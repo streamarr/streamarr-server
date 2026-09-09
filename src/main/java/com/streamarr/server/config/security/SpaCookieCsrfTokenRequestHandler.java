@@ -9,9 +9,9 @@ import org.springframework.security.web.csrf.XorCsrfTokenRequestAttributeHandler
 import org.springframework.util.StringUtils;
 
 /**
- * The documented SPA shape: BREACH-protected (Xor) rendering with eager realisation so the active
- * readable CSRF cookie is always written, and header-only resolution — the page reads the cookie
- * and echoes it as X-XSRF-TOKEN.
+ * The documented single-page application flow: BREACH-protected (Xor) rendering with eager
+ * realisation so the active readable CSRF cookie is always written, and header-only resolution —
+ * the page reads the cookie and echoes it as X-XSRF-TOKEN.
  */
 final class SpaCookieCsrfTokenRequestHandler implements CsrfTokenRequestHandler {
 

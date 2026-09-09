@@ -10,6 +10,7 @@ import com.streamarr.server.exceptions.DeviceCodeExpiredException;
 import com.streamarr.server.exceptions.DeviceCodeNotFoundException;
 import com.streamarr.server.exceptions.DeviceCodeNotPendingException;
 import com.streamarr.server.exceptions.DevicePairingNotConfiguredException;
+import com.streamarr.server.exceptions.SetupIncompleteException;
 import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationDecisionCommand;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertCommand;
@@ -17,6 +18,7 @@ import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
 import com.streamarr.server.repositories.auth.DeviceCodeCollisionException;
 import com.streamarr.server.repositories.auth.DeviceRegistrationRepository;
 import com.streamarr.server.repositories.auth.EsnBlockRepository;
+import com.streamarr.server.repositories.auth.ServerBootstrapRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.auth.UserCodeCollisionException;
 import java.nio.charset.StandardCharsets;
@@ -50,6 +52,7 @@ public class DeviceAuthorizationService {
   private final UserAccountRepository userAccountRepository;
   private final DeviceRegistrationRepository deviceRegistrationRepository;
   private final EsnBlockRepository esnBlockRepository;
+  private final ServerBootstrapRepository serverBootstrapRepository;
   private final DeviceRegistrationLifecycle registrationLifecycle;
   private final RefreshTokenService refreshTokenService;
   private final AccessTokenIssuer accessTokenIssuer;
@@ -71,6 +74,10 @@ public class DeviceAuthorizationService {
   public IssuedDeviceCode issue(String rawDeviceName, String esn) {
     if (!isPairingEnabled()) {
       throw new DevicePairingNotConfiguredException();
+    }
+
+    if (!serverBootstrapRepository.isClaimed()) {
+      throw new SetupIncompleteException();
     }
 
     var validatedEsn = Esn.requireValid(esn);
@@ -104,8 +111,8 @@ public class DeviceAuthorizationService {
   /**
    * One row-locked transaction. Every poller and the approving writer serialize on the same row, so
    * classification sees state nothing can change mid-decision and exactly one caller creates the
-   * session. Any failure afterwards rolls back and leaves the row APPROVED, so the device simply
-   * polls again.
+   * session. Any failure afterwards rolls back and leaves the row APPROVED, so the device polls
+   * again.
    */
   @Transactional
   public DevicePollResult redeem(String deviceCode) {
@@ -143,8 +150,8 @@ public class DeviceAuthorizationService {
   }
 
   /**
-   * Resolves a typed code to its pairing grant for the approval ceremony: the guessing budget is
-   * spent here, once per presented code, before Cedar or any validation sees the request.
+   * Resolves a typed code to its pairing grant for pairing approval: the guessing budget is spent
+   * here, once per presented code, before Cedar or any validation sees the request.
    */
   @Transactional(readOnly = true)
   public ResolvedGrant resolveForDecision(String typedUserCode, UUID callerAccountId) {
@@ -167,7 +174,7 @@ public class DeviceAuthorizationService {
 
   /**
    * The conditional decision write. Deliberately not throttled: {@link #resolveForDecision} already
-   * spent the budget for this presentation, and the ceremony calls both in one request.
+   * spent the budget for this presentation, and pairing approval calls both in one request.
    */
   @Transactional
   public DeviceAuthorizationDetails decide(DeviceDecisionCommand command) {
@@ -328,8 +335,8 @@ public class DeviceAuthorizationService {
             .findByUserCode(userCode)
             .orElseThrow(DeviceCodeNotFoundException::new);
 
-    // A probe deserves no oracle: expired collapses into not-found, matching the poll's
-    // expired_token.
+    // Approval requests return not-found for expired grants to conceal whether they existed.
+    // Polling clients receive expired_token for the same state.
     if (authorization.hasExpiredAt(clock.instant())) {
       throw new DeviceCodeNotFoundException();
     }
@@ -429,10 +436,6 @@ public class DeviceAuthorizationService {
         properties.maxOutstandingCodes());
   }
 
-  /**
-   * A row-count cap has no window to measure, so the honest answer is when the oldest outstanding
-   * code expires — the moment capacity provably frees.
-   */
   private Duration waitUntilCapacityFrees(Instant now) {
     return authorizationRepository
         .findOldestOutstandingExpiry(now)
@@ -467,6 +470,6 @@ public class DeviceAuthorizationService {
     }
   }
 
-  /** The grant the ceremony authorizes; never the code, never poll credentials. */
+  /** Excludes the code and polling credentials. */
   public record ResolvedGrant(UUID grantId, @NonNull Optional<String> esn, String deviceName) {}
 }

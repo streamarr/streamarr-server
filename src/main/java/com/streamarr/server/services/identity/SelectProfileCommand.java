@@ -4,7 +4,7 @@ import java.util.UUID;
 import lombok.Builder;
 import lombok.NonNull;
 
-/** The select-profile ceremony's input; the PIN is consumed and never echoed. */
+/** Contains Profile selection input. The PIN is consumed and never echoed. */
 @Builder
 public record SelectProfileCommand(@NonNull UUID profileId, String pin) {
 

@@ -1,4 +1,4 @@
 package com.streamarr.server.controllers.auth.device;
 
-/** Echoes the outcome that actually happened, not the one that was requested. */
+/** Reports the stored grant decision, which can differ from the requested decision. */
 public record DeviceDecisionResponse(String status, String deviceName) {}

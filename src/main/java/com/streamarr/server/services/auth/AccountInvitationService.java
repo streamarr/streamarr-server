@@ -230,8 +230,8 @@ public class AccountInvitationService {
   }
 
   /**
-   * The deferred Household invariants judge the accepted shape at commit; each one the issuance
-   * pre-checks can be raced is answered with a typed conflict instead of a bare 500.
+   * Deferred Household constraints validate the accepted identity at commit. Known conflicts caused
+   * by concurrent changes return typed errors instead of 500.
    */
   private RuntimeException translateAcceptanceFailure(DataIntegrityViolationException exception) {
     var constraint = constraintViolationTranslator.constraintName(exception).orElse("");
@@ -423,8 +423,8 @@ public class AccountInvitationService {
   private AccountInvitation resolvePending(String rawCode) {
     var invitation = codeResolver.resolvePending(rawCode, invitationRepository::findByPublicId);
     if (isLinkInvitationMissingProfile(invitation)) {
-      // The linkable Profile was deleted; invalidation should have flipped the row, and the
-      // SET NULL is the backstop. A dead code fails exactly like an unknown one.
+      // Deleting a linked Profile clears its reference. Reject the invitation with the same error
+      // as an unknown code.
       throw OpaqueCodeResolver.rejected(
           OpaqueCodeResolver.MissReason.NOT_REDEEMABLE, invitation.getPublicId());
     }

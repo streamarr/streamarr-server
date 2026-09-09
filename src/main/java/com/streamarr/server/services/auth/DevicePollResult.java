@@ -18,10 +18,10 @@ public sealed interface DevicePollResult {
     }
   }
 
-  /** Approval has not happened yet; keep polling at the interval already agreed. */
+  /** Approval is pending. Keep polling at the agreed interval. */
   record Pending() implements DevicePollResult {}
 
-  /** Polled before the cadence allowed; the caller must add five seconds and keep polling. */
+  /** The device polled too soon. Increase the interval by five seconds and continue polling. */
   record SlowDown() implements DevicePollResult {}
 
   record Denied() implements DevicePollResult {}

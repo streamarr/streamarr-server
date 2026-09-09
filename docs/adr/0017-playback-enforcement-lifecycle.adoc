@@ -46,7 +46,7 @@ The first terminal transition wins: later cleanup or revocation attempts never r
 The `TERMINATING` row *is* the durable cleanup marker: FFmpeg teardown and segment deletion happen after its transaction commits, the row is deleted only once cleanup succeeds, and failed cleanup retries periodically — startup-only retry is insufficient.
 No authoritative parent may cascade-delete it.
 The stream row's foreign keys to the authorization session/account binding, the media file, and the household/profile/grant chain use `NO ACTION`/`RESTRICT` with explicit indexes; deleting a parent while a stream exists fails rather than silently erasing enforcement and cleanup state.
-Parent deletion is explicit two-stage choreography: terminalize the affected streams (`AUTH_REVOKED` for identity or grant removal, `SOURCE_DELETED` for media removal), complete or retry cleanup, delete the stream rows, then retry the parent deletion.
+Parent deletion requires an explicit sequence: terminalize the affected streams (`AUTH_REVOKED` for identity or grant removal, `SOURCE_DELETED` for media removal), complete or retry cleanup, delete the stream rows, then retry the parent deletion.
 This invariant is also the foundation the distributed split needs, where remote workers require durable stop and cleanup intent.
 
 === Creation: admission, then locked activation
@@ -102,7 +102,7 @@ Retained rows and their directories expire together through the reaper.
 * A stale-but-unexpired access token cannot mint playback authority that outlives its staleness bound: admission and activation re-check the live authorization session, and the gate re-checks it per request.
 * Every lifecycle transition is a conditional statement; read-check-write sequences in Java are structurally excluded.
 * Cleanup is durable: crash windows between terminalization, teardown, and deletion are covered by the retained `TERMINATING` row and periodic retry.
-* Parent deletion becomes choreography rather than cascade — future account/profile/grant management must route through it.
+* Parent deletion requires coordinated operations rather than only cascading deletes — future account/profile/grant management must route through it.
 * The single-instance boundary is explicit; the distributed control plane extends this machine (owner, generation, leases) rather than replacing it.
 
 == Rejected Alternatives

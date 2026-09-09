@@ -3,9 +3,9 @@ package com.streamarr.server.services.auth;
 import java.util.Arrays;
 
 /**
- * The one shape rule for an email address, applied wherever one is stored or looked up: one local
- * part, one @, a domain of dot-separated non-empty labels, no whitespace — the shape, not
- * deliverability. A valid address is returned with surrounding whitespace removed and its case
+ * The shared format validation for an email address, applied wherever one is stored or looked up:
+ * one local part, one @, a domain of dot-separated non-empty labels, no whitespace — the format,
+ * not deliverability. A valid address is returned with surrounding whitespace removed and its case
  * kept; every lookup already ignores case.
  */
 public final class EmailAddressValidator {

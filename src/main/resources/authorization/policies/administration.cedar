@@ -63,8 +63,8 @@ when {
    (principal has serverAdmin && principal.serverAdmin))
 };
 
-// Only ServerAdmin proposes, replaces, cancels, or inspects Account invitations
-// (ADR 0024 §Invitations); the recipient's own ceremony authenticates by code, outside Cedar.
+// Only ServerAdmin manages Account invitations (ADR 0024 §Invitations).
+// Recipient requests authenticate by code outside Cedar.
 @id("account-invitations-are-server-admin-work")
 permit (
   principal,

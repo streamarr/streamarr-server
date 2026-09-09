@@ -12,6 +12,7 @@ import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidDecisionException;
 import com.streamarr.server.exceptions.InvalidEsnException;
 import com.streamarr.server.exceptions.InvalidUserCodeException;
+import com.streamarr.server.exceptions.SetupIncompleteException;
 import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
 import java.time.Duration;
 import org.springframework.http.HttpHeaders;
@@ -61,6 +62,11 @@ public class DeviceAuthExceptionHandler {
     return respond(HttpStatus.FORBIDDEN, "ESN_BLOCKED", e);
   }
 
+  @ExceptionHandler(SetupIncompleteException.class)
+  public ResponseEntity<AuthErrorResponse> handleSetupIncomplete(SetupIncompleteException e) {
+    return respond(HttpStatus.CONFLICT, "SETUP_INCOMPLETE", e);
+  }
+
   @ExceptionHandler(DevicePairingNotConfiguredException.class)
   public ResponseEntity<AuthErrorResponse> handleNotConfigured(
       DevicePairingNotConfiguredException e) {
@@ -99,7 +105,7 @@ public class DeviceAuthExceptionHandler {
         .body(new AuthErrorResponse("TOO_MANY_ATTEMPTS", e.getMessage()));
   }
 
-  /** Delta-seconds, rounded up: a client that retries a fraction early would just be refused. */
+  // Round up to whole seconds so clients do not retry before the delay expires.
   private static long retryAfterSeconds(Duration retryAfter) {
     if (retryAfter == null || retryAfter.isNegative() || retryAfter.isZero()) {
       return 1;

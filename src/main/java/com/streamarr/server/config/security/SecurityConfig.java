@@ -33,11 +33,12 @@ public class SecurityConfig {
    * SCOPE_PROFILE; everything else — GraphQL including introspection and future surfaces — demands
    * SCOPE_ACCOUNT, which profile tokens satisfy through the scope hierarchy.
    *
-   * <p>CSRF (SPA shape: readable host-bound cookie, Xor rendering, header-only submission) protects
-   * unsafe requests from the Streamarr cookie-carrying browser population. Explicitly insecure
-   * development uses an unprefixed fallback. The filter is wired manually because the
-   * resource-server DSL exempts any request its bearer resolver finds a token on — and our resolver
-   * reads the access cookie, which is precisely the ambient credential CSRF must cover.
+   * <p>CSRF (single-page application flow: readable host-bound cookie, Xor rendering, header-only
+   * submission) protects unsafe requests from the Streamarr cookie-carrying browser population.
+   * Explicitly insecure development uses an unprefixed fallback. The filter is wired manually
+   * because the resource-server DSL exempts any request its bearer resolver finds a token on — and
+   * our resolver reads the access cookie, which is precisely the ambient credential CSRF must
+   * cover.
    */
   @Bean
   SecurityFilterChain securityFilterChain(HttpSecurity http) {

@@ -1,5 +1,8 @@
 package com.streamarr.server.support;
 
+import static com.streamarr.server.jooq.generated.tables.ServerBootstrap.SERVER_BOOTSTRAP;
+import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
+
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.auth.AuthSession;
@@ -16,6 +19,7 @@ import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
+import com.streamarr.server.repositories.auth.ServerBootstrapRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -32,6 +36,7 @@ import java.util.UUID;
 import java.util.function.UnaryOperator;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
+import org.jooq.DSLContext;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -42,14 +47,16 @@ import org.springframework.transaction.support.TransactionTemplate;
  * Creates a complete ADR 0024 identity for integration tests — Household, unrestricted Adult
  * Personal Profile, HouseholdAdmin Account, structural share, and a session — and mints tokens for
  * it. The identity is created in one transaction because the deferred invariant triggers check the
- * whole shape at commit.
+ * complete identity state at commit.
  */
 @RequiredArgsConstructor
 public class AuthTestSupport {
 
   private final String password = UUID.randomUUID().toString();
 
+  private final DSLContext dsl;
   private final UserAccountRepository userAccountRepository;
+  private final ServerBootstrapRepository serverBootstrapRepository;
   private final HouseholdRepository householdRepository;
   private final ProfileRepository profileRepository;
   private final ProfileHouseholdShareRepository shareRepository;
@@ -60,6 +67,38 @@ public class AuthTestSupport {
   private final PlaybackTokenIssuer playbackTokenIssuer;
   private final PasswordEncoder passwordEncoder;
   private final TransactionTemplate transactionTemplate;
+
+  private TestIdentity bootstrapAdmin;
+
+  /** Ensures the bootstrap claim and an enabled ServerAdmin exist. Repeated calls are safe. */
+  public void claimBootstrap() {
+    // Earlier tests may leave a bootstrap claim or enabled ServerAdmin independently. Ensure
+    // both exist: the database requires an enabled ServerAdmin while a claim exists.
+    if (bootstrapAdmin == null && !hasEnabledServerAdmin()) {
+      bootstrapAdmin = createAdminIdentity();
+    }
+
+    serverBootstrapRepository.claim(
+        bootstrapAdmin == null ? null : bootstrapAdmin.account().getId());
+  }
+
+  private boolean hasEnabledServerAdmin() {
+    return dsl.fetchExists(
+        dsl.selectFrom(USER_ACCOUNT)
+            .where(USER_ACCOUNT.SERVER_ADMIN.isTrue().and(USER_ACCOUNT.ENABLED.isTrue())));
+  }
+
+  /**
+   * Restores the shared database's unclaimed baseline. Call before deleting identities: cleanup can
+   * remove the last enabled ServerAdmin, which the database forbids while a claim exists.
+   */
+  public void unclaimBootstrap() {
+    dsl.deleteFrom(SERVER_BOOTSTRAP).execute();
+    if (bootstrapAdmin != null) {
+      deleteIdentity(bootstrapAdmin);
+      bootstrapAdmin = null;
+    }
+  }
 
   public TestIdentity createIdentity() {
     return createIdentity(false);
@@ -112,9 +151,9 @@ public class AuthTestSupport {
   }
 
   /**
-   * Deletes an Account's whole Household in one transaction — T1 forbids a Household losing its
-   * final Account except inside Household deletion, so every Account and Profile of the Household
-   * goes with it (a deletion in miniature). Manager rows, shares, and guard rows cascade.
+   * Deletes an Account's Household and all of its Accounts and Profiles in one transaction. The
+   * database permits removing a Household's final Account only when deleting the Household itself.
+   * Foreign key cascades delete manager relationships, shares, and coordination rows.
    */
   public void deleteAccount(UUID accountId) {
     transactionTemplate.executeWithoutResult(
@@ -225,8 +264,9 @@ public class AuthTestSupport {
   }
 
   /**
-   * Deletes everything createIdentity made. The Account goes first (its FK to the Profile and the
-   * deferred T1/T2 triggers are satisfied once the Household is gone in the same transaction).
+   * Deletes everything createIdentity made. Delete the Account before its Personal Profile to
+   * satisfy the foreign key. Deleting the Household in the same transaction also satisfies the
+   * deferred checks for a remaining Account and its Personal Profile's structural share.
    */
   public void deleteIdentity(TestIdentity identity) {
     deleteAccount(identity.account().getId());

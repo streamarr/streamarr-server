@@ -14,7 +14,7 @@ Document status: historical baseline plus remediation record. The probe results 
 
 The core fix is correct: treating any Streamarr cookie, including the active CSRF marker, as evidence of a cookie-keeping browser closes the previously uncovered login-CSRF population without blocking native clients that do not retain cookies.
 
-Neither review established an exploitable cross-site login attack at the baseline commit. A fresh browser has no CSRF marker and is exempt, but all three browser-sendable form media types (`text/plain`, `application/x-www-form-urlencoded`, and `multipart/form-data`) are now pinned as `415` responses from setup, login, and refresh. A JSON request requires preflight, and the application does not grant a hostile origin an `Access-Control-Allow-Origin` response. The original review's P1 exploit claim was therefore a false positive; its underlying observation remains a valuable regression warning because these protections are load-bearing.
+Neither review established an exploitable cross-site login attack at the baseline commit. A fresh browser has no CSRF marker and is exempt, but all three browser-sendable form media types (`text/plain`, `application/x-www-form-urlencoded`, and `multipart/form-data`) are now pinned as `415` responses from setup, login, and refresh. A JSON request requires preflight, and the application does not grant a hostile origin an `Access-Control-Allow-Origin` response. The original review's P1 exploit claim was therefore a false positive; its underlying observation remains a valuable regression warning because preventing cross-site login depends on these protections.
 
 The merged review does reproduce several real issues: missing explicit CSRF cookie attributes, fixed rather than sliding CSRF-cookie expiry, the Bruno collection regression, request-parameter token fallback, an over-broad Bearer exemption, the cookie-deletion customizer trap, and the framework's live `GET /logout` endpoint. The request-format boundary, cookie attributes, lifetime decision, regression coverage, and Bruno harness affect the merge decision; the rest are bounded hardening or maintenance risks.
 
@@ -24,11 +24,11 @@ All before-merge and immediate-hardening recommendations were implemented on 202
 
 | Finding | Resolution | Permanent proof |
 |---|---|---|
-| F1 | Setup, login, and refresh now explicitly consume JSON; bodyless cookie refresh remains supported. | Nine non-JSON `415` cases, hostile-preflight test, existing bodyless-refresh IT |
+| F1 | Setup, login, and refresh now explicitly consume JSON; bodyless cookie refresh remains supported. | Nine non-JSON `415` cases, hostile-preflight test, existing bodyless-refresh integration test |
 | F2 | The CSRF cookie is explicitly `Secure`, `SameSite=Lax`, script-readable, and path `/`. | Cookie-attribute integration test |
-| F3 | The repository reissues a loaded CSRF token with a fresh refresh-token lifetime. | Refresh-rotation lifecycle IT |
+| F3 | The repository reissues a loaded CSRF token with a fresh refresh-token lifetime. | Refresh-rotation lifecycle integration test |
 | F4 | All identified negative and end-to-end gaps are now pinned, including rejected-response token re-minting. | Wrong-token, filter-order, GraphQL-cookie, setup-marker, media-type, CORS, attribute, renewal, and re-mint tests |
-| F5 | Bruno setup, login, and refresh echo either supported CSRF cookie name. | Retained-cookie bearer-login IT plus Bruno CLI 4.0 collection execution |
+| F5 | Bruno setup, login, and refresh echo either supported CSRF cookie name. | Retained-cookie bearer-login integration test plus Bruno CLI 4.0 collection execution |
 | F6 | `_csrf` request parameters are ignored; only `X-XSRF-TOKEN` resolves. | Request-handler unit test (red returned `raw-token`, green returned `null`) |
 | F7 | Bearer exemption applies only where the resolver accepts the Authorization header. | Matcher and filter-chain tests for protected routes versus login |
 | F8 | A dedicated repository keeps deletion at `Max-Age=0`, independent of normal lifetime customization. | Repository unit test (original behavior reproduced `2592000`) |
@@ -147,7 +147,7 @@ Add permanent tests for:
 - explicit CSRF cookie attributes;
 - sliding CSRF-cookie renewal, once implemented.
 
-The current throwing `JwtDecoder` in `SecurityConfigTest` is not an ordering tripwire because every probe targets `/api/auth/login`, a path on which `StreamarrBearerTokenResolver` returns before resolving any token. P06 demonstrates the missing falsifiable shape.
+The current throwing `JwtDecoder` in `SecurityConfigTest` does not detect incorrect filter ordering because every probe targets `/api/auth/login`, a path on which `StreamarrBearerTokenResolver` returns before resolving any token. P06 provides a test that fails when filter ordering is incorrect.
 
 ### F5 — The committed Bruno sequence now fails closed
 
@@ -197,7 +197,7 @@ Status: confirmed by static inspection.
 
 - `SecurityConfig` still says CSRF protects “exactly the cookie-authenticated requests,” while the new matcher intentionally protects the broader cookie-carrying population.
 - ADR 0016 says the CSRF and auth-cookie lifetimes stay in step by construction; P05 disproves that over time.
-- The ADR should state that same-origin deployment, JSON-only request binding, and absent hostile CORS are load-bearing for a first-contact browser.
+- The ADR should state that same-origin deployment, JSON-only request binding, and absent hostile CORS are required to protect a first-contact browser.
 - The matcher comment should not imply that `XSRF-TOKEN` alone covers a browser that has never contacted the origin.
 - The “first try” `403` narrative is possible but not certain if the SPA performs a safe boot request first.
 - Device-pairing text should be marked as forward-looking while its endpoint is not present at this commit.
@@ -220,7 +220,7 @@ HMAC-binding the token remains a separate deliberate hardening decision.
 3. [x] Add the passing security regression tests from F4.
 4. [x] Repair Bruno login by echoing the retained cookie into `X-XSRF-TOKEN`; verify setup, login, and refresh through a retained-cookie Bruno CLI collection run.
 5. [x] Implement sliding CSRF-cookie renewal and replace the single-instant claim with lifecycle proof.
-6. [x] Correct the stale `SecurityConfig` javadoc and load-bearing ADR claims.
+6. [x] Correct the stale `SecurityConfig` javadoc and ADR claims about required protections.
 
 ### Immediate hardening follow-up
 

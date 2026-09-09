@@ -20,11 +20,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 
 /**
- * V047's NOT VALID profile FKs tolerate legacy placeholder rows but must reject every new write for
- * a profile that does not exist — the enforcement half of the data-integrity contract.
+ * V047's NOT VALID profile foreign keys tolerate legacy placeholder rows but must reject every new
+ * write for a profile that does not exist — the enforcement half of the data-integrity contract.
  */
 @Tag("IntegrationTest")
-@DisplayName("Watch Table Profile FK Integration Tests")
+@DisplayName("Watch Table Profile Foreign Key Integration Tests")
 class WatchTableProfileFkIT extends AbstractIntegrationTest {
 
   @Autowired private SessionProgressRepository sessionProgressRepository;
@@ -51,7 +51,8 @@ class WatchTableProfileFkIT extends AbstractIntegrationTest {
   void shouldRejectSessionProgressWhenProfileDoesNotExist() {
     seedMediaFile();
 
-    // A real media file isolates the profile FK: it is the only constraint left to violate.
+    // A real media file isolates the profile foreign key: it is the only constraint left to
+    // violate.
     var sessionProgress =
         SessionProgressFixture.progressBuilder(UUID.randomUUID(), mediaFileId).build();
 

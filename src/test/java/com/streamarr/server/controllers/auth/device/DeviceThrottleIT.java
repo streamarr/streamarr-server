@@ -24,6 +24,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
@@ -32,6 +33,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 @Tag("IntegrationTest")
+@ResourceLock("server-bootstrap")
 @DisplayName("Device Pairing Throttle Integration Tests")
 @Import(AuthTestSupportConfig.class)
 class DeviceThrottleIT extends AbstractIntegrationTest {
@@ -51,8 +53,20 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
   private final List<UUID> accountIds = new ArrayList<>();
 
   @BeforeEach
+  void seedBaseline() {
+    authTestSupport.claimBootstrap();
+    deleteSeededRows();
+  }
+
   @AfterEach
-  void deleteSeededRows() {
+  void restoreBaseline() {
+    // Remove the bootstrap claim before cleanup can delete the last enabled ServerAdmin.
+    // The database requires an enabled ServerAdmin while a claim exists.
+    authTestSupport.unclaimBootstrap();
+    deleteSeededRows();
+  }
+
+  private void deleteSeededRows() {
     authorizationRepository.deleteAll();
     accountIds.forEach(authTestSupport::deleteAccount);
     accountIds.clear();
@@ -64,8 +78,8 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
     var approver = seedAccount();
     var bearer = bearerFor(approver);
 
-    // Lookup is the enumeration oracle, so its attempts and decision's come from one budget —
-    // two budgets would hand an attacker twice the tries against the same code.
+    // Lookup responses reveal whether a pairing code exists, so lookup and decision attempts
+    // share one limit. Separate limits would double the attempts available to guess the code.
     for (var attempt = 0; attempt < properties.maxGuessAttempts(); attempt++) {
       mockMvc.perform(lookup(bearer, "BCDF-GHJK")).andExpect(status().isNotFound());
     }

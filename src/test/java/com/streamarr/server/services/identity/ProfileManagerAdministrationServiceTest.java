@@ -51,11 +51,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.access.AccessDeniedException;
 
-/**
- * The direct-manager lifecycle over fakes: invitation and consent, one winner per transition, the
- * override boundary, and the invalidation rules that keep stale proposals from restoring disputed
- * authority.
- */
 @Tag("UnitTest")
 @DisplayName("Profile Manager Administration Service Tests")
 class ProfileManagerAdministrationServiceTest {

@@ -1,6 +1,6 @@
 package com.streamarr.server.services.identity;
 
-/** Expected refusals of the Device administration mutations (ADR 0026 shapes). */
+/** Expected refusals of the Device administration mutations (ADR 0026 error contracts). */
 public final class DeviceRejections {
 
   private DeviceRejections() {}

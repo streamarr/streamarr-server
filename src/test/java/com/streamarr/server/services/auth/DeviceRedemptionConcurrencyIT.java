@@ -45,9 +45,11 @@ import org.awaitility.Awaitility;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -56,6 +58,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 
 @Tag("IntegrationTest")
+@ResourceLock("server-bootstrap")
 @DisplayName("Device Redemption Concurrency Integration Tests")
 @Import(AuthTestSupportConfig.class)
 class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
@@ -88,15 +91,22 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
   private final List<UUID> accountIds = new ArrayList<>();
 
+  @BeforeEach
+  void claimBootstrap() {
+    authTestSupport.claimBootstrap();
+  }
+
   @AfterEach
   void deleteSeededRows() {
+    // Remove the claim so cleanup can delete the last enabled ServerAdmin.
+    authTestSupport.unclaimBootstrap();
     gatedIssuer.reset();
     gatedClock.reset();
     authorizationRepository.deleteAll();
     registrationRepository.deleteAll();
     esnBlockRepository.deleteAll();
     for (var accountId : accountIds) {
-      // FK cascades sweep auth_session and refresh_token rows.
+      // Foreign key cascades delete auth_session and refresh_token rows.
       authTestSupport.deleteAccount(accountId);
     }
 

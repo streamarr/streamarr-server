@@ -288,9 +288,8 @@ class FileProcessingTaskCoordinatorIT extends AbstractIntegrationTest {
     coordinator.createTask(path, testLibrary.getId());
     var claimed = coordinator.claimNextTask().orElseThrow();
 
-    // A genuinely orphaned task belongs to a crashed instance that no longer heartbeats. Reassign
-    // ownership away from this live coordinator so its @Scheduled extendLeases() cannot re-extend
-    // (or row-lock) the lease we rewind, which would race reclaim to zero.
+    // Use a different owner so this coordinator cannot renew or lock the expired lease during
+    // reclamation.
     claimed.setOwnerInstanceId("crashed-instance-" + UUID.randomUUID());
     claimed.setLeaseExpiresAt(Instant.now().minus(Duration.ofMinutes(5)));
     taskRepository.save(claimed);

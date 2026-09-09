@@ -34,7 +34,7 @@ public final class CredentialRejections {
 
   public record EmailRequired() implements Issue {}
 
-  /** Not the shape of an address; it would become the Account's login identity. */
+  /** The proposed Account login email address has an invalid format. */
   public record EmailInvalid() implements Issue {}
 
   /** An existing email cannot be invited or reassigned; transfer the Account instead. */

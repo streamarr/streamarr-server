@@ -1,7 +1,7 @@
-// Transfers and deletion (ADR 0024 §Transfers, §Account deletion): recovery work. Transfers are
-// live-ServerAdmin actions with an audit record; deletions add the fresh ceremony. Lifecycle
-// safety (final Account, last admin, anchors) is the database's T1/T4/T6 and the conditional
-// transitions' business — never authority's.
+// Transfers and deletion (ADR 0024 §Transfers, §Account deletion) are audited operations.
+// Transfers require current ServerAdmin authority. Deletions require recent reauthentication.
+// Database constraints and conditional writes preserve the final Account, required
+// administrators, and eligible Profile supervision independently of authorization.
 
 // Moving an Account or an unlinked Profile is live-ServerAdmin recovery work.
 @id("transfer-as-server-admin")

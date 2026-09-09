@@ -2,7 +2,9 @@
 
 Use the `local` environment, then set `AUTH_EMAIL`, `AUTH_PASSWORD`, and `TMDB_TOKEN`
 as secrets in Bruno. `AUTH_NEW_PASSWORD` is only needed for the manual password-change
-request. Replace the non-secret resource IDs and local library path as needed.
+request; `NEW_PROFILE_PIN` is only needed for the manual `GraphQL/Set Profile PIN` request.
+Configure both through Bruno's local secret store. Replace the non-secret resource IDs and local
+library path as needed.
 
 For a configured server, run `Auth/Public/Login` before protected requests. On a fresh
 server, run `Auth/Public/Setup (one time)` instead. Both requests keep the returned access and refresh
@@ -19,6 +21,11 @@ inherited bearer configuration backed by the separate `TMDB_TOKEN` secret.
 The token in a stream session's `streamUrl` is a short-lived playback token, not the API
 access token.
 
+`GraphQL/Get Me` chains the selected or first unlocked Profile that has no PIN for
+`Auth/Session/Select Profile`. If none qualifies, it clears `PROFILE_ID`; selecting a
+PIN-protected Profile requires setting the ID and supplying its `pin` through a Bruno
+local secret in that request body.
+
 Requests under `Streaming` exercise the HLS delivery routes. Run `GraphQL/Create Stream
 Session` first: it captures `STREAM_URL`, `STREAM_SESSION_ID`, and `PLAYBACK_TOKEN`, and
 `Get Media Playlist` then captures `SEGMENT_PATH` for `Get Segment`. Stream routes
@@ -28,3 +35,9 @@ wait a few seconds while FFmpeg produces it.
 
 Requests tagged `manual` or `destructive` intentionally change durable state. Exclude
 them from broad collection runs unless that behavior is desired.
+The embedded tests are live request-contract checks, not an isolated Maven test suite.
+Mutation requests intentionally build on prior requests: choose a fresh `NEW_PROFILE_NAME`,
+run `Create Profile`, then run `Set Profile PIN` with the chained `NEW_PROFILE_ID`.
+
+Run the offline profile-selection script checks with
+`node --test bruno/tests/profile-selection.test.mjs` from the repository root.

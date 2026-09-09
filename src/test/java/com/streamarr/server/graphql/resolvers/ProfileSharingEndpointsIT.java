@@ -53,11 +53,6 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
-/**
- * The sharing lifecycle through the GraphQL boundary against real PostgreSQL and Cedar: offers and
- * their decisions, activation eligibility, name conflicts, membership-required shares,
- * administratively ending after password confirmation, previews, and visitor-session effects.
- */
 @Tag("IntegrationTest")
 @DisplayName("Profile Sharing Endpoints Integration Tests")
 class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
@@ -551,7 +546,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
                 .getContextHouseholdId())
         .isNull();
 
-    // The membership-required share answers its typed refusal (Cedar and T3 both refuse it).
+    // Authorization and database constraints both prevent ending a share required by membership.
     var membershipShareId =
         shareRepository
             .findByProfileIdAndHouseholdIdAndStatus(
@@ -1281,7 +1276,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
         });
   }
 
-  // ---- T7 from the profile trigger: restricting a hosted Profile answers a typed rejection.
+  // Restricting a hosted Profile without an eligible HouseholdAdmin returns a typed rejection.
 
   @Test
   @DisplayName(

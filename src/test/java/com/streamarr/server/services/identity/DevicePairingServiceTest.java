@@ -36,7 +36,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.access.AccessDeniedException;
 
 /**
- * The approval ceremony over fakes: the grant resolves before Cedar, the chosen Household must be
+ * Pairing approval tested with fakes: the grant resolves before Cedar, the chosen Household must be
  * usable by the approver, and a blocked ESN refuses before any decision is written.
  */
 @Tag("UnitTest")

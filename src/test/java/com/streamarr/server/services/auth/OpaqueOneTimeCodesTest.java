@@ -59,7 +59,7 @@ class OpaqueOneTimeCodesTest {
   }
 
   @Test
-  @DisplayName("Should refuse malformed shapes when an opaque code is parsed")
+  @DisplayName("Should refuse malformed values when an opaque code is parsed")
   void shouldRefuseMalformedShapesWhenOpaqueCodeIsParsed() {
     assertThat(codes.parse(null)).isEmpty();
     assertThat(codes.parse("")).isEmpty();

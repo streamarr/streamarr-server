@@ -53,9 +53,9 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * The V056 invariants (T7 arrived with V059) as the database enforces them at commit (deferred
- * triggers, SQLSTATE 23514 with stable constraint names): each has a failing case that proves its
- * user impact and a passing case that proves legitimate transitions are not blocked.
+ * The identity constraints introduced in V056 and V059, enforced by the database at commit
+ * (deferred triggers, SQLSTATE 23514 with stable constraint names): each has a failing case that
+ * proves its user impact and a passing case that proves legitimate transitions are not blocked.
  */
 @Tag("IntegrationTest")
 @DisplayName("Identity Invariants Integration Tests")
@@ -100,10 +100,10 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
     throw failure;
   }
 
-  // ---- T1 ---------------------------------------------------------------------------------------
+  // Households retain their final Account and HouseholdAdmin.
 
   @Test
-  @DisplayName("Should refuse removing the final Account when outside Household deletion (T1)")
+  @DisplayName("Should refuse removing the final Account when outside Household deletion")
   void shouldRefuseRemovingFinalAccountWhenOutsideHouseholdDeletion() {
     var identity = create();
 
@@ -117,7 +117,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse demotion when the Account is the last HouseholdAdmin (T1)")
+  @DisplayName("Should refuse demotion when the Account is the last HouseholdAdmin")
   void shouldRefuseDemotionWhenAccountIsLastHouseholdAdmin() {
     var identity = create();
     var accountId = identity.account().getId();
@@ -129,7 +129,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep exactly one HouseholdAdmin when two demotions race (T1)")
+  @DisplayName("Should keep exactly one HouseholdAdmin when two demotions race")
   void shouldKeepExactlyOneHouseholdAdminWhenTwoDemotionsRace() throws Exception {
     var first = create();
     var second = joinAsAdmin(first);
@@ -157,10 +157,10 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
     assertThat(adminCount(first.household().getId())).isEqualTo(1);
   }
 
-  // ---- T2 / T3 ----------------------------------------------------------------------------------
+  // Personal Profiles retain their structural share while the Account remains a member.
 
   @Test
-  @DisplayName("Should refuse a Personal Profile when its structural share is missing (T2)")
+  @DisplayName("Should refuse a Personal Profile when its structural share is missing")
   void shouldRefusePersonalProfileWhenStructuralShareIsMissing() {
     assertThatThrownBy(
             () ->
@@ -186,7 +186,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse ending a structural share when the Account remains a member (T3)")
+  @DisplayName("Should refuse ending a structural share when the Account remains a member")
   void shouldRefuseEndingStructuralShareWhenAccountRemainsMember() {
     var identity = create();
     var share =
@@ -209,11 +209,11 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
         .isEqualTo("chk_structural_share_persists");
   }
 
-  // ---- T4 ---------------------------------------------------------------------------------------
+  // Claimed servers retain at least one enabled ServerAdmin.
 
   @Test
   @DisplayName(
-      "Should refuse disabling an Account when it is the last enabled ServerAdmin after bootstrap (T4)")
+      "Should refuse disabling an Account when it is the last enabled ServerAdmin after bootstrap")
   void shouldRefuseDisablingAccountWhenItIsLastEnabledServerAdminAfterBootstrap() {
     var admin = createServerAdmin();
     dsl.insertInto(SERVER_BOOTSTRAP)
@@ -235,7 +235,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep one enabled ServerAdmin when cross-Household demotions race (T4)")
+  @DisplayName("Should keep one enabled ServerAdmin when cross-Household demotions race")
   void shouldKeepOneEnabledServerAdminWhenCrossHouseholdDemotionsRace() throws Exception {
     var first = createServerAdmin();
     var second = createServerAdmin();
@@ -273,10 +273,10 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
     assertThat(enabledServerAdminCount()).isEqualTo(1);
   }
 
-  // ---- T5 ---------------------------------------------------------------------------------------
+  // Restricted Personal Profiles cannot confer authority on their Accounts.
 
   @Test
-  @DisplayName("Should refuse authority when the Personal Profile is restricted (T5)")
+  @DisplayName("Should refuse authority when the Personal Profile is restricted")
   void shouldRefuseAuthorityWhenPersonalProfileIsRestricted() {
     var admin = create();
     var member = join(admin, HouseholdRole.MEMBER);
@@ -296,8 +296,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName(
-      "Should allow restriction when a HouseholdAdmin directly manages the member (T5, T6)")
+  @DisplayName("Should allow restriction when a HouseholdAdmin directly manages the member")
   void shouldAllowRestrictionWhenHouseholdAdminDirectlyManagesMember() {
     var admin = create();
     var member = join(admin, HouseholdRole.MEMBER);
@@ -306,7 +305,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject one write when a manager grant races Profile restriction (T5)")
+  @DisplayName("Should reject one write when a manager grant races Profile restriction")
   void shouldRejectOneWriteWhenManagerGrantRacesProfileRestriction() throws Exception {
     var recipientHome = create();
     var recipient = join(recipientHome, HouseholdRole.MEMBER);
@@ -362,7 +361,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse restriction when the member Account has no supervisor (T6)")
+  @DisplayName("Should refuse restriction when the member Account has no supervisor")
   void shouldRefuseRestrictionWhenMemberAccountHasNoSupervisor() {
     var admin = create();
     var member = join(admin, HouseholdRole.MEMBER);
@@ -381,11 +380,11 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
         .isEqualTo("chk_profile_home_anchor");
   }
 
-  // ---- T6 ---------------------------------------------------------------------------------------
+  // Profiles retain eligible supervision in their home Household.
 
   @Test
   @DisplayName(
-      "Should refuse a Kid Profile when an eligible HouseholdAdmin manager is missing at home (T6)")
+      "Should refuse a Kid Profile when an eligible HouseholdAdmin manager is missing at home")
   void shouldRefuseKidProfileWhenEligibleHouseholdAdminManagerIsMissingAtHome() {
     var admin = create();
 
@@ -403,7 +402,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should allow a Kid Profile when a HouseholdAdmin directly manages it (T6)")
+  @DisplayName("Should allow a Kid Profile when a HouseholdAdmin directly manages it")
   void shouldAllowKidProfileWhenHouseholdAdminDirectlyManagesIt() {
     var admin = create();
 
@@ -412,7 +411,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should refuse manager removal when it would remove a Kid Profile's final eligible manager (T6)")
+      "Should refuse manager removal when it would remove a Kid Profile's final eligible manager")
   void shouldRefuseManagerRemovalWhenItWouldRemoveKidProfilesFinalEligibleManager() {
     var admin = create();
     var kid = createKid(admin);
@@ -430,7 +429,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should refuse a manager move when it would move a Kid Profile's final eligible manager away (T6)")
+      "Should refuse a manager move when it would move a Kid Profile's final eligible manager away")
   void shouldRefuseManagerMoveWhenItWouldMoveKidProfilesFinalEligibleManagerAway() {
     var firstAdmin = create();
     var firstKid = createKid(firstAdmin);
@@ -507,10 +506,10 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
             (left, right) -> left.getId().toString().compareTo(right.getId().toString()));
   }
 
-  // ---- T8 / PIN ---------------------------------------------------------------------------------
+  // Available Profile names are unique within each Household. PIN hashes cannot be blank.
 
   @Test
-  @DisplayName("Should refuse Profiles when available names differ only by case (T8)")
+  @DisplayName("Should refuse Profiles when available names differ only by case")
   void shouldRefuseProfilesWhenAvailableNamesDifferOnlyByCase() {
     var identity = create();
     var visitor = create();
@@ -775,7 +774,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
         });
   }
 
-  /** Restricts the member's Personal Profile with the admin as direct manager (T6-valid). */
+  /** Restricts the member's Personal Profile with the admin as direct manager. */
   private void restrictUnderSupervision(AuthTestSupport.TestIdentity admin, UserAccount member) {
     transactionTemplate.executeWithoutResult(
         _ -> {

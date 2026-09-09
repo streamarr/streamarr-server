@@ -17,7 +17,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
- * The complete select-profile ceremony (ADR 0024 §PIN safety): authenticate the Account and live
+ * The complete Profile selection process (ADR 0024 §PIN safety): authenticate the Account and live
  * session, confirm the Profile is available in the context Household, decide whether it requires a
  * PIN, throttle and verify the PIN, apply the Household safety lock through Cedar, record the
  * selection, and hand back the context the Profile-scoped token is minted from. The verified-PIN

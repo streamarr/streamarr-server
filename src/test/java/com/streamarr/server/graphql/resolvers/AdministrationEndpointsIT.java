@@ -145,7 +145,7 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should report the missing ceremony when revoking with a stale token")
+  @DisplayName("Should require reauthentication when revoking with a stale token")
   void shouldReportMissingCeremonyWhenRevokingServerAdminWithStaleToken() throws Exception {
     assertThat(userAccountRepository.tryGrantServerAdmin(resident.account().getId())).isTrue();
 
@@ -199,7 +199,7 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should report the missing ceremony when the ServerAdmin token is not fresh")
+  @DisplayName("Should require reauthentication when the ServerAdmin token is not fresh")
   void shouldReportMissingCeremonyWhenServerAdminTokenNotFresh() throws Exception {
     graphql(
             authTestSupport.accountBearer(serverAdmin),
@@ -251,7 +251,7 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return Account not found when the oracle rule hides it")
+  @DisplayName("Should return Account not found when the caller cannot view it")
   void shouldReturnAccountNotFoundWhenAccountHiddenByOracleRule() throws Exception {
     var hidden = authTestSupport.createIdentity();
     try {

@@ -98,10 +98,9 @@ class CedarAuthorizationDecider implements AuthorizationDecider {
     }
   }
 
-  /**
-   * Retries only a clean stale-policy denial as fresh. An allow classifies the original denial as
-   * reauthentication-required; failures and other denials remain unchanged (ADR 0025).
-   */
+  // Recheck a denial with fresh reauthentication when the original reauthentication is stale.
+  // Report REAUTHENTICATION_REQUIRED only if the fresh evaluation allows the request.
+  // Preserve the original denial for other outcomes (ADR 0025).
   private <T> Decision<T> decideWithFreshness(
       AuthenticatedIdentity identity,
       AuthorizationCheck check,

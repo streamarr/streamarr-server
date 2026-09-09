@@ -43,12 +43,6 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
-/**
- * Profile administration through the GraphQL boundary against real PostgreSQL and the real Cedar
- * engine: creation with its eligible-manager rules, the transition classifications and their
- * fresh-reauthentication boundary, PIN safety on removal, the break-glass override audit, and
- * ordinary standalone deletion.
- */
 @Tag("IntegrationTest")
 @DisplayName("Profile Administration Endpoints Integration Tests")
 class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {

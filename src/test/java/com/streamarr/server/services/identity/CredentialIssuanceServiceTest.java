@@ -57,11 +57,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.access.AccessDeniedException;
 
-/**
- * Issuing invitations and reset codes over fakes: whole-surface gating, the issue-time validations,
- * replacement invalidating the older pending artifact, and the reset issue's fresh-reauthentication
- * classification and audit.
- */
 @Tag("UnitTest")
 @DisplayName("Credential Issuance Service Tests")
 class CredentialIssuanceServiceTest {
@@ -593,7 +588,7 @@ class CredentialIssuanceServiceTest {
   @Test
   @DisplayName("Should reject a many-label recipient email when its domain ends with a dot")
   void shouldRejectManyLabelRecipientEmailWhenDomainEndsWithDot() {
-    // Deciding the shape must not recurse per label: this input once overflowed the stack.
+    // Validating the email format must not recurse per label: this input once overflowed the stack.
     var recipientEmail = "kai@" + "label.".repeat(100_000);
 
     var outcome =

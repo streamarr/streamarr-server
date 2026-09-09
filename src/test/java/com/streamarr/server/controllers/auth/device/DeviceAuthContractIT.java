@@ -24,9 +24,11 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.NullSource;
@@ -44,6 +46,7 @@ import tools.jackson.databind.ObjectMapper;
 
 /** Pins {@code /api/auth/device/**} and the status extension as an executable client contract. */
 @Tag("IntegrationTest")
+@ResourceLock("server-bootstrap")
 @DisplayName("Device Auth Contract Integration Tests")
 @Import(AuthTestSupportConfig.class)
 class DeviceAuthContractIT extends AbstractIntegrationTest {
@@ -51,6 +54,11 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   @Autowired private MockMvc mockMvc;
 
   @Autowired private AuthTestSupport authTestSupport;
+
+  @BeforeEach
+  void claimBootstrap() {
+    authTestSupport.claimBootstrap();
+  }
 
   @Autowired private DeviceAuthorizationRepository authorizationRepository;
 
@@ -64,6 +72,7 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
 
   @AfterEach
   void deleteSeededRows() {
+    authTestSupport.unclaimBootstrap();
     authorizationRepository.deleteAll();
     accountIds.forEach(authTestSupport::deleteAccount);
     accountIds.clear();

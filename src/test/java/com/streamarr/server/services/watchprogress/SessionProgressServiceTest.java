@@ -562,7 +562,6 @@ class SessionProgressServiceTest {
       // Session destroyed without STOPPED report (client crash)
       runtimeRegistry.removeById(session.getSessionId());
 
-      // Progress should still be in DB
       var progress =
           sessionProgressRepository.findBySessionId(session.getSessionId()).orElseThrow();
       assertThat(progress.getPositionSeconds()).isEqualTo(3600);

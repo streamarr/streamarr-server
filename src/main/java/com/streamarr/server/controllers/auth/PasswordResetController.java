@@ -10,9 +10,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Redeeming a password-reset code (ADR 0024 §Account): a principal-less REST ceremony, allowed
- * while the Account is disabled. It changes the password, revokes every refresh session, and
- * creates no session — the person signs in fresh, or stays disabled until re-enabled.
+ * Redeeming a password-reset code (ADR 0024 §Account): a REST operation authenticated by the code,
+ * allowed while the Account is disabled. It changes the password, revokes every refresh session,
+ * and creates no session — the person signs in fresh, or stays disabled until re-enabled.
  */
 @RestController
 @RequestMapping("/api/auth/password-reset")

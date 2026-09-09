@@ -59,7 +59,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
- * The refusal shapes and write rules of Profile administration over fakes: the oracle rule per
+ * Profile administration errors and write rules tested with fakes: resource visibility per
  * mutation, the normalized transition written verbatim, PIN hashing before any transaction, the
  * would-lock preflight, and audits only for the break-glass and deletion winners.
  */
@@ -439,7 +439,7 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should report the missing ceremony when a policy change needs reauthentication")
+  @DisplayName("Should require reauthentication when a policy change needs renewed credentials")
   void shouldReportMissingCeremonyWhenPolicyChangeNeedsReauthentication() {
     var profile =
         profiles.save(ProfileFixture.kidProfileBuilder().householdId(household.getId()).build());
@@ -950,7 +950,7 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should report reauthentication when deletion requires a fresh ceremony")
+  @DisplayName("Should require reauthentication when deletion needs renewed credentials")
   void shouldReportReauthenticationWhenDeletionRequiresFreshCeremony() {
     var profile =
         profiles.save(

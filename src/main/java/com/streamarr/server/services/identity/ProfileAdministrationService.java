@@ -403,7 +403,7 @@ public class ProfileAdministrationService {
               refusalOf(
                   identity,
                   new Intent.DeleteProfile(profileId),
-                  // Deletion denial always uses the typed oracle below, never FORBIDDEN.
+                  // Deletion denial uses the visibility-dependent typed rejection below.
                   () -> false,
                   () -> deletionRejection(identity, profileId),
                   Optional.of(ProfileRejections.ReauthenticationRequired::new));
@@ -466,7 +466,8 @@ public class ProfileAdministrationService {
 
   /**
    * Restricting a linked Personal Profile ends the person's eligibility (ADR 0024): a pending
-   * manager invitation naming them must not outlive it and later restore authority T5 forbids.
+   * manager invitation naming them must not outlive it and later restore authority forbidden to
+   * restricted Accounts.
    */
   private void invalidateRecipientProposalsWhenRestricted(
       UUID profileId, ProfilePolicyTransition transition) {
@@ -505,7 +506,7 @@ public class ProfileAdministrationService {
     };
   }
 
-  /** The shared refusal shape for ordinary edits: FORBIDDEN when visible, not-found when not. */
+  /** The shared error contract for ordinary edits: FORBIDDEN when visible, not-found when not. */
   private Optional<ProfileRejections.ProfileNotFound> editRefusal(
       AuthenticatedIdentity identity, Intent.UnitIntent intent, UUID profileId) {
     return refusalOf(
@@ -553,7 +554,7 @@ public class ProfileAdministrationService {
 
   private ProfileRejections.DeleteProfile deletionRejection(
       AuthenticatedIdentity identity, UUID profileId) {
-    // The oracle rule: a caller who may see the Profile's administration learns why deletion is
+    // A caller who may see the Profile's administration learns why deletion is
     // refused; anyone else learns nothing beyond not-found.
     return mayViewProfile(identity, profileId)
         ? new ProfileRejections.ProfileNotDeletable()
@@ -592,7 +593,6 @@ public class ProfileAdministrationService {
     return value != null && value < 0;
   }
 
-  /** What createProfile needs; the builder keeps call sites named (no positional soup). */
   @Builder
   public record CreateProfileCommand(
       UUID householdId,

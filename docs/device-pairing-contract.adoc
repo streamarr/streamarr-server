@@ -41,7 +41,7 @@ A client that receives a response missing either field treats the server as inco
 == Credential grammar
 
 `deviceCode`::
-Exactly 43 ASCII characters of canonical unpadded base64url (32 decoded bytes, 256-bit, cryptographic random). Opaque — clients never parse it. The server validates the shape before hashing, so a malformed code is indistinguishable from an unknown one.
+Exactly 43 ASCII characters of canonical unpadded base64url (32 decoded bytes, 256-bit, cryptographic random). Opaque — clients never parse it. The server validates this format before hashing, so a malformed code is indistinguishable from an unknown one.
 
 `userCode`::
 Streamarr chooses the exact alphabet `BCDFGHJKLMNPQRSTVWXZ`, following the non-normative usability example in RFC 8628 §6.1: no vowels and no ambiguous `0`/`O`/`1`/`I`. Length is fixed at 8 in v1. *Display form* groups of four joined by a single hyphen (`BCDF-GHJK`); *wire and storage form* is uppercase with no separators. Lookup and decision accept typed input case-insensitively, with or without separators and surrounding whitespace, then normalize and validate. The issuance response's `userCode` is authoritative for display, so clients never assume a length.
@@ -84,13 +84,23 @@ Request `{"deviceName": "Apple TV"}`. Success `200`:
 `verificationUri` is always absolute, joined beneath the configured base URL.
 The server never invents a process-local or container address.
 
-Errors: `503 DEVICE_PAIRING_NOT_CONFIGURED` when no canonical base URL is configured · `429 TOO_MANY_ATTEMPTS` with `Retry-After` when outstanding-code capacity is exhausted.
+Errors: `503 DEVICE_PAIRING_NOT_CONFIGURED` when no canonical base URL is configured · `409 SETUP_INCOMPLETE` while the server bootstrap remains unclaimed · `429 TOO_MANY_ATTEMPTS` with `Retry-After` when outstanding-code capacity is exhausted.
+The configuration check runs first, so an unconfigured and unclaimed server returns `DEVICE_PAIRING_NOT_CONFIGURED`.
+On `SETUP_INCOMPLETE`, clients return to the status bootstrap and wait for `setupComplete` before requesting another code.
 
 [source,json]
 ----
 {
   "code": "DEVICE_PAIRING_NOT_CONFIGURED",
   "message": "Device pairing requires a configured canonical base URL."
+}
+----
+
+[source,json]
+----
+{
+  "code": "SETUP_INCOMPLETE",
+  "message": "The server has not completed initial setup."
 }
 ----
 

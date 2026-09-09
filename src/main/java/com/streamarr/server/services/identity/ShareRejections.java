@@ -39,15 +39,15 @@ public final class ShareRejections {
   /** The system withdrew the offer — its offerer lost authority — and recorded why. */
   public record OfferInvalidated(String reason) implements Accept {}
 
-  /** T7: a Household hosting a restricted Profile holds an eligible HouseholdAdmin. */
+  /** A Household hosting a restricted Profile holds an eligible HouseholdAdmin. */
   public record NoEligibleAdmin() implements Accept {}
 
-  /** T8: the Profile's name collides with another available Profile there. */
+  /** The Profile's name collides with another available Profile there. */
   public record NameConflict() implements Accept {}
 
   public record ShareNotActive() implements End, AdministrativelyEnd {}
 
-  /** T3: nobody ends a structural share while the Account remains a member. */
+  /** A structural share cannot end while the Account remains a member. */
   public record StructuralShareCannotEnd() implements End, AdministrativelyEnd {}
 
   public record ReauthenticationRequired() implements AdministrativelyEnd {}

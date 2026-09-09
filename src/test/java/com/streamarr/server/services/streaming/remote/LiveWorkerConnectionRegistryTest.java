@@ -138,8 +138,6 @@ class LiveWorkerConnectionRegistryTest {
       registry.disconnect(WORKER_ID, workerSessionId);
       observer.dispatchRelease.countDown();
 
-      // The job must not be reported as dispatched while tracked nowhere: the race resolves to
-      // an honest dispatch failure and recovery moves on to another target.
       assertThat(dispatching.get(5, TimeUnit.SECONDS)).isFalse();
       assertThat(registry.isRunning(streamSessionId, job.getVariant().getVariantLabel())).isFalse();
     }

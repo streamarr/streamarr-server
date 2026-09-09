@@ -56,7 +56,9 @@ public interface ProfileHouseholdShareRepositoryCustom {
     }
   }
 
-  /** ACTIVE becomes ENDED. The deferred T3 judges structural shares at commit. */
+  /**
+   * ACTIVE becomes ENDED. At commit, the database rejects ending a share required by membership.
+   */
   boolean tryEndActive(UUID shareId, Instant now);
 
   /**

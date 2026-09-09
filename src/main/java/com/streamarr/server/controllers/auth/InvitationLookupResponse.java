@@ -8,7 +8,6 @@ import java.time.Instant;
 import java.util.List;
 import lombok.Builder;
 
-/** The lookup wire body: only what the code holder needs to decide, owned by the REST layer. */
 @Builder
 public record InvitationLookupResponse(
     String recipientEmail,

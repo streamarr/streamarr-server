@@ -16,7 +16,7 @@ public interface StreamingService {
 
   /**
    * Owner-checked destroy. A wrong-owner call is a silent no-op by design: an unowned session must
-   * be indistinguishable from a missing one (no existence oracle).
+   * be indistinguishable from a missing one to conceal its existence.
    */
   void destroySession(UUID sessionId, UUID profileId);
 

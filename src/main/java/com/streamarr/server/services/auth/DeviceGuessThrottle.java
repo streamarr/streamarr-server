@@ -18,10 +18,11 @@ import org.springframework.stereotype.Component;
 /**
  * One shared guessing budget for lookup and decision, keyed by the calling account.
  *
- * <p>Shared on purpose: lookup is the enumeration oracle — a 200 carrying a device name versus a
- * 404 — so two independent budgets would hand an attacker twice the attempts against the same
- * secret. Keyed by account rather than source for the reason {@link LoginThrottle} records: behind
- * a reverse proxy every caller shares one address, and a per-source block would lock out the house.
+ * <p>Lookup responses reveal whether a pairing code exists: 200 with a device name or 404. Lookup
+ * and decision requests share one attempt limit because separate limits would double the attempts
+ * available to guess the same secret. Keyed by account rather than source for the reason {@link
+ * LoginThrottle} records: behind a reverse proxy every caller shares one address, and a per-source
+ * block would lock out the house.
  *
  * <p>Keys are bounded by the number of authenticated accounts, so unlike {@link LoginThrottle}
  * there is nothing to spray and no sweeper to run.

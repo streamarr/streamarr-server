@@ -19,7 +19,7 @@ Remove MapStruct. Replace mapper calls with direct setters in `CompanyService` a
 MapStruct (or a similar mapping library) becomes worthwhile if:
 
 * We adopt REST or gRPC, where full object serialization exposes JPA internals
-* Domain objects diverge significantly from entity shape (different field names, nested transformations, type conversions)
+* Domain objects diverge significantly from entity structure (different field names, nested transformations, type conversions)
 * The number of mapped fields per entity grows large enough that manual setters become a maintenance risk
 
 == Consequences

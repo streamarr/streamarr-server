@@ -1639,7 +1639,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
 
   /**
    * A second, unlinked Profile the Account manages, available in its Household. One transaction:
-   * the deferred home-anchor trigger checks the whole shape at commit.
+   * the deferred home-anchor trigger checks the Profile and its management relationships at commit.
    */
   private Profile seedManagedProfile() {
     return transactionTemplate.execute(
@@ -1703,7 +1703,6 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     shareRepository.saveAndFlush(share);
   }
 
-  /** Proves the token still authenticates: GraphQL accepts ACCOUNT scope and answers 200. */
   private void assertStillAuthenticates(String accessToken) throws Exception {
     mockMvc
         .perform(

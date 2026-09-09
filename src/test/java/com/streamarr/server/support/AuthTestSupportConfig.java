@@ -4,10 +4,12 @@ import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
+import com.streamarr.server.repositories.auth.ServerBootstrapRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.auth.RefreshTokenService;
+import org.jooq.DSLContext;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -20,7 +22,9 @@ public class AuthTestSupportConfig {
 
   @Bean
   public AuthTestSupport authTestSupport(
+      DSLContext dsl,
       UserAccountRepository userAccountRepository,
+      ServerBootstrapRepository serverBootstrapRepository,
       HouseholdRepository householdRepository,
       ProfileRepository profileRepository,
       ProfileHouseholdShareRepository shareRepository,
@@ -32,7 +36,9 @@ public class AuthTestSupportConfig {
       PasswordEncoder passwordEncoder,
       PlatformTransactionManager transactionManager) {
     return new AuthTestSupport(
+        dsl,
         userAccountRepository,
+        serverBootstrapRepository,
         householdRepository,
         profileRepository,
         shareRepository,

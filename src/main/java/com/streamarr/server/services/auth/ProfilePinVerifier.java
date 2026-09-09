@@ -9,9 +9,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 /**
- * The single PIN checkpoint (ADR 0024): PIN verification exists only inside the select-profile
- * ceremony, throttled on the PROFILE_PIN budget keyed by Account and Profile. The verified result
- * is trusted attempt context the selection service alone creates; no client supplies it.
+ * The single PIN checkpoint (ADR 0024): PIN verification runs only during Profile selection,
+ * throttled on the PROFILE_PIN budget keyed by Account and Profile. Only the selection service
+ * creates the trusted verification context. Clients cannot supply it.
  */
 @Slf4j
 @Component
