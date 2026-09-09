@@ -27,7 +27,6 @@ public final class DeviceAuthorizationServiceHarness {
 
   private DeviceAuthorizationServiceHarness() {}
 
-  /** Pairing presumes a set-up server; the guard has its own dedicated test. */
   private static FakeServerBootstrapRepository claimedBootstrap() {
     var bootstrap = new FakeServerBootstrapRepository();
     bootstrap.claim(UUID.randomUUID());

@@ -33,7 +33,7 @@ public class OpaqueOneTimeCodes {
     return new IssuedCode(publicId, publicId + "." + secret, digestOf(secret));
   }
 
-  /** Splits {@code publicId.secret}; empty when the code format is invalid. */
+  /** Parses {@code publicId.secret}. Returns empty if the format is invalid. */
   public Optional<PresentedCode> parse(String code) {
     if (code == null) {
       return Optional.empty();

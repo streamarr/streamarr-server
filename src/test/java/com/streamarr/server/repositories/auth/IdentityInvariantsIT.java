@@ -506,7 +506,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
             (left, right) -> left.getId().toString().compareTo(right.getId().toString()));
   }
 
-  // Available Profile names are unique within each Household; PIN hashes cannot be blank.
+  // Available Profile names are unique within each Household. PIN hashes cannot be blank.
 
   @Test
   @DisplayName("Should refuse Profiles when available names differ only by case")

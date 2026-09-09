@@ -68,13 +68,9 @@ public class AuthTestSupport {
   private final PasswordEncoder passwordEncoder;
   private final TransactionTemplate transactionTemplate;
 
-  /**
-   * Fixture-created identities skip the initial setup, so the bootstrap claim it would have made is
-   * missing and pairing issuance refuses with SETUP_INCOMPLETE. Idempotent; tests that need an
-   * unclaimed server delete SERVER_BOOTSTRAP themselves, as before.
-   */
   private TestIdentity bootstrapAdmin;
 
+  /** Ensures the bootstrap claim and an enabled ServerAdmin exist. Repeated calls are safe. */
   public void claimBootstrap() {
     // Earlier tests may leave a bootstrap claim or enabled ServerAdmin independently. Ensure
     // both exist: the database requires an enabled ServerAdmin while a claim exists.

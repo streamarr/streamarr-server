@@ -491,7 +491,7 @@ class DeviceAuthorizationServiceTest {
     var userCode = issued.userCode();
     var approverId = approver.getId();
 
-    // Approval requests conceal expired grants as not-found; polling returns expired_token.
+    // Approval requests hide expired grants as not-found. Polling returns expired_token.
     assertThatThrownBy(() -> service.lookup(userCode, approverId))
         .isInstanceOf(DeviceCodeNotFoundException.class);
   }

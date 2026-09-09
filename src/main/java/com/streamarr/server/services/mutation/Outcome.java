@@ -7,8 +7,8 @@ import lombok.NonNull;
 /**
  * The protocol-independent result of a mutation service (ADR 0026): the work was accepted and
  * produced {@code T}, or it was rejected for one or more typed reasons {@code R} and nothing was
- * written. Services never throw an expected rejection; exceptions are reserved for failure and the
- * request gates.
+ * written. Expected rejections are returned as results. Exceptions indicate failures or
+ * request-wide denials.
  */
 public sealed interface Outcome<T, R> {
 

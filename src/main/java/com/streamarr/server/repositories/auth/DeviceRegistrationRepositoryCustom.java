@@ -12,7 +12,7 @@ public interface DeviceRegistrationRepositoryCustom {
   List<DeviceRegistration> findPageByHouseholdIdAndStatus(
       UUID householdId, DeviceRegistrationStatus status, KeysetPaginationOptions options);
 
-  /** Revokes one ACTIVE registration; false when already revoked or missing. */
+  /** Revokes one ACTIVE registration. Returns false if it is missing or already revoked. */
   boolean tryRevoke(UUID registrationId, UUID actorAccountId, String reason, Instant now);
 
   /**

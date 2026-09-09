@@ -38,9 +38,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class SetupService {
 
   /**
-   * Identity every watch row was written against before real profiles existed. Setup remaps those
-   * rows to the first profile; the constant disappears when the V047 profile foreign key is
-   * validated and the placeholder era ends.
+   * Legacy watch rows use this identity. Setup moves them to the first Profile. Remove the constant
+   * once the V047 foreign key is validated and no placeholder rows remain.
    */
   private static final UUID LEGACY_PLACEHOLDER_PROFILE_ID =
       UUID.fromString("00000000-0000-0000-0000-000000000001");

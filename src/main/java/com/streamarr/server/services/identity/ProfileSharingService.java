@@ -40,13 +40,12 @@ import org.springframework.stereotype.Service;
 
 /**
  * Profile sharing (ADR 0024 §Profile sharing): a share makes one Profile available to a Household
- * without copying data. Cedar authorizes each operation; conditional status transitions allow only
- * one concurrent request to succeed. Authorization and database constraints both prevent ending a
- * share required by Account membership. Deferred constraints require an eligible HouseholdAdmin for
- * hosted restricted Profiles and distinct available Profile names within each Household; violations
- * roll back the transaction and return typed errors. Unsharing clears selections of that Profile
- * there. Ending a Personal Profile's share returns the visitor's sessions to their membership
- * Household.
+ * without copying data. Cedar authorizes each operation. Only one concurrent request can complete
+ * each status transition. Authorization and database constraints prevent ending shares required by
+ * Account membership. At commit, database constraints require an eligible HouseholdAdmin for hosted
+ * restricted Profiles and unique available Profile names within each Household. Violations roll
+ * back the transaction and return typed errors. Unsharing clears selections of that Profile there.
+ * Ending a Personal Profile's share returns the visitor's sessions to their membership Household.
  */
 @Service
 @RequiredArgsConstructor

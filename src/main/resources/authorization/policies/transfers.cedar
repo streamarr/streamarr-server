@@ -1,5 +1,5 @@
 // Transfers and deletion (ADR 0024 §Transfers, §Account deletion) are audited operations.
-// Transfers require current ServerAdmin authority; deletions require recent reauthentication.
+// Transfers require current ServerAdmin authority. Deletions require recent reauthentication.
 // Database constraints and conditional writes preserve the final Account, required
 // administrators, and eligible Profile supervision independently of authorization.
 

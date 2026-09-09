@@ -3,7 +3,7 @@ package com.streamarr.server.graphql;
 import com.streamarr.server.exceptions.InvalidIdException;
 import java.util.UUID;
 
-/** GraphQL ID scalars arrive as strings; a malformed one is a request error, never a not-found. */
+/** GraphQL IDs arrive as strings. Malformed IDs produce request errors. */
 public final class Ids {
 
   private Ids() {}

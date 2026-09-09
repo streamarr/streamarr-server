@@ -21,8 +21,8 @@ forbid (
 )
 when { principal has deviceBound && principal.deviceBound };
 
-// Any enabled Account approves its own pairing grant; pairing approval validates the chosen
-// Household and the ESN block outside Cedar, and the winning poll rechecks them live.
+// Any enabled Account can approve its own pairing grant. The pairing service checks the chosen
+// Household and ESN block outside Cedar. The successful poll rechecks both.
 @id("link-device-as-enabled-account")
 permit (
   principal,

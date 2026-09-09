@@ -65,12 +65,12 @@ public interface ProfileRepositoryCustom {
   /** Locks and deletes the Profile only while no Account uses it as a Personal Profile. */
   boolean tryDeleteUnlinked(UUID profileId);
 
-  /** Renames only; the deferred name-uniqueness trigger judges the result at commit. */
+  /** Renames the Profile. The database checks name uniqueness at commit. */
   boolean tryRename(UUID profileId, String name);
 
   boolean trySetPicture(UUID profileId, String picture);
 
-  /** Writes the PIN hash (null removes it); the database refuses a blank hash. */
+  /** Writes the PIN hash. Null removes it. The database rejects blank hashes. */
   boolean trySetPinHash(UUID profileId, String pinHash);
 
   /**

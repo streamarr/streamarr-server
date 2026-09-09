@@ -110,8 +110,8 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
 
     var deviceBearer = tokens.get("accessToken").asString();
 
-    // TV sessions cannot administer resources, even for a ServerAdmin's own TV. The
-    // administration query returns FORBIDDEN; mutations return not-found for hidden resources.
+    // TV sessions cannot administer resources, even for a ServerAdmin's own TV.
+    // Administration queries return FORBIDDEN. Mutations return not-found for hidden resources.
     graphql(
             deviceBearer,
             """
