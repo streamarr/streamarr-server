@@ -7,6 +7,6 @@ package com.streamarr.server.exceptions;
 public class InvalidOneTimeCodeException extends CredentialVerificationException {
 
   public InvalidOneTimeCodeException() {
-    super("That code is not redeemable.");
+    super("This code cannot be used.");
   }
 }

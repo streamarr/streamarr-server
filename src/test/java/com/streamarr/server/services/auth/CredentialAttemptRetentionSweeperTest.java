@@ -57,7 +57,7 @@ class CredentialAttemptRetentionSweeperTest {
                 assertThat(event.getLevel()).isEqualTo(Level.INFO);
                 assertThat(event.getFormattedMessage())
                     .isEqualTo(
-                        "Deleted 2 credential attempts attempted before 2026-07-27T12:00:00Z");
+                        "Deleted 2 credential attempt records older than 2026-07-27T12:00:00Z");
               });
     }
   }

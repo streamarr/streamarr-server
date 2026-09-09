@@ -985,6 +985,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
         .perform(redeemRequest(code))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("INVALID_CODE"))
+        .andExpect(jsonPath("$.message").value("This code cannot be used."))
         .andReturn()
         .getResponse()
         .getContentAsString();

@@ -23,6 +23,6 @@ public class CredentialAttemptRetentionSweeper {
   public void deleteExpiredAttempts() {
     var cutoff = clock.instant().minus(RETENTION);
     var deleted = repository.deleteAttemptedBefore(cutoff);
-    log.info("Deleted {} credential attempts attempted before {}", deleted, cutoff);
+    log.info("Deleted {} credential attempt records older than {}", deleted, cutoff);
   }
 }
