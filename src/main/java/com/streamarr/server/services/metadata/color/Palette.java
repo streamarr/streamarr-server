@@ -64,12 +64,10 @@ final class Palette {
       }
 
       var score = target.score(swatch.hsl(), swatch.population() / (float) dominant.population());
-      if (best != null && score <= bestScore) {
-        continue;
+      if (best == null || score > bestScore) {
+        best = swatch;
+        bestScore = score;
       }
-
-      best = swatch;
-      bestScore = score;
     }
 
     if (best == null) {

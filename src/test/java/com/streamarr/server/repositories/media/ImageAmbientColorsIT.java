@@ -34,7 +34,9 @@ class ImageAmbientColorsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should reject partial ambient colors when image inserted")
   void shouldRejectPartialAmbientColorsWhenImageInserted() {
-    assertThatThrownBy(() -> insertImage().set(IMAGE.AMBIENT_PRIMARY, "#00a0a0").execute())
+    var insert = insertImage().set(IMAGE.AMBIENT_PRIMARY, "#00a0a0");
+
+    assertThatThrownBy(insert::execute)
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("chk_image_ambient_colors_complete");
   }
@@ -42,7 +44,9 @@ class ImageAmbientColorsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should reject target swatches when primary ambient color is absent")
   void shouldRejectTargetSwatchesWhenPrimaryAmbientColorIsAbsent() {
-    assertThatThrownBy(() -> insertImage().set(IMAGE.AMBIENT_DARK_MUTED, "#283830").execute())
+    var insert = insertImage().set(IMAGE.AMBIENT_DARK_MUTED, "#283830");
+
+    assertThatThrownBy(insert::execute)
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("chk_image_ambient_swatches_require_primary");
   }

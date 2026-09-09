@@ -51,8 +51,7 @@ class TargetTest {
     var offSaturation = Target.VIBRANT.score(hsl(0.8f, 0.5f), 1f);
     var offPopulation = Target.VIBRANT.score(hsl(1f, 0.5f), 0.8f);
 
-    assertThat(offLightness).isLessThan(offSaturation);
-    assertThat(offLightness).isLessThan(offPopulation);
+    assertThat(offLightness).isLessThan(offSaturation).isLessThan(offPopulation);
   }
 
   @Test
