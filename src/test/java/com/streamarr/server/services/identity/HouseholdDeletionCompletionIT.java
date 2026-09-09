@@ -67,17 +67,17 @@ class HouseholdDeletionCompletionIT extends AbstractIntegrationTest {
     doReturn(false)
         .when(profiles)
         .tryRehome(source.profile().getId(), source.household().getId(), admin.household().getId());
+    var command =
+        DeleteLastAccountAndHouseholdPreservingPersonalProfileCommand.builder()
+            .householdId(source.household().getId())
+            .destinationHouseholdId(admin.household().getId())
+            .replacementManagerAccountId(admin.account().getId())
+            .reason("closing Household")
+            .build();
 
     assertThatThrownBy(
             () ->
-                deletion.deleteLastAccountAndHouseholdPreservingPersonalProfile(
-                    identity,
-                    DeleteLastAccountAndHouseholdPreservingPersonalProfileCommand.builder()
-                        .householdId(source.household().getId())
-                        .destinationHouseholdId(admin.household().getId())
-                        .replacementManagerAccountId(admin.account().getId())
-                        .reason("closing Household")
-                        .build()))
+                deletion.deleteLastAccountAndHouseholdPreservingPersonalProfile(identity, command))
         .isInstanceOf(RuntimeException.class)
         .hasMessage("The Personal Profile could not move to the requested Household.");
 
@@ -94,16 +94,15 @@ class HouseholdDeletionCompletionIT extends AbstractIntegrationTest {
     doReturn(false)
         .when(profiles)
         .tryRehome(source.profile().getId(), source.household().getId(), admin.household().getId());
+    var identity = authTestSupport.freshIdentityOf(admin);
+    var command =
+        TransferLastAccountAndDeleteHouseholdCommand.builder()
+            .householdId(source.household().getId())
+            .destinationHouseholdId(admin.household().getId())
+            .reason("closing Household")
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                deletion.transferLastAccountAndDeleteHousehold(
-                    authTestSupport.freshIdentityOf(admin),
-                    TransferLastAccountAndDeleteHouseholdCommand.builder()
-                        .householdId(source.household().getId())
-                        .destinationHouseholdId(admin.household().getId())
-                        .reason("closing Household")
-                        .build()))
+    assertThatThrownBy(() -> deletion.transferLastAccountAndDeleteHousehold(identity, command))
         .isInstanceOf(RuntimeException.class)
         .hasMessage("The Personal Profile could not move to the requested Household.");
 

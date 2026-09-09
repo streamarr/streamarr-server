@@ -102,7 +102,7 @@ class StreamarrDataFetcherExceptionHandlerTest {
   void shouldPreserveOnlyContractExtensionsWhenFailureIsSerialized() {
     var error = errorFor(new IllegalStateException("private failure detail"));
 
-    assertThat(error.toSpecification().get("extensions")).isEqualTo(error.getExtensions());
+    assertThat(error.toSpecification()).containsEntry("extensions", error.getExtensions());
   }
 
   @Test

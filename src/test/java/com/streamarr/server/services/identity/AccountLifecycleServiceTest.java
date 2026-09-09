@@ -12,6 +12,7 @@ import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
+import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
@@ -140,7 +141,7 @@ class AccountLifecycleServiceTest {
             });
     assertThat(profiles.findById(mover.getPersonalProfileId()))
         .get()
-        .extracting(profile -> profile.getHouseholdId())
+        .extracting(Profile::getHouseholdId)
         .isEqualTo(destination.getId());
     assertThat(structuralShareIn(destination.getId())).isPresent();
     assertThat(

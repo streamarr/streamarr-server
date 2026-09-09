@@ -4,6 +4,7 @@ import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECU
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.domain.media.MediaFile;
@@ -173,7 +174,7 @@ class HouseholdDeletionServiceIT extends AbstractIntegrationTest {
           .isEqualTo(source.household().getId());
       assertThat(sessions.findById(source.session().getId()))
           .get()
-          .extracting(session -> session.getRevokedAt())
+          .extracting(AuthSession::getRevokedAt)
           .isNull();
       assertThat(
               shares.findByProfileIdAndHouseholdIdAndStatus(

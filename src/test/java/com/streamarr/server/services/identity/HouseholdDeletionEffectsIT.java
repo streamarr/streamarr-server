@@ -19,6 +19,7 @@ import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
+import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.SessionProgress;
@@ -268,7 +269,7 @@ class HouseholdDeletionEffectsIT extends AbstractIntegrationTest {
   private void assertRetainedProfile(ViewingData viewing, UUID destinationId) {
     assertThat(profileRepository.findById(doomed.profile().getId()))
         .get()
-        .extracting(profile -> profile.getHouseholdId())
+        .extracting(Profile::getHouseholdId)
         .isEqualTo(destinationId);
     assertThat(sessionProgressRepository.findById(viewing.progress().getId()))
         .get()
@@ -366,7 +367,7 @@ class HouseholdDeletionEffectsIT extends AbstractIntegrationTest {
     assertThat(userAccountRepository.findById(admin.account().getId())).isPresent();
     assertThat(profileRepository.findById(admin.profile().getId()))
         .get()
-        .extracting(profile -> profile.getHouseholdId())
+        .extracting(Profile::getHouseholdId)
         .isEqualTo(admin.household().getId());
     assertThat(
             shareRepository.findByProfileIdAndHouseholdIdAndStatus(
@@ -648,7 +649,8 @@ class HouseholdDeletionEffectsIT extends AbstractIntegrationTest {
                 authTestSupport.freshIdentityOf(admin), preservationCommand().build());
     assertThat(outcome).isEqualTo(Outcome.accepted(doomed.household().getId()));
 
-    assertThatThrownBy(() -> refreshTokens.redeem(doomed.rawRefreshToken()))
+    var rawRefreshToken = doomed.rawRefreshToken();
+    assertThatThrownBy(() -> refreshTokens.redeem(rawRefreshToken))
         .isInstanceOf(InvalidRefreshTokenException.class);
     assertThat(refreshTokens.redeem(admin.rawRefreshToken()))
         .isInstanceOf(RefreshResult.Rotated.class);
@@ -875,7 +877,7 @@ class HouseholdDeletionEffectsIT extends AbstractIntegrationTest {
           .isInstanceOf(InvalidOneTimeCodeException.class);
       assertThat(userAccountRepository.findById(target.account().getId()))
           .get()
-          .extracting(account -> account.getPasswordHash())
+          .extracting(UserAccount::getPasswordHash)
           .isEqualTo(oldHash);
       assertThat(authSessionRepository.findById(target.session().getId()))
           .get()

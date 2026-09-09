@@ -6,10 +6,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.BaseAuditableEntity;
+import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SourceHouseholdAccess;
+import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
@@ -128,10 +132,10 @@ class HouseholdDeletionConcurrencyIT extends AbstractIntegrationTest {
       assertThat(deletion.get(5, TimeUnit.SECONDS))
           .isEqualTo(Outcome.rejected(new HouseholdDeletionRejections.AccountsRemain()));
       assertThat(accounts.findByHouseholdId(source.household().getId()))
-          .extracting(account -> account.getId())
+          .extracting(BaseAuditableEntity::getId)
           .containsExactlyInAnyOrder(source.account().getId(), joining.account().getId());
       assertThat(profiles.findByHouseholdId(source.household().getId()))
-          .extracting(profile -> profile.getId())
+          .extracting(BaseAuditableEntity::getId)
           .containsExactlyInAnyOrder(source.profile().getId(), joining.profile().getId());
       assertThat(
               shares.findByHouseholdIdAndStatus(
@@ -231,7 +235,7 @@ class HouseholdDeletionConcurrencyIT extends AbstractIntegrationTest {
                 });
         assertThat(profiles.findById(source.profile().getId()))
             .get()
-            .extracting(profile -> profile.getHouseholdId())
+            .extracting(Profile::getHouseholdId)
             .isEqualTo(admin.household().getId());
         assertThat(
                 shares.findByProfileIdAndHouseholdIdAndStatus(
@@ -369,7 +373,7 @@ class HouseholdDeletionConcurrencyIT extends AbstractIntegrationTest {
                       : new HouseholdDeletionRejections.ReplacementManagerNotEligible()));
       assertThat(administration.accountAdministration(identity, source.account().getId()))
           .get()
-          .extracting(account -> account.getHouseholdId())
+          .extracting(UserAccount::getHouseholdId)
           .isEqualTo(source.household().getId());
       assertThat(administration.profileAdministration(identity, source.profile().getId()))
           .get()
@@ -383,7 +387,7 @@ class HouseholdDeletionConcurrencyIT extends AbstractIntegrationTest {
           .isEqualTo(true);
       assertThat(sessions.findById(source.session().getId()))
           .get()
-          .extracting(session -> session.getRevokedAt())
+          .extracting(AuthSession::getRevokedAt)
           .isNull();
       assertThat(
               managers.existsByAccountIdAndProfileId(
@@ -459,7 +463,7 @@ class HouseholdDeletionConcurrencyIT extends AbstractIntegrationTest {
           .isEqualTo(Outcome.rejected(new HouseholdDeletionRejections.DestinationNotFound()));
       assertThat(administration.accountAdministration(identity, source.account().getId()))
           .get()
-          .extracting(account -> account.getHouseholdId())
+          .extracting(UserAccount::getHouseholdId)
           .isEqualTo(source.household().getId());
       assertThat(administration.profileAdministration(identity, source.profile().getId()))
           .get()

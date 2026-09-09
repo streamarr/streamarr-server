@@ -54,27 +54,37 @@ class AccountRemoval {
     var profileId = transfer.profileId();
     var destinationHouseholdId = transfer.destinationHouseholdId();
     var now = transfer.now();
-    var destinationEmpty =
-        userAccountRepository.findByHouseholdId(destinationHouseholdId).isEmpty();
+    var destinationRole = destinationRole(destinationHouseholdId);
     if (!userAccountRepository.tryTransfer(
-        transfer.accountId(),
-        sourceHouseholdId,
-        destinationHouseholdId,
-        destinationEmpty ? HouseholdRole.ADMIN : HouseholdRole.MEMBER)) {
+        transfer.accountId(), sourceHouseholdId, destinationHouseholdId, destinationRole)) {
       throw new AccountRemovalConflictException();
     }
 
     rehomeProfile(profileId, sourceHouseholdId, destinationHouseholdId);
 
-    if (transfer.sourceHouseholdAccess() == SourceHouseholdAccess.KEEP_AS_VISITOR) {
-      shareRepository.convertMembershipShareToVisitorShare(profileId, sourceHouseholdId, now);
-      authSessionRepository.clearProfileSelectionFromLiveSessions(
-          profileId, sourceHouseholdId, now);
-    } else {
-      endSourceHouseholdAccess(transfer);
+    updateSourceHouseholdAccess(transfer);
+    shareRepository.ensureActiveMembershipShare(profileId, destinationHouseholdId, now);
+  }
+
+  private HouseholdRole destinationRole(UUID householdId) {
+    if (userAccountRepository.findByHouseholdId(householdId).isEmpty()) {
+      return HouseholdRole.ADMIN;
     }
 
-    shareRepository.ensureActiveMembershipShare(profileId, destinationHouseholdId, now);
+    return HouseholdRole.MEMBER;
+  }
+
+  private void updateSourceHouseholdAccess(Transfer transfer) {
+    if (transfer.sourceHouseholdAccess() == SourceHouseholdAccess.END) {
+      endSourceHouseholdAccess(transfer);
+      return;
+    }
+
+    var profileId = transfer.profileId();
+    var sourceHouseholdId = transfer.sourceHouseholdId();
+    var now = transfer.now();
+    shareRepository.convertMembershipShareToVisitorShare(profileId, sourceHouseholdId, now);
+    authSessionRepository.clearProfileSelectionFromLiveSessions(profileId, sourceHouseholdId, now);
   }
 
   /**

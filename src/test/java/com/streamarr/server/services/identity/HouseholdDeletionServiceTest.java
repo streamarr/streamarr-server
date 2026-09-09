@@ -376,8 +376,10 @@ class HouseholdDeletionServiceTest {
   void shouldAbortHouseholdDeletionWhenTransferredPersonalProfileCannotMove() {
     var lastResident = residentOf(doomed, HouseholdRole.ADMIN);
     profiles.refuseRehome();
+    var destinationHouseholdId = refuge.getId();
 
-    assertThatThrownBy(() -> transferLastAccountAndDeleteHousehold("closing", refuge.getId()))
+    assertThatThrownBy(
+            () -> transferLastAccountAndDeleteHousehold("closing", destinationHouseholdId))
         .isInstanceOf(RuntimeException.class)
         .hasMessage("The Personal Profile could not move to the requested Household.");
 
@@ -391,11 +393,11 @@ class HouseholdDeletionServiceTest {
   void shouldAbortHouseholdDeletionWhenPreservedPersonalProfileCannotMove() {
     var lastResident = residentOf(doomed, HouseholdRole.ADMIN);
     profiles.refuseRehome();
+    var identity = identity();
+    var command = preservationCommand().build();
 
     assertThatThrownBy(
-            () ->
-                service.deleteLastAccountAndHouseholdPreservingPersonalProfile(
-                    identity(), preservationCommand().build()))
+            () -> service.deleteLastAccountAndHouseholdPreservingPersonalProfile(identity, command))
         .isInstanceOf(RuntimeException.class)
         .hasMessage("The Personal Profile could not move to the requested Household.");
 
