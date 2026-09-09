@@ -141,6 +141,21 @@ class HouseholdDeletionResolverTest {
   }
 
   @ParameterizedTest
+  @EnumSource(
+      value = Action.class,
+      names = {"DELETE", "PRESERVE"})
+  @DisplayName("Should explain the ServerAdmin requirement when deleting the last enabled admin")
+  void shouldExplainServerAdminRequirementWhenDeletingLastEnabledAdmin(Action action) {
+    stubOutcome(action, Outcome.rejected(new HouseholdDeletionRejections.LastServerAdmin()));
+
+    var response = mutate(action, Map.of());
+
+    assertThat(response.has("errors")).isFalse();
+    assertThat(response.at("/data/" + action.operation + "/userErrors/0/message").asString())
+        .isEqualTo("At least one enabled ServerAdmin must remain.");
+  }
+
+  @ParameterizedTest
   @EnumSource(Action.class)
   @DisplayName("Should sanitize the top-level error when a deletion action fails unexpectedly")
   void shouldSanitizeTopLevelErrorWhenDeletionActionFailsUnexpectedly(Action action) {
@@ -592,7 +607,11 @@ class HouseholdDeletionResolverTest {
         mutation($input: %s!) {
           %s(input: $input) {
             deletedHouseholdId
-            userErrors { __typename ... on InputMutationError { inputPath } }
+            userErrors {
+              __typename
+              ... on MutationError { message }
+              ... on InputMutationError { inputPath }
+            }
           }
         }
         """

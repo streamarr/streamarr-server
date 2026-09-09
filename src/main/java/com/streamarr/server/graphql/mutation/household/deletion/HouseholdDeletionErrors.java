@@ -81,7 +81,7 @@ public final class HouseholdDeletionErrors {
               "That Account cannot manage the Profile because it is outside the destination Household or its Personal Profile is restricted.",
               InputPath.of("replacementManagerAccountId"));
       case HouseholdDeletionRejections.LastServerAdmin _ ->
-          new LastServerAdminError("At least one enabled ServerAdmin remains.");
+          new LastServerAdminError("At least one enabled ServerAdmin must remain.");
     };
   }
 
