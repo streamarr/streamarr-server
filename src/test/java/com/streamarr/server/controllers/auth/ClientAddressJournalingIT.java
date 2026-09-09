@@ -298,7 +298,7 @@ class ClientAddressJournalingIT extends AbstractIntegrationTest {
                 authTestSupport.accountBearer(serverAdmin),
                 "198.51.100.100",
                 """
-                mutation { issueAccountInvitation(input: {recipientEmail: "%s",
+                mutation { issueAccountInvitationWithNewProfile(input: {recipientEmail: "%s",
                   householdId: "%s", householdRole: MEMBER, profileName: "Invitee",
                   profileKind: ADULT}) {
                   issued { code invitation { id } } userErrors { __typename } } }
@@ -310,7 +310,11 @@ class ClientAddressJournalingIT extends AbstractIntegrationTest {
             .getResponse()
             .getContentAsString();
     var issued =
-        objectMapper.readTree(response).path("data").path("issueAccountInvitation").path("issued");
+        objectMapper
+            .readTree(response)
+            .path("data")
+            .path("issueAccountInvitationWithNewProfile")
+            .path("issued");
     return new IssuedInvitation(
         issued.path("code").asString(),
         UUID.fromString(issued.path("invitation").path("id").asString()));

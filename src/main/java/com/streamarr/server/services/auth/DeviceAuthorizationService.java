@@ -170,7 +170,9 @@ public class DeviceAuthorizationService {
           }
 
           return new ResolvedGrant(
-              authorization.getId(), Optional.ofNullable(authorization.getEsn()), authorization.getDeviceName());
+              authorization.getId(),
+              Optional.ofNullable(authorization.getEsn()),
+              authorization.getDeviceName());
         });
   }
 

@@ -438,7 +438,7 @@ class AccountInvitationServiceTest {
         .filter(reoffer -> reoffer.getHouseholdId().equals(removedHouseholdId))
         .forEach(reoffers::delete);
 
-    var preview = service.lookup(fixture.code());
+    var preview = lookup(fixture.code());
     service.accept(acceptCommand(fixture.code()));
 
     assertThat(preview.profileShareOfferTargets()).containsExactly("Lodge");

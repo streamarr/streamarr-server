@@ -436,10 +436,9 @@ public class AccountInvitationService {
             throw new InvalidOneTimeCodeException();
           }
 
-          if (invitation.getMode() == AccountInvitationMode.LINK
-              && invitation.getProfileId() == null) {
-            // The connectable Profile was deleted; invalidation should have flipped the row, and
-            // the SET NULL is the backstop. A dead code fails exactly like an unknown one.
+          if (isLinkInvitationMissingProfile(invitation)) {
+            // Deleting a linked Profile clears its reference. Reject the invitation with the same
+            // error as an unknown code.
             throw new InvalidOneTimeCodeException();
           }
 

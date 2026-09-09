@@ -324,7 +324,8 @@ class ProfileManagerAdministrationServiceTest {
         issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
     issued.invitation().setExpiresAt(NOW.minusSeconds(1));
 
-    assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), issued.code())))
+    assertThat(
+            rejectionOf(service.acceptManagerInvitation(recipientIdentity(), code(issued.code()))))
         .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
     assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), orphan.getId())).isFalse();
   }
@@ -368,7 +369,8 @@ class ProfileManagerAdministrationServiceTest {
           return new Decision.Allowed<>(AuthorizationUnit.INSTANCE);
         });
 
-    assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), stale.code())))
+    assertThat(
+            rejectionOf(service.acceptManagerInvitation(recipientIdentity(), code(stale.code()))))
         .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
     assertThat(invitations.findById(stale.invitation().getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
@@ -424,7 +426,7 @@ class ProfileManagerAdministrationServiceTest {
         issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
     var caller = recipientIdentity();
-    var code = issued.code();
+    var code = code(issued.code());
 
     assertThatThrownBy(() -> service.declineManagerInvitation(caller, code))
         .isInstanceOf(AuthorizationUnavailableException.class);

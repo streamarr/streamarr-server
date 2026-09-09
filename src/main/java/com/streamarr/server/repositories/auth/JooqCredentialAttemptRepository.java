@@ -1,5 +1,7 @@
 package com.streamarr.server.repositories.auth;
 
+import static com.streamarr.server.jooq.generated.enums.CredentialAttemptResult.FAILED;
+import static com.streamarr.server.jooq.generated.enums.CredentialAttemptResult.SUCCEEDED;
 import static com.streamarr.server.jooq.generated.tables.CredentialAttempt.CREDENTIAL_ATTEMPT;
 
 import com.streamarr.server.domain.auth.CredentialAttemptAdmission;
@@ -9,6 +11,7 @@ import com.streamarr.server.domain.auth.CredentialAttemptReservation;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.exceptions.CredentialAttemptNotPendingException;
+import com.streamarr.server.jooq.generated.enums.CredentialKind;
 import com.streamarr.server.jooq.generated.tables.records.CredentialAttemptRecord;
 import java.time.Duration;
 import java.time.Instant;
@@ -36,7 +39,6 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Repository
 @RequiredArgsConstructor
-@SuppressWarnings("checkstyle:fullyQualifiedName")
 public class JooqCredentialAttemptRepository implements CredentialAttemptRepository {
 
   /** ADR 0028: a reservation nobody completed stops consuming capacity after five minutes. */
@@ -136,9 +138,7 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
             .select(CREDENTIAL_ATTEMPT.COMPLETED_AT)
             .from(CREDENTIAL_ATTEMPT)
             .where(targetCondition(target))
-            .and(
-                CREDENTIAL_ATTEMPT.RESULT.eq(
-                    com.streamarr.server.jooq.generated.enums.CredentialAttemptResult.FAILED))
+            .and(CREDENTIAL_ATTEMPT.RESULT.eq(FAILED))
             .and(after(CREDENTIAL_ATTEMPT.COMPLETED_AT, latestSuccess))
             .and(CREDENTIAL_ATTEMPT.COMPLETED_AT.ge(earliestRelevant))
             .orderBy(CREDENTIAL_ATTEMPT.COMPLETED_AT.asc())
@@ -169,9 +169,7 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
             .where(targetCondition(target))
             // Stated explicitly: the partial index on completed rows is only provable from it.
             .and(CREDENTIAL_ATTEMPT.COMPLETED_AT.isNotNull())
-            .and(
-                CREDENTIAL_ATTEMPT.RESULT.eq(
-                    com.streamarr.server.jooq.generated.enums.CredentialAttemptResult.SUCCEEDED))
+            .and(CREDENTIAL_ATTEMPT.RESULT.eq(SUCCEEDED))
             .fetchOne(DSL.max(CREDENTIAL_ATTEMPT.COMPLETED_AT)));
   }
 
@@ -225,29 +223,24 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
     transactionLocks.lockNormalizedKey(LOCK_NAMESPACE, key, LOCK_TIMEOUT);
   }
 
-  private static com.streamarr.server.jooq.generated.enums.CredentialKind generatedKind(
-      CredentialAttemptTarget target) {
+  private static CredentialKind generatedKind(CredentialAttemptTarget target) {
     return switch (target.kind()) {
-      case ACCOUNT_LOGIN -> com.streamarr.server.jooq.generated.enums.CredentialKind.ACCOUNT_LOGIN;
-      case ACCOUNT_PASSWORD_VERIFICATION ->
-          com.streamarr.server.jooq.generated.enums.CredentialKind.ACCOUNT_PASSWORD_VERIFICATION;
-      case PROFILE_PIN -> com.streamarr.server.jooq.generated.enums.CredentialKind.PROFILE_PIN;
-      case ACCOUNT_INVITATION_CODE ->
-          com.streamarr.server.jooq.generated.enums.CredentialKind.ACCOUNT_INVITATION_CODE;
-      case PASSWORD_RESET_CODE ->
-          com.streamarr.server.jooq.generated.enums.CredentialKind.PASSWORD_RESET_CODE;
-      case PROFILE_MANAGER_INVITATION_CODE ->
-          com.streamarr.server.jooq.generated.enums.CredentialKind.PROFILE_MANAGER_INVITATION_CODE;
-      case DEVICE_PAIRING_CODE ->
-          com.streamarr.server.jooq.generated.enums.CredentialKind.DEVICE_PAIRING_CODE;
+      case ACCOUNT_LOGIN -> CredentialKind.ACCOUNT_LOGIN;
+      case ACCOUNT_PASSWORD_VERIFICATION -> CredentialKind.ACCOUNT_PASSWORD_VERIFICATION;
+      case PROFILE_PIN -> CredentialKind.PROFILE_PIN;
+      case ACCOUNT_INVITATION_CODE -> CredentialKind.ACCOUNT_INVITATION_CODE;
+      case PASSWORD_RESET_CODE -> CredentialKind.PASSWORD_RESET_CODE;
+      case PROFILE_MANAGER_INVITATION_CODE -> CredentialKind.PROFILE_MANAGER_INVITATION_CODE;
+      case DEVICE_PAIRING_CODE -> CredentialKind.DEVICE_PAIRING_CODE;
     };
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.server.jooq.generated.enums.CredentialAttemptResult generatedResult(
       CredentialAttemptResult result) {
     return switch (result) {
-      case FAILED -> com.streamarr.server.jooq.generated.enums.CredentialAttemptResult.FAILED;
-      case SUCCEEDED -> com.streamarr.server.jooq.generated.enums.CredentialAttemptResult.SUCCEEDED;
+      case FAILED -> FAILED;
+      case SUCCEEDED -> SUCCEEDED;
     };
   }
 

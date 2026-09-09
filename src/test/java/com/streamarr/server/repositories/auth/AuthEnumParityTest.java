@@ -67,6 +67,7 @@ class AuthEnumParityTest {
   }
 
   @Test
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   @DisplayName("Should keep credential kind literals in sync when parity is checked")
   void shouldKeepCredentialKindLiteralsInSyncWhenParityIsChecked() {
     assertParity(
@@ -75,6 +76,7 @@ class AuthEnumParityTest {
   }
 
   @Test
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   @DisplayName("Should keep credential attempt result literals in sync when parity is checked")
   void shouldKeepCredentialAttemptResultLiteralsInSyncWhenParityIsChecked() {
     assertParity(

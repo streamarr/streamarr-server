@@ -12,8 +12,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * The single PIN checkpoint (ADR 0024): PIN verification runs only during Profile selection,
- * limited by persisted PROFILE_PIN attempts keyed by Account and Profile. Only the selection service
- * creates the trusted verification context. Clients cannot supply it.
+ * limited by persisted PROFILE_PIN attempts keyed by Account and Profile. Only the selection
+ * service creates the trusted verification context. Clients cannot supply it.
  */
 @Slf4j
 @Component

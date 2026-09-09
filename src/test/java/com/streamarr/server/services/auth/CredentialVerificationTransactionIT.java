@@ -151,7 +151,7 @@ class CredentialVerificationTransactionIT extends AbstractIntegrationTest {
                             Map.of(
                                 "query",
                                 """
-                                mutation { issueAccountInvitation(input: {recipientEmail: "%s",
+                                mutation { issueAccountInvitationWithNewProfile(input: {recipientEmail: "%s",
                                   householdId: "%s", householdRole: MEMBER, profileName: "Invitee",
                                   profileKind: ADULT}) {
                                   issued { code } userErrors { __typename } } }
@@ -167,7 +167,7 @@ class CredentialVerificationTransactionIT extends AbstractIntegrationTest {
     return objectMapper
         .readTree(response)
         .path("data")
-        .path("issueAccountInvitation")
+        .path("issueAccountInvitationWithNewProfile")
         .path("issued")
         .path("code")
         .asString();

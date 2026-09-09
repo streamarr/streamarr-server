@@ -43,6 +43,7 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.services.auth.PasswordResetService;
+import com.streamarr.server.services.auth.RedeemPasswordResetCommand;
 import com.streamarr.server.services.auth.RefreshResult;
 import com.streamarr.server.services.auth.RefreshTokenService;
 import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteLastAccountAndHouseholdCommand;
@@ -873,7 +874,13 @@ class HouseholdDeletionEffectsIT extends AbstractIntegrationTest {
                       .build()))
           .isEqualTo(Outcome.accepted(doomed.household().getId()));
 
-      assertThatThrownBy(() -> passwordReset.redeem(code, "a new password phrase"))
+      var revokedReset =
+          RedeemPasswordResetCommand.builder()
+              .code(code)
+              .newPassword("a new password phrase")
+              .ipAddress("192.0.2.30")
+              .build();
+      assertThatThrownBy(() -> passwordReset.redeem(revokedReset))
           .isInstanceOf(InvalidOneTimeCodeException.class);
       assertThat(userAccountRepository.findById(target.account().getId()))
           .get()
@@ -883,7 +890,12 @@ class HouseholdDeletionEffectsIT extends AbstractIntegrationTest {
           .get()
           .extracting(AuthSession::getRevokedAt)
           .isNull();
-      passwordReset.redeem(unrelatedCode, "a different password phrase");
+      passwordReset.redeem(
+          RedeemPasswordResetCommand.builder()
+              .code(unrelatedCode)
+              .newPassword("a different password phrase")
+              .ipAddress("192.0.2.30")
+              .build());
       assertThat(
               passwordEncoder.matches(
                   "a different password phrase",
