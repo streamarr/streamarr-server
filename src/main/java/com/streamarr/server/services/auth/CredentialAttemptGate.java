@@ -12,6 +12,7 @@ import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
 import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
 import com.streamarr.server.repositories.auth.CredentialAttemptRepository;
 import java.time.Duration;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,29 +41,57 @@ public class CredentialAttemptGate {
   }
 
   /**
-   * Reserves an attempt, runs the verifier outside any transaction or lock, and journals the
+   * Reserves an attempt, runs the verifier after the reservation transaction ends, and journals the
    * outcome: SUCCEEDED when it returns, FAILED when it throws a {@link
    * CredentialVerificationException}, and left pending — abandoned after five minutes (ADR 0028) —
    * when it fails for any other reason.
    */
   public <T> T attempt(CredentialAttemptTarget target, Supplier<T> verification) {
     var reservation = reserve(target);
-    T verified;
+    var verified = verify(reservation, verification);
+    complete(reservation, CredentialAttemptResult.SUCCEEDED);
+    return verified;
+  }
+
+  /**
+   * Verifies before opening a transaction, then commits the database mutation and successful
+   * journal outcome together. The mutation may recheck database state but must not hash credentials
+   * or perform external I/O. Call outside a transaction.
+   */
+  public <V, T> T attempt(
+      CredentialAttemptTarget target, Supplier<V> verification, Function<V, T> mutation) {
+    var reservation = reserve(target);
+    return verify(
+        reservation,
+        () -> {
+          var verified = verification.get();
+          return completeWith(reservation, () -> mutation.apply(verified));
+        });
+  }
+
+  private <T> T verify(CredentialAttemptReservation reservation, Supplier<T> verification) {
     try {
-      verified = verification.get();
+      return verification.get();
     } catch (CredentialVerificationException refused) {
-      complete(reservation, CredentialAttemptResult.FAILED);
+      recordRefusal(reservation, refused);
       throw refused;
     } catch (RuntimeException failure) {
       log.warn(
           "Credential attempt left pending after an unexpected failure: {}",
-          describe(target),
+          describe(reservation.target()),
           failure);
       throw failure;
     }
+  }
 
-    complete(reservation, CredentialAttemptResult.SUCCEEDED);
-    return verified;
+  private void recordRefusal(
+      CredentialAttemptReservation reservation, CredentialVerificationException refused) {
+    try {
+      complete(reservation, CredentialAttemptResult.FAILED);
+    } catch (CredentialAttemptUnavailableException unavailable) {
+      unavailable.addSuppressed(refused);
+      throw unavailable;
+    }
   }
 
   public void attempt(CredentialAttemptTarget target, Verification verification) {
@@ -77,6 +106,14 @@ public class CredentialAttemptGate {
   public void complete(CredentialAttemptReservation reservation, CredentialAttemptResult result) {
     try {
       repository.complete(reservation, result);
+    } catch (DataAccessException | TransactionException exception) {
+      throw unavailable("completing", reservation.target(), exception);
+    }
+  }
+
+  private <T> T completeWith(CredentialAttemptReservation reservation, Supplier<T> mutation) {
+    try {
+      return repository.completeWith(reservation, mutation);
     } catch (DataAccessException | TransactionException exception) {
       throw unavailable("completing", reservation.target(), exception);
     }

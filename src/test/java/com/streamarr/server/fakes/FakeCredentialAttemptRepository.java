@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 /**
  * An in-memory journal that evaluates recorded attempts with {@link
@@ -59,6 +60,14 @@ public class FakeCredentialAttemptRepository implements CredentialAttemptReposit
         reservation.id(),
         new AttemptSnapshot(
             pending.id(), pending.target(), pending.attemptedAt(), completion, result));
+  }
+
+  @Override
+  public <T> T completeWith(CredentialAttemptReservation reservation, Supplier<T> mutation) {
+    failIfArmed();
+    var result = mutation.get();
+    complete(reservation, CredentialAttemptResult.SUCCEEDED);
+    return result;
   }
 
   @Override

@@ -23,13 +23,12 @@ public class LoginService {
   private final PasswordTimingEqualizer timingEqualizer;
 
   // Deliberately not @Transactional: a method-level transaction would pin a pooled connection
-  // across the Argon2 work (the documented Hikari-exhaustion pattern). LoginCompletionService owns
-  // the short transaction that begins only after all password work has finished.
+  // across Argon2 work. The gate commits the session and journal outcome in one short transaction.
   public LoginResult login(LoginCommand command) {
     var email = lookupEmail(command.email());
     var account = userAccountRepository.findByEmailIgnoreCase(email).orElse(null);
-    // Completion runs inside the attempt: it re-checks the stored hash under its row lock and
-    // refuses when a concurrent change beat this login, which the journal must record as FAILED.
+    // The completion transaction rechecks the stored hash under its row lock. A refusal rolls
+    // back the transaction before the gate journals the failed attempt.
     return credentialAttempts.attempt(
         loginTarget(command, account),
         () -> {
@@ -42,14 +41,14 @@ public class LoginService {
             throw new InvalidCredentialsException();
           }
 
-          return loginCompletionService.complete(
-              LoginCompletionCommand.builder()
-                  .accountId(account.getId())
-                  .expectedPasswordHash(account.getPasswordHash())
-                  .upgradedPasswordHash(upgradedPasswordHash(account, command.password()))
-                  .deviceName(command.deviceName())
-                  .build());
-        });
+          return LoginCompletionCommand.builder()
+              .accountId(account.getId())
+              .expectedPasswordHash(account.getPasswordHash())
+              .upgradedPasswordHash(upgradedPasswordHash(account, command.password()))
+              .deviceName(command.deviceName())
+              .build();
+        },
+        loginCompletionService::complete);
   }
 
   private static CredentialAttemptTarget loginTarget(LoginCommand command, UserAccount account) {

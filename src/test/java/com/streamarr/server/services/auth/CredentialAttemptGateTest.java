@@ -218,6 +218,25 @@ class CredentialAttemptGateTest {
   }
 
   @Test
+  @DisplayName("Should preserve the credential refusal when journal completion is unavailable")
+  void shouldPreserveCredentialRefusalWhenJournalCompletionIsUnavailable() {
+    var refused = new InvalidCredentialsException();
+    var outage = new DataAccessResourceFailureException("journal unavailable");
+
+    assertThatThrownBy(
+            () ->
+                gate.attempt(
+                    LOGIN_TARGET,
+                    () -> {
+                      repository.failWith(outage);
+                      throw refused;
+                    }))
+        .isInstanceOf(CredentialAttemptUnavailableException.class)
+        .hasCause(outage)
+        .hasSuppressedException(refused);
+  }
+
+  @Test
   @DisplayName("Should leave the reservation pending and warn when the verifier fails unexpectedly")
   void shouldLeaveReservationPendingAndWarnWhenVerifierFailsUnexpectedly() {
     try (var logs = LogCapture.forClass(CredentialAttemptGate.class)) {

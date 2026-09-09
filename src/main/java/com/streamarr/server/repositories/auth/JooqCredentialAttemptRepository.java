@@ -19,6 +19,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
@@ -72,6 +73,20 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
   @Transactional(propagation = Propagation.REQUIRES_NEW)
   public void complete(CredentialAttemptReservation reservation, CredentialAttemptResult result) {
     lockTargetOrLimitWait(reservation.target());
+    completeLocked(reservation, result);
+  }
+
+  @Override
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  public <T> T completeWith(CredentialAttemptReservation reservation, Supplier<T> mutation) {
+    lockTargetOrLimitWait(reservation.target());
+    var result = mutation.get();
+    completeLocked(reservation, CredentialAttemptResult.SUCCEEDED);
+    return result;
+  }
+
+  private void completeLocked(
+      CredentialAttemptReservation reservation, CredentialAttemptResult result) {
     var completedAt = clock.instant();
 
     var completed =
