@@ -32,22 +32,22 @@ public class FakeCredentialAttemptRepository implements CredentialAttemptReposit
   private static final Duration ABANDONED_RESERVATION_TIMEOUT = Duration.ofMinutes(5);
 
   private final Map<UUID, AttemptSnapshot> attempts = new LinkedHashMap<>();
+  private Clock clock = Clock.systemUTC();
   private Duration rejection;
   private RuntimeException failure;
 
   @Override
   public CredentialAttemptAdmission reserve(
-      CredentialAttemptTarget target, CredentialAttemptPolicy policy, Instant attemptedAt) {
+      CredentialAttemptTarget target, CredentialAttemptPolicy policy) {
     failIfArmed();
+    var attemptedAt = clock.instant();
     return blockedBy(policy, target, attemptedAt).orElseGet(() -> journal(target, attemptedAt));
   }
 
   @Override
-  public void complete(
-      CredentialAttemptReservation reservation,
-      CredentialAttemptResult result,
-      Instant completedAt) {
+  public void complete(CredentialAttemptReservation reservation, CredentialAttemptResult result) {
     failIfArmed();
+    var completedAt = clock.instant();
     var pending = attempts.get(reservation.id());
     if (pending == null || pending.completedAt() != null) {
       throw new CredentialAttemptNotPendingException();
@@ -69,8 +69,9 @@ public class FakeCredentialAttemptRepository implements CredentialAttemptReposit
     return before - attempts.size();
   }
 
-  public CredentialAttemptGate gate(Clock clock) {
-    return new CredentialAttemptGate(this, new StandardCredentialAttemptPolicyProvider(), clock);
+  public CredentialAttemptGate gate(Clock journalClock) {
+    clock = journalClock;
+    return new CredentialAttemptGate(this, new StandardCredentialAttemptPolicyProvider());
   }
 
   public void rejectReservations(Duration retryAfter) {
@@ -119,6 +120,7 @@ public class FakeCredentialAttemptRepository implements CredentialAttemptReposit
         attempts.values().stream().filter(attempt -> sameTarget(attempt.target(), target)).toList();
     var latestSuccess =
         journal.stream()
+            .filter(_ -> policy.resetFailuresOnSuccess())
             .filter(attempt -> attempt.result() == CredentialAttemptResult.SUCCEEDED)
             .map(AttemptSnapshot::completedAt)
             .max(Comparator.naturalOrder());

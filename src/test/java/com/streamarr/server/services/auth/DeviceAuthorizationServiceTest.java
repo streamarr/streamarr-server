@@ -487,6 +487,27 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
+  @DisplayName("Should retain failed guesses when the approver looks up a known pairing code")
+  void shouldRetainFailedGuessesWhenApproverLooksUpKnownPairingCode() {
+    var issued = service.issue("Apple TV", "esn-1");
+    var unknown = presented("BCDF-GHJK");
+
+    for (var attempt = 0; attempt < 4; attempt++) {
+      assertThatThrownBy(() -> service.lookup(unknown))
+          .isInstanceOf(DeviceCodeNotFoundException.class);
+      advanceClock(Duration.ofSeconds(1));
+    }
+
+    service.lookup(presented(issued.userCode()));
+    advanceClock(Duration.ofSeconds(1));
+    assertThatThrownBy(() -> service.lookup(unknown))
+        .isInstanceOf(DeviceCodeNotFoundException.class);
+
+    assertThatThrownBy(() -> service.lookup(unknown))
+        .isInstanceOf(TooManyDeviceAttemptsException.class);
+  }
+
+  @Test
   @DisplayName("Should preserve the retry delay when a pairing-code attempt is throttled")
   void shouldPreserveRetryDelayWhenPairingCodeAttemptThrottled() {
     credentialAttempts.rejectReservations(Duration.ofSeconds(42));

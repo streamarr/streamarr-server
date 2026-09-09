@@ -104,6 +104,25 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should retain failed guesses when the approver looks up a known pairing code")
+  void shouldRetainFailedGuessesWhenApproverLooksUpKnownPairingCode() throws Exception {
+    var bearer = bearerFor(seedAccount());
+    var knownCode = issueUserCode();
+
+    for (var attempt = 0; attempt < MAXIMUM_FAILURES - 1; attempt++) {
+      mockMvc.perform(lookup(bearer, UNKNOWN_USER_CODE)).andExpect(status().isNotFound());
+    }
+
+    mockMvc.perform(lookup(bearer, knownCode)).andExpect(status().isOk());
+    mockMvc.perform(lookup(bearer, UNKNOWN_USER_CODE)).andExpect(status().isNotFound());
+
+    mockMvc
+        .perform(lookup(bearer, UNKNOWN_USER_CODE))
+        .andExpect(status().isTooManyRequests())
+        .andExpect(header().exists(HttpHeaders.RETRY_AFTER));
+  }
+
+  @Test
   @DisplayName("Should use a separate guessing budget when the approver changes")
   void shouldUseSeparateGuessingBudgetWhenApproverChanges() throws Exception {
     var exhausted = bearerFor(seedAccount());

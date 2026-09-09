@@ -52,7 +52,8 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should persist the Account and IP address when a login attempt fails")
   void shouldPersistAccountAndIpAddressWhenLoginAttemptFails() {
-    var before = Instant.now();
+    var before = jdbcTemplate.queryForObject("SELECT clock_timestamp()", Timestamp.class);
+    assertThat(before).isNotNull();
     var accountId = UUID.randomUUID();
     var target =
         CredentialAttemptTarget.builder()
@@ -83,7 +84,7 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
         .containsEntry("ip_address", IP_ADDRESS)
         .containsEntry("result", "FAILED");
     var attemptedAt = ((Timestamp) row.get("attempted_at")).toInstant();
-    assertThat(attemptedAt).isAfterOrEqualTo(before);
+    assertThat(attemptedAt).isAfterOrEqualTo(before.toInstant());
     assertThat(((Timestamp) row.get("completed_at")).toInstant()).isAfterOrEqualTo(attemptedAt);
   }
 

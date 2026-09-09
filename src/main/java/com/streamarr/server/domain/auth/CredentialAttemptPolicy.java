@@ -5,14 +5,19 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
+import lombok.Builder;
 import lombok.NonNull;
 
 public sealed interface CredentialAttemptPolicy {
 
   record Unlimited() implements CredentialAttemptPolicy {}
 
+  @Builder(toBuilder = true)
   record Limited(
-      int maximumFailures, @NonNull Duration failureWindow, @NonNull Duration throttleDuration)
+      int maximumFailures,
+      @NonNull Duration failureWindow,
+      @NonNull Duration throttleDuration,
+      boolean resetFailuresOnSuccess)
       implements CredentialAttemptPolicy {
 
     private static final Duration MAXIMUM_DURATION = Duration.ofHours(24);

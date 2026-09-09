@@ -32,7 +32,9 @@ class CredentialAttemptPolicyTest {
 
     assertThat(provider.policyFor(kind))
         .isEqualTo(
-            new CredentialAttemptPolicy.Limited(5, Duration.ofMinutes(15), Duration.ofMinutes(15)));
+            STANDARD.toBuilder()
+                .resetFailuresOnSuccess(kind != CredentialKind.DEVICE_PAIRING_CODE)
+                .build());
   }
 
   @ParameterizedTest(name = "{3}")
@@ -42,8 +44,12 @@ class CredentialAttemptPolicyTest {
       int maximumFailures, Duration failureWindow, Duration throttleDuration, String message) {
     assertThatThrownBy(
             () ->
-                new CredentialAttemptPolicy.Limited(
-                    maximumFailures, failureWindow, throttleDuration))
+                CredentialAttemptPolicy.Limited.builder()
+                    .maximumFailures(maximumFailures)
+                    .failureWindow(failureWindow)
+                    .throttleDuration(throttleDuration)
+                    .resetFailuresOnSuccess(true)
+                    .build())
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage(message);
   }
@@ -68,7 +74,12 @@ class CredentialAttemptPolicyTest {
 
   private static final Instant NOW = Instant.parse("2026-08-26T12:00:00Z");
   private static final CredentialAttemptPolicy.Limited STANDARD =
-      new CredentialAttemptPolicy.Limited(5, Duration.ofMinutes(15), Duration.ofMinutes(15));
+      CredentialAttemptPolicy.Limited.builder()
+          .maximumFailures(5)
+          .failureWindow(Duration.ofMinutes(15))
+          .throttleDuration(Duration.ofMinutes(15))
+          .resetFailuresOnSuccess(true)
+          .build();
 
   @Test
   @DisplayName("Should admit when held slots are fewer than five")
@@ -147,7 +158,12 @@ class CredentialAttemptPolicyTest {
   @DisplayName("Should accept a limited policy when its bounds sit exactly on the limits")
   void shouldAcceptLimitedPolicyWhenBoundsSitExactlyOnTheLimits() {
     assertThatCode(
-            () -> new CredentialAttemptPolicy.Limited(1, Duration.ofDays(1), Duration.ofDays(1)))
+            () ->
+                STANDARD.toBuilder()
+                    .maximumFailures(1)
+                    .failureWindow(Duration.ofDays(1))
+                    .throttleDuration(Duration.ofDays(1))
+                    .build())
         .doesNotThrowAnyException();
   }
 }

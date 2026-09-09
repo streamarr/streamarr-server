@@ -10,12 +10,9 @@ import java.time.Instant;
 public interface CredentialAttemptRepository {
 
   CredentialAttemptAdmission reserve(
-      CredentialAttemptTarget target, CredentialAttemptPolicy policy, Instant attemptedAt);
+      CredentialAttemptTarget target, CredentialAttemptPolicy policy);
 
-  void complete(
-      CredentialAttemptReservation reservation,
-      CredentialAttemptResult result,
-      Instant completedAt);
+  void complete(CredentialAttemptReservation reservation, CredentialAttemptResult result);
 
   int deleteAttemptedBefore(Instant cutoff);
 }

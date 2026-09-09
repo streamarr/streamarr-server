@@ -6,8 +6,8 @@ import lombok.NonNull;
 
 /**
  * What a limited target has on record when an attempt asks for admission: every completed failure
- * after its latest success that could still anchor a lockout, oldest first, and the instant each
- * fresh pending reservation would be abandoned.
+ * that could still anchor a lockout, oldest first, and the instant each fresh pending reservation
+ * would be abandoned. A policy that resets on success excludes failures at or before that success.
  */
 public record CredentialAttemptHistory(
     @NonNull List<Instant> failures, @NonNull List<Instant> pendingExpiries) {

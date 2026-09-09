@@ -11,7 +11,6 @@ import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
 import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
 import com.streamarr.server.repositories.auth.CredentialAttemptRepository;
-import java.time.Clock;
 import java.time.Duration;
 import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
@@ -27,12 +26,10 @@ public class CredentialAttemptGate {
 
   private final CredentialAttemptRepository repository;
   private final CredentialAttemptPolicyProvider policies;
-  private final Clock clock;
 
   public CredentialAttemptReservation reserve(CredentialAttemptTarget target) {
     try {
-      return switch (repository.reserve(
-          target, policies.policyFor(target.kind()), clock.instant())) {
+      return switch (repository.reserve(target, policies.policyFor(target.kind()))) {
         case CredentialAttemptAdmission.Reserved(var reservation) -> reservation;
         case CredentialAttemptAdmission.Blocked(var retryAfter) ->
             throw blocked(target, retryAfter);
@@ -79,7 +76,7 @@ public class CredentialAttemptGate {
 
   public void complete(CredentialAttemptReservation reservation, CredentialAttemptResult result) {
     try {
-      repository.complete(reservation, result, clock.instant());
+      repository.complete(reservation, result);
     } catch (DataAccessException | TransactionException exception) {
       throw unavailable("completing", reservation.target(), exception);
     }

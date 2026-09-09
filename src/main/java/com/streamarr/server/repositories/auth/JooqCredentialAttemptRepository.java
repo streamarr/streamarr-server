@@ -49,17 +49,19 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
 
   private final DSLContext dsl;
   private final PostgresTransactionLocks transactionLocks;
+  private final CredentialAttemptClock clock;
 
   @Override
   @Transactional(propagation = Propagation.REQUIRES_NEW)
   public CredentialAttemptAdmission reserve(
-      CredentialAttemptTarget target, CredentialAttemptPolicy policy, Instant attemptedAt) {
+      CredentialAttemptTarget target, CredentialAttemptPolicy policy) {
     if (!(policy instanceof CredentialAttemptPolicy.Limited limited) || !target.isResolved()) {
       transactionLocks.limitLockWait(LOCK_TIMEOUT);
-      return insert(target, attemptedAt);
+      return insert(target, clock.instant());
     }
 
     lockTarget(target);
+    var attemptedAt = clock.instant();
     return limited
         .retryAfter(history(target, limited, attemptedAt), attemptedAt)
         .<CredentialAttemptAdmission>map(CredentialAttemptAdmission.Blocked::new)
@@ -68,11 +70,9 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
 
   @Override
   @Transactional(propagation = Propagation.REQUIRES_NEW)
-  public void complete(
-      CredentialAttemptReservation reservation,
-      CredentialAttemptResult result,
-      Instant completedAt) {
+  public void complete(CredentialAttemptReservation reservation, CredentialAttemptResult result) {
     lockTargetOrLimitWait(reservation.target());
+    var completedAt = clock.instant();
 
     var completed =
         dsl.update(CREDENTIAL_ATTEMPT)
@@ -130,7 +130,8 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
    */
   private CredentialAttemptHistory history(
       CredentialAttemptTarget target, CredentialAttemptPolicy.Limited policy, Instant now) {
-    var latestSuccess = latestSuccess(target);
+    var latestSuccess =
+        policy.resetFailuresOnSuccess() ? latestSuccess(target) : Optional.<OffsetDateTime>empty();
     var earliestRelevant =
         offsetOf(now.minus(policy.failureWindow()).minus(policy.throttleDuration()));
     var failures =
