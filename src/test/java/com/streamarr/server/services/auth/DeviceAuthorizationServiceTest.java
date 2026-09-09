@@ -827,17 +827,6 @@ class DeviceAuthorizationServiceTest {
         .build();
   }
 
-  private DeviceAuthorizationService serviceWith(
-      DeviceAuthorizationRepository repository,
-      UserCodeGenerator generator,
-      CanonicalBaseUrl baseUrl) {
-    return serviceFixture()
-        .authorizationRepository(repository)
-        .userCodeGenerator(generator)
-        .baseUrl(baseUrl)
-        .build();
-  }
-
   private DeviceAuthorizationService serviceWithCapacity(int capacity) {
     var capacityProperties =
         DeviceAuthProperties.builder()
