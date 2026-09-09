@@ -20,11 +20,9 @@ import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture.StreamingRig;
-import com.streamarr.server.services.concurrency.MutexFactory;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -32,7 +30,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
-import lombok.Builder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -559,160 +556,6 @@ class SegmentDeliveryCoordinatorTest {
 
   @Test
   @DisplayName(
-      "Should not charge a stale refusal to a planned replacement attempt when delivering a segment")
-  void shouldNotChargeAStaleRefusalToAPlannedReplacementAttemptWhenDeliveringSegment()
-      throws Exception {
-    var executor = new FakeTranscodeExecutor();
-    executor.setExecutionTargets(List.of(TARGET_A));
-    executor.refuseTarget(TARGET_A);
-    var racingLifecycle =
-        new RefusalRaceLifecycle(
-            RaceLifecycleConfiguration.builder()
-                .executor(executor)
-                .segmentStore(segmentStore)
-                .properties(properties)
-                .runtimeRegistry(runtimeRegistry)
-                .build());
-    var racingCoordinator =
-        SegmentDeliveryCoordinator.builder()
-            .runtimeRegistry(runtimeRegistry)
-            .segmentStore(segmentStore)
-            .transcodeExecutor(executor)
-            .producerLifecycle(racingLifecycle)
-            .properties(properties)
-            .clock(clock)
-            .pollInterval(Duration.ofMillis(20))
-            .build();
-    var session = defaultSessionBuilder().build();
-    var sessionId = session.getSessionId();
-    runtimeRegistry.save(session);
-    racingLifecycle.startAll(session, 0, 0);
-    executor.markDead(sessionId);
-    var plannedRestartObserved = new CountDownLatch(1);
-    racingLifecycle.afterNextRefusal(
-        () -> {
-          racingLifecycle.suspend(sessionId);
-          racingLifecycle.ensurePositioned(sessionId, "segment1.ts");
-          var pollsBefore = executor.livenessChecks();
-          var synchronizer =
-              CompletableFuture.supplyAsync(
-                  () ->
-                      racingCoordinator.deliver(
-                          sessionId, StreamSession.defaultVariant(), "segment2.ts"));
-          executor.awaitLivenessCheckCount(pollsBefore + 1);
-          segmentStore.addSegment(sessionId, "segment2.ts", new byte[] {2});
-          try {
-            assertThat(synchronizer.get(2, TimeUnit.SECONDS))
-                .isInstanceOf(SegmentDelivery.Ready.class);
-          } catch (Exception e) {
-            throw new AssertionError("Planned replacement did not become observable", e);
-          }
-
-          executor.acceptTarget(TARGET_A);
-          plannedRestartObserved.countDown();
-        });
-
-    var delivery =
-        CompletableFuture.supplyAsync(
-            () ->
-                racingCoordinator.deliver(
-                    sessionId, StreamSession.defaultVariant(), "segment1.ts"));
-    assertThat(plannedRestartObserved.await(5, TimeUnit.SECONDS)).isTrue();
-    executor.markDead(sessionId);
-    executor.awaitStartedTargetCount(1);
-    segmentStore.addSegment(sessionId, "segment1.ts", new byte[] {1});
-
-    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
-    assertThat(executor.getStartedTargets()).containsExactly(TARGET_A);
-  }
-
-  @Test
-  @DisplayName(
-      "Should not record a stale replacement after a planned restart when delivering a segment")
-  void shouldNotRecordAStaleReplacementAfterAPlannedRestartWhenDeliveringSegment()
-      throws Exception {
-    var executor = new FakeTranscodeExecutor();
-    executor.setExecutionTargets(List.of(TARGET_A));
-    var racingLifecycle =
-        new ReplacementRaceLifecycle(
-            RaceLifecycleConfiguration.builder()
-                .executor(executor)
-                .segmentStore(segmentStore)
-                .properties(properties)
-                .runtimeRegistry(runtimeRegistry)
-                .build());
-    var racingCoordinator =
-        SegmentDeliveryCoordinator.builder()
-            .runtimeRegistry(runtimeRegistry)
-            .segmentStore(segmentStore)
-            .transcodeExecutor(executor)
-            .producerLifecycle(racingLifecycle)
-            .properties(properties)
-            .clock(clock)
-            .pollInterval(Duration.ofMillis(20))
-            .build();
-    var session = defaultSessionBuilder().build();
-    var sessionId = session.getSessionId();
-    runtimeRegistry.save(session);
-    racingLifecycle.startAll(session, 0, 0);
-    executor.markDead(sessionId);
-    var plannedRestartObserved = new CountDownLatch(1);
-    var livenessChecksAfterRestart = new AtomicReference<Long>();
-    racingLifecycle.afterNextReplacement(
-        () -> {
-          racingLifecycle.suspend(sessionId);
-          racingLifecycle.ensurePositioned(sessionId, "segment50.ts");
-          var pollsBefore = executor.livenessChecks();
-          var synchronizer =
-              CompletableFuture.supplyAsync(
-                  () ->
-                      racingCoordinator.deliver(
-                          sessionId, StreamSession.defaultVariant(), "segment51.ts"));
-          executor.awaitLivenessCheckCount(pollsBefore + 1);
-          segmentStore.addSegment(sessionId, "segment51.ts", new byte[] {51});
-          try {
-            assertThat(synchronizer.get(2, TimeUnit.SECONDS))
-                .isInstanceOf(SegmentDelivery.Ready.class);
-          } catch (Exception e) {
-            throw new AssertionError("Planned restart did not become observable", e);
-          }
-
-          livenessChecksAfterRestart.set(executor.livenessChecks());
-          plannedRestartObserved.countDown();
-        });
-    var outcome = new AtomicReference<SegmentDelivery>();
-    var delivery =
-        new Thread(
-            () ->
-                outcome.set(
-                    racingCoordinator.deliver(
-                        sessionId, StreamSession.defaultVariant(), "segment0.ts")));
-
-    try {
-      delivery.start();
-      assertThat(plannedRestartObserved.await(5, TimeUnit.SECONDS)).isTrue();
-      executor.awaitLivenessCheckCount(livenessChecksAfterRestart.get() + 1);
-    } finally {
-      delivery.interrupt();
-      delivery.join(2000);
-    }
-
-    assertThat(outcome.get()).isInstanceOf(SegmentDelivery.Cancelled.class);
-    executor.markDead(sessionId);
-    var retry =
-        CompletableFuture.supplyAsync(
-            () ->
-                racingCoordinator.deliver(
-                    sessionId, StreamSession.defaultVariant(), "segment0.ts"));
-    executor.awaitStartedTargetCount(2);
-    segmentStore.addSegment(sessionId, "segment0.ts", new byte[] {0});
-
-    assertThat(retry.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
-    assertThat(executor.getStartedTargets()).containsExactly(TARGET_A, TARGET_A);
-  }
-
-  @Test
-  @DisplayName(
       "Should answer subsequent same-window requests with unrecoverable after exhaustion when delivering a segment")
   void
       shouldAnswerSubsequentSameWindowRequestsWithUnrecoverableAfterExhaustionWhenDeliveringSegment() {
@@ -906,52 +749,6 @@ class SegmentDeliveryCoordinatorTest {
   }
 
   @Test
-  @DisplayName("Should not kill a healthy replacement when a lagging waiter resumes its recovery")
-  void shouldNotKillHealthyReplacementWhenLaggingWaiterResumesItsRecovery() throws Exception {
-    var gatingExecutor = new EvidenceGatingExecutor();
-    var rig = rigWith(gatingExecutor);
-    gatingExecutor.setExecutionTargets(List.of(TARGET_A, TARGET_B));
-    var session = defaultSessionBuilder().build();
-    var sessionId = session.getSessionId();
-    runtimeRegistry.save(session);
-    rig.lifecycle().startAll(session, 0, 0);
-    gatingExecutor.markDead(sessionId);
-
-    // The lagging waiter observes the death and blocks entering recovery (pre-lock).
-    gatingExecutor.blockFirstRecoveryEntry();
-    var laggingWaiter =
-        CompletableFuture.supplyAsync(
-            () ->
-                rig.coordinator()
-                    .deliver(sessionId, StreamSession.defaultVariant(), "segment1.ts"));
-    gatingExecutor.awaitFirstRecoveryEntry();
-
-    // A second waiter completes the full recovery: healthy replacement Y on TARGET_A.
-    var promptWaiter =
-        CompletableFuture.supplyAsync(
-            () ->
-                rig.coordinator()
-                    .deliver(sessionId, StreamSession.defaultVariant(), "segment1.ts"));
-    gatingExecutor.awaitStartedTargetCount(1);
-    awaitLivenessChecks(gatingExecutor, 1);
-    var attemptY = session.getHandle().orElseThrow().attemptId();
-
-    gatingExecutor.releaseRecoveryEntry();
-    // The released lagging waiter runs its now-superseded recovery pass and returns to polling; a
-    // couple of its poll cycles must go by without it starting a second target.
-    awaitLivenessChecks(gatingExecutor, 2);
-
-    // One death, one replacement: the healthy producer was neither stopped nor replaced again.
-    assertThat(gatingExecutor.getStartedTargets()).containsExactly(TARGET_A);
-    assertThat(gatingExecutor.getStoppedVariants()).isEmpty();
-    assertThat(session.getHandle().orElseThrow().attemptId()).isEqualTo(attemptY);
-
-    segmentStore.addSegment(sessionId, "segment1.ts", new byte[] {1});
-    assertThat(laggingWaiter.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
-    assertThat(promptWaiter.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
-  }
-
-  @Test
   @DisplayName(
       "Should keep a seek revival healthy while an exhausting waiter races it when delivering a segment")
   void shouldKeepSeekRevivalHealthyWhileExhaustingWaiterRacesItWhenDeliveringSegment()
@@ -1034,7 +831,6 @@ class SegmentDeliveryCoordinatorTest {
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
     rig.lifecycle().startAll(session, 0, 0);
-    var attemptX = session.getHandle().orElseThrow().attemptId();
     gatingExecutor.markDead(sessionId);
     var streamingService =
         HlsStreamingService.builder()
@@ -1050,16 +846,7 @@ class SegmentDeliveryCoordinatorTest {
     var replace =
         CompletableFuture.supplyAsync(
             () ->
-                rig.lifecycle()
-                    .replaceProducer(
-                        ProducerLifecycleService.ReplaceProducerCommand.builder()
-                            .sessionId(sessionId)
-                            .variantLabel(StreamSession.defaultVariant())
-                            .segmentName("segment1.ts")
-                            .segmentIndex(1)
-                            .expectedAttemptId(attemptX)
-                            .target(ExecutionTargetId.LOCAL)
-                            .build()));
+                rig.lifecycle().recover(sessionId, StreamSession.defaultVariant(), "segment1.ts"));
     gatingExecutor.awaitTargetedStartEntered();
 
     // Destroy must serialize with the in-flight replace instead of losing to its save. The latch
@@ -1153,26 +940,11 @@ class SegmentDeliveryCoordinatorTest {
     }
   }
 
-  /** Gates recovery entry and targeted starts so races can be held open deterministically. */
+  /** Holds a targeted start open while session destruction races recovery. */
   private static final class EvidenceGatingExecutor extends FakeTranscodeExecutor {
 
-    private volatile CountDownLatch recoveryEntryGate;
-    private final AtomicBoolean recoveryEntryGateTaken = new AtomicBoolean();
-    private final CountDownLatch recoveryEntryEntered = new CountDownLatch(1);
     private volatile CountDownLatch targetedStartEntered;
     private volatile CountDownLatch targetedStartGate;
-
-    private void blockFirstRecoveryEntry() {
-      recoveryEntryGate = new CountDownLatch(1);
-    }
-
-    private void awaitFirstRecoveryEntry() throws InterruptedException {
-      assertThat(recoveryEntryEntered.await(5, TimeUnit.SECONDS)).isTrue();
-    }
-
-    private void releaseRecoveryEntry() {
-      recoveryEntryGate.countDown();
-    }
 
     private void holdTargetedStarts() {
       targetedStartEntered = new CountDownLatch(1);
@@ -1198,96 +970,12 @@ class SegmentDeliveryCoordinatorTest {
       return super.start(request, target);
     }
 
-    @Override
-    public Set<ExecutionTargetId> executionTargets() {
-      var gate = recoveryEntryGate;
-      if (gate != null && recoveryEntryGateTaken.compareAndSet(false, true)) {
-        recoveryEntryEntered.countDown();
-        awaitQuietly(gate);
-      }
-
-      return super.executionTargets();
-    }
-
     private static void awaitQuietly(CountDownLatch latch) {
       try {
         latch.await(5, TimeUnit.SECONDS);
       } catch (InterruptedException _) {
         Thread.currentThread().interrupt();
       }
-    }
-  }
-
-  @Builder
-  private record RaceLifecycleConfiguration(
-      FakeTranscodeExecutor executor,
-      FakeSegmentStore segmentStore,
-      StreamingProperties properties,
-      FakeRuntimeStreamSessionRegistry runtimeRegistry) {}
-
-  /**
-   * Inserts a planned restart after a real refusal returns but before the coordinator records it.
-   */
-  private static final class RefusalRaceLifecycle extends ProducerLifecycleService {
-
-    private Runnable afterNextRefusal;
-
-    private RefusalRaceLifecycle(RaceLifecycleConfiguration configuration) {
-      super(
-          configuration.executor(),
-          configuration.segmentStore(),
-          configuration.properties(),
-          configuration.runtimeRegistry(),
-          new MutexFactory<>());
-    }
-
-    private void afterNextRefusal(Runnable action) {
-      afterNextRefusal = action;
-    }
-
-    @Override
-    public ReplaceResult replaceProducer(ReplaceProducerCommand command) {
-      var result = super.replaceProducer(command);
-      if (!(result instanceof ReplaceResult.Refused) || afterNextRefusal == null) {
-        return result;
-      }
-
-      var action = afterNextRefusal;
-      afterNextRefusal = null;
-      action.run();
-      return result;
-    }
-  }
-
-  /** Inserts a planned restart after a real replacement returns but before it is recorded. */
-  private static final class ReplacementRaceLifecycle extends ProducerLifecycleService {
-
-    private Runnable afterNextReplacement;
-
-    private ReplacementRaceLifecycle(RaceLifecycleConfiguration configuration) {
-      super(
-          configuration.executor(),
-          configuration.segmentStore(),
-          configuration.properties(),
-          configuration.runtimeRegistry(),
-          new MutexFactory<>());
-    }
-
-    private void afterNextReplacement(Runnable action) {
-      afterNextReplacement = action;
-    }
-
-    @Override
-    public ReplaceResult replaceProducer(ReplaceProducerCommand command) {
-      var result = super.replaceProducer(command);
-      if (!(result instanceof ReplaceResult.Replaced) || afterNextReplacement == null) {
-        return result;
-      }
-
-      var action = afterNextReplacement;
-      afterNextReplacement = null;
-      action.run();
-      return result;
     }
   }
 }

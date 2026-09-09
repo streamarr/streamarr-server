@@ -24,7 +24,6 @@ import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
-import java.time.Clock;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -123,18 +122,10 @@ public class StreamingConfig {
 
   @Bean
   public SegmentDeliveryCoordinator segmentDeliveryCoordinator(
-      RuntimeStreamSessionRegistry runtimeRegistry,
-      SegmentStore segmentStore,
-      TranscodeExecutor transcodeExecutor,
-      ProducerLifecycleService producerLifecycleService,
-      StreamingProperties properties) {
+      SegmentStore segmentStore, ProducerLifecycleService producerLifecycleService) {
     return SegmentDeliveryCoordinator.builder()
-        .runtimeRegistry(runtimeRegistry)
         .segmentStore(segmentStore)
-        .transcodeExecutor(transcodeExecutor)
         .producerLifecycle(producerLifecycleService)
-        .properties(properties)
-        .clock(Clock.systemUTC())
         .build();
   }
 
