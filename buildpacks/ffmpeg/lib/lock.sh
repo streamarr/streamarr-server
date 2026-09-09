@@ -67,28 +67,21 @@ ffmpeg_lock_validate() {
   arm64_asset="$(ffmpeg_lock_value "${lock_file}" arm64_asset)"
   arm64_sha256="$(ffmpeg_lock_value "${lock_file}" arm64_sha256)"
 
-  if [[ ! "${release}" =~ ^autobuild-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{2}$ ]]; then
-    echo "FFmpeg lock release is not an exact BtbN autobuild tag" >&2
+  if [[ ! "${release}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$ ]]; then
+    echo "FFmpeg lock release is not an exact Jellyfin release tag" >&2
     return 1
   fi
   if [[ ! "${source_revision}" =~ ^[0-9a-f]{40}$ ]]; then
     echo "FFmpeg lock source revision is not a full commit SHA" >&2
     return 1
   fi
-  if [[ "${version}" =~ ^n[A-Za-z0-9.+-]+-g([0-9a-f]{7,40})$ ]]; then
-    if [[ "${source_revision}" != "${BASH_REMATCH[1]}"* ]]; then
-      echo "FFmpeg lock source revision contradicts version" >&2
-      return 1
-    fi
-  elif [[ ! "${version}" =~ ^n[0-9]+(\.[0-9]+)+$ ]]; then
-    echo "FFmpeg lock version is unsupported: ${version}" >&2
+  if [[ "${version}" != "${release#v}" ]]; then
+    echo "FFmpeg lock version contradicts release" >&2
     return 1
   fi
-  # Bare release tags do not encode a revision. The trusted --verify-upstream CI gate resolves
-  # those tags and compares the complete lock against canonical upstream metadata.
-  if [[ ! "${asset_variant}" =~ ^gpl-[0-9]+\.[0-9]+$ \
-    || "${amd64_asset}" != "ffmpeg-${version}-linux64-${asset_variant}.tar.xz" \
-    || "${arm64_asset}" != "ffmpeg-${version}-linuxarm64-${asset_variant}.tar.xz" ]]; then
+  if [[ "${asset_variant}" != gpl \
+    || "${amd64_asset}" != "jellyfin-ffmpeg_${version}_portable_linux64-${asset_variant}.tar.xz" \
+    || "${arm64_asset}" != "jellyfin-ffmpeg_${version}_portable_linuxarm64-${asset_variant}.tar.xz" ]]; then
     echo "FFmpeg lock asset contradicts version and variant" >&2
     return 1
   fi

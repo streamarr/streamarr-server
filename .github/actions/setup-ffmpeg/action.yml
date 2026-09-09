@@ -1,0 +1,16 @@
+name: Set up locked FFmpeg
+description: Install the same verified Jellyfin runtime used in the package image
+runs:
+  using: composite
+  steps:
+    - name: Prepare FFmpeg redistribution materials
+      uses: ./.github/actions/prepare-ffmpeg
+
+    - name: Install locked FFmpeg
+      shell: bash
+      run: |
+        runtime_layers="${RUNNER_TEMP}/ffmpeg-smoke-layers"
+        mkdir -p "${runtime_layers}"
+        CNB_LAYERS_DIR="${runtime_layers}" CNB_TARGET_ARCH="$(uname -m)" \
+          buildpacks/ffmpeg/bin/build
+        echo "${runtime_layers}/ffmpeg/bin" >>"${GITHUB_PATH}"

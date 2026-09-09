@@ -21,6 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       packaging: ${{ steps.filter.outputs.packaging }}
+      ffmpeg: ${{ steps.filter.outputs.ffmpeg }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -32,9 +33,17 @@ jobs:
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           filters: |
+            ffmpeg:
+              - 'buildpacks/ffmpeg/release'
+              - 'buildpacks/ffmpeg/ffmpeg.lock'
+              - 'buildpacks/ffmpeg/bin/update-lock'
+              - 'buildpacks/ffmpeg/lib/**'
             packaging:
               - 'buildpacks/**'
               - '.github/actions/pack-build/**'
+              - '.github/actions/setup-ffmpeg/**'
+              - '.github/actions/prepare-ffmpeg/**'
+              - '.nvmrc'
               - '.github/workflows/ci.yml'
               - 'Procfile'
               - 'pom.xml'
@@ -50,28 +59,19 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Check out trusted resolver
+      - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.event.pull_request.base.sha || github.sha }}
-          path: trusted
-          persist-credentials: false
-
-      - name: Check out proposed source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          path: proposed
           persist-credentials: false
 
       - name: Validate FFmpeg lock offline
-        run: trusted/buildpacks/ffmpeg/bin/update-lock --root proposed --check
+        uses: ./.github/actions/prepare-ffmpeg
 
       - name: Verify FFmpeg lock against upstream
-        if: needs.changes.outputs.packaging == 'true'
+        if: needs.changes.outputs.ffmpeg == 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: trusted/buildpacks/ffmpeg/bin/update-lock --root proposed --verify-upstream
+        run: buildpacks/ffmpeg/bin/update-lock --verify-upstream
 
   application:
     name: Build and test application
@@ -92,6 +92,9 @@ jobs:
           java-version: '25'
           distribution: 'zulu'
           cache: maven
+
+      - name: Prepare FFmpeg tooling
+        uses: ./.github/actions/prepare-ffmpeg
 
       - name: Set up Buf
         uses: bufbuild/buf-action@8c6a16e16f12ba20b6470afa9c2ba9b5ba8c97c3 # v1.5.0
@@ -115,12 +118,9 @@ jobs:
       - name: Build and test
         run: ./mvnw --batch-mode verify
 
-      - name: Change APT mirror priorities
-        uses: ./.github/actions/apt-mirrors
-
-      - name: Install FFmpeg
+      - name: Install locked FFmpeg
         timeout-minutes: 10
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+        uses: ./.github/actions/setup-ffmpeg
 
       # The SmokeTest group is excluded from the regular build (needs real FFmpeg) but is fast
       # (~14 tests, seconds) and deterministic, so it gates every PR — it is the only check of
@@ -170,6 +170,25 @@ jobs:
           tags: streamarr/streamarr-server:ci-${{ github.run_id }}-${{ matrix.architecture }}
           publish: "false"
           image-version: ${{ github.sha }}
+
+      - name: Set up JDK 25
+        if: matrix.architecture == 'arm64'
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          java-version: '25'
+          distribution: 'zulu'
+          cache: maven
+
+      - name: Install locked FFmpeg
+        if: matrix.architecture == 'arm64'
+        timeout-minutes: 10
+        uses: ./.github/actions/setup-ffmpeg
+
+      - name: Run HLS smoke tests
+        if: matrix.architecture == 'arm64'
+        run: >-
+          ./mvnw --batch-mode test -Dsurefire.excludedGroups= -Dgroups=SmokeTest
+          -Djacoco.skip=true -Dcheckstyle.skip=true -Dspotless.check.skip=true
 
   build:
     name: build

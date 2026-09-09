@@ -35,14 +35,26 @@ class FfmpegLockWorkflowTest {
         .containsEntry("needs", "changes")
         .containsEntry("permissions", Map.of("contents", "read"));
     assertThat(lock.toString()).doesNotContain("secrets.");
+    assertThat(map(changes.get("outputs")))
+        .containsEntry("ffmpeg", "${{ steps.filter.outputs.ffmpeg }}");
     assertThat(map(filter.get("with")).get("filters").toString())
         .contains(
             "- 'buildpacks/**'",
             "- '.github/actions/pack-build/**'",
             "- '.github/workflows/ci.yml'");
-    assertThat(offline).doesNotContainKeys("if", "env");
-    assertThat((String) offline.get("run")).contains("--check").doesNotContain("--verify-upstream");
-    assertThat(upstream).containsEntry("if", "needs.changes.outputs.packaging == 'true'");
+    assertThat(offline)
+        .doesNotContainKeys("if", "env")
+        .containsEntry("uses", "./.github/actions/prepare-ffmpeg");
+    var filters = yamlFilters(filter);
+    assertThat(filters)
+        .containsEntry(
+            "ffmpeg",
+            List.of(
+                "buildpacks/ffmpeg/release",
+                "buildpacks/ffmpeg/ffmpeg.lock",
+                "buildpacks/ffmpeg/bin/update-lock",
+                "buildpacks/ffmpeg/lib/**"));
+    assertThat(upstream).containsEntry("if", "needs.changes.outputs.ffmpeg == 'true'");
     assertThat((String) upstream.get("run")).contains("--verify-upstream");
     assertThat(map(upstream.get("env"))).containsEntry("GITHUB_TOKEN", "${{ github.token }}");
   }
@@ -75,8 +87,8 @@ class FfmpegLockWorkflowTest {
   }
 
   @Test
-  @DisplayName("Should verify canonical FFmpeg metadata before building release images")
-  void shouldVerifyCanonicalFfmpegMetadataBeforeBuildingReleaseImages() throws IOException {
+  @DisplayName("Should validate FFmpeg lock offline before building release images")
+  void shouldValidateFfmpegLockOfflineBeforeBuildingReleaseImages() throws IOException {
     var workflow = yaml(".github/workflows/publish-release.yml");
     var release = map(map(workflow.get("jobs")).get("build_release_images"));
     var steps = listOfMaps(release.get("steps"));
@@ -84,8 +96,52 @@ class FfmpegLockWorkflowTest {
 
     assertThat(steps.stream().map(step -> step.get("name")))
         .containsSubsequence("Verify FFmpeg lock", "Docker Metadata");
-    assertThat((String) verify.get("run")).contains("--verify-upstream");
-    assertThat(map(verify.get("env"))).containsEntry("GITHUB_TOKEN", "${{ github.token }}");
+    assertThat(verify)
+        .containsEntry("uses", "./.github/actions/prepare-ffmpeg")
+        .doesNotContainKeys("env");
+  }
+
+  @Test
+  @DisplayName("Should keep tooling version markers out of application buildpack detection")
+  void shouldKeepToolingVersionMarkersOutOfApplicationBuildpackDetection() {
+    assertThat(Path.of(".nvmrc"))
+        .as("Paketo Node Engine self-requires Node for a root .nvmrc")
+        .doesNotExist();
+    assertThat(Path.of(".node-version"))
+        .as("Paketo Node Engine also detects a root .node-version")
+        .doesNotExist();
+    assertThat(Path.of("buildpacks/ffmpeg/.nvmrc")).isRegularFile();
+  }
+
+  @Test
+  @DisplayName("Should prepare ephemeral redistribution materials with the declared Node toolchain")
+  void shouldPrepareEphemeralRedistributionMaterialsWithDeclaredNodeToolchain() throws IOException {
+    var prepare =
+        listOfMaps(map(yaml(".github/actions/prepare-ffmpeg/action.yml").get("runs")).get("steps"));
+    var node = prepare.getFirst();
+    assertThat(node.get("uses").toString()).startsWith("actions/setup-node@");
+    assertThat(map(node.get("with")))
+        .containsEntry("node-version-file", "buildpacks/ffmpeg/.nvmrc");
+    var commands =
+        stepNamed(prepare, "Prepare reviewed redistribution materials").get("run").toString();
+    assertThat(commands)
+        .contains("buildpacks/ffmpeg/bin/update-lock --check", "buildpacks/ffmpeg/bin/prepare")
+        .doesNotContain("--verify-upstream");
+    for (var action : List.of("pack-build", "setup-ffmpeg")) {
+      var steps =
+          listOfMaps(
+              map(yaml(".github/actions/" + action + "/action.yml").get("runs")).get("steps"));
+      assertThat(steps.getFirst()).containsEntry("uses", "./.github/actions/prepare-ffmpeg");
+    }
+
+    var application = map(map(yaml(".github/workflows/ci.yml").get("jobs")).get("application"));
+    var steps = listOfMaps(application.get("steps"));
+    assertThat(steps.stream().map(step -> step.get("name")))
+        .containsSubsequence("Prepare FFmpeg tooling", "Build and test");
+  }
+
+  private static Map<String, Object> yamlFilters(Map<String, Object> step) {
+    return new Yaml().load(map(step.get("with")).get("filters").toString());
   }
 
   private static Map<String, Object> yaml(String file) throws IOException {

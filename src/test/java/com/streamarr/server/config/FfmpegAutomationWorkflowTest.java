@@ -15,15 +15,17 @@ import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.yaml.snakeyaml.Yaml;
 
 @Tag("UnitTest")
 @DisplayName("FFmpeg Automation Workflow Tests")
 class FfmpegAutomationWorkflowTest {
 
-  private static final String DEPENDENCY = "BtbN/FFmpeg-Builds";
+  private static final String DEPENDENCY = "jellyfin/jellyfin-ffmpeg";
   private static final String LOCK_BOT_EMAIL =
-      "streamarr-ffmpeg-lock[bot]@users.noreply.github.com";
+      "315986519+streamarr-ffmpeg-lock[bot]@users.noreply.github.com";
 
   @Test
   @DisplayName("Should isolate exact FFmpeg release updates for lock synchronization")
@@ -48,14 +50,54 @@ class FfmpegAutomationWorkflowTest {
     assertThat(matchStrings).hasSize(1);
     assertThat(configuredPattern.matcher(releaseInput).matches()).isTrue();
     assertThat(configuredPattern.matcher(release).matches()).isTrue();
-    assertThat(List.of("prefix" + release, release + "5", release + "\nextra"))
+    assertThat(List.of("prefix" + release, release + "-rc1", release + "\nextra"))
         .allSatisfy(input -> assertThat(configuredPattern.matcher(input).matches()).isFalse());
     assertThat(manager.path("datasourceTemplate").asText()).isEqualTo("github-releases");
     assertThat(manager.path("depNameTemplate").asText()).isEqualTo(DEPENDENCY);
+    var versionPattern = Pattern.compile(manager.path("versioningTemplate").asText().substring(6));
+    var futureBuild = versionPattern.matcher("v8.1.2-10");
+    assertThat(futureBuild.matches()).isTrue();
+    assertThat(futureBuild.group("major")).isEqualTo("8");
+    assertThat(futureBuild.group("minor")).isEqualTo("1");
+    assertThat(futureBuild.group("patch")).isEqualTo("2");
+    assertThat(futureBuild.group("build")).isEqualTo("10");
+    assertThat(versionPattern.matcher("v8.1.2-4-rc1").matches()).isFalse();
     assertThat(ffmpegRule.path("groupName").asText()).isEqualTo("FFmpeg runtime");
     assertThat(ffmpegRule.path("automerge").isBoolean()).isTrue();
     assertThat(ffmpegRule.path("automerge").asBoolean()).isFalse();
-    assertThat(strings(renovate.path("gitIgnoredAuthors"))).containsExactly(LOCK_BOT_EMAIL);
+    assertThat(strings(renovate.path("gitIgnoredAuthors")))
+        .containsExactlyInAnyOrder(
+            LOCK_BOT_EMAIL, "streamarr-ffmpeg-lock[bot]@users.noreply.github.com");
+  }
+
+  @ParameterizedTest
+  @CsvSource({"patch,false", "minor,false", "major,true"})
+  @DisplayName(
+      "Should apply isolated reviewed FFmpeg update policy when package rules are combined")
+  void shouldApplyIsolatedReviewedFfmpegUpdatePolicyWhenPackageRulesAreCombined(
+      String updateType, boolean approvalRequired) throws IOException {
+    var mapper = new ObjectMapper();
+    var renovate = mapper.readTree(Files.readString(Path.of("renovate.json")));
+    var policy = mapper.createObjectNode();
+
+    nodes(renovate.path("packageRules"))
+        .filter(rule -> matchesRule(rule.path("matchDepNames"), DEPENDENCY))
+        .filter(rule -> matchesRule(rule.path("matchPackageNames"), DEPENDENCY))
+        .filter(rule -> matchesRule(rule.path("matchUpdateTypes"), updateType))
+        .forEach(
+            rule ->
+                Stream.of("groupName", "automerge", "dependencyDashboardApproval")
+                    .filter(rule::has)
+                    .forEach(property -> policy.set(property, rule.get(property))));
+
+    assertThat(policy.path("groupName").asText()).isEqualTo("FFmpeg runtime");
+    assertThat(policy.path("automerge").isBoolean()).isTrue();
+    assertThat(policy.path("automerge").asBoolean()).isFalse();
+    assertThat(policy.path("dependencyDashboardApproval").asBoolean()).isEqualTo(approvalRequired);
+  }
+
+  private static boolean matchesRule(JsonNode matcher, String value) {
+    return matcher.isMissingNode() || strings(matcher).anyMatch(value::equals);
   }
 
   @Test
@@ -78,6 +120,8 @@ class FfmpegAutomationWorkflowTest {
 
     assertThat(source).contains("pull_request_target:", "- 'buildpacks/ffmpeg/release'");
     assertThat(map(workflow.get("permissions"))).containsOnly(Map.entry("contents", "read"));
+    assertThat(workflow).containsKey("defaults");
+    assertThat(map(map(workflow.get("defaults")).get("run"))).containsEntry("shell", "bash");
     assertThat((String) job.get("if"))
         .contains(
             "github.event.pull_request.user.login == 'renovate[bot]'",
@@ -127,84 +171,73 @@ class FfmpegAutomationWorkflowTest {
         .containsEntry("permission-contents", "write");
     assertThat((String) commit.get("run"))
         .contains(
-            "git update-index --add --cacheinfo",
-            "git diff --cached --name-only",
-            "git diff --cached --check",
-            "git push origin \"HEAD:refs/heads/${HEAD_REF}\"")
-        .contains("git config user.email '" + LOCK_BOT_EMAIL + "'");
+            "createCommitOnBranch",
+            "expectedHeadOid: $expectedHead",
+            "git cat-file blob",
+            "buildpacks/ffmpeg/ffmpeg.lock",
+            "gh api graphql")
+        .doesNotContain("git commit", "git push", "git config", "proposed/buildpacks/");
+    assertThat(map(commit.get("env")))
+        .containsEntry("EXPECTED_HEAD_SHA", "${{ github.event.pull_request.head.sha }}")
+        .containsEntry("GH_TOKEN", "${{ steps.lock_bot.outputs.token }}");
   }
 
   @Test
-  @DisplayName("Should verify proposed FFmpeg data with the trusted resolver when applicable")
-  void shouldVerifyProposedFfmpegDataWithTrustedResolverWhenApplicable() throws IOException {
+  @DisplayName("Should test proposed FFmpeg resolver changes with read-only PR credentials")
+  void shouldTestProposedFfmpegResolverChangesWithReadOnlyPrCredentials() throws IOException {
+    var source = Files.readString(Path.of(".github/workflows/ci.yml"));
     var workflow = yaml(".github/workflows/ci.yml");
     var lock = map(map(workflow.get("jobs")).get("ffmpeg_lock"));
     var steps = listOfMaps(lock.get("steps"));
-    var trustedCheckout = stepNamed(steps, "Check out trusted resolver");
-    var proposedCheckout = stepNamed(steps, "Check out proposed source");
+    var checkout = stepNamed(steps, "Check out source");
     var offline = stepNamed(steps, "Validate FFmpeg lock offline");
-    var upstream = stepNamed(steps, "Verify FFmpeg lock against upstream");
 
-    assertThat(lock)
-        .containsEntry("needs", "changes")
-        .containsEntry("permissions", Map.of("contents", "read"));
-    assertThat(map(trustedCheckout.get("with")))
-        .containsEntry("ref", "${{ github.event.pull_request.base.sha || github.sha }}")
-        .containsEntry("path", "trusted")
-        .containsEntry("persist-credentials", false);
-    assertThat(map(proposedCheckout.get("with")))
-        .containsEntry("ref", "${{ github.event.pull_request.head.sha || github.sha }}")
-        .containsEntry("path", "proposed")
-        .containsEntry("persist-credentials", false);
-    assertThat(offline).doesNotContainKeys("if", "env");
-    assertThat((String) offline.get("run"))
-        .isEqualTo("trusted/buildpacks/ffmpeg/bin/update-lock --root proposed --check");
-    assertThat(upstream).containsEntry("if", "needs.changes.outputs.packaging == 'true'");
-    assertThat((String) upstream.get("run"))
-        .isEqualTo("trusted/buildpacks/ffmpeg/bin/update-lock --root proposed --verify-upstream");
-    assertThat(map(upstream.get("env"))).containsEntry("GITHUB_TOKEN", "${{ github.token }}");
-    assertThat(steps.toString()).doesNotContain("proposed/buildpacks/ffmpeg/bin/update-lock");
+    assertThat(source).contains("pull_request:").doesNotContain("pull_request_target:");
+    assertThat(lock).containsEntry("permissions", Map.of("contents", "read"));
+    assertThat(map(checkout.get("with")))
+        .containsEntry("persist-credentials", false)
+        .doesNotContainKeys("ref");
+    assertThat(offline).containsEntry("uses", "./.github/actions/prepare-ffmpeg");
+    var preparation = Files.readString(Path.of(".github/actions/prepare-ffmpeg/action.yml"));
+    assertThat(preparation)
+        .contains("buildpacks/ffmpeg/bin/update-lock --check")
+        .doesNotContain("secrets.", "pull_request_target");
+    assertThat(steps.toString()).doesNotContain("secrets.");
   }
 
   @Test
-  @DisplayName("Should prefer the canonical Ubuntu mirror before installing FFmpeg")
-  void shouldPreferCanonicalUbuntuMirrorBeforeInstallingFfmpeg() throws IOException {
-    var action = yaml(".github/actions/apt-mirrors/action.yml");
-    var actionRuns = map(action.get("runs"));
-    var changePriorities =
-        stepNamed(listOfMaps(actionRuns.get("steps")), "Change APT mirror priorities");
-    var commands = ((String) changePriorities.get("run")).lines().toList();
-    var workflow = yaml(".github/workflows/ci.yml");
-    var application = map(map(workflow.get("jobs")).get("application"));
-    var steps = listOfMaps(application.get("steps"));
+  @DisplayName("Should smoke test the locked FFmpeg runtime on application and packaging runners")
+  void shouldSmokeTestLockedFfmpegRuntimeOnApplicationAndPackagingRunners() throws IOException {
+    var jobs = map(yaml(".github/workflows/ci.yml").get("jobs"));
 
+    for (var jobName : List.of("application", "package_image")) {
+      var steps = listOfMaps(map(jobs.get(jobName)).get("steps"));
+      assertThat(steps.stream().map(step -> step.get("name")))
+          .containsSubsequence("Install locked FFmpeg", "Run HLS smoke tests");
+      assertThat(stepNamed(steps, "Install locked FFmpeg"))
+          .containsEntry("uses", "./.github/actions/setup-ffmpeg")
+          .containsEntry("timeout-minutes", 10);
+      assertThat((String) stepNamed(steps, "Run HLS smoke tests").get("run"))
+          .contains("-Dgroups=SmokeTest", "-Dsurefire.excludedGroups=");
+      assertThat(steps.toString()).doesNotContain("apt-get install", "apt-mirrors");
+    }
+
+    var applicationSteps = listOfMaps(map(jobs.get("application")).get("steps"));
+    assertThat(stepNamed(applicationSteps, "Run HLS smoke tests")).doesNotContainKey("if");
+    var packagingSteps = listOfMaps(map(jobs.get("package_image")).get("steps"));
+    assertThat(List.of("Set up JDK 25", "Install locked FFmpeg", "Run HLS smoke tests"))
+        .allSatisfy(
+            name ->
+                assertThat(stepNamed(packagingSteps, name))
+                    .containsEntry("if", "matrix.architecture == 'arm64'"));
+    assertThat(stepNamed(packagingSteps, "Build and verify package image")).doesNotContainKey("if");
+
+    var actionRuns = map(yaml(".github/actions/setup-ffmpeg/action.yml").get("runs"));
+    var install = stepNamed(listOfMaps(actionRuns.get("steps")), "Install locked FFmpeg");
     assertThat(actionRuns).containsEntry("using", "composite");
-    assertThat(changePriorities).containsEntry("shell", "bash");
-    assertThat(commands)
-        .anySatisfy(
-            command ->
-                assertThat(command).contains("'/archive.ubuntu.com", "s/priority:2/priority:0/"))
-        .anySatisfy(
-            command ->
-                assertThat(command)
-                    .contains("'/azure.archive.ubuntu.com", "s/priority:0/priority:1/"))
-        .anySatisfy(
-            command ->
-                assertThat(command).contains("'/security.ubuntu.com", "s/priority:3/priority:2/"));
-    assertThat(steps.stream().map(step -> step.get("name")))
-        .containsSubsequence("Change APT mirror priorities", "Install FFmpeg");
-    assertThat(stepNamed(steps, "Change APT mirror priorities"))
-        .containsEntry("uses", "./.github/actions/apt-mirrors");
-  }
-
-  @Test
-  @DisplayName("Should bound FFmpeg installation when Ubuntu mirrors are slow")
-  void shouldBoundFfmpegInstallationWhenUbuntuMirrorsAreSlow() throws IOException {
-    var workflow = yaml(".github/workflows/ci.yml");
-    var application = map(map(workflow.get("jobs")).get("application"));
-    var install = stepNamed(listOfMaps(application.get("steps")), "Install FFmpeg");
-
-    assertThat(install).containsEntry("timeout-minutes", 10);
+    assertThat(install).containsEntry("shell", "bash");
+    assertThat((String) install.get("run"))
+        .contains("CNB_TARGET_ARCH=", "uname -m", "buildpacks/ffmpeg/bin/build", "GITHUB_PATH");
   }
 
   private static Stream<JsonNode> nodes(JsonNode values) {

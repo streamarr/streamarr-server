@@ -1,0 +1,1493 @@
+[
+  {
+    "id": "amf",
+    "recipe": "builder/scripts.d/50-amf.sh",
+    "repository": "https://github.com/GPUOpen-LibrariesAndSDKs/AMF",
+    "revision": "eadd00804d5f7e5cd8c85d540073198312870776",
+    "architectures": [
+      "amd64"
+    ],
+    "role": "AMD AMF API headers (--enable-amf); proprietary driver runtime is not bundled.",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/AMF/eadd00804d5f7e5cd8c85d540073198312870776/LICENSE.txt",
+        "sha256": "eb856e5f25dda1a6f79012c6f4e77800ccce934e7d549416b930b4eed0a8c0ea",
+        "file": "amf/LICENSE.txt",
+        "upstreamSha256": "eb297397aaa455b5668ab67d216b83828466152dab123fa92384c6ec16b74170"
+      }
+    ],
+    "licenseExpression": "MIT",
+    "distribution": "embedded",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "chromaprint",
+    "recipe": "builder/scripts.d/50-chromaprint.sh",
+    "repository": "https://github.com/acoustid/chromaprint",
+    "revision": "6b13ce3a81ae931e7477c4856a86bece99157cd8",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static audio fingerprinting library (--enable-chromaprint).",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/acoustid/chromaprint/6b13ce3a81ae931e7477c4856a86bece99157cd8/LICENSE.md",
+        "sha256": "562cfe59627e0c4e8e3b066f3ff2e9736f83811ffe4c6c2c7796595aa7595ebd",
+        "file": "chromaprint/LICENSE.md"
+      }
+    ],
+    "licenseExpression": "LicenseRef-chromaprint",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "dav1d",
+    "recipe": "builder/scripts.d/50-dav1d.sh",
+    "repository": "https://code.videolan.org/videolan/dav1d",
+    "revision": "b546257f770768b2c88258c533da38b91a06f737",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static AV1 decoder (--enable-libdav1d).",
+    "notices": [
+      {
+        "url": "https://code.videolan.org/videolan/dav1d/-/raw/b546257f770768b2c88258c533da38b91a06f737/COPYING",
+        "sha256": "dd92c3c2247c5651606fc23a5e2d6a1ebc5ace9a3e49cbde0e12f05ad1cb1ee5",
+        "file": "dav1d/COPYING.txt"
+      }
+    ],
+    "licenseExpression": "BSD-2-Clause",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "fast-float",
+    "repository": "https://github.com/fastfloat/fast_float",
+    "revision": "97b54ca9e75f5303507699d27c6b4f4efe4641a1",
+    "recipe": "libplacebo/3rdparty/fast_float (gitlink)",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Header-only numeric parser compiled into libplacebo.",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/fastfloat/fast_float/97b54ca9e75f5303507699d27c6b4f4efe4641a1/LICENSE-MIT",
+        "sha256": "e562f3f974ced7e69dd1db77b820b36bcf8f30377f1aa105723fba449c53c4e6",
+        "file": "fast-float/LICENSE-MIT.txt"
+      }
+    ],
+    "licenseExpression": "MIT",
+    "distribution": "embedded",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "fdk-aac-stripped",
+    "recipe": "builder/scripts.d/50-fdk-aac-stripped.sh",
+    "repository": "https://gitlab.freedesktop.org/wtaymans/fdk-aac-stripped",
+    "revision": "529b87452cd33d45e1d0a5066d20b64f10b38845",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static stripped FDK AAC library (--enable-libfdk-aac). Streamarr selects the native aac encoder, not libfdk_aac.",
+    "notices": [
+      {
+        "url": "https://gitlab.freedesktop.org/wtaymans/fdk-aac-stripped/-/raw/529b87452cd33d45e1d0a5066d20b64f10b38845/NOTICE",
+        "sha256": "95ec80da40b4af12ad4c4f3158c9cfb80f2479f3246e4260cb600827cc8c7836",
+        "file": "fdk-aac-stripped/NOTICE.txt"
+      },
+      {
+        "url": "https://gitlab.freedesktop.org/wtaymans/fdk-aac-stripped/-/raw/529b87452cd33d45e1d0a5066d20b64f10b38845/README.fedora",
+        "sha256": "e2fb30b7a7e24cef17589c40540866ff22929f1d9329a49b01cdd9552e2aaec2",
+        "file": "fdk-aac-stripped/README.fedora.txt"
+      }
+    ],
+    "licenseExpression": "FDK-AAC",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "ffmpeg",
+    "repository": "https://github.com/jellyfin/jellyfin-ffmpeg",
+    "revision": "6c051dec38eb0e88d2d4d3c54b13014bf69f9799",
+    "recipe": "builder",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "FFmpeg and ffprobe executables, including Jellyfin patches.",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/jellyfin/jellyfin-ffmpeg/6c051dec38eb0e88d2d4d3c54b13014bf69f9799/LICENSE.md",
+        "sha256": "2e1d16c72fd74e12063776371da757322f8b77589386532f4fd8634bde7de1af",
+        "file": "ffmpeg/LICENSE.md"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/jellyfin/jellyfin-ffmpeg/6c051dec38eb0e88d2d4d3c54b13014bf69f9799/COPYING.GPLv2",
+        "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643",
+        "file": "ffmpeg/COPYING.GPLv2.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/jellyfin/jellyfin-ffmpeg/6c051dec38eb0e88d2d4d3c54b13014bf69f9799/COPYING.GPLv3",
+        "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
+        "file": "ffmpeg/COPYING.GPLv3.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/jellyfin/jellyfin-ffmpeg/6c051dec38eb0e88d2d4d3c54b13014bf69f9799/COPYING.LGPLv2.1",
+        "sha256": "246041b6ecf9bc32d718a62c57877c78b5eb397b6467e74ed7ae2626ab189c30",
+        "file": "ffmpeg/COPYING.LGPLv2.1.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/jellyfin/jellyfin-ffmpeg/6c051dec38eb0e88d2d4d3c54b13014bf69f9799/COPYING.LGPLv3",
+        "sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768",
+        "file": "ffmpeg/COPYING.LGPLv3.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/jellyfin/jellyfin-ffmpeg/6c051dec38eb0e88d2d4d3c54b13014bf69f9799/debian/copyright",
+        "sha256": "1dcbd4a0573defb2b6b44010c96eabe026d06d9cf2a86eaf7782aa80f76ed2f2",
+        "file": "ffmpeg/debian/copyright.txt"
+      }
+    ],
+    "licenseExpression": "GPL-3.0-or-later",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "ffnvcodec",
+    "recipe": "builder/scripts.d/50-ffnvcodec.sh",
+    "repository": "https://github.com/FFmpeg/nv-codec-headers",
+    "revision": "451da99614412a7f9526ef301a5ee0c7a6f9ad76",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "NVIDIA codec API headers and inline loaders; NVIDIA driver/CUDA runtime libraries are not bundled.",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/FFmpeg/nv-codec-headers/451da99614412a7f9526ef301a5ee0c7a6f9ad76/include/ffnvcodec/dynlink_loader.h",
+        "sha256": "6f0d5ad2609c6fda3e0fb07fa286e7b46c2ea7b87ab12d926ab7a82c69ffe09d",
+        "file": "ffnvcodec/include/ffnvcodec/dynlink_loader.h.txt",
+        "excerpt": true
+      },
+      {
+        "url": "https://raw.githubusercontent.com/FFmpeg/nv-codec-headers/451da99614412a7f9526ef301a5ee0c7a6f9ad76/include/ffnvcodec/nvEncodeAPI.h",
+        "sha256": "04b2307536706a130608b063817566affa567786d7428764c82535a29f7f905c",
+        "file": "ffnvcodec/include/ffnvcodec/nvEncodeAPI.h.txt",
+        "excerpt": true
+      },
+      {
+        "url": "https://raw.githubusercontent.com/FFmpeg/nv-codec-headers/451da99614412a7f9526ef301a5ee0c7a6f9ad76/include/ffnvcodec/dynlink_cuda.h",
+        "sha256": "6f0d5ad2609c6fda3e0fb07fa286e7b46c2ea7b87ab12d926ab7a82c69ffe09d",
+        "file": "ffnvcodec/include/ffnvcodec/dynlink_loader.h.txt",
+        "excerpt": true
+      },
+      {
+        "url": "https://raw.githubusercontent.com/FFmpeg/nv-codec-headers/451da99614412a7f9526ef301a5ee0c7a6f9ad76/include/ffnvcodec/dynlink_cuviddec.h",
+        "sha256": "04b2307536706a130608b063817566affa567786d7428764c82535a29f7f905c",
+        "file": "ffnvcodec/include/ffnvcodec/nvEncodeAPI.h.txt",
+        "excerpt": true
+      },
+      {
+        "url": "https://raw.githubusercontent.com/FFmpeg/nv-codec-headers/451da99614412a7f9526ef301a5ee0c7a6f9ad76/include/ffnvcodec/dynlink_nvcuvid.h",
+        "sha256": "04b2307536706a130608b063817566affa567786d7428764c82535a29f7f905c",
+        "file": "ffnvcodec/include/ffnvcodec/nvEncodeAPI.h.txt",
+        "excerpt": true
+      }
+    ],
+    "licenseExpression": "MIT",
+    "distribution": "embedded",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "fftw3f",
+    "recipe": "builder/scripts.d/25-fftw3f.sh",
+    "repository": "https://github.com/FFTW/fftw3",
+    "revision": "4fca9817e68f77c118e4704562d63e45c02d38bf",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static FFT dependency of Chromaprint (FFT_LIB=fftw3f).",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/FFTW/fftw3/4fca9817e68f77c118e4704562d63e45c02d38bf/COPYING",
+        "sha256": "231f7edcc7352d7734a96eef0b8030f77982678c516876fcb81e25b32d68564c",
+        "file": "fftw3f/COPYING.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/FFTW/fftw3/4fca9817e68f77c118e4704562d63e45c02d38bf/COPYRIGHT",
+        "sha256": "8a74b35d541d93fdf58a22a3d3baa48ae3edbf6d715edfeb6457c21968ae43ac",
+        "file": "fftw3f/COPYRIGHT.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/FFTW/fftw3/4fca9817e68f77c118e4704562d63e45c02d38bf/AUTHORS",
+        "sha256": "14e1b1c6a7d84613c85a4c457b4167fb4927ce239ec45123e85ba5eefca4e7bb",
+        "file": "fftw3f/AUTHORS.txt"
+      }
+    ],
+    "licenseExpression": "GPL-2.0-or-later",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "fontconfig",
+    "recipe": "builder/scripts.d/35-fontconfig.sh",
+    "repository": "https://chromium.googlesource.com/external/fontconfig",
+    "revision": "6d0a98982ec351c165c9224c8b7dbdfca3010e47",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static font configuration library (--enable-fontconfig).",
+    "notices": [
+      {
+        "url": "https://chromium.googlesource.com/external/fontconfig/+/6d0a98982ec351c165c9224c8b7dbdfca3010e47/COPYING?format=TEXT",
+        "sha256": "51a51aa9823704fd90bccc616cdd17ebabb5b2b3e9cbde886ca02c7002288067",
+        "file": "fontconfig/COPYING.txt"
+      }
+    ],
+    "licenseExpression": "LicenseRef-fontconfig",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "freetype",
+    "recipe": "builder/scripts.d/25-freetype.sh",
+    "repository": "https://github.com/freetype/freetype",
+    "revision": "1803559c4ee407d0bcbf2a67dbe96690cee869d2",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static font rasterization library (--enable-libfreetype).",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/freetype/freetype/1803559c4ee407d0bcbf2a67dbe96690cee869d2/LICENSE.TXT",
+        "sha256": "bd36c8b474855fa294c2ec5c184544478ef3720aad37d65a6296a4f264fd2d3b",
+        "file": "freetype/LICENSE.TXT"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/freetype/freetype/1803559c4ee407d0bcbf2a67dbe96690cee869d2/docs/FTL.TXT",
+        "sha256": "5a5ee54c5001bbad1cdc1a57cc3dd4c42199b2da09d39c7ee41fab002d02967f",
+        "file": "freetype/docs/FTL.TXT"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/freetype/freetype/1803559c4ee407d0bcbf2a67dbe96690cee869d2/docs/GPLv2.TXT",
+        "sha256": "c4120c6752c910c299e3bd9cb3a46ff262c268303ca2069b61f92f10a5656c18",
+        "file": "freetype/docs/GPLv2.TXT"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/freetype/freetype/1803559c4ee407d0bcbf2a67dbe96690cee869d2/src/bdf/README",
+        "sha256": "7984455e7e5a9faba3797c8bf095fbe10cc846316b7320aff8c58402e22b82fe",
+        "file": "freetype/src/bdf/README.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/freetype/freetype/1803559c4ee407d0bcbf2a67dbe96690cee869d2/src/pcf/README",
+        "sha256": "18d9782898d9eac04476e2f744678137b2a889689ed3e923e052fc396a86f86b",
+        "file": "freetype/src/pcf/README.txt"
+      }
+    ],
+    "licenseExpression": "LicenseRef-freetype",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "fribidi",
+    "recipe": "builder/scripts.d/25-fribidi.sh",
+    "repository": "https://github.com/fribidi/fribidi",
+    "revision": "5c85a174650ab8ef106ce85f13bcf2950d3fc65f",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static bidirectional-text library (--enable-libfribidi).",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/fribidi/fribidi/5c85a174650ab8ef106ce85f13bcf2950d3fc65f/COPYING",
+        "sha256": "32434afcc8666ba060e111d715bfdb6c2d5dd8a35fa4d3ab8ad67d8f850d2f2b",
+        "file": "fribidi/COPYING.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/fribidi/fribidi/5c85a174650ab8ef106ce85f13bcf2950d3fc65f/AUTHORS",
+        "sha256": "cb173f55c9514c8f38f4647ac3fedd5f8611358d331e65ab955da931e826861c",
+        "file": "fribidi/AUTHORS.txt"
+      }
+    ],
+    "licenseExpression": "LGPL-2.1-or-later",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "gcc-runtime",
+    "repository": "https://github.com/gcc-mirror/gcc",
+    "revision": "releases/gcc-15.2.0",
+    "recipe": "builder/images/base-linux64/ct-ng-config; builder/images/base-linuxarm64/ct-ng-config",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Statically linked GCC 15.2.0 runtime libraries (libgcc/libstdc++), with GCC Runtime Library Exception.",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-15.2.0/COPYING3",
+        "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
+        "file": "ffmpeg/COPYING.GPLv3.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-15.2.0/COPYING.RUNTIME",
+        "sha256": "9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74",
+        "file": "gcc-runtime/COPYING.RUNTIME.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-15.2.0/libgcc/libgcc2.c",
+        "sha256": "412607822941a2d2cb1b0025658a967aa1196b8c4e3874ad5e51d00858bab4a9",
+        "file": "gcc-runtime/libgcc/libgcc2.c.txt",
+        "excerpt": true
+      },
+      {
+        "url": "https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-15.2.0/libstdc%2B%2B-v3/include/bits/c%2B%2Bconfig",
+        "sha256": "ca89866f69d738602eba7eb4ab75ebac5fe666d2b222feead209a92243667f84",
+        "file": "gcc-runtime/libstdc++-v3/include/bits/c++config.txt",
+        "excerpt": true
+      }
+    ],
+    "licenseExpression": "GPL-3.0-or-later WITH GCC-exception-3.1",
+    "distribution": "embedded",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "glad",
+    "repository": "https://github.com/Dav1dde/glad",
+    "revision": "73db193f853e2ee079bf3ca8a64aa2eaf6459043",
+    "recipe": "libplacebo/3rdparty/glad (gitlink)",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Generated OpenGL/EGL loader code compiled into libplacebo; excludes generator-only Python dependencies.",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/Dav1dde/glad/73db193f853e2ee079bf3ca8a64aa2eaf6459043/LICENSE",
+        "sha256": "cbb325cd4ac5bd06717ffa34a322b984f9d285e4c67c8ca1b7380d6ef08c2a77",
+        "file": "glad/LICENSE.txt"
+      }
+    ],
+    "licenseExpression": "LicenseRef-glad",
+    "distribution": "embedded",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "glibc-startup",
+    "repository": "https://github.com/bminor/glibc",
+    "revision": "glibc-2.28",
+    "recipe": "builder/images/base-linux64/ct-ng-config; builder/images/base-linuxarm64/ct-ng-config",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "glibc startup/nonshared support from the cross-toolchain; shared glibc libraries and the dynamic loader are supplied by the base system.",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/bminor/glibc/glibc-2.28/COPYING.LIB",
+        "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+        "file": "glibc-startup/COPYING.LIB.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/bminor/glibc/glibc-2.28/LICENSES",
+        "sha256": "35bdb41dc0bcb10702ddacbd51ec4c0fe6fb3129f734e8c85fc02e4d3eb0ce3f",
+        "file": "glibc-startup/LICENSES.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/bminor/glibc/glibc-2.28/csu/libc-start.c",
+        "sha256": "14330df39e2442852024838d34c06deac90249bda409c11053dd213559a6b373",
+        "file": "glibc-startup/csu/libc-start.c.txt",
+        "excerpt": true
+      }
+    ],
+    "licenseExpression": "LicenseRef-glibc-startup",
+    "distribution": "embedded",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "glslang",
+    "repository": "https://github.com/KhronosGroup/glslang",
+    "revision": "5ed4003a18a10a9d1bd7e43aaf1664499abffa83",
+    "recipe": "shaderc/DEPS",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static shader language compiler within shaderc_combined; pin from shaderc DEPS.",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/KhronosGroup/glslang/5ed4003a18a10a9d1bd7e43aaf1664499abffa83/LICENSE.txt",
+        "sha256": "17e70c676e1521ff3e4686f04a2053d93a7e28a33be8de7ec37ab0ff72feb677",
+        "file": "glslang/LICENSE.txt"
+      }
+    ],
+    "licenseExpression": "LicenseRef-glslang",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "gmp",
+    "recipe": "builder/scripts.d/25-gmp.sh",
+    "repository": "https://github.com/BtbN/gmplib",
+    "revision": "9994908f090c694f8a152d660dc6852e0c48557a",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static arithmetic library (--enable-gmp).",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/BtbN/gmplib/9994908f090c694f8a152d660dc6852e0c48557a/COPYING.LESSERv3",
+        "sha256": "a853c2ffec17057872340eee242ae4d96cbf2b520ae27d903e1b2fef1a5f9d1c",
+        "file": "gmp/COPYING.LESSERv3.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/BtbN/gmplib/9994908f090c694f8a152d660dc6852e0c48557a/COPYINGv2",
+        "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643",
+        "file": "ffmpeg/COPYING.GPLv2.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/BtbN/gmplib/9994908f090c694f8a152d660dc6852e0c48557a/COPYINGv3",
+        "sha256": "e6037104443f9a7829b2aa7c5370d0789a7bda3ca65a0b904cdc0c2e285d9195",
+        "file": "gmp/COPYINGv3.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/BtbN/gmplib/9994908f090c694f8a152d660dc6852e0c48557a/AUTHORS",
+        "sha256": "da5870e2f0482c5dc15b4cfed8bbfb51ce1279c8f8fc52bdb8c13c7cee949c32",
+        "file": "gmp/AUTHORS.txt"
+      }
+    ],
+    "licenseExpression": "LGPL-3.0-or-later OR GPL-2.0-or-later",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "gnulib",
+    "repository": "https://github.com/coreutils/gnulib",
+    "revision": "5926e89900ffe4c850dd026fb634c15bf3cee526",
+    "recipe": "builder/scripts.d/20-libiconv.sh",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Pinned libiconv bootstrap source input; this entry does not assert that the entire gnulib project is linked.",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/coreutils/gnulib/5926e89900ffe4c850dd026fb634c15bf3cee526/COPYING",
+        "sha256": "438610ba3d10f492dff9e17f7d53a5316e3f4b4adc5f79a33ac7110d5a5ee210",
+        "file": "gnulib/COPYING.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/coreutils/gnulib/5926e89900ffe4c850dd026fb634c15bf3cee526/doc/COPYING.LESSERv2",
+        "sha256": "20e50fe7aae3e56378ebf0417d9de904f55a0e61e4df315333e632a4d3555d95",
+        "file": "gnulib/doc/COPYING.LESSERv2.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/coreutils/gnulib/5926e89900ffe4c850dd026fb634c15bf3cee526/doc/COPYING.LESSERv3",
+        "sha256": "e3a994d82e644b03a792a930f574002658412f62407f5fee083f2555c5f23118",
+        "file": "gnulib/doc/COPYING.LESSERv3.txt"
+      }
+    ],
+    "licenseExpression": "LicenseRef-gnulib",
+    "distribution": "build-input",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "harfbuzz",
+    "recipe": "builder/scripts.d/45-harfbuzz.sh",
+    "repository": "https://github.com/harfbuzz/harfbuzz",
+    "revision": "56feae4035bdd48f62ba2b8d8c16232d4d89b3a4",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static text shaping library (--enable-libharfbuzz).",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/harfbuzz/harfbuzz/56feae4035bdd48f62ba2b8d8c16232d4d89b3a4/COPYING",
+        "sha256": "ba8f810f2455c2f08e2d56bb49b72f37fcf68f1f4fade38977cfd7372050ad64",
+        "file": "harfbuzz/COPYING.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/harfbuzz/harfbuzz/56feae4035bdd48f62ba2b8d8c16232d4d89b3a4/AUTHORS",
+        "sha256": "19bfe8f5ed100636cd24ab0c90a3f71c21d8b02d9ba00719447a0faab364d49f",
+        "file": "harfbuzz/AUTHORS.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/harfbuzz/harfbuzz/56feae4035bdd48f62ba2b8d8c16232d4d89b3a4/src/ms-use/COPYING",
+        "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383",
+        "file": "harfbuzz/src/ms-use/COPYING.txt"
+      }
+    ],
+    "licenseExpression": "LicenseRef-harfbuzz",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "implib",
+    "repository": "https://github.com/yugr/Implib.so",
+    "revision": "a3e167cf978a5b8a38ec0f710d8c4331e8dcdd9a",
+    "recipe": "builder/images/base-linux64/Dockerfile; builder/images/base-linuxarm64/Dockerfile",
+    "version_note": "Upstream clones an unpinned default branch. This revision identifies the notice source, not a proven binary build revision.",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Generated lazy import-loader code embedded for system libraries; upstream does not pin the generator checkout.",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/yugr/Implib.so/a3e167cf978a5b8a38ec0f710d8c4331e8dcdd9a/LICENSE.txt",
+        "sha256": "3ce4e4bc862f11fd50735454e524c009923ff82131090847234dc2aa9893eda5",
+        "file": "implib/LICENSE.txt"
+      }
+    ],
+    "licenseExpression": "MIT",
+    "distribution": "embedded",
+    "revisionEvidence": "notice-only"
+  },
+  {
+    "id": "libass",
+    "recipe": "builder/scripts.d/50-libass.sh",
+    "repository": "https://github.com/libass/libass",
+    "revision": "4a05d8127f525943ebf45fdc6497c9e665947f0d",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static subtitle renderer (--enable-libass).",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/libass/libass/4a05d8127f525943ebf45fdc6497c9e665947f0d/COPYING",
+        "sha256": "f7e30699d02798351e7f839e3d3bfeb29ce65e44efa7735c225464c4fd7dfe9c",
+        "file": "libass/COPYING.txt"
+      }
+    ],
+    "licenseExpression": "ISC",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "libbluray",
+    "recipe": "builder/scripts.d/50-libbluray.sh",
+    "repository": "https://code.videolan.org/videolan/libbluray",
+    "revision": "4dfb9b0123b006ce5d66592dc8058f61e5c0cdc8",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static Blu-ray access library (--enable-libbluray).",
+    "notices": [
+      {
+        "url": "https://code.videolan.org/videolan/libbluray/-/raw/4dfb9b0123b006ce5d66592dc8058f61e5c0cdc8/COPYING",
+        "sha256": "b3aa400aca6d2ba1f0bd03bd98d03d1fe7489a3bbb26969d72016360af8a5c9d",
+        "file": "libbluray/COPYING.txt"
+      }
+    ],
+    "licenseExpression": "LGPL-2.1-or-later",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "libdrm",
+    "repository": "https://gitlab.freedesktop.org/mesa/drm",
+    "revision": "6bfcfc725fbe0ece0918535556d61ee567b1ffff",
+    "recipe": "builder/scripts.d/50-vaapi/40-libdrm.sh",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "DRM API headers used with generated import shims; system libdrm and GPU drivers are not bundled.",
+    "notices": [
+      {
+        "url": "https://gitlab.freedesktop.org/mesa/drm/-/raw/6bfcfc725fbe0ece0918535556d61ee567b1ffff/xf86drm.h",
+        "sha256": "f661a74247bb3d96da5d360dfffceb94f0dd422d744f192ac86c63068063001a",
+        "file": "libdrm/xf86drm.h.txt",
+        "excerpt": true
+      },
+      {
+        "url": "https://gitlab.freedesktop.org/mesa/drm/-/raw/6bfcfc725fbe0ece0918535556d61ee567b1ffff/xf86drmMode.h",
+        "sha256": "070c3ce3b107c92234a16aa69e0c020969f7ccc93bee46865d39b2cc01febb18",
+        "file": "libdrm/xf86drmMode.h.txt",
+        "excerpt": true
+      },
+      {
+        "url": "https://gitlab.freedesktop.org/mesa/drm/-/raw/6bfcfc725fbe0ece0918535556d61ee567b1ffff/include/drm/drm.h",
+        "sha256": "ee82e1a7c7f52ec6a72823376cba8396d4f5ed3bb906f3f74fe9cfca68f7ab3c",
+        "file": "libdrm/include/drm/drm.h.txt",
+        "excerpt": true
+      },
+      {
+        "url": "https://gitlab.freedesktop.org/mesa/drm/-/raw/6bfcfc725fbe0ece0918535556d61ee567b1ffff/include/drm/drm_fourcc.h",
+        "sha256": "fba2df38a39f63d9bcb7c696ef09924d3130679e660949a618f9c7081b59e15d",
+        "file": "libdrm/include/drm/drm_fourcc.h.txt",
+        "excerpt": true
+      }
+    ],
+    "licenseExpression": "MIT",
+    "distribution": "embedded",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "libiconv",
+    "recipe": "builder/scripts.d/20-libiconv.sh",
+    "repository": "https://skia.googlesource.com/third_party/libiconv",
+    "revision": "v1.19",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static character conversion library (--enable-iconv).",
+    "notices": [
+      {
+        "url": "https://skia.googlesource.com/third_party/libiconv/+/v1.19/COPYING.LIB?format=TEXT",
+        "sha256": "20e50fe7aae3e56378ebf0417d9de904f55a0e61e4df315333e632a4d3555d95",
+        "file": "gnulib/doc/COPYING.LESSERv2.txt"
+      },
+      {
+        "url": "https://skia.googlesource.com/third_party/libiconv/+/v1.19/AUTHORS?format=TEXT",
+        "sha256": "ed10ef2a01effb12849006d43262ffde5cf72a7d5423bbc8aa66fc6959774c0c",
+        "file": "libiconv/AUTHORS.txt"
+      }
+    ],
+    "licenseExpression": "LGPL-2.1-or-later",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "libmp3lame",
+    "recipe": "builder/scripts.d/50-libmp3lame.sh",
+    "repository": "https://svn.code.sf.net/p/lame/svn/trunk/lame",
+    "revision": "6531",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static MP3 encoder (--enable-libmp3lame).",
+    "notices": [
+      {
+        "url": "https://svn.code.sf.net/p/lame/svn/!svn/bc/6531/trunk/lame/COPYING",
+        "sha256": "e64f9c5a18f56828c10a575df13ade641aa3af4512a7afe6c411256943b57aaf",
+        "file": "libmp3lame/COPYING.txt"
+      }
+    ],
+    "licenseExpression": "LGPL-2.0-or-later",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "libne10",
+    "recipe": "builder/scripts.d/45-libne10.sh",
+    "repository": "https://github.com/gnattu/Ne10",
+    "revision": "502bbc4ab65fe83114d618363510fd4ffb7a8c46",
+    "architectures": [
+      "arm64"
+    ],
+    "role": "Static ARM NEON dependency of Opus.",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/gnattu/Ne10/502bbc4ab65fe83114d618363510fd4ffb7a8c46/LICENSE",
+        "sha256": "9a40649de0720a8700fba810b2d1f1b97900f43f3f1cd646df36b99cfc51e54c",
+        "file": "libne10/LICENSE.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/gnattu/Ne10/502bbc4ab65fe83114d618363510fd4ffb7a8c46/doc/NOTICE",
+        "sha256": "376b0e9a39ad33d01068deeebac424f62f534699931bd15c27df1481edda33ff",
+        "file": "libne10/doc/NOTICE.txt"
+      }
+    ],
+    "licenseExpression": "BSD-3-Clause",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "libogg",
+    "recipe": "builder/scripts.d/25-libogg.sh",
+    "repository": "https://github.com/xiph/ogg",
+    "revision": "06a5e0262cdc28aa4ae6797627a783b5010440f0",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static container dependency of Vorbis and Theora.",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/xiph/ogg/06a5e0262cdc28aa4ae6797627a783b5010440f0/COPYING",
+        "sha256": "d2ab5758336489da61c12cc5bb757da5339c4ae9001f9bb0562b4370249af814",
+        "file": "libogg/COPYING.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/xiph/ogg/06a5e0262cdc28aa4ae6797627a783b5010440f0/AUTHORS",
+        "sha256": "6fcb33d0cdd60b5054e7df820916388b590427514288c2bab01c626bb8ae9506",
+        "file": "libogg/AUTHORS.txt"
+      }
+    ],
+    "licenseExpression": "BSD-3-Clause",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "libopus",
+    "recipe": "builder/scripts.d/50-libopus.sh",
+    "repository": "https://github.com/xiph/opus",
+    "revision": "788cc89ce4f2c42025d8c70ec1b4457dc89cd50f",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static Opus audio codec (--enable-libopus).",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/xiph/opus/788cc89ce4f2c42025d8c70ec1b4457dc89cd50f/COPYING",
+        "sha256": "01e1167d54a096d123cf6dfbbeb19587278845c6481d2d66d545669846079551",
+        "file": "libopus/COPYING.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/xiph/opus/788cc89ce4f2c42025d8c70ec1b4457dc89cd50f/LICENSE_PLEASE_READ.txt",
+        "sha256": "7efb4989e0cd1b256229bdf2f09300c5d14e35db0e7476bfb87fac243498273d",
+        "file": "libopus/LICENSE_PLEASE_READ.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/xiph/opus/788cc89ce4f2c42025d8c70ec1b4457dc89cd50f/AUTHORS",
+        "sha256": "f9fd849e652219ce98e008303370b352d37663d0ffb27b8dc514ad93c9c7438b",
+        "file": "libopus/AUTHORS.txt"
+      }
+    ],
+    "licenseExpression": "BSD-3-Clause",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "libplacebo",
+    "recipe": "builder/scripts.d/50-libplacebo.sh",
+    "repository": "https://code.videolan.org/videolan/libplacebo",
+    "revision": "cee9b076f2c63104ccfd497fa79c39a867293ec4",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static rendering library (--enable-libplacebo), including Jellyfin's builder/patches/libplacebo patches.",
+    "notices": [
+      {
+        "url": "https://code.videolan.org/videolan/libplacebo/-/raw/cee9b076f2c63104ccfd497fa79c39a867293ec4/LICENSE",
+        "sha256": "b3aa400aca6d2ba1f0bd03bd98d03d1fe7489a3bbb26969d72016360af8a5c9d",
+        "file": "libbluray/COPYING.txt"
+      }
+    ],
+    "licenseExpression": "LGPL-2.1-or-later",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "libtheora",
+    "recipe": "builder/scripts.d/50-libtheora.sh",
+    "repository": "https://github.com/xiph/theora",
+    "revision": "014bc312d05241ff2d06fd52ee7cbbec3768bfd6",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static Theora codec (--enable-libtheora).",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/xiph/theora/014bc312d05241ff2d06fd52ee7cbbec3768bfd6/COPYING",
+        "sha256": "8417fad7da775735564e209484a2e011e0fa201e94f01fdbee6e4977e478e6fc",
+        "file": "libtheora/COPYING.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/xiph/theora/014bc312d05241ff2d06fd52ee7cbbec3768bfd6/LICENSE",
+        "sha256": "2c902950c73a63cd285dc0c36573de9c5fefe66d49312949c51d941f33e92932",
+        "file": "libtheora/LICENSE.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/xiph/theora/014bc312d05241ff2d06fd52ee7cbbec3768bfd6/AUTHORS",
+        "sha256": "ef0ba8da05924cf4e2f9acf782076892ed477c01a6d4cc9f5d107652cf84da8c",
+        "file": "libtheora/AUTHORS.txt"
+      }
+    ],
+    "licenseExpression": "BSD-3-Clause",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "libudfread",
+    "recipe": "builder/scripts.d/45-libudfread.sh",
+    "repository": "https://code.videolan.org/videolan/libudfread",
+    "revision": "139a2194525f2745b98a98e4d8fa627d07440176",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static UDF dependency of libbluray.",
+    "notices": [
+      {
+        "url": "https://code.videolan.org/videolan/libudfread/-/raw/139a2194525f2745b98a98e4d8fa627d07440176/COPYING",
+        "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+        "file": "glibc-startup/COPYING.LIB.txt"
+      }
+    ],
+    "licenseExpression": "LGPL-2.1-or-later",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "libunibreak",
+    "recipe": "builder/scripts.d/45-libunibreak.sh",
+    "repository": "https://github.com/adah1972/libunibreak",
+    "revision": "3ce4bfa3129ff3738046a44a6db533d2ce25af2b",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static Unicode line-breaking dependency of libass.",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/adah1972/libunibreak/3ce4bfa3129ff3738046a44a6db533d2ce25af2b/README.md",
+        "sha256": "09ddab4e128a5b3ecb7715a5f2a2eb3beff413a63d59f6fcea2f478fa65aadda",
+        "file": "libunibreak/README.md"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/adah1972/libunibreak/3ce4bfa3129ff3738046a44a6db533d2ce25af2b/LICENCE",
+        "sha256": "0c57e2ec42ece17791a75d2f9b2f8e0663181be008667a507f765b3ef22522db",
+        "file": "libunibreak/LICENCE"
+      }
+    ],
+    "licenseExpression": "LicenseRef-libunibreak",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "libvorbis",
+    "recipe": "builder/scripts.d/45-libvorbis.sh",
+    "repository": "https://github.com/xiph/vorbis",
+    "revision": "68a7fc2246e734f1a311b06083fc1249551c4412",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static audio codec (--enable-libvorbis).",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/xiph/vorbis/68a7fc2246e734f1a311b06083fc1249551c4412/COPYING",
+        "sha256": "ec1815db59fcd302846df949d7424876cb2e2dc5ed1606c5fb0b36787b1cf43a",
+        "file": "libvorbis/COPYING.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/xiph/vorbis/68a7fc2246e734f1a311b06083fc1249551c4412/AUTHORS",
+        "sha256": "f5cab9f16035f770f50299f85cf2938c06dc3a9a30425961067788102ec896d3",
+        "file": "libvorbis/AUTHORS.txt"
+      }
+    ],
+    "licenseExpression": "BSD-3-Clause",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "libvpl",
+    "recipe": "builder/scripts.d/50-libvpl.sh",
+    "repository": "https://github.com/intel/libvpl",
+    "revision": "d77f9195cf495b937631607333288fd917ae8939",
+    "architectures": [
+      "amd64"
+    ],
+    "role": "Static oneVPL dispatcher (--enable-libvpl); Intel media driver implementation is not bundled.",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/intel/libvpl/d77f9195cf495b937631607333288fd917ae8939/LICENSE",
+        "sha256": "bf1cfac2e2792b6e1e995ce103d70796aecaf2ec7e4c5fe5474f7acec7b4a677",
+        "file": "libvpl/LICENSE.txt"
+      }
+    ],
+    "licenseExpression": "MIT",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "libvpx",
+    "recipe": "builder/scripts.d/50-libvpx.sh",
+    "repository": "https://chromium.googlesource.com/webm/libvpx",
+    "revision": "1024874c5919305883187e2953de8fcb4c3d7fa6",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static VP8/VP9 codecs (--enable-libvpx).",
+    "notices": [
+      {
+        "url": "https://chromium.googlesource.com/webm/libvpx/+/1024874c5919305883187e2953de8fcb4c3d7fa6/LICENSE?format=TEXT",
+        "sha256": "8267348d5af1262c11d1a08de2f5afc77457755f1ac658627dd9acf71011d615",
+        "file": "libvpx/LICENSE.txt"
+      },
+      {
+        "url": "https://chromium.googlesource.com/webm/libvpx/+/1024874c5919305883187e2953de8fcb4c3d7fa6/PATENTS?format=TEXT",
+        "sha256": "cc3273e0694ea5896145e0677699b53471b03ea43021ddc50e7923fbb9f5023c",
+        "file": "libvpx/PATENTS.txt"
+      },
+      {
+        "url": "https://chromium.googlesource.com/webm/libvpx/+/1024874c5919305883187e2953de8fcb4c3d7fa6/AUTHORS?format=TEXT",
+        "sha256": "fd2d1ac03d9d3c864bd98c2042de2d8f7fbd78b298c8d9c506076b6c6a9de889",
+        "file": "libvpx/AUTHORS.txt"
+      }
+    ],
+    "licenseExpression": "BSD-3-Clause",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "libwebp",
+    "recipe": "builder/scripts.d/50-libwebp.sh",
+    "repository": "https://chromium.googlesource.com/webm/libwebp",
+    "revision": "4fa21912338357f89e4fd51cf2368325b59e9bd9",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static WebP codec (--enable-libwebp).",
+    "notices": [
+      {
+        "url": "https://chromium.googlesource.com/webm/libwebp/+/4fa21912338357f89e4fd51cf2368325b59e9bd9/COPYING?format=TEXT",
+        "sha256": "5aec868f669e384a22372a4e8a1a6cd7d44c64cd451f960ca69cc170d1e13acf",
+        "file": "libwebp/COPYING.txt"
+      },
+      {
+        "url": "https://chromium.googlesource.com/webm/libwebp/+/4fa21912338357f89e4fd51cf2368325b59e9bd9/PATENTS?format=TEXT",
+        "sha256": "cc3273e0694ea5896145e0677699b53471b03ea43021ddc50e7923fbb9f5023c",
+        "file": "libvpx/PATENTS.txt"
+      },
+      {
+        "url": "https://chromium.googlesource.com/webm/libwebp/+/4fa21912338357f89e4fd51cf2368325b59e9bd9/AUTHORS?format=TEXT",
+        "sha256": "f251be89fd442bd9d701360730aea163cc8e2076ff03528f59267dc2c4f8b60a",
+        "file": "libwebp/AUTHORS.txt"
+      }
+    ],
+    "licenseExpression": "BSD-3-Clause",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "libxml2",
+    "recipe": "builder/scripts.d/25-libxml2.sh",
+    "repository": "https://github.com/GNOME/libxml2",
+    "revision": "a7511af09f99995cdf81994db21f4eba564276b5",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static XML library (--enable-libxml2).",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/GNOME/libxml2/a7511af09f99995cdf81994db21f4eba564276b5/Copyright",
+        "sha256": "5d4873884a890122a4b9b20ad56ac6f7da1d796a5bfcf04a427970ac96217626",
+        "file": "libxml2/Copyright.txt"
+      }
+    ],
+    "licenseExpression": "MIT",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "opencl",
+    "recipe": "builder/scripts.d/45-opencl.sh",
+    "repository": "https://github.com/KhronosGroup/OpenCL-Headers",
+    "revision": "4c82e9cfaaad18c340f48af3cf5d09ff33e8c1b7",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "OpenCL API headers; vendor OpenCL implementations are not bundled.",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/KhronosGroup/OpenCL-Headers/4c82e9cfaaad18c340f48af3cf5d09ff33e8c1b7/LICENSE",
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+        "file": "opencl/LICENSE.txt"
+      }
+    ],
+    "licenseExpression": "Apache-2.0",
+    "distribution": "embedded",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "opencl-icd-loader",
+    "repository": "https://github.com/KhronosGroup/OpenCL-ICD-Loader",
+    "revision": "2cde5d09953a041786d1cfdcb1c08704a82cb904",
+    "recipe": "builder/scripts.d/45-opencl.sh",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static OpenCL ICD loader (--enable-opencl); loads external vendor implementations.",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/KhronosGroup/OpenCL-ICD-Loader/2cde5d09953a041786d1cfdcb1c08704a82cb904/LICENSE",
+        "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+        "file": "opencl-icd-loader/LICENSE.txt"
+      }
+    ],
+    "licenseExpression": "Apache-2.0",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "openmpt",
+    "recipe": "builder/scripts.d/50-openmpt.sh",
+    "repository": "https://github.com/OpenMPT/openmpt",
+    "revision": "11363ff11ba021b1cf1533da17d9fdf20c8d883c",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static module decoder (--enable-libopenmpt), including minimp3 and mpt utility code. Uses external zlib/ogg/vorbis; excludes fallback miniz/stb_vorbis and tracker-only components.",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/OpenMPT/openmpt/11363ff11ba021b1cf1533da17d9fdf20c8d883c/LICENSE",
+        "sha256": "ceabc562c8cfb3af0d51e94182947c23bde6c18274e2b21585bdde22d2031e9d",
+        "file": "openmpt/LICENSE.txt",
+        "upstreamSha256": "2c999e99533c10a347916a72e075bacf10fcedeff793bd90d41d812b46161da2"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/OpenMPT/openmpt/11363ff11ba021b1cf1533da17d9fdf20c8d883c/src/mpt/LICENSE.BSD-3-Clause.txt",
+        "sha256": "ceabc562c8cfb3af0d51e94182947c23bde6c18274e2b21585bdde22d2031e9d",
+        "file": "openmpt/LICENSE.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/OpenMPT/openmpt/11363ff11ba021b1cf1533da17d9fdf20c8d883c/src/mpt/LICENSE.BSL-1.0.txt",
+        "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566",
+        "file": "openmpt/src/mpt/LICENSE.BSL-1.0.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/OpenMPT/openmpt/11363ff11ba021b1cf1533da17d9fdf20c8d883c/include/minimp3/LICENSE",
+        "sha256": "6a1ee543e5282cd9061881edf462e6fdab181f328da71fc2c9a6950a80e94d01",
+        "file": "openmpt/include/minimp3/LICENSE.txt"
+      }
+    ],
+    "licenseExpression": "BSD-3-Clause AND BSL-1.0 AND CC0-1.0",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "openssl",
+    "recipe": "builder/scripts.d/25-openssl.sh",
+    "repository": "https://github.com/openssl/openssl",
+    "revision": "openssl-3.6.3",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static TLS/cryptography library (--enable-openssl).",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/openssl/openssl/openssl-3.6.3/LICENSE.txt",
+        "sha256": "7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a",
+        "file": "openssl/LICENSE.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/openssl/openssl/openssl-3.6.3/AUTHORS.md",
+        "sha256": "b9f638dfc06b59c2d3b808186c3b30f713805a5db390f5b77b1703ac58acb83e",
+        "file": "openssl/AUTHORS.md"
+      }
+    ],
+    "licenseExpression": "Apache-2.0",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "rkmpp",
+    "recipe": "builder/scripts.d/50-rkmpp.sh",
+    "repository": "https://github.com/nyanmisaka/rk-mirrors",
+    "revision": "a9380ef333102ac318628f83b5f7a460d377749e",
+    "architectures": [
+      "arm64"
+    ],
+    "role": "Static Rockchip MPP support library (--enable-rkmpp).",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/nyanmisaka/rk-mirrors/a9380ef333102ac318628f83b5f7a460d377749e/LICENSES/Apache-2.0",
+        "sha256": "ed57d96d27be775b22f9571d3724ef84e0d0b8f24b805ec7f87a32189de19a9c",
+        "file": "rkmpp/LICENSES/Apache-2.0.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/nyanmisaka/rk-mirrors/a9380ef333102ac318628f83b5f7a460d377749e/LICENSES/MIT",
+        "sha256": "323c587d0ccf10e376f8bf9a7f31fb4ca6078105194b42e0b1e0ee2bc9bde71f",
+        "file": "rkmpp/LICENSES/MIT.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/nyanmisaka/rk-mirrors/a9380ef333102ac318628f83b5f7a460d377749e/debian/copyright",
+        "sha256": "17a1c27c8fc2e8af125e052a9dc2d0e9662fef9533d9ea2fe3917473d2c21363",
+        "file": "rkmpp/debian/copyright.txt"
+      }
+    ],
+    "licenseExpression": "Apache-2.0 AND MIT",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "rkrga",
+    "recipe": "builder/scripts.d/50-rkrga.sh",
+    "repository": "https://github.com/nyanmisaka/rk-mirrors",
+    "revision": "1d330cc28551943bed3380261a5a9c6fbd58ff53",
+    "architectures": [
+      "arm64"
+    ],
+    "role": "Static Rockchip RGA support library (--enable-rkrga).",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/nyanmisaka/rk-mirrors/1d330cc28551943bed3380261a5a9c6fbd58ff53/COPYING",
+        "sha256": "58f1fdcee3211f839f749c1ed97ca87fd56d9d01d729bb74241eca9e2ac710bc",
+        "file": "rkrga/COPYING.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/nyanmisaka/rk-mirrors/1d330cc28551943bed3380261a5a9c6fbd58ff53/debian/copyright",
+        "sha256": "0096542cf3d7e435b6dd3bbdc63141b37acf106ce944275aa5472729f603430d",
+        "file": "rkrga/debian/copyright.txt"
+      }
+    ],
+    "licenseExpression": "Apache-2.0",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "shaderc",
+    "recipe": "builder/scripts.d/47-vulkan/50-shaderc.sh",
+    "repository": "https://github.com/google/shaderc",
+    "revision": "d5f08ae5c5a9a45165578445cbd0f9adf0223448",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static shader compiler (--enable-libshaderc, shaderc_combined).",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/google/shaderc/d5f08ae5c5a9a45165578445cbd0f9adf0223448/LICENSE",
+        "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+        "file": "opencl-icd-loader/LICENSE.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/google/shaderc/d5f08ae5c5a9a45165578445cbd0f9adf0223448/AUTHORS",
+        "sha256": "9fb4b067e4c9a1f91ea1c26465b3d1c6b515cb24860e0dbb719879925a5a1248",
+        "file": "shaderc/AUTHORS.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/google/shaderc/d5f08ae5c5a9a45165578445cbd0f9adf0223448/third_party/LICENSE.glslang",
+        "sha256": "b5a00e94f058edc87e05978329b55730d8689abe61205d9018443d03de4f07da",
+        "file": "shaderc/third_party/LICENSE.glslang.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/google/shaderc/d5f08ae5c5a9a45165578445cbd0f9adf0223448/third_party/LICENSE.spirv-tools",
+        "sha256": "47e20ce182bc68fab1a0cfb129b03c326aaf4f2b6b7905aa9d376d31018bd29f",
+        "file": "shaderc/third_party/LICENSE.spirv-tools.txt"
+      }
+    ],
+    "licenseExpression": "Apache-2.0",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "spirv-headers",
+    "repository": "https://github.com/KhronosGroup/SPIRV-Headers",
+    "revision": "ad9184e76a66b1001c29db9b0a3e87f646c64de0",
+    "recipe": "shaderc/DEPS",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "SPIR-V headers used by shaderc/glslang/SPIRV-Tools; pin from shaderc DEPS.",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/KhronosGroup/SPIRV-Headers/ad9184e76a66b1001c29db9b0a3e87f646c64de0/LICENSE",
+        "sha256": "ea43b1de38a6f90c488800d66dec1ed671e68cda530266bc96951fb5b6307613",
+        "file": "spirv-headers/LICENSE.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/KhronosGroup/SPIRV-Headers/ad9184e76a66b1001c29db9b0a3e87f646c64de0/LICENSES/MIT.txt",
+        "sha256": "6d7c9e9d7d12c8d3753bdb24417b84819ba4d6c2f025c37948113d86dc81eef9",
+        "file": "spirv-headers/LICENSES/MIT.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/KhronosGroup/SPIRV-Headers/ad9184e76a66b1001c29db9b0a3e87f646c64de0/LICENSES/CC-BY-4.0.txt",
+        "sha256": "d557539df68e771cc1eedcc91d13f70fca930e508d11eedcafa4b15db49e3744",
+        "file": "spirv-headers/LICENSES/CC-BY-4.0.txt"
+      }
+    ],
+    "licenseExpression": "LicenseRef-spirv-headers",
+    "distribution": "embedded",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "spirv-tools",
+    "repository": "https://github.com/KhronosGroup/SPIRV-Tools",
+    "revision": "c1cb30bb04e2bf911755a40df1242cc6e3d83e26",
+    "recipe": "shaderc/DEPS",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static SPIR-V optimization/validation code within shaderc_combined; pin from shaderc DEPS.",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/KhronosGroup/SPIRV-Tools/c1cb30bb04e2bf911755a40df1242cc6e3d83e26/LICENSE",
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+        "file": "opencl/LICENSE.txt"
+      }
+    ],
+    "licenseExpression": "Apache-2.0",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "srt",
+    "recipe": "builder/scripts.d/50-srt.sh",
+    "repository": "https://github.com/Haivision/srt",
+    "revision": "b6b4ae990daa8193625a4ddeaeaed03023b23125",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static SRT transport library (--enable-libsrt), including UDT-derived code.",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/Haivision/srt/b6b4ae990daa8193625a4ddeaeaed03023b23125/LICENSE",
+        "sha256": "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85",
+        "file": "srt/LICENSE.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/Haivision/srt/b6b4ae990daa8193625a4ddeaeaed03023b23125/srtcore/core.h",
+        "sha256": "26342bc602959daaf1a9228cecc2144dad53ae02a8362b6d94854380d3c6fe26",
+        "file": "srt/srtcore/core.h.txt",
+        "excerpt": true
+      }
+    ],
+    "licenseExpression": "MPL-2.0 AND BSD-3-Clause",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "svtav1",
+    "recipe": "builder/scripts.d/50-svtav1.sh",
+    "repository": "https://gitlab.com/AOMediaCodec/SVT-AV1",
+    "revision": "c04f951541ad600e0d9c10836f2ab7b9bc69816d",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static AV1 encoder (--enable-libsvtav1).",
+    "notices": [
+      {
+        "url": "https://gitlab.com/AOMediaCodec/SVT-AV1/-/raw/c04f951541ad600e0d9c10836f2ab7b9bc69816d/LICENSE.md",
+        "sha256": "0acc2fcb27472bdc9aaf8b71f37055bbdac4f54671b7d922f241bd7fcd0dd3e6",
+        "file": "svtav1/LICENSE.md"
+      },
+      {
+        "url": "https://gitlab.com/AOMediaCodec/SVT-AV1/-/raw/c04f951541ad600e0d9c10836f2ab7b9bc69816d/PATENTS.md",
+        "sha256": "20678ab10402659106dc4c147c97b2a6e94b5c0695415e15a8f195ebc3547922",
+        "file": "svtav1/PATENTS.md"
+      }
+    ],
+    "licenseExpression": "BSD-3-Clause-Clear",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "vulkan-headers",
+    "recipe": "builder/scripts.d/47-vulkan/45-vulkan-headers.sh",
+    "repository": "https://github.com/KhronosGroup/Vulkan-Headers",
+    "revision": "v1.4.355",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Vulkan API headers and registry used by libplacebo.",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/KhronosGroup/Vulkan-Headers/v1.4.355/LICENSE.md",
+        "sha256": "ac24e5ea920e4318e4d02c4086ae51f53cfb03feed06c18df1019e7ada1ec7bc",
+        "file": "vulkan-headers/LICENSE.md"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/KhronosGroup/Vulkan-Headers/v1.4.355/LICENSES/Apache-2.0.txt",
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+        "file": "opencl/LICENSE.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/KhronosGroup/Vulkan-Headers/v1.4.355/LICENSES/MIT.txt",
+        "sha256": "1ca3502222d967f3be5751c55f6b7ee735b5383909c3b501495f54b216dbf227",
+        "file": "vulkan-headers/LICENSES/MIT.txt"
+      }
+    ],
+    "licenseExpression": "Apache-2.0 OR MIT",
+    "distribution": "embedded",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "vulkan-loader",
+    "recipe": "builder/scripts.d/47-vulkan/45-vulkan-loader.sh",
+    "repository": "https://github.com/BtbN/Vulkan-Shim-Loader",
+    "revision": "65b3936528cd92eb4ea3de485d03f858a3850484",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static Vulkan shim loader (--enable-vulkan); the system Vulkan loader and drivers are not bundled.",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/BtbN/Vulkan-Shim-Loader/65b3936528cd92eb4ea3de485d03f858a3850484/LICENSE",
+        "sha256": "8d4d279343d72e5b9e06bbe38c1ad8660fa8eabc217164a5b482ddf4ab0dba9d",
+        "file": "vulkan-loader/LICENSE.txt"
+      }
+    ],
+    "licenseExpression": "MIT",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "x264",
+    "recipe": "builder/scripts.d/50-x264.sh",
+    "repository": "https://code.videolan.org/videolan/x264",
+    "revision": "0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static H.264 encoder (--enable-libx264).",
+    "notices": [
+      {
+        "url": "https://code.videolan.org/videolan/x264/-/raw/0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee/COPYING",
+        "sha256": "32b1062f7da84967e7019d01ab805935caa7ab7321a7ced0e30ebe75e5df1670",
+        "file": "x264/COPYING.txt"
+      }
+    ],
+    "licenseExpression": "GPL-2.0-or-later",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "x265",
+    "recipe": "builder/scripts.d/50-x265.sh",
+    "repository": "https://bitbucket.org/multicoreware/x265_git",
+    "revision": "e444744c03978c1fb4e037168967020cf2648427",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static HEVC encoder (--enable-libx265), including the json11 parser in the enabled HDR10+ builds.",
+    "notices": [
+      {
+        "url": "https://bitbucket.org/multicoreware/x265_git/raw/e444744c03978c1fb4e037168967020cf2648427/COPYING",
+        "sha256": "d8afb1bcc7a2cfc603683b168d6987ef0a48e59e0da3693bf55c5d33b67e2b49",
+        "file": "x265/COPYING.txt"
+      },
+      {
+        "file": "x265/source/dynamicHDR10/json11/LICENSE.txt",
+        "url": "https://bitbucket.org/multicoreware/x265_git/raw/e444744c03978c1fb4e037168967020cf2648427/source/dynamicHDR10/json11/LICENSE.txt",
+        "sha256": "950e288a2548cb33f6a90d23958806b0803f510ab17c600d661619a73ae3a6c8"
+      }
+    ],
+    "licenseExpression": "GPL-2.0-or-later AND MIT",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "xz",
+    "recipe": "builder/scripts.d/25-xz.sh",
+    "repository": "https://github.com/tukaani-project/xz",
+    "revision": "v5.8.3",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static liblzma compression library (--enable-lzma); xz command-line programs are not bundled.",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/tukaani-project/xz/v5.8.3/COPYING",
+        "sha256": "616a3ad264ce29b8f1cb97e53037b139d406899ca8d1f799651e17bfa09830b8",
+        "file": "xz/COPYING.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/tukaani-project/xz/v5.8.3/COPYING.0BSD",
+        "sha256": "0b01625d853911cd0e2e088dcfb743261034a091bb379246cb25a14cc4c74bf1",
+        "file": "xz/COPYING.0BSD.txt"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/tukaani-project/xz/v5.8.3/AUTHORS",
+        "sha256": "01e6df90d71d591f4307db3f397a5a4fac93b18533f5a3862156f1a0a7dc8610",
+        "file": "xz/AUTHORS.txt"
+      }
+    ],
+    "licenseExpression": "0BSD",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "zimg",
+    "recipe": "builder/scripts.d/50-zimg.sh",
+    "repository": "https://github.com/sekrit-twc/zimg",
+    "revision": "5e8c32222569edf3a712f83d7cff80ad4dd9ab6e",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static image scaling/conversion library (--enable-libzimg).",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/sekrit-twc/zimg/5e8c32222569edf3a712f83d7cff80ad4dd9ab6e/COPYING",
+        "sha256": "7637386b5f81e8a719ca336233149005e5fa28b5e6054ea7b67de49355b0ad40",
+        "file": "zimg/COPYING.txt"
+      }
+    ],
+    "licenseExpression": "WTFPL",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "zlib",
+    "recipe": "builder/scripts.d/20-zlib.sh",
+    "repository": "https://github.com/madler/zlib",
+    "revision": "f9dd6009be3ed32415edf1e89d1bc38380ecb95d",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static compression library (--enable-zlib).",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/madler/zlib/f9dd6009be3ed32415edf1e89d1bc38380ecb95d/LICENSE",
+        "sha256": "e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2",
+        "file": "zlib/LICENSE.txt"
+      }
+    ],
+    "licenseExpression": "Zlib",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  },
+  {
+    "id": "zvbi",
+    "recipe": "builder/scripts.d/50-zvbi.sh",
+    "repository": "https://github.com/zapping-vbi/zvbi",
+    "revision": "41477c97c8edf7a01f1594b2a95b94f0117eed21",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "role": "Static VBI library (--enable-libzvbi).",
+    "notices": [
+      {
+        "url": "https://raw.githubusercontent.com/zapping-vbi/zvbi/41477c97c8edf7a01f1594b2a95b94f0117eed21/COPYING.md",
+        "sha256": "01b41f9b6e262bb62063151f15988a236296bbb5eeb9752692fc7dc2fb27ec45",
+        "file": "zvbi/COPYING.md"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/zapping-vbi/zvbi/41477c97c8edf7a01f1594b2a95b94f0117eed21/AUTHORS",
+        "sha256": "349107750f8e6a3555e9ad47f625806e70ce6dd108926eb158528b27c2c03586",
+        "file": "zvbi/AUTHORS.txt"
+      }
+    ],
+    "licenseExpression": "LicenseRef-zvbi",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
+  }
+]

@@ -1,0 +1,10 @@
+# Preserve vendored notice text; notices/sources.json records its checksums.
+buildpacks/ffmpeg/notices/** -text -whitespace
+buildpacks/ffmpeg/LICENSE.txt -text
+buildpacks/ffmpeg/SOURCE.txt text eol=lf
+buildpacks/ffmpeg/ffmpeg.lock text eol=lf
+buildpacks/ffmpeg/bin/* text eol=lf
+buildpacks/ffmpeg/lib/*.sh text eol=lf
+# These upstream Markdown headings contain seven equals signs.
+buildpacks/ffmpeg/notices/chromaprint/LICENSE.md conflict-marker-size=32
+buildpacks/ffmpeg/notices/openssl/AUTHORS.md conflict-marker-size=32

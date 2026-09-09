@@ -2,6 +2,12 @@
 
 This repository contains adapted third-party material (source code and test fixture data). The notices below apply only to the identified material. Streamarr's modifications and all other project material remain subject to the project license in `LICENSE` unless stated otherwise. No upstream creator or project endorses Streamarr or its use of the material.
 
+## FFmpeg and bundled libraries
+
+Streamarr's container images also include Jellyfin builds of FFmpeg and ffprobe and their bundled libraries. Their license texts and attribution are maintained separately from the adapted project material listed below. See the [FFmpeg redistribution documentation](buildpacks/ffmpeg/README.md#redistribution-materials), [component inventory](buildpacks/ffmpeg/notices/sources.json), and [Corresponding Source instructions](buildpacks/ffmpeg/SOURCE.txt).
+
+The container's FFmpeg layer ships the generated `THIRD-PARTY-NOTICES.txt` and `SOURCE.txt` alongside `LICENSE.txt` and the `notices/` directory. These materials accompany the FFmpeg binaries separately from this notice, which is packaged in the server JAR at `META-INF/THIRD_PARTY_NOTICES.md`.
+
 ## AndroidX (Android Open Source Project)
 
 The following files contain source code adapted from the AndroidX Palette and Core libraries:
