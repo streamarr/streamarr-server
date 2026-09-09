@@ -37,6 +37,20 @@ License: Apache License 2.0. The complete license text is packaged at `META-INF/
 
 Modifications by Streamarr contributors: ported `android.graphics` and AndroidX types to `java.awt`/plain Java; reduced the six default targets to an enum scored in a fixed order with fixed weights and always-exclusive selection; reduced the text-contrast color generation to a light-or-dark choice over opaque backgrounds; removed the `Builder`, asynchronous generation, `Bitmap` resizing, region support, custom targets, and per-target getters; replaced filter arrays with a single filter; removed branches unreachable in this integration; renamed identifiers to project style. Each adapted file's header identifies its specific changes.
 
+## Material Color Utilities (Google)
+
+`src/main/java/com/streamarr/server/services/metadata/color/ContrastAdjustment.java` contains inverse contrast equations adapted from Material Color Utilities' `Contrast.lighter` and `Contrast.darker`.
+
+Copyright 2022 Google LLC
+
+Source (pinned to commit `5b3618b16fdc3825e21d5679bafd144662088ea1`):
+
+- <https://github.com/material-foundation/material-color-utilities/blob/5b3618b16fdc3825e21d5679bafd144662088ea1/java/contrast/Contrast.java>
+
+License: Apache License 2.0. The complete license text is packaged at `META-INF/LICENSE-APACHE-2.0.txt` from `src/main/resources/META-INF/LICENSE-APACHE-2.0.txt`.
+
+Modifications by Streamarr contributors: normalized luminance to 0–1; replaced HCT tone conversion and its gamut tolerance with a bounded HSL lightness search that checks rounded RGB contrast while preserving hue and saturation; added direction selection and optional results for unattainable contrast.
+
 ## UTF-8 decoder capability and stress test
 
 The following files contain data adapted from *UTF-8 decoder capability and stress test*:

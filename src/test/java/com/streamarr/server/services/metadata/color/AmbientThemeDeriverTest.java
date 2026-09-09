@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.within;
 
 import com.streamarr.server.domain.media.AmbientColors;
 import com.streamarr.server.domain.media.AmbientTheme;
+import java.awt.image.BufferedImage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -22,6 +23,64 @@ class AmbientThemeDeriverTest {
   private static final String AMBER_BRIGHT = "#f0c069";
   private static final String SAND = "#d9c5a5";
   private static final String UMBER = "#6b3a10";
+
+  @Test
+  @DisplayName("Should distinguish the accent from the background when artwork is black")
+  void shouldDistinguishAccentFromBackgroundWhenArtworkIsBlack() {
+    var artwork = new BufferedImage(100, 100, BufferedImage.TYPE_INT_RGB);
+    var colors = AmbientColorExtractor.extract(artwork).orElseThrow();
+
+    var theme = AmbientThemeDeriver.derive(colors);
+
+    assertThat(contrast(theme.accent(), theme.base())).isGreaterThanOrEqualTo(3.0);
+    assertThat(theme.selected()).isNotEqualTo(theme.base());
+  }
+
+  @Test
+  @DisplayName("Should keep selected text readable when a dark vibrant swatch is bright green")
+  void shouldKeepSelectedTextReadableWhenDarkVibrantSwatchIsBrightGreen() {
+    var artwork = new BufferedImage(10, 1, BufferedImage.TYPE_INT_RGB);
+    for (var x = 0; x < artwork.getWidth(); x++) {
+      var color =
+          switch (x) {
+            case 9 -> 0x00E000;
+            case 6, 7, 8 -> 0xF80000;
+            default -> 0x283830;
+          };
+      artwork.setRGB(x, 0, color);
+    }
+
+    var colors = AmbientColorExtractor.extract(artwork).orElseThrow();
+    var theme = AmbientThemeDeriver.derive(colors);
+
+    assertThat(contrast(theme.textPrimary(), theme.selected())).isGreaterThanOrEqualTo(4.5);
+    assertThat(contrast(theme.textSecondary(), theme.selected())).isGreaterThanOrEqualTo(3.0);
+  }
+
+  @Test
+  @DisplayName("Should keep panel text readable when base is near the light text contrast limit")
+  void shouldKeepPanelTextReadableWhenBaseIsNearLightTextContrastLimit() {
+    var colors = tealColors().darkMuted("#707070").darkVibrant("#103070").build();
+
+    var theme = AmbientThemeDeriver.derive(colors);
+
+    for (var surface : new String[] {theme.base(), theme.panel(), theme.selected()}) {
+      assertThat(contrast(theme.textPrimary(), surface)).isGreaterThanOrEqualTo(4.5);
+      assertThat(contrast(theme.textSecondary(), surface)).isGreaterThanOrEqualTo(3.0);
+    }
+  }
+
+  @Test
+  @DisplayName("Should keep dark text readable when bright artwork has a blue selection")
+  void shouldKeepDarkTextReadableWhenBrightArtworkHasBlueSelection() {
+    var colors = amberColors().lightVibrant("#4040f8").build();
+
+    var theme = AmbientThemeDeriver.derive(colors);
+
+    assertThat(contrast(theme.textPrimary(), theme.selected())).isGreaterThanOrEqualTo(4.5);
+    assertThat(contrast(theme.textSecondary(), theme.selected())).isGreaterThanOrEqualTo(3.0);
+    assertThat(contrast(theme.textPrimary(), theme.base())).isGreaterThanOrEqualTo(4.5);
+  }
 
   @Test
   @DisplayName("Should build a dark theme from the dark muted swatch when corners are dark")

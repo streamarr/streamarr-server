@@ -2,6 +2,8 @@ package com.streamarr.server.services.metadata.color;
 
 import com.streamarr.server.domain.media.AmbientColors;
 import com.streamarr.server.domain.media.AmbientTheme;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Stream;
@@ -17,7 +19,6 @@ public final class AmbientThemeDeriver {
 
   private static final float DARK_TARGET_LIGHTNESS = 0.26f;
   private static final float LIGHT_TARGET_LIGHTNESS = 0.74f;
-  private static final float ACCENT_LIGHTNESS_STEP = 0.05f;
   private static final float MIN_ACCENT_CONTRAST = 3.0f;
   private static final int TEXT_PRIMARY_ALPHA = 235;
   private static final int TEXT_SECONDARY_ALPHA = 128;
@@ -43,15 +44,22 @@ public final class AmbientThemeDeriver {
   }
 
   private AmbientTheme theme() {
+    var panel = readableSurface(ColorContrast.composite(text, PANEL_WASH_ALPHA, base));
+    var selected = readableSurface(selectSelected());
+    var surfaces = new int[] {base, panel, selected};
     return AmbientTheme.builder()
         .base(hex(base))
-        .panel(hex(ColorContrast.composite(text, PANEL_WASH_ALPHA, base)))
-        .selected(hex(selectSelected()))
+        .panel(hex(panel))
+        .selected(hex(selected))
         .accent(hex(accent))
-        .onAccent(hex(textOver(accent, TEXT_PRIMARY_ALPHA, ColorContrast.MIN_CONTRAST_BODY_TEXT)))
-        .textPrimary(hex(textOver(base, TEXT_PRIMARY_ALPHA, ColorContrast.MIN_CONTRAST_BODY_TEXT)))
+        .onAccent(
+            hex(
+                textOver(
+                    new int[] {accent}, TEXT_PRIMARY_ALPHA, ColorContrast.MIN_CONTRAST_BODY_TEXT)))
+        .textPrimary(
+            hex(textOver(surfaces, TEXT_PRIMARY_ALPHA, ColorContrast.MIN_CONTRAST_BODY_TEXT)))
         .textSecondary(
-            hex(textOver(base, TEXT_SECONDARY_ALPHA, ColorContrast.MIN_CONTRAST_TITLE_TEXT)))
+            hex(textOver(surfaces, TEXT_SECONDARY_ALPHA, ColorContrast.MIN_CONTRAST_TITLE_TEXT)))
         .build();
   }
 
@@ -83,17 +91,7 @@ public final class AmbientThemeDeriver {
 
   /** Moves the accent's lightness toward the text polarity until it stands out from base. */
   private int liftAccent(int candidate) {
-    var hsl = ColorConversions.rgbToHsl(candidate);
-    var step = text == ColorContrast.WHITE ? ACCENT_LIGHTNESS_STEP : -ACCENT_LIGHTNESS_STEP;
-    var lifted = candidate;
-    while (ColorContrast.contrastRatio(lifted, base) < MIN_ACCENT_CONTRAST
-        && hsl[2] > 0f
-        && hsl[2] < 1f) {
-      hsl[2] = Math.clamp(hsl[2] + step, 0f, 1f);
-      lifted = ColorConversions.hslToRgb(hsl);
-    }
-
-    return lifted;
+    return ContrastAdjustment.adjust(candidate, base, MIN_ACCENT_CONTRAST).orElseThrow();
   }
 
   private int selectSelected() {
@@ -103,8 +101,20 @@ public final class AmbientThemeDeriver {
         .orElseGet(() -> ColorContrast.composite(accent, SELECTED_MIX_ALPHA, base));
   }
 
-  private static int textOver(int background, int preferredAlpha, float minContrast) {
-    var polarity = ColorContrast.contrastingTextColor(background);
+  private int readableSurface(int candidate) {
+    return ContrastAdjustment.adjust(candidate, text, ColorContrast.MIN_CONTRAST_BODY_TEXT)
+        .orElseThrow();
+  }
+
+  private static int textOver(int[] backgrounds, int preferredAlpha, float minContrast) {
+    var polarity = ColorContrast.contrastingTextColor(backgrounds[0]);
+    var background =
+        Arrays.stream(backgrounds)
+            .boxed()
+            .min(
+                Comparator.comparingDouble(
+                    surface -> ColorContrast.contrastRatio(polarity, surface)))
+            .orElseThrow();
     var floor = ColorContrast.minimumAlpha(polarity, background, minContrast).orElseThrow();
     return ColorContrast.composite(polarity, Math.max(preferredAlpha, floor), background);
   }
