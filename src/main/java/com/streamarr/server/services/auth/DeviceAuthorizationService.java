@@ -77,9 +77,6 @@ public class DeviceAuthorizationService {
     }
 
     if (!serverBootstrapRepository.isClaimed()) {
-      // A code issued now could never be approved — approval needs a signed-in Account and none
-      // can exist yet. Refusing with a typed code lets the TV send the person to setup instead
-      // of showing a code that silently polls forever.
       throw new SetupIncompleteException();
     }
 
