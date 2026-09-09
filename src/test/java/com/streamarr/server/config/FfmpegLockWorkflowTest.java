@@ -42,8 +42,9 @@ class FfmpegLockWorkflowTest {
             "- 'buildpacks/**'",
             "- '.github/actions/pack-build/**'",
             "- '.github/workflows/ci.yml'");
-    assertThat(offline).doesNotContainKeys("if", "env");
-    assertThat(offline).containsEntry("uses", "./.github/actions/prepare-ffmpeg");
+    assertThat(offline)
+        .doesNotContainKeys("if", "env")
+        .containsEntry("uses", "./.github/actions/prepare-ffmpeg");
     var filters = yamlFilters(filter);
     assertThat(filters)
         .containsEntry(
@@ -95,8 +96,9 @@ class FfmpegLockWorkflowTest {
 
     assertThat(steps.stream().map(step -> step.get("name")))
         .containsSubsequence("Verify FFmpeg lock", "Docker Metadata");
-    assertThat(verify).containsEntry("uses", "./.github/actions/prepare-ffmpeg");
-    assertThat(verify).doesNotContainKeys("env");
+    assertThat(verify)
+        .containsEntry("uses", "./.github/actions/prepare-ffmpeg")
+        .doesNotContainKeys("env");
   }
 
   @Test
