@@ -48,6 +48,75 @@ class OpenApiContractIT extends AbstractIntegrationTest {
   @Autowired private MockMvc mockMvc;
 
   @Test
+  @DisplayName("Should declare credential carriers when the contract is served")
+  void shouldDeclareCredentialCarriersWhenContractIsServed() throws Exception {
+    var schemes = servedContract().path("components").path("securitySchemes");
+
+    assertThat(schemes.path("bearerAuth").path("type").asString()).isEqualTo("http");
+    assertThat(schemes.path("bearerAuth").path("scheme").asString()).isEqualTo("bearer");
+    assertThat(schemes.path("bearerAuth").path("bearerFormat").asString()).isEqualTo("JWT");
+    assertThat(schemes.path("accessCookie").path("type").asString()).isEqualTo("apiKey");
+    assertThat(schemes.path("accessCookie").path("in").asString()).isEqualTo("cookie");
+    assertThat(schemes.path("accessCookie").path("name").asString()).isEqualTo("streamarr_access");
+    assertThat(schemes.path("playbackQuery").path("type").asString()).isEqualTo("apiKey");
+    assertThat(schemes.path("playbackQuery").path("in").asString()).isEqualTo("query");
+    assertThat(schemes.path("playbackQuery").path("name").asString()).isEqualTo("t");
+  }
+
+  @ParameterizedTest
+  @CsvSource(
+      textBlock =
+          """
+      /api/auth/change-password, post, SCOPE_ACCOUNT
+      /api/auth/device/authorizations/decision, post, SCOPE_ACCOUNT
+      /api/auth/device/authorizations/lookup, post, SCOPE_ACCOUNT
+      /api/auth/reauth, post, SCOPE_ACCOUNT
+      /api/auth/select-household, post, SCOPE_ACCOUNT
+      /api/auth/select-profile, post, SCOPE_ACCOUNT
+      /api/images/{imageId}, get, SCOPE_PROFILE
+      """)
+  @DisplayName("Should require bearer or cookie credentials when an access token is needed")
+  void shouldRequireBearerOrCookieCredentialsWhenAccessTokenIsNeeded(
+      String path, String method, String authority) throws Exception {
+    var security = servedContract().path("paths").path(path).path(method).path("security");
+
+    assertThat(security)
+        .as("%s %s authentication alternatives", method, path)
+        .isEqualTo(
+            CANONICAL_JSON.readTree(
+                """
+                [{"bearerAuth": ["%s"]}, {"accessCookie": ["%s"]}]
+                """
+                    .formatted(authority, authority)));
+  }
+
+  @ParameterizedTest
+  @CsvSource(
+      textBlock =
+          """
+      /api/auth/status, get
+      /api/auth/setup, post
+      /api/auth/login, post
+      /api/auth/refresh, post
+      /api/auth/refresh/revoke, post
+      /api/auth/device/code, post
+      /api/auth/device/token, post
+      /api/auth/invitation/lookup, post
+      /api/auth/invitation/accept, post
+      /api/auth/invitation/decline, post
+      /api/auth/password-reset/redeem, post
+      """)
+  @DisplayName("Should declare no access token requirement when a route is public")
+  void shouldDeclareNoAccessTokenRequirementWhenRouteIsPublic(String path, String method)
+      throws Exception {
+    var security = servedContract().path("paths").path(path).path(method).path("security");
+
+    assertThat(security)
+        .as("%s %s access token requirements", method, path)
+        .isEqualTo(CANONICAL_JSON.createArrayNode());
+  }
+
+  @Test
   @DisplayName("Should allow a null rating limit when an invitation has no restriction")
   void shouldAllowNullRatingLimitWhenInvitationHasNoRestriction() throws Exception {
     mockMvc
@@ -104,6 +173,13 @@ class OpenApiContractIT extends AbstractIntegrationTest {
             .map(path -> path.getValue().path("get"))
             .toList();
 
+    assertThat(operations)
+        .extracting(operation -> operation.path("security"))
+        .containsOnly(
+            CANONICAL_JSON.readTree(
+                """
+                [{"playbackQuery": ["SCOPE_PLAYBACK"]}]
+                """));
     assertThat(operations)
         .isNotEmpty()
         .allSatisfy(

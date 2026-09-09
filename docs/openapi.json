@@ -391,6 +391,26 @@
         },
         "type": "object"
       }
+    },
+    "securitySchemes": {
+      "accessCookie": {
+        "description": "JWT access token. Profile tokens also satisfy SCOPE_ACCOUNT requirements. Unsafe cookie-authenticated requests also require the X-XSRF-TOKEN header.",
+        "in": "cookie",
+        "name": "streamarr_access",
+        "type": "apiKey"
+      },
+      "bearerAuth": {
+        "bearerFormat": "JWT",
+        "description": "JWT access token. Profile tokens also satisfy SCOPE_ACCOUNT requirements.",
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "playbackQuery": {
+        "description": "Playback token bound to this stream session. Stream endpoints ignore bearer headers and access cookies.",
+        "in": "query",
+        "name": "t",
+        "type": "apiKey"
+      }
     }
   },
   "info": {
@@ -434,6 +454,18 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [
+          {
+            "bearerAuth": [
+              "SCOPE_ACCOUNT"
+            ]
+          },
+          {
+            "accessCookie": [
+              "SCOPE_ACCOUNT"
+            ]
+          }
+        ],
         "tags": [
           "auth-controller"
         ]
@@ -474,6 +506,18 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [
+          {
+            "bearerAuth": [
+              "SCOPE_ACCOUNT"
+            ]
+          },
+          {
+            "accessCookie": [
+              "SCOPE_ACCOUNT"
+            ]
+          }
+        ],
         "tags": [
           "device-auth-controller"
         ]
@@ -514,6 +558,18 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [
+          {
+            "bearerAuth": [
+              "SCOPE_ACCOUNT"
+            ]
+          },
+          {
+            "accessCookie": [
+              "SCOPE_ACCOUNT"
+            ]
+          }
+        ],
         "tags": [
           "device-auth-controller"
         ]
@@ -553,6 +609,7 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [ ],
         "tags": [
           "device-auth-controller"
         ]
@@ -593,6 +650,7 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [ ],
         "tags": [
           "device-auth-controller"
         ]
@@ -633,6 +691,7 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [ ],
         "tags": [
           "invitation-controller"
         ]
@@ -666,6 +725,7 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [ ],
         "tags": [
           "invitation-controller"
         ]
@@ -706,6 +766,7 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [ ],
         "tags": [
           "invitation-controller"
         ]
@@ -746,6 +807,7 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [ ],
         "tags": [
           "auth-controller"
         ]
@@ -779,6 +841,7 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [ ],
         "tags": [
           "password-reset-controller"
         ]
@@ -819,6 +882,18 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [
+          {
+            "bearerAuth": [
+              "SCOPE_ACCOUNT"
+            ]
+          },
+          {
+            "accessCookie": [
+              "SCOPE_ACCOUNT"
+            ]
+          }
+        ],
         "tags": [
           "auth-controller"
         ]
@@ -858,6 +933,7 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [ ],
         "tags": [
           "auth-controller"
         ]
@@ -890,6 +966,7 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [ ],
         "tags": [
           "auth-controller"
         ]
@@ -930,6 +1007,18 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [
+          {
+            "bearerAuth": [
+              "SCOPE_ACCOUNT"
+            ]
+          },
+          {
+            "accessCookie": [
+              "SCOPE_ACCOUNT"
+            ]
+          }
+        ],
         "tags": [
           "auth-controller"
         ]
@@ -970,6 +1059,18 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [
+          {
+            "bearerAuth": [
+              "SCOPE_ACCOUNT"
+            ]
+          },
+          {
+            "accessCookie": [
+              "SCOPE_ACCOUNT"
+            ]
+          }
+        ],
         "tags": [
           "auth-controller"
         ]
@@ -1010,6 +1111,7 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [ ],
         "tags": [
           "auth-controller"
         ]
@@ -1040,6 +1142,7 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [ ],
         "tags": [
           "auth-controller"
         ]
@@ -1091,6 +1194,18 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [
+          {
+            "bearerAuth": [
+              "SCOPE_PROFILE"
+            ]
+          },
+          {
+            "accessCookie": [
+              "SCOPE_PROFILE"
+            ]
+          }
+        ],
         "tags": [
           "image-controller"
         ]
@@ -1148,6 +1263,13 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [
+          {
+            "playbackQuery": [
+              "SCOPE_PLAYBACK"
+            ]
+          }
+        ],
         "tags": [
           "stream-controller"
         ]
@@ -1201,6 +1323,13 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [
+          {
+            "playbackQuery": [
+              "SCOPE_PLAYBACK"
+            ]
+          }
+        ],
         "tags": [
           "stream-controller"
         ]
@@ -1254,6 +1383,13 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [
+          {
+            "playbackQuery": [
+              "SCOPE_PLAYBACK"
+            ]
+          }
+        ],
         "tags": [
           "stream-controller"
         ]
@@ -1328,6 +1464,13 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [
+          {
+            "playbackQuery": [
+              "SCOPE_PLAYBACK"
+            ]
+          }
+        ],
         "tags": [
           "stream-controller"
         ]
@@ -1396,6 +1539,13 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [
+          {
+            "playbackQuery": [
+              "SCOPE_PLAYBACK"
+            ]
+          }
+        ],
         "tags": [
           "stream-controller"
         ]
@@ -1460,6 +1610,13 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [
+          {
+            "playbackQuery": [
+              "SCOPE_PLAYBACK"
+            ]
+          }
+        ],
         "tags": [
           "stream-controller"
         ]
@@ -1542,6 +1699,13 @@
             "description": "Refusal: route on `code`, `message` is displayable"
           }
         },
+        "security": [
+          {
+            "playbackQuery": [
+              "SCOPE_PLAYBACK"
+            ]
+          }
+        ],
         "tags": [
           "stream-controller"
         ]
