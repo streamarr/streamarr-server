@@ -1703,7 +1703,6 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     shareRepository.saveAndFlush(share);
   }
 
-  /** Proves the token still authenticates: GraphQL accepts ACCOUNT scope and answers 200. */
   private void assertStillAuthenticates(String accessToken) throws Exception {
     mockMvc
         .perform(

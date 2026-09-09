@@ -51,7 +51,6 @@ public class Profile extends BaseAuditableEntity<Profile> {
     return isRestricted(kind, maximumAllowedRatingAge);
   }
 
-  /** Determines whether a Profile is restricted from its kind and optional rating-age limit. */
   public static boolean isRestricted(ProfileKind kind, Integer maximumAllowedRatingAge) {
     return kind == ProfileKind.KID || maximumAllowedRatingAge != null;
   }

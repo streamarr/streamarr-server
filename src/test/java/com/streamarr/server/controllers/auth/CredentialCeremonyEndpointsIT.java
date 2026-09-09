@@ -142,7 +142,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.profileName").value("Invitee"));
 
     mockMvc
-        .perform(acceptRequest(code, "Invitee"))
+        .perform(acceptWithBodyTokensRequest(code, "Invitee"))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.accessToken").isNotEmpty())
         .andExpect(jsonPath("$.refreshToken").isNotEmpty())
@@ -287,7 +287,8 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
     var userAgent = "\u202e" + "🎬".repeat(80);
 
     mockMvc
-        .perform(acceptRequest(code, "Invitee").header(HttpHeaders.USER_AGENT, userAgent))
+        .perform(
+            acceptWithBodyTokensRequest(code, "Invitee").header(HttpHeaders.USER_AGENT, userAgent))
         .andExpect(status().isCreated());
 
     var account = userAccountRepository.findByEmailIgnoreCase("invitee@example.com").orElseThrow();
@@ -379,7 +380,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
         authTestSupport.createAccount(builder -> builder.email("invitee@example.com"));
     try {
       mockMvc
-          .perform(acceptRequest(code, "Invitee"))
+          .perform(acceptWithBodyTokensRequest(code, "Invitee"))
           .andExpect(status().isConflict())
           .andExpect(jsonPath("$.code").value("INVITATION_EMAIL_ALREADY_USED"));
 
@@ -848,7 +849,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
         authTestSupport.createAccount(builder -> builder.email("Invitee@Example.com"));
     try {
       mockMvc
-          .perform(acceptRequest(code, "Invitee"))
+          .perform(acceptWithBodyTokensRequest(code, "Invitee"))
           .andExpect(status().isConflict())
           .andExpect(jsonPath("$.code").value("INVITATION_EMAIL_ALREADY_USED"));
     } finally {
@@ -1324,8 +1325,8 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
         .content("{\"code\": \"%s\"}".formatted(code));
   }
 
-  /** Accepts as a token-body client; the cookie-mode test builds its own request. */
-  private static MockHttpServletRequestBuilder acceptRequest(String code, String displayName) {
+  private static MockHttpServletRequestBuilder acceptWithBodyTokensRequest(
+      String code, String displayName) {
     return post("/api/auth/invitation/accept")
         .contentType(MediaType.APPLICATION_JSON)
         .content(
@@ -1347,7 +1348,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   private void acceptInvitation(String code, String displayName) throws Exception {
-    mockMvc.perform(acceptRequest(code, displayName)).andExpect(status().isCreated());
+    mockMvc.perform(acceptWithBodyTokensRequest(code, displayName)).andExpect(status().isCreated());
   }
 
   private ConcurrentAcceptance.ConcurrentAcceptanceBuilder concurrentAcceptanceBuilder(
@@ -1362,7 +1363,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
     }
 
     return mockMvc
-        .perform(acceptRequest(acceptance.code(), acceptance.displayName()))
+        .perform(acceptWithBodyTokensRequest(acceptance.code(), acceptance.displayName()))
         .andReturn()
         .getResponse()
         .getStatus();

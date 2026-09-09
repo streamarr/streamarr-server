@@ -445,7 +445,6 @@ public class ProfileSharingService {
         Refusals.<ShareRejections.Accept>hiddenAs(ShareRejections.ShareNotFound::new));
   }
 
-  /** A share is visible to whoever may view its Profile's or its target Household's admin view. */
   private boolean mayViewShare(AuthenticatedIdentity identity, UUID shareId) {
     return shareRepository
         .findById(shareId)

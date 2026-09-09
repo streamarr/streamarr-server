@@ -593,7 +593,6 @@ public class ProfileAdministrationService {
     return value != null && value < 0;
   }
 
-  /** What createProfile needs; the builder keeps call sites named (no positional soup). */
   @Builder
   public record CreateProfileCommand(
       UUID householdId,

@@ -75,9 +75,6 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
     identities.clear();
   }
 
-  // ---- I3: INVALIDATED pairs with a reason ------------------------------------------------------
-
-  /** V060: an INVALIDATED share always records why. */
   @Test
   @DisplayName("Should refuse an invalidated share when its invalidation reason is missing")
   void shouldRefuseInvalidatedShareWhenInvalidationReasonIsMissing() {
@@ -99,7 +96,6 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
         .isEqualTo(CHK_INVALIDATION_REASON);
   }
 
-  /** V060: only an INVALIDATED share carries a reason. */
   @Test
   @DisplayName("Should refuse a pending offer when it carries an invalidation reason")
   void shouldRefusePendingOfferWhenItCarriesInvalidationReason() {
@@ -123,9 +119,6 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
         .isEqualTo(CHK_INVALIDATION_REASON);
   }
 
-  // ---- I1: expiry is a state, not a wish --------------------------------------------------------
-
-  /** Declining an offer already past its expiry records EXPIRED, as replacement does. */
   @Test
   @DisplayName("Should record an expired offer as expired when it is declined after expiry")
   void shouldRecordExpiredOfferAsExpiredWhenDeclinedAfterExpiry() {
@@ -207,10 +200,6 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
 
   // Hosting supervision checks and constraint evaluation order.
 
-  /**
-   * Restricting a Profile triggers the hosting supervision constraint translated by the policy
-   * service.
-   */
   @Test
   @DisplayName(
       "Should raise hosting supervision when a shared Profile becomes restricted in an accountless Household")
@@ -228,7 +217,6 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
         .isEqualTo(CHK_HOSTING_ADMIN);
   }
 
-  /** The Household administrator check rejects demotion before hosting supervision is checked. */
   @Test
   @DisplayName(
       "Should raise Household retains admin before hosting supervision when the last admin is demoted")
@@ -246,7 +234,6 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
         .isEqualTo(CHK_HOUSEHOLD_ADMIN);
   }
 
-  /** With a member remaining, the Household administrator check rejects deletion first. */
   @Test
   @DisplayName(
       "Should raise Household retains admin before hosting supervision when the last admin is deleted")
@@ -266,7 +253,6 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
         .isEqualTo(CHK_HOUSEHOLD_ADMIN);
   }
 
-  /** An unrestricted share needs no supervising admin. */
   @Test
   @DisplayName("Should allow an accountless Household to host an unrestricted Profile")
   void shouldAllowAccountlessHouseholdToHostUnrestrictedProfile() {
