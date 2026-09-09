@@ -30,19 +30,11 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * The credential attempt journal and its admission decisions (ADR 0028). Reservation and completion
- * each run in their own REQUIRES_NEW transaction, so a reservation is committed and visible to
- * every instance before the verifier runs and a completion survives the caller's exception path. A
- * transaction-scoped advisory lock keyed by the target serializes admissions across instances;
- * completion takes the same lock so no row can complete between the failure and pending reads of a
- * concurrent admission and be counted by neither.
- */
+/** Commits reservations and outcomes independently of the caller's transaction. */
 @Repository
 @RequiredArgsConstructor
 public class JooqCredentialAttemptRepository implements CredentialAttemptRepository {
 
-  /** ADR 0028: a reservation nobody completed stops consuming capacity after five minutes. */
   private static final Duration ABANDONED_RESERVATION_TIMEOUT = Duration.ofMinutes(5);
 
   private static final Duration LOCK_TIMEOUT = Duration.ofSeconds(2);
@@ -91,8 +83,7 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
 
     var completed =
         dsl.update(CREDENTIAL_ATTEMPT)
-            // Never before the reservation: the CHECK constraint would otherwise refuse a correct
-            // verification after a backwards clock step and leave the row pending.
+            // Keep completed_at >= attempted_at if the database clock moves backward.
             .set(
                 CREDENTIAL_ATTEMPT.COMPLETED_AT,
                 DSL.greatest(CREDENTIAL_ATTEMPT.ATTEMPTED_AT, DSL.val(offsetOf(completedAt))))
@@ -139,14 +130,11 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
     return new CredentialAttemptAdmission.Reserved(new CredentialAttemptReservation(id, target));
   }
 
-  /**
-   * The failures fetched reach back one window plus one throttle: that is the oldest failure that
-   * can still anchor a lockout running at {@code now}.
-   */
   private CredentialAttemptHistory history(
       CredentialAttemptTarget target, CredentialAttemptPolicy.Limited policy, Instant now) {
     var latestSuccess =
         policy.resetFailuresOnSuccess() ? latestSuccess(target) : Optional.<OffsetDateTime>empty();
+    // A lockout can outlast its failure window, so read back through both durations.
     var earliestRelevant =
         offsetOf(now.minus(policy.failureWindow()).minus(policy.throttleDuration()));
     var failures =
@@ -202,12 +190,9 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
         identifierCondition(CREDENTIAL_ATTEMPT.CREDENTIAL_ID, target.credentialId()));
   }
 
-  /**
-   * Renders {@code =} or {@code IS NULL}: PostgreSQL never uses {@code IS NOT DISTINCT FROM} as a
-   * btree index condition, so the null-safe form would scan every row of the kind.
-   */
   private static Condition identifierCondition(
       TableField<CredentialAttemptRecord, UUID> column, UUID id) {
+    // Use = and IS NULL so PostgreSQL can use the target indexes.
     if (id == null) {
       return column.isNull();
     }
@@ -226,7 +211,8 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
   }
 
   private void lockTarget(CredentialAttemptTarget target) {
-    // Match targetCondition's identifiers. Hash collisions only serialize unrelated targets.
+    // Reservation and completion share this lock to keep history's two reads consistent.
+    // Use the same identifiers as targetCondition.
     var key =
         "%s:%s:%s:%s"
             .formatted(
