@@ -474,6 +474,9 @@ public class DeviceAuthorizationService {
     }
   }
 
-  /** The grant resolved for pairing approval; excludes the code and polling credentials. */
+  /**
+   * This record identifies the grant resolved for pairing approval. It excludes the code and
+   * polling credentials.
+   */
   public record ResolvedGrant(UUID grantId, @NonNull Optional<String> esn, String deviceName) {}
 }
