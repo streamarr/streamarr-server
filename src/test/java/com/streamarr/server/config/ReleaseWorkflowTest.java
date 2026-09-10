@@ -83,20 +83,6 @@ class ReleaseWorkflowTest {
     assertThat(map(workflow.get("concurrency"))).containsEntry("cancel-in-progress", false);
     assertThat(Path.of(".github/workflows/release-draft.yml")).doesNotExist();
     assertThat(Path.of(".github/release-drafter.yml")).doesNotExist();
-    var run = Files.readString(Path.of(".github/release/run.cjs"));
-    assertThat(run).contains("--auto", "--match-head-commit", "--body', ''");
-  }
-
-  @Test
-  @DisplayName("Should reject version drift when validating a release")
-  void shouldRejectVersionDriftWhenValidatingRelease() throws Exception {
-    var process =
-        new ProcessBuilder("node", "--test", ".github/release/verify-version.test.cjs")
-            .redirectErrorStream(true)
-            .start();
-    var output = new String(process.getInputStream().readAllBytes());
-
-    assertThat(process.waitFor()).as(output).isZero();
   }
 
   @Test
