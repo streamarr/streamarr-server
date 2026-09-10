@@ -9,7 +9,7 @@ import java.util.UUID;
 
 public interface AccountInvitationRepositoryCustom {
 
-  List<AccountInvitation> findAdministrationPage(MediaPaginationOptions options);
+  List<AccountInvitation> findForAdministration(MediaPaginationOptions options);
 
   /** Serializes replacement for one case-insensitive recipient across application instances. */
   void lockInvitationIssuanceForRecipientEmail(String recipientEmail);

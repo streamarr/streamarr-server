@@ -39,7 +39,7 @@ public class HouseholdRepositoryCustomImpl implements HouseholdRepositoryCustom 
   }
 
   @Override
-  public List<Household> findAdministrationPage(MediaPaginationOptions options) {
+  public List<Household> findForAdministration(MediaPaginationOptions options) {
     var reverse =
         options.getPaginationOptions().getPaginationDirection() == PaginationDirection.REVERSE;
     var sortOrder = reverse ? SortOrder.DESC : SortOrder.ASC;
