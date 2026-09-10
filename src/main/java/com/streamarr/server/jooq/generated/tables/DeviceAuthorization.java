@@ -276,6 +276,7 @@ public class DeviceAuthorization extends TableImpl<DeviceAuthorizationRecord> {
     @Override
     public List<Check<DeviceAuthorizationRecord>> getChecks() {
         return Arrays.asList(
+            Internal.createCheck(this, DSL.name("chk_device_authorization_esn_length"), "(((esn IS NULL) OR (char_length(esn) <= 255)))", true),
             Internal.createCheck(this, DSL.name("chk_device_authorization_poll_interval"), "((poll_interval_seconds >= 5))", true)
         );
     }

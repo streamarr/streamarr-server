@@ -20,6 +20,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
+import org.jooq.Check;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.ForeignKey;
@@ -210,7 +211,7 @@ public class DeviceRegistration extends TableImpl<DeviceRegistrationRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_DEVICE_REGISTRATION_ACCOUNT, Indexes.IDX_DEVICE_REGISTRATION_HOUSEHOLD, Indexes.UQ_DEVICE_REGISTRATION_LIVE);
+        return Arrays.asList(Indexes.IDX_DEVICE_REGISTRATION_ACCOUNT, Indexes.IDX_DEVICE_REGISTRATION_HOUSEHOLD_CREATED_ID, Indexes.UQ_DEVICE_REGISTRATION_LIVE);
     }
 
     @Override
@@ -285,6 +286,13 @@ public class DeviceRegistration extends TableImpl<DeviceRegistrationRecord> {
             _authSession = new AuthSessionPath(this, null, Keys.AUTH_SESSION__FK_AUTH_SESSION_REGISTRATION.getInverseKey());
 
         return _authSession;
+    }
+
+    @Override
+    public List<Check<DeviceRegistrationRecord>> getChecks() {
+        return Arrays.asList(
+            Internal.createCheck(this, DSL.name("chk_device_registration_esn_length"), "((char_length(esn) <= 255))", true)
+        );
     }
 
     @Override

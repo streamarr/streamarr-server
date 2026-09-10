@@ -4,6 +4,7 @@
 package com.streamarr.server.jooq.generated.tables;
 
 
+import com.streamarr.server.jooq.generated.Indexes;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.tables.Household.HouseholdPath;
@@ -15,9 +16,11 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
+import org.jooq.Check;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.ForeignKey;
+import org.jooq.Index;
 import org.jooq.InverseForeignKey;
 import org.jooq.Name;
 import org.jooq.Path;
@@ -167,6 +170,11 @@ public class EsnBlock extends TableImpl<EsnBlockRecord> {
     }
 
     @Override
+    public List<Index> getIndexes() {
+        return Arrays.asList(Indexes.IDX_ESN_BLOCK_HOUSEHOLD_CREATED_ID);
+    }
+
+    @Override
     public UniqueKey<EsnBlockRecord> getPrimaryKey() {
         return Keys.ESN_BLOCK_PKEY;
     }
@@ -191,6 +199,13 @@ public class EsnBlock extends TableImpl<EsnBlockRecord> {
             _household = new HouseholdPath(this, Keys.ESN_BLOCK__FK_ESN_BLOCK_HOUSEHOLD, null);
 
         return _household;
+    }
+
+    @Override
+    public List<Check<EsnBlockRecord>> getChecks() {
+        return Arrays.asList(
+            Internal.createCheck(this, DSL.name("chk_esn_block_esn_length"), "((char_length(esn) <= 255))", true)
+        );
     }
 
     @Override
