@@ -19,6 +19,8 @@ import com.streamarr.server.graphql.architecturefixture.PasswordEncodingResolver
 import com.streamarr.server.repositories.architecturefixture.RepositoryQueryFixture;
 import com.streamarr.server.services.RootServiceCycleFixture;
 import com.streamarr.server.services.architecturefixture.DirectAccountPasswordMatchFixture;
+import com.streamarr.server.services.architecturefixture.IncomingHttpServiceFixture;
+import com.streamarr.server.services.architecturefixture.IncomingWebRequestServiceFixture;
 import com.streamarr.server.services.architecturefixture.SubdomainServiceCycleFixture;
 import com.streamarr.server.services.auth.AccountPasswordVerifier;
 import com.streamarr.server.services.auth.LoginService;
@@ -43,6 +45,8 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
@@ -113,7 +117,12 @@ class ArchitectureTest {
           .resideInAPackage("..services..")
           .should()
           .dependOnClassesThat()
-          .resideInAnyPackage("jakarta.servlet..", "com.netflix.graphql.dgs..", "graphql..")
+          .resideInAnyPackage(
+              "jakarta.servlet..",
+              "com.netflix.graphql.dgs..",
+              "graphql..",
+              "org.springframework.http..",
+              "org.springframework.web.context.request..")
           .as("Services receive protocol data explicitly and must not depend on HTTP or DGS types");
 
   @ArchTest
@@ -408,6 +417,16 @@ class ArchitectureTest {
     assertThatThrownBy(() -> graphqlRule.check(encodingResolver))
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining("password");
+  }
+
+  @ParameterizedTest
+  @ValueSource(classes = {IncomingHttpServiceFixture.class, IncomingWebRequestServiceFixture.class})
+  @DisplayName("Should reject request types when a service depends on an HTTP adapter")
+  void shouldRejectRequestTypesWhenServiceDependsOnHttpAdapter(Class<?> fixture) {
+    var services = new ClassFileImporter().importClasses(fixture);
+    assertThatThrownBy(() -> servicesMustNotDependOnDrivingAdapterTypes.check(services))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("HTTP");
   }
 
   private static ArchRule accountPasswordMatchesMustUseVerifier() {
