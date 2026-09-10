@@ -75,6 +75,14 @@ test('exports the validated version and revision for a tag on main', t => {
     `version=1.2.3\nrevision=${git(['rev-parse', 'HEAD'])}\n`);
 });
 
+test('refuses to publish images while the GitHub release is still a draft', t => {
+  const { directory } = checkout(t);
+  const result = validate(directory, 'true');
+  assert.equal(result.status, 1);
+  assert.match(result.stdout + result.stderr, /Publish the GitHub release before publishing images/);
+  assert.equal(fs.existsSync(path.join(directory, 'outputs')), false);
+});
+
 for (const exitCode of [0, 23]) {
   test(`propagates image inspection exit ${exitCode} when both platforms are returned`, () => {
     const step = workflow.jobs.publish_release.steps.find(candidate => candidate.name === 'Publish immutable multi-architecture image');

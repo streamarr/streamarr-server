@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag to publish (vX.Y.Z)
+        description: Published GitHub release tag to retry (vX.Y.Z)
         required: true
         type: string
   release:
@@ -44,6 +44,7 @@ jobs:
         id: release
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
         run: |
           revision="$(git rev-parse HEAD)"
@@ -58,6 +59,11 @@ jobs:
           fi
           pom_version="$(./mvnw --batch-mode --quiet help:evaluate -Dexpression=project.version -DforceStdout)"
           version="$(node .github/release/verify-version.cjs "${RELEASE_TAG}" "${pom_version}")"
+          release_draft="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.draft')"
+          if [[ "${release_draft}" != "false" ]]; then
+            echo "::error::Publish the GitHub release before publishing images"
+            exit 1
+          fi
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           echo "revision=${revision}" >> "${GITHUB_OUTPUT}"
 
