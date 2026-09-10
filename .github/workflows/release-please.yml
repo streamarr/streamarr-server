@@ -44,7 +44,7 @@ jobs:
           permission-pull-requests: write
           permission-issues: write
 
-      - name: Update and queue release PRs
+      - name: Update release PRs and queue snapshots
         env:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
         run: npm run release --prefix .github/release

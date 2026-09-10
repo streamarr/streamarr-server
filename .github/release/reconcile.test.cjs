@@ -58,9 +58,11 @@ test('keeps the same Maven baseline when the prepared draft is published', async
   assert.deepEqual(fixture.github.tags[0], { name: 'v0.0.11', sha: 'd'.repeat(40) });
 });
 
-test('queues the refreshed release PR after processing merged releases', async () => {
+test('leaves the refreshed release PR pending after processing merged releases', async () => {
   const state = { released: false, queued: [] };
-  const pr = { number: 42, sha: 'a'.repeat(40), title: 'chore(main): release 1.2.3' };
+  const pr = {
+    number: 42, sha: 'a'.repeat(40), title: 'chore(main): release 1.2.3', labels: ['autorelease: pending'],
+  };
   const manifest = async () => ({
     createReleases: async () => { state.released = true; },
     createPullRequests: async () => {
@@ -71,7 +73,7 @@ test('queues the refreshed release PR after processing merged releases', async (
 
   await reconcile({ github, manifest, enqueue: async candidate => state.queued.push(candidate) });
 
-  assert.deepEqual(state.queued, [pr]);
+  assert.deepEqual(state.queued, []);
 });
 
 test('queues nothing when the release PR is already current', async () => {

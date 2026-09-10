@@ -3,13 +3,15 @@
 Release Please owns the Maven version, changelog, release tag, and GitHub release.
 The architectural decision and alternatives are recorded in [ADR 0034](https://github.com/streamarr/streamarr-adr/pull/10).
 The serialized workflow runs after pushes to `main`; `always-update` refreshes the open release PR against the current base.
-GitHub auto-merge waits for the repository ruleset, including an up-to-date branch and successful build, Sonar, and Snyk checks.
+Release PRs stay open until a maintainer chooses to merge them. The repository ruleset requires an up-to-date branch and successful build, Sonar, and Snyk checks.
 Merging a release PR creates its Git tag and an unpublished GitHub draft release.
-The same lifecycle merges the next development snapshot PR while the draft waits for publication; snapshot updates do not create GitHub releases.
+Only development snapshot PRs use GitHub auto-merge, under the same required checks. The next snapshot can merge while the draft waits for publication; snapshot updates do not create GitHub releases.
 
-## Publish a prepared release
+## Cut and publish a release
 
-Open the prepared draft under the repository's **Releases** page, review its notes, and click **Publish release** when ready.
+Review the maintained release PR's version, changelog, and required checks when ready to cut a release.
+Squash-merge that PR with its generated `chore(main): release X` title and an empty commit body.
+Release Please then creates the tagged draft. Open it under the repository's **Releases** page, review its notes, and click **Publish release** when ready.
 That publication event starts the container publisher. Preparing the draft does not publish images.
 The draft records the version and source revision already merged through the release PR. Keep its tag unchanged; choosing another version must happen before the release PR merges so the POM and tag continue to agree.
 

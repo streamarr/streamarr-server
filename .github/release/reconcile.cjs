@@ -1,4 +1,4 @@
-const { DEFAULT_LABELS } = require('release-please/build/src/manifest');
+const { DEFAULT_LABELS, DEFAULT_SNAPSHOT_LABELS } = require('release-please/build/src/manifest');
 
 async function reconcile({ github, manifest, enqueue }) {
   await (await manifest()).createReleases();
@@ -10,6 +10,8 @@ async function reconcile({ github, manifest, enqueue }) {
   }
   const pullRequests = await (await manifest()).createPullRequests();
   for (const pullRequest of pullRequests.filter(Boolean)) {
+    if (!DEFAULT_SNAPSHOT_LABELS.every(label => pullRequest.labels.includes(label))) continue;
+
     await enqueue(pullRequest);
   }
 }

@@ -31,6 +31,30 @@ test('explains unavailable auto-merge metadata before publishing', async () => {
   assert.deepEqual(github.opened, []);
 });
 
+test('prepares a stable release PR without requesting its merge', async () => {
+  const fixture = mergedReleaseFixture();
+  await (await fixture.manifest()).createReleases();
+  const { github } = fixture;
+  github.mergeCommitIterator = async function* () {
+    yield { sha: 'f'.repeat(40), message: 'behavioral: improve playback', files: ['Example.java'] };
+    yield { sha: 'e'.repeat(40), message: 'chore(main): release 0.0.12-SNAPSHOT', files: ['pom.xml'] };
+    yield { sha: 'd'.repeat(40), message: 'chore(main): release 0.0.11', files: ['pom.xml'] };
+  };
+  const commands = [];
+  const execute = (command, args) => {
+    commands.push([command, ...args]);
+    return args[1] === 'repos/streamarr/streamarr-server' ? 'true' : 'a'.repeat(40);
+  };
+
+  await runReleaseAutomation({ repository: 'streamarr/streamarr-server', connect: async () => github, execute });
+
+  assert.equal(github.opened.length, 1);
+  assert.equal(github.opened[0].title, 'chore(main): release 0.0.12');
+  assert.deepEqual(github.opened[0].labels, ['autorelease: pending']);
+  assert.equal(github.releases.length, 2);
+  assert.equal(commands.some(command => command[1] === 'pr'), false);
+});
+
 test('queues the updated PR head with its release title and an empty squash body', async () => {
   const { github } = mergedReleaseFixture();
   const commands = [];
