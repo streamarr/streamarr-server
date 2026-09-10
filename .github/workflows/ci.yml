@@ -139,9 +139,7 @@ jobs:
           -Djacoco.skip=true -Dcheckstyle.skip=true -Dspotless.check.skip=true
 
       - name: Fingerprint compiled classes
-        run: >-
-          find target/classes -name '*.class' -print0 | sort -z | xargs -0 sha256sum
-          > target/ci-${{ matrix.suite }}-classes.sha256
+        run: python3 .github/actions/coverage.py fingerprint ${{ matrix.suite }}
 
       - name: Upload unit coverage and compiled classes
         if: matrix.suite == 'unit'
@@ -154,6 +152,7 @@ jobs:
             target/surefire-reports/
             target/jacoco-output/jacoco-unit-tests.exec
             target/ci-unit-classes.sha256
+            target/maven-status/maven-compiler-plugin/compile/default-compile/createdFiles.lst
           if-no-files-found: error
           compression-level: 1
           retention-days: 7
@@ -198,18 +197,13 @@ jobs:
           merge-multiple: true
 
       - name: Verify complete and compatible coverage inputs
-        run: |
-          test -s target/jacoco-output/jacoco-unit-tests.exec
-          test -s target/jacoco-output/jacoco-integration-tests.exec
-          test -s target/ci-unit-classes.sha256
-          test -s target/ci-integration-classes.sha256
-          diff target/ci-unit-classes.sha256 target/ci-integration-classes.sha256
-          sha256sum --check --quiet target/ci-unit-classes.sha256
+        run: python3 .github/actions/coverage.py verify-inputs
 
       - name: Verify combined coverage
-        run: >-
-          ./mvnw --batch-mode jacoco:merge@merge-unit-and-integration
-          jacoco:report@create-merged-report jacoco:check@check-authorization-coverage
+        run: |
+          ./mvnw --batch-mode jacoco:merge@merge-unit-and-integration \
+            jacoco:report@create-merged-report jacoco:check@check-authorization-coverage
+          python3 .github/actions/coverage.py verify-report
 
       - name: Upload combined coverage report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
