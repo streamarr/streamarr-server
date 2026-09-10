@@ -1,0 +1,25 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/v17.11.2/schemas/config.json",
+  "always-update": true,
+  "separate-pull-requests": true,
+  "plugins": ["streamarr-release-metadata"],
+  "packages": {
+    ".": {
+      "release-type": "maven",
+      "pull-request-title-pattern": "behavioral${scope}: release${component} ${version}",
+      "include-component-in-tag": false,
+      "include-v-in-tag": true,
+      "include-commit-authors": false,
+      "changelog-sections": [
+        { "type": "feat", "section": "Features" },
+        { "type": "fix", "section": "Bug fixes" },
+        { "type": "perf", "section": "Performance" },
+        { "type": "deps", "section": "Dependencies" },
+        { "type": "build", "section": "Build" },
+        { "type": "revert", "section": "Reverts" },
+        { "type": "behavioral", "section": "Changes" },
+        { "type": "structural", "section": "Refactoring" }
+      ]
+    }
+  }
+}

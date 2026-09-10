@@ -95,7 +95,7 @@ class FfmpegLockWorkflowTest {
     var verify = stepNamed(steps, "Verify FFmpeg lock");
 
     assertThat(steps.stream().map(step -> step.get("name")))
-        .containsSubsequence("Verify FFmpeg lock", "Docker Metadata");
+        .containsSubsequence("Verify FFmpeg lock", "Build and publish");
     assertThat(verify)
         .containsEntry("uses", "./.github/actions/prepare-ffmpeg")
         .doesNotContainKeys("env");
