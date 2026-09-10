@@ -69,3 +69,21 @@ test('exports the validated version and revision for a tag on main', t => {
   assert.equal(fs.readFileSync(path.join(directory, 'outputs'), 'utf8'),
     `version=1.2.3\nrevision=${git(['rev-parse', 'HEAD'])}\n`);
 });
+
+for (const exitCode of [0, 23]) {
+  test(`propagates image inspection exit ${exitCode} when both platforms are returned`, () => {
+    const step = workflow.jobs.publish_release.steps.find(candidate => candidate.name === 'Publish immutable multi-architecture image');
+    const result = runStep({
+      ...step,
+      run: `
+        docker() {
+          if [[ "$3" == "create" ]]; then return 0; fi
+          printf '%s' '{"manifests":[{"platform":{"os":"linux","architecture":"amd64"}},{"platform":{"os":"linux","architecture":"arm64"}}]}'
+          return ${exitCode}
+        }
+        ${step.run}
+      `,
+    }, { env: { ...process.env, IMAGE_VERSION: '1.2.3' } });
+    assert.equal(result.status, exitCode, result.stdout + result.stderr);
+  });
+}

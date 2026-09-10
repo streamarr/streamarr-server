@@ -111,6 +111,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Publish immutable multi-architecture image
+        shell: bash
         env:
           IMAGE_VERSION: ${{ needs.validate_release.outputs.version }}
         run: |
