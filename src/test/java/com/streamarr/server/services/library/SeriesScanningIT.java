@@ -7,7 +7,6 @@ import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.AbstractWireMockIntegrationTest;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
@@ -15,18 +14,12 @@ import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
-import com.streamarr.server.fakes.FakeFfprobeService;
-import com.streamarr.server.fakes.FakeSegmentStore;
-import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
-import com.streamarr.server.services.streaming.FfprobeService;
-import com.streamarr.server.services.streaming.SegmentStore;
-import com.streamarr.server.services.streaming.TranscodeExecutor;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -37,12 +30,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.test.context.bean.override.convention.TestBean;
 
 @Isolated
 @Tag("IntegrationTest")
 @DisplayName("Series Scanning Integration Tests")
-class SeriesScanningIT extends AbstractWireMockIntegrationTest {
+class SeriesScanningIT extends AbstractScanningIntegrationTest {
 
   @Autowired private LibraryManagementService libraryManagementService;
   @Autowired private LibraryRepository libraryRepository;
@@ -50,26 +42,6 @@ class SeriesScanningIT extends AbstractWireMockIntegrationTest {
   @Autowired private SeasonRepository seasonRepository;
   @Autowired private EpisodeRepository episodeRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
-
-  @TestBean TranscodeExecutor transcodeExecutor;
-  @TestBean FfprobeService ffprobeService;
-  @TestBean SegmentStore segmentStore;
-
-  private static final FakeTranscodeExecutor FAKE_EXECUTOR = new FakeTranscodeExecutor();
-  private static final FakeFfprobeService FAKE_FFPROBE = new FakeFfprobeService();
-  private static final FakeSegmentStore FAKE_SEGMENT_STORE = new FakeSegmentStore();
-
-  static TranscodeExecutor transcodeExecutor() {
-    return FAKE_EXECUTOR;
-  }
-
-  static FfprobeService ffprobeService() {
-    return FAKE_FFPROBE;
-  }
-
-  static SegmentStore segmentStore() {
-    return FAKE_SEGMENT_STORE;
-  }
 
   @TempDir Path tempDir;
 
