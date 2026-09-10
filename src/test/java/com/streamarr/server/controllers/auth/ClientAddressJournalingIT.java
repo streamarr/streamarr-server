@@ -111,8 +111,7 @@ class ClientAddressJournalingIT extends AbstractIntegrationTest {
           .andExpect(status().isOk());
 
       assertThat(logs.events())
-          .allSatisfy(
-              event -> assertThat(event.getFormattedMessage()).doesNotContain(remoteAddress));
+          .noneSatisfy(event -> assertThat(event.getFormattedMessage()).contains(remoteAddress));
     }
 
     assertThat(journaledAddresses(CredentialKind.ACCOUNT_LOGIN, ownAccount()))

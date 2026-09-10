@@ -128,7 +128,7 @@ class ForwardedClientAddressIT extends AbstractIntegrationTest {
   private static MockHttpServletRequestBuilder proxiedRequest(
       String path, ForwardedAddress forwarded) {
     var request = post(path).with(remoteAddr("10.0.0.2")).contentType(MediaType.APPLICATION_JSON);
-    forwarded.headers().forEach((name, value) -> request.header(name, value));
+    forwarded.headers().forEach(request::header);
     return request;
   }
 
