@@ -47,6 +47,10 @@ public class StreamingResolver {
                 .options(opts)
                 .build());
 
+    return toCreatedSessionDto(session);
+  }
+
+  private StreamSessionDto toCreatedSessionDto(StreamSession session) {
     try {
       return toDto(session);
     } catch (RuntimeException exception) {
