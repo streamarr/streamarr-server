@@ -10,5 +10,8 @@
   },
   "dependencies": {
     "release-please": "17.11.2"
+  },
+  "devDependencies": {
+    "yaml": "2.9.0"
   }
 }
