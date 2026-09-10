@@ -6,7 +6,6 @@ const { Manifest } = require('release-please');
 const { buildStrategy } = require('release-please/build/src/factory');
 const { TagName } = require('release-please/build/src/util/tag-name');
 const { Version } = require('release-please/build/src/version');
-require('./metadata.cjs');
 
 const root = path.resolve(__dirname, '../..');
 const quiet = { info() {}, warn() {}, error() {}, debug() {}, trace() {} };

@@ -3,7 +3,6 @@ const path = require('node:path');
 const { Manifest } = require('release-please');
 const { PullRequestBody } = require('release-please/build/src/util/pull-request-body');
 const { Version } = require('release-please/build/src/version');
-require('./metadata.cjs');
 
 function mergedReleaseFixture(overrides = {}) {
   const root = path.resolve(__dirname, '../..');

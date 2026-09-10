@@ -1,7 +1,6 @@
 const { execFileSync } = require('node:child_process');
 const { GitHub, Manifest } = require('release-please');
 const { reconcile } = require('./reconcile.cjs');
-require('./metadata.cjs');
 
 async function runReleaseAutomation({ repository, token, execute = execFileSync, connect = GitHub.create }) {
   if (!repository) throw new Error('GITHUB_REPOSITORY must be set');
