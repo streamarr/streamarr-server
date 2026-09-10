@@ -35,7 +35,7 @@ class ReleaseWorkflowTest {
     assertThat(actions).hasSize(2);
     assertThat(actions.getFirst().get("uses").toString())
         .matches("googleapis/release-please-action@[a-f0-9]{40}");
-    assertThat(actions.getLast().get("uses")).isEqualTo(actions.getFirst().get("uses"));
+    assertThat(actions.getLast()).containsEntry("uses", actions.getFirst().get("uses"));
     assertThat(map(actions.getFirst().get("with"))).containsEntry("skip-github-pull-request", true);
     assertThat(map(actions.getLast().get("with"))).containsEntry("skip-github-release", true);
     for (var action : actions) {

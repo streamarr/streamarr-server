@@ -57,7 +57,7 @@ Renovate explicitly uses semantic commits. Production Maven dependency updates u
 
 Workflow tests run the actual shell steps against fake external commands and temporary Git repositories. They cover snapshot-only auto-merge, pending-release recovery, version and revision validation, and image publication safeguards.
 The official action is pinned to a commit and maintained by Renovate. Upstream owns the Maven engine and its tests; this repository has no release SDK package or npm lockfile.
-The workflow uses the action's documented `skip-github-pull-request` and `skip-github-release` inputs to check for unprocessed merged releases between publication and PR preparation.
+The action's documented `skip-github-pull-request` and `skip-github-release` inputs separate publication from PR preparation. Between those phases, **Verify merged releases were processed** checks for merged PRs still labeled `autorelease: pending` and fails with recovery instructions.
 
 Re-run **Release Please** with `workflow_dispatch` after an API failure; it reconciles already merged PRs and pending releases.
 If it reports an unprocessed merged release PR, restore that PR's original release title and structured release body before retrying. A pending release must be processed before another release PR is prepared.
