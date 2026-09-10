@@ -28,6 +28,7 @@ function checkout(t) {
   fs.mkdirSync(path.join(directory, '.github/release'), { recursive: true });
   fs.copyFileSync(path.join(__dirname, 'verify-version.cjs'), path.join(directory, '.github/release/verify-version.cjs'));
   fs.writeFileSync(path.join(directory, 'mvnw'), '#!/bin/sh\nprintf 1.2.3\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(directory, 'gh'), '#!/bin/sh\nprintf \'%s\' "$RELEASE_DRAFT"\n', { mode: 0o755 });
   return { directory, git };
 }
 
@@ -36,10 +37,14 @@ function runStep(step, options) {
   return spawnSync('bash', [...flags, '-c', step.run], { encoding: 'utf8', ...options });
 }
 
-function validate(directory) {
+function validate(directory, releaseDraft = 'false') {
   return runStep(validation, {
     cwd: directory,
-    env: { ...process.env, RELEASE_TAG: 'v1.2.3', GITHUB_OUTPUT: path.join(directory, 'outputs') },
+    env: {
+      ...process.env, PATH: `${directory}${path.delimiter}${process.env.PATH}`,
+      RELEASE_TAG: 'v1.2.3', RELEASE_DRAFT: releaseDraft,
+      GITHUB_REPOSITORY: 'streamarr/streamarr-server', GITHUB_OUTPUT: path.join(directory, 'outputs'),
+    },
   });
 }
 
