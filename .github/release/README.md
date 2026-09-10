@@ -13,8 +13,9 @@ Only the current GitHub release can advance Docker's `latest` tag; retrying an o
 ## Setup
 
 - Enable repository auto-merge; retain the existing required-check ruleset and give the release App no bypass.
-- Provide a GitHub App with repository **Contents**, **Pull requests**, and **Issues** write permissions, installed on this repository.
-- Store its credentials as `RELEASE_APP_CLIENT_ID` and `RELEASE_APP_PRIVATE_KEY`. The workflow also supports the existing `FFMPEG_LOCK_APP_*` credentials once that App has the required permissions.
+- Create a dedicated, organization-owned release App with repository **Contents**, **Pull requests**, and **Issues** write permissions, installed only on `streamarr/streamarr-server`.
+- Store that App's credentials as `RELEASE_APP_CLIENT_ID` and `RELEASE_APP_PRIVATE_KEY`. Release automation requires these secrets and has no fallback to another App.
+- Keep the FFmpeg App's credentials and permissions separate. Rotate or revoke the release App's private keys independently.
 - Remove the unpublished Release Drafter draft when enabling the replacement. Published releases and tags remain the migration baseline.
 
 The checked-in manifest starts from the last published release, `0.0.10`.

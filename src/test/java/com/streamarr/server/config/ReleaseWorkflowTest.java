@@ -18,6 +18,26 @@ import org.yaml.snakeyaml.Yaml;
 @DisplayName("Release Workflow Tests")
 class ReleaseWorkflowTest {
 
+  @Test
+  @DisplayName("Should use dedicated release credentials when minting the App token")
+  void shouldUseDedicatedReleaseCredentialsWhenMintingAppToken() throws Exception {
+    Map<String, Object> workflow =
+        new Yaml().load(Files.readString(Path.of(".github/workflows/release-please.yml")));
+    var release = map(map(workflow.get("jobs")).get("release"));
+    var token =
+        steps(release).stream()
+            .filter(step -> "Mint release bot token".equals(step.get("name")))
+            .findFirst()
+            .orElseThrow();
+
+    assertThat(map(token.get("with")))
+        .containsEntry("client-id", "${{ secrets.RELEASE_APP_CLIENT_ID }}")
+        .containsEntry("private-key", "${{ secrets.RELEASE_APP_PRIVATE_KEY }}")
+        .containsEntry("permission-contents", "write")
+        .containsEntry("permission-pull-requests", "write")
+        .containsEntry("permission-issues", "write");
+  }
+
   @ParameterizedTest
   @CsvSource({"v1.2.3, true", "v1.2.4, false"})
   @DisplayName("Should promote latest only when publishing the current GitHub release")
