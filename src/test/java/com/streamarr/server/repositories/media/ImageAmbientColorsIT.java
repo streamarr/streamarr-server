@@ -9,12 +9,16 @@ import com.streamarr.server.jooq.generated.enums.ImageSize;
 import com.streamarr.server.jooq.generated.enums.ImageType;
 import com.streamarr.server.jooq.generated.tables.records.ImageRecord;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.jooq.DSLContext;
+import org.jooq.Field;
 import org.jooq.InsertSetMoreStep;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 
@@ -41,14 +45,23 @@ class ImageAmbientColorsIT extends AbstractIntegrationTest {
         .hasMessageContaining("chk_image_ambient_colors_complete");
   }
 
-  @Test
+  @ParameterizedTest(name = "{0} without primary")
+  @MethodSource("targetSwatches")
   @DisplayName("Should reject target swatches when primary ambient color is absent")
-  void shouldRejectTargetSwatchesWhenPrimaryAmbientColorIsAbsent() {
-    var insert = insertImage().set(IMAGE.AMBIENT_DARK_MUTED, "#283830");
+  void shouldRejectTargetSwatchesWhenPrimaryAmbientColorIsAbsent(Field<String> column) {
+    var insert = insertImage().set(column, "#283830");
 
     assertThatThrownBy(insert::execute)
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("chk_image_ambient_swatches_require_primary");
+  }
+
+  private static Stream<Field<String>> targetSwatches() {
+    return Stream.of(
+        IMAGE.AMBIENT_DARK_VIBRANT,
+        IMAGE.AMBIENT_DARK_MUTED,
+        IMAGE.AMBIENT_LIGHT_VIBRANT,
+        IMAGE.AMBIENT_LIGHT_MUTED);
   }
 
   private InsertSetMoreStep<ImageRecord> insertImage() {

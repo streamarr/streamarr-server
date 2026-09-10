@@ -1,10 +1,12 @@
 package com.streamarr.server.repositories.media;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
 import lombok.RequiredArgsConstructor;
@@ -12,12 +14,15 @@ import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.callback.BaseCallback;
 import org.flywaydb.core.api.callback.Context;
 import org.flywaydb.core.api.callback.Event;
+import org.flywaydb.core.api.configuration.FluentConfiguration;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 
 @Tag("IntegrationTest")
@@ -38,8 +43,18 @@ class AmbientSwatchMigrationIT extends AbstractIntegrationTest {
         var statement = connection.createStatement()) {
       connection.setAutoCommit(false);
       statement.execute("SET LOCAL search_path = " + schema);
-      statement.execute("CREATE TABLE image (id INTEGER PRIMARY KEY, ambient_primary TEXT)");
+      statement.execute(
+          """
+          CREATE TABLE image (id INTEGER PRIMARY KEY, ambient_primary TEXT,
+            ambient_top_left TEXT, ambient_top_right TEXT,
+            ambient_bottom_right TEXT, ambient_bottom_left TEXT)
+          """);
       statement.execute("INSERT INTO image (id) VALUES (1)");
+      statement.execute(
+          """
+          INSERT INTO image VALUES
+            (2, '#00a0a0', '#010101', '#020202', '#030303', '#040404')
+          """);
       connection.commit();
     }
   }
@@ -54,20 +69,69 @@ class AmbientSwatchMigrationIT extends AbstractIntegrationTest {
   void shouldAllowImageReadsAndWritesWhenAmbientSwatchesAreValidated() {
     var probe = new ValidationAccessProbe(dataSource, schema);
 
-    Flyway.configure()
-        .configuration(flyway.getConfiguration())
-        .schemas(schema)
-        .defaultSchema(schema)
-        .baselineVersion("66")
-        .baselineOnMigrate(true)
-        .target("68?")
-        .callbacks(probe)
-        .load()
-        .migrate();
+    migrations().target("68?").callbacks(probe).load().migrate();
 
     assertThat(probe.checked)
         .as("Constraint validation must run before the upgrade finishes")
         .isTrue();
+  }
+
+  @ParameterizedTest(name = "{0} before validation")
+  @ValueSource(
+      strings = {
+        "ambient_dark_vibrant",
+        "ambient_dark_muted",
+        "ambient_light_vibrant",
+        "ambient_light_muted"
+      })
+  @DisplayName("Should reject orphan swatches when the addition has committed before validation")
+  void shouldRejectOrphanSwatchesWhenAdditionHasCommittedBeforeValidation(String column)
+      throws SQLException {
+    migrations().target("67?").load().migrate();
+
+    try (var connection = dataSource.getConnection();
+        var insert =
+            connection.prepareStatement(
+                "INSERT INTO " + schema + ".image (id, " + column + ") VALUES (3, '#283830')")) {
+      assertThatThrownBy(insert::executeUpdate)
+          .isInstanceOfSatisfying(
+              SQLException.class, error -> assertThat(error.getSQLState()).isEqualTo("23514"))
+          .hasMessageContaining("chk_image_ambient_swatches_require_primary");
+    }
+  }
+
+  @Test
+  @DisplayName("Should preserve legacy ambient colors when the swatch migrations complete")
+  void shouldPreserveLegacyAmbientColorsWhenSwatchMigrationsComplete() throws SQLException {
+    migrations().target("68?").load().migrate();
+
+    try (var connection = dataSource.getConnection();
+        var statement = connection.createStatement();
+        var row = statement.executeQuery("SELECT * FROM " + schema + ".image WHERE id = 2")) {
+      assertThat(row.next()).isTrue();
+      assertThat(row.getString("ambient_primary")).isEqualTo("#00a0a0");
+      assertThat(row.getString("ambient_top_left")).isEqualTo("#010101");
+      assertThat(row.getString("ambient_top_right")).isEqualTo("#020202");
+      assertThat(row.getString("ambient_bottom_right")).isEqualTo("#030303");
+      assertThat(row.getString("ambient_bottom_left")).isEqualTo("#040404");
+      for (var column :
+          List.of(
+              "ambient_dark_vibrant",
+              "ambient_dark_muted",
+              "ambient_light_vibrant",
+              "ambient_light_muted")) {
+        assertThat(row.getString(column)).as(column).isNull();
+      }
+    }
+  }
+
+  private FluentConfiguration migrations() {
+    return Flyway.configure()
+        .configuration(flyway.getConfiguration())
+        .schemas(schema)
+        .defaultSchema(schema)
+        .baselineVersion("66")
+        .baselineOnMigrate(true);
   }
 
   @RequiredArgsConstructor
@@ -118,7 +182,7 @@ class AmbientSwatchMigrationIT extends AbstractIntegrationTest {
         connection.setAutoCommit(false);
         statement.execute("SET LOCAL search_path = " + schema);
         statement.execute("SET LOCAL lock_timeout = '1s'");
-        try (var result = statement.executeQuery("SELECT id FROM image")) {
+        try (var result = statement.executeQuery("SELECT id FROM image WHERE id = 1")) {
           assertThat(result.next()).isTrue();
           assertThat(result.getInt("id")).isEqualTo(1);
         }

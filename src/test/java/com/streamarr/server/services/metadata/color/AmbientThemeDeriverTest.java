@@ -5,10 +5,19 @@ import static org.assertj.core.api.Assertions.within;
 
 import com.streamarr.server.domain.media.AmbientColors;
 import com.streamarr.server.domain.media.AmbientTheme;
+import com.streamarr.server.support.WcagContrast;
 import java.awt.image.BufferedImage;
+import java.util.Arrays;
+import java.util.Map;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Ambient Theme Deriver Tests")
@@ -23,6 +32,29 @@ class AmbientThemeDeriverTest {
   private static final String AMBER_BRIGHT = "#f0c069";
   private static final String SAND = "#d9c5a5";
   private static final String UMBER = "#6b3a10";
+
+  @ParameterizedTest(name = "corner {0}, bright family {1}")
+  @CsvSource({
+    "0, false, #0e3b34", "1, false, #0e3b34", "2, false, #0e3b34", "3, false, #0e3b34",
+    "0, true, #d9c5a5", "1, true, #d9c5a5", "2, true, #d9c5a5", "3, true, #d9c5a5"
+  })
+  @DisplayName("Should choose the family from all corners when one corner changes the mean")
+  void shouldChooseFamilyFromAllCornersWhenOneCornerChangesMean(
+      int corner, boolean bright, String expectedBase) {
+    var field = new String[4];
+    Arrays.fill(field, bright ? "#a9a9a9" : "#aaaaaa");
+    field[corner] = bright ? "#ffffff" : "#000000";
+    var colors =
+        tealColors()
+            .lightMuted(SAND)
+            .topLeft(field[0])
+            .topRight(field[1])
+            .bottomRight(field[2])
+            .bottomLeft(field[3])
+            .build();
+
+    assertThat(AmbientThemeDeriver.derive(colors).base()).isEqualTo(expectedBase);
+  }
 
   @Test
   @DisplayName("Should distinguish the accent from the background when artwork is black")
@@ -64,9 +96,15 @@ class AmbientThemeDeriverTest {
 
     var theme = AmbientThemeDeriver.derive(colors);
 
-    for (var surface : new String[] {theme.base(), theme.panel(), theme.selected()}) {
-      assertThat(contrast(theme.textPrimary(), surface)).isGreaterThanOrEqualTo(4.5);
-      assertThat(contrast(theme.textSecondary(), surface)).isGreaterThanOrEqualTo(3.0);
+    for (var surface :
+        Map.of("base", theme.base(), "panel", theme.panel(), "selected", theme.selected())
+            .entrySet()) {
+      assertThat(contrast(theme.textPrimary(), surface.getValue()))
+          .as("primary on %s", surface.getKey())
+          .isGreaterThanOrEqualTo(4.5);
+      assertThat(contrast(theme.textSecondary(), surface.getValue()))
+          .as("secondary on %s", surface.getKey())
+          .isGreaterThanOrEqualTo(3.0);
     }
   }
 
@@ -87,12 +125,17 @@ class AmbientThemeDeriverTest {
   void shouldBuildDarkThemeFromDarkMutedSwatchWhenCornersAreDark() {
     var theme = AmbientThemeDeriver.derive(tealColors().build());
 
-    assertThat(theme.base()).isEqualTo(TEAL_PANEL);
-    assertThat(theme.accent()).isEqualTo(MINT);
-    assertThat(theme.selected()).isEqualTo(TEAL_SELECTED);
-    assertThat(luminance(theme.textPrimary())).isGreaterThan(luminance(theme.base()));
-    assertThat(luminance(theme.panel())).isGreaterThan(luminance(theme.base()));
-    assertThat(luminance(theme.onAccent())).isLessThan(luminance(theme.accent()));
+    assertThat(theme)
+        .isEqualTo(
+            AmbientTheme.builder()
+                .base(TEAL_PANEL)
+                .panel("#1f4842")
+                .selected(TEAL_SELECTED)
+                .accent(MINT)
+                .onAccent("#08110e")
+                .textPrimary("#edf3f2")
+                .textSecondary("#97bab2")
+                .build());
   }
 
   @Test
@@ -100,27 +143,48 @@ class AmbientThemeDeriverTest {
   void shouldBuildBrightThemeFromLightMutedSwatchWhenCornersAreBright() {
     var theme = AmbientThemeDeriver.derive(amberColors().build());
 
-    assertThat(theme.base()).isEqualTo(SAND);
-    assertThat(theme.accent()).as("a dark button on the bright field").isEqualTo(UMBER);
-    assertThat(theme.selected()).isEqualTo(AMBER_BRIGHT);
-    assertThat(luminance(theme.textPrimary())).isLessThan(luminance(theme.base()));
-    assertThat(luminance(theme.panel())).isLessThan(luminance(theme.base()));
-    assertThat(luminance(theme.onAccent())).isGreaterThan(luminance(theme.accent()));
+    assertThat(theme)
+        .isEqualTo(
+            AmbientTheme.builder()
+                .base(SAND)
+                .panel("#c9b799")
+                .selected(AMBER_BRIGHT)
+                .accent(UMBER)
+                .onAccent("#f3efec")
+                .textPrimary("#0f0e0c")
+                .textSecondary("#645b4c")
+                .build());
   }
 
-  @Test
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("themeExamples")
   @DisplayName("Should clear text contrast floors when theme is dark or bright")
-  void shouldClearTextContrastFloorsWhenThemeIsDarkOrBright() {
-    for (var theme :
-        new AmbientTheme[] {
-          AmbientThemeDeriver.derive(tealColors().build()),
-          AmbientThemeDeriver.derive(amberColors().build())
-        }) {
-      assertThat(contrast(theme.textPrimary(), theme.base())).isGreaterThanOrEqualTo(4.5);
-      assertThat(contrast(theme.textSecondary(), theme.base())).isGreaterThanOrEqualTo(3.0);
-      assertThat(contrast(theme.onAccent(), theme.accent())).isGreaterThanOrEqualTo(4.5);
-      assertThat(contrast(theme.accent(), theme.base())).isGreaterThanOrEqualTo(3.0);
+  void shouldClearTextContrastFloorsWhenThemeIsDarkOrBright(AmbientColors colors) {
+    var theme = AmbientThemeDeriver.derive(colors);
+
+    for (var surface :
+        Map.of("base", theme.base(), "panel", theme.panel(), "selected", theme.selected())
+            .entrySet()) {
+      assertThat(contrast(theme.textPrimary(), surface.getValue()))
+          .as("primary on %s", surface.getKey())
+          .isGreaterThanOrEqualTo(4.5);
+      assertThat(contrast(theme.textSecondary(), surface.getValue()))
+          .as("secondary on %s", surface.getKey())
+          .isGreaterThanOrEqualTo(3.0);
     }
+
+    assertThat(contrast(theme.onAccent(), theme.accent()))
+        .as("on accent")
+        .isGreaterThanOrEqualTo(4.5);
+    assertThat(contrast(theme.accent(), theme.base()))
+        .as("accent on base")
+        .isGreaterThanOrEqualTo(3.0);
+  }
+
+  private static Stream<Arguments> themeExamples() {
+    return Stream.of(
+        Arguments.of(Named.of("dark", tealColors().build())),
+        Arguments.of(Named.of("bright", amberColors().build())));
   }
 
   @Test
@@ -163,10 +227,7 @@ class AmbientThemeDeriverTest {
   void shouldDarkenPrimaryColorForBaseWhenNoDarkSwatchExists() {
     var theme = AmbientThemeDeriver.derive(tealColors().darkMuted(null).darkVibrant(null).build());
 
-    var base = ColorConversions.rgbToHsl(ColorConversions.fromHex(theme.base()));
-    var primary = ColorConversions.rgbToHsl(ColorConversions.fromHex(MINT));
-    assertThat(base[2]).isCloseTo(0.26f, within(0.02f));
-    assertThat(base[0]).isCloseTo(primary[0], within(2f));
+    assertThat(theme.base()).isEqualTo("#176d54");
   }
 
   @Test
@@ -175,8 +236,18 @@ class AmbientThemeDeriverTest {
     var theme =
         AmbientThemeDeriver.derive(amberColors().lightMuted(null).lightVibrant(null).build());
 
-    var base = ColorConversions.rgbToHsl(ColorConversions.fromHex(theme.base()));
-    assertThat(base[2]).isCloseTo(0.74f, within(0.02f));
+    assertThat(theme.base()).isEqualTo("#f0cc8a");
+  }
+
+  @Test
+  @DisplayName("Should use the light vibrant base when bright artwork has no light muted swatch")
+  void shouldUseLightVibrantBaseWhenBrightArtworkHasNoLightMutedSwatch() {
+    var colors = amberColors().lightMuted(null).build();
+
+    var theme = AmbientThemeDeriver.derive(colors);
+
+    assertThat(theme.base()).isEqualTo(AMBER_BRIGHT);
+    assertThat(theme.selected()).isNotEqualTo(theme.base());
   }
 
   @Test
@@ -185,8 +256,16 @@ class AmbientThemeDeriverTest {
   void shouldDarkenPrimaryColorForAccentWhenNoDarkSwatchExistsInBrightTheme() {
     var theme = AmbientThemeDeriver.derive(amberColors().darkVibrant(null).build());
 
-    assertThat(luminance(theme.accent())).isLessThan(luminance(theme.base()));
+    assertThat(theme.accent()).isEqualTo("#75510f");
     assertThat(contrast(theme.accent(), theme.base())).isGreaterThanOrEqualTo(3.0);
+  }
+
+  @Test
+  @DisplayName("Should use the dark muted accent when bright artwork has no dark vibrant swatch")
+  void shouldUseDarkMutedAccentWhenBrightArtworkHasNoDarkVibrantSwatch() {
+    var colors = amberColors().darkVibrant(null).darkMuted("#503830").build();
+
+    assertThat(AmbientThemeDeriver.derive(colors).accent()).isEqualTo("#503830");
   }
 
   @Test
@@ -209,9 +288,26 @@ class AmbientThemeDeriverTest {
   void shouldMixAccentIntoBaseForSelectedWhenNoVibrantSwatchExists() {
     var theme = AmbientThemeDeriver.derive(tealColors().darkVibrant(null).build());
 
-    assertThat(luminance(theme.selected()))
-        .isGreaterThan(luminance(theme.base()))
-        .isLessThan(luminance(theme.accent()));
+    assertThat(theme.selected()).isEqualTo("#2b6c5d");
+  }
+
+  @Test
+  @DisplayName("Should preserve the accent mixture when a bright theme has no light vibrant swatch")
+  void shouldPreserveAccentMixtureWhenBrightThemeHasNoLightVibrantSwatch() {
+    var theme = AmbientThemeDeriver.derive(amberColors().lightVibrant(null).build());
+
+    assertThat(theme.selected()).isEqualTo("#b79b78");
+  }
+
+  @Test
+  @DisplayName("Should keep dark panel text readable when the base barely admits black text")
+  void shouldKeepDarkPanelTextReadableWhenBaseBarelyAdmitsBlackText() {
+    var theme = AmbientThemeDeriver.derive(amberColors().lightMuted("#777777").build());
+
+    assertThat(theme.base()).isEqualTo("#777777");
+    assertThat(contrast(theme.textPrimary(), theme.panel())).isGreaterThanOrEqualTo(4.5);
+    assertThat(contrast(theme.textSecondary(), theme.panel())).isGreaterThanOrEqualTo(3.0);
+    assertThat(theme.panel()).isNotEqualTo(theme.base());
   }
 
   private static AmbientColors.AmbientColorsBuilder tealColors() {
@@ -236,12 +332,7 @@ class AmbientThemeDeriverTest {
     builder.topLeft(hex).topRight(hex).bottomRight(hex).bottomLeft(hex);
   }
 
-  private static double luminance(String hex) {
-    return ColorContrast.relativeLuminance(ColorConversions.fromHex(hex));
-  }
-
   private static double contrast(String foreground, String background) {
-    return ColorContrast.contrastRatio(
-        ColorConversions.fromHex(foreground), ColorConversions.fromHex(background));
+    return WcagContrast.ratio(foreground, background);
   }
 }

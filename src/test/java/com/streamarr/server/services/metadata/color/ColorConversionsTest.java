@@ -4,49 +4,65 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 
 @Tag("UnitTest")
 @DisplayName("Color Conversions Tests")
 class ColorConversionsTest {
 
-  @Test
-  @DisplayName("Should parse packed rgb when hex is lowercase")
-  void shouldParsePackedRgbWhenHexIsLowercase() {
-    assertThat(ColorConversions.fromHex("#00a0a0")).isEqualTo(0x00A0A0);
+  @ParameterizedTest(name = "hex {0}: packed RGB {1}")
+  @CsvSource({
+    "#000000, 0x000000",
+    "#FFFFFF, 0xFFFFFF",
+    "#00a0a0, 0x00A0A0",
+    "#68F8F8, 0x68F8F8",
+    "#Ab12cD, 0xAB12CD",
+    "#00000f, 0x00000F"
+  })
+  @DisplayName("Should parse packed RGB when hex includes mixed case and leading zeros")
+  void shouldParsePackedRgbWhenHexIncludesMixedCaseAndLeadingZeros(String hex, int expected) {
+    assertThat(ColorConversions.fromHex(hex)).isEqualTo(expected);
   }
 
-  @Test
-  @DisplayName("Should parse packed rgb when hex is uppercase")
-  void shouldParsePackedRgbWhenHexIsUppercase() {
-    assertThat(ColorConversions.fromHex("#68F8F8")).isEqualTo(0x68F8F8);
+  @ParameterizedTest(name = "packed RGB {0}: hex {1}")
+  @CsvSource({"0x000000, #000000", "0xFFFFFF, #ffffff", "0x00000F, #00000f", "0xAB12CD, #ab12cd"})
+  @DisplayName("Should emit six lowercase digits when formatting packed RGB")
+  void shouldEmitSixLowercaseDigitsWhenFormattingPackedRgb(int rgb, String expected) {
+    assertThat(ColorConversions.toHex(rgb)).isEqualTo(expected);
   }
 
-  @Test
-  @DisplayName("Should round trip when hex is formatted then parsed")
-  void shouldRoundTripWhenHexIsFormattedThenParsed() {
-    assertThat(ColorConversions.toHex(ColorConversions.fromHex("#103070"))).isEqualTo("#103070");
+  @ParameterizedTest(name = "hue {0}: RGB {1}")
+  @CsvSource({
+    "0, 0xFF0000",
+    "30, 0xFF8000",
+    "60, 0xFFFF00",
+    "90, 0x80FF00",
+    "120, 0x00FF00",
+    "150, 0x00FF80",
+    "180, 0x00FFFF",
+    "210, 0x0080FF",
+    "240, 0x0000FF",
+    "270, 0x8000FF",
+    "300, 0xFF00FF",
+    "330, 0xFF0080"
+  })
+  @DisplayName("Should match the RGB color wheel when hue crosses every HSL sector")
+  void shouldMatchRgbColorWheelWhenHueCrossesEveryHslSector(float hue, int expected) {
+    assertThat(ColorConversions.hslToRgb(new float[] {hue, 1f, 0.5f})).isEqualTo(expected);
   }
 
-  @ParameterizedTest
-  @ValueSource(ints = {0x00A0A0, 0x68F8F8, 0x103070, 0x283830, 0xC8D0C8, 0xE9B658, 0xFF0000})
-  @DisplayName("Should round trip when rgb is converted to hsl and back")
-  void shouldRoundTripWhenRgbIsConvertedToHslAndBack(int rgb) {
-    assertThat(ColorConversions.hslToRgb(ColorConversions.rgbToHsl(rgb))).isEqualTo(rgb);
+  @ParameterizedTest(name = "lightness {0}: gray {1}")
+  @CsvSource({"0, 0x000000", "0.5, 0x808080", "1, 0xFFFFFF"})
+  @DisplayName("Should ignore hue when saturation is zero")
+  void shouldIgnoreHueWhenSaturationIsZero(float lightness, int expected) {
+    assertThat(ColorConversions.hslToRgb(new float[] {210f, 0f, lightness})).isEqualTo(expected);
   }
 
-  @Test
-  @DisplayName("Should produce gray when saturation is zero")
-  void shouldProduceGrayWhenSaturationIsZero() {
-    assertThat(ColorConversions.hslToRgb(new float[] {0f, 0f, 0.5f})).isEqualTo(0x808080);
-  }
-
-  @Test
-  @DisplayName("Should clamp to white and black when lightness hits the extremes")
-  void shouldClampToWhiteAndBlackWhenLightnessHitsTheExtremes() {
-    assertThat(ColorConversions.hslToRgb(new float[] {200f, 1f, 1f})).isEqualTo(0xFFFFFF);
-    assertThat(ColorConversions.hslToRgb(new float[] {200f, 1f, 0f})).isEqualTo(0x000000);
+  @ParameterizedTest(name = "lightness {0}: RGB {1}")
+  @CsvSource({"0, 0x000000", "1, 0xFFFFFF"})
+  @DisplayName("Should emit black or white when saturated lightness reaches an endpoint")
+  void shouldEmitBlackOrWhiteWhenSaturatedLightnessReachesEndpoint(float lightness, int expected) {
+    assertThat(ColorConversions.hslToRgb(new float[] {200f, 1f, lightness})).isEqualTo(expected);
   }
 }

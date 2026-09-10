@@ -18,12 +18,14 @@ import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
+import com.streamarr.server.fixtures.ImageFixture;
 import com.streamarr.server.graphql.dataloaders.ImageDataLoader;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
+import com.streamarr.server.services.metadata.color.AmbientThemeDeriver;
 import com.streamarr.server.support.security.WithProfileContext;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +35,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -129,22 +133,29 @@ class ImageFieldResolverTest {
                   "primary", "#00a0a0"));
     }
 
-    @Test
+    @ParameterizedTest
+    @ValueSource(strings = {"#0d322c", "#e9b658"})
     @DisplayName("Should derive the ambient theme when resolving ambient colors")
-    void shouldDeriveAmbientThemeWhenResolvingAmbientColors() {
+    void shouldDeriveAmbientThemeWhenResolvingAmbientColors(String corner) {
       var movie = setupMovie();
       var ambientColors =
           AmbientColors.builder()
-              .topLeft("#0d322c")
-              .topRight("#0d322c")
-              .bottomRight("#0d322c")
-              .bottomLeft("#0d322c")
+              .topLeft(corner)
+              .topRight(corner)
+              .bottomRight(corner)
+              .bottomLeft(corner)
               .primary("#6fe0bf")
               .darkMuted("#0e3b34")
               .darkVibrant("#1f6b5a")
+              .lightMuted("#d9c5a5")
+              .lightVibrant("#f0c069")
               .build();
-      var image = buildImage(movie.getId(), ImageEntityType.MOVIE, ImageType.POSTER);
-      image.setAmbientColors(Optional.of(ambientColors));
+      var image =
+          ImageFixture.imageBuilder(movie.getId())
+              .id(UUID.randomUUID())
+              .path("test/path.jpg")
+              .ambientColors(Optional.of(ambientColors))
+              .build();
       when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.MOVIE), any()))
           .thenReturn(List.of(image));
 
@@ -172,11 +183,24 @@ class ImageFieldResolverTest {
                   .formatted(movie.getId()),
               "data.movie.images[0].ambientColors.theme");
 
+      var expected = AmbientThemeDeriver.derive(ambientColors);
       assertThat(theme)
-          .containsEntry("base", "#0e3b34")
-          .containsEntry("selected", "#1f6b5a")
-          .containsEntry("accent", "#6fe0bf")
-          .containsKeys("panel", "onAccent", "textPrimary", "textSecondary");
+          .isEqualTo(
+              Map.of(
+                  "base",
+                  expected.base(),
+                  "panel",
+                  expected.panel(),
+                  "selected",
+                  expected.selected(),
+                  "accent",
+                  expected.accent(),
+                  "onAccent",
+                  expected.onAccent(),
+                  "textPrimary",
+                  expected.textPrimary(),
+                  "textSecondary",
+                  expected.textSecondary()));
     }
 
     @Test

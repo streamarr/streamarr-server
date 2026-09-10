@@ -2,6 +2,7 @@ package com.streamarr.server.services.metadata.color;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.support.WcagContrast;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -27,8 +28,7 @@ class ContrastAdjustmentTest {
       int color, int background, float minimumContrast) {
     var adjusted = ContrastAdjustment.adjust(color, background, minimumContrast).orElseThrow();
 
-    assertThat(ColorContrast.contrastRatio(adjusted, background))
-        .isGreaterThanOrEqualTo(minimumContrast);
+    assertThat(WcagContrast.ratio(adjusted, background)).isGreaterThanOrEqualTo(minimumContrast);
   }
 
   @Test

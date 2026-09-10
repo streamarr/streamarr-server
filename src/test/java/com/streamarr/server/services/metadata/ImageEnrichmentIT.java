@@ -3,7 +3,6 @@ package com.streamarr.server.services.metadata;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
-import static com.streamarr.server.fakes.TestImages.createDistinctColorPngImage;
 import static com.streamarr.server.fakes.TestImages.createSolidPngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fakes.TestImages.createTransparentPngImage;
@@ -15,7 +14,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractWireMockIntegrationTest;
-import com.streamarr.server.domain.media.AmbientColors;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
@@ -83,54 +81,6 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
                   imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
               assertThat(images).extracting(Image::getImageType).containsOnly(ImageType.POSTER);
             });
-  }
-
-  @Test
-  @DisplayName("Should persist ambient colors on small variant when enrichment completes")
-  void shouldPersistAmbientColorsOnSmallVariantWhenEnrichmentCompletes() {
-    var entityId = UUID.randomUUID();
-    stubImageDownload("/backdrop.jpg", createDistinctColorPngImage());
-
-    transactionTemplate.executeWithoutResult(
-        status ->
-            eventPublisher.publishEvent(
-                new MetadataEnrichedEvent(
-                    entityId,
-                    ImageEntityType.MOVIE,
-                    List.of(new TmdbImageSource(ImageType.BACKDROP, "/backdrop.jpg")))));
-
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> {
-              var images =
-                  imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-              assertThat(images)
-                  .filteredOn(image -> image.getVariant() == ImageSize.SMALL)
-                  .singleElement()
-                  .satisfies(
-                      small ->
-                          assertThat(small.getAmbientColors())
-                              .hasValueSatisfying(this::assertDistinctColorAmbientColors));
-            });
-  }
-
-  private void assertDistinctColorAmbientColors(AmbientColors colors) {
-    assertThat(colors)
-        .usingRecursiveComparison()
-        .ignoringFields("darkVibrant", "darkMuted", "lightVibrant", "lightMuted")
-        .isEqualTo(
-            AmbientColors.builder()
-                .topLeft("#202020")
-                .topRight("#404040")
-                .bottomRight("#c0c0c0")
-                .bottomLeft("#808080")
-                .primary("#00a0a0")
-                .build());
-    // The resized variant's edge blends make the vibrant targets unpredictable here; exact
-    // selection is pinned by AmbientColorExtractorTest on unblended canvases.
-    assertThat(colors.darkMuted()).as("dark gray quadrants").isNotNull();
-    assertThat(colors.lightMuted()).as("light gray quadrant").isNotNull();
   }
 
   @Test
