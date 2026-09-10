@@ -38,7 +38,7 @@ class SecretRecordToStringTest {
                 .toString(),
             DevicePairingService.PairingLookupCommand.builder().userCode(secret).toString(),
             DevicePairingService.PairingDecisionCommand.builder().userCode(secret).toString(),
-            DeviceCodePresentation.builder().userCode(secret).toString());
+            DeviceCodeSubmission.builder().userCode(secret).toString());
 
     assertThat(renderedValues)
         .hasSize(12)

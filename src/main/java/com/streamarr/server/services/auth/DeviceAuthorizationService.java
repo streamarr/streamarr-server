@@ -142,10 +142,10 @@ public class DeviceAuthorizationService {
     };
   }
 
-  public DeviceAuthorizationDetails lookup(DeviceCodePresentation presentation) {
-    var authorization = findPresented(presentation);
+  public DeviceAuthorizationDetails lookup(DeviceCodeSubmission submission) {
+    var authorization = findBySubmittedCode(submission);
     return credentialAttempts.attempt(
-        approverMetadata(presentation),
+        approverMetadata(submission),
         () -> {
           requireUnexpired(authorization);
           return detailsOf(authorization, authorization.getStatus());
@@ -156,10 +156,10 @@ public class DeviceAuthorizationService {
    * Resolves a pairing code and journals one attempt against the approver before authorization.
    * Unknown codes return not-found; expired codes return an expiry error.
    */
-  public ResolvedGrant resolveForDecision(DeviceCodePresentation presentation) {
-    var authorization = findPresented(presentation);
+  public ResolvedGrant resolveForDecision(DeviceCodeSubmission submission) {
+    var authorization = findBySubmittedCode(submission);
     return credentialAttempts.attempt(
-        approverMetadata(presentation),
+        approverMetadata(submission),
         () -> {
           requirePresent(authorization);
           // Decision reports expiry so the client can request a new code; lookup returns not-found.
@@ -331,8 +331,8 @@ public class DeviceAuthorizationService {
   }
 
   /** Format validation happens here, before any attempt is journaled. */
-  private DeviceAuthorization findPresented(DeviceCodePresentation presentation) {
-    var userCode = UserCode.normalize(presentation.userCode());
+  private DeviceAuthorization findBySubmittedCode(DeviceCodeSubmission submission) {
+    var userCode = UserCode.normalize(submission.userCode());
     return authorizationRepository.findByUserCode(userCode).orElse(null);
   }
 
@@ -352,11 +352,11 @@ public class DeviceAuthorizationService {
     }
   }
 
-  private static CredentialAttemptMetadata approverMetadata(DeviceCodePresentation presentation) {
+  private static CredentialAttemptMetadata approverMetadata(DeviceCodeSubmission submission) {
     return CredentialAttemptMetadata.builder()
         .kind(CredentialKind.DEVICE_PAIRING_CODE)
-        .accountId(presentation.approverAccountId())
-        .ipAddress(presentation.ipAddress())
+        .accountId(submission.approverAccountId())
+        .ipAddress(submission.ipAddress())
         .build();
   }
 

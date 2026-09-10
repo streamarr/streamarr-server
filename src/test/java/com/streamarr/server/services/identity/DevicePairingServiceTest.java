@@ -229,8 +229,8 @@ class DevicePairingServiceTest {
   }
 
   @Test
-  @DisplayName("Should release completed slots when successful presentations exceed five")
-  void shouldReleaseCompletedSlotsWhenSuccessfulPresentationsExceedFive() {
+  @DisplayName("Should release completed slots when successful submissions exceed five")
+  void shouldReleaseCompletedSlotsWhenSuccessfulSubmissionsExceedFive() {
     for (var i = 0; i < 6; i++) {
       var issued = deviceAuthorizationService.issue("TV-" + i, "esn-" + i);
       assertThat(service.lookup(identity(), lookup(issued.userCode())).authorization().deviceName())
@@ -332,7 +332,7 @@ class DevicePairingServiceTest {
 
     service.decide(identity(), approve(issued.userCode(), approver.getHouseholdId()));
 
-    // resolveForDecision journals the presentation; the decision write records nothing more.
+    // resolveForDecision journals the submission; the decision write records nothing more.
     assertThat(credentialAttempts.attempts())
         .singleElement()
         .satisfies(
