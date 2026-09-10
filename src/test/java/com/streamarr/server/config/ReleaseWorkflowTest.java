@@ -1,5 +1,6 @@
 package com.streamarr.server.config;
 
+import static com.streamarr.server.config.ReleaseWorkflowFixture.run;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
@@ -43,30 +44,17 @@ class ReleaseWorkflowTest {
   @DisplayName("Should promote latest only when publishing the current GitHub release")
   void shouldPromoteLatestOnlyWhenPublishingCurrentGitHubRelease(
       String latestTag, boolean promoted, @TempDir Path directory) throws Exception {
-    Map<String, Object> workflow =
-        new Yaml().load(Files.readString(Path.of(".github/workflows/publish-release.yml")));
-    var publish = map(map(workflow.get("jobs")).get("publish_release"));
-    var command =
-        steps(publish).stream()
-            .filter(step -> "Publish latest multi-architecture image".equals(step.get("name")))
-            .map(step -> (String) step.get("run"))
-            .findFirst()
-            .orElseThrow();
-    Files.writeString(directory.resolve("gh"), "#!/bin/sh\necho \"$LATEST_TAG\"\n");
-    Files.writeString(directory.resolve("docker"), "#!/bin/sh\ntouch \"$PROMOTED_FILE\"\n");
-    assertThat(directory.resolve("gh").toFile().setExecutable(true)).isTrue();
-    assertThat(directory.resolve("docker").toFile().setExecutable(true)).isTrue();
+    var fixture = new ReleaseWorkflowFixture(directory);
+    fixture.stub("gh", "echo \"$LATEST_TAG\"\n");
+    fixture.stub("docker", "touch \"$PROMOTED_FILE\"\n");
     var marker = directory.resolve("promoted");
-    var builder = new ProcessBuilder("bash", "-e", "-o", "pipefail", "-c", command);
-    builder.environment().put("PATH", directory + ":" + System.getenv("PATH"));
+    var builder = fixture.step("publish-release", "Publish latest multi-architecture image");
     builder.environment().put("LATEST_TAG", latestTag);
     builder.environment().put("IMAGE_VERSION", "1.2.3");
     builder.environment().put("GITHUB_REPOSITORY", "streamarr/streamarr-server");
     builder.environment().put("PROMOTED_FILE", marker.toString());
-    var process = builder.redirectErrorStream(true).start();
-    var output = new String(process.getInputStream().readAllBytes());
-
-    assertThat(process.waitFor()).as(output).isZero();
+    var result = run(builder);
+    assertThat(result.exitCode()).as(result.output()).isZero();
     assertThat(Files.exists(marker)).isEqualTo(promoted);
   }
 
