@@ -60,8 +60,8 @@ class CiPipelineWorkflowTest {
   void shouldSelectComplementaryMavenProfilesForParallelApplicationJobs(String suite)
       throws Exception {
     var matrix = map(map(job("application").get("strategy")).get("matrix"));
-    assertThat(matrix.get("suite")).isEqualTo(List.of("unit", "integration"));
-    assertThat(job("analysis").get("needs")).isEqualTo("application");
+    assertThat(matrix).containsEntry("suite", List.of("unit", "integration"));
+    assertThat(job("analysis")).containsEntry("needs", "application");
     var capture = temporaryDirectory.resolve("mvnw");
     Files.writeString(capture, "#!/bin/sh\nprintf '%s\\n' \"$@\"\n");
     assertThat(capture.toFile().setExecutable(true)).isTrue();
@@ -164,9 +164,9 @@ class CiPipelineWorkflowTest {
   }
 
   private static String render(String command, Map<String, String> context) {
-    return Pattern.compile("\\$\\{\\{\\s*(.*?)\\s*}}")
+    return Pattern.compile("\\$\\{\\{([^{}]*+)}}")
         .matcher(command)
-        .replaceAll(match -> context.get(match.group(1)));
+        .replaceAll(match -> context.get(match.group(1).strip()));
   }
 
   private CommandResult runBash(String command) throws Exception {
