@@ -2,9 +2,13 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.task.FileProcessingTask;
 import com.streamarr.server.domain.task.FileProcessingTaskStatus;
+import com.streamarr.server.domain.task.ProbeClaim;
+import com.streamarr.server.domain.task.ProbePublication;
+import com.streamarr.server.domain.task.ProbeRequest;
 import com.streamarr.server.repositories.task.FileProcessingTaskRepository;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +28,61 @@ public class FakeFileProcessingTaskRepository implements FileProcessingTaskRepos
       List.of(FileProcessingTaskStatus.PENDING, FileProcessingTaskStatus.PROCESSING);
 
   private final Map<UUID, FileProcessingTask> database = new HashMap<>();
+
+  @Override
+  public List<FileProcessingTask> findLegacyTasks(Optional<UUID> afterId, int limit) {
+    return database.values().stream()
+        .filter(task -> ACTIVE_STATUSES.contains(task.getStatus()))
+        .filter(task -> afterId.map(id -> task.getId().compareTo(id) > 0).orElse(true))
+        .sorted(Comparator.comparing(FileProcessingTask::getId))
+        .limit(limit)
+        .toList();
+  }
+
+  @Override
+  public void cancelTask(String filepathUri) {
+    deleteByFilepathUriAndStatusIn(filepathUri, List.of(FileProcessingTaskStatus.PENDING));
+  }
+
+  @Override
+  public UUID enqueueProbe(ProbeRequest request) {
+    throw new NotImplementedException();
+  }
+
+  @Override
+  public Optional<ProbeClaim> claimProbeTask(String ownerInstanceId, Instant leaseExpiresAt) {
+    throw new NotImplementedException();
+  }
+
+  @Override
+  public boolean retryProbe(ProbeClaim claim, String errorMessage, Instant retryAt) {
+    throw new NotImplementedException();
+  }
+
+  @Override
+  public boolean publishProbe(ProbePublication publication) {
+    throw new NotImplementedException();
+  }
+
+  @Override
+  public boolean completeProbe(ProbeClaim claim) {
+    throw new NotImplementedException();
+  }
+
+  @Override
+  public boolean failProbe(ProbeClaim claim, String errorMessage) {
+    throw new NotImplementedException();
+  }
+
+  @Override
+  public boolean rescheduleProbe(ProbeClaim claim, ProbeRequest replacement) {
+    throw new NotImplementedException();
+  }
+
+  @Override
+  public boolean renewProbe(ProbeClaim claim, Instant leaseExpiresAt) {
+    throw new NotImplementedException();
+  }
 
   @Override
   public Optional<FileProcessingTask> findByFilepathUriAndStatusIn(

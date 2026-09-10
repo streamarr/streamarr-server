@@ -9,6 +9,7 @@ import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.enums.MediaFileStatus;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable.BaseCollectablePath;
+import com.streamarr.server.jooq.generated.tables.FileProcessingTask.FileProcessingTaskPath;
 import com.streamarr.server.jooq.generated.tables.Library.LibraryPath;
 import com.streamarr.server.jooq.generated.tables.MediaFileContainerInfo.MediaFileContainerInfoPath;
 import com.streamarr.server.jooq.generated.tables.SessionProgress.SessionProgressPath;
@@ -225,6 +226,19 @@ public class MediaFile extends TableImpl<MediaFileRecord> {
             _library = new LibraryPath(this, Keys.MEDIA_FILE__FK_LIBRARY, null);
 
         return _library;
+    }
+
+    private transient FileProcessingTaskPath _fileProcessingTask;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.file_processing_task</code> table
+     */
+    public FileProcessingTaskPath fileProcessingTask() {
+        if (_fileProcessingTask == null)
+            _fileProcessingTask = new FileProcessingTaskPath(this, null, Keys.FILE_PROCESSING_TASK__FILE_PROCESSING_TASK_MEDIA_FILE_ID_FKEY.getInverseKey());
+
+        return _fileProcessingTask;
     }
 
     private transient SessionProgressPath _sessionProgress;

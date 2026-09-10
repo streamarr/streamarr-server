@@ -2,6 +2,9 @@ package com.streamarr.server.services.task;
 
 import com.streamarr.server.domain.task.FileProcessingTask;
 import com.streamarr.server.domain.task.FileProcessingTaskStatus;
+import com.streamarr.server.domain.task.ProbeClaim;
+import com.streamarr.server.domain.task.ProbePublication;
+import com.streamarr.server.domain.task.ProbeRequest;
 import com.streamarr.server.repositories.task.FileProcessingTaskRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import java.lang.management.ManagementFactory;
@@ -79,6 +82,43 @@ public class FileProcessingTaskCoordinator {
     }
   }
 
+  public List<FileProcessingTask> findLegacyTasks(Optional<UUID> afterId, int limit) {
+    return repository.findLegacyTasks(afterId, limit);
+  }
+
+  public UUID enqueueProbe(ProbeRequest request) {
+    return repository.enqueueProbe(request);
+  }
+
+  public Optional<ProbeClaim> claimProbeTask() {
+    return repository.claimProbeTask(instanceId, clock.instant().plus(leaseDuration));
+  }
+
+  public boolean retryProbe(ProbeClaim claim, String errorMessage) {
+    var delaySeconds = Math.min(300, 5L << Math.min(claim.retryCount(), 6));
+    return repository.retryProbe(claim, errorMessage, clock.instant().plusSeconds(delaySeconds));
+  }
+
+  public boolean publishProbe(ProbePublication publication) {
+    return repository.publishProbe(publication);
+  }
+
+  public boolean completeProbe(ProbeClaim claim) {
+    return repository.completeProbe(claim);
+  }
+
+  public boolean failProbe(ProbeClaim claim, String errorMessage) {
+    return repository.failProbe(claim, errorMessage);
+  }
+
+  public boolean rescheduleProbe(ProbeClaim claim, ProbeRequest replacement) {
+    return repository.rescheduleProbe(claim, replacement);
+  }
+
+  public boolean renewProbe(ProbeClaim claim) {
+    return repository.renewProbe(claim, clock.instant().plus(leaseDuration));
+  }
+
   public Optional<FileProcessingTask> claimNextTask() {
     var leaseExpiresAt = clock.instant().plus(leaseDuration);
     return repository.claimNextTask(instanceId, leaseExpiresAt);
@@ -122,8 +162,8 @@ public class FileProcessingTaskCoordinator {
   @Transactional
   public void cancelTask(Path path) {
     var filepath = FilepathCodec.encode(path);
-    repository.deleteByFilepathUriAndStatusIn(filepath, List.of(FileProcessingTaskStatus.PENDING));
-    log.info("Cancelled pending task for: {}", filepath);
+    repository.cancelTask(filepath);
+    log.info("Cancelled task for: {}", filepath);
   }
 
   private static String generateInstanceId() {

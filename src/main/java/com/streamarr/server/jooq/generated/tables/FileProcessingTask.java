@@ -9,6 +9,7 @@ import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.enums.FileProcessingTaskStatus;
 import com.streamarr.server.jooq.generated.tables.Library.LibraryPath;
+import com.streamarr.server.jooq.generated.tables.MediaFile.MediaFilePath;
 import com.streamarr.server.jooq.generated.tables.records.FileProcessingTaskRecord;
 
 import java.time.OffsetDateTime;
@@ -17,6 +18,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
+import org.jooq.Check;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.ForeignKey;
@@ -107,6 +109,48 @@ public class FileProcessingTask extends TableImpl<FileProcessingTaskRecord> {
      */
     public final TableField<FileProcessingTaskRecord, OffsetDateTime> COMPLETED_ON = createField(DSL.name("completed_on"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "");
 
+    /**
+     * The column <code>public.file_processing_task.media_file_id</code>.
+     */
+    public final TableField<FileProcessingTaskRecord, UUID> MEDIA_FILE_ID = createField(DSL.name("media_file_id"), SQLDataType.UUID, this, "");
+
+    /**
+     * The column <code>public.file_processing_task.source_size</code>.
+     */
+    public final TableField<FileProcessingTaskRecord, Long> SOURCE_SIZE = createField(DSL.name("source_size"), SQLDataType.BIGINT, this, "");
+
+    /**
+     * The column
+     * <code>public.file_processing_task.source_modified_epoch_second</code>.
+     */
+    public final TableField<FileProcessingTaskRecord, Long> SOURCE_MODIFIED_EPOCH_SECOND = createField(DSL.name("source_modified_epoch_second"), SQLDataType.BIGINT, this, "");
+
+    /**
+     * The column
+     * <code>public.file_processing_task.source_modified_nanos</code>.
+     */
+    public final TableField<FileProcessingTaskRecord, Integer> SOURCE_MODIFIED_NANOS = createField(DSL.name("source_modified_nanos"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>public.file_processing_task.probe_version</code>.
+     */
+    public final TableField<FileProcessingTaskRecord, Integer> PROBE_VERSION = createField(DSL.name("probe_version"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>public.file_processing_task.claim_id</code>.
+     */
+    public final TableField<FileProcessingTaskRecord, UUID> CLAIM_ID = createField(DSL.name("claim_id"), SQLDataType.UUID, this, "");
+
+    /**
+     * The column <code>public.file_processing_task.retry_at</code>.
+     */
+    public final TableField<FileProcessingTaskRecord, OffsetDateTime> RETRY_AT = createField(DSL.name("retry_at"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false).defaultValue(DSL.field(DSL.raw("CURRENT_TIMESTAMP"), SQLDataType.TIMESTAMPWITHTIMEZONE)), this, "");
+
+    /**
+     * The column <code>public.file_processing_task.retry_count</code>.
+     */
+    public final TableField<FileProcessingTaskRecord, Integer> RETRY_COUNT = createField(DSL.name("retry_count"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("0"), SQLDataType.INTEGER)), this, "");
+
     private FileProcessingTask(Name alias, Table<FileProcessingTaskRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -188,7 +232,19 @@ public class FileProcessingTask extends TableImpl<FileProcessingTaskRecord> {
 
     @Override
     public List<ForeignKey<FileProcessingTaskRecord, ?>> getReferences() {
-        return Arrays.asList(Keys.FILE_PROCESSING_TASK__FK_LIBRARY);
+        return Arrays.asList(Keys.FILE_PROCESSING_TASK__FILE_PROCESSING_TASK_MEDIA_FILE_ID_FKEY, Keys.FILE_PROCESSING_TASK__FK_LIBRARY);
+    }
+
+    private transient MediaFilePath _mediaFile;
+
+    /**
+     * Get the implicit join path to the <code>public.media_file</code> table.
+     */
+    public MediaFilePath mediaFile() {
+        if (_mediaFile == null)
+            _mediaFile = new MediaFilePath(this, Keys.FILE_PROCESSING_TASK__FILE_PROCESSING_TASK_MEDIA_FILE_ID_FKEY, null);
+
+        return _mediaFile;
     }
 
     private transient LibraryPath _library;
@@ -201,6 +257,14 @@ public class FileProcessingTask extends TableImpl<FileProcessingTaskRecord> {
             _library = new LibraryPath(this, Keys.FILE_PROCESSING_TASK__FK_LIBRARY, null);
 
         return _library;
+    }
+
+    @Override
+    public List<Check<FileProcessingTaskRecord>> getChecks() {
+        return Arrays.asList(
+            Internal.createCheck(this, DSL.name("file_processing_task_probe_inputs_check"), "((((media_file_id IS NULL) AND (source_size IS NULL) AND (source_modified_epoch_second IS NULL) AND (source_modified_nanos IS NULL) AND (probe_version IS NULL)) OR ((media_file_id IS NOT NULL) AND (source_size IS NOT NULL) AND (source_size >= 0) AND (source_modified_epoch_second IS NOT NULL) AND (source_modified_nanos IS NOT NULL) AND ((source_modified_nanos >= 0) AND (source_modified_nanos <= 999999999)) AND (probe_version IS NOT NULL) AND (probe_version > 0))))", true),
+            Internal.createCheck(this, DSL.name("file_processing_task_retry_count_check"), "((retry_count >= 0))", true)
+        );
     }
 
     @Override

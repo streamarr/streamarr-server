@@ -148,6 +148,122 @@ public class FileProcessingTaskRecord extends UpdatableRecordImpl<FileProcessing
         return (OffsetDateTime) get(8);
     }
 
+    /**
+     * Setter for <code>public.file_processing_task.media_file_id</code>.
+     */
+    public void setMediaFileId(UUID value) {
+        set(9, value);
+    }
+
+    /**
+     * Getter for <code>public.file_processing_task.media_file_id</code>.
+     */
+    public UUID getMediaFileId() {
+        return (UUID) get(9);
+    }
+
+    /**
+     * Setter for <code>public.file_processing_task.source_size</code>.
+     */
+    public void setSourceSize(Long value) {
+        set(10, value);
+    }
+
+    /**
+     * Getter for <code>public.file_processing_task.source_size</code>.
+     */
+    public Long getSourceSize() {
+        return (Long) get(10);
+    }
+
+    /**
+     * Setter for
+     * <code>public.file_processing_task.source_modified_epoch_second</code>.
+     */
+    public void setSourceModifiedEpochSecond(Long value) {
+        set(11, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.file_processing_task.source_modified_epoch_second</code>.
+     */
+    public Long getSourceModifiedEpochSecond() {
+        return (Long) get(11);
+    }
+
+    /**
+     * Setter for
+     * <code>public.file_processing_task.source_modified_nanos</code>.
+     */
+    public void setSourceModifiedNanos(Integer value) {
+        set(12, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.file_processing_task.source_modified_nanos</code>.
+     */
+    public Integer getSourceModifiedNanos() {
+        return (Integer) get(12);
+    }
+
+    /**
+     * Setter for <code>public.file_processing_task.probe_version</code>.
+     */
+    public void setProbeVersion(Integer value) {
+        set(13, value);
+    }
+
+    /**
+     * Getter for <code>public.file_processing_task.probe_version</code>.
+     */
+    public Integer getProbeVersion() {
+        return (Integer) get(13);
+    }
+
+    /**
+     * Setter for <code>public.file_processing_task.claim_id</code>.
+     */
+    public void setClaimId(UUID value) {
+        set(14, value);
+    }
+
+    /**
+     * Getter for <code>public.file_processing_task.claim_id</code>.
+     */
+    public UUID getClaimId() {
+        return (UUID) get(14);
+    }
+
+    /**
+     * Setter for <code>public.file_processing_task.retry_at</code>.
+     */
+    public void setRetryAt(OffsetDateTime value) {
+        set(15, value);
+    }
+
+    /**
+     * Getter for <code>public.file_processing_task.retry_at</code>.
+     */
+    public OffsetDateTime getRetryAt() {
+        return (OffsetDateTime) get(15);
+    }
+
+    /**
+     * Setter for <code>public.file_processing_task.retry_count</code>.
+     */
+    public void setRetryCount(Integer value) {
+        set(16, value);
+    }
+
+    /**
+     * Getter for <code>public.file_processing_task.retry_count</code>.
+     */
+    public Integer getRetryCount() {
+        return (Integer) get(16);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -171,7 +287,7 @@ public class FileProcessingTaskRecord extends UpdatableRecordImpl<FileProcessing
     /**
      * Create a detached, initialised FileProcessingTaskRecord
      */
-    public FileProcessingTaskRecord(UUID id, String filepathUri, UUID libraryId, FileProcessingTaskStatus status, String ownerInstanceId, OffsetDateTime leaseExpiresAt, String errorMessage, OffsetDateTime createdOn, OffsetDateTime completedOn) {
+    public FileProcessingTaskRecord(UUID id, String filepathUri, UUID libraryId, FileProcessingTaskStatus status, String ownerInstanceId, OffsetDateTime leaseExpiresAt, String errorMessage, OffsetDateTime createdOn, OffsetDateTime completedOn, UUID mediaFileId, Long sourceSize, Long sourceModifiedEpochSecond, Integer sourceModifiedNanos, Integer probeVersion, UUID claimId, OffsetDateTime retryAt, Integer retryCount) {
         super(FileProcessingTask.FILE_PROCESSING_TASK);
 
         setId(id);
@@ -183,6 +299,14 @@ public class FileProcessingTaskRecord extends UpdatableRecordImpl<FileProcessing
         setErrorMessage(errorMessage);
         setCreatedOn(createdOn);
         setCompletedOn(completedOn);
+        setMediaFileId(mediaFileId);
+        setSourceSize(sourceSize);
+        setSourceModifiedEpochSecond(sourceModifiedEpochSecond);
+        setSourceModifiedNanos(sourceModifiedNanos);
+        setProbeVersion(probeVersion);
+        setClaimId(claimId);
+        setRetryAt(retryAt);
+        setRetryCount(retryCount);
         resetTouchedOnNotNull();
     }
 }

@@ -52,6 +52,9 @@ public class FileProcessingTask {
   @Column(name = "error_message")
   private String errorMessage;
 
+  @Column(name = "retry_at", insertable = false, updatable = false)
+  private Instant retryAt;
+
   @Column(name = "created_on", nullable = false, updatable = false)
   private Instant createdOn;
 
