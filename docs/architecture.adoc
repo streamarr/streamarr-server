@@ -8,28 +8,31 @@
 * **Flyway** for database migrations
 * **FFmpeg** via ProcessBuilder for HLS transcoding
 
-== Layered Architecture
+== Dependency Boundaries
 
 ----
-Protocol Adapters (GraphQL Resolvers, REST Controllers)
-        |
-    Services (business logic)
-        |
-    Repositories (data access)
-        |
-    Domain Entities (core model)
-        |
-    PostgreSQL (via Flyway migrations)
+Protocol adapters ---> Services ---> Repository contracts
+                          |                 ^
+                          v                 |
+                     Domain model <--- Repository implementations ---> PostgreSQL
 ----
 
-*Dependency rule:* each layer only depends on the layer below it.
+Arrows point from consumers to their dependencies.
+Repository implementations fulfill the contracts used by services.
+Services, repository contracts, and repository implementations share domain types.
 
 * *Protocol adapters* (GraphQL resolvers, REST controllers) delegate to services -- no business logic at the protocol layer
 * *Services* orchestrate business operations -- protocol-agnostic (no `graphql.*` imports, enforced by ArchUnit)
-* *Repositories* use JPA for CRUD and jOOQ for complex queries
-* *Domain* depends on nothing -- pure data model
+* *Repository contracts* expose data access and atomic operations needed by services
+* *Repository implementations* use JPA for CRUD and jOOQ for complex queries
+* *Domain* defines the core model and does not depend on services, repositories, or protocol adapters
 
 These rules are enforced by ArchUnit tests (see https://github.com/streamarr/streamarr-adr/blob/main/adr/0014-protocol-agnostic-pagination.adoc[ADR 0014] for pagination-specific architecture).
+
+PostgreSQL-specific coordination belongs in repository implementations.
+`PostgresTransactionLocks` shares advisory-lock and transaction-local timeout operations within persistence.
+Services request atomic operations through repository contracts; lock keys and PostgreSQL calls stay inside the implementations.
+See https://github.com/streamarr/streamarr-adr/blob/main/adr/0031-transaction-scoped-artwork-replacement-locking.adoc[ADR 0031] for the artwork replacement protocol.
 
 == Database
 

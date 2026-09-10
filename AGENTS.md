@@ -88,10 +88,17 @@ Choose the simplest mechanism that fits the operation:
   transaction, then completes the row — so every instance shares one limit. Never add a
   per-instance throttle. The journaled client IP is observational only. See ADR 0028.
 - **Transaction-scoped advisory locks**: serialize a short, multi-statement database mutation
-  when the logical resource has no stable row to lock. Acquire the advisory lock before row locks,
-  bound the wait with a transaction-local `lock_timeout`, and keep external calls, file I/O, and
-  retry/backoff outside the transaction. Every writer for that logical resource must follow the
-  same cooperative lock protocol. See [ADR 0031](https://github.com/streamarr/streamarr-adr/blob/main/adr/0031-transaction-scoped-artwork-replacement-locking.adoc).
+  when the logical resource has no stable row to lock. Repository implementations use
+  `repositories.PostgresTransactionLocks` for advisory locks and transaction-local lock timeouts.
+  The caller must establish the transaction; the helper does not start one. Numeric `lock` methods
+  preserve the transaction's existing timeout, so callers must configure the required bound with
+  `limitLockWait` before acquiring locks. `lockNormalizedKey` applies its supplied timeout before
+  acquiring the advisory lock. The timeout also bounds subsequent row-lock waits in that transaction.
+  Acquire advisory locks before row locks, and keep external calls, file I/O, and retry/backoff
+  outside the transaction. Every writer for the same logical resource must use the same key,
+  normalization, and lock ordering. Preserve that protocol during refactors and prove contention
+  behavior with real PostgreSQL integration tests. The helper stays inside persistence; services
+  express the required atomic operation through repository contracts. See [ADR 0031](https://github.com/streamarr/streamarr-adr/blob/main/adr/0031-transaction-scoped-artwork-replacement-locking.adoc).
 - **Outbound HTTP throttling/retry**: use the client's native interceptors (Methanol `RetryInterceptor` + `RateLimitingInterceptor`) — never a hand-rolled `Semaphore` + sleep loop. Never hold a permit, lock, or database connection across a retry backoff sleep; that pattern caused cascading Hikari pool exhaustion (four fix PRs in ten days).
 - **Virtual threads are the async model**: `Executors.newVirtualThreadPerTaskExecutor()` in try-with-resources, plus `spring.threads.virtual.enabled: true`. No `@Async`, no reactive/actor frameworks.
 - **Async boundary policy**: library-mutating GraphQL mutations (scan/refresh) are async and return immediately. Apply this uniformly — don't flip individual mutations between sync and async.
