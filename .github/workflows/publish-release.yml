@@ -58,13 +58,20 @@ jobs:
             exit 1
           fi
           pom_version="$(./mvnw --batch-mode --quiet help:evaluate -Dexpression=project.version -DforceStdout)"
-          version="$(node .github/release/verify-version.cjs "${RELEASE_TAG}" "${pom_version}")"
+          if [[ ! "${RELEASE_TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::Release tag must be stable SemVer (vX.Y.Z)"
+            exit 1
+          fi
+          if [[ "${RELEASE_TAG}" != "v${pom_version}" ]]; then
+            echo "::error::Release tag and Maven version must agree"
+            exit 1
+          fi
           release_draft="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.draft')"
           if [[ "${release_draft}" != "false" ]]; then
             echo "::error::Publish the GitHub release before publishing images"
             exit 1
           fi
-          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "version=${pom_version}" >> "${GITHUB_OUTPUT}"
           echo "revision=${revision}" >> "${GITHUB_OUTPUT}"
 
   build_release_images:

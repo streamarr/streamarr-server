@@ -65,7 +65,3 @@ src/test/resources/BigBuckBunny_320x180.mp4
 
 ### Reproducible FFmpeg redistribution artifacts ###
 /buildpacks/ffmpeg/generated/
-
-### Release tooling ###
-/.github/release/node_modules/
-/.github/release/coverage/

@@ -42,7 +42,7 @@ The repository's `structural:` and `behavioral:` subjects remain visible in the 
 Ordinary patch releases need no extra labels or commit-body metadata.
 Only the release bot uses `chore(main): release X` subjects, with an empty squash body. The native Maven strategy recognizes its snapshot commits, and ordinary `chore:` updates do not initiate another release or appear in the notes.
 Human subjects such as `behavioral: release 1.2.3` and `behavioral: release 4k playback sessions` remain regular changes.
-Release preparation uses the SDK's native Maven strategy and PR grouping, with configured headers and footers for factual release and snapshot PR bodies. The group title pattern preserves the Maven version in the upstream `chore(main)` title format.
+The official Release Please action uses the native Maven strategy and PR grouping, with configured headers and footers for factual release and snapshot PR bodies. The group title pattern preserves the Maven version in the upstream `chore(main)` title format.
 While retaining those subjects, a commit can include an additional `feat: ...` paragraph for a feature or a `BREAKING CHANGE: ...` footer for an incompatible change.
 Separate those paragraphs from preceding prose by a blank line and preserve them when merging.
 This follows [Release Please's guidance for multiple changes in one commit](https://github.com/googleapis/release-please#what-if-my-pr-contains-multiple-fixes-or-features).
@@ -52,14 +52,12 @@ Renovate explicitly uses semantic commits. Production Maven dependency updates u
 ## Verification and recovery
 
 ```sh
-npm ci --ignore-scripts --prefix .github/release
-npm test --prefix .github/release
-npm audit --omit=dev --prefix .github/release
+./mvnw -Dtest=ReleaseAutomationTest,ReleasePublisherTest,ReleaseWorkflowTest test
 ```
 
-Tests exercise the actual pinned Release Please Maven strategy, including snapshot transitions, SemVer changes, POM updates, and release tags.
-The workflow installs dependencies before minting its App token.
-Renovate maintains the tooling version and lockfile.
+Workflow tests run the actual shell steps against fake external commands and temporary Git repositories. They cover snapshot-only auto-merge, pending-release recovery, version and revision validation, and image publication safeguards.
+The official action is pinned to a commit and maintained by Renovate. Upstream owns the Maven engine and its tests; this repository has no release SDK package or npm lockfile.
+The workflow uses the action's documented `skip-github-pull-request` and `skip-github-release` inputs to check for unprocessed merged releases between publication and PR preparation.
 
 Re-run **Release Please** with `workflow_dispatch` after an API failure; it reconciles already merged PRs and pending releases.
 If it reports an unprocessed merged release PR, restore that PR's original release title and structured release body before retrying. A pending release must be processed before another release PR is prepared.

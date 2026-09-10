@@ -20,6 +20,41 @@ import org.yaml.snakeyaml.Yaml;
 class ReleaseWorkflowTest {
 
   @Test
+  @DisplayName("Should use the official action when publishing releases and maintaining PRs")
+  void shouldUseOfficialActionWhenPublishingReleasesAndMaintainingPrs() throws Exception {
+    Map<String, Object> workflow =
+        new Yaml().load(Files.readString(Path.of(".github/workflows/release-please.yml")));
+    var steps = steps(map(map(workflow.get("jobs")).get("release")));
+    var actions =
+        steps.stream()
+            .filter(
+                step ->
+                    String.valueOf(step.get("uses"))
+                        .startsWith("googleapis/release-please-action@"))
+            .toList();
+    assertThat(actions).hasSize(2);
+    assertThat(actions.getFirst().get("uses").toString())
+        .matches("googleapis/release-please-action@[a-f0-9]{40}");
+    assertThat(actions.getLast().get("uses")).isEqualTo(actions.getFirst().get("uses"));
+    assertThat(map(actions.getFirst().get("with"))).containsEntry("skip-github-pull-request", true);
+    assertThat(map(actions.getLast().get("with"))).containsEntry("skip-github-release", true);
+    for (var action : actions) {
+      assertThat(map(action.get("with")))
+          .containsEntry("target-branch", "main")
+          .containsEntry("token", "${{ steps.bot.outputs.token }}")
+          .doesNotContainKey("release-type");
+    }
+
+    assertThat(steps.stream().map(step -> step.get("name")).toList())
+        .containsSubsequence(
+            "Verify repository auto-merge",
+            "Publish merged releases",
+            "Verify merged releases were processed",
+            "Maintain release PR",
+            "Queue snapshot auto-merge");
+  }
+
+  @Test
   @DisplayName("Should use dedicated release credentials when minting the App token")
   void shouldUseDedicatedReleaseCredentialsWhenMintingAppToken() throws Exception {
     Map<String, Object> workflow =

@@ -27,10 +27,6 @@ class ReleasePublisherTest {
     fixture.git("commit", "--quiet", "--allow-empty", "-m", "fixture");
     fixture.git("tag", "v1.2.3");
     fixture.git("update-ref", "refs/remotes/origin/main", "HEAD");
-    Files.createDirectories(directory.resolve(".github/release"));
-    Files.copy(
-        Path.of(".github/release/verify-version.cjs"),
-        directory.resolve(".github/release/verify-version.cjs"));
     fixture.stub("mvnw", "printf '%s' \"${POM_VERSION:-1.2.3}\"\n");
     fixture.stub("gh", "printf '%s' \"${RELEASE_DRAFT:-false}\"\n");
   }
