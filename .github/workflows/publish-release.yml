@@ -42,13 +42,20 @@ jobs:
 
       - name: Verify tagged Maven version
         id: release
+        shell: bash
         env:
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
         run: |
           revision="$(git rev-parse HEAD)"
           tagged_revision="$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")"
-          test "${revision}" = "${tagged_revision}"
-          git merge-base --is-ancestor "${revision}" origin/main
+          if [[ "${revision}" != "${tagged_revision}" ]]; then
+            echo "::error::Release tag does not match the checked-out revision"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "${revision}" origin/main; then
+            echo "::error::Release revision is not an ancestor of main"
+            exit 1
+          fi
           pom_version="$(./mvnw --batch-mode --quiet help:evaluate -Dexpression=project.version -DforceStdout)"
           version="$(node .github/release/verify-version.cjs "${RELEASE_TAG}" "${pom_version}")"
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
