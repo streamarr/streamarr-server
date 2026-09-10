@@ -28,6 +28,19 @@ class LocalFfprobeServiceTest {
   private final ObjectMapper objectMapper = new ObjectMapper();
 
   @ParameterizedTest
+  @ValueSource(strings = {"", "null"})
+  @DisplayName("Should reject missing results when ffprobe exits successfully without probe data")
+  void shouldRejectMissingResultsWhenFfprobeExitsSuccessfullyWithoutProbeData(String json) {
+    var filepath = Path.of("/test/movie.mkv");
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    assertThatThrownBy(() -> service.probe(filepath))
+        .isInstanceOf(ProbeExecutionException.class)
+        .hasMessage(TranscodeException.GENERIC_MESSAGE)
+        .hasRootCauseMessage("ffprobe returned no result");
+  }
+
+  @ParameterizedTest
   @MethodSource("streamsWithoutCodecTypes")
   @DisplayName("Should reject malformed output when a stream has no codec type")
   void shouldRejectMalformedOutputWhenAStreamHasNoCodecType(String json) {

@@ -40,7 +40,12 @@ public class LocalFfprobeService implements FfprobeService {
       var process = processFactory.apply(filepath);
       var json = objectMapper.readTree(process.getInputStream());
       var exitCode = process.waitFor();
-      var errorCode = json == null ? 0 : json.path("error").path("code").asInt();
+      if (json == null || json.isNull() || json.isMissingNode()) {
+        throw new ProbeExecutionException(
+            new IllegalArgumentException("ffprobe returned no result"));
+      }
+
+      var errorCode = json.path("error").path("code").asInt();
 
       if (exitCode != 0 && (errorCode == AVERROR_INVALIDDATA || errorCode == AVERROR_EOF)) {
         return new ProbeOutcome.Failure(ProbeError.INVALID_MEDIA);
