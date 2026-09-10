@@ -46,7 +46,7 @@ test('queues the updated PR head with its release title and an empty squash body
   assert.deepEqual(commands.at(-1), [
     'gh', 'pr', 'merge', '43', '--repo', 'streamarr/streamarr-server',
     '--auto', '--squash', '--match-head-commit', head,
-    '--subject', 'behavioral: release 0.0.12-SNAPSHOT', '--body', '',
+    '--subject', 'chore(main): release 0.0.12-SNAPSHOT', '--body', '',
   ]);
 });
 

@@ -40,10 +40,9 @@ Release Please generates the initial `0.0.11-SNAPSHOT` update itself; no POM ver
 Release Please reads conventional commit metadata: `fix:` produces a patch, `feat:` a minor, and a breaking-change marker a major.
 The repository's `structural:` and `behavioral:` subjects remain visible in the release notes and count as patch changes.
 Ordinary patch releases need no extra labels or commit-body metadata.
-Automated release and snapshot commits use `behavioral:` too.
-The metadata plugin recognizes those version commits and removes their version-bump signals and changelog entries while preserving the snapshot marker needed by Maven's release lifecycle.
-The `streamarr-maven` strategy extends the pinned Maven strategy with strict release-title recognition in its snapshot scan, so ordinary titles such as `behavioral: release 4k playback sessions` remain regular changes.
-The metadata plugin restores the configured title on snapshot PRs because the SDK builds them with its default title pattern; subsequent runs must recognize the merged snapshot to advance to a stable release.
+Only the release bot uses `chore(main): release X` subjects, with an empty squash body. The native Maven strategy recognizes its snapshot commits, and ordinary `chore:` updates do not initiate another release or appear in the notes.
+Human subjects such as `behavioral: release 1.2.3` and `behavioral: release 4k playback sessions` remain regular changes.
+Release preparation uses the SDK's native Maven strategy and PR grouping, with configured headers and footers for factual release and snapshot PR bodies. The group title pattern preserves the Maven version in the upstream `chore(main)` title format.
 While retaining those subjects, a commit can include an additional `feat: ...` paragraph for a feature or a `BREAKING CHANGE: ...` footer for an incompatible change.
 Separate those paragraphs from preceding prose by a blank line and preserve them when merging.
 This follows [Release Please's guidance for multiple changes in one commit](https://github.com/googleapis/release-please#what-if-my-pr-contains-multiple-fixes-or-features).

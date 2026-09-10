@@ -1,14 +1,15 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/v17.11.2/schemas/config.json",
   "always-update": true,
-  "separate-pull-requests": true,
-  "plugins": ["streamarr-release-metadata"],
+  "separate-pull-requests": false,
+  "group-pull-request-title-pattern": "chore${scope}: release${component} ${version}",
   "packages": {
     ".": {
-      "release-type": "streamarr-maven",
+      "release-type": "maven",
       "draft": true,
       "force-tag-creation": true,
-      "pull-request-title-pattern": "behavioral${scope}: release${component} ${version}",
+      "pull-request-header": "Updates the Maven version and release notes.",
+      "pull-request-footer": "Publishing uses the version and revision recorded in this pull request.",
       "include-component-in-tag": false,
       "include-v-in-tag": true,
       "include-commit-authors": false,

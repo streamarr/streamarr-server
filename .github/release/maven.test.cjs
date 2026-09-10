@@ -48,7 +48,7 @@ function release(version) {
 test('bootstraps from the published version with an automatic Maven snapshot PR', async () => {
   const pr = await prepare([], release('0.0.10'));
   assert.equal(pr.title.getVersion().toString(), '0.0.11-SNAPSHOT');
-  assert.equal(pr.title.toString(), 'behavioral: release 0.0.11-SNAPSHOT');
+  assert.equal(pr.title.toString(), 'chore(main): release 0.0.11-SNAPSHOT');
   assert.deepEqual(pr.labels, ['autorelease: snapshot']);
   assert.doesNotMatch(pr.body.toString(), /robot|beep|generated|authored|co-authored/i);
   assert.match(pr.body.toString(), /Maven version/);
@@ -63,6 +63,7 @@ for (const [message, expected] of [
   ['feat: add playlists', '0.1.0'],
   ['feat!: replace playback protocol', '1.0.0'],
   ['behavioral: preserve legacy release changes', '0.0.11'],
+  ['behavioral: release 1.2.3', '0.0.11'],
   ['behavioral: release 4k playback sessions', '0.0.11'],
   ['behavioral: release 2 stale locks', '0.0.11'],
   ['behavioral: release 1.2.3 hotfix', '0.0.11'],
@@ -81,7 +82,7 @@ for (const [message, expected] of [
         sha: 'b'.repeat(40), message, files: ['src/main/java/Example.java'],
         pullRequest: { title: message.split('\n')[0], body: '' },
       },
-      { sha: 'c'.repeat(40), message: 'behavioral: release 0.0.11-SNAPSHOT', files: ['pom.xml'] },
+      { sha: 'c'.repeat(40), message: 'chore(main): release 0.0.11-SNAPSHOT', files: ['pom.xml'] },
     ];
     const pr = await prepare(commits, release('0.0.10'));
     assert.equal(pr.title.getVersion().toString(), expected);
@@ -111,36 +112,7 @@ test('does not publish a snapshot PR as a GitHub release', async () => {
 
 test('does not create a release loop from the snapshot version commit alone', async () => {
   const commits = [
-    { sha: 'c'.repeat(40), message: 'behavioral: release 0.0.11-SNAPSHOT', files: ['pom.xml'] },
+    { sha: 'c'.repeat(40), message: 'chore(main): release 0.0.11-SNAPSHOT', files: ['pom.xml'] },
   ];
   assert.equal(await prepare(commits, release('0.0.10')), undefined);
 });
-
-for (const footer of ['BREAKING CHANGE: copied release notes', 'Release-As: 2.0.0']) {
-  test(`ignores ${footer} on a snapshot commit when calculating the next release`, async () => {
-    const commits = [
-      { sha: 'b'.repeat(40), message: 'fix: correct playback', files: ['src/main/java/Example.java'] },
-      {
-        sha: 'c'.repeat(40),
-        message: `behavioral: release 0.0.11-SNAPSHOT\n\n${footer}`,
-        pullRequest: { title: 'behavioral: release 0.0.11-SNAPSHOT', body: '' },
-        files: ['pom.xml'],
-      },
-    ];
-    const pr = await prepare(commits, release('0.0.10'));
-    assert.equal(pr.title.getVersion().toString(), '0.0.11');
-    assert.doesNotMatch(pr.body.toString(), /copied release notes|2\.0\.0/);
-  });
-
-  test(`does not create a release loop from a snapshot commit containing ${footer}`, async () => {
-    const commits = [
-      {
-        sha: 'c'.repeat(40),
-        message: `behavioral: release 0.0.11-SNAPSHOT\n\n${footer}`,
-        pullRequest: { title: 'behavioral: release 0.0.11-SNAPSHOT', body: '' },
-        files: ['pom.xml'],
-      },
-    ];
-    assert.equal(await prepare(commits, release('0.0.10')), undefined);
-  });
-}

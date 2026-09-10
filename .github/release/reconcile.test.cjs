@@ -41,7 +41,7 @@ test('tags a draft release and queues its next snapshot before publication', asy
   assert.equal(fixture.github.releases[0].draft, true);
   assert.deepEqual(fixture.github.tags[0], { name: 'v0.0.11', sha: 'd'.repeat(40) });
   assert.equal(queued.length, 1);
-  assert.equal(queued[0].title, 'behavioral: release 0.0.12-SNAPSHOT');
+  assert.equal(queued[0].title, 'chore(main): release 0.0.12-SNAPSHOT');
   assert.deepEqual(queued[0].labels, ['autorelease: snapshot']);
 });
 
@@ -52,8 +52,8 @@ test('keeps the same Maven baseline when the prepared draft is published', async
   fixture.github.releases[0].draft = false;
   assert.deepEqual(await (await fixture.manifest()).createReleases(), []);
   const [after] = await (await fixture.manifest()).buildPullRequests();
-  assert.equal(before.version.toString(), '0.0.12-SNAPSHOT');
-  assert.equal(after.version.toString(), '0.0.12-SNAPSHOT');
+  assert.equal(before.title.getVersion().toString(), '0.0.12-SNAPSHOT');
+  assert.equal(after.title.getVersion().toString(), '0.0.12-SNAPSHOT');
   assert.equal(fixture.github.releases.length, 2);
   assert.deepEqual(fixture.github.tags[0], { name: 'v0.0.11', sha: 'd'.repeat(40) });
 });

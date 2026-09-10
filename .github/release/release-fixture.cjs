@@ -8,7 +8,7 @@ require('./metadata.cjs');
 function mergedReleaseFixture(overrides = {}) {
   const root = path.resolve(__dirname, '../..');
   const pullRequest = {
-    number: 42, title: 'behavioral: release 0.0.11',
+    number: 42, title: 'chore(main): release 0.0.11',
     body: new PullRequestBody([
       { version: Version.parse('0.0.11'), notes: '## [0.0.11]\n\n### Bug fixes\n\n* Fix playback' },
     ]).toString(),
@@ -34,10 +34,10 @@ function mergedReleaseFixture(overrides = {}) {
     },
     async *tagIterator() { yield* this.tags; },
     async *mergeCommitIterator() {
-      yield { sha: pullRequest.sha, message: 'behavioral: release 0.0.11', files: ['pom.xml'], pullRequest };
-      yield { sha: 'c'.repeat(40), message: 'behavioral: release 0.0.11-SNAPSHOT', files: ['pom.xml'] };
+      yield { sha: pullRequest.sha, message: 'chore(main): release 0.0.11', files: ['pom.xml'], pullRequest };
+      yield { sha: 'c'.repeat(40), message: 'chore(main): release 0.0.11-SNAPSHOT', files: ['pom.xml'] };
       yield { sha: 'b'.repeat(40), message: 'fix: correct playback', files: ['Example.java'] };
-      yield { sha: 'a'.repeat(40), message: 'behavioral: release 0.0.10', files: ['pom.xml'] };
+      yield { sha: 'a'.repeat(40), message: 'chore(main): release 0.0.10', files: ['pom.xml'] };
     },
     async createRelease(release, { draft = false, forceTag = false } = {}) {
       const result = { tagName: release.tag.toString(), sha: release.sha, notes: release.notes, draft };
