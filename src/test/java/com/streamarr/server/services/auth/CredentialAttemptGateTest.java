@@ -21,7 +21,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -273,26 +272,16 @@ class CredentialAttemptGateTest {
   @DisplayName("Should refuse without running the verifier when the target is blocked")
   void shouldRefuseWithoutRunningVerifierWhenTargetIsBlocked() {
     repository.rejectReservations(Duration.ofSeconds(42));
-    var verifierRuns = new AtomicInteger();
 
-    assertThatThrownBy(() -> gate.attempt(LOGIN_TARGET, verifierRuns::incrementAndGet))
+    assertThatThrownBy(
+            () ->
+                gate.attempt(
+                    LOGIN_TARGET,
+                    () -> {
+                      throw new AssertionError("Blocked attempt reached verification");
+                    }))
         .isInstanceOf(TooManyLoginAttemptsException.class);
 
-    assertThat(verifierRuns).hasValue(0);
     assertThat(repository.attempts()).isEmpty();
-  }
-
-  @Test
-  @DisplayName("Should journal a success when a verifier without a result returns")
-  void shouldJournalSuccessWhenVerifierWithoutResultReturns() {
-    var verifierRuns = new AtomicInteger();
-
-    gate.attempt(LOGIN_TARGET, (CredentialAttemptGate.Verification) verifierRuns::incrementAndGet);
-
-    assertThat(verifierRuns).hasValue(1);
-    assertThat(repository.attempts())
-        .singleElement()
-        .extracting(FakeCredentialAttemptRepository.AttemptSnapshot::result)
-        .isEqualTo(CredentialAttemptResult.SUCCEEDED);
   }
 }

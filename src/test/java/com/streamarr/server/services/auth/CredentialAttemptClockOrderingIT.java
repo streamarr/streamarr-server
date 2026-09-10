@@ -47,8 +47,9 @@ class CredentialAttemptClockOrderingIT extends AbstractIntegrationTest {
 
   @ParameterizedTest(name = "{0}")
   @EnumSource(JournalWrite.class)
-  @DisplayName("Should timestamp a journal write after its target lock is acquired")
-  void shouldTimestampJournalWriteAfterTargetLockIsAcquired(JournalWrite write) throws Exception {
+  @DisplayName("Should timestamp journal write when target lock has been acquired")
+  void shouldTimestampJournalWriteWhenTargetLockHasBeenAcquired(JournalWrite write)
+      throws Exception {
     var reservation = gate.reserve(target);
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor();

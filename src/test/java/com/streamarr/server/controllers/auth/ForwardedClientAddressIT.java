@@ -4,11 +4,13 @@ import static com.streamarr.server.jooq.generated.tables.CredentialAttempt.CREDE
 import static com.streamarr.server.support.AuthTestSupport.remoteAddr;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.jooq.generated.enums.CredentialKind;
 import com.streamarr.server.support.AuthTestSupport;
+import java.util.Map;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
@@ -20,6 +22,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * With framework forwarded-header support enabled, the journal records the forwarded client
@@ -44,6 +47,10 @@ class ForwardedClientAddressIT extends AbstractIntegrationTest {
   @AfterEach
   void deleteIdentity() {
     authTestSupport.deleteIdentity(identity);
+    dsl.deleteFrom(CREDENTIAL_ATTEMPT)
+        .where(
+            DSL.field("host({0})", String.class, CREDENTIAL_ATTEMPT.IP_ADDRESS).eq("203.0.113.19"))
+        .execute();
   }
 
   @Test
@@ -70,5 +77,37 @@ class ForwardedClientAddressIT extends AbstractIntegrationTest {
                 .and(CREDENTIAL_ATTEMPT.CREDENTIAL_KIND.eq(CredentialKind.ACCOUNT_LOGIN))
                 .fetch(ipAddressText))
         .containsExactly("203.0.113.9");
+  }
+
+  @Test
+  @DisplayName("Should journal the forwarded address when a trusted proxy fronts GraphQL")
+  void shouldJournalForwardedAddressWhenTrustedProxyFrontsGraphQl() throws Exception {
+    mockMvc
+        .perform(
+            post("/graphql")
+                .with(remoteAddr("10.0.0.2"))
+                .header("X-Forwarded-For", "203.0.113.19")
+                .header("Authorization", "Bearer " + authTestSupport.accountBearer(identity))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    JsonMapper.builder()
+                        .build()
+                        .writeValueAsString(
+                            Map.of(
+                                "query",
+                                """
+                mutation { declineManagerInvitation(input: {code: "unknown.secret"}) { userErrors { __typename } } }
+                """))))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.declineManagerInvitation.userErrors[0].__typename")
+                .value("ManagerInvitationNotFoundError"));
+    var address = DSL.field("host({0})", String.class, CREDENTIAL_ATTEMPT.IP_ADDRESS);
+    assertThat(
+            dsl.select(address)
+                .from(CREDENTIAL_ATTEMPT)
+                .where(address.eq("203.0.113.19"))
+                .fetch(address))
+        .containsExactly("203.0.113.19");
   }
 }

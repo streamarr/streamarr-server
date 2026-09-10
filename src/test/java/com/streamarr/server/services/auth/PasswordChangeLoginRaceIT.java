@@ -36,6 +36,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -53,6 +54,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
   @Autowired private AuthSessionRepository authSessionRepository;
   @Autowired private PausingPasswordEncoder passwordEncoder;
   @Autowired private DataSource dataSource;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   private UserAccount account;
 
@@ -167,6 +169,12 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
           .isInstanceOf(ExecutionException.class)
           .hasCauseInstanceOf(InvalidCredentialsException.class);
       assertCallerWasReplaced(caller.getId(), passwordChange.session().getId(), 2);
+      assertThat(
+              jdbcTemplate.queryForList(
+                  "SELECT result::text FROM credential_attempt WHERE account_id = ? AND credential_kind = 'ACCOUNT_LOGIN'",
+                  String.class,
+                  account.getId()))
+          .containsExactly("FAILED");
     } finally {
       passwordEncoder.releaseLogin();
     }
@@ -214,6 +222,12 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
           .isInstanceOf(ExecutionException.class)
           .hasCauseInstanceOf(InvalidCredentialsException.class);
       assertCallerWasReplaced(caller.getId(), passwordChange.session().getId(), 2);
+      assertThat(
+              jdbcTemplate.queryForList(
+                  "SELECT result::text FROM credential_attempt WHERE account_id = ? AND credential_kind = 'ACCOUNT_LOGIN'",
+                  String.class,
+                  account.getId()))
+          .containsExactly("FAILED");
     } finally {
       passwordEncoder.releaseLogin();
     }

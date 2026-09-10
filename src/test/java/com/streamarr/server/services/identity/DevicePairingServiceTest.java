@@ -9,9 +9,13 @@ import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
 import com.streamarr.server.domain.auth.EsnBlock;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.DeviceCodeExpiredException;
+import com.streamarr.server.exceptions.DeviceCodeNotFoundException;
 import com.streamarr.server.exceptions.EsnBlockedException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
+import com.streamarr.server.exceptions.InvalidUserCodeException;
+import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeCredentialAttemptRepository;
@@ -22,6 +26,7 @@ import com.streamarr.server.fakes.FakeHouseholdRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
+import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
@@ -32,12 +37,14 @@ import com.streamarr.server.services.auth.DeviceDecision;
 import com.streamarr.server.services.identity.DevicePairingService.EligibleHouseholdDetails;
 import com.streamarr.server.services.identity.DevicePairingService.PairingDecisionCommand;
 import com.streamarr.server.services.identity.DevicePairingService.PairingLookupCommand;
-import java.time.Clock;
+import java.time.Duration;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.access.AccessDeniedException;
 
 /**
@@ -48,7 +55,7 @@ import org.springframework.security.access.AccessDeniedException;
 @DisplayName("Device Pairing Service Tests")
 class DevicePairingServiceTest {
 
-  private final Clock clock = Clock.systemUTC();
+  private final MutableClock clock = new MutableClock();
   private final FakeDeviceAuthorizationRepository authorizations =
       new FakeDeviceAuthorizationRepository();
   private final FakeProfileHouseholdShareRepository shares =
@@ -178,6 +185,107 @@ class DevicePairingServiceTest {
     var gatedCaller = identity();
     assertThatThrownBy(() -> service.decide(gatedCaller, gatedApproval))
         .isInstanceOf(AccessDeniedException.class);
+  }
+
+  @ParameterizedTest(name = "successful decision={0}")
+  @ValueSource(booleans = {false, true})
+  @DisplayName("Should preserve the shared approver budget when lookup or decision succeeds")
+  void shouldPreserveSharedApproverBudgetWhenLookupOrDecisionSucceeds(boolean successfulDecision) {
+    var issued = deviceAuthorizationService.issue("TV", "esn-budget");
+    var caller = identity();
+    var missingLookup = lookup("BBBB-BBBB");
+    var missingDecision = deny("BBBB-BBBB");
+    var knownLookup = lookup(issued.userCode());
+    var knownDecision = deny(issued.userCode());
+    for (var i = 0; i < 2; i++) {
+      assertThatThrownBy(() -> service.lookup(caller, missingLookup))
+          .isInstanceOf(DeviceCodeNotFoundException.class);
+      assertThatThrownBy(() -> service.decide(caller, missingDecision))
+          .isInstanceOf(DeviceCodeNotFoundException.class);
+    }
+
+    if (successfulDecision) {
+      assertThat(service.decide(caller, knownDecision).status())
+          .isEqualTo(DeviceAuthorizationStatus.DENIED);
+    } else {
+      assertThat(service.lookup(caller, knownLookup).authorization().deviceName()).isEqualTo("TV");
+    }
+
+    clock.advance(Duration.ofSeconds(1));
+    assertThatThrownBy(() -> service.lookup(caller, missingLookup))
+        .isInstanceOf(DeviceCodeNotFoundException.class);
+    assertThatThrownBy(() -> service.lookup(caller, knownLookup))
+        .isInstanceOf(TooManyDeviceAttemptsException.class);
+    assertThatThrownBy(() -> service.decide(caller, knownDecision))
+        .isInstanceOf(TooManyDeviceAttemptsException.class);
+    assertThat(credentialAttempts.attempts())
+        .hasSize(6)
+        .allSatisfy(
+            attempt -> assertThat(attempt.target().accountId()).isEqualTo(approver.getId()));
+    var anotherApprover = AuthenticatedIdentityFixture.accountScopedBuilder().build();
+    assertThat(
+            service.lookup(anotherApprover, lookup(issued.userCode())).authorization().deviceName())
+        .isEqualTo("TV");
+  }
+
+  @Test
+  @DisplayName("Should release completed slots when successful presentations exceed five")
+  void shouldReleaseCompletedSlotsWhenSuccessfulPresentationsExceedFive() {
+    for (var i = 0; i < 6; i++) {
+      var issued = deviceAuthorizationService.issue("TV-" + i, "esn-" + i);
+      assertThat(service.lookup(identity(), lookup(issued.userCode())).authorization().deviceName())
+          .isEqualTo("TV-" + i);
+      assertThat(service.decide(identity(), deny(issued.userCode())).status())
+          .isEqualTo(DeviceAuthorizationStatus.DENIED);
+    }
+
+    assertThat(credentialAttempts.attempts())
+        .hasSize(12)
+        .allSatisfy(
+            attempt -> assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED));
+  }
+
+  @Test
+  @DisplayName("Should journal no attempt when a pairing code is malformed")
+  void shouldJournalNoAttemptWhenPairingCodeIsMalformed() {
+    var caller = identity();
+    var invalidLookup = lookup("invalid");
+    var invalidDecision = deny("invalid");
+    assertThatThrownBy(() -> service.lookup(caller, invalidLookup))
+        .isInstanceOf(InvalidUserCodeException.class);
+    assertThatThrownBy(() -> service.decide(caller, invalidDecision))
+        .isInstanceOf(InvalidUserCodeException.class);
+    assertThat(credentialAttempts.attempts()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should distinguish decision expiry from a lookup miss when the grant has expired")
+  void shouldDistinguishDecisionExpiryFromLookupMissWhenGrantHasExpired() {
+    var issued = deviceAuthorizationService.issue("TV", "esn-expired");
+    clock.advance(Duration.ofDays(1));
+    var caller = identity();
+    var expiredLookup = lookup(issued.userCode());
+    var expiredDecision = deny(issued.userCode());
+    assertThatThrownBy(() -> service.lookup(caller, expiredLookup))
+        .isInstanceOf(DeviceCodeNotFoundException.class);
+    assertThatThrownBy(() -> service.decide(caller, expiredDecision))
+        .isInstanceOf(DeviceCodeExpiredException.class);
+    assertThat(credentialAttempts.attempts())
+        .hasSize(2)
+        .allSatisfy(
+            attempt -> assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.FAILED));
+  }
+
+  private PairingLookupCommand lookup(String code) {
+    return PairingLookupCommand.builder().userCode(code).ipAddress("192.0.2.30").build();
+  }
+
+  private PairingDecisionCommand deny(String code) {
+    return PairingDecisionCommand.builder()
+        .userCode(code)
+        .decision(DeviceDecision.DENY)
+        .ipAddress("192.0.2.30")
+        .build();
   }
 
   private PairingDecisionCommand approve(String userCode, UUID householdId) {

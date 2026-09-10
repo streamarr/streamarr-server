@@ -184,6 +184,51 @@ class PasswordChangeServiceTest {
     assertThat(tokenRepository.findAll()).isEmpty();
   }
 
+  @Test
+  @DisplayName("Should share the Account budget when reauthentication and password changes fail")
+  void shouldShareAccountBudgetWhenReauthenticationAndPasswordChangesFail() {
+    var hash = passwordEncoder.encode("current password");
+    var account =
+        accountRepository.save(AccountFixture.defaultAccountBuilder().passwordHash(hash).build());
+    var caller = sessionRepository.save(AuthSession.builder().accountId(account.getId()).build());
+    var identity = identity(account.getId(), caller.getId());
+    var reauthentication =
+        new ReauthenticationService(
+            accountRepository,
+            sessionRepository,
+            new AccountPasswordVerifier(
+                passwordEncoder,
+                new PasswordTimingEqualizer(passwordEncoder),
+                credentialAttempts.gate(clock)));
+    var wrongReauth =
+        ReauthenticationCommand.builder().password("wrong").ipAddress("192.0.2.22").build();
+    for (var i = 0; i < 2; i++) {
+      assertThatThrownBy(() -> reauthentication.reauthenticate(identity, wrongReauth))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+
+    for (var i = 0; i < 3; i++) {
+      var wrongChange = commandBuilder().currentPassword("wrong").build();
+      assertThatThrownBy(() -> service.changePassword(identity, wrongChange))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+
+    var correctChange = commandBuilder().currentPassword("current password").build();
+    var correctReauth =
+        ReauthenticationCommand.builder()
+            .password("current password")
+            .ipAddress("192.0.2.22")
+            .build();
+    assertThatThrownBy(() -> service.changePassword(identity, correctChange))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+    assertThatThrownBy(() -> reauthentication.reauthenticate(identity, correctReauth))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+    assertThat(credentialAttempts.attempts()).hasSize(5);
+    assertThat(accountRepository.findById(account.getId()).orElseThrow().getPasswordHash())
+        .isEqualTo(hash);
+    assertThat(tokenRepository.findAll()).isEmpty();
+  }
+
   private ChangePasswordCommand.ChangePasswordCommandBuilder commandBuilder() {
     return ChangePasswordCommand.builder()
         .currentPassword(UUID.randomUUID().toString())
@@ -228,6 +273,7 @@ class PasswordChangeServiceTest {
       assertThatThrownBy(() -> service.changePassword(identity, wrongCommand))
           .isInstanceOf(InvalidCredentialsException.class);
     }
+
     var correctCommand = commandBuilder().currentPassword(currentPassword).build();
 
     assertThatThrownBy(() -> service.changePassword(identity, correctCommand))

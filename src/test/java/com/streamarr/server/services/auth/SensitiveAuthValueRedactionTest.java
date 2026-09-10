@@ -46,8 +46,8 @@ class SensitiveAuthValueRedactionTest {
 
   @ParameterizedTest(name = "Should omit password field labels from auth value {index}")
   @MethodSource("passwordBearingValues")
-  @DisplayName("Should omit password fields from auth value string representations")
-  void shouldOmitPasswordFieldsFromAuthValueStringRepresentations(Object value) {
+  @DisplayName("Should omit password fields when auth value is rendered")
+  void shouldOmitPasswordFieldsWhenAuthValueIsRendered(Object value) {
     assertThat(value.toString()).doesNotContainIgnoringCase("password=");
   }
 

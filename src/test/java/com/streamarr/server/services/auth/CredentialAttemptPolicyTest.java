@@ -59,6 +59,17 @@ class CredentialAttemptPolicyTest {
     var tooLong = Duration.ofDays(1).plusNanos(1);
     return Stream.of(
         Arguments.of(0, window, window, "maximumFailures must be positive"),
+        Arguments.of(-1, window, window, "maximumFailures must be positive"),
+        Arguments.of(
+            5,
+            Duration.ofNanos(-1),
+            window,
+            "failureWindow must be positive and no longer than 24 hours"),
+        Arguments.of(
+            5,
+            window,
+            Duration.ofNanos(-1),
+            "throttleDuration must be positive and no longer than 24 hours"),
         Arguments.of(
             5, Duration.ZERO, window, "failureWindow must be positive and no longer than 24 hours"),
         Arguments.of(
@@ -125,8 +136,8 @@ class CredentialAttemptPolicyTest {
   }
 
   @Test
-  @DisplayName("Should admit again once the lockout has ended")
-  void shouldAdmitAgainOnceLockoutHasEnded() {
+  @DisplayName("Should admit again when lockout ends")
+  void shouldAdmitAgainWhenLockoutEnds() {
     var history = new CredentialAttemptHistory(failuresAt(NOW, 5), List.of());
 
     assertThat(STANDARD.retryAfter(history, NOW.plusSeconds(4).plus(Duration.ofMinutes(15))))
@@ -140,6 +151,29 @@ class CredentialAttemptPolicyTest {
     var history = new CredentialAttemptHistory(sameInstant, List.of());
 
     assertThat(STANDARD.retryAfter(history, NOW.plus(Duration.ofMinutes(15)))).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should retain the configured lockout when the shorter failure window has closed")
+  void shouldRetainConfiguredLockoutWhenShorterFailureWindowHasClosed() {
+    var policy =
+        STANDARD.toBuilder()
+            .maximumFailures(3)
+            .failureWindow(Duration.ofMinutes(1))
+            .throttleDuration(Duration.ofMinutes(3))
+            .build();
+    var history =
+        new CredentialAttemptHistory(
+            List.of(NOW, NOW.plusSeconds(10), NOW.plusSeconds(20)), List.of());
+
+    assertThat(policy.retryAfter(history, NOW.plusSeconds(90))).contains(Duration.ofSeconds(110));
+    assertThat(policy.retryAfter(history, NOW.plusSeconds(200))).isEmpty();
+    assertThat(
+            policy.retryAfter(
+                new CredentialAttemptHistory(
+                    List.of(NOW, NOW.plusSeconds(61), NOW.plusSeconds(62)), List.of()),
+                NOW.plusSeconds(63)))
+        .isEmpty();
   }
 
   private static List<Instant> failuresAt(Instant first, int count) {

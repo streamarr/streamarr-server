@@ -164,12 +164,14 @@ class LoginServiceTest {
   void shouldRejectLoginWhenEmailUnknown() {
     var attempt = commandBuilder("ghost@example.com").password(CORRECT_PASSWORD).build();
 
-    assertThatThrownBy(() -> loginService.login(attempt))
-        .isInstanceOf(InvalidCredentialsException.class);
+    for (var i = 0; i < 6; i++) {
+      assertThatThrownBy(() -> loginService.login(attempt))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
 
     assertThat(credentialAttempts.attempts())
-        .singleElement()
-        .satisfies(
+        .hasSize(6)
+        .allSatisfy(
             recorded -> {
               assertThat(recorded.target())
                   .isEqualTo(
@@ -393,6 +395,52 @@ class LoginServiceTest {
     var blocked = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
     assertThatThrownBy(() -> loginService.login(blocked))
         .isInstanceOf(TooManyLoginAttemptsException.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should release abandoned capacity when unexpected password failures leave pending attempts")
+  void shouldReleaseAbandonedCapacityWhenUnexpectedPasswordFailuresLeavePendingAttempts() {
+    var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
+    var outageEncoder =
+        new PasswordEncoder() {
+          @Override
+          public String encode(CharSequence rawPassword) {
+            return serviceEncoder.encode(rawPassword);
+          }
+
+          @Override
+          public boolean matches(CharSequence rawPassword, String encodedPassword) {
+            throw new IllegalStateException("encoder unavailable");
+          }
+        };
+    var unavailableLogin =
+        new LoginService(
+            userAccountRepository,
+            new LoginCompletionService(userAccountRepository, refreshTokenService),
+            outageEncoder,
+            credentialAttempts.gate(clock),
+            new PasswordTimingEqualizer(outageEncoder));
+    var command = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+    for (var i = 0; i < 5; i++) {
+      assertThatThrownBy(() -> unavailableLogin.login(command))
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessage("encoder unavailable");
+    }
+    assertThat(credentialAttempts.attempts())
+        .hasSize(5)
+        .allSatisfy(
+            attempt -> {
+              assertThat(attempt.result()).isNull();
+              assertThat(attempt.completedAt()).isNull();
+            });
+    assertThatThrownBy(() -> loginService.login(command))
+        .isInstanceOf(TooManyLoginAttemptsException.class);
+    assertThat(sessionRepository.findAll()).isEmpty();
+    clock.advance(Duration.ofMinutes(5));
+    assertThat(loginService.login(command).account().getId()).isEqualTo(account.getId());
+    assertThat(credentialAttempts.attempts()).hasSize(6);
+    assertThat(sessionRepository.findAll()).hasSize(1);
   }
 
   private UserAccount seedAccount(String passwordHash) {

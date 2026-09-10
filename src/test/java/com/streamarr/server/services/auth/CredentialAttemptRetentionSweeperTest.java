@@ -15,6 +15,8 @@ import java.time.ZoneOffset;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Credential Attempt Retention Sweeper Tests")
@@ -28,12 +30,13 @@ class CredentialAttemptRetentionSweeperTest {
   private final CredentialAttemptRetentionSweeper sweeper =
       new CredentialAttemptRetentionSweeper(repository, Clock.fixed(NOW, ZoneOffset.UTC));
 
-  @Test
+  @ParameterizedTest(name = "outcome={0}")
+  @ValueSource(strings = {"PENDING", "SUCCEEDED", "FAILED"})
   @DisplayName("Should delete only older attempts when retention is thirty days")
-  void shouldDeleteOnlyOlderAttemptsWhenRetentionIsThirtyDays() {
-    reserveAt(NOW.minus(RETENTION).minusSeconds(1));
-    reserveAt(NOW.minus(RETENTION));
-    reserveAt(NOW.minusSeconds(1));
+  void shouldDeleteOnlyOlderAttemptsWhenRetentionIsThirtyDays(String outcome) {
+    reserveAt(NOW.minus(RETENTION).minusSeconds(1), outcome);
+    reserveAt(NOW.minus(RETENTION), outcome);
+    reserveAt(NOW.minusSeconds(1), outcome);
 
     sweeper.deleteExpiredAttempts();
 
@@ -63,6 +66,10 @@ class CredentialAttemptRetentionSweeperTest {
   }
 
   private void reserveAt(Instant attemptedAt) {
+    reserveAt(attemptedAt, "FAILED");
+  }
+
+  private void reserveAt(Instant attemptedAt, String outcome) {
     var gate = repository.gate(Clock.fixed(attemptedAt, ZoneOffset.UTC));
     var reservation =
         gate.reserve(
@@ -70,6 +77,8 @@ class CredentialAttemptRetentionSweeperTest {
                 .kind(CredentialKind.ACCOUNT_LOGIN)
                 .ipAddress("192.0.2.30")
                 .build());
-    gate.complete(reservation, CredentialAttemptResult.FAILED);
+    if (!outcome.equals("PENDING")) {
+      gate.complete(reservation, CredentialAttemptResult.valueOf(outcome));
+    }
   }
 }

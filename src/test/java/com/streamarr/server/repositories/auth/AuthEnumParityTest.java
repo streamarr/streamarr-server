@@ -70,6 +70,15 @@ class AuthEnumParityTest {
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   @DisplayName("Should keep credential kind literals in sync when parity is checked")
   void shouldKeepCredentialKindLiteralsInSyncWhenParityIsChecked() {
+    assertThat(names(CredentialKind.values()))
+        .containsExactlyInAnyOrder(
+            "ACCOUNT_LOGIN",
+            "ACCOUNT_PASSWORD_VERIFICATION",
+            "PROFILE_PIN",
+            "ACCOUNT_INVITATION_CODE",
+            "PASSWORD_RESET_CODE",
+            "PROFILE_MANAGER_INVITATION_CODE",
+            "DEVICE_PAIRING_CODE");
     assertParity(
         names(CredentialKind.values()),
         literals(com.streamarr.server.jooq.generated.enums.CredentialKind.values()));
@@ -79,6 +88,8 @@ class AuthEnumParityTest {
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   @DisplayName("Should keep credential attempt result literals in sync when parity is checked")
   void shouldKeepCredentialAttemptResultLiteralsInSyncWhenParityIsChecked() {
+    assertThat(names(CredentialAttemptResult.values()))
+        .containsExactlyInAnyOrder("FAILED", "SUCCEEDED");
     assertParity(
         names(CredentialAttemptResult.values()),
         literals(com.streamarr.server.jooq.generated.enums.CredentialAttemptResult.values()));

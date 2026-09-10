@@ -318,6 +318,34 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should refuse a valid manager invitation when five wrong secrets exhaust its budget")
+  void shouldRefuseValidManagerInvitationWhenFiveWrongSecretsExhaustItsBudget() {
+    var issued =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+    var wrong = code(issued.invitation().getPublicId() + ".wrong-secret");
+    var caller = recipientIdentity();
+    for (var i = 0; i < 5; i++) {
+      assertThat(rejectionOf(service.acceptManagerInvitation(caller, wrong)))
+          .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
+    }
+
+    var correct = code(issued.code());
+    assertThatThrownBy(() -> service.acceptManagerInvitation(caller, correct))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+    assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), orphan.getId())).isFalse();
+    assertThat(invitations.findById(issued.invitation().getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.PENDING);
+    assertThat(credentialAttempts.attempts())
+        .hasSize(5)
+        .allSatisfy(
+            attempt -> {
+              assertThat(attempt.target().credentialId()).isEqualTo(issued.invitation().getId());
+              assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.FAILED);
+            });
+  }
+
+  @Test
   @DisplayName("Should return invitation not found when an acceptance code has expired")
   void shouldReturnInvitationNotFoundWhenAcceptanceCodeHasExpired() {
     var issued =

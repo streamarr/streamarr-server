@@ -18,13 +18,13 @@ import com.streamarr.server.fakes.FakeCredentialAttemptRepository;
 import com.streamarr.server.fakes.FakePasswordResetCodeRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
+import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fakes.PlainPasswordEncoder;
 import com.streamarr.server.fixtures.AccountFixture;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -45,7 +45,7 @@ class PasswordResetServiceTest {
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository();
   private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
   private final OpaqueOneTimeCodes opaqueCodes = new OpaqueOneTimeCodes();
-  private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+  private final MutableClock clock = new MutableClock(new AtomicReference<>(NOW));
   private final FakeCredentialAttemptRepository credentialAttempts =
       new FakeCredentialAttemptRepository();
 
@@ -134,14 +134,29 @@ class PasswordResetServiceTest {
   @Test
   @DisplayName("Should release the verification budget when a reset code succeeds")
   void shouldReleaseVerificationBudgetWhenResetCodeSucceeds() {
-    var first = pendingCode();
-    redeem(first.code(), "first passphrase");
-    var second = pendingCode();
+    var issued = pendingCode();
+    var consumedCode = issued.code();
+    var wrong = issued.publicId() + ".wrong-secret";
+    for (var i = 0; i < 4; i++) {
+      assertThatThrownBy(() -> redeem(wrong, "replacement password"))
+          .isInstanceOf(InvalidOneTimeCodeException.class);
+    }
 
-    redeem(second.code(), "second passphrase");
+    redeem(consumedCode, "replacement password");
+    clock.advance(Duration.ofSeconds(1));
+    for (var i = 0; i < 5; i++) {
+      assertThatThrownBy(() -> redeem(consumedCode, "another password"))
+          .isInstanceOf(InvalidOneTimeCodeException.class);
+    }
 
+    assertThatThrownBy(() -> redeem(consumedCode, "another password"))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
     assertThat(accounts.findById(account.getId()).orElseThrow().getPasswordHash())
-        .isEqualTo("hashed:second passphrase");
+        .isEqualTo("hashed:replacement password");
+    assertThat(credentialAttempts.attempts())
+        .hasSize(10)
+        .extracting(attempt -> attempt.target().credentialId())
+        .containsOnly(resetCodes.findAll().getFirst().getId());
   }
 
   @Test
@@ -307,18 +322,22 @@ class PasswordResetServiceTest {
   }
 
   @Test
-  @DisplayName("Should refuse the correct code when five wrong secrets hit the same reset code")
-  void shouldRefuseCorrectCodeWhenFiveWrongSecretsHitSameResetCode() {
-    var issued = pendingCode();
-    for (var attempt = 0; attempt < 5; attempt++) {
-      var guess = issued.publicId() + ".guess-" + attempt;
-      assertThatThrownBy(() -> redeem(guess, "a brand new passphrase"))
+  @DisplayName("Should preserve another code's budget when one reset code is exhausted")
+  void shouldPreserveAnotherCodesBudgetWhenOneResetCodeIsExhausted() {
+    var first = pendingCode();
+    var firstCode = first.code();
+    var other = pendingCode();
+    var wrong = first.publicId() + ".wrong-secret";
+    for (var i = 0; i < 5; i++) {
+      assertThatThrownBy(() -> redeem(wrong, "replacement password"))
           .isInstanceOf(InvalidOneTimeCodeException.class);
     }
 
-    var code = issued.code();
-    assertThatThrownBy(() -> redeem(code, "a brand new passphrase"))
+    redeem(other.code(), "replacement password");
+    assertThatThrownBy(() -> redeem(firstCode, "another password"))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
+    assertThat(accounts.findById(account.getId()).orElseThrow().getPasswordHash())
+        .isEqualTo("hashed:replacement password");
   }
 
   @Test

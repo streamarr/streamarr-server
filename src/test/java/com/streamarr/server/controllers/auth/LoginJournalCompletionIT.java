@@ -55,10 +55,13 @@ class LoginJournalCompletionIT extends AbstractIntegrationTest {
 
   private UserAccount account;
   private HeldRowLock journalLock;
+  private int originalDigestCount;
 
   @BeforeEach
   void blockJournalCompletionAfterPasswordVerification() {
     account = authTestSupport.createAccount();
+    originalDigestCount =
+        jdbcTemplate.queryForObject("SELECT count(*) FROM refresh_token", Integer.class);
     passwordEncoder.afterNextMatch(this::lockReservedAttempt);
   }
 
@@ -95,6 +98,8 @@ class LoginJournalCompletionIT extends AbstractIntegrationTest {
         .andExpect(cookie().doesNotExist("streamarr_refresh"));
 
     assertThat(sessionRepository.findByAccountId(account.getId())).isEmpty();
+    assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM refresh_token", Integer.class))
+        .isEqualTo(originalDigestCount);
   }
 
   @Test
@@ -112,6 +117,8 @@ class LoginJournalCompletionIT extends AbstractIntegrationTest {
         .isInstanceOf(CredentialAttemptUnavailableException.class);
 
     assertThat(sessionRepository.findByAccountId(account.getId())).isEmpty();
+    assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM refresh_token", Integer.class))
+        .isEqualTo(originalDigestCount);
   }
 
   @Test

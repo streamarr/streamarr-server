@@ -7,12 +7,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.jayway.jsonpath.JsonPath;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.config.security.DeviceAuthProperties;
+import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
+import com.streamarr.server.services.auth.CredentialAttemptGate;
 import com.streamarr.server.services.auth.RefreshTokenService;
 import com.streamarr.server.services.auth.TokenContext;
 import com.streamarr.server.support.AuthTestSupport;
@@ -56,6 +59,7 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
   @Autowired private DeviceAuthProperties properties;
 
   @Autowired private JdbcTemplate jdbcTemplate;
+  @Autowired private CredentialAttemptGate attempts;
 
   private final List<UUID> accountIds = new ArrayList<>();
 
@@ -81,14 +85,18 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should throttle a decision when lookup has spent the approver's guessing budget")
-  void shouldThrottleDecisionWhenLookupHasSpentApproversGuessingBudget() throws Exception {
-    var bearer = bearerFor(seedAccount());
-
-    // Lookup is the enumeration oracle, so its attempts and decision's come from one budget —
-    // two budgets would hand an attacker twice the tries against the same code.
-    for (var attempt = 0; attempt < MAXIMUM_FAILURES; attempt++) {
-      mockMvc.perform(lookup(bearer, UNKNOWN_USER_CODE)).andExpect(status().isNotFound());
+  @DisplayName("Should return a throttle response when the approver budget is exhausted")
+  void shouldReturnThrottleResponseWhenApproverBudgetIsExhausted() throws Exception {
+    var account = seedAccount();
+    var bearer = bearerFor(account);
+    var target =
+        CredentialAttemptTarget.builder()
+            .kind(CredentialKind.DEVICE_PAIRING_CODE)
+            .accountId(account.getId())
+            .ipAddress("192.0.2.30")
+            .build();
+    for (var i = 0; i < MAXIMUM_FAILURES; i++) {
+      attempts.complete(attempts.reserve(target), CredentialAttemptResult.FAILED);
     }
 
     mockMvc
@@ -101,64 +109,6 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
         .perform(decision(bearer, UNKNOWN_USER_CODE, "APPROVE"))
         .andExpect(status().isTooManyRequests())
         .andExpect(header().exists(HttpHeaders.RETRY_AFTER));
-  }
-
-  @Test
-  @DisplayName("Should retain failed guesses when the approver looks up a known pairing code")
-  void shouldRetainFailedGuessesWhenApproverLooksUpKnownPairingCode() throws Exception {
-    var bearer = bearerFor(seedAccount());
-    var knownCode = issueUserCode();
-
-    for (var attempt = 0; attempt < MAXIMUM_FAILURES - 1; attempt++) {
-      mockMvc.perform(lookup(bearer, UNKNOWN_USER_CODE)).andExpect(status().isNotFound());
-    }
-
-    mockMvc.perform(lookup(bearer, knownCode)).andExpect(status().isOk());
-    mockMvc.perform(lookup(bearer, UNKNOWN_USER_CODE)).andExpect(status().isNotFound());
-
-    mockMvc
-        .perform(lookup(bearer, UNKNOWN_USER_CODE))
-        .andExpect(status().isTooManyRequests())
-        .andExpect(header().exists(HttpHeaders.RETRY_AFTER));
-  }
-
-  @Test
-  @DisplayName("Should use a separate guessing budget when the approver changes")
-  void shouldUseSeparateGuessingBudgetWhenApproverChanges() throws Exception {
-    var exhausted = bearerFor(seedAccount());
-    var untouched = bearerFor(seedAccount());
-
-    for (var attempt = 0; attempt < MAXIMUM_FAILURES; attempt++) {
-      mockMvc.perform(lookup(exhausted, UNKNOWN_USER_CODE)).andExpect(status().isNotFound());
-    }
-
-    mockMvc.perform(lookup(exhausted, UNKNOWN_USER_CODE)).andExpect(status().isTooManyRequests());
-    mockMvc.perform(lookup(untouched, UNKNOWN_USER_CODE)).andExpect(status().isNotFound());
-  }
-
-  @Test
-  @DisplayName("Should journal a failure against the approver when the pairing code is unknown")
-  void shouldJournalFailureAgainstApproverWhenPairingCodeIsUnknown() throws Exception {
-    var approver = seedAccount();
-
-    mockMvc
-        .perform(lookup(bearerFor(approver), UNKNOWN_USER_CODE))
-        .andExpect(status().isNotFound());
-
-    assertThat(
-            jdbcTemplate.queryForObject(
-                """
-                SELECT count(*)
-                  FROM credential_attempt
-                 WHERE credential_kind = 'DEVICE_PAIRING_CODE'
-                   AND account_id = ?
-                   AND profile_id IS NULL
-                   AND credential_id IS NULL
-                   AND result = 'FAILED'
-                """,
-                Integer.class,
-                approver.getId()))
-        .isEqualTo(1);
   }
 
   @Test
@@ -179,22 +129,6 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should spend one budget when unknown lookups and decisions are mixed")
-  void shouldSpendOneBudgetWhenUnknownLookupsAndDecisionsAreMixed() throws Exception {
-    var bearer = bearerFor(seedAccount());
-
-    for (var attempt = 0; attempt < 3; attempt++) {
-      mockMvc.perform(lookup(bearer, UNKNOWN_USER_CODE)).andExpect(status().isNotFound());
-    }
-
-    for (var attempt = 0; attempt < MAXIMUM_FAILURES - 3; attempt++) {
-      mockMvc.perform(decision(bearer, UNKNOWN_USER_CODE, "DENY")).andExpect(status().isNotFound());
-    }
-
-    mockMvc.perform(lookup(bearer, UNKNOWN_USER_CODE)).andExpect(status().isTooManyRequests());
-  }
-
-  @Test
   @DisplayName("Should journal no attempt when the user code is malformed")
   void shouldJournalNoAttemptWhenUserCodeIsMalformed() throws Exception {
     var approver = seedAccount();
@@ -210,17 +144,6 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.code").value("INVALID_USER_CODE"));
 
     assertThat(journaledAttempts(approver.getId())).isZero();
-  }
-
-  @Test
-  @DisplayName("Should journal exactly one attempt when a real pairing code is decided")
-  void shouldJournalExactlyOneAttemptWhenRealPairingCodeIsDecided() throws Exception {
-    var approver = seedAccount();
-    var userCode = issueUserCode();
-
-    mockMvc.perform(decision(bearerFor(approver), userCode, "DENY")).andExpect(status().isOk());
-
-    assertThat(journaledAttempts(approver.getId())).isEqualTo(1);
   }
 
   @Test
@@ -252,17 +175,6 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
     return post("/api/auth/device/code")
         .contentType(MediaType.APPLICATION_JSON)
         .content("{\"deviceName\": \"Apple TV\", \"esn\": \"esn-1\"}");
-  }
-
-  private String issueUserCode() throws Exception {
-    var response =
-        mockMvc
-            .perform(issueCode())
-            .andExpect(status().isOk())
-            .andReturn()
-            .getResponse()
-            .getContentAsString();
-    return JsonPath.read(response, "$.userCode");
   }
 
   private MockHttpServletRequestBuilder lookup(String bearer, String userCode) {

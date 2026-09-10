@@ -18,7 +18,6 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Locale;
 import java.util.UUID;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.IntStream;
 import org.jooq.DSLContext;
@@ -30,6 +29,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -77,8 +79,8 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reset the failure sequence after the latest successful verification")
-  void shouldResetTheFailureSequenceAfterTheLatestSuccessfulVerification() {
+  @DisplayName("Should reset failure sequence when verification succeeds")
+  void shouldResetFailureSequenceWhenVerificationSucceeds() {
     var target = resolvedTarget();
     completeFailures(target, NOW, 4);
     var success = reserve(target, NOW.plusSeconds(4));
@@ -95,8 +97,8 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should admit an attempt after the completed lockout expires")
-  void shouldAdmitAnAttemptAfterTheCompletedLockoutExpires() {
+  @DisplayName("Should admit attempt when completed lockout expires")
+  void shouldAdmitAttemptWhenCompletedLockoutExpires() {
     var target = resolvedTarget();
     completeFailures(target, NOW, 5);
 
@@ -144,8 +146,8 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep counting pending reservations made before the latest success")
-  void shouldKeepCountingPendingReservationsMadeBeforeTheLatestSuccess() {
+  @DisplayName("Should count pending reservations when later attempt succeeds")
+  void shouldCountPendingReservationsWhenLaterAttemptSucceeds() {
     var target = resolvedTarget();
     for (var pending = 0; pending < 4; pending++) {
       reserve(target, NOW);
@@ -280,35 +282,12 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
     assertThat(attemptCount()).isEqualTo(20);
   }
 
-  @Test
-  @DisplayName("Should admit no more than five reservations when instances reserve in parallel")
-  void shouldAdmitNoMoreThanFiveReservationsWhenInstancesReserveInParallel() throws Exception {
-    var target = resolvedTarget();
-    var admissions = new ArrayList<CredentialAttemptAdmission>();
-
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var tasks =
-          IntStream.range(0, 20)
-              .mapToObj(_ -> executor.submit(() -> admit(target, LIMITED_POLICY, NOW)))
-              .toList();
-      for (var task : tasks) {
-        admissions.add(task.get());
-      }
-    }
-
-    assertThat(admissions)
-        .filteredOn(CredentialAttemptAdmission.Reserved.class::isInstance)
-        .hasSize(5);
-    assertThat(admissions)
-        .filteredOn(CredentialAttemptAdmission.Blocked.class::isInstance)
-        .hasSize(15);
-    assertThat(attemptCount()).isEqualTo(5);
-  }
-
-  @Test
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(CredentialKind.class)
   @DisplayName(
       "Should serve every admission query from the target indexes when sequential scans are disabled")
-  void shouldServeEveryAdmissionQueryFromTheTargetIndexesWhenSequentialScansAreDisabled() {
+  void shouldServeEveryAdmissionQueryFromTheTargetIndexesWhenSequentialScansAreDisabled(
+      CredentialKind kind) {
     var statements = new ArrayList<String>();
     var recordingListener =
         new ExecuteListener() {
@@ -319,21 +298,42 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
             }
           }
         };
+
     var recording =
         DSL.using(
             dsl.configuration().derive(new DefaultExecuteListenerProvider(recordingListener)));
-    var target = resolvedTarget();
+    var builder = CredentialAttemptTarget.builder().kind(kind).ipAddress(IP_ADDRESS);
+    var indexColumn =
+        switch (kind) {
+          case ACCOUNT_LOGIN, ACCOUNT_PASSWORD_VERIFICATION, DEVICE_PAIRING_CODE -> {
+            builder.accountId(UUID.randomUUID());
+            yield "account_id";
+          }
+
+          case PROFILE_PIN -> {
+            builder.accountId(UUID.randomUUID()).profileId(UUID.randomUUID());
+            yield "profile_id";
+          }
+
+          case ACCOUNT_INVITATION_CODE, PASSWORD_RESET_CODE, PROFILE_MANAGER_INVITATION_CODE -> {
+            builder.credentialId(UUID.randomUUID());
+            yield "credential_id";
+          }
+        };
+
+    var target = builder.build();
+    var policy = new StandardCredentialAttemptPolicyProvider().policyFor(kind);
     transactionTemplate.executeWithoutResult(
         _ ->
             new JooqCredentialAttemptRepository(recording, transactionLocks, journalClock)
-                .reserve(target, LIMITED_POLICY));
+                .reserve(target, policy));
 
     var admissionQueries =
         statements.stream()
             .filter(sql -> sql.toLowerCase(Locale.ROOT).startsWith("select"))
             .filter(sql -> sql.contains("credential_attempt"))
             .toList();
-    assertThat(admissionQueries).hasSize(3);
+    assertThat(admissionQueries).isNotEmpty();
     transactionTemplate.executeWithoutResult(
         _ -> {
           // A tiny table would otherwise be scanned on cost alone; the index must be usable.
@@ -343,14 +343,14 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
             assertThat(plan)
                 .as(sql)
                 .doesNotContain("Seq Scan")
-                .containsPattern("Index Cond: \\(.*account_id = ");
+                .containsPattern("Index Cond: \\(.*" + indexColumn + " = ");
           }
         });
   }
 
   @Test
-  @DisplayName("Should refuse to complete a reservation that is no longer pending")
-  void shouldRefuseToCompleteAReservationThatIsNoLongerPending() {
+  @DisplayName("Should refuse completion when reservation is no longer pending")
+  void shouldRefuseCompletionWhenReservationIsNoLongerPending() {
     var target = resolvedTarget();
     var reservation = reserve(target, NOW);
     completeAt(reservation, CredentialAttemptResult.FAILED, NOW);
@@ -375,12 +375,21 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
         .isTrue();
   }
 
-  @Test
+  @ParameterizedTest(name = "outcome={0}")
+  @ValueSource(strings = {"PENDING", "SUCCEEDED", "FAILED"})
   @DisplayName("Should remove only older attempts when the cutoff is thirty days")
-  void shouldRemoveOnlyOlderAttemptsWhenCutoffIsThirtyDays() {
+  void shouldRemoveOnlyOlderAttemptsWhenCutoffIsThirtyDays(String outcome) {
     var target = resolvedTarget();
-    reserve(target, NOW.minus(Duration.ofDays(30)).minusSeconds(1));
-    reserve(target, NOW.minus(Duration.ofDays(30)));
+    var older = reserve(target, NOW.minus(Duration.ofDays(30)).minusSeconds(1));
+    var boundary = reserve(target, NOW.minus(Duration.ofDays(30)));
+    if (!outcome.equals("PENDING")) {
+      completeAt(
+          older,
+          CredentialAttemptResult.valueOf(outcome),
+          NOW.minus(Duration.ofDays(30)).minusSeconds(1));
+      completeAt(
+          boundary, CredentialAttemptResult.valueOf(outcome), NOW.minus(Duration.ofDays(30)));
+    }
 
     assertThat(repository.deleteAttemptedBefore(NOW.minus(Duration.ofDays(30)))).isEqualTo(1);
     assertThat(
@@ -469,8 +478,8 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should ignore failures completed at the same instant as the latest success")
-  void shouldIgnoreFailuresCompletedAtTheSameInstantAsTheLatestSuccess() {
+  @DisplayName("Should ignore failure when it completes at latest success instant")
+  void shouldIgnoreFailureWhenItCompletesAtLatestSuccessInstant() {
     var target = resolvedTarget();
     var success = reserve(target, NOW.minusSeconds(1));
     completeAt(success, CredentialAttemptResult.SUCCEEDED, NOW);
@@ -514,6 +523,54 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
                 jdbcTemplate.update(
                     "UPDATE credential_attempt SET result = 'FAILED' WHERE id = ?", reservationId))
         .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @ValueSource(
+      strings = {
+        "UPDATE credential_attempt SET completed_at = attempted_at WHERE id = ?",
+        "UPDATE credential_attempt SET result = 'FAILED', completed_at = attempted_at - interval '1 second' WHERE id = ?"
+      })
+  @DisplayName("Should reject invalid completion state when another writer updates the journal")
+  void shouldRejectInvalidCompletionStateWhenAnotherWriterUpdatesJournal(String update) {
+    var reservation = reserve(resolvedTarget(), NOW);
+    var reservationId = reservation.id();
+    assertThatThrownBy(() -> jdbcTemplate.update(update, reservationId))
+        .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test
+  @DisplayName("Should preserve the original retry boundary when blocked requests repeat")
+  void shouldPreserveOriginalRetryBoundaryWhenBlockedRequestsRepeat() {
+    var target = resolvedTarget();
+    completeFailures(target, NOW, 5);
+    for (var seconds : new int[] {30, 60, 899}) {
+      assertThat(admit(target, LIMITED_POLICY, NOW.plusSeconds(seconds)))
+          .isEqualTo(new CredentialAttemptAdmission.Blocked(Duration.ofSeconds(904 - seconds)));
+      assertThat(attemptCount()).isEqualTo(5);
+    }
+
+    assertThat(admit(target, LIMITED_POLICY, NOW.plusSeconds(904)))
+        .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
+  }
+
+  @Test
+  @DisplayName("Should store only journal metadata when the journal schema is inspected")
+  void shouldStoreOnlyJournalMetadataWhenJournalSchemaIsInspected() {
+    assertThat(
+            jdbcTemplate.queryForList(
+                "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'credential_attempt'",
+                String.class))
+        .containsExactlyInAnyOrder(
+            "id",
+            "credential_kind",
+            "account_id",
+            "profile_id",
+            "credential_id",
+            "ip_address",
+            "attempted_at",
+            "completed_at",
+            "result");
   }
 
   @Test

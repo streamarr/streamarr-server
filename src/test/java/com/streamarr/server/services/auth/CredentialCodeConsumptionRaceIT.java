@@ -17,6 +17,7 @@ import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
+import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
@@ -27,6 +28,7 @@ import com.streamarr.server.services.identity.CredentialIssuanceService;
 import com.streamarr.server.services.identity.CredentialRejections;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.ControlledClockConfiguration;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import java.time.Duration;
 import java.time.Instant;
@@ -37,15 +39,20 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.annotation.DirtiesContext;
 
 @Tag("IntegrationTest")
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("Credential Code Consumption Race Integration Tests")
+@Import(ControlledClockConfiguration.class)
 class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
 
   @Autowired private AccountInvitationService invitationService;
@@ -60,8 +67,14 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private DataSource dataSource;
   @Autowired private JdbcTemplate jdbcTemplate;
+  @Autowired private MutableClock clock;
 
   private AuthTestSupport.TestIdentity identity;
+
+  @BeforeEach
+  void resetClock() {
+    clock.advance(Duration.between(clock.instant(), Instant.now()));
+  }
 
   @AfterEach
   void tearDown() {
@@ -216,7 +229,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
   void shouldRejectResetCodeWhenItExpiresWhileWaitingForAccountLock() throws Exception {
     identity = authTestSupport.createAdminIdentity();
     var issued = opaqueCodes.issue();
-    var expiresAt = Instant.now().plusSeconds(2);
+    var expiresAt = clock.instant().plusSeconds(2);
     var resetCode = saveResetCode(issued);
     resetCode.setExpiresAt(expiresAt);
     resetCodeRepository.saveAndFlush(resetCode);
@@ -230,8 +243,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
           .atMost(Duration.ofSeconds(10))
           .untilAsserted(
               () -> assertThat(waitingBehind(lock.backendPid(), "user_account")).isOne());
-      assertThat(Instant.now()).isBefore(expiresAt);
-      await().atMost(Duration.ofSeconds(3)).until(() -> !Instant.now().isBefore(expiresAt));
+      clock.advance(Duration.ofSeconds(3));
       lock.release();
 
       var attempt = redemption.get(10, TimeUnit.SECONDS);
