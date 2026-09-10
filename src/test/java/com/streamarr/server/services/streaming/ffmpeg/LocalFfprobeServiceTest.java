@@ -12,10 +12,12 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import tools.jackson.databind.ObjectMapper;
 
@@ -24,6 +26,56 @@ import tools.jackson.databind.ObjectMapper;
 class LocalFfprobeServiceTest {
 
   private final ObjectMapper objectMapper = new ObjectMapper();
+
+  @ParameterizedTest
+  @MethodSource("streamsWithoutCodecTypes")
+  @DisplayName("Should reject malformed output when a stream has no codec type")
+  void shouldRejectMalformedOutputWhenAStreamHasNoCodecType(String json) {
+    var filepath = Path.of("/test/movie.mkv");
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    assertThatThrownBy(() -> service.probe(filepath))
+        .isInstanceOf(ProbeExecutionException.class)
+        .hasMessage(TranscodeException.GENERIC_MESSAGE)
+        .hasRootCauseMessage("ffprobe stream is missing codec_type");
+  }
+
+  private static Stream<String> streamsWithoutCodecTypes() {
+    return Stream.of("{}", "{\"codec_type\":null}")
+        .flatMap(
+            malformed ->
+                Stream.of(
+                    """
+                    {"streams": [%s, {"codec_type": "video"}]}
+                    """
+                        .formatted(malformed),
+                    """
+                    {"streams": [{"codec_type": "video"}, %s]}
+                    """
+                        .formatted(malformed)));
+  }
+
+  @Test
+  @DisplayName("Should retain unknown streams when ffprobe explicitly reports their type")
+  void shouldRetainUnknownStreamsWhenFfprobeExplicitlyReportsTheirType() {
+    var json =
+        """
+        {"streams": [
+          {"index": 0, "codec_type": "unknown"},
+          {"index": 1, "codec_type": "video", "codec_name": "h264"}
+        ]}
+        """;
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    assertThat(service.probe(Path.of("/test/movie.mkv")))
+        .isInstanceOfSatisfying(
+            ProbeOutcome.Success.class,
+            success -> {
+              assertThat(success.streams()).hasSize(2);
+              assertThat(success.streams().getFirst().codecType()).isEqualTo("unknown");
+              assertThat(success.mediaProbe().videoCodec()).isEqualTo("h264");
+            });
+  }
 
   @Test
   @DisplayName("Should return a terminal media failure when a truncated input ends during probing")

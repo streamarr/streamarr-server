@@ -89,7 +89,7 @@ public class LocalFfprobeService implements FfprobeService {
     var result = new ArrayList<StreamInfo>();
     for (int i = 0; i < streamsNode.size(); i++) {
       var stream = streamsNode.get(i);
-      var codecType = stream.get("codec_type").asString();
+      var codecType = requiredCodecType(stream);
       var indexNode = stream.get("index");
       result.add(
           StreamInfo.builder()
@@ -141,11 +141,19 @@ public class LocalFfprobeService implements FfprobeService {
     }
 
     for (var stream : streams) {
-      if (codecType.equals(stream.get("codec_type").asString())) {
+      if (codecType.equals(requiredCodecType(stream))) {
         return Optional.of(stream);
       }
     }
     return Optional.empty();
+  }
+
+  private String requiredCodecType(JsonNode stream) {
+    return optionalString(stream, "codec_type")
+        .orElseThrow(
+            () ->
+                new ProbeExecutionException(
+                    new IllegalArgumentException("ffprobe stream is missing codec_type")));
   }
 
   private Optional<String> optionalString(JsonNode node, String field) {
