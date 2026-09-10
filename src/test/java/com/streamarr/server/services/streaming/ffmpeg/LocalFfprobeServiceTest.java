@@ -79,6 +79,7 @@ class LocalFfprobeServiceTest {
   @Test
   @DisplayName("Should retain a retryable failure when ffprobe cannot start")
   void shouldRetainARetryableFailureWhenFfprobeCannotStart() {
+    var filepath = Path.of("/test/movie.mkv");
     var cause = new UncheckedIOException(new IOException("executable unavailable"));
     var service =
         new LocalFfprobeService(
@@ -87,7 +88,7 @@ class LocalFfprobeServiceTest {
               throw cause;
             });
 
-    assertThatThrownBy(() -> service.probe(Path.of("/test/movie.mkv")))
+    assertThatThrownBy(() -> service.probe(filepath))
         .isInstanceOf(ProbeExecutionException.class)
         .hasCause(cause)
         .hasMessage(TranscodeException.GENERIC_MESSAGE);
@@ -97,6 +98,7 @@ class LocalFfprobeServiceTest {
   @ValueSource(ints = {-5, -2, -13, -12345})
   @DisplayName("Should retain a retryable failure when ffprobe reports storage or execution errors")
   void shouldRetainARetryableFailureWhenFfprobeReportsStorageOrExecutionErrors(int code) {
+    var filepath = Path.of("/test/movie.mkv");
     var json =
         """
         {"error": {"code": %d, "string": "input unavailable"}}
@@ -104,7 +106,7 @@ class LocalFfprobeServiceTest {
             .formatted(code);
     var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 1));
 
-    assertThatThrownBy(() -> service.probe(Path.of("/test/movie.mkv")))
+    assertThatThrownBy(() -> service.probe(filepath))
         .isInstanceOf(ProbeExecutionException.class)
         .hasMessage(TranscodeException.GENERIC_MESSAGE);
   }
@@ -112,6 +114,7 @@ class LocalFfprobeServiceTest {
   @Test
   @DisplayName("Should return a terminal outcome when the media has no video stream")
   void shouldReturnATerminalOutcomeWhenTheMediaHasNoVideoStream() {
+    var filepath = Path.of("/test/audio.m4a");
     var service =
         new LocalFfprobeService(
             objectMapper,
@@ -122,9 +125,9 @@ class LocalFfprobeServiceTest {
         """,
                     0));
 
-    assertThat(service.probe(Path.of("/test/audio.m4a")))
+    assertThat(service.probe(filepath))
         .isEqualTo(new ProbeOutcome.Failure(ProbeError.NO_VIDEO_STREAM));
-    assertThatThrownBy(() -> service.probeMedia(Path.of("/test/audio.m4a")))
+    assertThatThrownBy(() -> service.probeMedia(filepath))
         .isInstanceOf(TranscodeException.class)
         .hasMessage(TranscodeException.GENERIC_MESSAGE);
   }
