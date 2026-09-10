@@ -72,6 +72,7 @@ public class StreamingConfig {
                     "json",
                     "-show_streams",
                     "-show_format",
+                    "-show_error",
                     filepath.toString())
                 .start();
           } catch (IOException e) {

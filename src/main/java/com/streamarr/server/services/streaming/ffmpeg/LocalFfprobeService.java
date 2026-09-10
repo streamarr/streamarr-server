@@ -1,15 +1,17 @@
 package com.streamarr.server.services.streaming.ffmpeg;
 
-import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.ProbeContainer;
+import com.streamarr.server.domain.streaming.ProbeError;
+import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
-import com.streamarr.server.exceptions.FfmpegNotAvailableException;
-import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.services.streaming.FfprobeService;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.function.Function;
@@ -25,58 +27,57 @@ public class LocalFfprobeService implements FfprobeService {
   private static final String AUDIO = "audio";
   private static final String CODEC_NAME = "codec_name";
   private static final String BIT_RATE = "bit_rate";
+  // AVERROR_INVALIDDATA is FFERRTAG('I', 'N', 'D', 'A'), independent of platform errno values.
+  private static final int AVERROR_INVALIDDATA = -1094995529;
+  private static final int AVERROR_EOF = -541478725;
 
   private final ObjectMapper objectMapper;
   private final Function<Path, Process> processFactory;
 
   @Override
-  public MediaProbe probe(Path filepath) {
+  public ProbeOutcome probe(Path filepath) {
     try {
       var process = processFactory.apply(filepath);
       var json = objectMapper.readTree(process.getInputStream());
       var exitCode = process.waitFor();
+      var errorCode = json == null ? 0 : json.path("error").path("code").asInt();
+
+      if (exitCode != 0 && (errorCode == AVERROR_INVALIDDATA || errorCode == AVERROR_EOF)) {
+        return new ProbeOutcome.Failure(ProbeError.INVALID_MEDIA);
+      }
 
       if (exitCode != 0) {
         log.error("ffprobe exited with code {} for: {}", exitCode, filepath);
-        throw new FfmpegNotAvailableException(FfmpegNotAvailableException.GENERIC_MESSAGE);
+        throw new ProbeExecutionException();
       }
 
       return parseProbe(json, filepath);
-    } catch (FfmpegNotAvailableException | TranscodeException e) {
+    } catch (ProbeExecutionException e) {
       throw e;
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       log.error("ffprobe interrupted for: {}", filepath, e);
-      throw new TranscodeException(TranscodeException.GENERIC_MESSAGE, e);
+      throw new ProbeExecutionException(e);
     } catch (Exception e) {
       log.error("Failed to parse ffprobe output for: {}", filepath, e);
-      throw new TranscodeException(TranscodeException.GENERIC_MESSAGE, e);
+      throw new ProbeExecutionException(e);
     }
   }
 
-  private MediaProbe parseProbe(JsonNode root, Path filepath) {
-    var videoStream = findStream(root, "video").orElseThrow(() -> noVideoStreamFound(filepath));
-    var audioStream = findStream(root, AUDIO);
+  private ProbeOutcome parseProbe(JsonNode root, Path filepath) {
+    if (findStream(root, "video").isEmpty()) {
+      log.error("No video stream found in: {}", filepath);
+      return new ProbeOutcome.Failure(ProbeError.NO_VIDEO_STREAM);
+    }
+
     var format = root.get("format");
-
-    return MediaProbe.builder()
-        .videoCodec(videoStream.get(CODEC_NAME).asString())
-        .audioCodec(audioStream.map(s -> s.get(CODEC_NAME).asString()).orElse(null))
-        .audioChannels(audioStream.map(s -> optionalInt(s, "channels")).orElse(OptionalInt.empty()))
-        .audioBitrate(audioStream.map(s -> optionalLong(s, BIT_RATE)).orElse(OptionalLong.empty()))
-        .width(videoStream.get("width").asInt())
-        .height(videoStream.get("height").asInt())
-        .framerate(parseFrameRate(videoStream.get("r_frame_rate").asString()))
-        .duration(parseDuration(format.get("duration").asString()))
-        .bitrate(format.get(BIT_RATE).asLong())
-        .containerFormat(optionalString(format, "format_name"))
-        .streams(parseAllStreams(root))
-        .build();
-  }
-
-  private TranscodeException noVideoStreamFound(Path filepath) {
-    log.error("No video stream found in: {}", filepath);
-    return new TranscodeException(TranscodeException.GENERIC_MESSAGE);
+    var container =
+        ProbeContainer.builder()
+            .format(optionalString(format, "format_name"))
+            .duration(optionalString(format, "duration").flatMap(this::parseDuration))
+            .bitrate(optionalLong(format, BIT_RATE))
+            .build();
+    return new ProbeOutcome.Success(container, parseAllStreams(root));
   }
 
   private List<StreamInfo> parseAllStreams(JsonNode root) {
@@ -94,12 +95,17 @@ public class LocalFfprobeService implements FfprobeService {
           StreamInfo.builder()
               .index(indexNode != null && !indexNode.isNull() ? indexNode.asInt() : i)
               .codecType(codecType)
-              .codec(stream.get(CODEC_NAME).asString())
+              .codec(optionalString(stream, CODEC_NAME))
               .language(extractLanguage(stream))
               .channels(
                   AUDIO.equals(codecType) ? optionalInt(stream, "channels") : OptionalInt.empty())
-              .bitrate(
-                  AUDIO.equals(codecType) ? optionalLong(stream, BIT_RATE) : OptionalLong.empty())
+              .bitrate(optionalLong(stream, BIT_RATE))
+              .width(optionalInt(stream, "width"))
+              .height(optionalInt(stream, "height"))
+              .framerate(
+                  optionalString(stream, "r_frame_rate")
+                      .map(this::parseFrameRate)
+                      .orElse(OptionalDouble.empty()))
               .isDefault(extractDisposition(stream, "default"))
               .isForced(extractDisposition(stream, "forced"))
               .build());
@@ -143,7 +149,7 @@ public class LocalFfprobeService implements FfprobeService {
   }
 
   private Optional<String> optionalString(JsonNode node, String field) {
-    var value = node.get(field);
+    var value = node == null ? null : node.get(field);
     if (value == null || value.isNull()) {
       return Optional.empty();
     }
@@ -151,12 +157,20 @@ public class LocalFfprobeService implements FfprobeService {
   }
 
   private OptionalInt optionalInt(JsonNode node, String field) {
-    var value = node.get(field);
-    return value != null && !value.isNull() ? OptionalInt.of(value.asInt()) : OptionalInt.empty();
+    var value = node == null ? null : node.get(field);
+    if (value == null || value.isNull()) {
+      return OptionalInt.empty();
+    }
+
+    try {
+      return OptionalInt.of(Integer.parseInt(value.asString()));
+    } catch (NumberFormatException _) {
+      return OptionalInt.empty();
+    }
   }
 
   private OptionalLong optionalLong(JsonNode node, String field) {
-    var value = node.get(field);
+    var value = node == null ? null : node.get(field);
     if (value == null || value.isNull()) {
       return OptionalLong.empty();
     }
@@ -168,17 +182,29 @@ public class LocalFfprobeService implements FfprobeService {
     }
   }
 
-  private double parseFrameRate(String rFrameRate) {
-    var parts = rFrameRate.split("/");
-    if (parts.length == 2) {
-      return Double.parseDouble(parts[0]) / Double.parseDouble(parts[1]);
+  private OptionalDouble parseFrameRate(String rFrameRate) {
+    try {
+      var parts = rFrameRate.split("/");
+      var rate =
+          parts.length == 2
+              ? Double.parseDouble(parts[0]) / Double.parseDouble(parts[1])
+              : Double.parseDouble(rFrameRate);
+      return Double.isFinite(rate) && rate > 0 ? OptionalDouble.of(rate) : OptionalDouble.empty();
+    } catch (NumberFormatException _) {
+      return OptionalDouble.empty();
     }
-
-    return Double.parseDouble(rFrameRate);
   }
 
-  private Duration parseDuration(String durationStr) {
-    var seconds = Double.parseDouble(durationStr);
-    return Duration.ofMillis((long) (seconds * 1000));
+  private Optional<Duration> parseDuration(String durationStr) {
+    try {
+      var seconds = Double.parseDouble(durationStr);
+      if (!Double.isFinite(seconds) || seconds < 0) {
+        return Optional.empty();
+      }
+
+      return Optional.of(Duration.ofMillis((long) (seconds * 1000)));
+    } catch (NumberFormatException _) {
+      return Optional.empty();
+    }
   }
 }
