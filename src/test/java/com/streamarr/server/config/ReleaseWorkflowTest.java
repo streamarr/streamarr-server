@@ -56,8 +56,9 @@ class ReleaseWorkflowTest {
     var source = Files.readString(Path.of(".github/workflows/release-please.yml"));
     Map<String, Object> workflow = new Yaml().load(source);
 
-    assertThat(source).contains("push:", "- main", "workflow_dispatch:");
-    assertThat(source).doesNotContain("pull_request_target:", "pull_request:");
+    assertThat(source)
+        .contains("push:", "- main", "workflow_dispatch:")
+        .doesNotContain("pull_request_target:", "pull_request:");
     assertThat(map(workflow.get("permissions"))).containsOnly(Map.entry("contents", "read"));
     assertThat(map(workflow.get("concurrency"))).containsEntry("cancel-in-progress", false);
     assertThat(Path.of(".github/workflows/release-draft.yml")).doesNotExist();
