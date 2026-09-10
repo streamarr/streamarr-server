@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
+import graphql.language.NamedNode;
 import graphql.language.ObjectTypeDefinition;
 import graphql.schema.idl.SchemaParser;
 import java.nio.file.Files;
@@ -47,7 +48,7 @@ class CredentialJournalBoundaryTest {
                         registry.getTypes(ObjectTypeDefinition.class).stream(),
                         registry.objectTypeExtensions().values().stream().flatMap(List::stream))
                     .flatMap(type -> type.getFieldDefinitions().stream())
-                    .map(field -> field.getName())
+                    .map(NamedNode::getName)
                     .toList())
             .noneMatch(name -> name.startsWith("credentialAttempt"));
       }
