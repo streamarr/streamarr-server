@@ -8,6 +8,7 @@ import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.jooq.generated.enums.ImageEntityType;
 import com.streamarr.server.jooq.generated.enums.ImageSize;
 import com.streamarr.server.jooq.generated.enums.ImageType;
+import com.streamarr.server.repositories.PostgresTransactionLocks;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -18,7 +19,6 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
 import org.jooq.Field;
-import org.jooq.impl.DSL;
 import org.springframework.data.domain.AuditorAware;
 
 @RequiredArgsConstructor
@@ -27,6 +27,7 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
   private final ImageProperties imageProperties;
+  private final PostgresTransactionLocks transactionLocks;
 
   @Override
   public Set<UUID> insertAllIfAbsent(List<Image> images) {
@@ -55,10 +56,8 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
     var lockKey =
         UUID.nameUUIDFromBytes(artworkIdentity.getBytes(StandardCharsets.UTF_8))
             .getMostSignificantBits();
-    var lockTimeout = imageProperties.replacementLockTimeout().toMillis() + "ms";
-    dsl.setLocal(DSL.name("lock_timeout"), DSL.inline(lockTimeout)).execute();
-    dsl.select(DSL.function(DSL.name("pg_advisory_xact_lock"), Object.class, DSL.val(lockKey)))
-        .execute();
+    transactionLocks.limitLockWait(imageProperties.replacementLockTimeout());
+    transactionLocks.lock(lockKey);
     var condition =
         IMAGE
             .ENTITY_ID

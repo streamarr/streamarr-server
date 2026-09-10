@@ -5,6 +5,7 @@ import static com.streamarr.server.jooq.generated.tables.DeviceAuthorization.DEV
 import com.streamarr.server.domain.auth.DeviceAuthorization;
 import com.streamarr.server.jooq.generated.enums.DeviceAuthorizationStatus;
 import com.streamarr.server.repositories.JooqQueryHelper;
+import com.streamarr.server.repositories.PostgresTransactionLocks;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -32,6 +33,7 @@ public class DeviceAuthorizationRepositoryCustomImpl
   private static final String USER_CODE_UNIQUE_CONSTRAINT = "uq_device_authorization_user_code";
 
   private final DSLContext dsl;
+  private final PostgresTransactionLocks transactionLocks;
   private final AuditorAware<UUID> auditorAware;
 
   private final EntityManager entityManager;
@@ -98,7 +100,7 @@ public class DeviceAuthorizationRepositoryCustomImpl
       DeviceAuthorizationInsertCommand command) {
     // Held until this transaction ends, and shared across instances because it lives in the
     // database. Every issuance passes through here, so the count below cannot go stale under it.
-    dsl.execute("SELECT pg_advisory_xact_lock(?)", ISSUANCE_LOCK_KEY);
+    transactionLocks.lock(ISSUANCE_LOCK_KEY);
 
     var outstanding = countOutstanding(command.now());
     if (outstanding >= command.maxOutstanding()) {

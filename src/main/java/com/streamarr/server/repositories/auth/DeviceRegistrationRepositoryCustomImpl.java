@@ -9,6 +9,7 @@ import static org.jooq.impl.DSL.inline;
 import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
 import com.streamarr.server.jooq.generated.tables.records.DeviceRegistrationRecord;
+import com.streamarr.server.repositories.PostgresTransactionLocks;
 import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
@@ -26,6 +27,7 @@ public class DeviceRegistrationRepositoryCustomImpl implements DeviceRegistratio
   private static final int ESN_LOCK_NAMESPACE = 0x5354524D;
 
   private final DSLContext dsl;
+  private final PostgresTransactionLocks transactionLocks;
   private final EntityManager entityManager;
   private final AuditorAware<UUID> auditorAware;
 
@@ -60,7 +62,7 @@ public class DeviceRegistrationRepositoryCustomImpl implements DeviceRegistratio
     // The caller's transaction holds this cross-instance lock through its subsequent insert or
     // block write. Without it, two pairings can both observe no active registration and race the
     // partial unique index after this revoke returns.
-    dsl.execute("SELECT pg_advisory_xact_lock(?, ?)", ESN_LOCK_NAMESPACE, esn.hashCode());
+    transactionLocks.lock(ESN_LOCK_NAMESPACE, esn.hashCode());
     var scope = DEVICE_REGISTRATION.ESN.eq(esn);
     if (householdId != null) {
       scope = scope.and(DEVICE_REGISTRATION.HOUSEHOLD_ID.eq(householdId));

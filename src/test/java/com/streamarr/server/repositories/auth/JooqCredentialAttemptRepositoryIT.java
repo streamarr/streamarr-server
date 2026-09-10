@@ -11,6 +11,7 @@ import com.streamarr.server.domain.auth.CredentialAttemptReservation;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.exceptions.CredentialAttemptNotPendingException;
+import com.streamarr.server.repositories.PostgresTransactionLocks;
 import com.streamarr.server.services.auth.StandardCredentialAttemptPolicyProvider;
 import java.time.Duration;
 import java.time.Instant;

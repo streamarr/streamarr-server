@@ -13,6 +13,7 @@ import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.exceptions.CredentialAttemptNotPendingException;
 import com.streamarr.server.jooq.generated.enums.CredentialKind;
 import com.streamarr.server.jooq.generated.tables.records.CredentialAttemptRecord;
+import com.streamarr.server.repositories.PostgresTransactionLocks;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
