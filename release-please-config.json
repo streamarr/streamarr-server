@@ -6,6 +6,8 @@
   "packages": {
     ".": {
       "release-type": "streamarr-maven",
+      "draft": true,
+      "force-tag-creation": true,
       "pull-request-title-pattern": "behavioral${scope}: release${component} ${version}",
       "include-component-in-tag": false,
       "include-v-in-tag": true,
