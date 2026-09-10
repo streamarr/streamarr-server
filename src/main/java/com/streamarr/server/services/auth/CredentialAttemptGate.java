@@ -1,9 +1,9 @@
 package com.streamarr.server.services.auth;
 
 import com.streamarr.server.domain.auth.CredentialAttemptAdmission;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialAttemptReservation;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.exceptions.CredentialAttemptUnavailableException;
 import com.streamarr.server.exceptions.CredentialVerificationException;
 import com.streamarr.server.exceptions.TooManyAttemptsException;
@@ -28,15 +28,15 @@ public class CredentialAttemptGate {
   private final CredentialAttemptRepository repository;
   private final CredentialAttemptPolicyProvider policies;
 
-  public CredentialAttemptReservation reserve(CredentialAttemptTarget target) {
+  public CredentialAttemptReservation reserve(CredentialAttemptMetadata metadata) {
     try {
-      return switch (repository.reserve(target, policies.policyFor(target.kind()))) {
+      return switch (repository.reserve(metadata, policies.policyFor(metadata.kind()))) {
         case CredentialAttemptAdmission.Reserved(var reservation) -> reservation;
         case CredentialAttemptAdmission.Blocked(var retryAfter) ->
-            throw blocked(target, retryAfter);
+            throw blocked(metadata, retryAfter);
       };
     } catch (DataAccessException | TransactionException exception) {
-      throw unavailable("reserving", target, exception);
+      throw unavailable("reserving", metadata, exception);
     }
   }
 
@@ -46,8 +46,8 @@ public class CredentialAttemptGate {
    * CredentialVerificationException}, and left pending — abandoned after five minutes (ADR 0028) —
    * when it fails for any other reason.
    */
-  public <T> T attempt(CredentialAttemptTarget target, Supplier<T> verification) {
-    var reservation = reserve(target);
+  public <T> T attempt(CredentialAttemptMetadata metadata, Supplier<T> verification) {
+    var reservation = reserve(metadata);
     var verified = verify(reservation, verification);
     complete(reservation, CredentialAttemptResult.SUCCEEDED);
     return verified;
@@ -59,8 +59,8 @@ public class CredentialAttemptGate {
    * or perform external I/O. Call outside a transaction.
    */
   public <V, T> T attempt(
-      CredentialAttemptTarget target, Supplier<V> verification, Function<V, T> mutation) {
-    var reservation = reserve(target);
+      CredentialAttemptMetadata metadata, Supplier<V> verification, Function<V, T> mutation) {
+    var reservation = reserve(metadata);
     return verify(
         reservation,
         () -> {
@@ -78,7 +78,7 @@ public class CredentialAttemptGate {
     } catch (RuntimeException failure) {
       log.warn(
           "Credential attempt left pending after an unexpected failure: {}",
-          describe(reservation.target()),
+          describe(reservation.metadata()),
           failure);
       throw failure;
     }
@@ -94,9 +94,9 @@ public class CredentialAttemptGate {
     }
   }
 
-  public void attempt(CredentialAttemptTarget target, Verification verification) {
+  public void attempt(CredentialAttemptMetadata metadata, Verification verification) {
     attempt(
-        target,
+        metadata,
         () -> {
           verification.verify();
           return null;
@@ -107,7 +107,7 @@ public class CredentialAttemptGate {
     try {
       repository.complete(reservation, result);
     } catch (DataAccessException | TransactionException exception) {
-      throw unavailable("completing", reservation.target(), exception);
+      throw unavailable("completing", reservation.metadata(), exception);
     }
   }
 
@@ -115,14 +115,14 @@ public class CredentialAttemptGate {
     try {
       return repository.completeWith(reservation, mutation);
     } catch (DataAccessException | TransactionException exception) {
-      throw unavailable("completing", reservation.target(), exception);
+      throw unavailable("completing", reservation.metadata(), exception);
     }
   }
 
   private static TooManyAttemptsException blocked(
-      CredentialAttemptTarget target, Duration retryAfter) {
-    log.warn("Credential attempt blocked: {} retryAfter={}", describe(target), retryAfter);
-    return switch (target.kind()) {
+      CredentialAttemptMetadata metadata, Duration retryAfter) {
+    log.warn("Credential attempt blocked: {} retryAfter={}", describe(metadata), retryAfter);
+    return switch (metadata.kind()) {
       case ACCOUNT_LOGIN -> new TooManyLoginAttemptsException(retryAfter);
       case DEVICE_PAIRING_CODE -> new TooManyDeviceAttemptsException(retryAfter);
       case ACCOUNT_PASSWORD_VERIFICATION,
@@ -135,19 +135,20 @@ public class CredentialAttemptGate {
   }
 
   private static CredentialAttemptUnavailableException unavailable(
-      String operation, CredentialAttemptTarget target, RuntimeException cause) {
+      String operation, CredentialAttemptMetadata metadata, RuntimeException cause) {
     log.error(
         "Credential journal unavailable while {} an attempt: {}",
         operation,
-        describe(target),
+        describe(metadata),
         cause);
     return new CredentialAttemptUnavailableException(cause);
   }
 
   /** Identifiers only: the client address is observational and never belongs in a log line. */
-  private static String describe(CredentialAttemptTarget target) {
+  private static String describe(CredentialAttemptMetadata metadata) {
     return "kind=%s accountId=%s profileId=%s credentialId=%s"
-        .formatted(target.kind(), target.accountId(), target.profileId(), target.credentialId());
+        .formatted(
+            metadata.kind(), metadata.accountId(), metadata.profileId(), metadata.credentialId());
   }
 
   /** A credential check with no result of its own; it refuses by throwing. */

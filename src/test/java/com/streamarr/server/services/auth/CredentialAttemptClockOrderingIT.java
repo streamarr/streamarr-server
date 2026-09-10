@@ -5,8 +5,8 @@ import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -33,8 +33,8 @@ class CredentialAttemptClockOrderingIT extends AbstractIntegrationTest {
   @Autowired private JdbcTemplate jdbcTemplate;
 
   private final UUID accountId = UUID.randomUUID();
-  private final CredentialAttemptTarget target =
-      CredentialAttemptTarget.builder()
+  private final CredentialAttemptMetadata metadata =
+      CredentialAttemptMetadata.builder()
           .kind(CredentialKind.ACCOUNT_LOGIN)
           .accountId(accountId)
           .ipAddress("192.0.2.100")
@@ -50,7 +50,7 @@ class CredentialAttemptClockOrderingIT extends AbstractIntegrationTest {
   @DisplayName("Should timestamp journal write when target lock has been acquired")
   void shouldTimestampJournalWriteWhenTargetLockHasBeenAcquired(JournalWrite write)
       throws Exception {
-    var reservation = gate.reserve(target);
+    var reservation = gate.reserve(metadata);
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor();
         var holder = dataSource.getConnection()) {
@@ -60,7 +60,7 @@ class CredentialAttemptClockOrderingIT extends AbstractIntegrationTest {
           executor.submit(
               () ->
                   switch (write) {
-                    case RESERVATION -> gate.reserve(target).id();
+                    case RESERVATION -> gate.reserve(metadata).id();
                     case COMPLETION -> {
                       gate.complete(reservation, CredentialAttemptResult.FAILED);
                       yield reservation.id();

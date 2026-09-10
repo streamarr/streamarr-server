@@ -2,10 +2,10 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.CredentialAttemptAdmission;
 import com.streamarr.server.domain.auth.CredentialAttemptHistory;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialAttemptPolicy;
 import com.streamarr.server.domain.auth.CredentialAttemptReservation;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.exceptions.CredentialAttemptNotPendingException;
 import com.streamarr.server.repositories.auth.CredentialAttemptRepository;
 import com.streamarr.server.services.auth.CredentialAttemptGate;
@@ -39,10 +39,10 @@ public class FakeCredentialAttemptRepository implements CredentialAttemptReposit
 
   @Override
   public CredentialAttemptAdmission reserve(
-      CredentialAttemptTarget target, CredentialAttemptPolicy policy) {
+      CredentialAttemptMetadata metadata, CredentialAttemptPolicy policy) {
     failIfArmed();
     var attemptedAt = clock.instant();
-    return blockedBy(policy, target, attemptedAt).orElseGet(() -> journal(target, attemptedAt));
+    return blockedBy(policy, metadata, attemptedAt).orElseGet(() -> journal(metadata, attemptedAt));
   }
 
   @Override
@@ -59,7 +59,7 @@ public class FakeCredentialAttemptRepository implements CredentialAttemptReposit
     attempts.put(
         reservation.id(),
         new AttemptSnapshot(
-            pending.id(), pending.target(), pending.attemptedAt(), completion, result));
+            pending.id(), pending.metadata(), pending.attemptedAt(), completion, result));
   }
 
   @Override
@@ -101,32 +101,35 @@ public class FakeCredentialAttemptRepository implements CredentialAttemptReposit
   }
 
   private Optional<CredentialAttemptAdmission> blockedBy(
-      CredentialAttemptPolicy policy, CredentialAttemptTarget target, Instant now) {
+      CredentialAttemptPolicy policy, CredentialAttemptMetadata metadata, Instant now) {
     if (rejection != null) {
       return Optional.of(new CredentialAttemptAdmission.Blocked(rejection));
     }
 
-    if (!(policy instanceof CredentialAttemptPolicy.Limited limited) || !target.isResolved()) {
+    if (!(policy instanceof CredentialAttemptPolicy.Limited limited) || !metadata.isResolved()) {
       return Optional.empty();
     }
 
     return limited
-        .retryAfter(history(target, limited, now), now)
+        .retryAfter(history(metadata, limited, now), now)
         .map(CredentialAttemptAdmission.Blocked::new);
   }
 
-  private CredentialAttemptAdmission journal(CredentialAttemptTarget target, Instant attemptedAt) {
-    var reservation = new CredentialAttemptReservation(UUID.randomUUID(), target);
+  private CredentialAttemptAdmission journal(
+      CredentialAttemptMetadata metadata, Instant attemptedAt) {
+    var reservation = new CredentialAttemptReservation(UUID.randomUUID(), metadata);
     attempts.put(
-        reservation.id(), new AttemptSnapshot(reservation.id(), target, attemptedAt, null, null));
+        reservation.id(), new AttemptSnapshot(reservation.id(), metadata, attemptedAt, null, null));
     return new CredentialAttemptAdmission.Reserved(reservation);
   }
 
   /** The same selection the jOOQ repository makes, over the in-memory rows. */
   private CredentialAttemptHistory history(
-      CredentialAttemptTarget target, CredentialAttemptPolicy.Limited policy, Instant now) {
+      CredentialAttemptMetadata metadata, CredentialAttemptPolicy.Limited policy, Instant now) {
     var journal =
-        attempts.values().stream().filter(attempt -> sameTarget(attempt.target(), target)).toList();
+        attempts.values().stream()
+            .filter(attempt -> sameTarget(attempt.metadata(), metadata))
+            .toList();
     var latestSuccess =
         journal.stream()
             .filter(_ -> policy.resetFailuresOnSuccess())
@@ -153,7 +156,8 @@ public class FakeCredentialAttemptRepository implements CredentialAttemptReposit
   }
 
   /** The client address is observational and never part of the throttle target. */
-  private static boolean sameTarget(CredentialAttemptTarget left, CredentialAttemptTarget right) {
+  private static boolean sameTarget(
+      CredentialAttemptMetadata left, CredentialAttemptMetadata right) {
     return left.kind() == right.kind()
         && Objects.equals(left.accountId(), right.accountId())
         && Objects.equals(left.profileId(), right.profileId())
@@ -168,7 +172,7 @@ public class FakeCredentialAttemptRepository implements CredentialAttemptReposit
 
   public record AttemptSnapshot(
       UUID id,
-      CredentialAttemptTarget target,
+      CredentialAttemptMetadata metadata,
       Instant attemptedAt,
       Instant completedAt,
       CredentialAttemptResult result) {}

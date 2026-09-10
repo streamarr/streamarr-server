@@ -9,8 +9,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.config.security.DeviceAuthProperties;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
@@ -89,14 +89,14 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
   void shouldReturnThrottleResponseWhenApproverBudgetIsExhausted() throws Exception {
     var account = seedAccount();
     var bearer = bearerFor(account);
-    var target =
-        CredentialAttemptTarget.builder()
+    var metadata =
+        CredentialAttemptMetadata.builder()
             .kind(CredentialKind.DEVICE_PAIRING_CODE)
             .accountId(account.getId())
             .ipAddress("192.0.2.30")
             .build();
     for (var i = 0; i < MAXIMUM_FAILURES; i++) {
-      attempts.complete(attempts.reserve(target), CredentialAttemptResult.FAILED);
+      attempts.complete(attempts.reserve(metadata), CredentialAttemptResult.FAILED);
     }
 
     mockMvc

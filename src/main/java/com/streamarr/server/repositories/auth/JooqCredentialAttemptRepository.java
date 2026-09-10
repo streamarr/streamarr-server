@@ -6,10 +6,10 @@ import static com.streamarr.server.jooq.generated.tables.CredentialAttempt.CREDE
 
 import com.streamarr.server.domain.auth.CredentialAttemptAdmission;
 import com.streamarr.server.domain.auth.CredentialAttemptHistory;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialAttemptPolicy;
 import com.streamarr.server.domain.auth.CredentialAttemptReservation;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.exceptions.CredentialAttemptNotPendingException;
 import com.streamarr.server.jooq.generated.enums.CredentialKind;
 import com.streamarr.server.jooq.generated.tables.records.CredentialAttemptRecord;
@@ -47,31 +47,31 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
   @Override
   @Transactional(propagation = Propagation.REQUIRES_NEW)
   public CredentialAttemptAdmission reserve(
-      CredentialAttemptTarget target, CredentialAttemptPolicy policy) {
-    if (!(policy instanceof CredentialAttemptPolicy.Limited limited) || !target.isResolved()) {
+      CredentialAttemptMetadata metadata, CredentialAttemptPolicy policy) {
+    if (!(policy instanceof CredentialAttemptPolicy.Limited limited) || !metadata.isResolved()) {
       transactionLocks.limitLockWait(LOCK_TIMEOUT);
-      return insert(target, clock.instant());
+      return insert(metadata, clock.instant());
     }
 
-    lockTarget(target);
+    lockTarget(metadata);
     var attemptedAt = clock.instant();
     return limited
-        .retryAfter(history(target, limited, attemptedAt), attemptedAt)
+        .retryAfter(history(metadata, limited, attemptedAt), attemptedAt)
         .<CredentialAttemptAdmission>map(CredentialAttemptAdmission.Blocked::new)
-        .orElseGet(() -> insert(target, attemptedAt));
+        .orElseGet(() -> insert(metadata, attemptedAt));
   }
 
   @Override
   @Transactional(propagation = Propagation.REQUIRES_NEW)
   public void complete(CredentialAttemptReservation reservation, CredentialAttemptResult result) {
-    lockTargetOrLimitWait(reservation.target());
+    lockTargetOrLimitWait(reservation.metadata());
     completeLocked(reservation, result);
   }
 
   @Override
   @Transactional(propagation = Propagation.REQUIRES_NEW)
   public <T> T completeWith(CredentialAttemptReservation reservation, Supplier<T> mutation) {
-    lockTargetOrLimitWait(reservation.target());
+    lockTargetOrLimitWait(reservation.metadata());
     var result = mutation.get();
     completeLocked(reservation, CredentialAttemptResult.SUCCEEDED);
     return result;
@@ -104,9 +104,10 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
         .execute();
   }
 
-  private CredentialAttemptAdmission insert(CredentialAttemptTarget target, Instant attemptedAt) {
+  private CredentialAttemptAdmission insert(
+      CredentialAttemptMetadata metadata, Instant attemptedAt) {
     var id = UUID.randomUUID();
-    var ipAddress = DSL.val(target.ipAddress()).cast(CREDENTIAL_ATTEMPT.IP_ADDRESS.getDataType());
+    var ipAddress = DSL.val(metadata.ipAddress()).cast(CREDENTIAL_ATTEMPT.IP_ADDRESS.getDataType());
     dsl.insertInto(
             CREDENTIAL_ATTEMPT,
             CREDENTIAL_ATTEMPT.ID,
@@ -119,21 +120,23 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
         .select(
             dsl.select(
                 DSL.val(id),
-                DSL.val(generatedKind(target)),
-                DSL.val(target.accountId(), CREDENTIAL_ATTEMPT.ACCOUNT_ID.getDataType()),
-                DSL.val(target.profileId(), CREDENTIAL_ATTEMPT.PROFILE_ID.getDataType()),
-                DSL.val(target.credentialId(), CREDENTIAL_ATTEMPT.CREDENTIAL_ID.getDataType()),
+                DSL.val(generatedKind(metadata)),
+                DSL.val(metadata.accountId(), CREDENTIAL_ATTEMPT.ACCOUNT_ID.getDataType()),
+                DSL.val(metadata.profileId(), CREDENTIAL_ATTEMPT.PROFILE_ID.getDataType()),
+                DSL.val(metadata.credentialId(), CREDENTIAL_ATTEMPT.CREDENTIAL_ID.getDataType()),
                 ipAddress,
                 DSL.val(offsetOf(attemptedAt))))
         .execute();
 
-    return new CredentialAttemptAdmission.Reserved(new CredentialAttemptReservation(id, target));
+    return new CredentialAttemptAdmission.Reserved(new CredentialAttemptReservation(id, metadata));
   }
 
   private CredentialAttemptHistory history(
-      CredentialAttemptTarget target, CredentialAttemptPolicy.Limited policy, Instant now) {
+      CredentialAttemptMetadata metadata, CredentialAttemptPolicy.Limited policy, Instant now) {
     var latestSuccess =
-        policy.resetFailuresOnSuccess() ? latestSuccess(target) : Optional.<OffsetDateTime>empty();
+        policy.resetFailuresOnSuccess()
+            ? latestSuccess(metadata)
+            : Optional.<OffsetDateTime>empty();
     // A lockout can outlast its failure window, so read back through both durations.
     var earliestRelevant =
         offsetOf(now.minus(policy.failureWindow()).minus(policy.throttleDuration()));
@@ -141,7 +144,7 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
         dsl
             .select(CREDENTIAL_ATTEMPT.COMPLETED_AT)
             .from(CREDENTIAL_ATTEMPT)
-            .where(targetCondition(target))
+            .where(targetCondition(metadata))
             .and(CREDENTIAL_ATTEMPT.RESULT.eq(FAILED))
             .and(after(CREDENTIAL_ATTEMPT.COMPLETED_AT, latestSuccess))
             .and(CREDENTIAL_ATTEMPT.COMPLETED_AT.ge(earliestRelevant))
@@ -154,7 +157,7 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
         dsl
             .select(CREDENTIAL_ATTEMPT.ATTEMPTED_AT)
             .from(CREDENTIAL_ATTEMPT)
-            .where(targetCondition(target))
+            .where(targetCondition(metadata))
             .and(CREDENTIAL_ATTEMPT.COMPLETED_AT.isNull())
             .and(
                 CREDENTIAL_ATTEMPT.ATTEMPTED_AT.gt(
@@ -166,11 +169,11 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
     return new CredentialAttemptHistory(failures, pendingExpiries);
   }
 
-  private Optional<OffsetDateTime> latestSuccess(CredentialAttemptTarget target) {
+  private Optional<OffsetDateTime> latestSuccess(CredentialAttemptMetadata metadata) {
     return Optional.ofNullable(
         dsl.select(DSL.max(CREDENTIAL_ATTEMPT.COMPLETED_AT))
             .from(CREDENTIAL_ATTEMPT)
-            .where(targetCondition(target))
+            .where(targetCondition(metadata))
             // Required for PostgreSQL to use the partial index on completed attempts.
             .and(CREDENTIAL_ATTEMPT.COMPLETED_AT.isNotNull())
             .and(CREDENTIAL_ATTEMPT.RESULT.eq(SUCCEEDED))
@@ -182,12 +185,12 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
     return exclusiveBound.map(column::gt).orElseGet(DSL::noCondition);
   }
 
-  private Condition targetCondition(CredentialAttemptTarget target) {
+  private Condition targetCondition(CredentialAttemptMetadata metadata) {
     return DSL.and(
-        CREDENTIAL_ATTEMPT.CREDENTIAL_KIND.eq(generatedKind(target)),
-        identifierCondition(CREDENTIAL_ATTEMPT.ACCOUNT_ID, target.accountId()),
-        identifierCondition(CREDENTIAL_ATTEMPT.PROFILE_ID, target.profileId()),
-        identifierCondition(CREDENTIAL_ATTEMPT.CREDENTIAL_ID, target.credentialId()));
+        CREDENTIAL_ATTEMPT.CREDENTIAL_KIND.eq(generatedKind(metadata)),
+        identifierCondition(CREDENTIAL_ATTEMPT.ACCOUNT_ID, metadata.accountId()),
+        identifierCondition(CREDENTIAL_ATTEMPT.PROFILE_ID, metadata.profileId()),
+        identifierCondition(CREDENTIAL_ATTEMPT.CREDENTIAL_ID, metadata.credentialId()));
   }
 
   private static Condition identifierCondition(
@@ -200,28 +203,31 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
     return column.eq(id);
   }
 
-  private void lockTargetOrLimitWait(CredentialAttemptTarget target) {
+  private void lockTargetOrLimitWait(CredentialAttemptMetadata metadata) {
     // Unresolved targets skip the advisory lock but still need a lock timeout for journal writes.
-    if (!target.isResolved()) {
+    if (!metadata.isResolved()) {
       transactionLocks.limitLockWait(LOCK_TIMEOUT);
       return;
     }
 
-    lockTarget(target);
+    lockTarget(metadata);
   }
 
-  private void lockTarget(CredentialAttemptTarget target) {
+  private void lockTarget(CredentialAttemptMetadata metadata) {
     // Reservation and completion share this lock to keep history's two reads consistent.
     // Use the same identifiers as targetCondition.
     var key =
         "%s:%s:%s:%s"
             .formatted(
-                target.kind(), target.accountId(), target.profileId(), target.credentialId());
+                metadata.kind(),
+                metadata.accountId(),
+                metadata.profileId(),
+                metadata.credentialId());
     transactionLocks.lockNormalizedKey(LOCK_NAMESPACE, key, LOCK_TIMEOUT);
   }
 
-  private static CredentialKind generatedKind(CredentialAttemptTarget target) {
-    return switch (target.kind()) {
+  private static CredentialKind generatedKind(CredentialAttemptMetadata metadata) {
+    return switch (metadata.kind()) {
       case ACCOUNT_LOGIN -> CredentialKind.ACCOUNT_LOGIN;
       case ACCOUNT_PASSWORD_VERIFICATION -> CredentialKind.ACCOUNT_PASSWORD_VERIFICATION;
       case PROFILE_PIN -> CredentialKind.PROFILE_PIN;

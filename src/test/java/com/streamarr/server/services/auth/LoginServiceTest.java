@@ -6,8 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.config.security.Argon2Properties;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.PasswordEncoderConfig;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
@@ -173,9 +173,9 @@ class LoginServiceTest {
         .hasSize(6)
         .allSatisfy(
             recorded -> {
-              assertThat(recorded.target())
+              assertThat(recorded.metadata())
                   .isEqualTo(
-                      CredentialAttemptTarget.builder()
+                      CredentialAttemptMetadata.builder()
                           .kind(CredentialKind.ACCOUNT_LOGIN)
                           .ipAddress("127.0.0.1")
                           .build());
@@ -257,7 +257,8 @@ class LoginServiceTest {
         .isInstanceOf(InvalidCredentialsException.class);
 
     assertThat(credentialAttempts.attempts())
-        .allSatisfy(attempt -> assertThat(attempt.target().accountId()).isEqualTo(account.getId()))
+        .allSatisfy(
+            attempt -> assertThat(attempt.metadata().accountId()).isEqualTo(account.getId()))
         .extracting(FakeCredentialAttemptRepository.AttemptSnapshot::result)
         .containsExactly(
             CredentialAttemptResult.FAILED,
@@ -352,7 +353,7 @@ class LoginServiceTest {
         .isInstanceOf(InvalidCredentialsException.class);
 
     assertThat(credentialAttempts.attempts())
-        .extracting(attempt -> attempt.target().accountId())
+        .extracting(attempt -> attempt.metadata().accountId())
         .containsExactly(account.getId(), account.getId());
   }
 

@@ -1,6 +1,6 @@
 package com.streamarr.server.services.auth;
 
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
@@ -33,7 +33,7 @@ public class AccountPasswordVerifier {
    */
   public void verify(UserAccount account, String password, String ipAddress) {
     credentialAttempts.attempt(
-        passwordTarget(account, ipAddress),
+        passwordMetadata(account, ipAddress),
         () -> {
           // Compare against the hash read at the start, even if the managed entity changes
           // meanwhile.
@@ -49,8 +49,8 @@ public class AccountPasswordVerifier {
         });
   }
 
-  private static CredentialAttemptTarget passwordTarget(UserAccount account, String ipAddress) {
-    return CredentialAttemptTarget.builder()
+  private static CredentialAttemptMetadata passwordMetadata(UserAccount account, String ipAddress) {
+    return CredentialAttemptMetadata.builder()
         .kind(CredentialKind.ACCOUNT_PASSWORD_VERIFICATION)
         .accountId(account.getId())
         .ipAddress(ipAddress)

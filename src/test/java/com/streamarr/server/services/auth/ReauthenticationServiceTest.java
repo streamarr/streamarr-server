@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.DeviceBoundSessionException;
@@ -102,7 +102,7 @@ class ReauthenticationServiceTest {
         .singleElement()
         .satisfies(
             attempt -> {
-              assertThat(attempt.target()).isEqualTo(passwordTarget());
+              assertThat(attempt.metadata()).isEqualTo(passwordMetadata());
               assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.FAILED);
             });
   }
@@ -117,7 +117,7 @@ class ReauthenticationServiceTest {
         .singleElement()
         .satisfies(
             attempt -> {
-              assertThat(attempt.target()).isEqualTo(passwordTarget());
+              assertThat(attempt.metadata()).isEqualTo(passwordMetadata());
               assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED);
             });
   }
@@ -138,8 +138,8 @@ class ReauthenticationServiceTest {
         .isInstanceOf(TooManyCredentialAttemptsException.class);
   }
 
-  private CredentialAttemptTarget passwordTarget() {
-    return CredentialAttemptTarget.builder()
+  private CredentialAttemptMetadata passwordMetadata() {
+    return CredentialAttemptMetadata.builder()
         .kind(CredentialKind.ACCOUNT_PASSWORD_VERIFICATION)
         .accountId(account.getId())
         .ipAddress(IP_ADDRESS)

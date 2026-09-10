@@ -1,6 +1,6 @@
 package com.streamarr.server.services.auth;
 
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
@@ -30,7 +30,7 @@ public class LoginService {
     // The completion transaction rechecks the stored hash under its row lock. A refusal rolls
     // back the transaction before the gate journals the failed attempt.
     return credentialAttempts.attempt(
-        loginTarget(command, account),
+        loginMetadata(command, account),
         () -> {
           if (account == null) {
             timingEqualizer.burn(command.password());
@@ -51,8 +51,9 @@ public class LoginService {
         loginCompletionService::complete);
   }
 
-  private static CredentialAttemptTarget loginTarget(LoginCommand command, UserAccount account) {
-    return CredentialAttemptTarget.builder()
+  private static CredentialAttemptMetadata loginMetadata(
+      LoginCommand command, UserAccount account) {
+    return CredentialAttemptMetadata.builder()
         .kind(CredentialKind.ACCOUNT_LOGIN)
         .accountId(account == null ? null : account.getId())
         .ipAddress(command.ipAddress())

@@ -5,14 +5,14 @@ import lombok.Builder;
 import lombok.NonNull;
 
 @Builder
-public record CredentialAttemptTarget(
+public record CredentialAttemptMetadata(
     @NonNull CredentialKind kind,
     UUID accountId,
     UUID profileId,
     UUID credentialId,
     @NonNull String ipAddress) {
 
-  public CredentialAttemptTarget {
+  public CredentialAttemptMetadata {
     var shape = Shape.of(kind);
     shape.account().check(kind, accountId, "accountId");
     shape.profile().check(kind, profileId, "profileId");

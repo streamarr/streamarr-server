@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.AuthSession;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
@@ -284,9 +284,9 @@ class PasswordChangeServiceTest {
         .hasSize(5)
         .allSatisfy(
             attempt ->
-                assertThat(attempt.target())
+                assertThat(attempt.metadata())
                     .isEqualTo(
-                        CredentialAttemptTarget.builder()
+                        CredentialAttemptMetadata.builder()
                             .kind(CredentialKind.ACCOUNT_PASSWORD_VERIFICATION)
                             .accountId(account.getId())
                             .ipAddress("192.0.2.22")

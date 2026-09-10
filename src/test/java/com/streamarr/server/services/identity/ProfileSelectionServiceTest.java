@@ -5,8 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import ch.qos.logback.classic.spi.ThrowableProxyUtil;
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
@@ -238,8 +238,8 @@ class ProfileSelectionServiceTest {
     assertThat(credentialAttempts.attempts())
         .allSatisfy(
             attempt -> {
-              assertThat(attempt.target().accountId()).isEqualTo(account.getId());
-              assertThat(attempt.target().profileId()).isEqualTo(personal.getId());
+              assertThat(attempt.metadata().accountId()).isEqualTo(account.getId());
+              assertThat(attempt.metadata().profileId()).isEqualTo(personal.getId());
             })
         .extracting(FakeCredentialAttemptRepository.AttemptSnapshot::result)
         .containsExactly(
@@ -400,9 +400,9 @@ class ProfileSelectionServiceTest {
         .hasSize(5)
         .allSatisfy(
             attempt ->
-                assertThat(attempt.target())
+                assertThat(attempt.metadata())
                     .isEqualTo(
-                        CredentialAttemptTarget.builder()
+                        CredentialAttemptMetadata.builder()
                             .kind(CredentialKind.PROFILE_PIN)
                             .accountId(account.getId())
                             .profileId(personal.getId())

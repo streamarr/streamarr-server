@@ -3,8 +3,8 @@ package com.streamarr.server.services.identity;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
 import com.streamarr.server.domain.auth.EsnBlock;
@@ -221,7 +221,7 @@ class DevicePairingServiceTest {
     assertThat(credentialAttempts.attempts())
         .hasSize(6)
         .allSatisfy(
-            attempt -> assertThat(attempt.target().accountId()).isEqualTo(approver.getId()));
+            attempt -> assertThat(attempt.metadata().accountId()).isEqualTo(approver.getId()));
     var anotherApprover = AuthenticatedIdentityFixture.accountScopedBuilder().build();
     assertThat(
             service.lookup(anotherApprover, lookup(issued.userCode())).authorization().deviceName())
@@ -314,9 +314,9 @@ class DevicePairingServiceTest {
         .singleElement()
         .satisfies(
             attempt -> {
-              assertThat(attempt.target())
+              assertThat(attempt.metadata())
                   .isEqualTo(
-                      CredentialAttemptTarget.builder()
+                      CredentialAttemptMetadata.builder()
                           .kind(CredentialKind.DEVICE_PAIRING_CODE)
                           .accountId(approver.getId())
                           .ipAddress("192.0.2.30")
@@ -337,7 +337,7 @@ class DevicePairingServiceTest {
         .singleElement()
         .satisfies(
             attempt -> {
-              assertThat(attempt.target().accountId()).isEqualTo(approver.getId());
+              assertThat(attempt.metadata().accountId()).isEqualTo(approver.getId());
               assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED);
             });
   }

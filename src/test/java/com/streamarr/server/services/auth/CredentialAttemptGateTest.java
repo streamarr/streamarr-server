@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import ch.qos.logback.classic.Level;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.exceptions.CredentialAttemptNotPendingException;
 import com.streamarr.server.exceptions.CredentialAttemptUnavailableException;
@@ -33,8 +33,8 @@ class CredentialAttemptGateTest {
 
   private static final Instant NOW = Instant.parse("2026-08-26T12:00:00Z");
   private static final UUID ACCOUNT_ID = UUID.fromString("10000000-0000-0000-0000-000000000001");
-  private static final CredentialAttemptTarget LOGIN_TARGET =
-      CredentialAttemptTarget.builder()
+  private static final CredentialAttemptMetadata LOGIN_METADATA =
+      CredentialAttemptMetadata.builder()
           .kind(CredentialKind.ACCOUNT_LOGIN)
           .accountId(ACCOUNT_ID)
           .ipAddress("192.0.2.30")
@@ -48,7 +48,7 @@ class CredentialAttemptGateTest {
   void shouldFailClosedWhenReservingAttemptCannotReachDatabase() {
     repository.failWith(new DataAccessResourceFailureException("database unavailable"));
 
-    assertThatThrownBy(() -> gate.reserve(LOGIN_TARGET))
+    assertThatThrownBy(() -> gate.reserve(LOGIN_METADATA))
         .isInstanceOf(CredentialAttemptUnavailableException.class)
         .hasCauseInstanceOf(DataAccessResourceFailureException.class);
   }
@@ -58,7 +58,7 @@ class CredentialAttemptGateTest {
   void shouldFailClosedWhenReservingAttemptCannotOpenTransaction() {
     repository.failWith(new CannotCreateTransactionException("pool exhausted"));
 
-    assertThatThrownBy(() -> gate.reserve(LOGIN_TARGET))
+    assertThatThrownBy(() -> gate.reserve(LOGIN_METADATA))
         .isInstanceOf(CredentialAttemptUnavailableException.class)
         .hasCauseInstanceOf(CannotCreateTransactionException.class);
   }
@@ -66,7 +66,7 @@ class CredentialAttemptGateTest {
   @Test
   @DisplayName("Should fail closed when completing an attempt cannot reach the database")
   void shouldFailClosedWhenCompletingAttemptCannotReachDatabase() {
-    var reservation = gate.reserve(LOGIN_TARGET);
+    var reservation = gate.reserve(LOGIN_METADATA);
     repository.failWith(new DataAccessResourceFailureException("database unavailable"));
 
     assertThatThrownBy(() -> gate.complete(reservation, CredentialAttemptResult.SUCCEEDED))
@@ -78,7 +78,7 @@ class CredentialAttemptGateTest {
   @DisplayName(
       "Should pass the not-pending failure through when the reservation is already completed")
   void shouldPassNotPendingFailureThroughWhenReservationIsAlreadyCompleted() {
-    var reservation = gate.reserve(LOGIN_TARGET);
+    var reservation = gate.reserve(LOGIN_METADATA);
     gate.complete(reservation, CredentialAttemptResult.FAILED);
 
     assertThatThrownBy(() -> gate.complete(reservation, CredentialAttemptResult.SUCCEEDED))
@@ -91,7 +91,7 @@ class CredentialAttemptGateTest {
     repository.failWith(new DataAccessResourceFailureException("database unavailable"));
 
     try (var logs = LogCapture.forClass(CredentialAttemptGate.class)) {
-      assertThatThrownBy(() -> gate.reserve(LOGIN_TARGET))
+      assertThatThrownBy(() -> gate.reserve(LOGIN_METADATA))
           .isInstanceOf(CredentialAttemptUnavailableException.class);
 
       assertThat(logs.events())
@@ -112,7 +112,7 @@ class CredentialAttemptGateTest {
     repository.rejectReservations(Duration.ofSeconds(42));
 
     try (var logs = LogCapture.forClass(CredentialAttemptGate.class)) {
-      assertThatThrownBy(() -> gate.reserve(LOGIN_TARGET))
+      assertThatThrownBy(() -> gate.reserve(LOGIN_METADATA))
           .isInstanceOf(TooManyLoginAttemptsException.class);
 
       assertThat(logs.events())
@@ -131,7 +131,7 @@ class CredentialAttemptGateTest {
   void shouldRefuseLoginWithRetryDelayWhenAccountIsBlocked() {
     repository.rejectReservations(Duration.ofSeconds(42));
 
-    assertThatThrownBy(() -> gate.reserve(LOGIN_TARGET))
+    assertThatThrownBy(() -> gate.reserve(LOGIN_METADATA))
         .isInstanceOf(TooManyLoginAttemptsException.class)
         .extracting(failure -> ((RetryAfterAware) failure).retryAfter())
         .isEqualTo(Duration.ofSeconds(42));
@@ -142,7 +142,7 @@ class CredentialAttemptGateTest {
   void shouldRefuseProfilePinWithRetryDelayWhenProfileIsBlocked() {
     repository.rejectReservations(Duration.ofSeconds(42));
     var target =
-        CredentialAttemptTarget.builder()
+        CredentialAttemptMetadata.builder()
             .kind(CredentialKind.PROFILE_PIN)
             .accountId(ACCOUNT_ID)
             .profileId(UUID.fromString("20000000-0000-0000-0000-000000000001"))
@@ -160,7 +160,7 @@ class CredentialAttemptGateTest {
   void shouldRefusePairingCodeWithRetryDelayWhenApproverIsBlocked() {
     repository.rejectReservations(Duration.ofSeconds(42));
     var target =
-        CredentialAttemptTarget.builder()
+        CredentialAttemptMetadata.builder()
             .kind(CredentialKind.DEVICE_PAIRING_CODE)
             .accountId(ACCOUNT_ID)
             .ipAddress("192.0.2.30")
@@ -177,7 +177,7 @@ class CredentialAttemptGateTest {
   void shouldJournalSuccessAndReturnVerifiedValueWhenVerifierReturns() {
     var verified =
         gate.attempt(
-            LOGIN_TARGET,
+            LOGIN_METADATA,
             () -> {
               // The reservation is journaled before the verifier runs.
               assertThat(repository.attempts())
@@ -192,7 +192,7 @@ class CredentialAttemptGateTest {
         .singleElement()
         .satisfies(
             attempt -> {
-              assertThat(attempt.target()).isEqualTo(LOGIN_TARGET);
+              assertThat(attempt.metadata()).isEqualTo(LOGIN_METADATA);
               assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED);
               assertThat(attempt.completedAt()).isEqualTo(NOW);
             });
@@ -204,7 +204,7 @@ class CredentialAttemptGateTest {
     assertThatThrownBy(
             () ->
                 gate.attempt(
-                    LOGIN_TARGET,
+                    LOGIN_METADATA,
                     () -> {
                       throw new InvalidCredentialsException();
                     }))
@@ -225,7 +225,7 @@ class CredentialAttemptGateTest {
     assertThatThrownBy(
             () ->
                 gate.attempt(
-                    LOGIN_TARGET,
+                    LOGIN_METADATA,
                     () -> {
                       repository.failWith(outage);
                       throw refused;
@@ -242,7 +242,7 @@ class CredentialAttemptGateTest {
       assertThatThrownBy(
               () ->
                   gate.attempt(
-                      LOGIN_TARGET,
+                      LOGIN_METADATA,
                       () -> {
                         throw new IllegalStateException("encoder misconfigured");
                       }))
@@ -276,7 +276,7 @@ class CredentialAttemptGateTest {
     assertThatThrownBy(
             () ->
                 gate.attempt(
-                    LOGIN_TARGET,
+                    LOGIN_METADATA,
                     () -> {
                       throw new AssertionError("Blocked attempt reached verification");
                     }))

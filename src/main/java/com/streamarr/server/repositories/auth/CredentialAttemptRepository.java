@@ -1,17 +1,17 @@
 package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.CredentialAttemptAdmission;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialAttemptPolicy;
 import com.streamarr.server.domain.auth.CredentialAttemptReservation;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import java.time.Instant;
 import java.util.function.Supplier;
 
 public interface CredentialAttemptRepository {
 
   CredentialAttemptAdmission reserve(
-      CredentialAttemptTarget target, CredentialAttemptPolicy policy);
+      CredentialAttemptMetadata metadata, CredentialAttemptPolicy policy);
 
   void complete(CredentialAttemptReservation reservation, CredentialAttemptResult result);
 

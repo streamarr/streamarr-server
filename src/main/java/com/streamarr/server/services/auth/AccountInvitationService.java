@@ -5,7 +5,7 @@ import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationMode;
 import com.streamarr.server.domain.auth.AccountInvitationReoffer;
 import com.streamarr.server.domain.auth.AuthSession;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
@@ -420,7 +420,7 @@ public class AccountInvitationService {
     var presented = opaqueCodes.parse(rawCode).orElseThrow(InvalidOneTimeCodeException::new);
     var invitation = invitationRepository.findByPublicId(presented.publicId()).orElse(null);
     return credentialAttempts.attempt(
-        codeTarget(invitation, ipAddress),
+        codeMetadata(invitation, ipAddress),
         () -> {
           if (invitation == null) {
             throw new InvalidOneTimeCodeException();
@@ -444,9 +444,9 @@ public class AccountInvitationService {
         });
   }
 
-  private static CredentialAttemptTarget codeTarget(
+  private static CredentialAttemptMetadata codeMetadata(
       AccountInvitation invitation, String ipAddress) {
-    return CredentialAttemptTarget.builder()
+    return CredentialAttemptMetadata.builder()
         .kind(CredentialKind.ACCOUNT_INVITATION_CODE)
         .credentialId(invitation == null ? null : invitation.getId())
         .ipAddress(ipAddress)

@@ -5,10 +5,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.CredentialAttemptAdmission;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialAttemptPolicy;
 import com.streamarr.server.domain.auth.CredentialAttemptReservation;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.exceptions.CredentialAttemptNotPendingException;
 import com.streamarr.server.services.auth.StandardCredentialAttemptPolicyProvider;
@@ -66,14 +66,14 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should begin a full lockout when the fifth failure completes")
   void shouldBeginAFullLockoutWhenTheFifthFailureCompletes() {
-    var target = resolvedTarget();
+    var metadata = resolvedTarget();
 
     for (var failure = 0; failure < 5; failure++) {
-      var reservation = reserve(target, NOW.plusSeconds(failure));
+      var reservation = reserve(metadata, NOW.plusSeconds(failure));
       completeAt(reservation, CredentialAttemptResult.FAILED, NOW.plusSeconds(failure));
     }
 
-    assertThat(admit(target, LIMITED_POLICY, NOW.plusSeconds(5)))
+    assertThat(admit(metadata, LIMITED_POLICY, NOW.plusSeconds(5)))
         .isEqualTo(new CredentialAttemptAdmission.Blocked(Duration.ofMinutes(15).minusSeconds(1)));
     assertThat(attemptCount()).isEqualTo(5);
   }
@@ -81,97 +81,97 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should reset failure sequence when verification succeeds")
   void shouldResetFailureSequenceWhenVerificationSucceeds() {
-    var target = resolvedTarget();
-    completeFailures(target, NOW, 4);
-    var success = reserve(target, NOW.plusSeconds(4));
+    var metadata = resolvedTarget();
+    completeFailures(metadata, NOW, 4);
+    var success = reserve(metadata, NOW.plusSeconds(4));
     completeAt(success, CredentialAttemptResult.SUCCEEDED, NOW.plusSeconds(4));
 
-    completeFailures(target, NOW.plusSeconds(5), 4);
+    completeFailures(metadata, NOW.plusSeconds(5), 4);
 
     // Four failures since the success still admit; only failures after the success count, so
     // the fifth of them is the one that begins the lockout.
-    var fifthSinceSuccess = reserve(target, NOW.plusSeconds(9));
+    var fifthSinceSuccess = reserve(metadata, NOW.plusSeconds(9));
     completeAt(fifthSinceSuccess, CredentialAttemptResult.FAILED, NOW.plusSeconds(9));
-    assertThat(admit(target, LIMITED_POLICY, NOW.plusSeconds(10)))
+    assertThat(admit(metadata, LIMITED_POLICY, NOW.plusSeconds(10)))
         .isInstanceOf(CredentialAttemptAdmission.Blocked.class);
   }
 
   @Test
   @DisplayName("Should admit attempt when completed lockout expires")
   void shouldAdmitAttemptWhenCompletedLockoutExpires() {
-    var target = resolvedTarget();
-    completeFailures(target, NOW, 5);
+    var metadata = resolvedTarget();
+    completeFailures(metadata, NOW, 5);
 
-    assertThat(admit(target, LIMITED_POLICY, NOW.plus(Duration.ofMinutes(15)).plusSeconds(4)))
+    assertThat(admit(metadata, LIMITED_POLICY, NOW.plus(Duration.ofMinutes(15)).plusSeconds(4)))
         .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
   }
 
   @Test
   @DisplayName("Should admit an attempt exactly when the failure window closes")
   void shouldAdmitAnAttemptExactlyWhenTheFailureWindowCloses() {
-    var target = resolvedTarget();
+    var metadata = resolvedTarget();
     for (var failure = 0; failure < 5; failure++) {
-      completeAt(reserve(target, NOW), CredentialAttemptResult.FAILED, NOW);
+      completeAt(reserve(metadata, NOW), CredentialAttemptResult.FAILED, NOW);
     }
 
     // The lockout and the window both end here; a client retrying at Retry-After is admitted.
-    assertThat(admit(target, LIMITED_POLICY, NOW.plus(Duration.ofMinutes(15))))
+    assertThat(admit(metadata, LIMITED_POLICY, NOW.plus(Duration.ofMinutes(15))))
         .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
   }
 
   @Test
   @DisplayName("Should hold a slot for a pending reservation when it is fresh")
   void shouldHoldSlotForPendingReservationWhenItIsFresh() {
-    var target = resolvedTarget();
+    var metadata = resolvedTarget();
     for (var pending = 0; pending < 5; pending++) {
-      reserve(target, NOW);
+      reserve(metadata, NOW);
     }
 
-    assertThat(admit(target, LIMITED_POLICY, NOW.plusSeconds(1)))
+    assertThat(admit(metadata, LIMITED_POLICY, NOW.plusSeconds(1)))
         .isInstanceOf(CredentialAttemptAdmission.Blocked.class);
-    assertThat(admit(target, LIMITED_POLICY, NOW.plus(Duration.ofMinutes(5)).minusSeconds(1)))
+    assertThat(admit(metadata, LIMITED_POLICY, NOW.plus(Duration.ofMinutes(5)).minusSeconds(1)))
         .isInstanceOf(CredentialAttemptAdmission.Blocked.class);
   }
 
   @Test
   @DisplayName("Should free the slot when a pending reservation is five minutes old")
   void shouldFreeSlotWhenPendingReservationIsFiveMinutesOld() {
-    var target = resolvedTarget();
+    var metadata = resolvedTarget();
     for (var pending = 0; pending < 5; pending++) {
-      reserve(target, NOW);
+      reserve(metadata, NOW);
     }
 
-    assertThat(admit(target, LIMITED_POLICY, NOW.plus(Duration.ofMinutes(5))))
+    assertThat(admit(metadata, LIMITED_POLICY, NOW.plus(Duration.ofMinutes(5))))
         .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
   }
 
   @Test
   @DisplayName("Should count pending reservations when later attempt succeeds")
   void shouldCountPendingReservationsWhenLaterAttemptSucceeds() {
-    var target = resolvedTarget();
+    var metadata = resolvedTarget();
     for (var pending = 0; pending < 4; pending++) {
-      reserve(target, NOW);
+      reserve(metadata, NOW);
     }
 
-    var success = reserve(target, NOW.plusSeconds(1));
+    var success = reserve(metadata, NOW.plusSeconds(1));
     completeAt(success, CredentialAttemptResult.SUCCEEDED, NOW.plusSeconds(1));
 
     // The four in-flight verifications may still fail after the success; they hold their slots.
-    assertThat(admit(target, LIMITED_POLICY, NOW.plusSeconds(2)))
+    assertThat(admit(metadata, LIMITED_POLICY, NOW.plusSeconds(2)))
         .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
-    assertThat(admit(target, LIMITED_POLICY, NOW.plusSeconds(2)))
+    assertThat(admit(metadata, LIMITED_POLICY, NOW.plusSeconds(2)))
         .isInstanceOf(CredentialAttemptAdmission.Blocked.class);
   }
 
   @Test
   @DisplayName("Should not lock out when five failures span more than the window")
   void shouldNotLockOutWhenFiveFailuresSpanMoreThanTheWindow() {
-    var target = resolvedTarget();
-    completeFailures(target, NOW, 4);
+    var metadata = resolvedTarget();
+    completeFailures(metadata, NOW, 4);
     var late = NOW.plus(Duration.ofMinutes(16));
-    completeAt(reserve(target, late), CredentialAttemptResult.FAILED, late);
+    completeAt(reserve(metadata, late), CredentialAttemptResult.FAILED, late);
 
-    assertThat(admit(target, LIMITED_POLICY, late.plusSeconds(1)))
+    assertThat(admit(metadata, LIMITED_POLICY, late.plusSeconds(1)))
         .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
   }
 
@@ -179,16 +179,16 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should measure the lockout from the fifth failure's completion when completion lags its reservation")
   void shouldMeasureLockoutFromFifthFailuresCompletionWhenCompletionLagsReservation() {
-    var target = resolvedTarget();
-    var reservations = IntStream.range(0, 5).mapToObj(_ -> reserve(target, NOW)).toList();
+    var metadata = resolvedTarget();
+    var reservations = IntStream.range(0, 5).mapToObj(_ -> reserve(metadata, NOW)).toList();
     var completedAt = NOW.plusSeconds(30);
     reservations.forEach(
         reservation -> completeAt(reservation, CredentialAttemptResult.FAILED, completedAt));
     var lockoutEnd = completedAt.plus(Duration.ofMinutes(15));
 
-    assertThat(admit(target, LIMITED_POLICY, lockoutEnd.minusSeconds(1)))
+    assertThat(admit(metadata, LIMITED_POLICY, lockoutEnd.minusSeconds(1)))
         .isInstanceOf(CredentialAttemptAdmission.Blocked.class);
-    assertThat(admit(target, LIMITED_POLICY, lockoutEnd))
+    assertThat(admit(metadata, LIMITED_POLICY, lockoutEnd))
         .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
   }
 
@@ -196,8 +196,8 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   @DisplayName("Should keep PIN failure sequences separate when Profiles share an Account")
   void shouldKeepPinFailureSequencesSeparateWhenProfilesShareAnAccount() {
     var accountId = UUID.randomUUID();
-    var firstProfile = pinTarget(accountId, UUID.randomUUID());
-    var secondProfile = pinTarget(accountId, UUID.randomUUID());
+    var firstProfile = pinMetadata(accountId, UUID.randomUUID());
+    var secondProfile = pinMetadata(accountId, UUID.randomUUID());
     completeFailures(firstProfile, NOW, 5);
 
     assertThat(admit(firstProfile, LIMITED_POLICY, NOW.plusSeconds(5)))
@@ -210,8 +210,8 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   @DisplayName("Should keep a Profile locked when another Profile's PIN verification succeeds")
   void shouldKeepProfileLockedWhenAnotherProfilesPinVerificationSucceeds() {
     var accountId = UUID.randomUUID();
-    var lockedProfile = pinTarget(accountId, UUID.randomUUID());
-    var siblingProfile = pinTarget(accountId, UUID.randomUUID());
+    var lockedProfile = pinMetadata(accountId, UUID.randomUUID());
+    var siblingProfile = pinMetadata(accountId, UUID.randomUUID());
     completeFailures(lockedProfile, NOW, 5);
 
     var siblingSuccess = reserve(siblingProfile, NOW.plusSeconds(6));
@@ -225,9 +225,9 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   @DisplayName("Should keep login failures out of password verification when they share an Account")
   void shouldKeepLoginFailuresOutOfPasswordVerificationWhenTheyShareAnAccount() {
     var accountId = UUID.randomUUID();
-    completeFailures(loginTarget(accountId), NOW, 5);
+    completeFailures(loginMetadata(accountId), NOW, 5);
     var passwordVerification =
-        CredentialAttemptTarget.builder()
+        CredentialAttemptMetadata.builder()
             .kind(CredentialKind.ACCOUNT_PASSWORD_VERIFICATION)
             .accountId(accountId)
             .ipAddress(IP_ADDRESS)
@@ -240,11 +240,11 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should keep the journal row when the caller's transaction rolls back")
   void shouldKeepTheJournalRowWhenTheCallersTransactionRollsBack() {
-    var target = resolvedTarget();
+    var metadata = resolvedTarget();
 
     transactionTemplate.executeWithoutResult(
         status -> {
-          reserve(target, NOW);
+          reserve(metadata, NOW);
           status.setRollbackOnly();
         });
 
@@ -254,11 +254,11 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should record every attempt without rejecting when the policy is unlimited")
   void shouldRecordEveryAttemptWithoutRejectingWhenPolicyIsUnlimited() {
-    var target = resolvedTarget();
+    var metadata = resolvedTarget();
     var policy = new CredentialAttemptPolicy.Unlimited();
 
     for (var attempt = 0; attempt < 20; attempt++) {
-      assertThat(admit(target, policy, NOW))
+      assertThat(admit(metadata, policy, NOW))
           .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
     }
 
@@ -268,14 +268,14 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should record every attempt without throttling when the target is unresolved")
   void shouldRecordEveryAttemptWithoutThrottlingWhenTargetIsUnresolved() {
-    var target =
-        CredentialAttemptTarget.builder()
+    var metadata =
+        CredentialAttemptMetadata.builder()
             .kind(CredentialKind.PASSWORD_RESET_CODE)
             .ipAddress(IP_ADDRESS)
             .build();
 
     for (var attempt = 0; attempt < 20; attempt++) {
-      var reservation = reserve(target, NOW);
+      var reservation = reserve(metadata, NOW);
       completeAt(reservation, CredentialAttemptResult.FAILED, NOW);
     }
 
@@ -302,7 +302,7 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
     var recording =
         DSL.using(
             dsl.configuration().derive(new DefaultExecuteListenerProvider(recordingListener)));
-    var builder = CredentialAttemptTarget.builder().kind(kind).ipAddress(IP_ADDRESS);
+    var builder = CredentialAttemptMetadata.builder().kind(kind).ipAddress(IP_ADDRESS);
     var indexColumn =
         switch (kind) {
           case ACCOUNT_LOGIN, ACCOUNT_PASSWORD_VERIFICATION, DEVICE_PAIRING_CODE -> {
@@ -321,12 +321,12 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
           }
         };
 
-    var target = builder.build();
+    var metadata = builder.build();
     var policy = new StandardCredentialAttemptPolicyProvider().policyFor(kind);
     transactionTemplate.executeWithoutResult(
         _ ->
             new JooqCredentialAttemptRepository(recording, transactionLocks, journalClock)
-                .reserve(target, policy));
+                .reserve(metadata, policy));
 
     var admissionQueries =
         statements.stream()
@@ -351,8 +351,8 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should refuse completion when reservation is no longer pending")
   void shouldRefuseCompletionWhenReservationIsNoLongerPending() {
-    var target = resolvedTarget();
-    var reservation = reserve(target, NOW);
+    var metadata = resolvedTarget();
+    var reservation = reserve(metadata, NOW);
     completeAt(reservation, CredentialAttemptResult.FAILED, NOW);
 
     assertThatThrownBy(() -> completeAt(reservation, CredentialAttemptResult.SUCCEEDED, NOW))
@@ -362,8 +362,8 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should complete at the reservation instant when the clock stepped backwards")
   void shouldCompleteAtTheReservationInstantWhenTheClockSteppedBackwards() {
-    var target = resolvedTarget();
-    var reservation = reserve(target, NOW);
+    var metadata = resolvedTarget();
+    var reservation = reserve(metadata, NOW);
 
     completeAt(reservation, CredentialAttemptResult.FAILED, NOW.minusSeconds(1));
 
@@ -379,9 +379,9 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   @ValueSource(strings = {"PENDING", "SUCCEEDED", "FAILED"})
   @DisplayName("Should remove only older attempts when the cutoff is thirty days")
   void shouldRemoveOnlyOlderAttemptsWhenCutoffIsThirtyDays(String outcome) {
-    var target = resolvedTarget();
-    var older = reserve(target, NOW.minus(Duration.ofDays(30)).minusSeconds(1));
-    var boundary = reserve(target, NOW.minus(Duration.ofDays(30)));
+    var metadata = resolvedTarget();
+    var older = reserve(metadata, NOW.minus(Duration.ofDays(30)).minusSeconds(1));
+    var boundary = reserve(metadata, NOW.minus(Duration.ofDays(30)));
     if (!outcome.equals("PENDING")) {
       completeAt(
           older,
@@ -402,20 +402,20 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
         .isEqualTo(NOW.minus(Duration.ofDays(30)));
   }
 
-  private static CredentialAttemptTarget resolvedTarget() {
-    return loginTarget(UUID.randomUUID());
+  private static CredentialAttemptMetadata resolvedTarget() {
+    return loginMetadata(UUID.randomUUID());
   }
 
-  private static CredentialAttemptTarget loginTarget(UUID accountId) {
-    return CredentialAttemptTarget.builder()
+  private static CredentialAttemptMetadata loginMetadata(UUID accountId) {
+    return CredentialAttemptMetadata.builder()
         .kind(CredentialKind.ACCOUNT_LOGIN)
         .accountId(accountId)
         .ipAddress(IP_ADDRESS)
         .build();
   }
 
-  private static CredentialAttemptTarget pinTarget(UUID accountId, UUID profileId) {
-    return CredentialAttemptTarget.builder()
+  private static CredentialAttemptMetadata pinMetadata(UUID accountId, UUID profileId) {
+    return CredentialAttemptMetadata.builder()
         .kind(CredentialKind.PROFILE_PIN)
         .accountId(accountId)
         .profileId(profileId)
@@ -424,9 +424,9 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   }
 
   private CredentialAttemptAdmission admit(
-      CredentialAttemptTarget target, CredentialAttemptPolicy policy, Instant attemptedAt) {
+      CredentialAttemptMetadata metadata, CredentialAttemptPolicy policy, Instant attemptedAt) {
     journalClock.set(attemptedAt);
-    return repository.reserve(target, policy);
+    return repository.reserve(metadata, policy);
   }
 
   private void completeAt(
@@ -438,18 +438,18 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   }
 
   private CredentialAttemptReservation reserve(
-      CredentialAttemptTarget target, Instant attemptedAt) {
-    return switch (admit(target, LIMITED_POLICY, attemptedAt)) {
+      CredentialAttemptMetadata metadata, Instant attemptedAt) {
+    return switch (admit(metadata, LIMITED_POLICY, attemptedAt)) {
       case CredentialAttemptAdmission.Reserved(var reservation) -> reservation;
       case CredentialAttemptAdmission.Blocked _ -> throw new AssertionError("attempt was blocked");
     };
   }
 
   private void completeFailures(
-      CredentialAttemptTarget target, Instant firstAttempt, int numberOfFailures) {
+      CredentialAttemptMetadata metadata, Instant firstAttempt, int numberOfFailures) {
     for (var failure = 0; failure < numberOfFailures; failure++) {
       var completedAt = firstAttempt.plusSeconds(failure);
-      completeAt(reserve(target, completedAt), CredentialAttemptResult.FAILED, completedAt);
+      completeAt(reserve(metadata, completedAt), CredentialAttemptResult.FAILED, completedAt);
     }
   }
 
@@ -464,9 +464,9 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   @DisplayName("Should block the target when the same Account fails from another address")
   void shouldBlockTargetWhenSameAccountFailsFromAnotherAddress() {
     var accountId = UUID.randomUUID();
-    completeFailures(loginTarget(accountId), NOW, 5);
+    completeFailures(loginMetadata(accountId), NOW, 5);
     var fromElsewhere =
-        CredentialAttemptTarget.builder()
+        CredentialAttemptMetadata.builder()
             .kind(CredentialKind.ACCOUNT_LOGIN)
             .accountId(accountId)
             .ipAddress("198.51.100.9")
@@ -480,23 +480,23 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should ignore failure when it completes at latest success instant")
   void shouldIgnoreFailureWhenItCompletesAtLatestSuccessInstant() {
-    var target = resolvedTarget();
-    var success = reserve(target, NOW.minusSeconds(1));
+    var metadata = resolvedTarget();
+    var success = reserve(metadata, NOW.minusSeconds(1));
     completeAt(success, CredentialAttemptResult.SUCCEEDED, NOW);
     for (var failure = 0; failure < 5; failure++) {
-      completeAt(reserve(target, NOW), CredentialAttemptResult.FAILED, NOW);
+      completeAt(reserve(metadata, NOW), CredentialAttemptResult.FAILED, NOW);
     }
 
     // The success cutoff also excludes failures completed at the same instant.
-    assertThat(admit(target, LIMITED_POLICY, NOW.plusSeconds(1)))
+    assertThat(admit(metadata, LIMITED_POLICY, NOW.plusSeconds(1)))
         .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
   }
 
   @Test
   @DisplayName("Should keep the completion when the caller's transaction rolls back")
   void shouldKeepTheCompletionWhenTheCallersTransactionRollsBack() {
-    var target = resolvedTarget();
-    var reservation = reserve(target, NOW);
+    var metadata = resolvedTarget();
+    var reservation = reserve(metadata, NOW);
 
     transactionTemplate.executeWithoutResult(
         status -> {
@@ -542,15 +542,15 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should preserve the original retry boundary when blocked requests repeat")
   void shouldPreserveOriginalRetryBoundaryWhenBlockedRequestsRepeat() {
-    var target = resolvedTarget();
-    completeFailures(target, NOW, 5);
+    var metadata = resolvedTarget();
+    completeFailures(metadata, NOW, 5);
     for (var seconds : new int[] {30, 60, 899}) {
-      assertThat(admit(target, LIMITED_POLICY, NOW.plusSeconds(seconds)))
+      assertThat(admit(metadata, LIMITED_POLICY, NOW.plusSeconds(seconds)))
           .isEqualTo(new CredentialAttemptAdmission.Blocked(Duration.ofSeconds(904 - seconds)));
       assertThat(attemptCount()).isEqualTo(5);
     }
 
-    assertThat(admit(target, LIMITED_POLICY, NOW.plusSeconds(904)))
+    assertThat(admit(metadata, LIMITED_POLICY, NOW.plusSeconds(904)))
         .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
   }
 

@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.exceptions.CredentialAttemptUnavailableException;
 import com.streamarr.server.support.AuthTestSupport;
@@ -55,14 +55,14 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
     var before = jdbcTemplate.queryForObject("SELECT clock_timestamp()", Timestamp.class);
     assertThat(before).isNotNull();
     var accountId = UUID.randomUUID();
-    var target =
-        CredentialAttemptTarget.builder()
+    var metadata =
+        CredentialAttemptMetadata.builder()
             .kind(CredentialKind.ACCOUNT_LOGIN)
             .accountId(accountId)
             .ipAddress(IP_ADDRESS)
             .build();
 
-    var reservation = gate.reserve(target);
+    var reservation = gate.reserve(metadata);
     gate.complete(reservation, CredentialAttemptResult.FAILED);
 
     var row =
@@ -91,14 +91,14 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should persist the client address when it is IPv6")
   void shouldPersistClientAddressWhenItIsIpv6() {
-    var target =
-        CredentialAttemptTarget.builder()
+    var metadata =
+        CredentialAttemptMetadata.builder()
             .kind(CredentialKind.ACCOUNT_LOGIN)
             .accountId(UUID.randomUUID())
             .ipAddress(IPV6_ADDRESS)
             .build();
 
-    var reservation = gate.reserve(target);
+    var reservation = gate.reserve(metadata);
     gate.complete(reservation, CredentialAttemptResult.FAILED);
 
     assertThat(
@@ -112,8 +112,8 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should fail closed when the journal cannot be locked within the lock timeout")
   void shouldFailClosedWhenJournalCannotBeLockedWithinLockTimeout() throws Exception {
-    var target =
-        CredentialAttemptTarget.builder()
+    var metadata =
+        CredentialAttemptMetadata.builder()
             .kind(CredentialKind.ACCOUNT_LOGIN)
             .accountId(UUID.randomUUID())
             .ipAddress(IP_ADDRESS)
@@ -126,7 +126,7 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
       }
 
       var started = Instant.now();
-      assertThatThrownBy(() -> gate.reserve(target))
+      assertThatThrownBy(() -> gate.reserve(metadata))
           .isInstanceOf(CredentialAttemptUnavailableException.class);
       assertThat(Duration.between(started, Instant.now()))
           .isGreaterThanOrEqualTo(Duration.ofSeconds(2))
@@ -148,15 +148,15 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
   void shouldFailClosedWhenJournalCannotBeLockedForTargetThatResolvesToNoRow() throws Exception {
     // An unknown email or code names no row, so nothing is advisory-locked; the journal write
     // must still stop waiting at the lock_timeout instead of holding a pooled connection.
-    var target =
-        CredentialAttemptTarget.builder()
+    var metadata =
+        CredentialAttemptMetadata.builder()
             .kind(CredentialKind.ACCOUNT_LOGIN)
             .ipAddress(IP_ADDRESS)
             .build();
 
     whileJournalTableIsLocked(
         () ->
-            assertThatThrownBy(() -> gate.reserve(target))
+            assertThatThrownBy(() -> gate.reserve(metadata))
                 .isInstanceOf(CredentialAttemptUnavailableException.class));
 
     assertThat(
@@ -175,7 +175,7 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
       throws Exception {
     var reservation =
         gate.reserve(
-            CredentialAttemptTarget.builder()
+            CredentialAttemptMetadata.builder()
                 .kind(CredentialKind.ACCOUNT_LOGIN)
                 .ipAddress(IP_ADDRESS)
                 .build());
@@ -190,13 +190,13 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
   @DisplayName("Should fail closed when the target's advisory lock is held during completion")
   void shouldFailClosedWhenTargetsAdvisoryLockIsHeldDuringCompletion() throws Exception {
     var accountId = UUID.randomUUID();
-    var target =
-        CredentialAttemptTarget.builder()
+    var metadata =
+        CredentialAttemptMetadata.builder()
             .kind(CredentialKind.ACCOUNT_LOGIN)
             .accountId(accountId)
             .ipAddress(IP_ADDRESS)
             .build();
-    var reservation = gate.reserve(target);
+    var reservation = gate.reserve(metadata);
 
     try (var holder = dataSource.getConnection()) {
       holder.setAutoCommit(false);
@@ -227,13 +227,13 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
   @DisplayName("Should keep the journal row when its Account is deleted")
   void shouldKeepTheJournalRowWhenItsAccountIsDeleted() {
     var account = authTestSupport.createAccount();
-    var target =
-        CredentialAttemptTarget.builder()
+    var metadata =
+        CredentialAttemptMetadata.builder()
             .kind(CredentialKind.ACCOUNT_LOGIN)
             .accountId(account.getId())
             .ipAddress(IP_ADDRESS)
             .build();
-    gate.complete(gate.reserve(target), CredentialAttemptResult.FAILED);
+    gate.complete(gate.reserve(metadata), CredentialAttemptResult.FAILED);
 
     authTestSupport.deleteAccount(account.getId());
 
@@ -249,20 +249,20 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should journal a credential that no row backs when the code id is unknown")
   void shouldJournalCredentialThatNoRowBacksWhenCodeIdIsUnknown() {
-    var target =
-        CredentialAttemptTarget.builder()
+    var metadata =
+        CredentialAttemptMetadata.builder()
             .kind(CredentialKind.PASSWORD_RESET_CODE)
             .credentialId(UUID.randomUUID())
             .ipAddress(IP_ADDRESS)
             .build();
 
-    gate.complete(gate.reserve(target), CredentialAttemptResult.FAILED);
+    gate.complete(gate.reserve(metadata), CredentialAttemptResult.FAILED);
 
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM credential_attempt WHERE credential_id = ?",
                 Integer.class,
-                target.credentialId()))
+                metadata.credentialId()))
         .isEqualTo(1);
   }
 

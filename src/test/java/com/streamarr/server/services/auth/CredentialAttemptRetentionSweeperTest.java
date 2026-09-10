@@ -3,8 +3,8 @@ package com.streamarr.server.services.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import ch.qos.logback.classic.Level;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.fakes.FakeCredentialAttemptRepository;
 import com.streamarr.server.support.LogCapture;
@@ -73,7 +73,7 @@ class CredentialAttemptRetentionSweeperTest {
     var gate = repository.gate(Clock.fixed(attemptedAt, ZoneOffset.UTC));
     var reservation =
         gate.reserve(
-            CredentialAttemptTarget.builder()
+            CredentialAttemptMetadata.builder()
                 .kind(CredentialKind.ACCOUNT_LOGIN)
                 .ipAddress("192.0.2.30")
                 .build());

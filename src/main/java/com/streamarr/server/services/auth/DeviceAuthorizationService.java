@@ -2,7 +2,7 @@ package com.streamarr.server.services.auth;
 
 import com.streamarr.server.config.CanonicalBaseUrl;
 import com.streamarr.server.config.security.DeviceAuthProperties;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.DeviceAuthorization;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
@@ -145,7 +145,7 @@ public class DeviceAuthorizationService {
   public DeviceAuthorizationDetails lookup(DeviceCodePresentation presentation) {
     var authorization = findPresented(presentation);
     return credentialAttempts.attempt(
-        approverTarget(presentation),
+        approverMetadata(presentation),
         () -> {
           requireUnexpired(authorization);
           return detailsOf(authorization, authorization.getStatus());
@@ -159,7 +159,7 @@ public class DeviceAuthorizationService {
   public ResolvedGrant resolveForDecision(DeviceCodePresentation presentation) {
     var authorization = findPresented(presentation);
     return credentialAttempts.attempt(
-        approverTarget(presentation),
+        approverMetadata(presentation),
         () -> {
           requirePresent(authorization);
           // Decision reports expiry so the client can request a new code; lookup returns not-found.
@@ -352,8 +352,8 @@ public class DeviceAuthorizationService {
     }
   }
 
-  private static CredentialAttemptTarget approverTarget(DeviceCodePresentation presentation) {
-    return CredentialAttemptTarget.builder()
+  private static CredentialAttemptMetadata approverMetadata(DeviceCodePresentation presentation) {
+    return CredentialAttemptMetadata.builder()
         .kind(CredentialKind.DEVICE_PAIRING_CODE)
         .accountId(presentation.approverAccountId())
         .ipAddress(presentation.ipAddress())

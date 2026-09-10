@@ -1,7 +1,7 @@
 package com.streamarr.server.services.identity;
 
 import com.streamarr.server.config.security.CredentialCodeProperties;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
@@ -481,7 +481,7 @@ public class ProfileManagerAdministrationService {
     try {
       return Optional.of(
           credentialAttempts.attempt(
-              codeTarget(invitation, command.ipAddress()),
+              codeMetadata(invitation, command.ipAddress()),
               () -> {
                 if (invitation == null
                     || !opaqueCodes.matches(presented.get(), invitation.getSecretDigest())
@@ -497,9 +497,9 @@ public class ProfileManagerAdministrationService {
     }
   }
 
-  private static CredentialAttemptTarget codeTarget(
+  private static CredentialAttemptMetadata codeMetadata(
       ProfileManagerInvitation invitation, String ipAddress) {
-    return CredentialAttemptTarget.builder()
+    return CredentialAttemptMetadata.builder()
         .kind(CredentialKind.PROFILE_MANAGER_INVITATION_CODE)
         .credentialId(invitation == null ? null : invitation.getId())
         .ipAddress(ipAddress)

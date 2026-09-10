@@ -3,7 +3,7 @@ package com.streamarr.server.services.auth;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
@@ -52,27 +52,27 @@ class CredentialAttemptClockSkewIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should retain failed verifications when the application clock is behind a prior success")
   void shouldRetainFailedVerificationsWhenApplicationClockIsBehindPriorSuccess() {
-    var target =
-        CredentialAttemptTarget.builder()
+    var metadata =
+        CredentialAttemptMetadata.builder()
             .kind(CredentialKind.ACCOUNT_LOGIN)
             .accountId(UUID.randomUUID())
             .ipAddress("192.0.2.98")
             .build();
-    gate.attempt(target, () -> "verified");
+    gate.attempt(metadata, () -> "verified");
     applicationClock.advance(Duration.ofSeconds(-1));
 
     for (var attempt = 0; attempt < 5; attempt++) {
       assertThatThrownBy(
               () ->
                   gate.attempt(
-                      target,
+                      metadata,
                       () -> {
                         throw new InvalidCredentialsException();
                       }))
           .isInstanceOf(InvalidCredentialsException.class);
     }
 
-    assertThatThrownBy(() -> gate.attempt(target, () -> "must not verify"))
+    assertThatThrownBy(() -> gate.attempt(metadata, () -> "must not verify"))
         .isInstanceOf(TooManyLoginAttemptsException.class);
   }
 

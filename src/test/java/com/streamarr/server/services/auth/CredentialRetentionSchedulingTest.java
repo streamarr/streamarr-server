@@ -2,7 +2,7 @@ package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.fakes.FakeCredentialAttemptRepository;
 import java.time.Clock;
@@ -27,13 +27,13 @@ class CredentialRetentionSchedulingTest {
   void shouldDeleteExpiredAttemptsWhenRegisteredDailyTaskRuns() {
     var now = Instant.parse("2026-08-26T12:00:00Z");
     var repository = new FakeCredentialAttemptRepository();
-    var target =
-        CredentialAttemptTarget.builder()
+    var metadata =
+        CredentialAttemptMetadata.builder()
             .kind(CredentialKind.ACCOUNT_LOGIN)
             .ipAddress("192.0.2.30")
             .build();
-    repository.gate(Clock.fixed(now.minus(Duration.ofDays(31)), ZoneOffset.UTC)).reserve(target);
-    var retained = repository.gate(Clock.fixed(now, ZoneOffset.UTC)).reserve(target);
+    repository.gate(Clock.fixed(now.minus(Duration.ofDays(31)), ZoneOffset.UTC)).reserve(metadata);
+    var retained = repository.gate(Clock.fixed(now, ZoneOffset.UTC)).reserve(metadata);
 
     try (var context = new AnnotationConfigApplicationContext()) {
       context.register(SchedulingConfiguration.class);

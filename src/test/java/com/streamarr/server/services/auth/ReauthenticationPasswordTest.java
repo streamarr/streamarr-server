@@ -165,8 +165,8 @@ class ReauthenticationPasswordTest {
         .satisfies(
             attempt -> {
               assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.FAILED);
-              assertThat(attempt.target().accountId()).isEqualTo(identity.accountId());
-              assertThat(attempt.target().kind())
+              assertThat(attempt.metadata().accountId()).isEqualTo(identity.accountId());
+              assertThat(attempt.metadata().kind())
                   .isEqualTo(CredentialKind.ACCOUNT_PASSWORD_VERIFICATION);
             });
   }

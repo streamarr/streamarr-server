@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.security.CredentialCodeProperties;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
@@ -234,9 +234,9 @@ class ProfileManagerAdministrationServiceTest {
         .singleElement()
         .satisfies(
             attempt -> {
-              assertThat(attempt.target())
+              assertThat(attempt.metadata())
                   .isEqualTo(
-                      CredentialAttemptTarget.builder()
+                      CredentialAttemptMetadata.builder()
                           .kind(CredentialKind.PROFILE_MANAGER_INVITATION_CODE)
                           .credentialId(issued.invitation().getId())
                           .ipAddress("192.0.2.30")
@@ -294,9 +294,9 @@ class ProfileManagerAdministrationServiceTest {
         .singleElement()
         .satisfies(
             attempt -> {
-              assertThat(attempt.target())
+              assertThat(attempt.metadata())
                   .isEqualTo(
-                      CredentialAttemptTarget.builder()
+                      CredentialAttemptMetadata.builder()
                           .kind(CredentialKind.PROFILE_MANAGER_INVITATION_CODE)
                           .ipAddress("192.0.2.30")
                           .build());
@@ -306,7 +306,7 @@ class ProfileManagerAdministrationServiceTest {
     var guess = issued.invitation().getPublicId() + ".guess";
     assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), code(guess))))
         .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
-    assertThat(credentialAttempts.attempts().getLast().target().credentialId())
+    assertThat(credentialAttempts.attempts().getLast().metadata().credentialId())
         .isEqualTo(issued.invitation().getId());
 
     credentialAttempts.rejectReservations(Duration.ofMinutes(15));
@@ -340,7 +340,7 @@ class ProfileManagerAdministrationServiceTest {
         .hasSize(5)
         .allSatisfy(
             attempt -> {
-              assertThat(attempt.target().credentialId()).isEqualTo(issued.invitation().getId());
+              assertThat(attempt.metadata().credentialId()).isEqualTo(issued.invitation().getId());
               assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.FAILED);
             });
   }

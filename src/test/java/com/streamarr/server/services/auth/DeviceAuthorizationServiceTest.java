@@ -7,8 +7,8 @@ import com.streamarr.server.config.CanonicalBaseUrl;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.DeviceAuthProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.DeviceAuthorization;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
@@ -475,9 +475,9 @@ class DeviceAuthorizationServiceTest {
         .singleElement()
         .satisfies(
             attempt -> {
-              assertThat(attempt.target())
+              assertThat(attempt.metadata())
                   .isEqualTo(
-                      CredentialAttemptTarget.builder()
+                      CredentialAttemptMetadata.builder()
                           .kind(CredentialKind.DEVICE_PAIRING_CODE)
                           .accountId(approver.getId())
                           .ipAddress("192.0.2.30")
@@ -1027,7 +1027,7 @@ class DeviceAuthorizationServiceTest {
         .singleElement()
         .satisfies(
             attempt -> {
-              assertThat(attempt.target().accountId()).isEqualTo(approver.getId());
+              assertThat(attempt.metadata().accountId()).isEqualTo(approver.getId());
               assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.FAILED);
             });
   }
@@ -1044,7 +1044,7 @@ class DeviceAuthorizationServiceTest {
         .singleElement()
         .satisfies(
             attempt -> {
-              assertThat(attempt.target().accountId()).isEqualTo(approver.getId());
+              assertThat(attempt.metadata().accountId()).isEqualTo(approver.getId());
               assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED);
             });
   }

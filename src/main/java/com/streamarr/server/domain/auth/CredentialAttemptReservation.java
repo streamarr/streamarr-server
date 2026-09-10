@@ -4,4 +4,4 @@ import java.util.UUID;
 import lombok.NonNull;
 
 public record CredentialAttemptReservation(
-    @NonNull UUID id, @NonNull CredentialAttemptTarget target) {}
+    @NonNull UUID id, @NonNull CredentialAttemptMetadata metadata) {}

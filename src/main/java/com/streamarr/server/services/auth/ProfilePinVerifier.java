@@ -1,6 +1,6 @@
 package com.streamarr.server.services.auth;
 
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.exceptions.InvalidProfilePinException;
@@ -35,7 +35,7 @@ public class ProfilePinVerifier {
     }
 
     credentialAttempts.attempt(
-        pinTarget(accountId, profile.getId(), ipAddress),
+        pinMetadata(accountId, profile.getId(), ipAddress),
         () -> {
           if (!matches(profile, pin)) {
             throw new InvalidProfilePinException();
@@ -43,9 +43,9 @@ public class ProfilePinVerifier {
         });
   }
 
-  private static CredentialAttemptTarget pinTarget(
+  private static CredentialAttemptMetadata pinMetadata(
       UUID accountId, UUID profileId, String ipAddress) {
-    return CredentialAttemptTarget.builder()
+    return CredentialAttemptMetadata.builder()
         .kind(CredentialKind.PROFILE_PIN)
         .accountId(accountId)
         .profileId(profileId)

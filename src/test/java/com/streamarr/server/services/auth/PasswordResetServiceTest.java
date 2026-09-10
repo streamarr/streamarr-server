@@ -5,8 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.security.CredentialCodeProperties;
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
@@ -82,9 +82,9 @@ class PasswordResetServiceTest {
         .singleElement()
         .satisfies(
             attempt -> {
-              assertThat(attempt.target())
+              assertThat(attempt.metadata())
                   .isEqualTo(
-                      CredentialAttemptTarget.builder()
+                      CredentialAttemptMetadata.builder()
                           .kind(CredentialKind.PASSWORD_RESET_CODE)
                           .credentialId(resetCodes.findAll().getFirst().getId())
                           .ipAddress("192.0.2.26")
@@ -155,7 +155,7 @@ class PasswordResetServiceTest {
         .isEqualTo("hashed:replacement password");
     assertThat(credentialAttempts.attempts())
         .hasSize(10)
-        .extracting(attempt -> attempt.target().credentialId())
+        .extracting(attempt -> attempt.metadata().credentialId())
         .containsOnly(resetCodes.findAll().getFirst().getId());
   }
 
@@ -290,9 +290,9 @@ class PasswordResetServiceTest {
         .singleElement()
         .satisfies(
             attempt -> {
-              assertThat(attempt.target())
+              assertThat(attempt.metadata())
                   .isEqualTo(
-                      CredentialAttemptTarget.builder()
+                      CredentialAttemptMetadata.builder()
                           .kind(CredentialKind.PASSWORD_RESET_CODE)
                           .credentialId(resetCodes.findAll().getFirst().getId())
                           .ipAddress("192.0.2.26")
@@ -311,9 +311,9 @@ class PasswordResetServiceTest {
         .singleElement()
         .satisfies(
             attempt -> {
-              assertThat(attempt.target())
+              assertThat(attempt.metadata())
                   .isEqualTo(
-                      CredentialAttemptTarget.builder()
+                      CredentialAttemptMetadata.builder()
                           .kind(CredentialKind.PASSWORD_RESET_CODE)
                           .ipAddress("192.0.2.26")
                           .build());

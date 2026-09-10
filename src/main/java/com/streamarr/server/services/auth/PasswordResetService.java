@@ -1,7 +1,7 @@
 package com.streamarr.server.services.auth;
 
 import com.streamarr.server.config.security.CredentialCodeProperties;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
@@ -71,7 +71,7 @@ public class PasswordResetService {
     var presented = opaqueCodes.parse(rawCode).orElseThrow(InvalidOneTimeCodeException::new);
     var code = resetCodeRepository.findByPublicId(presented.publicId()).orElse(null);
     return credentialAttempts.attempt(
-        codeTarget(code, ipAddress),
+        codeMetadata(code, ipAddress),
         () -> {
           if (code == null) {
             throw new InvalidOneTimeCodeException();
@@ -89,8 +89,8 @@ public class PasswordResetService {
         });
   }
 
-  private static CredentialAttemptTarget codeTarget(PasswordResetCode code, String ipAddress) {
-    return CredentialAttemptTarget.builder()
+  private static CredentialAttemptMetadata codeMetadata(PasswordResetCode code, String ipAddress) {
+    return CredentialAttemptMetadata.builder()
         .kind(CredentialKind.PASSWORD_RESET_CODE)
         .credentialId(code == null ? null : code.getId())
         .ipAddress(ipAddress)

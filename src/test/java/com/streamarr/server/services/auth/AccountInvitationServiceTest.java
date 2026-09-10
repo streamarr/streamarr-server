@@ -10,8 +10,8 @@ import com.streamarr.server.domain.auth.AccountInvitationMode;
 import com.streamarr.server.domain.auth.AccountInvitationReoffer;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
-import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
@@ -286,9 +286,9 @@ class AccountInvitationServiceTest {
         .hasSize(2)
         .allSatisfy(
             attempt -> {
-              assertThat(attempt.target())
+              assertThat(attempt.metadata())
                   .isEqualTo(
-                      CredentialAttemptTarget.builder()
+                      CredentialAttemptMetadata.builder()
                           .kind(CredentialKind.ACCOUNT_INVITATION_CODE)
                           .credentialId(invitationId)
                           .ipAddress("192.0.2.25")
@@ -307,9 +307,9 @@ class AccountInvitationServiceTest {
         .singleElement()
         .satisfies(
             attempt -> {
-              assertThat(attempt.target())
+              assertThat(attempt.metadata())
                   .isEqualTo(
-                      CredentialAttemptTarget.builder()
+                      CredentialAttemptMetadata.builder()
                           .kind(CredentialKind.ACCOUNT_INVITATION_CODE)
                           .ipAddress("192.0.2.25")
                           .build());
