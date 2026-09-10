@@ -18,7 +18,7 @@ public class FakeAccountInvitationRepository extends FakeJpaRepository<AccountIn
     implements AccountInvitationRepository {
 
   @Override
-  public List<AccountInvitation> findAdministrationPage(MediaPaginationOptions options) {
+  public List<AccountInvitation> findForAdministration(MediaPaginationOptions options) {
     var reverse =
         options.getPaginationOptions().getPaginationDirection() == PaginationDirection.REVERSE;
     var order =

@@ -10,7 +10,7 @@ public interface HouseholdRepositoryCustom {
 
   void refresh(Household household);
 
-  List<Household> findAdministrationPage(MediaPaginationOptions options);
+  List<Household> findForAdministration(MediaPaginationOptions options);
 
   /**
    * Locks the Household row for the caller's transaction, serializing destructive transitions.

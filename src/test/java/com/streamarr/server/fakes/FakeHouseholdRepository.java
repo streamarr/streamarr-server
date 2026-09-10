@@ -30,7 +30,7 @@ public class FakeHouseholdRepository extends FakeJpaRepository<Household>
   }
 
   @Override
-  public List<Household> findAdministrationPage(MediaPaginationOptions options) {
+  public List<Household> findForAdministration(MediaPaginationOptions options) {
     var comparator =
         Comparator.comparing(Household::getName, String.CASE_INSENSITIVE_ORDER)
             .thenComparing(Household::getId);

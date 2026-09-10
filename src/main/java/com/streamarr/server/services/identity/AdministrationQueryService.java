@@ -86,7 +86,7 @@ public class AdministrationQueryService {
       AuthenticatedIdentity identity, MediaPaginationOptions options) {
     authorizationService.requireAllowed(identity, new Intent.ViewAccountInvitations());
     var items =
-        accountInvitationRepository.findAdministrationPage(options).stream()
+        accountInvitationRepository.findForAdministration(options).stream()
             .map(invitation -> new PageItem<>(invitation, invitation.getCreatedOn()))
             .toList();
     return paginationService.buildMediaPage(
@@ -98,7 +98,7 @@ public class AdministrationQueryService {
       AuthenticatedIdentity identity, MediaPaginationOptions options) {
     authorizationService.requireAllowed(identity, new Intent.ViewHouseholds());
     var items =
-        householdRepository.findAdministrationPage(options).stream()
+        householdRepository.findForAdministration(options).stream()
             .map(household -> new PageItem<>(household, household.getName()))
             .toList();
     return paginationService.buildMediaPage(

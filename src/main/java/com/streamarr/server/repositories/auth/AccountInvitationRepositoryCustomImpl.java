@@ -35,7 +35,7 @@ public class AccountInvitationRepositoryCustomImpl implements AccountInvitationR
   private final InvitationIssuanceLock invitationIssuanceLock;
 
   @Override
-  public List<AccountInvitation> findAdministrationPage(MediaPaginationOptions options) {
+  public List<AccountInvitation> findForAdministration(MediaPaginationOptions options) {
     var reverse =
         options.getPaginationOptions().getPaginationDirection() == PaginationDirection.REVERSE;
     var createdOnOrder = reverse ? SortOrder.ASC : SortOrder.DESC;
