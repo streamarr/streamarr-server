@@ -5,7 +5,7 @@
   "plugins": ["streamarr-release-metadata"],
   "packages": {
     ".": {
-      "release-type": "maven",
+      "release-type": "streamarr-maven",
       "pull-request-title-pattern": "behavioral${scope}: release${component} ${version}",
       "include-component-in-tag": false,
       "include-v-in-tag": true,

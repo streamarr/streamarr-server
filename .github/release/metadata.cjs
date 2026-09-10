@@ -1,13 +1,15 @@
 const { registerPlugin } = require('release-please');
 const { ManifestPlugin } = require('release-please/build/src/plugin');
 const { PullRequestTitle } = require('release-please/build/src/util/pull-request-title');
+const { isReleaseTitle } = require('./release-title.cjs');
+require('./maven.cjs');
 
 class ReleaseMetadata extends ManifestPlugin {
   processCommits(commits) {
     const pattern = this.repositoryConfig['.'].pullRequestTitlePattern;
     return commits.map(commit => {
       const title = commit.pullRequest?.title || commit.message;
-      const release = PullRequestTitle.parse(title, pattern);
+      const release = isReleaseTitle(title, pattern);
       return release ? { ...commit, type: 'chore', breaking: false, notes: [] } : commit;
     });
   }
