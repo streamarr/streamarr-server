@@ -66,7 +66,10 @@ for (const [message, expected] of [
   test(`keeps the POM and tag aligned for ${message}`, async () => {
     const maven = await strategy();
     const commits = parseConventionalCommits([
-      { sha: 'b'.repeat(40), message, files: ['src/main/java/Example.java'] },
+      {
+        sha: 'b'.repeat(40), message, files: ['src/main/java/Example.java'],
+        pullRequest: { title: message.split('\n')[0], body: '' },
+      },
       { sha: 'c'.repeat(40), message: 'behavioral: release 0.0.11-SNAPSHOT', files: ['pom.xml'] },
     ]);
     const pr = await prepare(maven, commits, release('0.0.10'));

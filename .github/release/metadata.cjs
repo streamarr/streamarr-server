@@ -16,6 +16,7 @@ class ReleaseMetadata extends ManifestPlugin {
 
   async run(candidates) {
     for (const { path, pullRequest } of candidates) {
+      // Snapshot creation bypasses the SDK's configured title pattern.
       pullRequest.title = PullRequestTitle.ofComponentVersion(
         pullRequest.title.getComponent() || '',
         pullRequest.version,
