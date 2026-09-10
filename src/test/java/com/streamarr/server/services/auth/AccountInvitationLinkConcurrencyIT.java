@@ -27,6 +27,7 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccountInvitationService.AcceptInvitationCommand;
 import com.streamarr.server.services.auth.AccountInvitationService.AcceptedInvitation;
+import com.streamarr.server.services.auth.AccountInvitationService.InvitationCodeCommand;
 import com.streamarr.server.services.identity.AdministrationQueryService;
 import com.streamarr.server.services.identity.CredentialIssuanceService;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationForProfileCommand;
@@ -246,7 +247,9 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
     accepted(profileSharingService.endProfileShare(accountIdentity(targetAdmin), visit.getId()));
     activeShare(orphan, targetHouseholdId);
 
-    var preview = invitationService.lookup(issued.code());
+    var preview =
+        invitationService.lookup(
+            InvitationCodeCommand.builder().code(issued.code()).ipAddress("192.0.2.30").build());
     invitationService.accept(acceptCommand(issued.code()));
 
     assertThat(preview.profileShareOfferTargets()).isEmpty();
@@ -890,6 +893,7 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
         .displayName("Joe")
         .password("a strong passphrase")
         .deviceName("web")
+        .ipAddress("192.0.2.30")
         .build();
   }
 

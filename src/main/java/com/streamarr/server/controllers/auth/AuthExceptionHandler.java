@@ -3,8 +3,6 @@ package com.streamarr.server.controllers.auth;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.exceptions.DeviceBoundSessionException;
-import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
-import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.InvalidEmailAddressException;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
@@ -17,8 +15,6 @@ import com.streamarr.server.exceptions.ProfileLockedException;
 import com.streamarr.server.exceptions.ResourceBusyException;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
 import com.streamarr.server.exceptions.TokenReuseDetectedException;
-import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
-import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.PessimisticLockingFailureException;
@@ -34,7 +30,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
       PasswordResetController.class
     })
 @Slf4j
-public class AuthExceptionHandler {
+public class AuthExceptionHandler extends AuthExceptionHandlerSupport {
 
   // Do not reveal whether a rejected refresh token was ever valid.
   private static final String REFRESH_TOKEN_REJECTED = "The refresh token is unknown or expired.";
@@ -56,11 +52,6 @@ public class AuthExceptionHandler {
   @ExceptionHandler(InvalidCredentialsException.class)
   public ResponseEntity<AuthErrorResponse> handleInvalidCredentials(InvalidCredentialsException e) {
     return respond(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", e);
-  }
-
-  @ExceptionHandler({TooManyLoginAttemptsException.class, TooManyCredentialAttemptsException.class})
-  public ResponseEntity<AuthErrorResponse> handleTooManyAttempts(RuntimeException e) {
-    return respond(HttpStatus.TOO_MANY_REQUESTS, "TOO_MANY_ATTEMPTS", e);
   }
 
   @ExceptionHandler({InvalidRefreshTokenException.class, TokenReuseDetectedException.class})
@@ -89,16 +80,6 @@ public class AuthExceptionHandler {
   public ResponseEntity<AuthErrorResponse> handleAuthenticationRequired(
       AuthenticationRequiredException e) {
     return respond(HttpStatus.UNAUTHORIZED, "AUTHENTICATION_REQUIRED", e);
-  }
-
-  @ExceptionHandler(HouseholdRequiredException.class)
-  public ResponseEntity<AuthErrorResponse> handleHouseholdRequired(HouseholdRequiredException e) {
-    return respond(HttpStatus.BAD_REQUEST, "HOUSEHOLD_REQUIRED", e);
-  }
-
-  @ExceptionHandler(HouseholdAccessDeniedException.class)
-  public ResponseEntity<AuthErrorResponse> handleHouseholdDenied(HouseholdAccessDeniedException e) {
-    return respond(HttpStatus.FORBIDDEN, "HOUSEHOLD_ACCESS_DENIED", e);
   }
 
   @ExceptionHandler(ProfileAccessDeniedException.class)
@@ -141,11 +122,6 @@ public class AuthExceptionHandler {
   public ResponseEntity<AuthErrorResponse> handlePersistenceFailure(DataAccessException e) {
     log.error("Auth persistence failure", e);
     return respond(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", REQUEST_NOT_COMPLETED);
-  }
-
-  private static ResponseEntity<AuthErrorResponse> respond(
-      HttpStatus status, String code, RuntimeException e) {
-    return respond(status, code, e.getMessage());
   }
 
   private static ResponseEntity<AuthErrorResponse> respond(

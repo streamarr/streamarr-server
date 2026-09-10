@@ -17,7 +17,8 @@ public class ReauthenticationService {
   private final AuthSessionRepository authSessionRepository;
   private final AccountPasswordVerifier accountPasswordVerifier;
 
-  public TokenContext reauthenticate(AuthenticatedIdentity identity, String password) {
+  public TokenContext reauthenticate(
+      AuthenticatedIdentity identity, ReauthenticationCommand command) {
     if (identity.deviceBound()) {
       // A TV never steps up: fresh-reauthentication work is for people at their own keyboard.
       throw new DeviceBoundSessionException();
@@ -33,7 +34,7 @@ public class ReauthenticationService {
             .findById(identity.accountId())
             .orElseThrow(AuthenticationRequiredException::new);
 
-    accountPasswordVerifier.verify(account, password);
+    accountPasswordVerifier.verify(account, command.password(), command.ipAddress());
 
     return TokenContext.builder()
         .account(account)

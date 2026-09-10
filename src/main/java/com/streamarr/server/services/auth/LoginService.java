@@ -1,5 +1,7 @@
 package com.streamarr.server.services.auth;
 
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -17,39 +19,45 @@ public class LoginService {
   private final UserAccountRepository userAccountRepository;
   private final LoginCompletionService loginCompletionService;
   private final PasswordEncoder passwordEncoder;
-  private final LoginThrottle throttle;
+  private final CredentialAttemptGate credentialAttempts;
   private final PasswordTimingEqualizer timingEqualizer;
 
   // Deliberately not @Transactional: a method-level transaction would pin a pooled connection
-  // across the Argon2 work (the documented Hikari-exhaustion pattern). LoginCompletionService owns
-  // the short transaction that begins only after all password work has finished.
+  // across Argon2 work. The gate commits the session and journal outcome in one short transaction.
   public LoginResult login(LoginCommand command) {
     var email = lookupEmail(command.email());
-    // Reserve the slot before any password work — recording failures after hashing is a
-    // check-then-act race that lets a concurrent burst overrun the budget.
-    throttle.registerAttempt(email, command.source());
-
     var account = userAccountRepository.findByEmailIgnoreCase(email).orElse(null);
-    if (account == null) {
-      timingEqualizer.burn(command.password());
-      throw new InvalidCredentialsException();
-    }
+    // The completion transaction rechecks the stored hash under its row lock. A refusal rolls
+    // back the transaction before the gate journals the failed attempt.
+    return credentialAttempts.attempt(
+        loginMetadata(command, account),
+        () -> {
+          if (account == null) {
+            timingEqualizer.burn(command.password());
+            throw new InvalidCredentialsException();
+          }
 
-    if (!credentialsValid(account, command.password())) {
-      throw new InvalidCredentialsException();
-    }
+          if (!credentialsValid(account, command.password())) {
+            throw new InvalidCredentialsException();
+          }
 
-    var result =
-        loginCompletionService.complete(
-            LoginCompletionCommand.builder()
-                .accountId(account.getId())
-                .expectedPasswordHash(account.getPasswordHash())
-                .upgradedPasswordHash(upgradedPasswordHash(account, command.password()))
-                .deviceName(command.deviceName())
-                .build());
+          return LoginCompletionCommand.builder()
+              .accountId(account.getId())
+              .expectedPasswordHash(account.getPasswordHash())
+              .upgradedPasswordHash(upgradedPasswordHash(account, command.password()))
+              .deviceName(command.deviceName())
+              .build();
+        },
+        loginCompletionService::complete);
+  }
 
-    throttle.reset(email, command.source());
-    return result;
+  private static CredentialAttemptMetadata loginMetadata(
+      LoginCommand command, UserAccount account) {
+    return CredentialAttemptMetadata.builder()
+        .kind(CredentialKind.ACCOUNT_LOGIN)
+        .accountId(account == null ? null : account.getId())
+        .ipAddress(command.ipAddress())
+        .build();
   }
 
   /**

@@ -19,6 +19,8 @@ import com.streamarr.server.graphql.architecturefixture.PasswordEncodingResolver
 import com.streamarr.server.repositories.architecturefixture.RepositoryQueryFixture;
 import com.streamarr.server.services.RootServiceCycleFixture;
 import com.streamarr.server.services.architecturefixture.DirectAccountPasswordMatchFixture;
+import com.streamarr.server.services.architecturefixture.IncomingHttpServiceFixture;
+import com.streamarr.server.services.architecturefixture.IncomingWebRequestServiceFixture;
 import com.streamarr.server.services.architecturefixture.SubdomainServiceCycleFixture;
 import com.streamarr.server.services.auth.AccountPasswordVerifier;
 import com.streamarr.server.services.auth.LoginService;
@@ -43,6 +45,8 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
@@ -105,6 +109,21 @@ class ArchitectureTest {
           .dependOnClassesThat()
           .resideInAnyPackage("..graphql..")
           .as("Services must not depend on graphql");
+
+  @ArchTest
+  static final ArchRule servicesMustNotDependOnDrivingAdapterTypes =
+      noClasses()
+          .that()
+          .resideInAPackage("..services..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAnyPackage(
+              "jakarta.servlet..",
+              "com.netflix.graphql.dgs..",
+              "graphql..",
+              "org.springframework.http..",
+              "org.springframework.web.context.request..")
+          .as("Services receive protocol data explicitly and must not depend on HTTP or DGS types");
 
   @ArchTest
   static final ArchRule authServicesMustNotDependOnJooq =
@@ -205,10 +224,8 @@ class ArchitectureTest {
   static final ArchRule repositoryMethodsMustNotUseQueryAnnotations =
       repositoryMethodsMustNotUseQueryAnnotations();
 
-  // Every authenticated Account-password check must get the shared budget, the disabled-Account
-  // rule, and the one-full-cost-operation timing rule; a direct encoder comparison gets none of
-  // them. Login is the allow-listed exception (no authenticated Account yet, email+source key),
-  // and the equalizer is the burn itself.
+  // Authenticated Account-password checks share one throttle and timing contract. Login is exempt
+  // because no authenticated Account exists yet.
   @ArchTest
   static final ArchRule accountPasswordMatchesMustUseVerifier =
       accountPasswordMatchesMustUseVerifier();
@@ -402,6 +419,16 @@ class ArchitectureTest {
         .hasMessageContaining("password");
   }
 
+  @ParameterizedTest
+  @ValueSource(classes = {IncomingHttpServiceFixture.class, IncomingWebRequestServiceFixture.class})
+  @DisplayName("Should reject request types when a service depends on an HTTP adapter")
+  void shouldRejectRequestTypesWhenServiceDependsOnHttpAdapter(Class<?> fixture) {
+    var services = new ClassFileImporter().importClasses(fixture);
+    assertThatThrownBy(() -> servicesMustNotDependOnDrivingAdapterTypes.check(services))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("HTTP");
+  }
+
   private static ArchRule accountPasswordMatchesMustUseVerifier() {
     return noClasses()
         .that()
@@ -420,8 +447,8 @@ class ArchitectureTest {
                 .and(target(rawParameterTypes(CharSequence.class, String.class))))
         .as(
             "Authenticated Account password checks must go through AccountPasswordVerifier; only"
-                + " login (distinct email+source throttle), password-encoder composition, the"
-                + " timing equalizer, and the Profile PIN verifier (distinct PROFILE_PIN budget)"
+                + " login, password-encoder composition, the timing equalizer, and the Profile"
+                + " PIN verifier (distinct PROFILE_PIN target)"
                 + " compare directly");
   }
 

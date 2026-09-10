@@ -36,6 +36,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -53,6 +54,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
   @Autowired private AuthSessionRepository authSessionRepository;
   @Autowired private PausingPasswordEncoder passwordEncoder;
   @Autowired private DataSource dataSource;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   private UserAccount account;
 
@@ -65,8 +67,8 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should verify and hash passwords when no transaction-bound connection is held")
-  void shouldVerifyAndHashPasswordsWhenNoTransactionBoundConnectionIsHeld() {
+  @DisplayName("Should hold no transaction-bound connection when verifying and hashing passwords")
+  void shouldHoldNoTransactionBoundConnectionWhenVerifyingAndHashingPasswords() {
     var oldPassword = UUID.randomUUID().toString();
     account =
         authTestSupport.createAccount(
@@ -79,6 +81,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
         ChangePasswordCommand.builder()
             .currentPassword(oldPassword)
             .newPassword(UUID.randomUUID().toString())
+            .ipAddress("192.0.2.30")
             .build());
 
     assertThat(passwordEncoder.matchObservation()).isEqualTo(TransactionObservation.NONE);
@@ -145,7 +148,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
                         .email(account.getEmail())
                         .password(oldPassword)
                         .deviceName("racing-login-device")
-                        .source("race-test")
+                        .ipAddress("127.0.0.1")
                         .build());
               });
 
@@ -157,6 +160,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
               ChangePasswordCommand.builder()
                   .currentPassword(oldPassword)
                   .newPassword(newPassword)
+                  .ipAddress("192.0.2.30")
                   .build());
 
       passwordEncoder.releaseLogin();
@@ -165,6 +169,12 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
           .isInstanceOf(ExecutionException.class)
           .hasCauseInstanceOf(InvalidCredentialsException.class);
       assertCallerWasReplaced(caller.getId(), passwordChange.session().getId(), 2);
+      assertThat(
+              jdbcTemplate.queryForList(
+                  "SELECT result::text FROM credential_attempt WHERE account_id = ? AND credential_kind = 'ACCOUNT_LOGIN'",
+                  String.class,
+                  account.getId()))
+          .containsExactly("FAILED");
     } finally {
       passwordEncoder.releaseLogin();
     }
@@ -191,7 +201,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
                         .email(account.getEmail())
                         .password(oldPassword)
                         .deviceName("racing-login-device")
-                        .source("race-test")
+                        .ipAddress("127.0.0.1")
                         .build());
               });
 
@@ -203,6 +213,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
               ChangePasswordCommand.builder()
                   .currentPassword(oldPassword)
                   .newPassword(newPassword)
+                  .ipAddress("192.0.2.30")
                   .build());
 
       passwordEncoder.releaseLogin();
@@ -211,6 +222,12 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
           .isInstanceOf(ExecutionException.class)
           .hasCauseInstanceOf(InvalidCredentialsException.class);
       assertCallerWasReplaced(caller.getId(), passwordChange.session().getId(), 2);
+      assertThat(
+              jdbcTemplate.queryForList(
+                  "SELECT result::text FROM credential_attempt WHERE account_id = ? AND credential_kind = 'ACCOUNT_LOGIN'",
+                  String.class,
+                  account.getId()))
+          .containsExactly("FAILED");
     } finally {
       passwordEncoder.releaseLogin();
     }
@@ -242,7 +259,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
                           .email(account.getEmail())
                           .password(oldPassword)
                           .deviceName("racing-login-device")
-                          .source("race-test")
+                          .ipAddress("127.0.0.1")
                           .build()));
       await()
           .atMost(Duration.ofSeconds(10))
@@ -260,6 +277,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
                       ChangePasswordCommand.builder()
                           .currentPassword(oldPassword)
                           .newPassword(newPassword)
+                          .ipAddress("192.0.2.30")
                           .build()));
       await()
           .atMost(Duration.ofSeconds(10))
@@ -315,6 +333,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
         ChangePasswordCommand.builder()
             .currentPassword(oldPassword)
             .newPassword(newPassword)
+            .ipAddress("192.0.2.30")
             .build());
   }
 
@@ -365,6 +384,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
           WHERE relation.relname = 'auth_session'
             AND lock.mode = 'RowExclusiveLock'
             AND NOT lock.granted
+            AND lock.pid <> pg_backend_pid()
         )
         """);
   }
@@ -375,7 +395,8 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
         SELECT EXISTS (
           SELECT 1
           FROM pg_stat_activity
-          WHERE wait_event_type = 'Lock'
+          WHERE pid <> pg_backend_pid()
+            AND wait_event_type = 'Lock'
             AND wait_event = 'transactionid'
             AND query ILIKE '%user_account%'
             AND query ILIKE '%for update%'

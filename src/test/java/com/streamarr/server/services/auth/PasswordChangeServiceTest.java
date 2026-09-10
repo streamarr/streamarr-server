@@ -3,15 +3,17 @@ package com.streamarr.server.services.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.DeviceBoundSessionException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
+import com.streamarr.server.fakes.FakeCredentialAttemptRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
@@ -36,6 +38,8 @@ class PasswordChangeServiceTest {
   private final FakeRefreshTokenRepository tokenRepository = new FakeRefreshTokenRepository();
   private final PasswordEncoder passwordEncoder = new TestPasswordEncoder();
   private final Clock clock = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
+  private final FakeCredentialAttemptRepository credentialAttempts =
+      new FakeCredentialAttemptRepository();
   private final RefreshTokenService refreshTokenService =
       new RefreshTokenService(
           sessionRepository,
@@ -57,12 +61,7 @@ class PasswordChangeServiceTest {
           new AccountPasswordVerifier(
               passwordEncoder,
               new PasswordTimingEqualizer(passwordEncoder),
-              new CredentialGuessThrottle(
-                  AuthThrottleProperties.builder()
-                      .maxAttempts(2)
-                      .window(Duration.ofMinutes(15))
-                      .build(),
-                  clock)),
+              credentialAttempts.gate(clock)),
           passwordEncoder);
 
   @Test
@@ -164,8 +163,8 @@ class PasswordChangeServiceTest {
   }
 
   @Test
-  @DisplayName("Should throttle password changes when current password repeatedly wrong")
-  void shouldThrottlePasswordChangesWhenCurrentPasswordRepeatedlyWrong() {
+  @DisplayName("Should refuse the password change when the journal blocks the attempt")
+  void shouldRefusePasswordChangeWhenJournalBlocksAttempt() {
     var currentPassword = UUID.randomUUID().toString();
     var account =
         accountRepository.save(
@@ -176,11 +175,7 @@ class PasswordChangeServiceTest {
         sessionRepository.save(
             AuthSession.builder().accountId(account.getId()).deviceName("caller").build());
     var identity = identity(account.getId(), caller.getId());
-    var wrongCommand = commandBuilder().build();
-    for (var attempt = 0; attempt < 2; attempt++) {
-      assertThatThrownBy(() -> service.changePassword(identity, wrongCommand))
-          .isInstanceOf(InvalidCredentialsException.class);
-    }
+    credentialAttempts.rejectReservations(Duration.ofMinutes(15));
 
     var correctCommand = commandBuilder().currentPassword(currentPassword).build();
 
@@ -189,10 +184,56 @@ class PasswordChangeServiceTest {
     assertThat(tokenRepository.findAll()).isEmpty();
   }
 
+  @Test
+  @DisplayName("Should share the Account budget when reauthentication and password changes fail")
+  void shouldShareAccountBudgetWhenReauthenticationAndPasswordChangesFail() {
+    var hash = passwordEncoder.encode("current password");
+    var account =
+        accountRepository.save(AccountFixture.defaultAccountBuilder().passwordHash(hash).build());
+    var caller = sessionRepository.save(AuthSession.builder().accountId(account.getId()).build());
+    var identity = identity(account.getId(), caller.getId());
+    var reauthentication =
+        new ReauthenticationService(
+            accountRepository,
+            sessionRepository,
+            new AccountPasswordVerifier(
+                passwordEncoder,
+                new PasswordTimingEqualizer(passwordEncoder),
+                credentialAttempts.gate(clock)));
+    var wrongReauth =
+        ReauthenticationCommand.builder().password("wrong").ipAddress("192.0.2.22").build();
+    for (var i = 0; i < 2; i++) {
+      assertThatThrownBy(() -> reauthentication.reauthenticate(identity, wrongReauth))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+
+    for (var i = 0; i < 3; i++) {
+      var wrongChange = commandBuilder().currentPassword("wrong").build();
+      assertThatThrownBy(() -> service.changePassword(identity, wrongChange))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+
+    var correctChange = commandBuilder().currentPassword("current password").build();
+    var correctReauth =
+        ReauthenticationCommand.builder()
+            .password("current password")
+            .ipAddress("192.0.2.22")
+            .build();
+    assertThatThrownBy(() -> service.changePassword(identity, correctChange))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+    assertThatThrownBy(() -> reauthentication.reauthenticate(identity, correctReauth))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+    assertThat(credentialAttempts.attempts()).hasSize(5);
+    assertThat(accountRepository.findById(account.getId()).orElseThrow().getPasswordHash())
+        .isEqualTo(hash);
+    assertThat(tokenRepository.findAll()).isEmpty();
+  }
+
   private ChangePasswordCommand.ChangePasswordCommandBuilder commandBuilder() {
     return ChangePasswordCommand.builder()
         .currentPassword(UUID.randomUUID().toString())
-        .newPassword(UUID.randomUUID().toString());
+        .newPassword(UUID.randomUUID().toString())
+        .ipAddress("192.0.2.22");
   }
 
   private AuthenticatedIdentity identity(UUID accountId, UUID sessionId) {
@@ -213,5 +254,42 @@ class PasswordChangeServiceTest {
     public boolean matches(CharSequence rawPassword, String encodedPassword) {
       return encode(rawPassword).equals(encodedPassword);
     }
+  }
+
+  @Test
+  @DisplayName("Should refuse the correct password when five wrong current passwords precede it")
+  void shouldRefuseCorrectPasswordWhenFiveWrongCurrentPasswordsPrecedeIt() {
+    var currentPassword = UUID.randomUUID().toString();
+    var originalPasswordHash = passwordEncoder.encode(currentPassword);
+    var account =
+        accountRepository.save(
+            AccountFixture.defaultAccountBuilder().passwordHash(originalPasswordHash).build());
+    var caller =
+        sessionRepository.save(
+            AuthSession.builder().accountId(account.getId()).deviceName("caller").build());
+    var identity = identity(account.getId(), caller.getId());
+    for (var attempt = 0; attempt < 5; attempt++) {
+      var wrongCommand = commandBuilder().build();
+      assertThatThrownBy(() -> service.changePassword(identity, wrongCommand))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+
+    var correctCommand = commandBuilder().currentPassword(currentPassword).build();
+
+    assertThatThrownBy(() -> service.changePassword(identity, correctCommand))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+    assertThat(accountRepository.findById(account.getId()).orElseThrow().getPasswordHash())
+        .isEqualTo(originalPasswordHash);
+    assertThat(credentialAttempts.attempts())
+        .hasSize(5)
+        .allSatisfy(
+            attempt ->
+                assertThat(attempt.metadata())
+                    .isEqualTo(
+                        CredentialAttemptMetadata.builder()
+                            .kind(CredentialKind.ACCOUNT_PASSWORD_VERIFICATION)
+                            .accountId(account.getId())
+                            .ipAddress("192.0.2.22")
+                            .build()));
   }
 }

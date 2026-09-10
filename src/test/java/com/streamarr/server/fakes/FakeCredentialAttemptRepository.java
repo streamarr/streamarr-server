@@ -1,0 +1,179 @@
+package com.streamarr.server.fakes;
+
+import com.streamarr.server.domain.auth.CredentialAttemptAdmission;
+import com.streamarr.server.domain.auth.CredentialAttemptHistory;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
+import com.streamarr.server.domain.auth.CredentialAttemptPolicy;
+import com.streamarr.server.domain.auth.CredentialAttemptReservation;
+import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.exceptions.CredentialAttemptNotPendingException;
+import com.streamarr.server.repositories.auth.CredentialAttemptRepository;
+import com.streamarr.server.services.auth.CredentialAttemptGate;
+import com.streamarr.server.services.auth.StandardCredentialAttemptPolicyProvider;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.function.Supplier;
+
+/**
+ * An in-memory journal that evaluates recorded attempts with {@link
+ * CredentialAttemptPolicy.Limited#retryAfter}. {@link #rejectReservations} forces a block
+ * regardless of history.
+ */
+public class FakeCredentialAttemptRepository implements CredentialAttemptRepository {
+
+  /** Mirrors the jOOQ repository: a pending reservation is abandoned after five minutes. */
+  private static final Duration ABANDONED_RESERVATION_TIMEOUT = Duration.ofMinutes(5);
+
+  private final Map<UUID, AttemptSnapshot> attempts = new LinkedHashMap<>();
+  private Clock clock = Clock.systemUTC();
+  private Duration rejection;
+  private RuntimeException failure;
+
+  @Override
+  public CredentialAttemptAdmission reserve(
+      CredentialAttemptMetadata metadata, CredentialAttemptPolicy policy) {
+    failIfArmed();
+    var attemptedAt = clock.instant();
+    return blockedBy(policy, metadata, attemptedAt).orElseGet(() -> journal(metadata, attemptedAt));
+  }
+
+  @Override
+  public void complete(CredentialAttemptReservation reservation, CredentialAttemptResult result) {
+    failIfArmed();
+    var completedAt = clock.instant();
+    var pending = attempts.get(reservation.id());
+    if (pending == null || pending.completedAt() != null) {
+      throw new CredentialAttemptNotPendingException();
+    }
+
+    var completion =
+        completedAt.isBefore(pending.attemptedAt()) ? pending.attemptedAt() : completedAt;
+    attempts.put(
+        reservation.id(),
+        new AttemptSnapshot(
+            pending.id(), pending.metadata(), pending.attemptedAt(), completion, result));
+  }
+
+  @Override
+  public <T> T completeWith(CredentialAttemptReservation reservation, Supplier<T> mutation) {
+    failIfArmed();
+    var result = mutation.get();
+    complete(reservation, CredentialAttemptResult.SUCCEEDED);
+    return result;
+  }
+
+  @Override
+  public int deleteAttemptedBefore(Instant cutoff) {
+    failIfArmed();
+    var before = attempts.size();
+    attempts.values().removeIf(attempt -> attempt.attemptedAt().isBefore(cutoff));
+    return before - attempts.size();
+  }
+
+  public CredentialAttemptGate gate(Clock journalClock) {
+    clock = journalClock;
+    return new CredentialAttemptGate(this, new StandardCredentialAttemptPolicyProvider());
+  }
+
+  public void rejectReservations(Duration retryAfter) {
+    rejection = retryAfter;
+  }
+
+  public void allowReservations() {
+    rejection = null;
+  }
+
+  /** Every later call throws {@code failure}, standing in for a lost database or lock. */
+  public void failWith(RuntimeException failure) {
+    this.failure = failure;
+  }
+
+  public List<AttemptSnapshot> attempts() {
+    return List.copyOf(attempts.values());
+  }
+
+  private Optional<CredentialAttemptAdmission> blockedBy(
+      CredentialAttemptPolicy policy, CredentialAttemptMetadata metadata, Instant now) {
+    if (rejection != null) {
+      return Optional.of(new CredentialAttemptAdmission.Blocked(rejection));
+    }
+
+    if (!(policy instanceof CredentialAttemptPolicy.Limited limited) || !metadata.isResolved()) {
+      return Optional.empty();
+    }
+
+    return limited
+        .retryAfter(history(metadata, limited, now), now)
+        .map(CredentialAttemptAdmission.Blocked::new);
+  }
+
+  private CredentialAttemptAdmission journal(
+      CredentialAttemptMetadata metadata, Instant attemptedAt) {
+    var reservation = new CredentialAttemptReservation(UUID.randomUUID(), metadata);
+    attempts.put(
+        reservation.id(), new AttemptSnapshot(reservation.id(), metadata, attemptedAt, null, null));
+    return new CredentialAttemptAdmission.Reserved(reservation);
+  }
+
+  /** The same selection the jOOQ repository makes, over the in-memory rows. */
+  private CredentialAttemptHistory history(
+      CredentialAttemptMetadata metadata, CredentialAttemptPolicy.Limited policy, Instant now) {
+    var journal =
+        attempts.values().stream()
+            .filter(attempt -> sameTarget(attempt.metadata(), metadata))
+            .toList();
+    var latestSuccess =
+        journal.stream()
+            .filter(_ -> policy.resetFailuresOnSuccess())
+            .filter(attempt -> attempt.result() == CredentialAttemptResult.SUCCEEDED)
+            .map(AttemptSnapshot::completedAt)
+            .max(Comparator.naturalOrder());
+    var earliestRelevant = now.minus(policy.failureWindow()).minus(policy.throttleDuration());
+    var failures =
+        journal.stream()
+            .filter(attempt -> attempt.result() == CredentialAttemptResult.FAILED)
+            .map(AttemptSnapshot::completedAt)
+            .filter(completedAt -> latestSuccess.map(completedAt::isAfter).orElse(true))
+            .filter(completedAt -> !completedAt.isBefore(earliestRelevant))
+            .sorted()
+            .toList();
+    var pendingExpiries =
+        journal.stream()
+            .filter(attempt -> attempt.result() == null)
+            .map(AttemptSnapshot::attemptedAt)
+            .filter(attemptedAt -> attemptedAt.isAfter(now.minus(ABANDONED_RESERVATION_TIMEOUT)))
+            .map(attemptedAt -> attemptedAt.plus(ABANDONED_RESERVATION_TIMEOUT))
+            .toList();
+    return new CredentialAttemptHistory(failures, pendingExpiries);
+  }
+
+  /** The client address is observational and never part of the throttle target. */
+  private static boolean sameTarget(
+      CredentialAttemptMetadata left, CredentialAttemptMetadata right) {
+    return left.kind() == right.kind()
+        && Objects.equals(left.accountId(), right.accountId())
+        && Objects.equals(left.profileId(), right.profileId())
+        && Objects.equals(left.credentialId(), right.credentialId());
+  }
+
+  private void failIfArmed() {
+    if (failure != null) {
+      throw failure;
+    }
+  }
+
+  public record AttemptSnapshot(
+      UUID id,
+      CredentialAttemptMetadata metadata,
+      Instant attemptedAt,
+      Instant completedAt,
+      CredentialAttemptResult result) {}
+}

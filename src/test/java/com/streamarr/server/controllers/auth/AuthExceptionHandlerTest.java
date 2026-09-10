@@ -3,6 +3,7 @@ package com.streamarr.server.controllers.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.CredentialAttemptUnavailableException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
@@ -13,11 +14,13 @@ import com.streamarr.server.exceptions.ResourceBusyException;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
+import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.InvalidDataAccessApiUsageException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 
 @Tag("UnitTest")
@@ -62,9 +65,11 @@ class AuthExceptionHandlerTest {
   @Test
   @DisplayName("Should respond 429 too many attempts when login throttled")
   void shouldRespond429TooManyAttemptsWhenLoginThrottled() {
-    var response = handler.handleTooManyAttempts(new TooManyLoginAttemptsException());
+    var response =
+        handler.handleTooManyAttempts(new TooManyLoginAttemptsException(Duration.ofSeconds(90)));
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+    assertThat(response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("90");
     assertThat(response.getBody())
         .isEqualTo(
             new AuthErrorResponse(
@@ -74,13 +79,31 @@ class AuthExceptionHandlerTest {
   @Test
   @DisplayName("Should respond 429 too many attempts when credential verification throttled")
   void shouldRespond429TooManyAttemptsWhenCredentialVerificationThrottled() {
-    var response = handler.handleTooManyAttempts(new TooManyCredentialAttemptsException());
+    var response =
+        handler.handleTooManyAttempts(
+            new TooManyCredentialAttemptsException(Duration.ofMillis(1500)));
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+    assertThat(response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("2");
     assertThat(response.getBody())
         .isEqualTo(
             new AuthErrorResponse(
                 "TOO_MANY_ATTEMPTS", "Too many failed credential attempts. Try again later."));
+  }
+
+  @Test
+  @DisplayName("Should respond 503 when credential attempt enforcement is unavailable")
+  void shouldRespond503WhenCredentialAttemptEnforcementUnavailable() {
+    var failure = new CredentialAttemptUnavailableException(new IllegalStateException("offline"));
+
+    var response = handler.handleCredentialAttemptUnavailable(failure);
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+    assertThat(response.getBody())
+        .isEqualTo(
+            new AuthErrorResponse(
+                "CREDENTIAL_VERIFICATION_UNAVAILABLE",
+                "Credential verification is temporarily unavailable."));
   }
 
   @Test

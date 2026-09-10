@@ -18,6 +18,7 @@ import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
+import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -27,6 +28,7 @@ import com.streamarr.server.services.auth.OpaqueOneTimeCodes;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationCommand;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.ControlledClockConfiguration;
 import com.streamarr.server.support.PostgresLockTestSupport.HeldRowLock;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import java.sql.Connection;
@@ -39,14 +41,19 @@ import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 
 @Tag("IntegrationTest")
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("Credential Issuance Replacement Race Integration Tests")
+@Import(ControlledClockConfiguration.class)
 class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
 
   private static final String RECIPIENT_UPDATE = "%update%account_invitation%recipient_email%";
@@ -64,10 +71,16 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
   @Autowired private DataSource dataSource;
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private DSLContext dsl;
+  @Autowired private MutableClock clock;
 
   private AuthTestSupport.TestIdentity firstIssuer;
   private AuthTestSupport.TestIdentity secondIssuer;
   private AuthTestSupport.TestIdentity resetTarget;
+
+  @BeforeEach
+  void resetClock() {
+    clock.advance(Duration.between(clock.instant(), Instant.now()));
+  }
 
   @Test
   @DisplayName(
@@ -108,7 +121,7 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
       var replacementSucceeded =
           replacement.get(10, TimeUnit.SECONDS) instanceof Outcome.Accepted<?, ?>;
       var acceptanceSucceeded = acceptance.get(10, TimeUnit.SECONDS);
-      assertThat(acceptanceSucceeded && replacementSucceeded).isFalse();
+      assertThat(acceptanceSucceeded).isNotEqualTo(replacementSucceeded);
     }
 
     var accountExists = userAccountRepository.findByEmailIgnoreCase(recipientEmail).isPresent();
@@ -122,11 +135,11 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should expire an invitation that ages out while replacement waits for its lock")
-  void shouldExpireInvitationThatAgesOutWhileReplacementWaitsForItsLock() throws Exception {
+  @DisplayName("Should expire invitation when it ages out while replacement waits for lock")
+  void shouldExpireInvitationWhenItAgesOutWhileReplacementWaitsForLock() throws Exception {
     firstIssuer = authTestSupport.createAdminIdentity();
     var recipientEmail = "expiry-during-invitation-replacement@example.com";
-    var expiresAt = Instant.now().plusSeconds(2);
+    var expiresAt = clock.instant().plusSeconds(2);
     var existing = saveBlockingInvitation(recipientEmail);
     existing.setExpiresAt(expiresAt);
     invitationRepository.saveAndFlush(existing);
@@ -142,8 +155,7 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
       await()
           .atMost(Duration.ofSeconds(10))
           .untilAsserted(() -> assertThat(waitingBehind(blockerPid, RECIPIENT_LOCK)).isOne());
-      assertThat(Instant.now()).isBefore(expiresAt);
-      await().atMost(Duration.ofSeconds(3)).until(() -> !Instant.now().isBefore(expiresAt));
+      clock.advance(Duration.ofSeconds(3));
       issuanceLock.rollback();
 
       accepted(replacement.get(10, TimeUnit.SECONDS));
@@ -154,11 +166,11 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should expire a reset code that ages out while replacement waits for its lock")
-  void shouldExpireResetCodeThatAgesOutWhileReplacementWaitsForItsLock() throws Exception {
+  @DisplayName("Should expire reset code when it ages out while replacement waits for lock")
+  void shouldExpireResetCodeWhenItAgesOutWhileReplacementWaitsForLock() throws Exception {
     firstIssuer = authTestSupport.createAdminIdentity();
     resetTarget = authTestSupport.createIdentity();
-    var expiresAt = Instant.now().plusSeconds(2);
+    var expiresAt = clock.instant().plusSeconds(2);
     var existing = saveBlockingResetCode();
     existing.setExpiresAt(expiresAt);
     resetCodeRepository.saveAndFlush(existing);
@@ -175,8 +187,7 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
       await()
           .atMost(Duration.ofSeconds(10))
           .untilAsserted(() -> assertThat(waitingBehind(lock, ACCOUNT_LOCK)).isOne());
-      assertThat(Instant.now()).isBefore(expiresAt);
-      await().atMost(Duration.ofSeconds(3)).until(() -> !Instant.now().isBefore(expiresAt));
+      clock.advance(Duration.ofSeconds(3));
       lock.release();
 
       accepted(replacement.get(10, TimeUnit.SECONDS));
@@ -361,6 +372,7 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
               .displayName("Invitee")
               .password("a strong passphrase")
               .deviceName("test")
+              .ipAddress("192.0.2.30")
               .build());
       return true;
     } catch (InvalidOneTimeCodeException _) {

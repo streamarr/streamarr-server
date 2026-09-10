@@ -3,8 +3,11 @@ package com.streamarr.server.services.identity;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streamarr.server.config.security.AuthThrottleProperties;
+import ch.qos.logback.classic.spi.ThrowableProxyUtil;
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
+import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
@@ -16,19 +19,20 @@ import com.streamarr.server.exceptions.ProfileLockedException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
+import com.streamarr.server.fakes.FakeCredentialAttemptRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fakes.PlainPasswordEncoder;
 import com.streamarr.server.fixtures.AccountFixture;
+import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
-import com.streamarr.server.services.auth.CredentialGuessThrottle;
 import com.streamarr.server.services.auth.ProfilePinVerifier;
 import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.authorization.Decision;
-import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.support.LogCapture;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
@@ -36,6 +40,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 @Tag("UnitTest")
@@ -47,11 +54,10 @@ class ProfileSelectionServiceTest {
   private final FakeProfileRepository profiles = new FakeProfileRepository(shares);
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository(shares);
   private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
-  private final PasswordEncoder encoder = new PlainPasswordEncoder();
-  private final CredentialGuessThrottle throttle =
-      new CredentialGuessThrottle(
-          AuthThrottleProperties.builder().maxAttempts(2).window(Duration.ofMinutes(15)).build(),
-          new MutableClock());
+  private final PinEncoder encoder = new PinEncoder();
+  private final MutableClock clock = new MutableClock();
+  private final FakeCredentialAttemptRepository credentialAttempts =
+      new FakeCredentialAttemptRepository();
   private final LiveSessions liveSessions = new LiveSessions(accounts, sessions);
   private final SessionContextService sessionContext =
       new SessionContextService(
@@ -82,7 +88,10 @@ class ProfileSelectionServiceTest {
     authorization = new FakeAuthorizationService(identity());
     service =
         new ProfileSelectionService(
-            profiles, new ProfilePinVerifier(encoder, throttle), authorization, sessionContext);
+            profiles,
+            new ProfilePinVerifier(encoder, credentialAttempts.gate(clock)),
+            authorization,
+            sessionContext);
   }
 
   @Test
@@ -94,8 +103,7 @@ class ProfileSelectionServiceTest {
     assertThat(context.scope()).isEqualTo(TokenScope.PROFILE);
     assertThat(sessions.findById(session.getId()).orElseThrow().getSelectedProfileId())
         .isEqualTo(personal.getId());
-    assertThat(authorization.recordedIntents())
-        .containsExactly(new Intent.SelectProfile(personal.getId(), false));
+    assertThat(credentialAttempts.attempts()).isEmpty();
   }
 
   @Test
@@ -124,37 +132,36 @@ class ProfileSelectionServiceTest {
     assertThat(authorization.recordedIntents()).isEmpty();
   }
 
-  @Test
+  @ParameterizedTest
+  @NullAndEmptySource
+  @ValueSource(strings = {" "})
   @DisplayName("Should require the PIN when the Profile has one")
-  void shouldRequirePinWhenProfileHasOne() {
+  void shouldRequirePinWhenProfileHasOne(String pin) {
     pin(personal, "4242");
 
     var identity = identity();
-    var command = command(personal.getId(), null);
+    var command = command(personal.getId(), pin);
 
     assertThatThrownBy(() -> service.selectProfile(identity, command))
         .isInstanceOf(InvalidProfilePinException.class);
     assertThat(sessions.findById(session.getId()).orElseThrow().getSelectedProfileId()).isNull();
+    assertThat(credentialAttempts.attempts()).isEmpty();
   }
 
   @Test
-  @DisplayName("Should reject and throttle when the Profile PIN is wrong")
-  void shouldRejectAndThrottleWhenProfilePinIsWrong() {
+  @DisplayName("Should refuse the selection when the journal blocks the PIN attempt")
+  void shouldRefuseSelectionWhenJournalBlocksPinAttempt() {
     pin(personal, "4242");
-
-    for (var attempt = 0; attempt < 2; attempt++) {
-      var identity = identity();
-      var command = command(personal.getId(), "0000");
-
-      assertThatThrownBy(() -> service.selectProfile(identity, command))
-          .isInstanceOf(InvalidProfilePinException.class);
-    }
+    credentialAttempts.rejectReservations(Duration.ofMinutes(15));
+    encoder.forbidden = true;
 
     var identity = identity();
     var command = command(personal.getId(), "4242");
 
     assertThatThrownBy(() -> service.selectProfile(identity, command))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
+    assertThat(credentialAttempts.attempts()).isEmpty();
+    assertThat(sessions.findById(session.getId()).orElseThrow().getSelectedProfileId()).isNull();
   }
 
   @Test
@@ -165,8 +172,6 @@ class ProfileSelectionServiceTest {
     var context = service.selectProfile(identity(), command(personal.getId(), "4242"));
 
     assertThat(context.profileId()).contains(personal.getId());
-    assertThat(authorization.recordedIntents())
-        .containsExactly(new Intent.SelectProfile(personal.getId(), true));
   }
 
   @Test
@@ -222,13 +227,145 @@ class ProfileSelectionServiceTest {
         .isInstanceOf(AuthenticationRequiredException.class);
   }
 
+  @Test
+  @DisplayName("Should journal each outcome when PIN selections alternate")
+  void shouldJournalEachOutcomeWhenPinSelectionsAlternate() {
+    pin(personal, "4242");
+    failPin(personal);
+    service.selectProfile(identity(), command(personal.getId(), "4242"));
+    failPin(personal);
+    service.selectProfile(identity(), command(personal.getId(), "4242"));
+    assertThat(credentialAttempts.attempts())
+        .allSatisfy(
+            attempt -> {
+              assertThat(attempt.metadata().accountId()).isEqualTo(account.getId());
+              assertThat(attempt.metadata().profileId()).isEqualTo(personal.getId());
+            })
+        .extracting(FakeCredentialAttemptRepository.AttemptSnapshot::result)
+        .containsExactly(
+            CredentialAttemptResult.FAILED,
+            CredentialAttemptResult.SUCCEEDED,
+            CredentialAttemptResult.FAILED,
+            CredentialAttemptResult.SUCCEEDED);
+  }
+
+  @Test
+  @DisplayName("Should reset only the selected target when an Account supplies the correct PIN")
+  void shouldResetOnlySelectedTargetWhenAccountSuppliesCorrectPin() {
+    pin(personal, "4242");
+    var other =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(account.getHouseholdId()).build());
+    shares.share(other.getId(), account.getHouseholdId(), false);
+    pin(other, "4242");
+    for (var i = 0; i < 4; i++) {
+      failPin(personal);
+      failPin(other);
+    }
+
+    service.selectProfile(identity(), command(personal.getId(), "4242"));
+    clock.advance(Duration.ofSeconds(1));
+    for (var i = 0; i < 5; i++) {
+      failPin(personal);
+    }
+
+    failPin(other);
+    var identity = identity();
+    var personalCommand = command(personal.getId(), "4242");
+    var otherCommand = command(other.getId(), "4242");
+    assertThatThrownBy(() -> service.selectProfile(identity, personalCommand))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+    assertThatThrownBy(() -> service.selectProfile(identity, otherCommand))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+    var anotherAccount =
+        accounts.save(
+            AccountFixture.defaultAccountBuilder().householdId(account.getHouseholdId()).build());
+    var anotherSession =
+        sessions.save(
+            AuthSession.builder()
+                .accountId(anotherAccount.getId())
+                .contextHouseholdId(account.getHouseholdId())
+                .build());
+    var anotherIdentity =
+        AuthenticatedIdentityFixture.accountScopedBuilder()
+            .accountId(anotherAccount.getId())
+            .authSessionId(anotherSession.getId())
+            .householdId(account.getHouseholdId())
+            .contextHouseholdId(account.getHouseholdId())
+            .build();
+    assertThat(service.selectProfile(anotherIdentity, personalCommand).profileId())
+        .contains(personal.getId());
+    assertThat(sessions.findById(session.getId()).orElseThrow().getSelectedProfileId())
+        .isEqualTo(personal.getId());
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse without exposing hash material when the stored PIN hash is unreadable")
+  void shouldRefuseWithoutExposingHashMaterialWhenStoredPinHashIsUnreadable() {
+    var storedHash = "unreadable:stored-secret-marker";
+    personal.setPinHash(storedHash);
+    profiles.save(personal);
+    try (var logs = LogCapture.forClass(ProfilePinVerifier.class)) {
+      failPin(personal);
+      assertThat(logs.events())
+          .singleElement()
+          .satisfies(
+              event -> {
+                assertThat(event.getFormattedMessage()).doesNotContain(storedHash);
+                assertThat(ThrowableProxyUtil.asString(event.getThrowableProxy()))
+                    .doesNotContain(storedHash);
+              });
+    }
+
+    assertThat(credentialAttempts.attempts())
+        .singleElement()
+        .satisfies(
+            attempt -> assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.FAILED));
+    assertThat(sessions.findById(session.getId()).orElseThrow().getSelectedProfileId()).isNull();
+  }
+
+  private void failPin(Profile profile) {
+    var caller = identity();
+    var wrong = command(profile.getId(), "0000");
+    assertThatThrownBy(() -> service.selectProfile(caller, wrong))
+        .isInstanceOf(InvalidProfilePinException.class);
+  }
+
+  private static final class PinEncoder implements PasswordEncoder {
+    private final PasswordEncoder delegate = new PlainPasswordEncoder();
+    private boolean forbidden;
+
+    @Override
+    public String encode(CharSequence rawPassword) {
+      return delegate.encode(rawPassword);
+    }
+
+    @Override
+    public boolean matches(CharSequence rawPassword, String encodedPassword) {
+      if (forbidden) {
+        throw new AssertionError("Blocked PIN reached hashing");
+      }
+
+      if (encodedPassword.startsWith("unreadable")) {
+        throw new IllegalArgumentException(encodedPassword);
+      }
+
+      return delegate.matches(rawPassword, encodedPassword);
+    }
+  }
+
   private void pin(Profile profile, String pin) {
     profile.setPinHash(encoder.encode(pin));
     profiles.save(profile);
   }
 
   private SelectProfileCommand command(UUID profileId, String pin) {
-    return SelectProfileCommand.builder().profileId(profileId).pin(pin).build();
+    return SelectProfileCommand.builder()
+        .profileId(profileId)
+        .pin(pin)
+        .ipAddress("192.0.2.24")
+        .build();
   }
 
   private AuthenticatedIdentity identity() {
@@ -240,5 +377,36 @@ class ProfileSelectionServiceTest {
         .householdRole(account.getHouseholdRole())
         .contextHouseholdId(account.getHouseholdId())
         .build();
+  }
+
+  @Test
+  @DisplayName("Should refuse the correct PIN when five wrong PINs precede it")
+  void shouldRefuseCorrectPinWhenFiveWrongPinsPrecedeIt() {
+    pin(personal, "4242");
+    for (var attempt = 0; attempt < 5; attempt++) {
+      var identity = identity();
+      var wrong = command(personal.getId(), "000" + attempt);
+      assertThatThrownBy(() -> service.selectProfile(identity, wrong))
+          .isInstanceOf(InvalidProfilePinException.class);
+    }
+
+    var identity = identity();
+    var correct = command(personal.getId(), "4242");
+
+    assertThatThrownBy(() -> service.selectProfile(identity, correct))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+    assertThat(sessions.findById(session.getId()).orElseThrow().getSelectedProfileId()).isNull();
+    assertThat(credentialAttempts.attempts())
+        .hasSize(5)
+        .allSatisfy(
+            attempt ->
+                assertThat(attempt.metadata())
+                    .isEqualTo(
+                        CredentialAttemptMetadata.builder()
+                            .kind(CredentialKind.PROFILE_PIN)
+                            .accountId(account.getId())
+                            .profileId(personal.getId())
+                            .ipAddress("192.0.2.24")
+                            .build()));
   }
 }

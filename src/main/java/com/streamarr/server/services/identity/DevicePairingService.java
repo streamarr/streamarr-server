@@ -10,6 +10,7 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceAuthorizationDetails;
 import com.streamarr.server.services.auth.DeviceAuthorizationService;
+import com.streamarr.server.services.auth.DeviceCodeSubmission;
 import com.streamarr.server.services.auth.DeviceDecision;
 import com.streamarr.server.services.auth.DeviceDecisionCommand;
 import com.streamarr.server.services.authorization.AuthorizationService;
@@ -19,14 +20,14 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
- * The approval half of pairing (ADR 0024 §Devices): the typed code is resolved to its grant —
- * spending the guessing budget once — before Cedar decides linkDevice, the chosen Household is
- * validated as one the approver may use, and the ESN block is checked for that Household. The
- * winning poll rechecks all of it live; ADR 0021's transport stays in the auth layer untouched.
+ * Authorizes pairing decisions after the code check is journaled. Approval requires access to the
+ * chosen Household and an unblocked ESN. These permissions are checked again when the device polls
+ * for its session (ADR 0024 §Devices).
  */
 @Service
 @RequiredArgsConstructor
@@ -39,15 +40,18 @@ public class DevicePairingService {
   private final EsnBlockRepository esnBlockRepository;
 
   /** What the approver is shown: the device and the Households they could bind it to. */
-  public PairingLookupDetails lookup(AuthenticatedIdentity identity, String typedUserCode) {
-    var details = deviceAuthorizationService.lookup(typedUserCode, identity.accountId());
+  public PairingLookupDetails lookup(AuthenticatedIdentity identity, PairingLookupCommand command) {
+    var details =
+        deviceAuthorizationService.lookup(
+            toDeviceCodeSubmission(identity, command.userCode(), command.ipAddress()));
     return new PairingLookupDetails(details, eligibleHouseholds(identity));
   }
 
   public DeviceAuthorizationDetails decide(
       AuthenticatedIdentity identity, PairingDecisionCommand command) {
     var grant =
-        deviceAuthorizationService.resolveForDecision(command.userCode(), identity.accountId());
+        deviceAuthorizationService.resolveForDecision(
+            toDeviceCodeSubmission(identity, command.userCode(), command.ipAddress()));
     authorizationService.requireAllowed(identity, new Intent.LinkDevice(grant.grantId()));
     if (command.decision() == DeviceDecision.APPROVE) {
       validateBinding(identity, command.householdId(), grant.esn());
@@ -61,6 +65,15 @@ public class DevicePairingService {
             .chosenHouseholdId(
                 command.decision() == DeviceDecision.APPROVE ? command.householdId() : null)
             .build());
+  }
+
+  private static DeviceCodeSubmission toDeviceCodeSubmission(
+      AuthenticatedIdentity identity, String userCode, String ipAddress) {
+    return DeviceCodeSubmission.builder()
+        .userCode(userCode)
+        .approverAccountId(identity.accountId())
+        .ipAddress(ipAddress)
+        .build();
   }
 
   private void validateBinding(
@@ -102,12 +115,39 @@ public class DevicePairingService {
   }
 
   @Builder
-  public record PairingDecisionCommand(String userCode, DeviceDecision decision, UUID householdId) {
+  public record PairingLookupCommand(String userCode, @NonNull String ipAddress) {
 
     @Override
     public String toString() {
-      return "PairingDecisionCommand[userCode=REDACTED, decision=%s, householdId=%s]"
-          .formatted(decision, householdId);
+      return "PairingLookupCommand[userCode=REDACTED, ipAddress=%s]".formatted(ipAddress);
+    }
+
+    public static class PairingLookupCommandBuilder {
+
+      @Override
+      public String toString() {
+        return "PairingLookupCommandBuilder[REDACTED]";
+      }
+    }
+  }
+
+  @Builder
+  public record PairingDecisionCommand(
+      String userCode, DeviceDecision decision, UUID householdId, @NonNull String ipAddress) {
+
+    @Override
+    public String toString() {
+      return "PairingDecisionCommand[userCode=REDACTED, decision=%s, householdId=%s,"
+              .formatted(decision, householdId)
+          + " ipAddress=%s]".formatted(ipAddress);
+    }
+
+    public static class PairingDecisionCommandBuilder {
+
+      @Override
+      public String toString() {
+        return "PairingDecisionCommandBuilder[REDACTED]";
+      }
     }
   }
 }

@@ -2,6 +2,8 @@ package com.streamarr.server.repositories.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
@@ -62,6 +64,35 @@ class AuthEnumParityTest {
     assertParity(
         names(HouseholdRole.values()),
         literals(com.streamarr.server.jooq.generated.enums.HouseholdRole.values()));
+  }
+
+  @Test
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @DisplayName("Should keep credential kind literals in sync when parity is checked")
+  void shouldKeepCredentialKindLiteralsInSyncWhenParityIsChecked() {
+    assertThat(names(CredentialKind.values()))
+        .containsExactlyInAnyOrder(
+            "ACCOUNT_LOGIN",
+            "ACCOUNT_PASSWORD_VERIFICATION",
+            "PROFILE_PIN",
+            "ACCOUNT_INVITATION_CODE",
+            "PASSWORD_RESET_CODE",
+            "PROFILE_MANAGER_INVITATION_CODE",
+            "DEVICE_PAIRING_CODE");
+    assertParity(
+        names(CredentialKind.values()),
+        literals(com.streamarr.server.jooq.generated.enums.CredentialKind.values()));
+  }
+
+  @Test
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @DisplayName("Should keep credential attempt result literals in sync when parity is checked")
+  void shouldKeepCredentialAttemptResultLiteralsInSyncWhenParityIsChecked() {
+    assertThat(names(CredentialAttemptResult.values()))
+        .containsExactlyInAnyOrder("FAILED", "SUCCEEDED");
+    assertParity(
+        names(CredentialAttemptResult.values()),
+        literals(com.streamarr.server.jooq.generated.enums.CredentialAttemptResult.values()));
   }
 
   private static void assertParity(List<String> javaNames, List<String> databaseLiterals) {

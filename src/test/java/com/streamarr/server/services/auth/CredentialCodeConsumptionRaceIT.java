@@ -17,15 +17,18 @@ import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
+import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccountInvitationService.AcceptInvitationCommand;
+import com.streamarr.server.services.auth.AccountInvitationService.InvitationCodeCommand;
 import com.streamarr.server.services.identity.CredentialIssuanceService;
 import com.streamarr.server.services.identity.CredentialRejections;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.ControlledClockConfiguration;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import java.time.Duration;
 import java.time.Instant;
@@ -36,15 +39,20 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.annotation.DirtiesContext;
 
 @Tag("IntegrationTest")
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("Credential Code Consumption Race Integration Tests")
+@Import(ControlledClockConfiguration.class)
 class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
 
   @Autowired private AccountInvitationService invitationService;
@@ -59,8 +67,14 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private DataSource dataSource;
   @Autowired private JdbcTemplate jdbcTemplate;
+  @Autowired private MutableClock clock;
 
   private AuthTestSupport.TestIdentity identity;
+
+  @BeforeEach
+  void resetClock() {
+    clock.advance(Duration.between(clock.instant(), Instant.now()));
+  }
 
   @AfterEach
   void tearDown() {
@@ -83,7 +97,16 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
       var acceptance =
           executor.submit(
               () -> attempt(() -> invitationService.accept(acceptCommand(issued.code()))));
-      var decline = executor.submit(() -> attempt(() -> invitationService.decline(issued.code())));
+      var decline =
+          executor.submit(
+              () ->
+                  attempt(
+                      () ->
+                          invitationService.decline(
+                              InvitationCodeCommand.builder()
+                                  .code(issued.code())
+                                  .ipAddress("192.0.2.30")
+                                  .build())));
 
       await()
           .atMost(Duration.ofSeconds(10))
@@ -158,19 +181,9 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor();
         var lock = lockRow(rowLock("password_reset_code", resetCode.getId()))) {
       var first =
-          executor.submit(
-              () ->
-                  attempt(
-                      () ->
-                          passwordResetService.redeem(
-                              issued.code(), "the replacement passphrase")));
+          executor.submit(() -> attempt(() -> redeem(issued.code(), "the replacement passphrase")));
       var second =
-          executor.submit(
-              () ->
-                  attempt(
-                      () ->
-                          passwordResetService.redeem(
-                              issued.code(), "the replacement passphrase")));
+          executor.submit(() -> attempt(() -> redeem(issued.code(), "the replacement passphrase")));
 
       await()
           .atMost(Duration.ofSeconds(10))
@@ -186,6 +199,14 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
 
     assertThat(resetCodeRepository.findById(resetCode.getId()).orElseThrow().getStatus())
         .isEqualTo(PasswordResetCodeStatus.REDEEMED);
+    // Both racers presented the correct code; the loser lost the redemption, not the
+    // verification, so the journal records two successes (ADR 0028).
+    assertThat(
+            jdbcTemplate.queryForList(
+                "SELECT result::text FROM credential_attempt WHERE credential_id = ?",
+                String.class,
+                resetCode.getId()))
+        .containsExactly("SUCCEEDED", "SUCCEEDED");
     assertThat(
             passwordEncoder.matches(
                 "the replacement passphrase",
@@ -208,7 +229,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
   void shouldRejectResetCodeWhenItExpiresWhileWaitingForAccountLock() throws Exception {
     identity = authTestSupport.createAdminIdentity();
     var issued = opaqueCodes.issue();
-    var expiresAt = Instant.now().plusSeconds(2);
+    var expiresAt = clock.instant().plusSeconds(2);
     var resetCode = saveResetCode(issued);
     resetCode.setExpiresAt(expiresAt);
     resetCodeRepository.saveAndFlush(resetCode);
@@ -217,17 +238,12 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
         var lock = lockRow(rowLock("user_account", identity.account().getId()))) {
       var redemption =
           executor.submit(
-              () ->
-                  attempt(
-                      () ->
-                          passwordResetService.redeem(
-                              issued.code(), "the expired replacement passphrase")));
+              () -> attempt(() -> redeem(issued.code(), "the expired replacement passphrase")));
       await()
           .atMost(Duration.ofSeconds(10))
           .untilAsserted(
               () -> assertThat(waitingBehind(lock.backendPid(), "user_account")).isOne());
-      assertThat(Instant.now()).isBefore(expiresAt);
-      await().atMost(Duration.ofSeconds(3)).until(() -> !Instant.now().isBefore(expiresAt));
+      clock.advance(Duration.ofSeconds(3));
       lock.release();
 
       var attempt = redemption.get(10, TimeUnit.SECONDS);
@@ -264,11 +280,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
 
       var redemption =
           executor.submit(
-              () ->
-                  attempt(
-                      () ->
-                          passwordResetService.redeem(
-                              issued.code(), "the concurrent replacement passphrase")));
+              () -> attempt(() -> redeem(issued.code(), "the concurrent replacement passphrase")));
       await()
           .atMost(Duration.ofSeconds(10))
           .untilAsserted(() -> assertThat(waitingBehind(holderPid, "user_account")).isOne());
@@ -373,7 +385,17 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
         .displayName("Invitee")
         .password("a strong passphrase")
         .deviceName("test")
+        .ipAddress("192.0.2.30")
         .build();
+  }
+
+  private void redeem(String code, String newPassword) {
+    passwordResetService.redeem(
+        RedeemPasswordResetCommand.builder()
+            .code(code)
+            .newPassword(newPassword)
+            .ipAddress("192.0.2.30")
+            .build());
   }
 
   private RowLockTarget rowLock(String table, UUID rowId) {

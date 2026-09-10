@@ -2,6 +2,8 @@ package com.streamarr.server.services.auth;
 
 import com.streamarr.server.config.CanonicalBaseUrl;
 import com.streamarr.server.config.security.DeviceAuthProperties;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.DeviceAuthorization;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
 import com.streamarr.server.domain.auth.DeviceRegistration;
@@ -58,7 +60,7 @@ public class DeviceAuthorizationService {
   private final AccessTokenIssuer accessTokenIssuer;
   private final UserCodeGenerator userCodeGenerator;
   private final DeviceCodeGenerator deviceCodeGenerator;
-  private final DeviceGuessThrottle guessThrottle;
+  private final CredentialAttemptGate credentialAttempts;
   private final DeviceAuthProperties properties;
   private final CanonicalBaseUrl baseUrl;
   private final Clock clock;
@@ -140,41 +142,41 @@ public class DeviceAuthorizationService {
     };
   }
 
-  @Transactional(readOnly = true)
-  public DeviceAuthorizationDetails lookup(String typedUserCode, UUID callerAccountId) {
-    guessThrottle.registerAttempt(callerAccountId);
-
-    var authorization = findUnexpired(UserCode.normalize(typedUserCode));
-
-    return detailsOf(authorization, authorization.getStatus());
+  public DeviceAuthorizationDetails lookup(DeviceCodeSubmission submission) {
+    var authorization = findBySubmittedCode(submission);
+    return credentialAttempts.attempt(
+        approverMetadata(submission),
+        () -> {
+          requireUnexpired(authorization);
+          return detailsOf(authorization, authorization.getStatus());
+        });
   }
 
   /**
-   * Resolves a typed code to its pairing grant for pairing approval: the guessing budget is spent
-   * here, once per presented code, before Cedar or any validation sees the request.
+   * Resolves a pairing code and journals one attempt against the approver before authorization.
+   * Unknown codes return not-found; expired codes return an expiry error.
    */
-  @Transactional(readOnly = true)
-  public ResolvedGrant resolveForDecision(String typedUserCode, UUID callerAccountId) {
-    guessThrottle.registerAttempt(callerAccountId);
-    var authorization =
-        authorizationRepository
-            .findByUserCode(UserCode.normalize(typedUserCode))
-            .orElseThrow(DeviceCodeNotFoundException::new);
-    // The approver is mid-flow on a code they demonstrably saw, so expiry earns its own answer
-    // here; a bare not-found would read as a typo. Lookup collapses it to 404 on purpose.
-    if (authorization.hasExpiredAt(clock.instant())) {
-      throw new DeviceCodeExpiredException();
-    }
+  public ResolvedGrant resolveForDecision(DeviceCodeSubmission submission) {
+    var authorization = findBySubmittedCode(submission);
+    return credentialAttempts.attempt(
+        approverMetadata(submission),
+        () -> {
+          requirePresent(authorization);
+          // Decision reports expiry so the client can request a new code; lookup returns not-found.
+          if (authorization.hasExpiredAt(clock.instant())) {
+            throw new DeviceCodeExpiredException();
+          }
 
-    return new ResolvedGrant(
-        authorization.getId(),
-        Optional.ofNullable(authorization.getEsn()),
-        authorization.getDeviceName());
+          return new ResolvedGrant(
+              authorization.getId(),
+              Optional.ofNullable(authorization.getEsn()),
+              authorization.getDeviceName());
+        });
   }
 
   /**
-   * The conditional decision write. Deliberately not throttled: {@link #resolveForDecision} already
-   * spent the budget for this presentation, and pairing approval calls both in one request.
+   * Records the decision after {@link #resolveForDecision} has journaled the code check. Calling
+   * both methods for one request creates one attempt.
    */
   @Transactional
   public DeviceAuthorizationDetails decide(DeviceDecisionCommand command) {
@@ -184,8 +186,7 @@ public class DeviceAuthorizationService {
             .findByUserCode(userCode)
             .orElseThrow(DeviceCodeNotFoundException::new);
 
-    // The approver is mid-flow on a code they demonstrably saw, so expiry earns its own answer
-    // here; a bare not-found would read as a typo. Lookup collapses it to 404 on purpose.
+    // The code may have expired since resolveForDecision checked it.
     var now = clock.instant();
     if (authorization.hasExpiredAt(now)) {
       throw new DeviceCodeExpiredException();
@@ -329,19 +330,34 @@ public class DeviceAuthorizationService {
         id, intervalSeconds, now.plusSeconds(intervalSeconds), now);
   }
 
-  private DeviceAuthorization findUnexpired(String userCode) {
-    var authorization =
-        authorizationRepository
-            .findByUserCode(userCode)
-            .orElseThrow(DeviceCodeNotFoundException::new);
+  /** Format validation happens here, before any attempt is journaled. */
+  private DeviceAuthorization findBySubmittedCode(DeviceCodeSubmission submission) {
+    var userCode = UserCode.normalize(submission.userCode());
+    return authorizationRepository.findByUserCode(userCode).orElse(null);
+  }
+
+  private void requireUnexpired(DeviceAuthorization authorization) {
+    requirePresent(authorization);
 
     // Approval requests return not-found for expired grants to conceal whether they existed.
     // Polling clients receive expired_token for the same state.
     if (authorization.hasExpiredAt(clock.instant())) {
       throw new DeviceCodeNotFoundException();
     }
+  }
 
-    return authorization;
+  private static void requirePresent(DeviceAuthorization authorization) {
+    if (authorization == null) {
+      throw new DeviceCodeNotFoundException();
+    }
+  }
+
+  private static CredentialAttemptMetadata approverMetadata(DeviceCodeSubmission submission) {
+    return CredentialAttemptMetadata.builder()
+        .kind(CredentialKind.DEVICE_PAIRING_CODE)
+        .accountId(submission.approverAccountId())
+        .ipAddress(submission.ipAddress())
+        .build();
   }
 
   private static DeviceAuthorizationDetails detailsOf(

@@ -1,6 +1,9 @@
 package com.streamarr.server;
 
 import com.streamarr.server.support.AuthTestSupportConfig;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -14,6 +17,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @AutoConfigureMockMvc
 @Import(AuthTestSupportConfig.class)
 @ActiveProfiles("test")
+@Isolated("Integration tests share one reusable PostgreSQL database")
+@Execution(ExecutionMode.SAME_THREAD)
 public abstract class AbstractIntegrationTest {
 
   @ServiceConnection

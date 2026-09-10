@@ -5,6 +5,8 @@ import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationMode;
 import com.streamarr.server.domain.auth.AccountInvitationReoffer;
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
@@ -13,6 +15,7 @@ import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.exceptions.InvitationEmailAlreadyUsedException;
 import com.streamarr.server.exceptions.InvitationNotAcceptableException;
 import com.streamarr.server.repositories.auth.AccountInvitationReofferRepository;
@@ -33,6 +36,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import lombok.Builder;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -40,11 +44,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Presents and consumes principal-less Account invitation codes.
- *
- * @see <a
- *     href="https://github.com/streamarr/streamarr-adr/blob/main/adr/0024-identity-authority-by-relationship.adoc#_invitations">ADR
- *     0024 §Invitations</a>
+ * Invitation operations authenticated by code (ADR 0024 §Invitations). Acceptance consumes the
+ * pending invitation and creates the Account, Personal Profile, structural share, required manager
+ * rows, and first session in one transaction. Deferred constraints validate these records at
+ * commit. Password hashing runs before the transaction opens.
  */
 @Service
 @RequiredArgsConstructor
@@ -67,7 +70,8 @@ public class AccountInvitationService {
   private final HouseholdRepository householdRepository;
   private final AuthSessionRepository authSessionRepository;
   private final RefreshTokenService refreshTokenService;
-  private final OpaqueCodeResolver codeResolver;
+  private final OpaqueOneTimeCodes opaqueCodes;
+  private final CredentialAttemptGate credentialAttempts;
   private final PasswordEncoder passwordEncoder;
   private final TransactionTemplate transactionTemplate;
   private final ConstraintViolationTranslator constraintViolationTranslator;
@@ -75,8 +79,8 @@ public class AccountInvitationService {
   private final Clock clock;
 
   /** What the code holder needs to decide; never the secret, never other Households' data. */
-  public InvitationPreview lookup(String rawCode) {
-    var invitation = resolvePending(rawCode);
+  public InvitationPreview lookup(InvitationCodeCommand command) {
+    var invitation = resolvePending(command.code(), command.ipAddress());
     return InvitationPreview.builder()
         .recipientEmail(invitation.getRecipientEmail())
         .householdName(invitation.getHouseholdName())
@@ -135,7 +139,7 @@ public class AccountInvitationService {
   }
 
   public AcceptedInvitation accept(AcceptInvitationCommand command) {
-    var invitation = resolvePending(command.code());
+    var invitation = resolvePending(command.code(), command.ipAddress());
     var passwordHash = passwordEncoder.encode(command.password());
 
     try {
@@ -145,12 +149,11 @@ public class AccountInvitationService {
     }
   }
 
-  public void decline(String rawCode) {
-    var invitation = resolvePending(rawCode);
+  public void decline(InvitationCodeCommand command) {
+    var invitation = resolvePending(command.code(), command.ipAddress());
     if (!invitationRepository.markDeclinedIfPendingAndUnexpired(
         invitation.getId(), clock.instant())) {
-      throw OpaqueCodeResolver.rejected(
-          OpaqueCodeResolver.MissReason.LOST_RACE, invitation.getPublicId());
+      throw new InvalidOneTimeCodeException();
     }
   }
 
@@ -199,16 +202,14 @@ public class AccountInvitationService {
     }
 
     if (!profileRepository.lockById(invitation.getProfileId())) {
-      throw OpaqueCodeResolver.rejected(
-          OpaqueCodeResolver.MissReason.NOT_REDEEMABLE, invitation.getPublicId());
+      throw new InvalidOneTimeCodeException();
     }
   }
 
   private void consumeInvitation(AccountInvitation invitation) {
     if (!invitationRepository.markAcceptedIfPendingAndUnexpired(
         invitation.getId(), clock.instant())) {
-      throw OpaqueCodeResolver.rejected(
-          OpaqueCodeResolver.MissReason.LOST_RACE, invitation.getPublicId());
+      throw new InvalidOneTimeCodeException();
     }
   }
 
@@ -305,17 +306,11 @@ public class AccountInvitationService {
     var householdId = invitation.getHouseholdId();
     var profileId = invitation.getProfileId();
     var profile =
-        profileRepository
-            .findById(profileId)
-            .orElseThrow(
-                () ->
-                    OpaqueCodeResolver.rejected(
-                        OpaqueCodeResolver.MissReason.NOT_REDEEMABLE, invitation.getPublicId()));
+        profileRepository.findById(profileId).orElseThrow(InvalidOneTimeCodeException::new);
     if (userAccountRepository.findByPersonalProfileId(profileId).isPresent()
         || !profile.getHouseholdId().equals(householdId)) {
       // The Profile moved on after issuance; a late code fails exactly like an unknown one.
-      throw OpaqueCodeResolver.rejected(
-          OpaqueCodeResolver.MissReason.NOT_REDEEMABLE, invitation.getPublicId());
+      throw new InvalidOneTimeCodeException();
     }
 
     var recordedReoffers = reofferRepository.findByInvitationId(invitation.getId());
@@ -332,14 +327,10 @@ public class AccountInvitationService {
     var role =
         userAccountRepository
             .roleForNewAccount(householdId, invitation.getHouseholdRole())
-            .orElseThrow(
-                () ->
-                    OpaqueCodeResolver.rejected(
-                        OpaqueCodeResolver.MissReason.NOT_REDEEMABLE, invitation.getPublicId()));
+            .orElseThrow(InvalidOneTimeCodeException::new);
     if (profile.isRestricted() && role == HouseholdRole.ADMIN) {
       // The first Account becomes HouseholdAdmin, and a restricted Account holds no authority.
-      throw OpaqueCodeResolver.rejected(
-          OpaqueCodeResolver.MissReason.NOT_REDEEMABLE, invitation.getPublicId());
+      throw new InvalidOneTimeCodeException();
     }
 
     var account =
@@ -420,16 +411,46 @@ public class AccountInvitationService {
   private record ReofferPlan(
       UUID profileId, List<AccountInvitationReoffer> targets, UUID offererAccountId, Instant now) {}
 
-  private AccountInvitation resolvePending(String rawCode) {
-    var invitation = codeResolver.resolvePending(rawCode, invitationRepository::findByPublicId);
-    if (isLinkInvitationMissingProfile(invitation)) {
-      // Deleting a linked Profile clears its reference. Reject the invitation with the same error
-      // as an unknown code.
-      throw OpaqueCodeResolver.rejected(
-          OpaqueCodeResolver.MissReason.NOT_REDEEMABLE, invitation.getPublicId());
-    }
+  /**
+   * Resolves a code to a pending, unexpired invitation. Digest verification is journaled by
+   * invitation ID; an unknown public ID is journaled without a target. Invalid codes return the
+   * same error regardless of the reason.
+   */
+  private AccountInvitation resolvePending(String rawCode, String ipAddress) {
+    var presented = opaqueCodes.parse(rawCode).orElseThrow(InvalidOneTimeCodeException::new);
+    var invitation = invitationRepository.findByPublicId(presented.publicId()).orElse(null);
+    return credentialAttempts.attempt(
+        codeMetadata(invitation, ipAddress),
+        () -> {
+          if (invitation == null) {
+            throw new InvalidOneTimeCodeException();
+          }
 
-    return invitation;
+          if (!opaqueCodes.matches(presented, invitation.getSecretDigest())) {
+            throw new InvalidOneTimeCodeException();
+          }
+
+          if (!invitation.isRedeemableAt(clock.instant())) {
+            throw new InvalidOneTimeCodeException();
+          }
+
+          if (isLinkInvitationMissingProfile(invitation)) {
+            // Deleting a linked Profile clears its reference. Reject the invitation with the same
+            // error as an unknown code.
+            throw new InvalidOneTimeCodeException();
+          }
+
+          return invitation;
+        });
+  }
+
+  private static CredentialAttemptMetadata codeMetadata(
+      AccountInvitation invitation, String ipAddress) {
+    return CredentialAttemptMetadata.builder()
+        .kind(CredentialKind.ACCOUNT_INVITATION_CODE)
+        .credentialId(invitation == null ? null : invitation.getId())
+        .ipAddress(ipAddress)
+        .build();
   }
 
   private static boolean isLinkInvitationMissingProfile(AccountInvitation invitation) {
@@ -438,23 +459,44 @@ public class AccountInvitationService {
 
   @Builder
   public record AcceptInvitationCommand(
-      String code, String displayName, String password, String deviceName) {
-
-    public static class AcceptInvitationCommandBuilder {
-
-      @Override
-      public String toString() {
-        return "AcceptInvitationCommandBuilder[code=REDACTED, displayName=%s, password=REDACTED,"
-                .formatted(displayName)
-            + " deviceName=%s]".formatted(deviceName);
-      }
-    }
+      String code,
+      String displayName,
+      String password,
+      String deviceName,
+      @NonNull String ipAddress) {
 
     @Override
     public String toString() {
       return "AcceptInvitationCommand[code=REDACTED, displayName=%s, password=REDACTED,"
               .formatted(displayName)
-          + " deviceName=%s]".formatted(deviceName);
+          + " deviceName=%s, ipAddress=%s]".formatted(deviceName, ipAddress);
+    }
+
+    public static class AcceptInvitationCommandBuilder {
+
+      @Override
+      public String toString() {
+        return "AcceptInvitationCommandBuilder[code=REDACTED, displayName=%s,"
+                .formatted(displayName)
+            + " password=REDACTED, deviceName=%s, ipAddress=%s]".formatted(deviceName, ipAddress);
+      }
+    }
+  }
+
+  @Builder
+  public record InvitationCodeCommand(String code, @NonNull String ipAddress) {
+
+    @Override
+    public String toString() {
+      return "InvitationCodeCommand[code=REDACTED, ipAddress=%s]".formatted(ipAddress);
+    }
+
+    public static class InvitationCodeCommandBuilder {
+
+      @Override
+      public String toString() {
+        return "InvitationCodeCommandBuilder[REDACTED]";
+      }
     }
   }
 

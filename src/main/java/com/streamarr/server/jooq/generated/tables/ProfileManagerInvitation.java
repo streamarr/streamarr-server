@@ -18,6 +18,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
+import org.jooq.Check;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.ForeignKey;
@@ -280,6 +281,13 @@ public class ProfileManagerInvitation extends TableImpl<ProfileManagerInvitation
             _fkPmInvitationRecipient = new UserAccountPath(this, Keys.PROFILE_MANAGER_INVITATION__FK_PM_INVITATION_RECIPIENT, null);
 
         return _fkPmInvitationRecipient;
+    }
+
+    @Override
+    public List<Check<ProfileManagerInvitationRecord>> getChecks() {
+        return Arrays.asList(
+            Internal.createCheck(this, DSL.name("chk_pm_invitation_pending_has_parties"), "(((status <> 'PENDING'::profile_manager_invitation_status) OR ((profile_id IS NOT NULL) AND (inviter_account_id IS NOT NULL) AND (recipient_account_id IS NOT NULL))))", true)
+        );
     }
 
     @Override

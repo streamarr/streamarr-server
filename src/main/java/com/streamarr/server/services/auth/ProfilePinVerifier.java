@@ -1,5 +1,7 @@
 package com.streamarr.server.services.auth;
 
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.exceptions.InvalidProfilePinException;
 import java.util.UUID;
@@ -10,8 +12,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * The single PIN checkpoint (ADR 0024): PIN verification runs only during Profile selection,
- * throttled on the PROFILE_PIN budget keyed by Account and Profile. Only the selection service
- * creates the trusted verification context. Clients cannot supply it.
+ * limited by persisted PROFILE_PIN attempts keyed by Account and Profile. Only the selection
+ * service creates the trusted verification context. Clients cannot supply it.
  */
 @Slf4j
 @Component
@@ -19,20 +21,36 @@ import org.springframework.stereotype.Component;
 public class ProfilePinVerifier {
 
   private final PasswordEncoder passwordEncoder;
-  private final CredentialGuessThrottle throttle;
+  private final CredentialAttemptGate credentialAttempts;
 
   /**
-   * @throws com.streamarr.server.exceptions.TooManyCredentialAttemptsException when the budget is
-   *     exhausted — before any hashing
+   * @throws com.streamarr.server.exceptions.TooManyCredentialAttemptsException when the attempt
+   *     limit is exhausted — before any hashing
    * @throws InvalidProfilePinException when the PIN is missing or does not match
    */
-  public void verify(UUID accountId, Profile profile, String pin) {
-    throttle.registerProfilePinAttempt(accountId, profile.getId());
-    if (pin == null || pin.isBlank() || !matches(profile, pin)) {
+  public void verify(UUID accountId, Profile profile, String pin, String ipAddress) {
+    // A missing PIN is transport-invalid input, not a guess: it spends no journal slot (ADR 0028).
+    if (pin == null || pin.isBlank()) {
       throw new InvalidProfilePinException();
     }
 
-    throttle.resetProfilePinAttempts(accountId, profile.getId());
+    credentialAttempts.attempt(
+        pinMetadata(accountId, profile.getId(), ipAddress),
+        () -> {
+          if (!matches(profile, pin)) {
+            throw new InvalidProfilePinException();
+          }
+        });
+  }
+
+  private static CredentialAttemptMetadata pinMetadata(
+      UUID accountId, UUID profileId, String ipAddress) {
+    return CredentialAttemptMetadata.builder()
+        .kind(CredentialKind.PROFILE_PIN)
+        .accountId(accountId)
+        .profileId(profileId)
+        .ipAddress(ipAddress)
+        .build();
   }
 
   private boolean matches(Profile profile, String pin) {
