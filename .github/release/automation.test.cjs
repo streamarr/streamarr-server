@@ -22,6 +22,15 @@ test('stops before publishing when repository auto-merge is disabled', async () 
   assert.deepEqual(github.opened, []);
 });
 
+test('explains unavailable auto-merge metadata before publishing', async () => {
+  const { github } = mergedReleaseFixture();
+  await assert.rejects(runReleaseAutomation({
+    repository: 'streamarr/streamarr-server', connect: async () => github, execute: () => 'null',
+  }), /Cannot determine repository auto-merge setting.*allow_auto_merge="null"/);
+  assert.equal(github.releases.length, 1);
+  assert.deepEqual(github.opened, []);
+});
+
 test('queues the updated PR head with its release title and an empty squash body', async () => {
   const { github } = mergedReleaseFixture();
   const commands = [];

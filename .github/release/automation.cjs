@@ -7,7 +7,11 @@ async function runReleaseAutomation({ repository, token, execute = execFileSync,
   if (!repository) throw new Error('GITHUB_REPOSITORY must be set');
   const [owner, repo] = repository.split('/');
   const autoMerge = execute('gh', ['api', `repos/${repository}`, '--jq', '.allow_auto_merge'], { encoding: 'utf8' }).trim();
-  if (autoMerge !== 'true') throw new Error('Enable repository auto-merge before running release automation');
+  if (autoMerge === 'false') throw new Error('Enable repository auto-merge before running release automation');
+  if (autoMerge !== 'true') {
+    throw new Error(`Cannot determine repository auto-merge setting: allow_auto_merge=${JSON.stringify(autoMerge)}. Check release App authentication and repository access.`);
+  }
+
   const github = await connect({ owner, repo, token });
   await reconcile({
     github,
