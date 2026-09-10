@@ -11,6 +11,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Transcode Worker Settings Tests")
@@ -19,6 +21,36 @@ class TranscodeWorkerSettingsTest {
   private static final UUID WORKER_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
   private static final UUID SOURCE_NAMESPACE_ID =
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
+
+  @Test
+  @DisplayName("Should configure a dedicated default health port when loading worker settings")
+  void shouldConfigureADedicatedDefaultHealthPortWhenLoadingWorkerSettings() {
+    var settings = TranscodeWorkerSettings.fromEnvironment(requiredEnvironment());
+
+    assertThat(settings.workerConfiguration().healthPort()).isEqualTo(9091);
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {-1, 65536})
+  @DisplayName("Should reject a health port outside the TCP range when loading worker settings")
+  void shouldRejectAHealthPortOutsideTheTcpRangeWhenLoadingWorkerSettings(int healthPort) {
+    assertInvalidSetting(
+        "TRANSCODE_WORKER_HEALTH_PORT",
+        Integer.toString(healthPort),
+        "Worker health port must be between 0 and 65535");
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {0, 8123, 65535})
+  @DisplayName("Should use the configured health port including zero when loading worker settings")
+  void shouldUseTheConfiguredHealthPortIncludingZeroWhenLoadingWorkerSettings(int healthPort) {
+    var environment = new HashMap<>(requiredEnvironment());
+    environment.put("TRANSCODE_WORKER_HEALTH_PORT", Integer.toString(healthPort));
+
+    assertThat(
+            TranscodeWorkerSettings.fromEnvironment(environment).workerConfiguration().healthPort())
+        .isEqualTo(healthPort);
+  }
 
   @Test
   @DisplayName(

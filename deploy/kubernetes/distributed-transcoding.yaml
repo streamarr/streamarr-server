@@ -180,7 +180,22 @@ spec:
               memory: 512Mi
             limits:
               memory: 1Gi
+          ports:
+            - name: health-grpc
+              containerPort: 9091
+          livenessProbe:
+            grpc:
+              port: 9091
+              service: liveness
+            periodSeconds: 10
+          readinessProbe:
+            grpc:
+              port: 9091
+              service: readiness
+            periodSeconds: 5
           env:
+            - name: TRANSCODE_WORKER_HEALTH_PORT
+              value: "9091"
             - name: TRANSCODE_WORKER_CONTROL_PLANE_HOST
               value: streamarr-server
             - name: TRANSCODE_WORKER_ID

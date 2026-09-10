@@ -120,6 +120,7 @@ class TranscodeWorkerApplicationIT {
                 "TRANSCODE_WORKER_TLS_PRIVATE_KEY", tlsResource("worker-key.fixture").toString(),
                 "TRANSCODE_WORKER_TLS_TRUST_BUNDLE", tlsResource("ca-cert.pem").toString(),
                 "TRANSCODE_WORKER_FFMPEG_PATH", ffmpeg.toString()));
+    process.environment().put("TRANSCODE_WORKER_HEALTH_PORT", "0");
     return process;
   }
 
