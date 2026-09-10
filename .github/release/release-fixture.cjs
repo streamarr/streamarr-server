@@ -17,7 +17,8 @@ function mergedReleaseFixture(overrides = {}) {
     ...overrides,
   };
   const github = {
-    releases: [{ tagName: 'v0.0.10', sha: 'a'.repeat(40), notes: '' }],
+    releases: [{ tagName: 'v0.0.10', sha: 'a'.repeat(40), notes: '', draft: false }],
+    tags: [{ name: 'v0.0.10', sha: 'a'.repeat(40) }],
     opened: [],
     repository: { owner: 'streamarr', repo: 'streamarr-server' },
     getFileJson: async file => file === '.release-please-manifest.json'
@@ -29,16 +30,18 @@ function mergedReleaseFixture(overrides = {}) {
       if (state === 'MERGED') yield pullRequest;
     },
     async *releaseIterator() {
-      yield* this.releases;
+      yield* this.releases.filter(release => this.tags.some(tag => tag.name === release.tagName));
     },
+    async *tagIterator() { yield* this.tags; },
     async *mergeCommitIterator() {
       yield { sha: pullRequest.sha, message: 'behavioral: release 0.0.11', files: ['pom.xml'], pullRequest };
       yield { sha: 'c'.repeat(40), message: 'behavioral: release 0.0.11-SNAPSHOT', files: ['pom.xml'] };
       yield { sha: 'b'.repeat(40), message: 'fix: correct playback', files: ['Example.java'] };
       yield { sha: 'a'.repeat(40), message: 'behavioral: release 0.0.10', files: ['pom.xml'] };
     },
-    async createRelease(release) {
-      const result = { tagName: release.tag.toString(), sha: release.sha, notes: release.notes };
+    async createRelease(release, { draft = false, forceTag = false } = {}) {
+      const result = { tagName: release.tag.toString(), sha: release.sha, notes: release.notes, draft };
+      if (!draft || forceTag) this.tags.unshift({ name: result.tagName, sha: result.sha });
       this.releases.unshift(result);
       return result;
     },
