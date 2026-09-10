@@ -57,7 +57,12 @@ class ClientIpAddressGraphQlInterceptorTest {
   @ParameterizedTest
   @CsvSource({
     "::ffff:198.51.100.7,198.51.100.7",
+    "::ffff:c633:6407,198.51.100.7",
+    "2001:db8::7,2001:db8:0:0:0:0:0:7",
     "fe80::1%en0,fe80:0:0:0:0:0:0:1",
+    "[fe80::1%remote-interface],fe80:0:0:0:0:0:0:1",
+    "[fe80::1]%3,0.0.0.0",
+    "198.51.100.7%en0,0.0.0.0",
     "localhost,0.0.0.0"
   })
   @DisplayName("Should preserve normalization when the remote socket address is unresolved")
@@ -78,16 +83,18 @@ class ClientIpAddressGraphQlInterceptorTest {
         .isEqualTo("fe80:0:0:0:0:0:0:1");
   }
 
-  @Test
+  @ParameterizedTest
+  @CsvSource({"198.51.100.7,198.51.100.7", "2001:db8::7,2001:db8:0:0:0:0:0:7"})
   @DisplayName("Should retain the captured address when a data fetcher runs on another thread")
-  void shouldRetainCapturedAddressWhenDataFetcherRunsOnAnotherThread() throws Exception {
+  void shouldRetainCapturedAddressWhenDataFetcherRunsOnAnotherThread(
+      String remoteAddress, String expectedAddress) throws Exception {
     var environment =
-        capturedEnvironment(new InetSocketAddress(InetAddress.ofLiteral("198.51.100.7"), 12345));
+        capturedEnvironment(new InetSocketAddress(InetAddress.ofLiteral(remoteAddress), 12345));
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var address = executor.submit(() -> ClientIpAddressGraphQlInterceptor.resolve(environment));
 
-      assertThat(address.get()).isEqualTo("198.51.100.7");
+      assertThat(address.get()).isEqualTo(expectedAddress);
     }
   }
 

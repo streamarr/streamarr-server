@@ -7,6 +7,8 @@ import com.streamarr.server.support.LogCapture;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 @Tag("UnitTest")
@@ -31,18 +33,22 @@ class ClientIpAddressResolverTest {
     assertThat(resolve("::ffff:192.0.2.30")).isEqualTo("192.0.2.30");
   }
 
-  @Test
+  @ParameterizedTest
+  @ValueSource(strings = {"unknown", "fe80::1%en0\r\nforged", "fe80::1%en0\0"})
   @DisplayName(
       "Should journal the unspecified address and warn when the remote address is not an IP")
-  void shouldJournalUnspecifiedAddressAndWarnWhenRemoteAddressIsNotAnIp() {
+  void shouldJournalUnspecifiedAddressAndWarnWhenRemoteAddressIsNotAnIp(String remoteAddress) {
     try (var logs = LogCapture.forClass(ClientIpAddressNormalizer.class)) {
-      assertThat(resolve("unknown")).isEqualTo("0.0.0.0");
+      assertThat(resolve(remoteAddress)).isEqualTo("0.0.0.0");
 
       assertThat(logs.events())
-          .anyMatch(
-              event ->
-                  event.getLevel() == Level.WARN
-                      && event.getFormattedMessage().contains("unknown"));
+          .singleElement()
+          .satisfies(
+              event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                assertThat(event.getFormattedMessage())
+                    .isEqualTo("Client address is not an IP literal; journaling 0.0.0.0");
+              });
     }
   }
 

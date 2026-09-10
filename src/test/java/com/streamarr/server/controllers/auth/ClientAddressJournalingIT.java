@@ -15,6 +15,8 @@ import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.LogCapture;
+import com.streamarr.server.web.ClientIpAddressNormalizer;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -27,6 +29,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -79,6 +83,47 @@ class ClientAddressJournalingIT extends AbstractIntegrationTest {
         .ifPresent(created -> authTestSupport.deleteAccount(created.getId()));
     authTestSupport.deleteIdentity(identity);
     authTestSupport.deleteIdentity(serverAdmin);
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "2001:0DB8:0000:0000:0000:0000:0000:0101,2001:db8::101,6",
+    "[fe80::1%3],fe80::1,6",
+    "fe80::1%remote-interface,fe80::1,6",
+    "::ffff:192.0.2.30,192.0.2.30,4",
+    "::ffff:c000:21e,192.0.2.30,4",
+    "64:ff9b::192.0.2.30,64:ff9b::c000:21e,6",
+    "192.0.2.30%en0,0.0.0.0,4",
+    "[fe80::1]%3,0.0.0.0,4"
+  })
+  @DisplayName("Should journal the normalized address when login receives a remote address")
+  void shouldJournalNormalizedAddressWhenLoginReceivesRemoteAddress(
+      String remoteAddress, String expectedAddress, int expectedFamily) throws Exception {
+    try (var logs = LogCapture.forClass(ClientIpAddressNormalizer.class)) {
+      mockMvc
+          .perform(
+              anonymousRequest("/api/auth/login", remoteAddress)
+                  .content(
+                      """
+                    {"email": "%s", "password": "%s", "deviceName": "IPv6 client", "cookieMode": false}
+                    """
+                          .formatted(identity.account().getEmail(), authTestSupport.password())))
+          .andExpect(status().isOk());
+
+      assertThat(logs.events())
+          .allSatisfy(
+              event -> assertThat(event.getFormattedMessage()).doesNotContain(remoteAddress));
+    }
+
+    assertThat(journaledAddresses(CredentialKind.ACCOUNT_LOGIN, ownAccount()))
+        .containsExactly(expectedAddress);
+    assertThat(
+            dsl.select(DSL.field("family({0})", Integer.class, CREDENTIAL_ATTEMPT.IP_ADDRESS))
+                .from(CREDENTIAL_ATTEMPT)
+                .where(CREDENTIAL_ATTEMPT.CREDENTIAL_KIND.eq(CredentialKind.ACCOUNT_LOGIN))
+                .and(ownAccount())
+                .fetchOne(0, Integer.class))
+        .isEqualTo(expectedFamily);
   }
 
   @Test
