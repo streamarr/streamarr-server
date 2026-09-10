@@ -223,7 +223,13 @@ class FfmpegAutomationWorkflowTest {
     }
 
     var applicationSteps = listOfMaps(map(jobs.get("application")).get("steps"));
-    assertThat(stepNamed(applicationSteps, "Run HLS smoke tests")).doesNotContainKey("if");
+    assertThat(map(map(map(jobs.get("application")).get("strategy")).get("matrix")))
+        .containsEntry("suite", List.of("unit", "integration"));
+    assertThat(List.of("Install locked FFmpeg", "Run HLS smoke tests"))
+        .allSatisfy(
+            name ->
+                assertThat(stepNamed(applicationSteps, name))
+                    .containsEntry("if", "matrix.suite == 'unit'"));
     var packagingSteps = listOfMaps(map(jobs.get("package_image")).get("steps"));
     assertThat(List.of("Set up JDK 25", "Install locked FFmpeg", "Run HLS smoke tests"))
         .allSatisfy(

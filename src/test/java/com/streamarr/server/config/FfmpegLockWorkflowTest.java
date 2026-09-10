@@ -75,7 +75,8 @@ class FfmpegLockWorkflowTest {
         .containsEntry("needs", List.of("changes", "ffmpeg_lock"))
         .containsEntry("if", "needs.changes.outputs.packaging == 'true'");
     assertThat(aggregate)
-        .containsEntry("needs", List.of("changes", "ffmpeg_lock", "application", "package_image"))
+        .containsEntry(
+            "needs", List.of("changes", "ffmpeg_lock", "application", "analysis", "package_image"))
         .containsEntry("if", "${{ always() }}");
     assertThat((String) verify.get("run"))
         .contains(
@@ -83,7 +84,8 @@ class FfmpegLockWorkflowTest {
             "needs.changes.outputs.packaging",
             "needs.ffmpeg_lock.result",
             "needs.application.result",
-            "needs.package_image.result");
+            "needs.package_image.result",
+            "needs.analysis.result");
   }
 
   @Test
