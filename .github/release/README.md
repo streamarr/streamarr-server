@@ -26,9 +26,10 @@ Release Please generates the initial `0.0.11-SNAPSHOT` update itself; no POM ver
 Release Please reads immutable commit metadata: `fix:` produces a patch, `feat:` a minor, and a breaking-change marker a major.
 Legacy `structural:` and `behavioral:` commits remain visible in the release notes and count as patch changes.
 Automated release and snapshot commits use `behavioral:` too.
-The metadata plugin recognizes those version commits and excludes them from changelog entries, preventing a snapshot-only release loop.
+The metadata plugin recognizes those version commits and removes their version-bump signals and changelog entries while preserving the snapshot marker needed by Maven's release lifecycle.
 While retaining those subjects, a commit can include an additional `feat: ...` paragraph for a feature or a `BREAKING CHANGE: ...` footer for an incompatible change.
-Preserve those paragraphs in the squash commit body.
+Place those paragraphs at the bottom of the squash commit body, separated from preceding prose by a blank line, and preserve them when merging.
+This follows [Release Please's guidance for multiple changes in one commit](https://github.com/googleapis/release-please#what-if-my-pr-contains-multiple-fixes-or-features).
 PR labels do not calculate a second release version.
 
 ## Verification and recovery

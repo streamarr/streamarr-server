@@ -8,7 +8,7 @@ class ReleaseMetadata extends ManifestPlugin {
     return commits.map(commit => {
       const title = commit.pullRequest?.title || commit.message;
       const release = PullRequestTitle.parse(title, pattern);
-      return release ? { ...commit, type: 'chore' } : commit;
+      return release ? { ...commit, type: 'chore', breaking: false, notes: [] } : commit;
     });
   }
 

@@ -55,8 +55,10 @@ for (const [message, expected] of [
   ['feat: add playlists', '0.1.0'],
   ['feat!: replace playback protocol', '1.0.0'],
   ['behavioral: preserve legacy release changes', '0.0.11'],
-  ['behavioral: introduce playlists\n\nfeat: add playlists', '0.1.0'],
-  ['behavioral: replace playback\n\nBREAKING CHANGE: playback clients must migrate', '1.0.0'],
+  ['behavioral: introduce playlists\n\nAdds playlist management.\n\nfeat: add playlists', '0.1.0'],
+  ['behavioral: replace playback\n\nUpdates the playback protocol.\n\nBREAKING CHANGE: playback clients must migrate', '1.0.0'],
+  ['behavioral: introduce playlists\n\nfeat: add playlists\n\nAdditional explanation after the feature.', '0.1.0'],
+  ['behavioral: replace playback\n\nBREAKING CHANGE: playback clients must migrate\n\nAdditional explanation after the footer.', '1.0.0'],
 ]) {
   test(`keeps the POM and tag aligned for ${message}`, async () => {
     const maven = await strategy();
@@ -95,3 +97,34 @@ test('does not create a release loop from the snapshot version commit alone', as
   ]);
   assert.equal(await prepare(maven, commits, release('0.0.10')), undefined);
 });
+
+for (const footer of ['BREAKING CHANGE: copied release notes', 'Release-As: 2.0.0']) {
+  test(`ignores ${footer} on a snapshot commit when calculating the next release`, async () => {
+    const maven = await strategy();
+    const commits = parseConventionalCommits([
+      { sha: 'b'.repeat(40), message: 'fix: correct playback', files: ['src/main/java/Example.java'] },
+      {
+        sha: 'c'.repeat(40),
+        message: `behavioral: release 0.0.11-SNAPSHOT\n\n${footer}`,
+        pullRequest: { title: 'behavioral: release 0.0.11-SNAPSHOT', body: '' },
+        files: ['pom.xml'],
+      },
+    ]);
+    const pr = await prepare(maven, commits, release('0.0.10'));
+    assert.equal(pr.version.toString(), '0.0.11');
+    assert.doesNotMatch(pr.body.toString(), /copied release notes|2\.0\.0/);
+  });
+
+  test(`does not create a release loop from a snapshot commit containing ${footer}`, async () => {
+    const maven = await strategy();
+    const commits = parseConventionalCommits([
+      {
+        sha: 'c'.repeat(40),
+        message: `behavioral: release 0.0.11-SNAPSHOT\n\n${footer}`,
+        pullRequest: { title: 'behavioral: release 0.0.11-SNAPSHOT', body: '' },
+        files: ['pom.xml'],
+      },
+    ]);
+    assert.equal(await prepare(maven, commits, release('0.0.10')), undefined);
+  });
+}
