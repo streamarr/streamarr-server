@@ -1,13 +1,15 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.services.mutation.Outcome;
 import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface StreamingService {
 
-  StreamSession createSession(CreateStreamSessionCommand command);
+  Outcome<StreamSession, CreateStreamSessionRejection> createSession(
+      CreateStreamSessionCommand command);
 
   Optional<StreamSession> accessSession(PlaybackRequest request);
 

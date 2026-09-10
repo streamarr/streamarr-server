@@ -3,9 +3,12 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.media.MediaFileContainerInfo;
 import com.streamarr.server.domain.media.MediaFileStreamInfo;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbePublication;
+import com.streamarr.server.fixtures.PersistedProbeFixture;
+import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import java.util.ArrayList;
 import java.util.List;
@@ -20,11 +23,27 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   private final Map<UUID, MediaFileContainerInfo> rows = new ConcurrentHashMap<>();
   private final Map<UUID, ProbeInputs> desiredInputs = new ConcurrentHashMap<>();
   private final List<ProbePublication> publications = new ArrayList<>();
+  private Optional<ProbeOutcome.Success> defaultProbe = Optional.empty();
   private Predicate<UUID> mediaFileExists = _ -> true;
+
+  /** Answers every media file id with this probe unless a row was stored for it. */
+  public void setDefaultProbe(MediaProbe probe) {
+    defaultProbe = Optional.of(ProbeFixture.completeProbe(probe));
+  }
+
+  public void clear() {
+    defaultProbe = Optional.empty();
+    rows.clear();
+    desiredInputs.clear();
+  }
 
   @Override
   public Optional<MediaFileContainerInfo> findByMediaFileId(UUID mediaFileId) {
-    return Optional.ofNullable(rows.get(mediaFileId));
+    return Optional.ofNullable(rows.get(mediaFileId))
+        .or(
+            () ->
+                defaultProbe.map(
+                    probe -> PersistedProbeFixture.storedProbeBuilder(mediaFileId, probe).build()));
   }
 
   @Override
@@ -41,7 +60,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
       return false;
     }
 
-    var existing = findByMediaFileId(publication.mediaFileId());
+    var existing = Optional.ofNullable(rows.get(publication.mediaFileId()));
     if (existing
         .filter(row -> row.getSnapshot().equals(publication.snapshot()))
         .filter(row -> row.getProbeVersion() > publication.probeVersion())
@@ -72,7 +91,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
 
   private void invalidateOutcomeUnlessSnapshotMatches(
       UUID mediaFileId, SourceFileSnapshot snapshot) {
-    findByMediaFileId(mediaFileId)
+    Optional.ofNullable(rows.get(mediaFileId))
         .filter(row -> !row.getSnapshot().equals(snapshot))
         .ifPresent(_ -> rows.remove(mediaFileId));
   }
