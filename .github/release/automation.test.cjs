@@ -1,7 +1,17 @@
 const assert = require('node:assert/strict');
+const { spawnSync } = require('node:child_process');
+const path = require('node:path');
 const { test } = require('node:test');
 const { runReleaseAutomation } = require('./automation.cjs');
 const { mergedReleaseFixture } = require('./release-fixture.cjs');
+
+test('explains missing repository configuration when invoked from the CLI', () => {
+  const env = { ...process.env };
+  delete env.GITHUB_REPOSITORY;
+  const result = spawnSync(process.execPath, [path.join(__dirname, 'run.cjs')], { env, encoding: 'utf8' });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /GITHUB_REPOSITORY must be set/);
+});
 
 test('stops before publishing when repository auto-merge is disabled', async () => {
   const { github } = mergedReleaseFixture();

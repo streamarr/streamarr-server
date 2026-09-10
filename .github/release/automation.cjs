@@ -4,6 +4,7 @@ const { reconcile } = require('./reconcile.cjs');
 require('./metadata.cjs');
 
 async function runReleaseAutomation({ repository, token, execute = execFileSync, connect = GitHub.create }) {
+  if (!repository) throw new Error('GITHUB_REPOSITORY must be set');
   const [owner, repo] = repository.split('/');
   const autoMerge = execute('gh', ['api', `repos/${repository}`, '--jq', '.allow_auto_merge'], { encoding: 'utf8' }).trim();
   if (autoMerge !== 'true') throw new Error('Enable repository auto-merge before running release automation');
