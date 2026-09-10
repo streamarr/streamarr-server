@@ -13,25 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * Modified by Streamarr contributors: the vibrant-target constants and swatch scoring are
- * adapted from AndroidX Palette and Target (androidx commit
- * 9748764301e5dce66cbf297f6778fa658768c213), reduced to a single-target search with a
- * dominant-swatch fallback. The corner averaging, opaque-coverage gating, and pixel sampling
- * are Streamarr additions. See THIRD_PARTY_NOTICES.md.
+ * Modified by Streamarr contributors: the default swatch count and sample-area constants are
+ * adapted from AndroidX Palette (androidx commit 9748764301e5dce66cbf297f6778fa658768c213);
+ * target scoring is delegated to Palette. The corner averaging, opaque-coverage gating, and
+ * pixel sampling are Streamarr additions. See THIRD_PARTY_NOTICES.md.
  */
 package com.streamarr.server.services.metadata.color;
 
 import com.streamarr.server.domain.media.AmbientColors;
 import java.awt.image.BufferedImage;
 import java.util.Arrays;
-import java.util.Comparator;
-import java.util.List;
 import java.util.Optional;
 import java.util.SplittableRandom;
 
 /**
  * Derives ambient UI colors from artwork: a linear-light average per image quadrant for corner
- * gradient tinting, and a saturation-weighted dominant color for accents.
+ * gradient tinting, a saturation-weighted dominant color for accents, and the dark and light target
+ * swatches theme surfaces are built from.
  */
 public final class AmbientColorExtractor {
 
@@ -40,15 +38,6 @@ public final class AmbientColorExtractor {
   private static final int MAX_SAMPLED_PIXELS = 112 * 112;
   private static final int MAX_COLOR_COUNT = 16;
   private static final long DETERMINISTIC_SAMPLING_SEED = 0;
-
-  private static final float MIN_VIBRANT_SATURATION = 0.35f;
-  private static final float TARGET_SATURATION = 1f;
-  private static final float MIN_LIGHTNESS = 0.3f;
-  private static final float TARGET_LIGHTNESS = 0.5f;
-  private static final float MAX_LIGHTNESS = 0.7f;
-  private static final float WEIGHT_SATURATION = 0.24f;
-  private static final float WEIGHT_LIGHTNESS = 0.52f;
-  private static final float WEIGHT_POPULATION = 0.24f;
 
   private static final int TOP_LEFT = 0;
   private static final int TOP_RIGHT = 1;
@@ -73,14 +62,26 @@ public final class AmbientColorExtractor {
       wholeImage.addAll(quadrant);
     }
 
+    var palette = quantize(opaquePixels);
     return Optional.of(
         AmbientColors.builder()
             .topLeft(quadrantHex(quadrants[TOP_LEFT], wholeImage))
             .topRight(quadrantHex(quadrants[TOP_RIGHT], wholeImage))
             .bottomRight(quadrantHex(quadrants[BOTTOM_RIGHT], wholeImage))
             .bottomLeft(quadrantHex(quadrants[BOTTOM_LEFT], wholeImage))
-            .primary(ColorConversions.toHex(selectPrimaryColor(opaquePixels)))
+            .primary(ColorConversions.toHex(selectPrimaryColor(palette)))
+            .darkVibrant(targetHex(palette, Target.DARK_VIBRANT))
+            .darkMuted(targetHex(palette, Target.DARK_MUTED))
+            .lightVibrant(targetHex(palette, Target.LIGHT_VIBRANT))
+            .lightMuted(targetHex(palette, Target.LIGHT_MUTED))
             .build());
+  }
+
+  private static String targetHex(Palette palette, Target target) {
+    return palette
+        .swatchFor(target)
+        .map(swatch -> ColorConversions.toHex(swatch.rgb()))
+        .orElse(null);
   }
 
   private static int[] collectOpaquePixels(int[] pixels) {
@@ -123,7 +124,7 @@ public final class AmbientColorExtractor {
     return quadrant.averageHex();
   }
 
-  private static int selectPrimaryColor(int[] opaquePixels) {
+  private static Palette quantize(int[] opaquePixels) {
     var sample = samplePixels(opaquePixels);
     var swatches =
         new ColorCutQuantizer(sample, MAX_COLOR_COUNT, SwatchFilter.DEFAULT).getQuantizedColors();
@@ -132,9 +133,11 @@ public final class AmbientColorExtractor {
           new ColorCutQuantizer(sample, MAX_COLOR_COUNT, SwatchFilter.ALLOW_ALL)
               .getQuantizedColors();
     }
+    return new Palette(swatches);
+  }
 
-    var dominant = findDominantSwatch(swatches);
-    return findBestVibrantSwatch(swatches, dominant.population()).orElse(dominant).rgb();
+  private static int selectPrimaryColor(Palette palette) {
+    return palette.swatchFor(Target.VIBRANT).orElse(palette.dominantSwatch()).rgb();
   }
 
   private static int[] samplePixels(int[] opaquePixels) {
@@ -150,39 +153,6 @@ public final class AmbientColorExtractor {
       }
     }
     return sample;
-  }
-
-  private static Swatch findDominantSwatch(List<Swatch> swatches) {
-    return swatches.stream().max(Comparator.comparingInt(Swatch::population)).orElseThrow();
-  }
-
-  private static Optional<Swatch> findBestVibrantSwatch(List<Swatch> swatches, int maxPopulation) {
-    Swatch best = null;
-    var bestScore = 0f;
-    for (var swatch : swatches) {
-      if (!isVibrantCandidate(swatch)) {
-        continue;
-      }
-      var score = vibrantScore(swatch, maxPopulation);
-      if (best == null || score > bestScore) {
-        best = swatch;
-        bestScore = score;
-      }
-    }
-    return Optional.ofNullable(best);
-  }
-
-  private static boolean isVibrantCandidate(Swatch swatch) {
-    var hsl = swatch.hsl();
-    return hsl[1] >= MIN_VIBRANT_SATURATION && hsl[2] >= MIN_LIGHTNESS && hsl[2] <= MAX_LIGHTNESS;
-  }
-
-  private static float vibrantScore(Swatch swatch, int maxPopulation) {
-    var hsl = swatch.hsl();
-    var saturationScore = WEIGHT_SATURATION * (1f - Math.abs(hsl[1] - TARGET_SATURATION));
-    var lightnessScore = WEIGHT_LIGHTNESS * (1f - Math.abs(hsl[2] - TARGET_LIGHTNESS));
-    var populationScore = WEIGHT_POPULATION * (swatch.population() / (float) maxPopulation);
-    return saturationScore + lightnessScore + populationScore;
   }
 
   private static final class LinearAccumulator {

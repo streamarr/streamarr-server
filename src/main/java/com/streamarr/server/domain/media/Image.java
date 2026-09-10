@@ -53,6 +53,10 @@ public class Image extends BaseAuditableEntity<Image> {
   @AttributeOverride(name = "bottomRight", column = @Column(name = "ambient_bottom_right"))
   @AttributeOverride(name = "bottomLeft", column = @Column(name = "ambient_bottom_left"))
   @AttributeOverride(name = "primary", column = @Column(name = "ambient_primary"))
+  @AttributeOverride(name = "darkVibrant", column = @Column(name = "ambient_dark_vibrant"))
+  @AttributeOverride(name = "darkMuted", column = @Column(name = "ambient_dark_muted"))
+  @AttributeOverride(name = "lightVibrant", column = @Column(name = "ambient_light_vibrant"))
+  @AttributeOverride(name = "lightMuted", column = @Column(name = "ambient_light_muted"))
   @Getter(AccessLevel.NONE)
   @Setter(AccessLevel.NONE)
   private AmbientColors ambientColors;

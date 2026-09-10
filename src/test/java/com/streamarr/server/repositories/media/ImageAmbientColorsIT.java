@@ -7,12 +7,18 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.jooq.generated.enums.ImageEntityType;
 import com.streamarr.server.jooq.generated.enums.ImageSize;
 import com.streamarr.server.jooq.generated.enums.ImageType;
+import com.streamarr.server.jooq.generated.tables.records.ImageRecord;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.jooq.DSLContext;
+import org.jooq.Field;
+import org.jooq.InsertSetMoreStep;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 
@@ -32,13 +38,34 @@ class ImageAmbientColorsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should reject partial ambient colors when image inserted")
   void shouldRejectPartialAmbientColorsWhenImageInserted() {
-    assertThatThrownBy(this::insertImageWithOnlyPrimaryAmbientColor)
+    var insert = insertImage().set(IMAGE.AMBIENT_PRIMARY, "#00a0a0");
+
+    assertThatThrownBy(insert::execute)
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("chk_image_ambient_colors_complete");
   }
 
-  private void insertImageWithOnlyPrimaryAmbientColor() {
-    dsl.insertInto(IMAGE)
+  @ParameterizedTest(name = "{0} without primary")
+  @MethodSource("targetSwatches")
+  @DisplayName("Should reject target swatches when primary ambient color is absent")
+  void shouldRejectTargetSwatchesWhenPrimaryAmbientColorIsAbsent(Field<String> column) {
+    var insert = insertImage().set(column, "#283830");
+
+    assertThatThrownBy(insert::execute)
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("chk_image_ambient_swatches_require_primary");
+  }
+
+  private static Stream<Field<String>> targetSwatches() {
+    return Stream.of(
+        IMAGE.AMBIENT_DARK_VIBRANT,
+        IMAGE.AMBIENT_DARK_MUTED,
+        IMAGE.AMBIENT_LIGHT_VIBRANT,
+        IMAGE.AMBIENT_LIGHT_MUTED);
+  }
+
+  private InsertSetMoreStep<ImageRecord> insertImage() {
+    return dsl.insertInto(IMAGE)
         .set(IMAGE.ID, imageId)
         .set(IMAGE.ENTITY_ID, UUID.randomUUID())
         .set(IMAGE.ENTITY_TYPE, ImageEntityType.MOVIE)
@@ -46,8 +73,6 @@ class ImageAmbientColorsIT extends AbstractIntegrationTest {
         .set(IMAGE.VARIANT, ImageSize.SMALL)
         .set(IMAGE.WIDTH, 185)
         .set(IMAGE.HEIGHT, 278)
-        .set(IMAGE.AMBIENT_PRIMARY, "#00a0a0")
-        .set(IMAGE.PATH, "movie/poster-small.jpg")
-        .execute();
+        .set(IMAGE.PATH, "movie/poster-small.jpg");
   }
 }

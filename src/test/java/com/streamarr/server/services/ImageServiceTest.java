@@ -18,6 +18,7 @@ import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.exceptions.ImageProcessingException;
 import com.streamarr.server.fakes.FakeImageRepository;
+import com.streamarr.server.fixtures.AmbientArtworkFixture;
 import com.streamarr.server.services.metadata.ImageVariantService;
 import java.io.IOException;
 import java.nio.file.FileSystem;
@@ -29,6 +30,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -65,6 +68,54 @@ class ImageServiceTest {
         images.stream().filter(i -> i.getVariant() == ImageSize.SMALL).findFirst().orElseThrow();
     assertThat(small.getAmbientColors())
         .hasValueSatisfying(colors -> assertThat(colors.primary()).isEqualTo("#00a0a0"));
+  }
+
+  @Test
+  @DisplayName("Should return every artwork target when processing distinct palette profiles")
+  void shouldReturnEveryArtworkTargetWhenProcessingDistinctPaletteProfiles() throws IOException {
+    var result =
+        imageService.processImage(
+            AmbientArtworkFixture.profiles(),
+            ImageType.BACKDROP,
+            UUID.randomUUID(),
+            ImageEntityType.MOVIE);
+
+    var small =
+        result.images().stream()
+            .filter(image -> image.getVariant() == ImageSize.SMALL)
+            .findFirst()
+            .orElseThrow();
+    var colors = small.getAmbientColors().orElseThrow();
+    assertThat(colors.primary()).isEqualTo("#00a0a0");
+    assertThat(colors.darkVibrant()).as("dark vibrant").isEqualTo("#103070");
+    assertThat(colors.darkMuted()).as("dark muted").isEqualTo("#283830");
+    assertThat(colors.lightVibrant()).as("light vibrant").isEqualTo("#68f8f8");
+    assertThat(colors.lightMuted()).as("light muted").isEqualTo("#c8d0c8");
+  }
+
+  @ParameterizedTest(name = "overlapping primary RGB {0}")
+  @ValueSource(ints = {0x00A0A0, 0x68F8F8})
+  @DisplayName("Should reserve the swatch for primary when artwork fits another vibrant target")
+  void shouldReserveSwatchForPrimaryWhenArtworkFitsAnotherVibrantTarget(int rgb)
+      throws IOException {
+    var result =
+        imageService.processImage(
+            AmbientArtworkFixture.solid().rgb(rgb).png(),
+            ImageType.BACKDROP,
+            UUID.randomUUID(),
+            ImageEntityType.MOVIE);
+
+    var small =
+        result.images().stream()
+            .filter(image -> image.getVariant() == ImageSize.SMALL)
+            .findFirst()
+            .orElseThrow();
+    var colors = small.getAmbientColors().orElseThrow();
+    assertThat(colors.primary()).isEqualTo(String.format("#%06x", rgb));
+    assertThat(colors.darkVibrant()).isNull();
+    assertThat(colors.darkMuted()).isNull();
+    assertThat(colors.lightVibrant()).isNull();
+    assertThat(colors.lightMuted()).isNull();
   }
 
   @Test
