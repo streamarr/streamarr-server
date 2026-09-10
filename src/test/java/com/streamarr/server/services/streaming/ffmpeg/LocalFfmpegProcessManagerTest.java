@@ -7,7 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.AppenderBase;
+import ch.qos.logback.core.UnsynchronizedAppenderBase;
 import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.TranscodeException;
@@ -26,6 +26,9 @@ import org.slf4j.LoggerFactory;
 @DisplayName("Local FFmpeg Process Manager Tests")
 class LocalFfmpegProcessManagerTest {
 
+  private static final List<String> QUIT_ON_STDIN =
+      List.of("bash", "-c", "read -r -n 1 quit; test \"$quit\" = q");
+
   @TempDir Path tempDir;
 
   private final LocalFfmpegProcessManager manager = new LocalFfmpegProcessManager();
@@ -36,8 +39,7 @@ class LocalFfmpegProcessManagerTest {
     var sessionId = UUID.randomUUID();
 
     var process =
-        manager.startProcess(
-            sessionId, StreamSession.defaultVariant(), List.of("sleep", "30"), tempDir);
+        manager.startProcess(sessionId, StreamSession.defaultVariant(), QUIT_ON_STDIN, tempDir);
 
     assertThat(process).isNotNull();
     assertThat(process.isAlive()).isTrue();
@@ -48,14 +50,16 @@ class LocalFfmpegProcessManagerTest {
 
   @Test
   @DisplayName("Should stop process gracefully when requested")
-  void shouldStopProcessGracefullyWhenRequested() {
+  void shouldStopProcessGracefullyWhenRequested() throws Exception {
     var sessionId = UUID.randomUUID();
 
-    manager.startProcess(
-        sessionId, StreamSession.defaultVariant(), List.of("sleep", "30"), tempDir);
+    var process =
+        manager.startProcess(sessionId, StreamSession.defaultVariant(), QUIT_ON_STDIN, tempDir);
 
     manager.stopProcess(sessionId);
 
+    assertThat(process.waitFor(5, TimeUnit.SECONDS)).isTrue();
+    assertThat(process.exitValue()).isZero();
     assertThat(manager.isRunning(sessionId)).isFalse();
   }
 
@@ -91,9 +95,9 @@ class LocalFfmpegProcessManagerTest {
   void shouldTrackMultipleVariantsPerSession() {
     var sessionId = UUID.randomUUID();
 
-    manager.startProcess(sessionId, "1080p", List.of("sleep", "30"), tempDir);
-    manager.startProcess(sessionId, "720p", List.of("sleep", "30"), tempDir);
-    manager.startProcess(sessionId, "480p", List.of("sleep", "30"), tempDir);
+    manager.startProcess(sessionId, "1080p", QUIT_ON_STDIN, tempDir);
+    manager.startProcess(sessionId, "720p", QUIT_ON_STDIN, tempDir);
+    manager.startProcess(sessionId, "480p", QUIT_ON_STDIN, tempDir);
 
     assertThat(manager.isRunning(sessionId)).isTrue();
     assertThat(manager.isRunning(sessionId, "1080p")).isTrue();
@@ -108,9 +112,9 @@ class LocalFfmpegProcessManagerTest {
   void shouldStopAllVariantsWhenStoppingSession() {
     var sessionId = UUID.randomUUID();
 
-    manager.startProcess(sessionId, "1080p", List.of("sleep", "30"), tempDir);
-    manager.startProcess(sessionId, "720p", List.of("sleep", "30"), tempDir);
-    manager.startProcess(sessionId, "480p", List.of("sleep", "30"), tempDir);
+    manager.startProcess(sessionId, "1080p", QUIT_ON_STDIN, tempDir);
+    manager.startProcess(sessionId, "720p", QUIT_ON_STDIN, tempDir);
+    manager.startProcess(sessionId, "480p", QUIT_ON_STDIN, tempDir);
 
     manager.stopProcess(sessionId);
 
@@ -140,12 +144,27 @@ class LocalFfmpegProcessManagerTest {
   void shouldReportRunningForSpecificVariant() {
     var sessionId = UUID.randomUUID();
 
-    manager.startProcess(sessionId, "720p", List.of("sleep", "30"), tempDir);
+    manager.startProcess(sessionId, "720p", QUIT_ON_STDIN, tempDir);
 
     assertThat(manager.isRunning(sessionId, "720p")).isTrue();
     assertThat(manager.isRunning(sessionId, "360p")).isFalse();
 
     manager.stopProcess(sessionId);
+  }
+
+  @Test
+  @DisplayName("Should force-kill process when it ignores the quit signal")
+  void shouldForceKillProcessWhenItIgnoresQuitSignal() throws Exception {
+    var sessionId = UUID.randomUUID();
+    var process =
+        manager.startProcess(
+            sessionId, StreamSession.defaultVariant(), List.of("sleep", "30"), tempDir);
+
+    manager.stopProcess(sessionId);
+
+    assertThat(process.waitFor(5, TimeUnit.SECONDS)).isTrue();
+    assertThat(process.exitValue()).isNotZero();
+    assertThat(manager.isRunning(sessionId)).isFalse();
   }
 
   @Test
@@ -238,6 +257,7 @@ class LocalFfmpegProcessManagerTest {
       gate.release.countDown();
       cleanup.join(5000);
       assertThat(cleanup.isAlive()).as("cleanup thread must have completed its removal").isFalse();
+      assertThat(gate.timedOut).as("cleanup must resume through the explicit release").isFalse();
 
       assertThat(manager.isRunning(sessionId, StreamSession.defaultVariant()))
           .as("corpse cleanup must not unregister the live replacement")
@@ -255,11 +275,13 @@ class LocalFfmpegProcessManagerTest {
   }
 
   /** Blocks the named thread inside an observed-exit warn, exactly once. */
-  private static final class LatchingWarnAppender extends AppenderBase<ILoggingEvent> {
+  private static final class LatchingWarnAppender
+      extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
     private final CountDownLatch reached = new CountDownLatch(1);
     private final CountDownLatch release = new CountDownLatch(1);
     private final String threadName;
+    private volatile boolean timedOut;
 
     private LatchingWarnAppender(String threadName) {
       this.threadName = threadName;
@@ -273,7 +295,7 @@ class LocalFfmpegProcessManagerTest {
       }
       reached.countDown();
       try {
-        release.await(10, TimeUnit.SECONDS);
+        timedOut = !release.await(10, TimeUnit.SECONDS);
       } catch (InterruptedException _) {
         Thread.currentThread().interrupt();
       }

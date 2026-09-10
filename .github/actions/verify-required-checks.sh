@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-if (( $# != 5 )); then
-  echo "Usage: $0 <changes> <packaging> <ffmpeg-lock> <application> <package-image>" >&2
+if (( $# != 6 )); then
+  echo "Usage: $0 <changes> <packaging> <ffmpeg-lock> <application> <package-image> <analysis>" >&2
   exit 2
 fi
 
@@ -12,6 +12,7 @@ packaging_required="$2"
 ffmpeg_lock_result="$3"
 application_result="$4"
 package_image_result="$5"
+analysis_result="$6"
 if [[ "${changes_result}" != "success" ]]; then
   echo "Change detection failed: ${changes_result}" >&2
   exit 1
@@ -36,5 +37,9 @@ if [[ "${packaging_required}" == "false" \
   && "${package_image_result}" != "success" \
   && "${package_image_result}" != "skipped" ]]; then
   echo "Unexpected package image result: ${package_image_result}" >&2
+  exit 1
+fi
+if [[ "${analysis_result}" != "success" ]]; then
+  echo "Coverage and analysis verification failed: ${analysis_result}" >&2
   exit 1
 fi
