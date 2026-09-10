@@ -10,6 +10,7 @@ async function main() {
   if (autoMerge !== 'true') throw new Error('Enable repository auto-merge before running release automation');
   const github = await GitHub.create({ owner, repo, token: process.env.GH_TOKEN });
   await reconcile({
+    github,
     manifest: () => Manifest.fromManifest(github, 'main'),
     enqueue: async pr => {
       const head = execFileSync('gh', [
