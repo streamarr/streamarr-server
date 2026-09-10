@@ -4,6 +4,7 @@
 
 * **JDK 25** (LTS) -- https://www.azul.com/downloads/?version=java-25-lts[Zulu] or https://adoptium.net/[Temurin]
 * **Docker** -- for PostgreSQL (development and integration tests)
+* **Python 3** (`python3`) -- standard-library-only CI artifact regression tests
 * **Git** with GPG signing configured
 
 == Clone and Build

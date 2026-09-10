@@ -98,6 +98,7 @@ class FfmpegPackagingScriptsTest {
             .argument("failure")
             .argument("success")
             .argument("skipped")
+            .argument("success")
             .execute();
 
     assertThat(result.exitCode()).isEqualTo(1);
@@ -114,6 +115,7 @@ class FfmpegPackagingScriptsTest {
             .argument("success")
             .argument("failure")
             .argument("skipped")
+            .argument("success")
             .execute();
 
     assertThat(result.exitCode()).isEqualTo(1);
@@ -130,6 +132,7 @@ class FfmpegPackagingScriptsTest {
             .argument("success")
             .argument("success")
             .argument("skipped")
+            .argument("success")
             .execute();
 
     assertThat(result.exitCode()).isEqualTo(1);
@@ -146,6 +149,7 @@ class FfmpegPackagingScriptsTest {
             .argument("success")
             .argument("success")
             .argument("skipped")
+            .argument("success")
             .execute();
 
     assertThat(result.exitCode()).isEqualTo(1);
@@ -162,6 +166,7 @@ class FfmpegPackagingScriptsTest {
             .argument("success")
             .argument("success")
             .argument("skipped")
+            .argument("success")
             .execute();
 
     assertThat(result.exitCode()).isEqualTo(1);
@@ -178,6 +183,7 @@ class FfmpegPackagingScriptsTest {
             .argument("success")
             .argument("success")
             .argument("failure")
+            .argument("success")
             .execute();
 
     assertThat(result.exitCode()).isEqualTo(1);
@@ -194,6 +200,7 @@ class FfmpegPackagingScriptsTest {
             .argument("success")
             .argument("success")
             .argument("skipped")
+            .argument("success")
             .execute();
     var withPackaging =
         command(REQUIRED_CHECKS_VERIFIER)
@@ -202,10 +209,30 @@ class FfmpegPackagingScriptsTest {
             .argument("success")
             .argument("success")
             .argument("success")
+            .argument("success")
             .execute();
 
     assertThat(withoutPackaging.exitCode()).isZero();
     assertThat(withPackaging.exitCode()).isZero();
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"failure", "cancelled", "skipped", ""})
+  @DisplayName("Should reject the required CI gate when coverage and analysis do not succeed")
+  void shouldRejectRequiredCiGateWhenCoverageAndAnalysisDoNotSucceed(String analysisResult)
+      throws Exception {
+    var result =
+        command(REQUIRED_CHECKS_VERIFIER)
+            .argument("success")
+            .argument("false")
+            .argument("success")
+            .argument("success")
+            .argument("skipped")
+            .argument(analysisResult)
+            .execute();
+
+    assertThat(result.exitCode()).isEqualTo(1);
+    assertThat(result.output()).contains("Coverage and analysis verification failed");
   }
 
   @Test

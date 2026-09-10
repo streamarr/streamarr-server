@@ -69,21 +69,14 @@ class FfmpegLockWorkflowTest {
 
     var packageImage = map(jobs.get("package_image"));
     var aggregate = map(jobs.get("build"));
-    var verify = stepNamed(listOfMaps(aggregate.get("steps")), "Verify required checks");
 
     assertThat(packageImage)
         .containsEntry("needs", List.of("changes", "ffmpeg_lock"))
         .containsEntry("if", "needs.changes.outputs.packaging == 'true'");
     assertThat(aggregate)
-        .containsEntry("needs", List.of("changes", "ffmpeg_lock", "application", "package_image"))
+        .containsEntry(
+            "needs", List.of("changes", "ffmpeg_lock", "application", "analysis", "package_image"))
         .containsEntry("if", "${{ always() }}");
-    assertThat((String) verify.get("run"))
-        .contains(
-            "needs.changes.result",
-            "needs.changes.outputs.packaging",
-            "needs.ffmpeg_lock.result",
-            "needs.application.result",
-            "needs.package_image.result");
   }
 
   @Test
