@@ -31,10 +31,14 @@ function checkout(t) {
   return { directory, git };
 }
 
+function runStep(step, options) {
+  const flags = step.shell === 'bash' ? ['-e', '-o', 'pipefail'] : ['-e'];
+  return spawnSync('bash', [...flags, '-c', step.run], { encoding: 'utf8', ...options });
+}
+
 function validate(directory) {
-  const options = validation.shell === 'bash' ? ['-e', '-o', 'pipefail'] : ['-e'];
-  return spawnSync('bash', [...options, '-c', validation.run], {
-    cwd: directory, encoding: 'utf8',
+  return runStep(validation, {
+    cwd: directory,
     env: { ...process.env, RELEASE_TAG: 'v1.2.3', GITHUB_OUTPUT: path.join(directory, 'outputs') },
   });
 }
