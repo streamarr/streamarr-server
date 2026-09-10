@@ -22,6 +22,7 @@ import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.jooq.generated.enums.ProfileShareStatus;
 import com.streamarr.server.jooq.generated.tables.records.UserAccountRecord;
 import com.streamarr.server.repositories.JooqQueryHelper;
+import com.streamarr.server.repositories.PostgresTransactionLocks;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import jakarta.persistence.EntityManager;
@@ -51,6 +52,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCustom {
 
   private final DSLContext dsl;
+  private final PostgresTransactionLocks transactionLocks;
   private final EntityManager entityManager;
   private final AuditorAware<UUID> auditorAware;
   private final Clock clock;
@@ -182,7 +184,7 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
   @Override
   public Set<UUID> lockByIds(Set<UUID> accountIds, Duration timeout) {
     requireActiveTransaction();
-    dsl.setLocal(DSL.name("lock_timeout"), DSL.inline(timeout.toMillis() + "ms")).execute();
+    transactionLocks.limitLockWait(timeout);
     return dsl.select(USER_ACCOUNT.ID)
         .from(USER_ACCOUNT)
         .where(USER_ACCOUNT.ID.in(accountIds))

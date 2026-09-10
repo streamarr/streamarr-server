@@ -1,5 +1,7 @@
 package com.streamarr.server.services.auth;
 
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitBlockedBackendPid;
+import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -17,6 +19,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,6 +48,8 @@ class DeviceIssuanceCapConcurrencyIT extends AbstractIntegrationTest {
 
   @Autowired private DeviceAuthProperties properties;
 
+  @Autowired private DataSource dataSource;
+
   @BeforeEach
   void claimBootstrap() {
     authTestSupport.claimBootstrap();
@@ -54,6 +59,32 @@ class DeviceIssuanceCapConcurrencyIT extends AbstractIntegrationTest {
   void deleteSeededRows() {
     authTestSupport.unclaimBootstrap();
     authorizationRepository.deleteAll();
+  }
+
+  @Test
+  @DisplayName("Should wait for the existing issuance lock when creating a device code")
+  void shouldWaitForExistingIssuanceLockWhenCreatingDeviceCode() throws Exception {
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var holder = dataSource.getConnection();
+        var observer = dataSource.getConnection()) {
+      holder.setAutoCommit(false);
+      try (var statement = holder.prepareStatement("SELECT pg_advisory_xact_lock(?)")) {
+        statement.setLong(1, 0x5354524D_44455601L);
+        statement.execute();
+      }
+
+      var issuance =
+          executor.submit(() -> deviceAuthorizationService.issue("Waiting TV", "waiting-esn"));
+      try {
+        awaitBlockedBackendPid(observer, backendPid(holder), "advisory");
+        assertThat(authorizationRepository.countOutstanding(Instant.now())).isZero();
+      } finally {
+        holder.rollback();
+      }
+
+      assertThat(issuance.get(10, TimeUnit.SECONDS).deviceCode()).isNotBlank();
+      assertThat(authorizationRepository.countOutstanding(Instant.now())).isEqualTo(1);
+    }
   }
 
   @Test
