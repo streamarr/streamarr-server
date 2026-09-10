@@ -3,9 +3,13 @@ package com.streamarr.server.domain.media;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Media file probe entity identity")
@@ -22,7 +26,7 @@ class MediaFileProbeIdentityTest {
 
     assertThat(original).isEqualTo(refreshed);
     assertThat(refreshed).isEqualTo(original);
-    assertThat(original.hashCode()).isEqualTo(MediaFileContainerInfo.class.hashCode());
+    assertThat(original).hasSameHashCodeAs(MediaFileContainerInfo.class);
     assertThat(refreshed).hasSameHashCodeAs(original);
   }
 
@@ -44,19 +48,17 @@ class MediaFileProbeIdentityTest {
 
     assertThat(original).isEqualTo(refreshed);
     assertThat(refreshed).isEqualTo(original);
-    assertThat(original.hashCode()).isEqualTo(MediaFileStreamInfo.class.hashCode());
+    assertThat(original).hasSameHashCodeAs(MediaFileStreamInfo.class);
     assertThat(refreshed).hasSameHashCodeAs(original);
     assertThat(original)
         .isNotEqualTo(
             MediaFileStreamInfo.builder().id(new MediaFileStreamId(mediaFileId, 2)).build())
         .isNotEqualTo(
-            MediaFileStreamInfo.builder().id(new MediaFileStreamId(UUID.randomUUID(), 1)).build())
-        .isNotEqualTo(null)
-        .isNotEqualTo(mediaFileId);
+            MediaFileStreamInfo.builder().id(new MediaFileStreamId(UUID.randomUUID(), 1)).build());
     var transientStream = MediaFileStreamInfo.builder().build();
-    assertThat(transientStream).isEqualTo(transientStream);
-    assertThat(transientStream).isNotEqualTo(MediaFileStreamInfo.builder().build());
-    assertThat(transientStream).isNotEqualTo(original);
+    assertThat(transientStream)
+        .isNotEqualTo(MediaFileStreamInfo.builder().build())
+        .isNotEqualTo(original);
     assertThat(original).isNotEqualTo(transientStream);
   }
 
@@ -70,11 +72,29 @@ class MediaFileProbeIdentityTest {
 
     assertThat(persisted)
         .isNotEqualTo(MediaFileContainerInfo.builder().mediaFileId(UUID.randomUUID()).build())
-        .isNotEqualTo(null)
-        .isNotEqualTo(mediaFileId)
         .isNotEqualTo(transientContainer);
-    assertThat(transientContainer).isEqualTo(transientContainer);
-    assertThat(transientContainer).isNotEqualTo(MediaFileContainerInfo.builder().build());
-    assertThat(transientContainer).isNotEqualTo(persisted);
+    assertThat(transientContainer)
+        .isNotEqualTo(MediaFileContainerInfo.builder().build())
+        .isNotEqualTo(persisted);
+  }
+
+  @ParameterizedTest
+  @MethodSource("equalityBoundaries")
+  @DisplayName("Should follow the equality contract for null, other types, and the same instance")
+  void shouldFollowEqualityContractForNullOtherTypesAndSameInstance(
+      Object entity, Object other, boolean expected) {
+    assertThat(entity.equals(other)).isEqualTo(expected);
+  }
+
+  private static Stream<Arguments> equalityBoundaries() {
+    var container = MediaFileContainerInfo.builder().build();
+    var stream = MediaFileStreamInfo.builder().build();
+    return Stream.of(
+        Arguments.of(container, null, false),
+        Arguments.of(container, UUID.randomUUID(), false),
+        Arguments.of(container, container, true),
+        Arguments.of(stream, null, false),
+        Arguments.of(stream, UUID.randomUUID(), false),
+        Arguments.of(stream, stream, true));
   }
 }
