@@ -5,7 +5,8 @@ With no remote settings, Streamarr runs the existing local FFmpeg path and requi
 
 The supported first topology is one Streamarr server and zero or more outbound workers.
 Workers read the same media through an operator-defined source namespace, run the same variant engine as local playback, and upload segments to the server over mTLS gRPC.
-Workers do not accept inbound connections and never connect to PostgreSQL.
+Workers connect outward for control and never connect to PostgreSQL.
+Their dedicated inbound port serves only health checks.
 
 == Identity and media contract
 
@@ -40,6 +41,16 @@ The server exposes Spring Boot's Kubernetes probe groups at `/actuator/health/li
 Leave the `transcodeExecutor` health indicator out of both probe groups: it reports DOWN whenever zero workers are connected, which is an alerting signal, not a restart or unrouting signal.
 Restarting the server cannot conjure workers, and marking it unready would remove the worker gRPC port from the shared Service — leaving workers permanently unable to connect and make it ready again.
 Alert on the aggregate `/actuator/health` instead.
+
+Workers expose plaintext gRPC health checks on `TRANSCODE_WORKER_HEALTH_PORT`, which defaults to `9091`.
+The port listens on all interfaces so Kubernetes can probe the Pod IP.
+The `liveness` service reports local process health.
+The `readiness` service requires successful initialization and a session accepted by the server.
+A worker stays ready when all execution slots are occupied.
+Losing the server connection changes readiness without failing liveness.
+The server never dials this health port.
+It continues to dispatch work through the worker session using advertised capabilities and available slots.
+Tests may set the health port to `0` and read the bound port from the worker after startup.
 
 == Docker Compose
 

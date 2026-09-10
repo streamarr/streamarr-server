@@ -69,6 +69,31 @@ class KubernetesManifestContractTest {
   }
 
   @Test
+  @DisplayName("Should probe distinct worker health services on the configured dedicated port")
+  void shouldProbeDistinctWorkerHealthServicesOnTheConfiguredDedicatedPort() {
+    var worker = container(workerDeployment);
+
+    assertThat(asMap(asMap(worker.get("livenessProbe")).get("grpc")))
+        .containsEntry("port", 9091)
+        .containsEntry("service", "liveness");
+    assertThat(asMap(asMap(worker.get("readinessProbe")).get("grpc")))
+        .containsEntry("port", 9091)
+        .containsEntry("service", "readiness");
+    assertThat(((List<?>) worker.get("ports")).stream().map(KubernetesManifestContractTest::asMap))
+        .anySatisfy(
+            port ->
+                assertThat(port)
+                    .containsEntry("name", "health-grpc")
+                    .containsEntry("containerPort", 9091));
+    assertThat(((List<?>) worker.get("env")).stream().map(KubernetesManifestContractTest::asMap))
+        .anySatisfy(
+            value ->
+                assertThat(value)
+                    .containsEntry("name", "TRANSCODE_WORKER_HEALTH_PORT")
+                    .containsEntry("value", "9091"));
+  }
+
+  @Test
   @DisplayName("Should declare resource requests for both workloads when deployed")
   void shouldDeclareResourceRequestsForBothWorkloadsWhenDeployed() {
     for (var deployment : List.of(serverDeployment, workerDeployment)) {
