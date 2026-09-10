@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -10,9 +11,9 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.MaxConcurrentTranscodesException;
-import com.streamarr.server.exceptions.MediaFileNotFoundException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.mutation.Outcome;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
@@ -28,7 +29,7 @@ public class HlsStreamingService implements StreamingService {
   private final MediaFileRepository mediaFileRepository;
   private final TranscodeExecutor transcodeExecutor;
   private final SegmentStore segmentStore;
-  private final FfprobeService ffprobeService;
+  private final PlaybackProbeService playbackProbeService;
   private final TranscodeDecisionService transcodeDecisionService;
   private final QualityLadderService qualityLadderService;
   private final StreamingProperties properties;
@@ -38,25 +39,39 @@ public class HlsStreamingService implements StreamingService {
   private final SegmentDeliveryCoordinator deliveryCoordinator;
 
   @Override
-  public StreamSession createSession(CreateStreamSessionCommand command) {
+  public Outcome<StreamSession, CreateStreamSessionRejection> createSession(
+      CreateStreamSessionCommand command) {
     var identity = command.identity();
     if (identity.profileId() == null
         || !authorityGate.allows(identity, identity.playbackAuthority())) {
       throw new AuthenticationRequiredException();
     }
 
-    var authority = identity.playbackAuthority();
+    var mediaFileId = command.mediaFileId();
+    var mediaFile = mediaFileRepository.findById(mediaFileId);
+    if (mediaFile.isEmpty()) {
+      return Outcome.rejected(new CreateStreamSessionRejection.MediaFileNotFound(mediaFileId));
+    }
+
+    return playbackProbeService
+        .read(mediaFileId)
+        .fold(probe -> startSession(command, mediaFile.get(), probe), Outcome::rejected);
+  }
+
+  private Outcome<StreamSession, CreateStreamSessionRejection> startSession(
+      CreateStreamSessionCommand command, MediaFile mediaFile, MediaProbe probe) {
+    var authority = command.identity().playbackAuthority();
     var mediaFileId = command.mediaFileId();
     var options = command.options();
-    var mediaFile =
-        mediaFileRepository
-            .findById(mediaFileId)
-            .orElseThrow(() -> new MediaFileNotFoundException(mediaFileId));
-
-    var probe = ffprobeService.probeMedia(FilepathCodec.decode(mediaFile.getFilepathUri()));
     var decision = transcodeDecisionService.decide(probe, options);
     var variants = resolveVariants(probe, options, decision);
-    variants = enforceCapacityLimits(decision.transcodeMode(), variants);
+    try {
+      variants = enforceCapacityLimits(decision.transcodeMode(), variants);
+    } catch (MaxConcurrentTranscodesException _) {
+      return Outcome.rejected(
+          new CreateStreamSessionRejection.TranscodeCapacityUnavailable(
+              properties.maxConcurrentTranscodes()));
+    }
 
     var sessionId = UUID.randomUUID();
     var now = Instant.now();
@@ -89,7 +104,7 @@ public class HlsStreamingService implements StreamingService {
         decision.transcodeMode(),
         variants.size());
 
-    return session;
+    return Outcome.accepted(session);
   }
 
   private void rollbackFailedStartup(UUID sessionId, RuntimeException startupFailure) {

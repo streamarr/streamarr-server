@@ -5,6 +5,7 @@ import static com.streamarr.server.support.TokenTestSupport.decode;
 import static com.streamarr.server.support.TokenTestSupport.tokenProperties;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.jayway.jsonpath.DocumentContext;
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.config.StreamingProperties;
@@ -13,6 +14,7 @@ import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
+import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -25,7 +27,9 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
+import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
+import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
 import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
@@ -39,6 +43,7 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -68,6 +73,209 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
     })
 @DisplayName("Streaming Resolver Tests")
 class StreamingResolverTest {
+
+  @Test
+  @DisplayName("Should return a typed capacity error when V2 playback has no transcode slots")
+  void shouldReturnATypedCapacityErrorWhenV2PlaybackHasNoTranscodeSlots() {
+    STUB_SERVICE.setRejection(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3));
+    var context = requestV2Session(UUID.randomUUID().toString());
+
+    assertThat(context.read("data.createStreamSessionV2.session", Object.class)).isNull();
+    assertThat(context.read("data.createStreamSessionV2.userErrors[0].__typename", String.class))
+        .isEqualTo("TranscodeCapacityUnavailableError");
+  }
+
+  @Test
+  @DisplayName("Should return a typed file error when the V2 media file no longer exists")
+  void shouldReturnATypedFileErrorWhenTheV2MediaFileNoLongerExists() {
+    var mediaFileId = UUID.randomUUID();
+    STUB_SERVICE.setRejection(new CreateStreamSessionRejection.MediaFileNotFound(mediaFileId));
+    var context = requestV2Session(mediaFileId.toString());
+
+    assertThat(context.read("data.createStreamSessionV2.session", Object.class)).isNull();
+    assertThat(context.read("data.createStreamSessionV2.userErrors[0].__typename", String.class))
+        .isEqualTo("MediaFileNotFoundError");
+    List<String> inputPath = context.read("data.createStreamSessionV2.userErrors[0].inputPath");
+    assertThat(inputPath).containsExactly("mediaFileId");
+  }
+
+  @Test
+  @DisplayName("Should return an input error when the V2 media file ID is malformed")
+  void shouldReturnAnInputErrorWhenTheV2MediaFileIdIsMalformed() {
+    var context = requestV2Session("not-a-uuid");
+
+    assertThat(context.read("data.createStreamSessionV2.session", Object.class)).isNull();
+    assertThat(context.read("data.createStreamSessionV2.userErrors[0].__typename", String.class))
+        .isEqualTo("InvalidIdError");
+    List<String> inputPath = context.read("data.createStreamSessionV2.userErrors[0].inputPath");
+    assertThat(inputPath).containsExactly("mediaFileId");
+    assertThat(STUB_SERVICE.getLastCreateProfileId()).isNull();
+  }
+
+  @ParameterizedTest
+  @MethodSource("terminalProbeErrors")
+  @DisplayName("Should return the typed terminal failure when V2 playback has a failed probe")
+  void shouldReturnTheTypedTerminalFailureWhenV2PlaybackHasAFailedProbe(
+      ProbeError reason, String errorType, String message) {
+    STUB_SERVICE.setRejection(new CreateStreamSessionRejection.ProbeFailed(reason));
+    var context = requestV2Session(UUID.randomUUID().toString());
+    List<Map<String, String>> errors = context.read("data.createStreamSessionV2.userErrors");
+
+    assertThat(context.read("data.createStreamSessionV2.session", Object.class)).isNull();
+    assertThat(errors).containsExactly(Map.of("__typename", errorType, "message", message));
+  }
+
+  static Stream<Arguments> terminalProbeErrors() {
+    return Stream.of(
+        Arguments.of(
+            ProbeError.INVALID_MEDIA,
+            "InvalidMediaFileError",
+            "This file cannot be read as supported media."),
+        Arguments.of(
+            ProbeError.NO_VIDEO_STREAM,
+            "MediaFileHasNoVideoError",
+            "This file has no video stream."));
+  }
+
+  @Test
+  @DisplayName("Should return a typed not-ready payload when V2 playback has no probe outcome")
+  void shouldReturnATypedNotReadyPayloadWhenV2PlaybackHasNoProbeOutcome() {
+    STUB_SERVICE.setRejection(new CreateStreamSessionRejection.ProbeNotReady());
+    var context = requestV2Session(UUID.randomUUID().toString());
+    List<Map<String, String>> errors = context.read("data.createStreamSessionV2.userErrors");
+
+    assertThat(context.read("data.createStreamSessionV2.session", Object.class)).isNull();
+    assertThat(errors)
+        .containsExactly(
+            Map.of(
+                "__typename", "MediaFileProbeNotReadyError",
+                "message", "This file is being prepared for playback. Try again shortly."));
+  }
+
+  @Test
+  @DisplayName("Should return a playable session payload when V2 creation succeeds")
+  void shouldReturnAPlayableSessionPayloadWhenV2CreationSucceeds() {
+    var session = buildSession(UUID.randomUUID());
+    STUB_SERVICE.setNextResult(session);
+    var context =
+        dgsQueryExecutor.executeAndGetDocumentContext(
+            """
+        mutation {
+          createStreamSessionV2(input: {
+            mediaFileId: "%s"
+            options: {quality: HIGH_720P, supportedCodecs: ["h264"],
+              supportedAudioCodecs: ["aac", "ac3"], maxAudioChannels: 6}
+          }) {
+            session { id streamUrl transcodeMode }
+            userErrors { __typename }
+          }
+        }
+        """
+                .formatted(session.getMediaFileId()));
+
+    assertThat(context.read("data.createStreamSessionV2.session.id", String.class))
+        .isEqualTo(session.getSessionId().toString());
+    assertThat(context.read("data.createStreamSessionV2.session.transcodeMode", String.class))
+        .isEqualTo("REMUX");
+    List<Object> errors = context.read("data.createStreamSessionV2.userErrors");
+    assertThat(errors).isEmpty();
+    var streamUrl = context.read("data.createStreamSessionV2.session.streamUrl", String.class);
+    assertThat(streamUrl)
+        .startsWith("/api/stream/" + session.getSessionId() + "/multivariant.m3u8?t=");
+    var decoded = decodeToken(streamUrl.substring(streamUrl.indexOf("?t=") + 3));
+    assertThat(Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt()))
+        .isEqualTo(session.getMediaProbe().duration().plus(streamingProperties.sessionRetention()));
+    assertThat(STUB_SERVICE.getLastCreateProfileId()).isEqualTo(TestIdentityConstants.PROFILE_ID);
+    var options = STUB_SERVICE.getLastReceivedOptions();
+    assertThat(options.quality()).isEqualTo(VideoQuality.HIGH_720P);
+    assertThat(options.supportedCodecs()).containsExactly("h264");
+    assertThat(options.supportedAudioCodecs()).containsExactly("aac", "ac3");
+    assertThat(options.maxAudioChannels()).isEqualTo(6);
+  }
+
+  @Test
+  @DisplayName("Should destroy the accepted session when V2 playback token issuance fails")
+  void shouldDestroyTheAcceptedSessionWhenV2PlaybackTokenIssuanceFails() {
+    var sessionId = UUID.randomUUID();
+    STUB_SERVICE.setNextResult(buildSessionOwnedBy(sessionId, UUID.randomUUID()));
+
+    var result =
+        dgsQueryExecutor.execute(
+            """
+        mutation {
+          createStreamSessionV2(input: {mediaFileId: "%s"}) {
+            session { id streamUrl }
+            userErrors { __typename }
+          }
+        }
+        """
+                .formatted(UUID.randomUUID()));
+
+    assertThat(result.getErrors()).hasSize(1);
+    assertThat(result.getErrors().getFirst().getMessage())
+        .contains("Streaming session not found: " + sessionId);
+    assertThat(result.toSpecification().toString()).doesNotContain("?t=");
+    assertThat(STUB_SERVICE.getActiveSessionCount()).isZero();
+  }
+
+  @ParameterizedTest
+  @MethodSource("legacyCreationFailures")
+  @DisplayName("Should preserve the legacy failure channel when session creation is rejected")
+  void shouldPreserveTheLegacyFailureChannelWhenSessionCreationIsRejected(
+      CreateStreamSessionRejection reason, String message) {
+    STUB_SERVICE.setRejection(reason);
+
+    var result =
+        dgsQueryExecutor.execute(
+            """
+        mutation {
+          createStreamSession(mediaFileId: "%s") { id streamUrl }
+        }
+        """
+                .formatted(UUID.randomUUID()));
+
+    assertThat(result.getErrors()).hasSize(1);
+    assertThat(result.getErrors().getFirst().getMessage()).contains(message);
+    assertThat(result.toSpecification().toString()).doesNotContain("?t=");
+    assertThat(STUB_SERVICE.getActiveSessionCount()).isZero();
+  }
+
+  static Stream<Arguments> legacyCreationFailures() {
+    var mediaFileId = UUID.randomUUID();
+    return Stream.of(
+        Arguments.of(
+            new CreateStreamSessionRejection.MediaFileNotFound(mediaFileId),
+            "Media file not found: " + mediaFileId),
+        Arguments.of(
+            new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3),
+            "Maximum concurrent transcodes reached: 3"),
+        Arguments.of(
+            new CreateStreamSessionRejection.ProbeNotReady(),
+            "Media processing failed. Check server logs for details"),
+        Arguments.of(
+            new CreateStreamSessionRejection.ProbeFailed(ProbeError.INVALID_MEDIA),
+            "Media processing failed. Check server logs for details"),
+        Arguments.of(
+            new CreateStreamSessionRejection.ProbeFailed(ProbeError.NO_VIDEO_STREAM),
+            "Media processing failed. Check server logs for details"));
+  }
+
+  private DocumentContext requestV2Session(String mediaFileId) {
+    return dgsQueryExecutor.executeAndGetDocumentContext(
+        """
+        mutation {
+          createStreamSessionV2(input: {mediaFileId: "%s"}) {
+            session { id }
+            userErrors {
+              __typename
+              ... on MutationError { message }
+              ... on InputMutationError { inputPath }
+            }
+          }
+        }
+        """
+            .formatted(mediaFileId));
+  }
 
   private static final StubStreamingService STUB_SERVICE = new StubStreamingService();
 
@@ -412,12 +620,14 @@ class StreamingResolverTest {
   private static class StubStreamingService implements StreamingService {
 
     private StreamSession nextResult;
+    private Optional<CreateStreamSessionRejection> rejection = Optional.empty();
     private StreamingOptions lastReceivedOptions;
     private UUID lastCreateProfileId;
     private UUID lastDestroyProfileId;
 
     void reset() {
       nextResult = null;
+      rejection = Optional.empty();
       lastReceivedOptions = null;
       lastCreateProfileId = null;
       lastDestroyProfileId = null;
@@ -425,6 +635,10 @@ class StreamingResolverTest {
 
     void setNextResult(StreamSession session) {
       this.nextResult = session;
+    }
+
+    void setRejection(CreateStreamSessionRejection reason) {
+      rejection = Optional.of(reason);
     }
 
     StreamingOptions getLastReceivedOptions() {
@@ -440,10 +654,15 @@ class StreamingResolverTest {
     }
 
     @Override
-    public StreamSession createSession(CreateStreamSessionCommand command) {
+    public Outcome<StreamSession, CreateStreamSessionRejection> createSession(
+        CreateStreamSessionCommand command) {
       this.lastReceivedOptions = command.options();
       this.lastCreateProfileId = command.identity().profileId();
-      return nextResult;
+      if (rejection.isPresent()) {
+        return Outcome.rejected(rejection.get());
+      }
+
+      return Outcome.accepted(nextResult);
     }
 
     @Override
