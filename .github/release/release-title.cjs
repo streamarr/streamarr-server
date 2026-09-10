@@ -6,7 +6,7 @@ function isReleaseTitle(title, pattern) {
     const version = parsed?.getVersion();
     return Boolean(version && !version.build
       && (!version.preRelease || version.preRelease === 'SNAPSHOT')
-      && parsed.toString() === title);
+      && PullRequestTitle.ofVersion(version, pattern).toString() === title);
   } catch {
     return false;
   }
