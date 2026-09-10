@@ -119,7 +119,9 @@ jobs:
           fi
 
       - name: Build and test
-        run: ./mvnw --batch-mode verify -Pci-${{ matrix.suite }}
+        run: >-
+          ./mvnw --batch-mode verify -Pci-${{ matrix.suite }}
+          -Dcheckstyle.skip=${{ matrix.suite == 'integration' }}
 
       - name: Install locked FFmpeg
         if: matrix.suite == 'unit'
