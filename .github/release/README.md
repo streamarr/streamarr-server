@@ -1,14 +1,24 @@
 # Maven releases
 
 Release Please owns the Maven version, changelog, release tag, and GitHub release.
-The architectural decision and alternatives are recorded in [ADR 0032](https://github.com/streamarr/streamarr-adr/pull/10).
+The architectural decision and alternatives are recorded in [ADR 0034](https://github.com/streamarr/streamarr-adr/pull/10).
 The serialized workflow runs after pushes to `main`; `always-update` refreshes the open release PR against the current base.
 GitHub auto-merge waits for the repository ruleset, including an up-to-date branch and successful build, Sonar, and Snyk checks.
-The same lifecycle merges the next development snapshot PR without publishing a snapshot release.
+Merging a release PR creates its Git tag and an unpublished GitHub draft release.
+The same lifecycle merges the next development snapshot PR while the draft waits for publication; snapshot updates do not create GitHub releases.
+
+## Publish a prepared release
+
+Open the prepared draft under the repository's **Releases** page, review its notes, and click **Publish release** when ready.
+That publication event starts the container publisher. Preparing the draft does not publish images.
+The draft records the version and source revision already merged through the release PR. Keep its tag unchanged; choosing another version must happen before the release PR merges so the POM and tag continue to agree.
+
+Drafts have Git tags immediately so Release Please can find the prepared version and advance the Maven snapshot without waiting for publication.
+Each draft is a fixed release candidate; later commits belong to subsequent release PRs and do not move its tag.
 
 The release publisher checks that the tag is stable SemVer, the tagged commit belongs to `main`, and the POM version matches the tag.
 Both architectures build that validated commit and use its version in the image metadata and tags.
-Manual publishing requires an existing tag and performs the same validation.
+Manual publishing retries require an already-published GitHub release and perform the same validation. A tag belonging to an unpublished draft is rejected.
 Only the current GitHub release can advance Docker's `latest` tag; retrying an older release preserves it.
 
 ## Setup
@@ -29,12 +39,13 @@ Release Please generates the initial `0.0.11-SNAPSHOT` update itself; no POM ver
 
 Release Please reads conventional commit metadata: `fix:` produces a patch, `feat:` a minor, and a breaking-change marker a major.
 The repository's `structural:` and `behavioral:` subjects remain visible in the release notes and count as patch changes.
+Ordinary patch releases need no extra labels or commit-body metadata.
 Automated release and snapshot commits use `behavioral:` too.
 The metadata plugin recognizes those version commits and removes their version-bump signals and changelog entries while preserving the snapshot marker needed by Maven's release lifecycle.
 The `streamarr-maven` strategy extends the pinned Maven strategy with strict release-title recognition in its snapshot scan, so ordinary titles such as `behavioral: release 4k playback sessions` remain regular changes.
 The metadata plugin restores the configured title on snapshot PRs because the SDK builds them with its default title pattern; subsequent runs must recognize the merged snapshot to advance to a stable release.
 While retaining those subjects, a commit can include an additional `feat: ...` paragraph for a feature or a `BREAKING CHANGE: ...` footer for an incompatible change.
-Place those paragraphs at the bottom of the squash commit body, separated from preceding prose by a blank line, and preserve them when merging.
+Separate those paragraphs from preceding prose by a blank line and preserve them when merging.
 This follows [Release Please's guidance for multiple changes in one commit](https://github.com/googleapis/release-please#what-if-my-pr-contains-multiple-fixes-or-features).
 PR labels do not calculate a second release version.
 Renovate explicitly uses semantic commits. Production Maven dependency updates use `fix(deps):`; ordinary `chore(deps):` updates do not initiate a release or appear in the notes.
@@ -53,7 +64,7 @@ Renovate maintains the tooling version and lockfile.
 
 Re-run **Release Please** with `workflow_dispatch` after an API failure; it reconciles already merged PRs and pending releases.
 If it reports an unprocessed merged release PR, restore that PR's original release title and structured release body before retrying. A pending release must be processed before another release PR is prepared.
-Re-run **Release Publisher** with the existing tag after a publishing failure.
+Re-run **Release Publisher** with the already-published release's tag after an image publishing failure.
 Correct a failed required check through the normal PR workflow; keep the release PR pending until the ruleset allows it to merge.
 
 The release notes omit author attribution, and automated squash merges explicitly use an empty commit body.
