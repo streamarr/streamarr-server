@@ -4,10 +4,10 @@ const { reconcile } = require('./reconcile.cjs');
 const { mergedReleaseFixture } = require('./release-fixture.cjs');
 const github = { async *pullRequestIterator() {} };
 
-test('prepares a merged release as an unpublished GitHub draft', async () => {
+test('publishes the merged release at its recorded version and revision', async () => {
   const fixture = mergedReleaseFixture();
   await (await fixture.manifest()).createReleases();
-  assert.equal(fixture.github.releases[0].draft, true);
+  assert.equal(fixture.github.releases[0].draft, false);
   assert.equal(fixture.github.releases[0].tagName, 'v0.0.11');
   assert.equal(fixture.github.releases[0].sha, 'd'.repeat(40));
 });
@@ -32,29 +32,30 @@ test('fails visibly when a merged release body cannot be parsed', async () => {
   assert.deepEqual(queued, []);
 });
 
-test('tags a draft release and queues its next snapshot before publication', async () => {
+test('tags and publishes a release before queuing its next snapshot', async () => {
   const fixture = mergedReleaseFixture();
   const queued = [];
   await reconcile({ ...fixture, enqueue: async pr => queued.push(pr) });
   assert.equal(fixture.github.releases[0].tagName, 'v0.0.11');
   assert.equal(fixture.github.releases[0].sha, 'd'.repeat(40));
-  assert.equal(fixture.github.releases[0].draft, true);
+  assert.equal(fixture.github.releases[0].draft, false);
   assert.deepEqual(fixture.github.tags[0], { name: 'v0.0.11', sha: 'd'.repeat(40) });
   assert.equal(queued.length, 1);
   assert.equal(queued[0].title, 'chore(main): release 0.0.12-SNAPSHOT');
   assert.deepEqual(queued[0].labels, ['autorelease: snapshot']);
 });
 
-test('keeps the same Maven baseline when the prepared draft is published', async () => {
+test('keeps the published release and Maven baseline unchanged on retry', async () => {
   const fixture = mergedReleaseFixture();
   await (await fixture.manifest()).createReleases();
   const [before] = await (await fixture.manifest()).buildPullRequests();
-  fixture.github.releases[0].draft = false;
   assert.deepEqual(await (await fixture.manifest()).createReleases(), []);
   const [after] = await (await fixture.manifest()).buildPullRequests();
   assert.equal(before.title.getVersion().toString(), '0.0.12-SNAPSHOT');
   assert.equal(after.title.getVersion().toString(), '0.0.12-SNAPSHOT');
   assert.equal(fixture.github.releases.length, 2);
+  assert.equal(fixture.github.releases[0].draft, false);
+  assert.equal(fixture.github.tags.length, 2);
   assert.deepEqual(fixture.github.tags[0], { name: 'v0.0.11', sha: 'd'.repeat(40) });
 });
 

@@ -6,8 +6,6 @@
   "packages": {
     ".": {
       "release-type": "maven",
-      "draft": true,
-      "force-tag-creation": true,
       "pull-request-header": "Updates the Maven version and release notes.",
       "pull-request-footer": "Publishing uses the version and revision recorded in this pull request.",
       "include-component-in-tag": false,

@@ -55,7 +55,7 @@ test('prepares a stable release PR without requesting its merge', async () => {
   assert.equal(commands.some(command => command[1] === 'pr'), false);
 });
 
-test('queues the updated PR head with its release title and an empty squash body', async () => {
+test('publishes the merged release and queues its next snapshot with an empty squash body', async () => {
   const { github } = mergedReleaseFixture();
   const commands = [];
   const head = 'e'.repeat(40);
@@ -67,6 +67,8 @@ test('queues the updated PR head with its release title and an empty squash body
   };
   await runReleaseAutomation({ repository: 'streamarr/streamarr-server', connect: async () => github, execute });
   assert.equal(github.releases[0].tagName, 'v0.0.11');
+  assert.equal(github.releases[0].draft, false);
+  assert.deepEqual(github.tags[0], { name: 'v0.0.11', sha: 'd'.repeat(40) });
   assert.deepEqual(commands.at(-1), [
     'gh', 'pr', 'merge', '43', '--repo', 'streamarr/streamarr-server',
     '--auto', '--squash', '--match-head-commit', head,

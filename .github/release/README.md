@@ -4,19 +4,17 @@ Release Please owns the Maven version, changelog, release tag, and GitHub releas
 The architectural decision and alternatives are recorded in [ADR 0034](https://github.com/streamarr/streamarr-adr/pull/10).
 The serialized workflow runs after pushes to `main`; `always-update` refreshes the open release PR against the current base.
 Release PRs stay open until a maintainer chooses to merge them. The repository ruleset requires an up-to-date branch and successful build, Sonar, and Snyk checks.
-Merging a release PR creates its Git tag and an unpublished GitHub draft release.
-Only development snapshot PRs use GitHub auto-merge, under the same required checks. The next snapshot can merge while the draft waits for publication; snapshot updates do not create GitHub releases.
+Merging a release PR is the single manual release gate: Release Please creates its Git tag and publishes the GitHub release automatically.
+This follows [Release Please's documented release PR lifecycle](https://github.com/googleapis/release-please#whats-a-release-pr), using its default published-release behavior.
+Only development snapshot PRs use GitHub auto-merge, under the same required checks. Snapshot updates do not create GitHub releases.
 
 ## Cut and publish a release
 
 Review the maintained release PR's version, changelog, and required checks when ready to cut a release.
 Squash-merge that PR with its generated `chore(main): release X` title and an empty commit body.
-Release Please then creates the tagged draft. Open it under the repository's **Releases** page, review its notes, and click **Publish release** when ready.
-That publication event starts the container publisher. Preparing the draft does not publish images.
-The draft records the version and source revision already merged through the release PR. Keep its tag unchanged; choosing another version must happen before the release PR merges so the POM and tag continue to agree.
-
-Drafts have Git tags immediately so Release Please can find the prepared version and advance the Maven snapshot without waiting for publication.
-Each draft is a fixed release candidate; later commits belong to subsequent release PRs and do not move its tag.
+Release Please then tags the merged revision and publishes its GitHub release. The release App creates the GitHub release, allowing its publication event to trigger the container publisher automatically.
+Release Please also prepares the next Maven snapshot PR for auto-merge after its required checks pass.
+Choose the version and review the notes before merging. Each release records a fixed version and source revision; later commits belong to subsequent release PRs and do not move its tag.
 
 The release publisher checks that the tag is stable SemVer, the tagged commit belongs to `main`, and the POM version matches the tag.
 Both architectures build that validated commit and use its version in the image metadata and tags.
