@@ -15,9 +15,12 @@ import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
 import com.streamarr.server.services.streaming.ffmpeg.LocalFfmpegProcessManager;
@@ -26,6 +29,7 @@ import com.streamarr.server.services.streaming.ffmpeg.LocalTranscodeExecutor;
 import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.support.OutcomeTestSupport;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -116,6 +120,8 @@ class HlsStreamingSmokeTest {
             .sessionTimeout(Duration.ofSeconds(60))
             .build();
 
+    var probeResults = new FakeMediaFileContainerInfoRepository();
+    probeResults.setDefaultProbe(ffprobeService.probeMedia(TEST_VIDEO));
     mediaFileRepository = new FakeMediaFileRepository();
     var sessionRegistry = new InMemoryStreamSessionRegistry();
     var producerLifecycle =
@@ -131,7 +137,9 @@ class HlsStreamingSmokeTest {
             .mediaFileRepository(mediaFileRepository)
             .transcodeExecutor(transcodeExecutor)
             .segmentStore(segmentStore)
-            .ffprobeService(ffprobeService)
+            .playbackProbeService(
+                new PlaybackProbeService(
+                    new PersistedProbeReader(probeResults), new CapturingEventPublisher()))
             .transcodeDecisionService(decisionService)
             .qualityLadderService(qualityLadderService)
             .properties(properties)
@@ -179,8 +187,9 @@ class HlsStreamingSmokeTest {
   }
 
   private StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
-    return streamingService.createSession(
-        createStreamSessionCommand(mediaFileId, profileId, options));
+    return OutcomeTestSupport.accepted(
+        streamingService.createSession(
+            createStreamSessionCommand(mediaFileId, profileId, options)));
   }
 
   @Test

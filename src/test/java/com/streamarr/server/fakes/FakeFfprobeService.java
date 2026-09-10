@@ -5,8 +5,8 @@ import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.services.streaming.FfprobeService;
 import java.nio.file.Path;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class FakeFfprobeService implements FfprobeService {
 
