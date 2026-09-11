@@ -26,10 +26,10 @@ import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.streaming.ffmpeg.LocalFfmpegProcessManager;
-import com.streamarr.server.services.streaming.ffmpeg.LocalTranscodeExecutor;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
+import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.support.OutcomeTestSupport;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -57,6 +57,7 @@ class HlsStreamingSmokeTest {
   private HlsPlaylistService playlistService;
   private Path segmentBaseDir;
   private WorkerStreamingSmokeFixture workerFixture;
+  private RecordingProcessManager processManager;
 
   @BeforeAll
   static void checkPrerequisites() {
@@ -77,15 +78,20 @@ class HlsStreamingSmokeTest {
   void setUp() throws Exception {
     segmentBaseDir = Files.createTempDirectory("streamarr-smoke-");
     segmentStore = new LocalSegmentStore(segmentBaseDir);
+    processManager = new RecordingProcessManager();
 
     workerFixture =
         WorkerStreamingSmokeFixture.builder()
-            .processManager(new LocalFfmpegProcessManager())
+            .processManager(processManager)
             .sourceRoot(TEST_VIDEO.getParent())
             .segmentBaseDir(segmentBaseDir)
             .segmentStore(segmentStore)
             .build();
-    var transcodeExecutor = new LocalTranscodeExecutor(workerFixture.engine(), segmentStore);
+    var transcodeExecutor =
+        new RemoteTranscodeExecutor(
+            workerFixture.workerSessions(),
+            workerFixture.sourceNamespaceId(),
+            TEST_VIDEO.getParent());
     workerFixture.start();
     var outcome =
         new RemoteFfprobeService(
@@ -232,6 +238,7 @@ class HlsStreamingSmokeTest {
 
     var session = createSession(file.getId(), UUID.randomUUID(), options);
 
+    assertThat(session.getHandle().orElseThrow().processId()).isEmpty();
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(session.getTranscodeDecision().containerFormat()).isEqualTo(ContainerFormat.MPEGTS);
   }
@@ -348,13 +355,13 @@ class HlsStreamingSmokeTest {
 
     var handle = session.getHandle().orElseThrow();
     assertThat(handle.status()).isEqualTo(TranscodeStatus.ACTIVE);
+    var process = processManager.lastProcessFor(sessionId).orElseThrow();
 
     streamingService.destroySession(sessionId);
 
-    var processHandle = ProcessHandle.of(handle.processId().orElseThrow());
-    assertThat(processHandle)
-        .satisfiesAnyOf(
-            ph -> assertThat(ph).isEmpty(), ph -> assertThat(ph.get().isAlive()).isFalse());
+    await()
+        .atMost(Duration.ofSeconds(30))
+        .untilAsserted(() -> assertThat(process.isAlive()).isFalse());
   }
 
   @Test
