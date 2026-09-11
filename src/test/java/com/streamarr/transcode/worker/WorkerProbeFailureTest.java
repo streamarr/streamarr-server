@@ -36,6 +36,30 @@ class WorkerProbeFailureTest {
   @TempDir Path tempDir;
 
   @Test
+  @DisplayName(
+      "Should reply with execution failure when the producer throws an unchecked exception")
+  void shouldReplyWithExecutionFailureWhenTheProducerThrowsAnUncheckedException() throws Exception {
+    Files.writeString(tempDir.resolve("movie.mkv"), "media");
+    var runtime = new ScriptedWorkerRuntime();
+    var producer =
+        new FfprobeExecutor(
+            new ObjectMapper(),
+            _ -> {
+              throw new IllegalStateException("producer unavailable");
+            });
+    var request = requestBuilder().build();
+
+    try (var worker = workerBuilder(tempDir).runtime(runtime).ffprobe(producer).build()) {
+      worker.start("localhost", 1);
+      start(runtime.connection(), request);
+      runtime.probes().drain();
+
+      assertThat(runtime.connection().results())
+          .containsExactly(failure(request, ProbeFailure.PROBE_FAILURE_EXECUTION_FAILED));
+    }
+  }
+
+  @Test
   @DisplayName("Should retain the source diagnosis when a probe cannot resolve its media")
   void shouldRetainTheSourceDiagnosisWhenAProbeCannotResolveItsMedia(CapturedOutput output)
       throws Exception {

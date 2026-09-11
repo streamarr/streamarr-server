@@ -12,7 +12,9 @@ import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeFailure;
+import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeRequest;
+import com.streamarr.transcode.v1.ProbeStreamInfo;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.StartProbeCommand;
 import com.streamarr.transcode.v1.VariantJob;
@@ -150,21 +152,67 @@ class WorkerProbeDispatchTest {
   }
 
   @Test
+  @DisplayName("Should admit a transcode when one of two occupying probes finishes")
+  void shouldAdmitATranscodeWhenOneOfTwoOccupyingProbesFinishes() throws Exception {
+    var registry = new LiveWorkerConnectionRegistry();
+    var registration = registration().setAvailableSlots(2);
+    registration.getCapabilitiesBuilder().addProbeVersions(1);
+    var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
+    var first = probe().build();
+    var second = probe().build();
+    var firstResult = registry.dispatchProbe(first).orElseThrow();
+    var secondResult = registry.dispatchProbe(second).orElseThrow();
+    var job =
+        VariantJob.newBuilder()
+            .setJobAttemptId(toProto(UUID.randomUUID()))
+            .setSource(source())
+            .build();
+
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isZero();
+    assertThat(registry.dispatch(job)).isFalse();
+    var success =
+        ProbeAttemptResult.newBuilder()
+            .setProbeAttemptId(first.getProbeAttemptId())
+            .setProbeVersion(1)
+            .setMedia(
+                ProbeMediaInfo.newBuilder()
+                    .addStreams(ProbeStreamInfo.newBuilder().setCodecType("video")))
+            .build();
+    assertThat(registry.completeProbe(WORKER_ID, sessionId, success)).isTrue();
+    assertThat(firstResult.get(1, TimeUnit.SECONDS)).isEqualTo(success);
+    assertThat(secondResult).isNotDone();
+
+    assertThat(registry.dispatch(job)).isTrue();
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isZero();
+    var secondSuccess = success.toBuilder().setProbeAttemptId(second.getProbeAttemptId()).build();
+    assertThat(registry.completeProbe(WORKER_ID, sessionId, secondSuccess)).isTrue();
+    assertThat(secondResult.get(1, TimeUnit.SECONDS)).isEqualTo(secondSuccess);
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
   @DisplayName(
       "Should fail the pending probe without accepting data when its reply has another version")
-  void shouldFailPendingProbeWithoutAcceptingDataWhenItsReplyHasAnotherVersion() {
+  void shouldFailPendingProbeWithoutAcceptingDataWhenItsReplyHasAnotherVersion(boolean success) {
     var registry = new LiveWorkerConnectionRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(2);
     var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
     var request = probe().setProbeVersion(2).build();
     var attempt = registry.dispatchProbe(request).orElseThrow();
-    var result =
+    var reply =
         ProbeAttemptResult.newBuilder()
             .setProbeAttemptId(request.getProbeAttemptId())
             .setProbeVersion(1)
-            .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA)
-            .build();
+            .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA);
+    if (success) {
+      reply.setMedia(
+          ProbeMediaInfo.newBuilder()
+              .addStreams(ProbeStreamInfo.newBuilder().setCodecType("video")));
+    }
+
+    var result = reply.build();
 
     assertThat(registry.completeProbe(WORKER_ID, sessionId, result)).isFalse();
 
