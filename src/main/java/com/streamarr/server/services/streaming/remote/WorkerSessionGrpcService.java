@@ -6,6 +6,7 @@ import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptFailed;
+import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.UploadSegmentResponse;
@@ -186,12 +187,25 @@ final class WorkerSessionGrpcService
             finishOrWarn(request.getJobAttemptCompleted().getJobAttemptId(), "completed");
         case JOB_ATTEMPT_STOPPED ->
             finishOrWarn(request.getJobAttemptStopped().getJobAttemptId(), "stopped");
+        case PROBE_RESULT -> completeProbe(request.getProbeResult());
         default ->
             log.warn(
                 "Ignoring unexpected {} event on established session of worker {}",
                 request.getEventCase(),
                 authenticatedWorkerId);
       }
+    }
+
+    private void completeProbe(ProbeAttemptResult result) {
+      if (workerConnections.completeProbe(authenticatedWorkerId, workerSessionId, result)) {
+        return;
+      }
+
+      log.warn(
+          "Worker {} reported an unaccepted probe result for attempt {} at version {}",
+          authenticatedWorkerId,
+          fromProto(result.getProbeAttemptId()),
+          result.getProbeVersion());
     }
 
     private void reportFailedJobAttempt(JobAttemptFailed failed) {
