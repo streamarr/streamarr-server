@@ -6,7 +6,7 @@
 * **GraphQL** via Netflix DGS
 * **jOOQ** for complex queries (keyset pagination)
 * **Flyway** for database migrations
-* **FFmpeg** via ProcessBuilder for HLS transcoding
+* **FFmpeg** via ProcessBuilder in transcode workers for HLS transcoding and remuxing
 
 == Dependency Boundaries
 
@@ -93,7 +93,7 @@ See https://github.com/streamarr/streamarr-adr/blob/main/adr/0010-spring-applica
 == Streaming Pipeline
 
 ----
-StreamingOptions (client)  +  MediaProbe (ffprobe)
+StreamingOptions (client)  +  MediaProbe (persisted probe rows)
                     |
             TranscodeDecisionService
             ├── Video: copy or transcode?
@@ -103,23 +103,43 @@ StreamingOptions (client)  +  MediaProbe (ffprobe)
             TranscodeDecision (composite)
             → TranscodeMode, ContainerFormat, needsKeyframeAlignment
                     |
-            TranscodeExecutor → resolves encoder (HW/SW)
+            RemoteTranscodeExecutor → WorkerSession
                     |
-            FfmpegCommandBuilder → -map, codecs, keyframes, HLS args
+            Worker engine → resolves encoder (HW/SW)
+            → FfmpegCommandBuilder → FFmpeg
                     |
-            HlsPlaylistService → master + media playlists
+            Segment uploads → server segment store
+            → HlsPlaylistService → master + media playlists
 ----
 
 See https://github.com/streamarr/streamarr-adr/blob/main/adr/0007-transcode-first-with-smart-remux.adoc[ADR 0007],
 https://github.com/streamarr/streamarr-adr/blob/main/adr/0009-h264-plus-av1-codec-strategy.adoc[ADR 0009],
 https://github.com/streamarr/streamarr-adr/blob/main/adr/0013-stream-decision-architecture.adoc[ADR 0013].
 
-=== Distributed Transcoding Direction
+=== Persisted Probes and Worker Execution
 
-https://github.com/streamarr/streamarr-adr/blob/main/adr/0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] keeps local playback as the default and preserves independent variant failure through one shared FFmpeg engine.
-An optional worker opens an outbound, long-lived mTLS gRPC `WorkerSession`; the live connection owns registration, capacity accounting, commands, and job-attempt fencing.
-Segment uploads use separate bounded HTTP/2 streams over the same channel, and media is addressed by opaque `MediaSourceRef(source_namespace_id, relative_key)` values rather than host paths.
-The initial topology is one Streamarr server and zero or more workers; workers have no database access or inbound listener, and multi-server coordination is deferred.
+https://github.com/streamarr/streamarr-adr/blob/main/adr/0032-media-file-probe-results-are-persisted.adoc[ADR 0032] persists container and stream data separately from title metadata.
+Scans and watcher events schedule missing or outdated probes before skipping already matched files.
+A successful scan means enumeration, matching, and enrichment attempts finished and required probe work was durably enqueued.
+Playback reads stored outcomes.
+It returns a typed not-ready error when no usable outcome exists and a typed failure for a retained terminal media error.
+
+https://github.com/streamarr/streamarr-adr/blob/main/adr/0033-transcode-worker-is-a-separate-service.adoc[ADR 0033] requires workers for probing, transcoding, and remuxing.
+Each worker opens an outbound, long-lived gRPC `WorkerSession` using mutual TLS or the trusted loopback listener for colocated deployments.
+The live connection owns registration, capacity accounting, commands, and job-attempt fencing.
+Segment uploads use separate bounded HTTP/2 streams over the same channel.
+Media is addressed by opaque `MediaSourceRef(source_namespace_id, relative_key)` values rather than host paths.
+Administrators map each source namespace to the same media content on the server and its workers.
+
+The supported topology has one Streamarr server and independently scalable workers.
+Kubernetes workers run in a separate Deployment. The server uses stop-before-start replacement as specified by https://github.com/streamarr/streamarr-adr/blob/main/adr/0027-library-work-claimed-in-database-single-instance.adoc[ADR 0027].
+Workers have no database access. Their inbound port serves health checks only.
+The server can start and remain ready with zero connected workers, but playback and probing require worker capacity.
+Multi-server coordination remains deferred.
+
+For repository extraction, link:worker-code-moves.json[worker code moves] records relocated paths.
+link:worker-code-copies.json[Worker code copies] records the server origins of worker value types whose server counterparts remain in use.
+The copy entries preserve provenance without treating those paths as renames.
 
 == Authentication and Invalidation
 
