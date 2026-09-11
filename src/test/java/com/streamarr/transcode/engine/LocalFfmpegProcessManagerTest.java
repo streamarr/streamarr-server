@@ -1,4 +1,4 @@
-package com.streamarr.server.services.streaming.ffmpeg;
+package com.streamarr.transcode.engine;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
@@ -9,7 +9,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.UnsynchronizedAppenderBase;
 import ch.qos.logback.core.read.ListAppender;
-import com.streamarr.transcode.engine.TranscodeException;
+import com.streamarr.server.services.streaming.ffmpeg.LocalFfmpegProcessManager;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
