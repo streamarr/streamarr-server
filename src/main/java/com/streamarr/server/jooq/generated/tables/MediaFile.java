@@ -10,6 +10,7 @@ import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.enums.MediaFileStatus;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable.BaseCollectablePath;
 import com.streamarr.server.jooq.generated.tables.Library.LibraryPath;
+import com.streamarr.server.jooq.generated.tables.MediaFileContainerInfo.MediaFileContainerInfoPath;
 import com.streamarr.server.jooq.generated.tables.SessionProgress.SessionProgressPath;
 import com.streamarr.server.jooq.generated.tables.records.MediaFileRecord;
 
@@ -237,6 +238,19 @@ public class MediaFile extends TableImpl<MediaFileRecord> {
             _sessionProgress = new SessionProgressPath(this, null, Keys.SESSION_PROGRESS__FK_SESSION_PROGRESS_MEDIA_FILE.getInverseKey());
 
         return _sessionProgress;
+    }
+
+    private transient MediaFileContainerInfoPath _mediaFileContainerInfo;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.media_file_container_info</code> table
+     */
+    public MediaFileContainerInfoPath mediaFileContainerInfo() {
+        if (_mediaFileContainerInfo == null)
+            _mediaFileContainerInfo = new MediaFileContainerInfoPath(this, null, Keys.MEDIA_FILE_CONTAINER_INFO__MEDIA_FILE_CONTAINER_INFO_MEDIA_FILE_ID_FKEY.getInverseKey());
+
+        return _mediaFileContainerInfo;
     }
 
     @Override
