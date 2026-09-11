@@ -26,6 +26,7 @@ import com.streamarr.server.fakes.FakeStreamingService;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import java.time.Duration;
@@ -356,6 +357,7 @@ class StreamControllerTest {
     streamingService.setSession(session);
     session.setHandle(mintHandle(1L, TranscodeStatus.FAILED));
     runtimeRegistry.save(session);
+    transcodeExecutor.refuseTarget(ExecutionTargetId.LOCAL);
 
     var result =
         mockMvc

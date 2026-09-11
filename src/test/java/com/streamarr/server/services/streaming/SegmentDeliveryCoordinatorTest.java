@@ -631,6 +631,38 @@ class SegmentDeliveryCoordinatorTest {
   }
 
   @Test
+  @DisplayName("Should exhaust recovery when an accepted replacement exceeds its startup budget")
+  void shouldExhaustRecoveryWhenAnAcceptedReplacementExceedsItsStartupBudget() throws Exception {
+    var session = startedSession();
+    var sessionId = session.getSessionId();
+    transcodeExecutor.markDead(sessionId);
+    var startsBefore = transcodeExecutor.getStartedRequests().size();
+    var startupBudget =
+        properties.producerStallThreshold().plus(properties.targetSegmentDuration());
+
+    var delivery = deliverAsync(sessionId, "segment0.ts");
+    try {
+      transcodeExecutor.awaitStartedRequestCount(startsBefore + 1);
+      awaitLivenessChecks(2);
+      clock.advance(startupBudget.minusMillis(1));
+      awaitLivenessChecks(2);
+      assertThat(delivery).isNotDone();
+      assertThat(transcodeExecutor.isRunning(sessionId, StreamSession.defaultVariant())).isTrue();
+
+      clock.advance(Duration.ofMillis(1));
+
+      assertThat(delivery.get(2, TimeUnit.SECONDS))
+          .isInstanceOf(SegmentDelivery.Unrecoverable.class);
+      assertThat(transcodeExecutor.getStartedRequests()).hasSize(startsBefore + 1);
+      assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
+      assertThat(transcodeExecutor.isRunning(sessionId, StreamSession.defaultVariant())).isFalse();
+    } finally {
+      runtimeRegistry.removeById(sessionId);
+      delivery.get(2, TimeUnit.SECONDS);
+    }
+  }
+
+  @Test
   @DisplayName("Should start exactly one replacement when two waiters observe one death")
   void shouldStartExactlyOneReplacementWhenTwoWaitersObserveOneDeath() throws Exception {
     var session = startedSession();

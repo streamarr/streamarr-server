@@ -415,10 +415,12 @@ class ImageEnrichmentListenerTest {
 
   @Test
   @DisplayName("Should clean up written files when batch save fails")
-  void shouldCleanUpWrittenFilesWhenBatchSaveFails() {
+  void shouldCleanUpWrittenFilesWhenBatchSaveFails() throws Exception {
     var entityId = UUID.randomUUID();
     tmdbHttpService.setImageData(createTestImage(600, 900));
     imageRepository.setFailOnInsertAllIfAbsent(true);
+    var mutex = SignalingMutex.builder().expectedUnlocks(1).build();
+    var testListener = createListener(tmdbHttpService, new FixedMutexFactory(mutex));
 
     var event =
         new MetadataEnrichedEvent(
@@ -426,25 +428,16 @@ class ImageEnrichmentListenerTest {
             ImageEntityType.MOVIE,
             List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")));
 
-    listener.onMetadataEnriched(event);
+    testListener.onMetadataEnriched(event);
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> {
-              assertThat(
-                      imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
-                  .isEmpty();
-
-              var entityDir =
-                  fileSystem
-                      .getPath("/data/images/movie")
-                      .resolve(entityId.toString())
-                      .resolve("poster");
-              try (var files = Files.list(entityDir)) {
-                assertThat(files).isEmpty();
-              }
-            });
+    assertThat(mutex.awaitUnlocks()).isTrue();
+    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+        .isEmpty();
+    var entityDir =
+        fileSystem.getPath("/data/images/movie").resolve(entityId.toString()).resolve("poster");
+    try (var files = Files.list(entityDir)) {
+      assertThat(files).isEmpty();
+    }
   }
 
   @Test

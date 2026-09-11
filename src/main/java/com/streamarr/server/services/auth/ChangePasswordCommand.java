@@ -5,7 +5,7 @@ import lombok.NonNull;
 
 @Builder
 public record ChangePasswordCommand(
-    String currentPassword, String newPassword, @NonNull String ipAddress) {
+    String currentPassword, @NonNull String newPassword, @NonNull String ipAddress) {
 
   public static class ChangePasswordCommandBuilder {
 
