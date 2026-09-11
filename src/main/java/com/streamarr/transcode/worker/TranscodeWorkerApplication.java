@@ -5,6 +5,8 @@ import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
 import com.streamarr.server.services.streaming.ffmpeg.LocalFfmpegProcessManager;
 import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
 import com.streamarr.transcode.probe.FfprobeExecutor;
+import java.io.IOException;
+import java.lang.ProcessBuilder.Redirect;
 import java.nio.file.Path;
 
 public final class TranscodeWorkerApplication {
@@ -24,6 +26,7 @@ public final class TranscodeWorkerApplication {
               + capabilities.getUnavailableReason());
     }
 
+    requireFfprobe(settings.ffprobePath());
     var engine =
         new FfmpegTranscodeEngine(
             new FfmpegCommandBuilder(settings.ffmpegPath()),
@@ -36,6 +39,36 @@ public final class TranscodeWorkerApplication {
       Runtime.getRuntime().addShutdownHook(shutdownHook);
       worker.start(settings.controlPlaneHost(), settings.controlPlanePort());
       worker.awaitDisconnection();
+    }
+  }
+
+  private static void requireFfprobe(String ffprobePath) throws IOException, InterruptedException {
+    Process process;
+    try {
+      process =
+          new ProcessBuilder(ffprobePath, "-version")
+              .redirectOutput(Redirect.DISCARD)
+              .redirectError(Redirect.DISCARD)
+              .start();
+    } catch (IOException exception) {
+      throw new IOException(
+          "ffprobe is not available to the transcode worker: " + ffprobePath, exception);
+    }
+
+    try {
+      var exitCode = process.waitFor();
+      if (exitCode != 0) {
+        throw new IllegalStateException(
+            "ffprobe is not available to the transcode worker: "
+                + ffprobePath
+                + " exited with code "
+                + exitCode);
+      }
+    } catch (InterruptedException exception) {
+      process.destroyForcibly();
+      process.onExit().join();
+      Thread.currentThread().interrupt();
+      throw exception;
     }
   }
 }

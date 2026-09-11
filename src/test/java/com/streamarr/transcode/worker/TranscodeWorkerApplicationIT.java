@@ -159,6 +159,7 @@ class TranscodeWorkerApplicationIT {
 
   private ProcessBuilder workerProcess(int port, Path ffmpeg) throws Exception {
     var process = new ProcessBuilder(workerCommand()).redirectErrorStream(true);
+    process.environment().keySet().removeIf(key -> key.startsWith("TRANSCODE_WORKER_"));
     process
         .environment()
         .putAll(
@@ -171,7 +172,8 @@ class TranscodeWorkerApplicationIT {
                 "TRANSCODE_WORKER_TLS_CERTIFICATE", tlsResource("worker-cert.pem").toString(),
                 "TRANSCODE_WORKER_TLS_PRIVATE_KEY", tlsResource("worker-key.fixture").toString(),
                 "TRANSCODE_WORKER_TLS_TRUST_BUNDLE", tlsResource("ca-cert.pem").toString(),
-                "TRANSCODE_WORKER_FFMPEG_PATH", ffmpeg.toString()));
+                "TRANSCODE_WORKER_FFMPEG_PATH", ffmpeg.toString(),
+                "TRANSCODE_WORKER_FFPROBE_PATH", fakeFfprobe().toString()));
     process.environment().put("TRANSCODE_WORKER_HEALTH_PORT", "0");
     return process;
   }
@@ -201,6 +203,13 @@ class TranscodeWorkerApplicationIT {
         esac
         exit 0
         """);
+    assertThat(executable.toFile().setExecutable(true)).isTrue();
+    return executable;
+  }
+
+  private Path fakeFfprobe() throws Exception {
+    var executable = tempDir.resolve("ffprobe");
+    Files.writeString(executable, "#!/bin/sh\nexit 0\n");
     assertThat(executable.toFile().setExecutable(true)).isTrue();
     return executable;
   }
