@@ -2,15 +2,18 @@ package com.streamarr.server.services.streaming.ffmpeg;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.domain.streaming.AudioDecision;
-import com.streamarr.server.domain.streaming.AudioMode;
-import com.streamarr.server.domain.streaming.ContainerFormat;
-import com.streamarr.server.domain.streaming.SubtitleDecision;
-import com.streamarr.server.domain.streaming.TranscodeDecision;
-import com.streamarr.server.domain.streaming.TranscodeJob;
-import com.streamarr.server.domain.streaming.TranscodeMode;
-import com.streamarr.server.domain.streaming.TranscodeRequest;
+import com.streamarr.transcode.engine.AudioDecision;
+import com.streamarr.transcode.engine.AudioMode;
+import com.streamarr.transcode.engine.ContainerFormat;
+import com.streamarr.transcode.engine.SubtitleDecision;
+import com.streamarr.transcode.engine.SubtitleMode;
+import com.streamarr.transcode.engine.TranscodeDecision;
+import com.streamarr.transcode.engine.TranscodeJob;
+import com.streamarr.transcode.engine.TranscodeMode;
+import com.streamarr.transcode.engine.TranscodeRequest;
 import java.nio.file.Path;
+import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
@@ -82,7 +85,12 @@ class FfmpegCommandBuilderTest {
                         .transcodeMode(mode)
                         .videoCodecFamily(codecFamily)
                         .audioDecision(audio)
-                        .subtitleDecision(SubtitleDecision.exclude())
+                        .subtitleDecision(
+                            new SubtitleDecision(
+                                SubtitleMode.EXCLUDE,
+                                Optional.empty(),
+                                OptionalInt.empty(),
+                                Optional.empty()))
                         .containerFormat(container)
                         .needsKeyframeAlignment(needsKeyframeAlignment)
                         .build())
@@ -117,7 +125,12 @@ class FfmpegCommandBuilderTest {
                         .transcodeMode(mode)
                         .videoCodecFamily(codecFamily)
                         .audioDecision(audio)
-                        .subtitleDecision(SubtitleDecision.exclude())
+                        .subtitleDecision(
+                            new SubtitleDecision(
+                                SubtitleMode.EXCLUDE,
+                                Optional.empty(),
+                                OptionalInt.empty(),
+                                Optional.empty()))
                         .containerFormat(container)
                         .needsKeyframeAlignment(needsKeyframeAlignment)
                         .build())
@@ -133,8 +146,20 @@ class FfmpegCommandBuilderTest {
 
   private AudioDecision audioDecisionFor(TranscodeMode mode, String audioCodec) {
     return switch (mode) {
-      case REMUX, VIDEO_TRANSCODE -> AudioDecision.copy(audioCodec, 2, 0);
-      case AUDIO_TRANSCODE, FULL_TRANSCODE -> AudioDecision.stereoAac();
+      case REMUX, VIDEO_TRANSCODE ->
+          AudioDecision.builder()
+              .mode(AudioMode.COPY)
+              .codec(audioCodec)
+              .channels(2)
+              .bitrate(0L)
+              .build();
+      case AUDIO_TRANSCODE, FULL_TRANSCODE ->
+          AudioDecision.builder()
+              .mode(AudioMode.TRANSCODE)
+              .codec("aac")
+              .channels(2)
+              .bitrate(128_000L)
+              .build();
     };
   }
 
@@ -157,7 +182,12 @@ class FfmpegCommandBuilderTest {
                         .transcodeMode(mode)
                         .videoCodecFamily(codecFamily)
                         .audioDecision(audio)
-                        .subtitleDecision(SubtitleDecision.exclude())
+                        .subtitleDecision(
+                            new SubtitleDecision(
+                                SubtitleMode.EXCLUDE,
+                                Optional.empty(),
+                                OptionalInt.empty(),
+                                Optional.empty()))
                         .containerFormat(container)
                         .needsKeyframeAlignment(mode == TranscodeMode.REMUX)
                         .build())
@@ -639,7 +669,8 @@ class FfmpegCommandBuilderTest {
   @Test
   @DisplayName("Should omit audio map and codec args when audio mode is none")
   void shouldOmitAudioMapAndCodecArgsWhenAudioModeIsNone() {
-    var audio = AudioDecision.none();
+    var audio =
+        AudioDecision.builder().mode(AudioMode.NONE).codec(null).channels(0).bitrate(0L).build();
     var j =
         jobWithAudio(
             TranscodeMode.FULL_TRANSCODE, "h264", audio, ContainerFormat.MPEGTS, "libx264");
@@ -689,7 +720,13 @@ class FfmpegCommandBuilderTest {
   @Test
   @DisplayName("Should copy surround audio when audio decision is copy with 5.1 channels")
   void shouldCopySurroundAudioWhenAudioDecisionIsCopyWith51Channels() {
-    var audio = AudioDecision.copy("ac3", 6, 384_000L);
+    var audio =
+        AudioDecision.builder()
+            .mode(AudioMode.COPY)
+            .codec("ac3")
+            .channels(6)
+            .bitrate(384_000L)
+            .build();
     var j = jobWithAudio(TranscodeMode.REMUX, "h264", audio, ContainerFormat.MPEGTS, "copy");
 
     var cmd = builder.buildCommand(j);
@@ -717,7 +754,8 @@ class FfmpegCommandBuilderTest {
   @Test
   @DisplayName("Should map video and exclude subtitles without audio when audio mode is none")
   void shouldMapVideoAndExcludeSubtitlesWithoutAudioWhenAudioModeIsNone() {
-    var audio = AudioDecision.none();
+    var audio =
+        AudioDecision.builder().mode(AudioMode.NONE).codec(null).channels(0).bitrate(0L).build();
     var transcodeJob =
         jobWithAudio(
             TranscodeMode.FULL_TRANSCODE, "h264", audio, ContainerFormat.MPEGTS, "libx264");

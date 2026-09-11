@@ -1,4 +1,4 @@
-package com.streamarr.server.domain.streaming;
+package com.streamarr.transcode.engine;
 
 import java.nio.file.Path;
 import lombok.Builder;

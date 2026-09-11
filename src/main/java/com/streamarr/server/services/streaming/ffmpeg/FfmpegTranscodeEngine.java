@@ -1,11 +1,11 @@
 package com.streamarr.server.services.streaming.ffmpeg;
 
-import com.streamarr.server.domain.streaming.TranscodeHandle;
-import com.streamarr.server.domain.streaming.TranscodeJob;
-import com.streamarr.server.domain.streaming.TranscodeMode;
-import com.streamarr.server.domain.streaming.TranscodeRequest;
-import com.streamarr.server.domain.streaming.TranscodeStatus;
-import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.transcode.engine.TranscodeException;
+import com.streamarr.transcode.engine.TranscodeHandle;
+import com.streamarr.transcode.engine.TranscodeJob;
+import com.streamarr.transcode.engine.TranscodeMode;
+import com.streamarr.transcode.engine.TranscodeRequest;
+import com.streamarr.transcode.engine.TranscodeStatus;
 import java.nio.file.Path;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
