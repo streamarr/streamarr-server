@@ -161,7 +161,10 @@ public final class FfprobeExecutor {
 
   private ProbeStreamInfo parseStream(JsonNode source, int position) {
     var type =
-        text(source, "codec_type")
+        Optional.ofNullable(source.get("codec_type"))
+            .filter(JsonNode::isTextual)
+            .map(JsonNode::asString)
+            .filter(value -> !value.isBlank())
             .orElseThrow(
                 () -> new IllegalArgumentException("ffprobe stream is missing codec_type"));
     var stream =
