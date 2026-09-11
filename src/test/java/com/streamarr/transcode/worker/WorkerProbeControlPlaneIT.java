@@ -36,6 +36,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -47,6 +48,29 @@ import tools.jackson.databind.ObjectMapper;
 class WorkerProbeControlPlaneIT {
 
   @TempDir Path tempDir;
+
+  @Test
+  @DisplayName(
+      "Should reply with execution failure when the producer throws an unchecked exception")
+  void shouldReplyWithExecutionFailureWhenTheProducerThrowsAnUncheckedException() throws Exception {
+    Files.writeString(tempDir.resolve("movie.mkv"), "media");
+    var ffprobe =
+        new FfprobeExecutor(
+            new ObjectMapper(),
+            _ -> {
+              throw new IllegalStateException("producer unavailable");
+            });
+    var request = request("movie.mkv").build();
+
+    try (var controlPlane = new ProbeControlPlane();
+        var worker = worker(ffprobe)) {
+      worker.start("localhost", controlPlane.port());
+      controlPlane.start(controlPlane.identity(), request);
+
+      assertThat(controlPlane.awaitResult(request).getFailure())
+          .isEqualTo(ProbeFailure.PROBE_FAILURE_EXECUTION_FAILED);
+    }
+  }
 
   @ParameterizedTest
   @CsvSource({"1, PROBE_FAILURE_INVALID_MEDIA", "2, PROBE_FAILURE_UNSUPPORTED_VERSION"})
