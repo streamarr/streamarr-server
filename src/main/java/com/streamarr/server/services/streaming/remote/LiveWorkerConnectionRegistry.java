@@ -3,9 +3,14 @@ package com.streamarr.server.services.streaming.remote;
 import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
 import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 
+import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
+import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
+import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
+import com.streamarr.transcode.v1.StartProbeCommand;
 import com.streamarr.transcode.v1.StartVariantCommand;
 import com.streamarr.transcode.v1.StopVariantCommand;
 import com.streamarr.transcode.v1.Uuid;
@@ -21,7 +26,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 
@@ -89,6 +96,33 @@ final class LiveWorkerConnectionRegistry {
       }
     }
     return false;
+  }
+
+  Optional<Future<ProbeAttemptResult>> dispatchProbe(ProbeRequest request) {
+    for (var connection : connections.values()) {
+      var dispatched = connection.tryDispatchProbe(request);
+      if (dispatched.isEmpty()) {
+        continue;
+      }
+
+      if (connections.containsValue(connection)) {
+        return dispatched;
+      }
+
+      connection.abandonProbe(fromProto(request.getProbeAttemptId()));
+    }
+
+    return Optional.empty();
+  }
+
+  synchronized boolean completeProbe(
+      UUID workerId, UUID workerSessionId, ProbeAttemptResult result) {
+    var connection = connections.get(workerId);
+    if (connection == null || !connection.workerSessionId().equals(workerSessionId)) {
+      return false;
+    }
+
+    return connection.completeProbe(result);
   }
 
   boolean dispatchTo(ExecutionTargetId target, VariantJob job) {
@@ -195,10 +229,12 @@ final class LiveWorkerConnectionRegistry {
     private final UUID workerSessionId;
     private final WorkerIdentity worker;
     private final Set<Uuid> sourceNamespaceIds;
+    private final Set<Integer> probeVersions;
     private final int maximumActiveVariants;
     private final StreamObserver<EstablishWorkerSessionResponse> responseObserver;
 
     private final Map<UUID, VariantJob> activeVariants = new ConcurrentHashMap<>();
+    private final Map<UUID, PendingProbe> activeProbes = new ConcurrentHashMap<>();
 
     private WorkerConnection(
         UUID workerSessionId,
@@ -207,6 +243,7 @@ final class LiveWorkerConnectionRegistry {
       this.workerSessionId = workerSessionId;
       worker = registration.getWorker();
       sourceNamespaceIds = Set.copyOf(registration.getCapabilities().getSourceNamespaceIdsList());
+      probeVersions = Set.copyOf(registration.getCapabilities().getProbeVersionsList());
       maximumActiveVariants = registration.getAvailableSlots();
       this.responseObserver = responseObserver;
     }
@@ -223,7 +260,7 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private synchronized boolean tryDispatch(VariantJob job) {
-      if (!canAccessSource(job) || activeVariants.size() >= maximumActiveVariants) {
+      if (!canAccessSource(job) || availableSlots() == 0) {
         return false;
       }
 
@@ -233,6 +270,81 @@ final class LiveWorkerConnectionRegistry {
       }
       activeVariants.put(fromProto(job.getJobAttemptId()), job);
       return true;
+    }
+
+    private synchronized Optional<Future<ProbeAttemptResult>> tryDispatchProbe(
+        ProbeRequest request) {
+      if (!probeVersions.contains(request.getProbeVersion())
+          || !request.hasSource()
+          || !canAccessSourceNamespace(request.getSource().getSourceNamespaceId())
+          || availableSlots() == 0) {
+        return Optional.empty();
+      }
+
+      var attemptId = fromProto(request.getProbeAttemptId());
+      var pending = new PendingProbe(request, new CompletableFuture<>());
+      if (activeProbes.putIfAbsent(attemptId, pending) != null) {
+        return Optional.empty();
+      }
+
+      pending.result().whenComplete((_, _) -> cancelProbeIfRequested(pending));
+      var command = StartProbeCommand.newBuilder().setTarget(worker).setRequest(request).build();
+      if (!trySend(EstablishWorkerSessionResponse.newBuilder().setStartProbe(command).build())) {
+        activeProbes.remove(attemptId);
+        return Optional.empty();
+      }
+
+      return Optional.of(pending.result());
+    }
+
+    private void cancelProbeIfRequested(PendingProbe pending) {
+      if (!pending.result().isCancelled()) {
+        return;
+      }
+
+      synchronized (this) {
+        var attemptId = fromProto(pending.request().getProbeAttemptId());
+        if (activeProbes.get(attemptId) != pending) {
+          return;
+        }
+
+        var command =
+            CancelProbeCommand.newBuilder()
+                .setTarget(worker)
+                .setProbeAttemptId(pending.request().getProbeAttemptId())
+                .build();
+        trySend(EstablishWorkerSessionResponse.newBuilder().setCancelProbe(command).build());
+      }
+    }
+
+    private boolean completeProbe(ProbeAttemptResult result) {
+      var pending = activeProbes.remove(fromProto(result.getProbeAttemptId()));
+      if (pending == null) {
+        return false;
+      }
+
+      if (result.getProbeVersion() != pending.request().getProbeVersion()) {
+        pending
+            .result()
+            .completeExceptionally(
+                new ProbeExecutionException(
+                    new IllegalArgumentException("Worker reply has a different probe version")));
+        return false;
+      }
+
+      pending.result().complete(result);
+      return true;
+    }
+
+    private void abandonProbe(UUID attemptId) {
+      var pending = activeProbes.remove(attemptId);
+      if (pending != null) {
+        pending
+            .result()
+            .completeExceptionally(
+                new ProbeExecutionException(
+                    new IllegalStateException("Worker disconnected during probe dispatch")));
+      }
     }
 
     private boolean canAccessSource(VariantJob job) {
@@ -285,7 +397,7 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private synchronized int availableSlots() {
-      return Math.max(0, maximumActiveVariants - activeVariants.size());
+      return Math.max(0, maximumActiveVariants - activeVariants.size() - activeProbes.size());
     }
 
     private synchronized void stopStreamSession(UUID streamSessionId) {
@@ -340,6 +452,16 @@ final class LiveWorkerConnectionRegistry {
     private List<VariantJob> abandonAllJobsWithoutWaiting() {
       var drained = List.copyOf(activeVariants.values());
       activeVariants.clear();
+      activeProbes
+          .values()
+          .forEach(
+              pending ->
+                  pending
+                      .result()
+                      .completeExceptionally(
+                          new ProbeExecutionException(
+                              new IllegalStateException("Worker session ended"))));
+      activeProbes.clear();
       return drained;
     }
 
@@ -353,5 +475,8 @@ final class LiveWorkerConnectionRegistry {
       }
       return abandonedJobs;
     }
+
+    private record PendingProbe(
+        ProbeRequest request, CompletableFuture<ProbeAttemptResult> result) {}
   }
 }

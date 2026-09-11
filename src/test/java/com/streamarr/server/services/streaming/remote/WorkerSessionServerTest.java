@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.transcode.tls.PemTlsIdentity;
+import com.streamarr.transcode.v1.ProbeRequest;
 import java.nio.file.Path;
 import java.util.UUID;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
@@ -15,6 +16,15 @@ import org.junit.jupiter.api.Test;
 @Tag("UnitTest")
 @DisplayName("Worker Session Server Tests")
 class WorkerSessionServerTest {
+
+  @Test
+  @DisplayName("Should reject a probe dispatch when the worker session server has not started")
+  void shouldRejectProbeDispatchWhenWorkerSessionServerHasNotStarted() {
+    var server = unstartedServer();
+    var request = ProbeRequest.getDefaultInstance();
+
+    assertNotStarted(() -> server.dispatchProbe(request));
+  }
 
   private WorkerSessionServer unstartedServer() {
     var configuration =

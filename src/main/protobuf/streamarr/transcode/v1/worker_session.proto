@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package streamarr.transcode.v1;
 
+import "google/protobuf/duration.proto";
+
 option java_multiple_files = true;
 option java_outer_classname = "WorkerSessionProto";
 option java_package = "com.streamarr.transcode.v1";
@@ -25,6 +27,7 @@ enum ContainerFormat {
 
 message WorkerCapabilities {
   repeated Uuid source_namespace_ids = 1;
+  repeated uint32 probe_versions = 2;
 }
 
 message WorkerRegistration {
@@ -148,6 +151,7 @@ message EstablishWorkerSessionRequest {
     JobAttemptFailed job_attempt_failed = 3;
     JobAttemptCompleted job_attempt_completed = 4;
     JobAttemptStopped job_attempt_stopped = 5;
+    ProbeAttemptResult probe_result = 6;
   }
 }
 
@@ -161,6 +165,66 @@ message StartVariantCommand {
   VariantJob job = 2;
 }
 
+message ProbeRequest {
+  Uuid probe_attempt_id = 1;
+  uint32 probe_version = 2;
+  MediaSourceRef source = 3;
+}
+
+message ProbeContainerInfo {
+  optional string format = 1;
+  google.protobuf.Duration duration = 2;
+  optional int64 bitrate_bits_per_second = 3;
+}
+
+message ProbeStreamInfo {
+  uint32 index = 1;
+  string codec_type = 2;
+  optional string codec = 3;
+  optional string language = 4;
+  optional uint32 channels = 5;
+  optional int64 bitrate_bits_per_second = 6;
+  optional uint32 width = 7;
+  optional uint32 height = 8;
+  optional double framerate = 9;
+  bool is_default = 10;
+  bool is_forced = 11;
+}
+
+message ProbeMediaInfo {
+  ProbeContainerInfo container = 1;
+  repeated ProbeStreamInfo streams = 2;
+}
+
+message ProbeAttemptResult {
+  Uuid probe_attempt_id = 1;
+  uint32 probe_version = 2;
+  oneof outcome {
+    ProbeMediaInfo media = 3;
+    ProbeFailure failure = 4;
+  }
+}
+
+enum ProbeFailure {
+  PROBE_FAILURE_UNSPECIFIED = 0;
+  PROBE_FAILURE_INVALID_MEDIA = 1;
+  PROBE_FAILURE_NO_VIDEO_STREAM = 2;
+  PROBE_FAILURE_SOURCE_UNAVAILABLE = 3;
+  PROBE_FAILURE_EXECUTION_FAILED = 4;
+  PROBE_FAILURE_UNSUPPORTED_VERSION = 5;
+  PROBE_FAILURE_CANCELLED = 6;
+}
+
+message StartProbeCommand {
+  WorkerIdentity target = 1;
+  ProbeRequest request = 2;
+}
+
+message CancelProbeCommand {
+  WorkerIdentity target = 1;
+  Uuid probe_attempt_id = 2;
+}
+
 message StopVariantCommand {
   WorkerIdentity target = 1;
   Uuid job_attempt_id = 2;
@@ -171,6 +235,8 @@ message EstablishWorkerSessionResponse {
     WorkerSessionAccepted session_accepted = 1;
     StartVariantCommand start_variant = 2;
     StopVariantCommand stop_variant = 3;
+    StartProbeCommand start_probe = 4;
+    CancelProbeCommand cancel_probe = 5;
   }
 }
 

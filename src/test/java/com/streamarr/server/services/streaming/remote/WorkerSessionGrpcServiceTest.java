@@ -16,6 +16,9 @@ import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.MediaSourceRef;
+import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeFailure;
+import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
@@ -42,6 +45,38 @@ import org.slf4j.LoggerFactory;
 @Tag("UnitTest")
 @DisplayName("Worker Session gRPC Service Tests")
 class WorkerSessionGrpcServiceTest {
+
+  @Test
+  @DisplayName(
+      "Should complete a probe when its result arrives on the authenticated worker session")
+  void shouldCompleteProbeWhenItsResultArrivesOnAuthenticatedWorkerSession() throws Exception {
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var registry = new LiveWorkerConnectionRegistry();
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var session = workerSession(service, workerId, new IgnoringResponseObserver());
+    var registration = registration(worker(workerId), sourceNamespaceId).toBuilder();
+    registration.getCapabilitiesBuilder().addProbeVersions(1);
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build());
+    var request =
+        ProbeRequest.newBuilder()
+            .setProbeAttemptId(toProto(UUID.randomUUID()))
+            .setProbeVersion(1)
+            .setSource(variantJob(sourceNamespaceId).getSource())
+            .build();
+    var attempt = registry.dispatchProbe(request).orElseThrow();
+    var result =
+        ProbeAttemptResult.newBuilder()
+            .setProbeAttemptId(request.getProbeAttemptId())
+            .setProbeVersion(1)
+            .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA)
+            .build();
+
+    session.onNext(EstablishWorkerSessionRequest.newBuilder().setProbeResult(result).build());
+
+    assertThat(attempt.get(1, TimeUnit.SECONDS)).isEqualTo(result);
+  }
 
   @Test
   @DisplayName("Should retry registration when sending the acceptance response fails")
@@ -511,6 +546,7 @@ class WorkerSessionGrpcServiceTest {
       assertThat(value.getCommandCase())
           .isIn(
               EstablishWorkerSessionResponse.CommandCase.SESSION_ACCEPTED,
+              EstablishWorkerSessionResponse.CommandCase.START_PROBE,
               EstablishWorkerSessionResponse.CommandCase.START_VARIANT);
     }
 

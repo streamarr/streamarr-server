@@ -22,6 +22,9 @@ import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.JobAttemptStopped;
 import com.streamarr.transcode.v1.MediaSourceRef;
+import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeFailure;
+import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
@@ -61,6 +64,54 @@ class WorkerSessionServerIT {
       UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
   private static final UUID SOURCE_NAMESPACE_ID =
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
+
+  @Test
+  @DisplayName("Should deliver a typed probe result when a capable worker replies over mutual TLS")
+  void shouldDeliverTypedProbeResultWhenCapableWorkerRepliesOverMutualTls() throws Exception {
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+      try {
+        var responses = new LinkedBlockingQueue<EstablishWorkerSessionResponse>();
+        var closed = new CompletableFuture<Void>();
+        var session =
+            TranscodeWorkerServiceGrpc.newStub(channel)
+                .establishWorkerSession(new QueuedResponseObserver(responses, closed));
+        var registration = registration(AUTHENTICATED_WORKER_ID).toBuilder();
+        registration.getRegistrationBuilder().getCapabilitiesBuilder().addProbeVersions(2);
+        session.onNext(registration.build());
+        assertThat(responses.poll(5, TimeUnit.SECONDS))
+            .isNotNull()
+            .satisfies(response -> assertThat(response.hasSessionAccepted()).isTrue());
+        var request =
+            ProbeRequest.newBuilder()
+                .setProbeAttemptId(toProto(UUID.randomUUID()))
+                .setProbeVersion(2)
+                .setSource(variantJob().getSource())
+                .build();
+
+        var pending = server.dispatchProbe(request).orElseThrow();
+
+        var command = responses.poll(5, TimeUnit.SECONDS);
+        assertThat(command).isNotNull();
+        assertThat(command.getStartProbe().getRequest()).isEqualTo(request);
+        assertThat(command.getStartProbe().getTarget())
+            .isEqualTo(registration.getRegistration().getWorker());
+        var result =
+            ProbeAttemptResult.newBuilder()
+                .setProbeAttemptId(request.getProbeAttemptId())
+                .setProbeVersion(2)
+                .setFailure(ProbeFailure.PROBE_FAILURE_NO_VIDEO_STREAM)
+                .build();
+        session.onNext(EstablishWorkerSessionRequest.newBuilder().setProbeResult(result).build());
+
+        assertThat(pending.get(5, TimeUnit.SECONDS)).isEqualTo(result);
+        assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
 
   @Test
   @DisplayName(
