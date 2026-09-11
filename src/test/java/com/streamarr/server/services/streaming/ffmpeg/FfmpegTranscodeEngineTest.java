@@ -3,18 +3,21 @@ package com.streamarr.server.services.streaming.ffmpeg;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
-import com.streamarr.server.domain.streaming.AudioDecision;
-import com.streamarr.server.domain.streaming.ContainerFormat;
-import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.SubtitleDecision;
-import com.streamarr.server.domain.streaming.TranscodeDecision;
-import com.streamarr.server.domain.streaming.TranscodeMode;
-import com.streamarr.server.domain.streaming.TranscodeRequest;
-import com.streamarr.server.domain.streaming.TranscodeStatus;
-import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.FakeFfmpegProcessManager;
+import com.streamarr.transcode.engine.AudioDecision;
+import com.streamarr.transcode.engine.AudioMode;
+import com.streamarr.transcode.engine.ContainerFormat;
+import com.streamarr.transcode.engine.SubtitleDecision;
+import com.streamarr.transcode.engine.SubtitleMode;
+import com.streamarr.transcode.engine.TranscodeDecision;
+import com.streamarr.transcode.engine.TranscodeException;
+import com.streamarr.transcode.engine.TranscodeMode;
+import com.streamarr.transcode.engine.TranscodeRequest;
+import com.streamarr.transcode.engine.TranscodeStatus;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -65,8 +68,19 @@ class FfmpegTranscodeEngineTest {
             TranscodeDecision.builder()
                 .transcodeMode(mode)
                 .videoCodecFamily(codecFamily)
-                .audioDecision(AudioDecision.stereoAac())
-                .subtitleDecision(SubtitleDecision.exclude())
+                .audioDecision(
+                    AudioDecision.builder()
+                        .mode(AudioMode.TRANSCODE)
+                        .codec("aac")
+                        .channels(2)
+                        .bitrate(128_000L)
+                        .build())
+                .subtitleDecision(
+                    new SubtitleDecision(
+                        SubtitleMode.EXCLUDE,
+                        Optional.empty(),
+                        OptionalInt.empty(),
+                        Optional.empty()))
                 .containerFormat(
                     "av1".equals(codecFamily) ? ContainerFormat.FMP4 : ContainerFormat.MPEGTS)
                 .needsKeyframeAlignment(mode != TranscodeMode.FULL_TRANSCODE)
@@ -93,8 +107,19 @@ class FfmpegTranscodeEngineTest {
                 TranscodeDecision.builder()
                     .transcodeMode(TranscodeMode.FULL_TRANSCODE)
                     .videoCodecFamily("h264")
-                    .audioDecision(AudioDecision.stereoAac())
-                    .subtitleDecision(SubtitleDecision.exclude())
+                    .audioDecision(
+                        AudioDecision.builder()
+                            .mode(AudioMode.TRANSCODE)
+                            .codec("aac")
+                            .channels(2)
+                            .bitrate(128_000L)
+                            .build())
+                    .subtitleDecision(
+                        new SubtitleDecision(
+                            SubtitleMode.EXCLUDE,
+                            Optional.empty(),
+                            OptionalInt.empty(),
+                            Optional.empty()))
                     .containerFormat(ContainerFormat.MPEGTS)
                     .needsKeyframeAlignment(false)
                     .build())
@@ -154,7 +179,7 @@ class FfmpegTranscodeEngineTest {
 
     executor.stop(request.sessionId());
 
-    assertThat(executor.isRunning(request.sessionId(), StreamSession.defaultVariant())).isFalse();
+    assertThat(executor.isRunning(request.sessionId(), "default")).isFalse();
     assertThat(processManager.getStopped()).contains(request.sessionId());
   }
 
@@ -163,21 +188,21 @@ class FfmpegTranscodeEngineTest {
   void shouldReportRunningOnlyBetweenStartAndStopWhenSessionIsActive() {
     var request = createRequest(TranscodeMode.FULL_TRANSCODE, "h264");
 
-    assertThat(executor.isRunning(request.sessionId(), StreamSession.defaultVariant())).isFalse();
+    assertThat(executor.isRunning(request.sessionId(), "default")).isFalse();
 
     executor.start(request, tempDir);
 
-    assertThat(executor.isRunning(request.sessionId(), StreamSession.defaultVariant())).isTrue();
+    assertThat(executor.isRunning(request.sessionId(), "default")).isTrue();
 
-    executor.stop(request.sessionId(), StreamSession.defaultVariant());
+    executor.stop(request.sessionId(), "default");
 
-    assertThat(executor.isRunning(request.sessionId(), StreamSession.defaultVariant())).isFalse();
+    assertThat(executor.isRunning(request.sessionId(), "default")).isFalse();
   }
 
   @Test
   @DisplayName("Should report not running when session is unknown")
   void shouldReportNotRunningWhenSessionIsUnknown() {
-    assertThat(executor.isRunning(UUID.randomUUID(), StreamSession.defaultVariant())).isFalse();
+    assertThat(executor.isRunning(UUID.randomUUID(), "default")).isFalse();
   }
 
   @Test
