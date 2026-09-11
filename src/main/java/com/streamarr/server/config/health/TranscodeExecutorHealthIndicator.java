@@ -6,10 +6,7 @@ import org.springframework.boot.health.contributor.Health;
 import org.springframework.boot.health.contributor.HealthIndicator;
 import org.springframework.stereotype.Component;
 
-/**
- * Reports on whichever transcode executor is active: local FFmpeg availability, or — in remote mode
- * — whether any transcode worker is connected.
- */
+/** Reports worker connectivity and available transcode capacity. */
 @Component
 @RequiredArgsConstructor
 public class TranscodeExecutorHealthIndicator implements HealthIndicator {
