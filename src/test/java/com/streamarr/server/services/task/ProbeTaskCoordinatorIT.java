@@ -26,13 +26,20 @@ import com.streamarr.server.domain.task.FileProcessingTaskStatus;
 import com.streamarr.server.domain.task.ProbeClaim;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeRequest;
+import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.task.FileProcessingTaskRepository;
+import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.library.ProbeTaskDispatcher;
 import com.streamarr.server.services.probe.PersistedProbeReader;
+import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
+import java.io.IOException;
 import java.net.URI;
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
@@ -45,10 +52,15 @@ import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.IntStream;
 import javax.sql.DataSource;
 import lombok.Builder;
@@ -56,6 +68,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -75,6 +88,7 @@ class ProbeTaskCoordinatorIT extends AbstractIntegrationTest {
   @Autowired private MediaFileContainerInfoRepository containers;
   @Autowired private DataSource dataSource;
   @Autowired private JdbcTemplate jdbc;
+  @TempDir Path sourceDirectory;
 
   @BeforeEach
   void clearTasks() {
@@ -125,6 +139,293 @@ class ProbeTaskCoordinatorIT extends AbstractIntegrationTest {
       jdbc.execute("DROP TRIGGER adversarial_enqueue_gate ON file_processing_task");
       jdbc.execute("DROP FUNCTION adversarial_enqueue_gate()");
     }
+  }
+
+  @Test
+  @DisplayName("Should complete due work when another task has a future retry deadline")
+  void shouldCompleteDueWorkWhenAnotherTaskHasAFutureRetryDeadline() throws Exception {
+    var delayedRequest = requestForExistingFile();
+    var delayedId = coordinator.enqueueProbe(delayedRequest);
+    var delayedClaim = coordinator.claimProbeTask().orElseThrow();
+    assertThat(coordinator.retryProbe(delayedClaim, "Storage unavailable")).isTrue();
+    jdbc.update(
+        "UPDATE file_processing_task SET retry_at = clock_timestamp() + interval '1 day' WHERE id = ?",
+        delayedId);
+    var retryAt = tasks.findById(delayedId).orElseThrow().getRetryAt();
+    var dueRequest = requestForExistingFile();
+    var dueId = coordinator.enqueueProbe(dueRequest);
+    var producer = observedProbe().build();
+
+    try (var dispatcher = databaseDispatcher().producer(producer).build()) {
+      dispatcher.dispatch();
+      producer.awaitFinishedExecution();
+
+      assertThat(tasks.findById(dueId).orElseThrow().getStatus())
+          .isEqualTo(FileProcessingTaskStatus.COMPLETED);
+      assertThat(probes.find(dueRequest.mediaFileId())).isPresent();
+      assertThat(probes.find(delayedRequest.mediaFileId())).isEmpty();
+      var pending = tasks.findById(delayedId).orElseThrow();
+      assertThat(pending.getStatus()).isEqualTo(FileProcessingTaskStatus.PENDING);
+      assertThat(pending.getRetryAt()).isEqualTo(retryAt);
+      assertThat(pending.getLeaseExpiresAt()).isNull();
+    }
+  }
+
+  @Test
+  @DisplayName("Should recover with fresh claim when renewal fails and lease expires")
+  void shouldRecoverWithFreshClaimWhenRenewalFailsAndLeaseExpires() throws Exception {
+    var request = requestForExistingFile();
+    var taskId = coordinator.enqueueProbe(request);
+    var started = new CountDownLatch(1);
+    var release = new CountDownLatch(1);
+    var interrupted = new CountDownLatch(1);
+    var attempt = new AtomicInteger();
+    var recoveredClaimId = new AtomicReference<UUID>();
+    var producer =
+        observedProbe()
+            .delegate(
+                _ -> {
+                  if (attempt.incrementAndGet() != 1) {
+                    recoveredClaimId.set(
+                        jdbc.queryForObject(
+                            "SELECT claim_id FROM file_processing_task WHERE id = ?",
+                            UUID.class,
+                            taskId));
+                    return successfulOutcome();
+                  }
+
+                  started.countDown();
+                  try {
+                    assertThat(release.await(10, TimeUnit.SECONDS)).isTrue();
+                  } catch (InterruptedException exception) {
+                    interrupted.countDown();
+                    Thread.currentThread().interrupt();
+                    throw new ProbeExecutionException(exception);
+                  }
+
+                  return successfulOutcome();
+                })
+            .build();
+    try (var dispatcher = databaseDispatcher().producer(producer).build()) {
+      dispatcher.dispatch();
+      assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+      var initialClaimId =
+          jdbc.queryForObject(
+              "SELECT claim_id FROM file_processing_task WHERE id = ?", UUID.class, taskId);
+      jdbc.execute(
+          """
+          CREATE FUNCTION adversarial_renewal_failure() RETURNS trigger LANGUAGE plpgsql AS $$
+          BEGIN
+            IF OLD.claim_id IS NOT DISTINCT FROM NEW.claim_id AND NEW.status = 'PROCESSING' THEN
+              RAISE EXCEPTION 'adversarial renewal write failure';
+            END IF;
+            RETURN NEW;
+          END $$
+          """);
+      jdbc.execute(
+          """
+          CREATE TRIGGER adversarial_renewal_failure BEFORE UPDATE OF lease_expires_at
+          ON file_processing_task FOR EACH ROW EXECUTE FUNCTION adversarial_renewal_failure()
+          """);
+      try {
+        dispatcher.heartbeat();
+        assertThat(interrupted.await(5, TimeUnit.SECONDS)).isTrue();
+        producer.awaitFinishedExecution();
+      } finally {
+        release.countDown();
+        jdbc.execute("DROP TRIGGER adversarial_renewal_failure ON file_processing_task");
+        jdbc.execute("DROP FUNCTION adversarial_renewal_failure()");
+      }
+
+      assertThat(tasks.findById(taskId).orElseThrow().getStatus())
+          .isEqualTo(FileProcessingTaskStatus.PROCESSING);
+      assertThat(probes.find(request.mediaFileId())).isEmpty();
+      assertThat(coordinator.claimProbeTask()).isEmpty();
+      expireLease(taskId);
+      dispatcher.dispatch();
+      producer.awaitFinishedExecution();
+
+      assertThat(tasks.findById(taskId).orElseThrow().getStatus())
+          .isEqualTo(FileProcessingTaskStatus.COMPLETED);
+      assertThat(probes.find(request.mediaFileId())).isPresent();
+      assertThat(recoveredClaimId.get()).isNotNull().isNotEqualTo(initialClaimId);
+    }
+  }
+
+  @Test
+  @DisplayName("Should recover without publishing stopped result when dispatcher closes")
+  void shouldRecoverWithoutPublishingStoppedResultWhenDispatcherCloses() throws Exception {
+    var request = requestForExistingFile();
+    var taskId = coordinator.enqueueProbe(request);
+    var started = new CountDownLatch(1);
+    var release = new CountDownLatch(1);
+    var interrupted = new CountDownLatch(1);
+    var producer =
+        observedProbe()
+            .delegate(
+                _ -> {
+                  started.countDown();
+                  try {
+                    assertThat(release.await(10, TimeUnit.SECONDS)).isTrue();
+                  } catch (InterruptedException _) {
+                    interrupted.countDown();
+                  }
+
+                  return successfulOutcome();
+                })
+            .build();
+    var dispatcher = databaseDispatcher().producer(producer).build();
+    try {
+      dispatcher.dispatch();
+      assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+      dispatcher.close();
+      assertThat(interrupted.await(5, TimeUnit.SECONDS)).isTrue();
+      producer.awaitFinishedExecution();
+    } finally {
+      release.countDown();
+      dispatcher.close();
+    }
+
+    assertThat(tasks.findById(taskId).orElseThrow().getStatus())
+        .isEqualTo(FileProcessingTaskStatus.PROCESSING);
+    assertThat(probes.find(request.mediaFileId())).isEmpty();
+    assertThat(coordinator.claimProbeTask()).isEmpty();
+    expireLease(taskId);
+    var replacementProducer = observedProbe().build();
+    try (var replacement = databaseDispatcher().producer(replacementProducer).build()) {
+      replacement.dispatch();
+      replacementProducer.awaitFinishedExecution();
+
+      assertThat(tasks.findById(taskId).orElseThrow().getStatus())
+          .isEqualTo(FileProcessingTaskStatus.COMPLETED);
+      assertThat(probes.find(request.mediaFileId())).isPresent();
+    }
+  }
+
+  private enum ExecutionFailure {
+    RETRY_WRITE,
+    ERROR
+  }
+
+  @ParameterizedTest
+  @EnumSource(ExecutionFailure.class)
+  @DisplayName("Should recover claim when failure recording is unavailable and lease expires")
+  void shouldRecoverClaimWhenFailureRecordingIsUnavailableAndLeaseExpires(ExecutionFailure failure)
+      throws Exception {
+    var request = requestForExistingFile();
+    var taskId = coordinator.enqueueProbe(request);
+    var attempt = new AtomicInteger();
+    var producer =
+        observedProbe()
+            .delegate(
+                _ -> {
+                  if (attempt.incrementAndGet() != 1) {
+                    return successfulOutcome();
+                  }
+
+                  if (failure == ExecutionFailure.ERROR) {
+                    throw new AssertionError("adversarial fatal producer error");
+                  }
+
+                  throw new ProbeExecutionException(
+                      new IOException("adversarial probe execution failure"));
+                })
+            .build();
+    jdbc.execute(
+        """
+        CREATE FUNCTION adversarial_retry_failure() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF NEW.retry_count > OLD.retry_count THEN
+            RAISE EXCEPTION 'adversarial retry write failure';
+          END IF;
+          RETURN NEW;
+        END $$
+        """);
+    jdbc.execute(
+        """
+        CREATE TRIGGER adversarial_retry_failure BEFORE UPDATE OF retry_count
+        ON file_processing_task FOR EACH ROW EXECUTE FUNCTION adversarial_retry_failure()
+        """);
+    try (var dispatcher = databaseDispatcher().producer(producer).build()) {
+      try {
+        dispatcher.dispatch();
+        producer.awaitFinishedExecution();
+      } finally {
+        jdbc.execute("DROP TRIGGER adversarial_retry_failure ON file_processing_task");
+        jdbc.execute("DROP FUNCTION adversarial_retry_failure()");
+      }
+
+      var abandoned = tasks.findById(taskId).orElseThrow();
+      assertThat(abandoned.getStatus()).isEqualTo(FileProcessingTaskStatus.PROCESSING);
+      assertThat(abandoned.getErrorMessage()).isNull();
+      assertThat(probes.find(request.mediaFileId())).isEmpty();
+      assertThat(coordinator.claimProbeTask()).isEmpty();
+      expireLease(taskId);
+      dispatcher.dispatch();
+      producer.awaitFinishedExecution();
+
+      assertThat(tasks.findById(taskId).orElseThrow().getStatus())
+          .isEqualTo(FileProcessingTaskStatus.COMPLETED);
+      assertThat(probes.find(request.mediaFileId())).isPresent();
+    }
+  }
+
+  private ProbeTaskDispatcher.ProbeTaskDispatcherBuilder databaseDispatcher() {
+    return ProbeTaskDispatcher.builder()
+        .coordinator(coordinator)
+        .reader(probes)
+        .fileSystem(FileSystems.getDefault())
+        .stabilityChecker(_ -> true)
+        .maxConcurrent(1);
+  }
+
+  private ObservedProbe.ObservedProbeBuilder observedProbe() {
+    return ObservedProbe.builder().delegate(_ -> successfulOutcome());
+  }
+
+  @Builder
+  private static class ObservedProbe implements FfprobeService {
+    private final FfprobeService delegate;
+    private final BlockingQueue<Thread> executions = new LinkedBlockingQueue<>();
+
+    @Override
+    public ProbeOutcome probe(Path path) {
+      executions.add(Thread.currentThread());
+      return delegate.probe(path);
+    }
+
+    private void awaitFinishedExecution() throws InterruptedException {
+      var execution = executions.poll(5, TimeUnit.SECONDS);
+      assertThat(execution)
+          .as("producer execution reached its deterministic observation hook")
+          .isNotNull();
+      assertThat(execution.join(Duration.ofSeconds(5)))
+          .as("dispatcher execution finished its publication or retry transaction")
+          .isTrue();
+    }
+  }
+
+  private void expireLease(UUID taskId) {
+    jdbc.update(
+        "UPDATE file_processing_task SET lease_expires_at = clock_timestamp() - interval '1 second' WHERE id = ?",
+        taskId);
+  }
+
+  private ProbeRequest requestForExistingFile() throws IOException {
+    var request = request();
+    var path = Files.writeString(sourceDirectory.resolve(UUID.randomUUID() + ".mkv"), "media");
+    var filepathUri = FilepathCodec.encode(path);
+    var snapshot =
+        sourceSnapshot()
+            .size(Files.size(path))
+            .modifiedAt(Files.getLastModifiedTime(path).toInstant())
+            .build();
+    jdbc.update(
+        "UPDATE media_file SET filepath_uri = ?, size = ? WHERE id = ?",
+        filepathUri,
+        snapshot.size(),
+        request.mediaFileId());
+    return request.toBuilder().filepathUri(filepathUri).snapshot(snapshot).build();
   }
 
   @Test

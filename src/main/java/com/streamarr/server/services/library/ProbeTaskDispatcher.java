@@ -76,10 +76,22 @@ public class ProbeTaskDispatcher implements AutoCloseable {
       }
 
       log.warn("Probe execution failed for task {}", claim.taskId(), exception);
-      coordinator.retryProbe(claim, exception.toString());
+      retryAfterFailure(claim, exception.toString());
     } finally {
       running.remove(claim.claimId(), execution);
       occupied.decrementAndGet();
+    }
+  }
+
+  private void retryAfterFailure(ProbeClaim claim, String errorMessage) {
+    try {
+      coordinator.retryProbe(claim, errorMessage);
+    } catch (Exception exception) {
+      log.warn(
+          "Could not schedule retry for probe task {} with claim {}",
+          claim.taskId(),
+          claim.claimId(),
+          exception);
     }
   }
 
