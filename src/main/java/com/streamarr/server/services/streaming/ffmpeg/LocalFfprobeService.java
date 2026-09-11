@@ -154,7 +154,10 @@ public class LocalFfprobeService implements FfprobeService {
   }
 
   private String requiredCodecType(JsonNode stream) {
-    return optionalString(stream, "codec_type")
+    return Optional.ofNullable(stream.get("codec_type"))
+        .filter(JsonNode::isTextual)
+        .map(JsonNode::asString)
+        .filter(value -> !value.isBlank())
         .orElseThrow(
             () ->
                 new ProbeExecutionException(
