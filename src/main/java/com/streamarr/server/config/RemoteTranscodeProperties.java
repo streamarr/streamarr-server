@@ -8,10 +8,8 @@ public record RemoteTranscodeProperties(
     boolean enabled, UUID sourceNamespaceId, String sourceRoot) {
 
   public RemoteTranscodeProperties {
-    if (enabled) {
-      require(sourceNamespaceId, "Remote source namespace ID is required");
-      requireText(sourceRoot, "Remote source root is required");
-    }
+    require(sourceNamespaceId, "Remote source namespace ID is required");
+    requireText(sourceRoot, "Remote source root is required");
   }
 
   private static void require(Object value, String message) {

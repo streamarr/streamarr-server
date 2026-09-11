@@ -20,6 +20,10 @@ public class WorkerSessionConfiguration {
   public WorkerSessionServer workerSessionServer(
       WorkerSessionProperties properties, SegmentStore segmentStore) {
     var loopback = properties.loopback();
+    if (!loopback.enabled() && !properties.mutualTls().enabled()) {
+      throw new IllegalArgumentException("At least one worker session listener must be enabled");
+    }
+
     var listeners =
         WorkerSessionListeners.builder()
             .loopbackPort(

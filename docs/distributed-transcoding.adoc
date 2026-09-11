@@ -1,7 +1,8 @@
 = Distributed Transcoding
 
 The default Compose deployment starts one server and one colocated worker.
-Outside Compose, local FFmpeg remains the default.
+Outside Compose, local FFmpeg remains the default for transcoding.
+Background probes always run on workers that support the requested probe version.
 Enabling a worker listener does not change executor selection. Set `STREAMING_REMOTE_ENABLED=true` to dispatch transcoding to workers.
 
 The supported first topology is one Streamarr server and zero or more outbound workers.
@@ -28,7 +29,13 @@ The worker needs `TRANSCODE_WORKER_PLAINTEXT=true`, `TRANSCODE_WORKER_CONTROL_PL
 It does not need certificates in this mode.
 
 The dev profile enables loopback. Full application test contexts use an ephemeral loopback port.
-Listener enablement remains independent of local or remote executor selection. A server with both listeners disabled can still start with local execution.
+The server requires at least one enabled worker listener because probing uses the worker session.
+It refuses startup when both listeners are disabled.
+It can start with no connected workers. Probe tasks retain their retry schedule until a capable worker connects.
+
+Set `STREAMING_REMOTE_SOURCE_NAMESPACE_ID` and `STREAMING_REMOTE_SOURCE_ROOT` for the server's media mapping.
+These settings are required even when transcoding still runs locally.
+The dev profile defaults to the Compose namespace UUID and `/media`. When running the server on the host, set the source root to the host media directory and configure the same namespace on the worker.
 
 === Remote workers
 
