@@ -4,6 +4,8 @@ import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
 import com.streamarr.server.services.streaming.ffmpeg.LocalFfmpegProcessManager;
 import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
+import com.streamarr.transcode.probe.FfprobeExecutor;
+import java.nio.file.Path;
 
 public final class TranscodeWorkerApplication {
 
@@ -27,7 +29,8 @@ public final class TranscodeWorkerApplication {
             new FfmpegCommandBuilder(settings.ffmpegPath()),
             new LocalFfmpegProcessManager(),
             capabilities);
-    try (var worker = new TranscodeWorker(settings.workerConfiguration(), engine)) {
+    var ffprobe = FfprobeExecutor.forBinary(Path.of(settings.ffprobePath()));
+    try (var worker = new TranscodeWorker(settings.workerConfiguration(), engine, ffprobe)) {
       var shutdownHook =
           Thread.ofPlatform().name("transcode-worker-shutdown").unstarted(worker::close);
       Runtime.getRuntime().addShutdownHook(shutdownHook);

@@ -64,6 +64,7 @@ class TranscodeWorkerSettingsTest {
     assertThat(settings.controlPlaneHost()).isEqualTo("streamarr-server");
     assertThat(settings.controlPlanePort()).isEqualTo(9090);
     assertThat(settings.ffmpegPath()).isEqualTo("ffmpeg");
+    assertThat(settings.ffprobePath()).isEqualTo("ffprobe");
     assertThat(worker.workerId()).isEqualTo(WORKER_ID);
     assertThat(worker.availableSlots()).isEqualTo(1);
     assertThat(worker.sourceNamespaces()).containsEntry(SOURCE_NAMESPACE_ID, Path.of("/media"));
@@ -177,12 +178,14 @@ class TranscodeWorkerSettingsTest {
     environment.put("TRANSCODE_WORKER_CONTROL_PLANE_PORT", "65535");
     environment.put("TRANSCODE_WORKER_SLOTS", "2");
     environment.put("TRANSCODE_WORKER_FFMPEG_PATH", "/usr/local/bin/ffmpeg");
+    environment.put("TRANSCODE_WORKER_FFPROBE_PATH", "/usr/local/bin/ffprobe");
     environment.put("TRANSCODE_WORKER_SEGMENT_BASE_PATH", "/transcode");
 
     var settings = TranscodeWorkerSettings.fromEnvironment(environment);
 
     assertThat(settings.controlPlanePort()).isEqualTo(65_535);
     assertThat(settings.ffmpegPath()).isEqualTo("/usr/local/bin/ffmpeg");
+    assertThat(settings.ffprobePath()).isEqualTo("/usr/local/bin/ffprobe");
     assertThat(settings.workerConfiguration().availableSlots()).isEqualTo(2);
     assertThat(settings.workerConfiguration().segmentBasePath()).isEqualTo(Path.of("/transcode"));
   }
