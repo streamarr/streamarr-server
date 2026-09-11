@@ -1,3 +1,8 @@
+streaming:
+  worker-session:
+    loopback:
+      enabled: ${STREAMING_WORKER_SESSION_LOOPBACK_ENABLED:true}
+
 spring:
   jpa:
     properties:

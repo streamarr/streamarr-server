@@ -22,8 +22,31 @@ services:
       SPRING_JPA_PROPERTIES_HIBERNATE_SHOW_SQL: false
       LANG: C.UTF-8
       TMDB_API_TOKEN: ${TMDB_API_TOKEN:-}
+      STREAMING_WORKER_SESSION_LOOPBACK_ENABLED: "true"
+      STREAMING_WORKER_SESSION_LOOPBACK_PORT: ${STREAMARR_WORKER_SESSION_PORT:-9090}
+      STREAMING_REMOTE_ENABLED: "true"
+      STREAMING_REMOTE_SOURCE_NAMESPACE_ID: ${STREAMARR_SOURCE_NAMESPACE_ID:-cccccccc-cccc-cccc-cccc-cccccccccccc}
+      STREAMING_REMOTE_SOURCE_ROOT: /media
     volumes:
-      - /mpool/media/clean/movies:/mpool/media/clean/movies
+      - ${STREAMARR_MEDIA_PATH:-/mpool/media/clean/movies}:/media:ro
+
+  transcode-worker:
+    image: streamarr/streamarr-server:latest
+    entrypoint: worker
+    restart: unless-stopped
+    network_mode: service:streamarr-server
+    depends_on:
+      - streamarr-server
+    environment:
+      TRANSCODE_WORKER_PLAINTEXT: "true"
+      TRANSCODE_WORKER_CONTROL_PLANE_HOST: 127.0.0.1
+      TRANSCODE_WORKER_CONTROL_PLANE_PORT: ${STREAMARR_WORKER_SESSION_PORT:-9090}
+      TRANSCODE_WORKER_ID: ${STREAMARR_WORKER_ID:-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa}
+      TRANSCODE_WORKER_SOURCE_NAMESPACE_ID: ${STREAMARR_SOURCE_NAMESPACE_ID:-cccccccc-cccc-cccc-cccc-cccccccccccc}
+      TRANSCODE_WORKER_SOURCE_ROOT: /media
+      TRANSCODE_WORKER_SLOTS: ${STREAMARR_WORKER_SLOTS:-1}
+    volumes:
+      - ${STREAMARR_MEDIA_PATH:-/mpool/media/clean/movies}:/media:ro
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:latest

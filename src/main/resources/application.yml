@@ -76,15 +76,21 @@ streaming:
   session-retention: ${STREAMING_SESSION_RETENTION:24h}
   producer-stall-threshold: ${STREAMING_PRODUCER_STALL_THRESHOLD:10s}
   segment-base-path: ${STREAMING_SEGMENT_BASE_PATH:}
+  worker-session:
+    loopback:
+      enabled: ${STREAMING_WORKER_SESSION_LOOPBACK_ENABLED:false}
+      port: ${STREAMING_WORKER_SESSION_LOOPBACK_PORT:9090}
+    mutual-tls:
+      enabled: ${STREAMING_WORKER_SESSION_MUTUAL_TLS_ENABLED:false}
+      port: ${STREAMING_WORKER_SESSION_MUTUAL_TLS_PORT:9090}
+      trust-domain: ${STREAMING_WORKER_SESSION_MUTUAL_TLS_TRUST_DOMAIN:}
+      certificate: ${STREAMING_WORKER_SESSION_MUTUAL_TLS_CERTIFICATE:}
+      private-key: ${STREAMING_WORKER_SESSION_MUTUAL_TLS_PRIVATE_KEY:}
+      trust-bundle: ${STREAMING_WORKER_SESSION_MUTUAL_TLS_TRUST_BUNDLE:}
   remote:
     enabled: ${STREAMING_REMOTE_ENABLED:false}
-    port: ${STREAMING_REMOTE_PORT:9090}
-    trust-domain: ${STREAMING_REMOTE_TRUST_DOMAIN:}
     source-namespace-id: ${STREAMING_REMOTE_SOURCE_NAMESPACE_ID:}
     source-root: ${STREAMING_REMOTE_SOURCE_ROOT:}
-    certificate: ${STREAMING_REMOTE_CERTIFICATE:}
-    private-key: ${STREAMING_REMOTE_PRIVATE_KEY:}
-    trust-bundle: ${STREAMING_REMOTE_TRUST_BUNDLE:}
   watch-progress:
     min-played-percent: ${STREAMING_WATCH_PROGRESS_MIN_RESUME_PERCENT:5.0}
     max-played-percent: ${STREAMING_WATCH_PROGRESS_MAX_RESUME_PERCENT:90.0}

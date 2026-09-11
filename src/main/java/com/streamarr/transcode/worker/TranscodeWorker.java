@@ -6,6 +6,7 @@ import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 import com.google.protobuf.ByteString;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
 import com.streamarr.transcode.protocol.ProtoUuid;
+import com.streamarr.transcode.protocol.WorkerIdentityMetadata;
 import com.streamarr.transcode.v1.ContainerFormat;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
@@ -27,10 +28,12 @@ import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerSessionAccepted;
 import io.grpc.ManagedChannel;
+import io.grpc.Metadata;
 import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.ClientCallStreamObserver;
 import io.grpc.stub.ClientResponseObserver;
+import io.grpc.stub.MetadataUtils;
 import io.grpc.stub.StreamObserver;
 import java.io.IOException;
 import java.io.InputStream;
@@ -81,18 +84,12 @@ public final class TranscodeWorker implements AutoCloseable {
       throw new IllegalStateException("Transcode worker is already started");
     }
 
-    var tlsIdentity = configuration.tlsIdentity();
-    var sslContext =
-        GrpcSslContexts.forClient()
-            .keyManager(tlsIdentity.certificate().toFile(), tlsIdentity.privateKey().toFile())
-            .trustManager(tlsIdentity.trustBundle().toFile())
-            .build();
+    var channelBuilder = connectionBuilder(host, port);
     executor = Executors.newVirtualThreadPerTaskExecutor();
     // Client keepalive detects a half-open control-plane connection (server power loss, dropped
     // NAT mapping); without it an idle worker would wait on a dead session until TCP gives up.
     channel =
-        NettyChannelBuilder.forAddress(host, port)
-            .sslContext(sslContext)
+        channelBuilder
             .keepAliveTime(configuration.keepAliveTime().toMillis(), TimeUnit.MILLISECONDS)
             .keepAliveTimeout(configuration.keepAliveTimeout().toMillis(), TimeUnit.MILLISECONDS)
             .build();
@@ -103,6 +100,23 @@ public final class TranscodeWorker implements AutoCloseable {
             .establishWorkerSession(new WorkerResponseObserver(accepted));
     send(registration());
     accepted.get(CONNECTION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+  }
+
+  private NettyChannelBuilder connectionBuilder(String host, int port) throws IOException {
+    var builder = NettyChannelBuilder.forAddress(host, port);
+    if (configuration.plaintext()) {
+      var headers = new Metadata();
+      headers.put(WorkerIdentityMetadata.WORKER_ID, configuration.workerId().toString());
+      return builder.usePlaintext().intercept(MetadataUtils.newAttachHeadersInterceptor(headers));
+    }
+
+    var tlsIdentity = configuration.tlsIdentity().orElseThrow();
+    var sslContext =
+        GrpcSslContexts.forClient()
+            .keyManager(tlsIdentity.certificate().toFile(), tlsIdentity.privateKey().toFile())
+            .trustManager(tlsIdentity.trustBundle().toFile())
+            .build();
+    return builder.sslContext(sslContext);
   }
 
   public void awaitDisconnection() throws InterruptedException {
