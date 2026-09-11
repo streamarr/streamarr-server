@@ -1,4 +1,4 @@
-package com.streamarr.server.services.probe;
+package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.task.ProbeRequest;
 import lombok.NonNull;

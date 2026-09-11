@@ -1,4 +1,4 @@
-package com.streamarr.server.services.probe;
+package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -23,6 +23,8 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.probe.PersistedProbeReader;
+import com.streamarr.server.services.probe.ProbeRequests;
 import java.io.IOException;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
@@ -46,7 +48,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 @Tag("IntegrationTest")
 @DisplayName("Media probe scheduling")
-class MediaProbeSchedulingIT extends AbstractIntegrationTest {
+class SchedulerProbeRequestsIT extends AbstractIntegrationTest {
 
   @TempDir Path tempDir;
 
