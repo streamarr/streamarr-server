@@ -7,6 +7,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.streamarr.transcode.protocol.WorkerIdentityMetadata;
 import io.grpc.Attributes;
 import io.grpc.Grpc;
 import io.grpc.Metadata;
@@ -18,6 +19,7 @@ import java.lang.reflect.Proxy;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.util.UUID;
 import javax.net.ssl.SSLSession;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,6 +41,25 @@ class WorkerIdentityServerInterceptorTest {
     interceptorLogger().detachAppender(appender);
     appender.stop();
     assertThat(interceptorLogger().isAttached(appender)).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should propagate downstream failure when the loopback worker identity is valid")
+  void shouldPropagateDownstreamFailureWhenLoopbackWorkerIdentityIsValid() {
+    var call = new RecordingServerCall(Attributes.EMPTY);
+    var headers = new Metadata();
+    headers.put(WorkerIdentityMetadata.WORKER_ID, UUID.randomUUID().toString());
+    var interceptor = new LoopbackWorkerIdentityInterceptor();
+    var downstreamFailure = new IllegalArgumentException("downstream setup failed");
+    ServerCallHandler<Object, Object> handler =
+        (_, _) -> {
+          throw downstreamFailure;
+        };
+
+    var thrown = catchThrowable(() -> interceptor.interceptCall(call, headers, handler));
+
+    assertThat(thrown).isSameAs(downstreamFailure);
+    assertThat(call.closedStatus()).isNull();
   }
 
   @Test
