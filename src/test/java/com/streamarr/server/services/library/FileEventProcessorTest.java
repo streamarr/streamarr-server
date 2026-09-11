@@ -13,7 +13,6 @@ import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.fakes.FakeFileProcessingTaskRepository;
 import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.fakes.FakeLibraryMutationTransaction;
 import com.streamarr.server.fakes.FakeLibraryRepository;
@@ -31,7 +30,6 @@ import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataParser;
-import com.streamarr.server.services.task.FileProcessingTaskCoordinator;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import io.methvin.watcher.DirectoryChangeEvent;
@@ -39,10 +37,7 @@ import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -63,7 +58,6 @@ class FileEventProcessorTest {
   private FileSystem fileSystem;
   private LibraryRepository libraryRepository;
   private FakeMediaFileRepository mediaFileRepository;
-  private FakeFileProcessingTaskRepository taskRepository;
   private AtomicReference<FileStabilityChecker> stabilityCheckerRef;
   private FileEventProcessor eventProcessor;
   private UUID specialLibraryId;
@@ -152,17 +146,11 @@ class FileEventProcessorTest {
             new FakeLibraryMutationTransaction(),
             mutationTransactions);
 
-    taskRepository = new FakeFileProcessingTaskRepository();
-    var clock = Clock.fixed(Instant.now(), ZoneId.of("UTC"));
-    var taskCoordinator =
-        new FileProcessingTaskCoordinator(taskRepository, clock, Duration.ofSeconds(60));
-
     eventProcessor =
         new FileEventProcessor(
             path -> stabilityCheckerRef.get().waitForStability(path),
             libraryManagementService,
-            ignoredFileValidator,
-            taskCoordinator);
+            ignoredFileValidator);
 
     eventProcessor.reset(libraryRepository.findAll());
   }
@@ -241,22 +229,6 @@ class FileEventProcessorTest {
                   mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
               assertThat(mediaFile).isPresent();
             });
-  }
-
-  @Test
-  @DisplayName("Should leave task ownership to probe scheduling when processing a stable file")
-  void shouldLeaveTaskOwnershipToProbeSchedulingWhenProcessingStableFile() throws Exception {
-    var path = createFile("/media/movies/Movie (2024).mkv");
-
-    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
-
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () ->
-                assertThat(mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path)))
-                    .isPresent());
-    assertThat(taskRepository.count()).isZero();
   }
 
   @Test
