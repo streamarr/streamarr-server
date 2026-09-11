@@ -5,6 +5,7 @@ import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE;
 import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE_CONTAINER_INFO;
 import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE_STREAM_INFO;
 import static org.jooq.impl.DSL.currentOffsetDateTime;
+import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.function;
 import static org.jooq.impl.DSL.greatest;
 import static org.jooq.impl.DSL.inline;
@@ -116,13 +117,24 @@ public class FileProcessingTaskRepositoryCustomImpl implements FileProcessingTas
             FILE_PROCESSING_TASK.STATUS.in(
                 inline(FileProcessingTaskStatus.PENDING),
                 inline(FileProcessingTaskStatus.PROCESSING)))
-        .doNothing()
-        .execute();
-    resetProbeInputs(request)
-        .set(FILE_PROCESSING_TASK.MEDIA_FILE_ID, request.mediaFileId())
-        .where(FILE_PROCESSING_TASK.FILEPATH_URI.eq(request.filepathUri()))
-        .and(FILE_PROCESSING_TASK.STATUS.in(ACTIVE_STATUSES))
-        .and(
+        .doUpdate()
+        .set(FILE_PROCESSING_TASK.MEDIA_FILE_ID, excluded(FILE_PROCESSING_TASK.MEDIA_FILE_ID))
+        .set(FILE_PROCESSING_TASK.SOURCE_SIZE, excluded(FILE_PROCESSING_TASK.SOURCE_SIZE))
+        .set(
+            FILE_PROCESSING_TASK.SOURCE_MODIFIED_EPOCH_SECOND,
+            excluded(FILE_PROCESSING_TASK.SOURCE_MODIFIED_EPOCH_SECOND))
+        .set(
+            FILE_PROCESSING_TASK.SOURCE_MODIFIED_NANOS,
+            excluded(FILE_PROCESSING_TASK.SOURCE_MODIFIED_NANOS))
+        .set(FILE_PROCESSING_TASK.PROBE_VERSION, excluded(FILE_PROCESSING_TASK.PROBE_VERSION))
+        .set(FILE_PROCESSING_TASK.CLAIM_ID, (UUID) null)
+        .set(FILE_PROCESSING_TASK.OWNER_INSTANCE_ID, (String) null)
+        .set(FILE_PROCESSING_TASK.LEASE_EXPIRES_AT, (OffsetDateTime) null)
+        .set(FILE_PROCESSING_TASK.STATUS, FileProcessingTaskStatus.PENDING)
+        .set(FILE_PROCESSING_TASK.RETRY_AT, databaseNow())
+        .set(FILE_PROCESSING_TASK.RETRY_COUNT, 0)
+        .set(FILE_PROCESSING_TASK.ERROR_MESSAGE, (String) null)
+        .where(
             FILE_PROCESSING_TASK
                 .SOURCE_SIZE
                 .isDistinctFrom(request.snapshot().size())

@@ -1,8 +1,10 @@
 package com.streamarr.server.services.task;
 
+import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
 import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
@@ -49,6 +51,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 import javax.sql.DataSource;
+import lombok.Builder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -61,6 +64,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 @Tag("IntegrationTest")
+@DisplayName("Probe Task Coordinator Integration Tests")
 class ProbeTaskCoordinatorIT extends AbstractIntegrationTest {
 
   @Autowired private FileProcessingTaskCoordinator coordinator;
@@ -75,6 +79,52 @@ class ProbeTaskCoordinatorIT extends AbstractIntegrationTest {
   @BeforeEach
   void clearTasks() {
     tasks.deleteAll();
+  }
+
+  @Test
+  @DisplayName("Should retain requested probe when legacy completion overlaps enqueue")
+  void shouldRetainRequestedProbeWhenLegacyCompletionOverlapsEnqueue() throws Exception {
+    var request = request();
+    var legacy =
+        coordinator.createTask(Path.of(URI.create(request.filepathUri())), request.libraryId());
+    jdbc.execute(
+        """
+        CREATE FUNCTION adversarial_enqueue_gate() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(377342);
+          RETURN NULL;
+        END $$
+        """);
+    jdbc.execute(
+        """
+        CREATE TRIGGER adversarial_enqueue_gate BEFORE UPDATE OF source_size ON file_processing_task
+        FOR EACH STATEMENT EXECUTE FUNCTION adversarial_enqueue_gate()
+        """);
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var held = dataSource.getConnection()) {
+      held.setAutoCommit(false);
+      try (var statement = held.createStatement()) {
+        statement.execute("SELECT pg_advisory_xact_lock(377342)");
+      }
+
+      var blocker = backendPid(held);
+      var pending = executor.submit(() -> coordinator.enqueueProbe(request));
+      await()
+          .atMost(Duration.ofSeconds(5))
+          .until(() -> waitersBehind(jdbc, blocker, "%file_processing_task%") == 1);
+      assertThat(
+              executor.submit(() -> coordinator.complete(legacy.getId())).get(5, TimeUnit.SECONDS))
+          .isPresent();
+      held.commit();
+
+      assertThatCode(() -> pending.get(5, TimeUnit.SECONDS))
+          .as("enqueue retains requested probe work despite concurrent legacy completion")
+          .doesNotThrowAnyException();
+      assertThat(coordinator.claimProbeTask().orElseThrow().request()).isEqualTo(request);
+    } finally {
+      jdbc.execute("DROP TRIGGER adversarial_enqueue_gate ON file_processing_task");
+      jdbc.execute("DROP FUNCTION adversarial_enqueue_gate()");
+    }
   }
 
   @Test
@@ -108,6 +158,28 @@ class ProbeTaskCoordinatorIT extends AbstractIntegrationTest {
     COMPLETE,
     FAIL,
     RECOVER
+  }
+
+  @Test
+  @DisplayName("Should retain changed source inputs when an older version is enqueued")
+  void shouldRetainChangedSourceInputsWhenAnOlderVersionIsEnqueued() {
+    var original = request().toBuilder().probeVersion(2).build();
+    var taskId = coordinator.enqueueProbe(original);
+    var changed =
+        original.toBuilder()
+            .probeVersion(1)
+            .snapshot(
+                sourceSnapshot()
+                    .size(original.snapshot().size() + 1)
+                    .modifiedAt(original.snapshot().modifiedAt())
+                    .build())
+            .build();
+
+    assertThat(coordinator.enqueueProbe(changed)).isEqualTo(taskId);
+
+    var claimed = coordinator.claimProbeTask().orElseThrow();
+    assertThat(claimed.request().snapshot()).isEqualTo(changed.snapshot());
+    assertThat(coordinator.claimProbeTask()).isEmpty();
   }
 
   @ParameterizedTest
@@ -664,6 +736,33 @@ class ProbeTaskCoordinatorIT extends AbstractIntegrationTest {
     RETRY,
     RESCHEDULE,
     RENEW
+  }
+
+  @ParameterizedTest
+  @EnumSource(ClaimMutation.class)
+  @DisplayName("Should reject old claim mutations when an expired claim is reclaimed")
+  void shouldRejectOldClaimMutationsWhenAnExpiredClaimIsReclaimed(ClaimMutation mutation) {
+    var request = request();
+    coordinator.enqueueProbe(request);
+    assertThat(mutate(ClaimMutation.PUBLISH, coordinator.claimProbeTask().orElseThrow())).isTrue();
+    var stored = probes.find(request.mediaFileId()).orElseThrow();
+    coordinator.enqueueProbe(request);
+    var oldClaim = coordinator.claimProbeTask().orElseThrow();
+    jdbc.update(
+        "UPDATE file_processing_task SET lease_expires_at = clock_timestamp() - interval '1 second' WHERE id = ?",
+        oldClaim.taskId());
+    var current = coordinator.claimProbeTask().orElseThrow();
+
+    assertThat(current.claimId()).isNotEqualTo(oldClaim.claimId());
+    assertThat(mutate(mutation, oldClaim)).isFalse();
+    assertThat(probes.find(request.mediaFileId())).contains(stored);
+    assertThat(coordinator.renewProbe(current)).isTrue();
+    assertThat(coordinator.claimProbeTask()).isEmpty();
+  }
+
+  @Builder(builderMethodName = "sourceSnapshot")
+  private static SourceFileSnapshot buildSourceSnapshot(long size, Instant modifiedAt) {
+    return new SourceFileSnapshot(size, modifiedAt);
   }
 
   @ParameterizedTest
