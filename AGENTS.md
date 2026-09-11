@@ -81,8 +81,8 @@ Choose the simplest mechanism that fits the operation:
   be expressed as a single SQL statement — e.g., read the database → call an external API → conditionally
   create multiple entities. Single-JVM only — ineffective across multiple instances.
   See `MovieFileProcessor.enrichMovieMetadata()`.
-- **Database locks** (`SELECT FOR UPDATE … skipLocked`): coordinate across multiple application
-  instances. Pair with lease-based heartbeats for crash recovery (see `FileProcessingTaskCoordinator`).
+- **Durable probe jobs**: db-scheduler owns claiming, heartbeats, recovery, and retry timing.
+  Keep guarded probe-result publication in the domain repository. See ADR 0032.
 - **Credential throttling**: every credential check runs through `CredentialAttemptGate.attempt`,
   which reserves a row in the `credential_attempt` journal under a transaction-scoped advisory lock
   keyed by the target (`JooqCredentialAttemptRepository`), runs the verifier outside any

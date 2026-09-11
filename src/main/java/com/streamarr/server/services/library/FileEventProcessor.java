@@ -2,7 +2,6 @@ package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.services.filepath.FilepathCodec;
-import com.streamarr.server.services.task.FileProcessingTaskCoordinator;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import io.methvin.watcher.DirectoryChangeEvent;
 import java.nio.file.Files;
@@ -30,7 +29,6 @@ class FileEventProcessor {
   private final FileStabilityChecker fileStabilityChecker;
   private final LibraryManagementService libraryManagementService;
   private final IgnoredFileValidator ignoredFileValidator;
-  private final FileProcessingTaskCoordinator taskCoordinator;
 
   private final ConcurrentHashMap<Path, InFlightTask> inFlightChecks = new ConcurrentHashMap<>();
   private final ReentrantReadWriteLock stateLock = new ReentrantReadWriteLock();
@@ -41,12 +39,10 @@ class FileEventProcessor {
   FileEventProcessor(
       FileStabilityChecker fileStabilityChecker,
       LibraryManagementService libraryManagementService,
-      IgnoredFileValidator ignoredFileValidator,
-      FileProcessingTaskCoordinator taskCoordinator) {
+      IgnoredFileValidator ignoredFileValidator) {
     this.fileStabilityChecker = fileStabilityChecker;
     this.libraryManagementService = libraryManagementService;
     this.ignoredFileValidator = ignoredFileValidator;
-    this.taskCoordinator = taskCoordinator;
   }
 
   void handleFileEvent(DirectoryChangeEvent.EventType eventType, Path path) {
@@ -157,7 +153,6 @@ class FileEventProcessor {
       log.info("Cancelled in-flight check for deleted file: {}", path);
     }
 
-    taskCoordinator.cancelTask(path);
     log.info("Watcher event type: DELETE -- filepath: {}", path);
   }
 
