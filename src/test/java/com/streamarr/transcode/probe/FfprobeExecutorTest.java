@@ -23,11 +23,13 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import tools.jackson.databind.ObjectMapper;
 
@@ -167,24 +169,45 @@ class FfprobeExecutorTest {
   }
 
   @ParameterizedTest
-  @ValueSource(
-      strings = {
-        "",
-        "null",
-        "not json",
-        "[]",
-        "{\"streams\":\"invalid\"}",
-        "{\"streams\":[{}, {\"codec_type\":\"video\"}]}",
-        "{\"streams\":[{\"codec_type\":null}, {\"codec_type\":\"video\"}]}",
-        "{\"streams\":[{\"codec_type\":\"video\"}, {}]}",
-        "{\"streams\":[{\"codec_type\":\"video\"}, {\"codec_type\":null}]}"
-      })
+  @MethodSource("malformedProbeOutput")
   @DisplayName("Should return a retryable failure when ffprobe output is absent or malformed")
   void shouldReturnARetryableFailureWhenFfprobeOutputIsAbsentOrMalformed(String json) {
     var result = executor(json, 0).probe(SOURCE, request());
 
     assertThat(result.hasMedia()).isFalse();
     assertThat(result.getFailure()).isEqualTo(ProbeFailure.PROBE_FAILURE_EXECUTION_FAILED);
+  }
+
+  private static Stream<String> malformedProbeOutput() {
+    var missingResults =
+        Stream.of(
+            "",
+            "null",
+            "not json",
+            "[]",
+            "{\"streams\":\"invalid\"}",
+            "{\"streams\":[{}, {\"codec_type\":\"video\"}]}",
+            "{\"streams\":[{\"codec_type\":null}, {\"codec_type\":\"video\"}]}",
+            "{\"streams\":[{\"codec_type\":\"video\"}, {}]}",
+            "{\"streams\":[{\"codec_type\":\"video\"}, {\"codec_type\":null}]}");
+    var malformedCodecTypes =
+        Stream.of("7", "1.5", "true", "false", "\"\"", "\" \\t\\n\"", "{}", "[]")
+            .flatMap(
+                codecType ->
+                    Stream.of(
+                        """
+                        {"streams":[{"codec_type":%s}]}
+                        """
+                            .formatted(codecType),
+                        """
+                        {"streams":[{"codec_type":%s},{"codec_type":"video"}]}
+                        """
+                            .formatted(codecType),
+                        """
+                        {"streams":[{"codec_type":"video"},{"codec_type":%s}]}
+                        """
+                            .formatted(codecType)));
+    return Stream.concat(missingResults, malformedCodecTypes);
   }
 
   @ParameterizedTest
