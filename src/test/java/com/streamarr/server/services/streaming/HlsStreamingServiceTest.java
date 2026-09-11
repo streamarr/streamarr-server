@@ -463,6 +463,25 @@ class HlsStreamingServiceTest {
   }
 
   @Test
+  @DisplayName("Should reject remux session creation when no worker slot is available")
+  void shouldRejectRemuxSessionCreationWhenNoWorkerSlotIsAvailable() {
+    var file = seedMediaFile();
+    transcodeExecutor.setAvailableSlots(0);
+    var command =
+        CreateStreamSessionCommand.builder()
+            .mediaFileId(file.getId())
+            .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
+            .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
+            .build();
+
+    assertThat(service.createSession(command))
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(service.getActiveSessionCount()).isZero();
+    assertThat(transcodeExecutor.getRunningCount()).isZero();
+  }
+
+  @Test
   @DisplayName("Should transcode video when video codec is incompatible")
   void shouldTranscodeVideoWhenVideoCodecIsIncompatible() {
     probeResults.setDefaultProbe(
