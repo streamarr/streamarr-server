@@ -4,7 +4,7 @@ import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
 import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 
 import com.google.protobuf.ByteString;
-import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
+import com.streamarr.transcode.engine.FfmpegTranscodeEngine;
 import com.streamarr.transcode.probe.FfprobeExecutor;
 import com.streamarr.transcode.protocol.ProtoUuid;
 import com.streamarr.transcode.protocol.WorkerIdentityMetadata;
