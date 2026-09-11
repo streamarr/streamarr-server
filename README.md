@@ -35,7 +35,7 @@ See [Developer Setup](docs/dev-setup.adoc) for prerequisites, build instructions
 ## Architecture
 
 See [Architecture Overview](docs/architecture.adoc) for how the system is structured, and [Architecture Decision Records](https://github.com/streamarr/streamarr-adr) for key design rationale.
-See [Distributed Transcoding](docs/distributed-transcoding.adoc) for the opt-in Docker Compose and Kubernetes worker paths.
+See [Distributed Transcoding](docs/distributed-transcoding.adoc) for Docker Compose and Kubernetes worker deployments.
 
 ## Contributing
 

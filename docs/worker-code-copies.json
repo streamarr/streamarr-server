@@ -1,0 +1,13 @@
+{
+  "src/main/java/com/streamarr/server/domain/streaming/AudioDecision.java": "src/main/java/com/streamarr/transcode/engine/AudioDecision.java",
+  "src/main/java/com/streamarr/server/domain/streaming/SubtitleDecision.java": "src/main/java/com/streamarr/transcode/engine/SubtitleDecision.java",
+  "src/main/java/com/streamarr/server/domain/streaming/ContainerFormat.java": "src/main/java/com/streamarr/transcode/engine/ContainerFormat.java",
+  "src/main/java/com/streamarr/server/domain/streaming/AudioMode.java": "src/main/java/com/streamarr/transcode/engine/AudioMode.java",
+  "src/main/java/com/streamarr/server/domain/streaming/TranscodeHandle.java": "src/main/java/com/streamarr/transcode/engine/TranscodeHandle.java",
+  "src/main/java/com/streamarr/server/domain/streaming/TranscodeRequest.java": "src/main/java/com/streamarr/transcode/engine/TranscodeRequest.java",
+  "src/main/java/com/streamarr/server/exceptions/TranscodeException.java": "src/main/java/com/streamarr/transcode/engine/TranscodeException.java",
+  "src/main/java/com/streamarr/server/domain/streaming/TranscodeMode.java": "src/main/java/com/streamarr/transcode/engine/TranscodeMode.java",
+  "src/main/java/com/streamarr/server/domain/streaming/SubtitleMode.java": "src/main/java/com/streamarr/transcode/engine/SubtitleMode.java",
+  "src/main/java/com/streamarr/server/domain/streaming/TranscodeDecision.java": "src/main/java/com/streamarr/transcode/engine/TranscodeDecision.java",
+  "src/main/java/com/streamarr/server/domain/streaming/TranscodeStatus.java": "src/main/java/com/streamarr/transcode/engine/TranscodeStatus.java"
+}
