@@ -1,12 +1,12 @@
 package com.streamarr.server.services.streaming.ffmpeg;
 
-import com.streamarr.server.domain.streaming.AudioDecision;
-import com.streamarr.server.domain.streaming.AudioMode;
-import com.streamarr.server.domain.streaming.SubtitleDecision;
-import com.streamarr.server.domain.streaming.SubtitleMode;
-import com.streamarr.server.domain.streaming.TranscodeJob;
-import com.streamarr.server.domain.streaming.TranscodeMode;
-import com.streamarr.server.domain.streaming.TranscodeRequest;
+import com.streamarr.transcode.engine.AudioDecision;
+import com.streamarr.transcode.engine.AudioMode;
+import com.streamarr.transcode.engine.SubtitleDecision;
+import com.streamarr.transcode.engine.SubtitleMode;
+import com.streamarr.transcode.engine.TranscodeJob;
+import com.streamarr.transcode.engine.TranscodeMode;
+import com.streamarr.transcode.engine.TranscodeRequest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -73,6 +73,7 @@ public class FfmpegCommandBuilder {
     if (audio.mode() != AudioMode.NONE) {
       cmd.addAll(List.of("-map", "0:a:0"));
     }
+
     if (subtitle.mode() == SubtitleMode.EXCLUDE) {
       cmd.addAll(List.of("-map", "-0:s"));
     }
@@ -113,6 +114,7 @@ public class FfmpegCommandBuilder {
     if (audio.mode() == AudioMode.NONE) {
       return;
     }
+
     if (audio.mode() == AudioMode.COPY) {
       cmd.addAll(List.of("-c:a", "copy"));
       return;

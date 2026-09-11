@@ -1,6 +1,6 @@
 package com.streamarr.server.services.streaming.ffmpeg;
 
-import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.transcode.engine.TranscodeException;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -92,6 +92,7 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
       if (exitCode == 0) {
         return;
       }
+
       log.warn(
           "FFmpeg had already exited with code {} for session {} before its planned stop: {}",
           exitCode,
@@ -163,6 +164,7 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
         log.info("FFmpeg completed for session {} variant {}", key.sessionId(), key.variantLabel());
         return;
       }
+
       log.warn(
           "FFmpeg exited with code {} for session {} variant {}: {}",
           exitCode,
