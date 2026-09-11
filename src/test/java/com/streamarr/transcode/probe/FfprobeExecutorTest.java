@@ -452,7 +452,9 @@ class FfprobeExecutorTest {
     }
 
     @Override
-    public void destroy() {}
+    public void destroy() {
+      // This fake has already exited.
+    }
   }
 
   private static final class DelayedTerminationProcess extends CompletedProcess {

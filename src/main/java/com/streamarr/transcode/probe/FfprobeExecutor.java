@@ -106,20 +106,7 @@ public final class FfprobeExecutor {
 
   private void terminate(Process process) {
     process.destroyForcibly();
-    var interrupted = false;
-    var terminated = false;
-    while (!terminated) {
-      try {
-        process.waitFor();
-        terminated = true;
-      } catch (InterruptedException _) {
-        interrupted = true;
-      }
-    }
-
-    if (interrupted) {
-      Thread.currentThread().interrupt();
-    }
+    process.onExit().join();
   }
 
   private ProbeAttemptResult interpret(
