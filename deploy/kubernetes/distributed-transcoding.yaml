@@ -98,17 +98,23 @@ spec:
                   key: datasource-password
             - name: STREAMING_REMOTE_ENABLED
               value: "true"
-            - name: STREAMING_REMOTE_TRUST_DOMAIN
+            - name: STREAMING_WORKER_SESSION_LOOPBACK_ENABLED
+              value: "false"
+            - name: STREAMING_WORKER_SESSION_MUTUAL_TLS_ENABLED
+              value: "true"
+            - name: STREAMING_WORKER_SESSION_MUTUAL_TLS_PORT
+              value: "9090"
+            - name: STREAMING_WORKER_SESSION_MUTUAL_TLS_TRUST_DOMAIN
               value: streamarr.example
             - name: STREAMING_REMOTE_SOURCE_NAMESPACE_ID
               value: cccccccc-cccc-cccc-cccc-cccccccccccc
             - name: STREAMING_REMOTE_SOURCE_ROOT
               value: /media
-            - name: STREAMING_REMOTE_CERTIFICATE
+            - name: STREAMING_WORKER_SESSION_MUTUAL_TLS_CERTIFICATE
               value: /run/secrets/streamarr/tls.crt
-            - name: STREAMING_REMOTE_PRIVATE_KEY
+            - name: STREAMING_WORKER_SESSION_MUTUAL_TLS_PRIVATE_KEY
               value: /run/secrets/streamarr/tls.key
-            - name: STREAMING_REMOTE_TRUST_BUNDLE
+            - name: STREAMING_WORKER_SESSION_MUTUAL_TLS_TRUST_BUNDLE
               value: /run/secrets/streamarr/ca.crt
           volumeMounts:
             - name: media
@@ -194,10 +200,14 @@ spec:
               service: readiness
             periodSeconds: 5
           env:
+            - name: TRANSCODE_WORKER_PLAINTEXT
+              value: "false"
             - name: TRANSCODE_WORKER_HEALTH_PORT
               value: "9091"
             - name: TRANSCODE_WORKER_CONTROL_PLANE_HOST
               value: streamarr-server
+            - name: TRANSCODE_WORKER_CONTROL_PLANE_PORT
+              value: "9090"
             - name: TRANSCODE_WORKER_ID
               valueFrom:
                 fieldRef:

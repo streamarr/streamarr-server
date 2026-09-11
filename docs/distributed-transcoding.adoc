@@ -1,14 +1,38 @@
 = Distributed Transcoding
 
-Distributed transcoding is optional.
-With no remote settings, Streamarr runs the existing local FFmpeg path and requires no worker, broker, mesh, or additional database.
+The default Compose deployment starts one server and one colocated worker.
+Outside Compose, local FFmpeg remains the default.
+Enabling a worker listener does not change executor selection. Set `STREAMING_REMOTE_ENABLED=true` to dispatch transcoding to workers.
 
 The supported first topology is one Streamarr server and zero or more outbound workers.
-Workers read the same media through an operator-defined source namespace, run the same variant engine as local playback, and upload segments to the server over mTLS gRPC.
+Workers read the same media through an administrator-defined source namespace, run the same variant engine as local playback, and upload segments over their worker session.
 Workers connect outward for control and never connect to PostgreSQL.
 Their dedicated inbound port serves only health checks.
 
 == Identity and media contract
+
+=== Colocated workers
+
+The plaintext listener binds only `127.0.0.1` inside the server's network namespace.
+Its bind address is not configurable.
+Every process that can reach this listener is trusted. Reusing a worker ID replaces its previous connection and abandons that connection's active jobs.
+Share this namespace only with trusted processes.
+
+Enable the listener with `STREAMING_WORKER_SESSION_LOOPBACK_ENABLED=true` and set its port with `STREAMING_WORKER_SESSION_LOOPBACK_PORT`.
+The default port is `9090`.
+The worker needs `TRANSCODE_WORKER_PLAINTEXT=true`, `TRANSCODE_WORKER_CONTROL_PLANE_HOST=127.0.0.1`, the same port in `TRANSCODE_WORKER_CONTROL_PLANE_PORT`, and a UUID in `TRANSCODE_WORKER_ID`.
+It does not need certificates in this mode.
+
+The dev profile enables loopback. Full application test contexts use an ephemeral loopback port.
+Listener enablement remains independent of local or remote executor selection. A server with both listeners disabled can still start with local execution.
+
+=== Remote workers
+
+Workers outside the server's network namespace use mutual TLS.
+Set `STREAMING_WORKER_SESSION_MUTUAL_TLS_ENABLED=true` on the server and leave `TRANSCODE_WORKER_PLAINTEXT` unset or `false` on each worker.
+The server's port, trust domain, certificate, private key, and trust bundle settings use the `STREAMING_WORKER_SESSION_MUTUAL_TLS_` prefix.
+These listener settings replace their former `STREAMING_REMOTE_` equivalents.
+The loopback and mutual-TLS listeners may run together. Choose different ports when configuring both with fixed ports.
 
 Streamarr consumes PEM files issued by the operator's existing tooling.
 It does not issue or enroll certificates.
@@ -54,7 +78,18 @@ Tests may set the health port to `0` and read the bound port from the worker aft
 
 == Docker Compose
 
-The Compose override adds one worker and enables the server's worker listener without changing the default local-only deployment.
+The default worker uses `network_mode: service:streamarr-server` to reach the server over loopback.
+Set `STREAMARR_MEDIA_PATH` to the host media directory. Both containers mount it read-only at `/media`, which is the library root inside the server.
+The worker writes segments in its own temporary directory.
+`STREAMARR_WORKER_ID` and `STREAMARR_SOURCE_NAMESPACE_ID` override the example UUIDs in the default configuration.
+
+[source,bash]
+----
+STREAMARR_MEDIA_PATH=/absolute/path/to/media docker compose up -d
+----
+
+The distributed override moves the worker onto the Compose network and enables mutual TLS.
+It clears the default worker's shared network namespace and explicitly disables plaintext mode.
 Provide these values in the shell or `.env`:
 
 [source,bash]
@@ -93,10 +128,11 @@ STREAMARR_RENDER_GID=109 docker compose \
 ----
 
 The group id is host-specific; `109` is only an example. The overlay passes `/dev/dri` only to the
-worker and leaves the default local-only and distributed CPU paths unchanged.
+worker. CPU deployments need no hardware overlay.
 
 The release image exposes `web` as its default process and `worker` as a second Cloud Native Buildpacks process type.
-To add Compose workers, give every worker a distinct UUID and matching certificate; duplicating the example service unchanged intentionally replaces the prior connection for that identity.
+To add remote Compose workers, give every worker a distinct UUID and matching certificate.
+Duplicating the example service unchanged replaces the prior connection for that identity.
 
 == Kubernetes
 
@@ -147,7 +183,7 @@ The live worker connection is the job fence and the server keeps runtime stream 
 A server restart therefore drops active playback and worker sessions; clients reconnect and workers dial out again.
 This keeps the single-server path disposable and avoids a durable job ledger, leases, a shared worker database, or NATS before multi-server demand exists.
 
-Segment bytes travel on separate bounded HTTP/2 streams over the worker's mTLS channel, so bulk uploads do not share the control-message stream.
+Segment bytes travel on separate bounded HTTP/2 streams over the worker channel, so bulk uploads do not share the control-message stream.
 Clients continue to fetch playlists and segments from the Streamarr HTTP endpoint; workers are never exposed to players.
 
 See https://github.com/streamarr/streamarr-adr/blob/main/adr/0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] for the decision and deferred multi-server boundary.
