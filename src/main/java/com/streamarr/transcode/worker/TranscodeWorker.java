@@ -461,7 +461,11 @@ public final class TranscodeWorker implements AutoCloseable {
   }
 
   @Override
-  public synchronized void close() {
+  public void close() {
+    closeConnection();
+  }
+
+  private synchronized void closeConnection() {
     var server = healthServer.get();
     if (server != null) {
       server.close();
