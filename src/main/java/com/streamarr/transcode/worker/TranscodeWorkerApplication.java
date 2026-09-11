@@ -1,9 +1,9 @@
 package com.streamarr.transcode.worker;
 
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
-import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
 import com.streamarr.server.services.streaming.ffmpeg.LocalFfmpegProcessManager;
-import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
+import com.streamarr.transcode.engine.FfmpegTranscodeEngine;
+import com.streamarr.transcode.engine.TranscodeCapabilityService;
 import com.streamarr.transcode.probe.FfprobeExecutor;
 import java.io.IOException;
 import java.lang.ProcessBuilder.Redirect;
