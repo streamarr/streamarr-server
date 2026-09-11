@@ -10,24 +10,19 @@ import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.SubtitleMode;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
-import com.streamarr.server.exceptions.TranscodeException;
-import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.TranscodeExecution;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
-import java.io.File;
 import java.nio.file.Path;
 import java.util.UUID;
 
 // Domain and protobuf contracts intentionally share simple names.
 final class RemoteVariantJobMapper {
 
-  private final UUID sourceNamespaceId;
-  private final Path sourceRoot;
+  private final RemoteMediaSourceMapper sourceMapper;
 
   RemoteVariantJobMapper(UUID sourceNamespaceId, Path sourceRoot) {
-    this.sourceNamespaceId = sourceNamespaceId;
-    this.sourceRoot = sourceRoot.toAbsolutePath().normalize();
+    this.sourceMapper = new RemoteMediaSourceMapper(sourceNamespaceId, sourceRoot);
   }
 
   VariantJob map(TranscodeRequest request) {
@@ -35,7 +30,7 @@ final class RemoteVariantJobMapper {
         .setStreamSessionId(toProto(request.sessionId()))
         .setJobId(toProto(logicalJobId(request)))
         .setJobAttemptId(toProto(request.attemptId()))
-        .setSource(source(request.sourcePath()))
+        .setSource(sourceMapper.map(request.sourcePath()))
         .setDecision(decision(request))
         .setVariant(variant(request))
         .setExecution(execution(request))
@@ -45,19 +40,6 @@ final class RemoteVariantJobMapper {
   private static UUID logicalJobId(TranscodeRequest request) {
     var name = request.sessionId() + "\0" + request.variantLabel();
     return UUID.nameUUIDFromBytes(name.getBytes(UTF_8));
-  }
-
-  private MediaSourceRef source(Path sourcePath) {
-    var normalized = sourcePath.toAbsolutePath().normalize();
-    if (!normalized.startsWith(sourceRoot) || normalized.equals(sourceRoot)) {
-      throw new TranscodeException("Media source is outside the configured source namespace");
-    }
-
-    var relativeKey = sourceRoot.relativize(normalized).toString().replace(File.separatorChar, '/');
-    return MediaSourceRef.newBuilder()
-        .setSourceNamespaceId(toProto(sourceNamespaceId))
-        .setRelativeKey(relativeKey)
-        .build();
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
