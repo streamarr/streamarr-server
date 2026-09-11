@@ -314,15 +314,12 @@ class PackagedConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should ship an opt-in Docker Compose worker path when packaged")
-  void shouldShipOptInDockerComposeWorkerPathWhenPackaged() throws IOException {
+  @DisplayName("Should ship a mutual TLS Docker Compose worker path when packaged")
+  void shouldShipAMutualTlsDockerComposeWorkerPathWhenPackaged() throws IOException {
     var deployment = Files.readString(Path.of("deploy/compose/distributed-transcoding.yml"));
 
     assertThat(deployment)
-        .contains(
-            "entrypoint: worker",
-            "STREAMING_REMOTE_ENABLED: \"true\"",
-            "TRANSCODE_WORKER_CONTROL_PLANE_HOST: streamarr-server");
+        .contains("entrypoint: worker", "TRANSCODE_WORKER_CONTROL_PLANE_HOST: streamarr-server");
   }
 
   @Test

@@ -27,13 +27,12 @@ class FfprobeConfigurationTest {
           .withPropertyValues(
               "streaming.worker-session.loopback.enabled=true",
               "streaming.worker-session.loopback.port=0",
-              "streaming.remote.enabled=false",
               "streaming.remote.source-namespace-id=cccccccc-cccc-cccc-cccc-cccccccccccc",
               "streaming.remote.source-root=/media");
 
   @Test
-  @DisplayName("Should use worker probing when local transcoding is still selected")
-  void shouldUseWorkerProbingWhenLocalTranscodingIsStillSelected() {
+  @DisplayName("Should use worker probing when the server starts")
+  void shouldUseWorkerProbingWhenTheServerStarts() {
     contextRunner.run(
         context -> {
           assertThat(context).hasNotFailed().hasSingleBean(FfprobeService.class);

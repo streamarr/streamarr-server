@@ -17,12 +17,8 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.services.concurrency.MutexFactory;
-import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
-import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
-import com.streamarr.server.services.streaming.ffmpeg.LocalFfmpegProcessManager;
-import com.streamarr.server.services.streaming.ffmpeg.LocalTranscodeExecutor;
-import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -31,10 +27,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -60,7 +52,8 @@ class HlsRecoveryContinuitySmokeTest {
 
   private LocalSegmentStore segmentStore;
   private RecordingProcessManager processManager;
-  private LocalTranscodeExecutor transcodeExecutor;
+  private RemoteTranscodeExecutor transcodeExecutor;
+  private WorkerStreamingSmokeFixture workerFixture;
   private FakeRuntimeStreamSessionRegistry runtimeRegistry;
   private ProducerLifecycleService lifecycle;
   private SegmentDeliveryCoordinator coordinator;
@@ -83,19 +76,23 @@ class HlsRecoveryContinuitySmokeTest {
   }
 
   @BeforeEach
-  void setUp() throws IOException {
+  void setUp() throws Exception {
     segmentBaseDir = Files.createTempDirectory("streamarr-recovery-smoke-");
-    segmentStore = new LocalSegmentStore(segmentBaseDir);
+    segmentStore = new LocalSegmentStore(segmentBaseDir.resolve("server"));
     processManager = new RecordingProcessManager();
-    var capabilityService =
-        new TranscodeCapabilityService(
-            "ffmpeg", command -> new ProcessBuilder(command).redirectErrorStream(false).start());
-    capabilityService.detectCapabilities();
+    workerFixture =
+        WorkerStreamingSmokeFixture.builder()
+            .processManager(processManager)
+            .sourceRoot(TEST_VIDEO.getParent())
+            .segmentBaseDir(segmentBaseDir)
+            .segmentStore(segmentStore)
+            .build();
+    workerFixture.start();
     transcodeExecutor =
-        new LocalTranscodeExecutor(
-            new FfmpegTranscodeEngine(
-                new FfmpegCommandBuilder("ffmpeg"), processManager, capabilityService),
-            segmentStore);
+        new RemoteTranscodeExecutor(
+            workerFixture.workerSessions(),
+            workerFixture.sourceNamespaceId(),
+            TEST_VIDEO.getParent());
     runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
     var properties =
         StreamingProperties.builder()
@@ -132,6 +129,7 @@ class HlsRecoveryContinuitySmokeTest {
                 // best-effort cleanup
               }
             });
+    workerFixture.close();
     segmentStore.shutdown();
   }
 
@@ -139,6 +137,7 @@ class HlsRecoveryContinuitySmokeTest {
   @DisplayName("Should continue the absolute timeline when a dead MPEG-TS producer is replaced")
   void shouldContinueAbsoluteTimelineWhenDeadMpegtsProducerIsReplaced() throws Exception {
     var session = startedSession(remuxMpegtsDecision());
+    assertThat(session.getHandle().orElseThrow().processId()).isEmpty();
     var sessionId = session.getSessionId();
     await()
         .atMost(30, TimeUnit.SECONDS)
@@ -218,8 +217,7 @@ class HlsRecoveryContinuitySmokeTest {
    */
   private void killProducerAndDropSegmentsFrom(
       StreamSession session, int firstMissingIndex, String extension) throws IOException {
-    ProcessHandle.of(session.getHandle().orElseThrow().processId().orElseThrow())
-        .ifPresent(ProcessHandle::destroyForcibly);
+    processManager.lastProcessFor(session.getSessionId()).orElseThrow().destroyForcibly();
     await()
         .atMost(10, TimeUnit.SECONDS)
         .until(
@@ -275,21 +273,5 @@ class HlsRecoveryContinuitySmokeTest {
         .containerFormat(ContainerFormat.FMP4)
         .needsKeyframeAlignment(true)
         .build();
-  }
-
-  private static final class RecordingProcessManager extends LocalFfmpegProcessManager {
-
-    private final Map<UUID, List<String>> lastCommands = new ConcurrentHashMap<>();
-
-    @Override
-    public Process startProcess(
-        UUID sessionId, String variantLabel, List<String> command, Path workingDir) {
-      lastCommands.put(sessionId, List.copyOf(command));
-      return super.startProcess(sessionId, variantLabel, command, workingDir);
-    }
-
-    private Optional<List<String>> lastCommandFor(UUID sessionId) {
-      return Optional.ofNullable(lastCommands.get(sessionId));
-    }
   }
 }

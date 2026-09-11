@@ -96,8 +96,6 @@ spec:
                 secretKeyRef:
                   name: streamarr-runtime
                   key: datasource-password
-            - name: STREAMING_REMOTE_ENABLED
-              value: "true"
             - name: STREAMING_WORKER_SESSION_LOOPBACK_ENABLED
               value: "false"
             - name: STREAMING_WORKER_SESSION_MUTUAL_TLS_ENABLED

@@ -22,7 +22,6 @@ import lombok.Builder;
 final class WorkerStreamingSmokeFixture implements AutoCloseable {
 
   private final UUID sourceNamespaceId = UUID.randomUUID();
-  private final FfmpegTranscodeEngine engine;
   private final WorkerSessionServer workerSessions;
   private final TranscodeWorker worker;
 
@@ -36,7 +35,7 @@ final class WorkerStreamingSmokeFixture implements AutoCloseable {
         new TranscodeCapabilityService(
             "ffmpeg", command -> new ProcessBuilder(command).redirectErrorStream(false).start());
     capabilityService.detectCapabilities();
-    engine =
+    var engine =
         new FfmpegTranscodeEngine(
             new FfmpegCommandBuilder("ffmpeg"), processManager, capabilityService);
     workerSessions =
@@ -62,10 +61,6 @@ final class WorkerStreamingSmokeFixture implements AutoCloseable {
     await()
         .untilAsserted(
             () -> assertThat(workerSessions.availableSlots(sourceNamespaceId)).isEqualTo(3));
-  }
-
-  FfmpegTranscodeEngine engine() {
-    return engine;
   }
 
   WorkerSessionServer workerSessions() {

@@ -4,8 +4,7 @@ import java.util.UUID;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "streaming.remote")
-public record RemoteTranscodeProperties(
-    boolean enabled, UUID sourceNamespaceId, String sourceRoot) {
+public record RemoteTranscodeProperties(UUID sourceNamespaceId, String sourceRoot) {
 
   public RemoteTranscodeProperties {
     require(sourceNamespaceId, "Remote source namespace ID is required");

@@ -13,15 +13,9 @@ import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
-import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
-import com.streamarr.server.services.streaming.ffmpeg.FfmpegProcessManager;
-import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
-import com.streamarr.server.services.streaming.ffmpeg.LocalTranscodeExecutor;
-import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import java.nio.file.Path;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -31,46 +25,6 @@ public class StreamingConfig {
   @Bean
   public LocalSegmentStore segmentStore(StreamingProperties properties) {
     return new LocalSegmentStore(Path.of(properties.segmentBasePath()));
-  }
-
-  @Bean
-  public FfmpegPaths ffmpegPaths(StreamingProperties properties) {
-    return FfmpegPaths.resolve(properties.ffmpegPath(), properties.ffprobePath());
-  }
-
-  @Bean
-  public FfmpegCommandBuilder ffmpegCommandBuilder(FfmpegPaths ffmpegPaths) {
-    return new FfmpegCommandBuilder(ffmpegPaths.ffmpeg());
-  }
-
-  @Bean
-  public TranscodeCapabilityService transcodeCapabilityService(FfmpegPaths ffmpegPaths) {
-    var service =
-        new TranscodeCapabilityService(
-            ffmpegPaths.ffmpeg(),
-            command -> new ProcessBuilder(command).redirectErrorStream(false).start());
-    service.detectCapabilities();
-
-    return service;
-  }
-
-  @Bean
-  public FfmpegTranscodeEngine ffmpegTranscodeEngine(
-      FfmpegCommandBuilder commandBuilder,
-      FfmpegProcessManager processManager,
-      TranscodeCapabilityService capabilityService) {
-    return new FfmpegTranscodeEngine(commandBuilder, processManager, capabilityService);
-  }
-
-  @Bean
-  @ConditionalOnProperty(
-      prefix = "streaming.remote",
-      name = "enabled",
-      havingValue = "false",
-      matchIfMissing = true)
-  public TranscodeExecutor transcodeExecutor(
-      FfmpegTranscodeEngine engine, LocalSegmentStore segmentStore) {
-    return new LocalTranscodeExecutor(engine, segmentStore);
   }
 
   @Bean

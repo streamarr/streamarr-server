@@ -88,7 +88,6 @@ streaming:
       private-key: ${STREAMING_WORKER_SESSION_MUTUAL_TLS_PRIVATE_KEY:}
       trust-bundle: ${STREAMING_WORKER_SESSION_MUTUAL_TLS_TRUST_BUNDLE:}
   remote:
-    enabled: ${STREAMING_REMOTE_ENABLED:false}
     source-namespace-id: ${STREAMING_REMOTE_SOURCE_NAMESPACE_ID:}
     source-root: ${STREAMING_REMOTE_SOURCE_ROOT:}
   watch-progress:
