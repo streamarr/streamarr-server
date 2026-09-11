@@ -488,7 +488,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
       return false;
     }
 
-    var mediaFile = probeFile(library, path);
+    var mediaFile = findOrCreateMediaFile(library, path);
 
     if (isAlreadyMatched(mediaFile)) {
       return false;
@@ -511,7 +511,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     return FilenameUtils.getExtension(path.getFileName().toString());
   }
 
-  private MediaFile probeFile(Library library, Path path) {
+  private MediaFile findOrCreateMediaFile(Library library, Path path) {
     var absoluteFilepath = FilepathCodec.encode(path);
     var filepathMutex = mutexFactory.getMutex(absoluteFilepath);
 
