@@ -2,6 +2,7 @@ package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
@@ -17,6 +18,7 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Optional;
+import java.util.UUID;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -79,7 +81,13 @@ public class ProbeExecution {
       return new ProbeExecutionResult.Completed();
     }
 
-    var outcome = producer.probe(path);
+    var outcome =
+        producer.probe(
+            ProbeExecutionRequest.builder()
+                .sourcePath(path)
+                .attemptId(UUID.randomUUID())
+                .probeVersion(request.probeVersion())
+                .build());
     var after = snapshot(path);
     if (after.isEmpty()) {
       return new ProbeExecutionResult.Completed();

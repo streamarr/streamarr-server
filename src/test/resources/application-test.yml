@@ -26,6 +26,9 @@ springdoc:
     enabled: true
 
 streaming:
+  remote:
+    source-namespace-id: cccccccc-cccc-cccc-cccc-cccccccccccc
+    source-root: /media
   worker-session:
     loopback:
       enabled: true

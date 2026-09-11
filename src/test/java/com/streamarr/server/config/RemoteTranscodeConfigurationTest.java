@@ -14,6 +14,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.validation.autoconfigure.ValidationAutoConfiguration;
@@ -51,10 +53,12 @@ class RemoteTranscodeConfigurationTest {
         .run(context -> assertThat(context).hasFailed());
   }
 
-  @Test
-  @DisplayName("Should reject a blank remote media source root when configured")
-  void shouldRejectBlankRemoteMediaSourceRootWhenConfigured() {
-    assertThatThrownBy(() -> new RemoteTranscodeProperties(true, SOURCE_NAMESPACE_ID, " "))
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  @DisplayName("Should require a source root regardless of local transcode selection")
+  void shouldRequireASourceRootRegardlessOfLocalTranscodeSelection(boolean remoteTranscoding) {
+    assertThatThrownBy(
+            () -> new RemoteTranscodeProperties(remoteTranscoding, SOURCE_NAMESPACE_ID, " "))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Remote source root is required");
   }

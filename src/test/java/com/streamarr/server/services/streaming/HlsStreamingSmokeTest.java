@@ -9,7 +9,10 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.ContainerFormat;
+import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
+import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -24,18 +27,23 @@ import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
 import com.streamarr.server.services.streaming.ffmpeg.LocalFfmpegProcessManager;
-import com.streamarr.server.services.streaming.ffmpeg.LocalFfprobeService;
 import com.streamarr.server.services.streaming.ffmpeg.LocalTranscodeExecutor;
 import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
+import com.streamarr.server.services.streaming.remote.WorkerSessionListeners;
+import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.server.support.OutcomeTestSupport;
-import java.io.IOException;
-import java.io.UncheckedIOException;
+import com.streamarr.transcode.probe.FfprobeExecutor;
+import com.streamarr.transcode.worker.TranscodeWorker;
+import com.streamarr.transcode.worker.TranscodeWorkerConfiguration;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
+import java.util.OptionalInt;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -43,7 +51,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import tools.jackson.databind.ObjectMapper;
 
 @Tag("SmokeTest")
 @DisplayName("HLS Streaming Smoke Tests")
@@ -57,6 +64,8 @@ class HlsStreamingSmokeTest {
   private HlsStreamingService streamingService;
   private HlsPlaylistService playlistService;
   private Path segmentBaseDir;
+  private WorkerSessionServer workerSessions;
+  private TranscodeWorker worker;
 
   @BeforeAll
   static void checkPrerequisites() {
@@ -74,30 +83,9 @@ class HlsStreamingSmokeTest {
   }
 
   @BeforeEach
-  void setUp() throws IOException {
+  void setUp() throws Exception {
     segmentBaseDir = Files.createTempDirectory("streamarr-smoke-");
     segmentStore = new LocalSegmentStore(segmentBaseDir);
-
-    var objectMapper = new ObjectMapper();
-    var ffprobeService =
-        new LocalFfprobeService(
-            objectMapper,
-            filepath -> {
-              try {
-                return new ProcessBuilder(
-                        "ffprobe",
-                        "-v",
-                        "quiet",
-                        "-print_format",
-                        "json",
-                        "-show_streams",
-                        "-show_format",
-                        filepath.toString())
-                    .start();
-              } catch (IOException e) {
-                throw new UncheckedIOException("Failed to start ffprobe", e);
-              }
-            });
 
     var capabilityService =
         new TranscodeCapabilityService(
@@ -106,10 +94,41 @@ class HlsStreamingSmokeTest {
 
     var commandBuilder = new FfmpegCommandBuilder("ffmpeg");
     var processManager = new LocalFfmpegProcessManager();
-    var transcodeExecutor =
-        new LocalTranscodeExecutor(
-            new FfmpegTranscodeEngine(commandBuilder, processManager, capabilityService),
-            segmentStore);
+    var engine = new FfmpegTranscodeEngine(commandBuilder, processManager, capabilityService);
+    var transcodeExecutor = new LocalTranscodeExecutor(engine, segmentStore);
+    var namespaceId = UUID.randomUUID();
+    workerSessions =
+        WorkerSessionServer.forListeners(
+            WorkerSessionListeners.builder().loopbackPort(OptionalInt.of(0)).build(), segmentStore);
+    workerSessions.start();
+    worker =
+        new TranscodeWorker(
+            TranscodeWorkerConfiguration.builder()
+                .workerId(UUID.randomUUID())
+                .bootId(UUID.randomUUID())
+                .availableSlots(3)
+                .plaintext(true)
+                .sourceNamespaces(Map.of(namespaceId, TEST_VIDEO.getParent()))
+                .segmentBasePath(segmentBaseDir.resolve("worker"))
+                .build(),
+            engine,
+            FfprobeExecutor.forBinary(Path.of("ffprobe")));
+    worker.start("127.0.0.1", workerSessions.loopbackPort());
+    await()
+        .untilAsserted(() -> assertThat(workerSessions.availableSlots(namespaceId)).isEqualTo(3));
+    var outcome =
+        new RemoteFfprobeService(workerSessions, namespaceId, TEST_VIDEO.getParent())
+            .probe(
+                ProbeExecutionRequest.builder()
+                    .sourcePath(TEST_VIDEO)
+                    .attemptId(UUID.randomUUID())
+                    .probeVersion(ProbeVersion.CURRENT)
+                    .build());
+    assertThat(outcome).isInstanceOf(ProbeOutcome.Success.class);
+    var completeProbe = (ProbeOutcome.Success) outcome;
+    var probeRepository = new FakeMediaFileContainerInfoRepository();
+    probeRepository.setDefaultOutcome(completeProbe);
+    var probeReader = new PersistedProbeReader(probeRepository);
 
     var decisionService = new TranscodeDecisionService();
     var qualityLadderService = new QualityLadderService();
@@ -120,8 +139,6 @@ class HlsStreamingSmokeTest {
             .sessionTimeout(Duration.ofSeconds(60))
             .build();
 
-    var probeResults = new FakeMediaFileContainerInfoRepository();
-    probeResults.setDefaultProbe(ffprobeService.probeMedia(TEST_VIDEO));
     mediaFileRepository = new FakeMediaFileRepository();
     var sessionRegistry = new InMemoryStreamSessionRegistry();
     var producerLifecycle =
@@ -138,8 +155,7 @@ class HlsStreamingSmokeTest {
             .transcodeExecutor(transcodeExecutor)
             .segmentStore(segmentStore)
             .playbackProbeService(
-                new PlaybackProbeService(
-                    new PersistedProbeReader(probeResults), new CapturingEventPublisher()))
+                new PlaybackProbeService(probeReader, new CapturingEventPublisher()))
             .transcodeDecisionService(decisionService)
             .qualityLadderService(qualityLadderService)
             .properties(properties)
@@ -165,6 +181,14 @@ class HlsStreamingSmokeTest {
     } catch (Exception _) {
       // best-effort cleanup
     }
+    if (worker != null) {
+      worker.close();
+    }
+
+    if (workerSessions != null) {
+      workerSessions.close();
+    }
+
     segmentStore.shutdown();
   }
 
