@@ -207,6 +207,10 @@ public class HlsStreamingService implements StreamingService {
 
   private List<QualityVariant> enforceCapacityLimits(
       TranscodeMode mode, List<QualityVariant> variants) {
+    if (transcodeExecutor.availableSlots() <= 0) {
+      throw new MaxConcurrentTranscodesException(properties.maxConcurrentTranscodes());
+    }
+
     if (!variants.isEmpty()) {
       return capVariantsToAvailableSlots(variants);
     }
