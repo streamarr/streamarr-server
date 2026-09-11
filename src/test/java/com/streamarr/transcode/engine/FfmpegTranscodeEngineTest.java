@@ -3,8 +3,7 @@ package com.streamarr.transcode.engine;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
-import com.streamarr.server.fakes.FakeFfmpegProcessManager;
-import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
+import com.streamarr.transcode.fakes.FakeFfmpegProcessManager;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Optional;

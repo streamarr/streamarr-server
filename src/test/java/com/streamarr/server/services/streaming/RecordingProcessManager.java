@@ -1,6 +1,6 @@
 package com.streamarr.server.services.streaming;
 
-import com.streamarr.server.services.streaming.ffmpeg.LocalFfmpegProcessManager;
+import com.streamarr.transcode.engine.LocalFfmpegProcessManager;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;

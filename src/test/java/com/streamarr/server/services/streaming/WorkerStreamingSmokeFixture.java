@@ -3,11 +3,11 @@ package com.streamarr.server.services.streaming;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
-import com.streamarr.server.services.streaming.ffmpeg.FfmpegProcessManager;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.remote.WorkerSessionListeners;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
+import com.streamarr.transcode.engine.FfmpegCommandBuilder;
+import com.streamarr.transcode.engine.FfmpegProcessManager;
 import com.streamarr.transcode.engine.FfmpegTranscodeEngine;
 import com.streamarr.transcode.engine.TranscodeCapabilityService;
 import com.streamarr.transcode.probe.FfprobeExecutor;

@@ -39,6 +39,7 @@ import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
+import com.tngtech.archunit.lang.CompositeArchRule;
 import com.tngtech.archunit.library.dependencies.SliceAssignment;
 import com.tngtech.archunit.library.dependencies.SliceIdentifier;
 import java.nio.file.Path;
@@ -80,8 +81,7 @@ class ArchitectureTest {
           .resideInAPackage("..services.metadata.tmdb..")
           .as("TMDB types must not be used outside metadata package");
 
-  @ArchTest
-  static final ArchRule workerProtocolTypesMustNotLeakOutsideRemotePackage =
+  private static final ArchRule workerProtocolTypesMustNotLeakOutsideRemotePackage =
       noClasses()
           .that()
           .resideOutsideOfPackage("..services.streaming.remote..")
@@ -89,6 +89,10 @@ class ArchitectureTest {
           .dependOnClassesThat()
           .resideInAnyPackage("com.streamarr.transcode.v1..", "com.streamarr.transcode.protocol..")
           .as("Worker wire-protocol types must not be used outside services.streaming.remote");
+
+  @ArchTest
+  static final ArchRule serverWorkerBoundary =
+      CompositeArchRule.of(workerProtocolTypesMustNotLeakOutsideRemotePackage);
 
   @ArchTest
   static final ArchRule controllersMustNotDependOnRepositories =

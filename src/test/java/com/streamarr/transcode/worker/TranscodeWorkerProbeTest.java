@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.google.protobuf.Duration;
-import com.streamarr.server.fakes.FakeFfmpegProcessManager;
+import com.streamarr.transcode.fakes.FakeFfmpegProcessManager;
 import com.streamarr.transcode.probe.FfprobeExecutor;
 import com.streamarr.transcode.protocol.ProtoUuid;
 import com.streamarr.transcode.v1.CancelProbeCommand;

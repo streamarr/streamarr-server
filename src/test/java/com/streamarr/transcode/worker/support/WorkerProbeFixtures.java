@@ -5,7 +5,7 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.remuxEngine;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.workerConfigurationBuilder;
 import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 
-import com.streamarr.server.fakes.FakeFfmpegProcessManager;
+import com.streamarr.transcode.fakes.FakeFfmpegProcessManager;
 import com.streamarr.transcode.probe.FfprobeExecutor;
 import com.streamarr.transcode.v1.AudioDecision;
 import com.streamarr.transcode.v1.AudioMode;
