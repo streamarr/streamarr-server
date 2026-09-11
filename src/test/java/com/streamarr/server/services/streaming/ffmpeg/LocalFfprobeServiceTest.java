@@ -4,12 +4,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
-import com.streamarr.server.exceptions.FfmpegNotAvailableException;
+import com.streamarr.server.domain.streaming.ProbeError;
+import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.TranscodeException;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import tools.jackson.databind.ObjectMapper;
 
 @Tag("UnitTest")
@@ -17,6 +26,374 @@ import tools.jackson.databind.ObjectMapper;
 class LocalFfprobeServiceTest {
 
   private final ObjectMapper objectMapper = new ObjectMapper();
+
+  @ParameterizedTest
+  @ValueSource(strings = {"", "null"})
+  @DisplayName("Should reject missing results when ffprobe exits successfully without probe data")
+  void shouldRejectMissingResultsWhenFfprobeExitsSuccessfullyWithoutProbeData(String json) {
+    var filepath = Path.of("/test/movie.mkv");
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    assertThatThrownBy(() -> service.probe(filepath))
+        .isInstanceOf(ProbeExecutionException.class)
+        .hasMessage(TranscodeException.GENERIC_MESSAGE)
+        .hasRootCauseMessage("ffprobe returned no result");
+  }
+
+  @ParameterizedTest
+  @MethodSource("streamsWithoutCodecTypes")
+  @DisplayName("Should reject malformed output when a stream has no codec type")
+  void shouldRejectMalformedOutputWhenAStreamHasNoCodecType(String json) {
+    var filepath = Path.of("/test/movie.mkv");
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    assertThatThrownBy(() -> service.probe(filepath))
+        .isInstanceOf(ProbeExecutionException.class)
+        .hasMessage(TranscodeException.GENERIC_MESSAGE)
+        .hasRootCauseMessage("ffprobe stream is missing codec_type");
+  }
+
+  private static Stream<String> streamsWithoutCodecTypes() {
+    return Stream.of(
+            "{}",
+            "{\"codec_type\":null}",
+            "{\"codec_type\":7}",
+            "{\"codec_type\":1.5}",
+            "{\"codec_type\":true}",
+            "{\"codec_type\":false}",
+            "{\"codec_type\":\"\"}",
+            "{\"codec_type\":\" \\t\\n\"}",
+            "{\"codec_type\":{}}",
+            "{\"codec_type\":[]}")
+        .flatMap(
+            malformed ->
+                Stream.of(
+                    """
+                    {"streams": [%s]}
+                    """
+                        .formatted(malformed),
+                    """
+                    {"streams": [%s, {"codec_type": "video"}]}
+                    """
+                        .formatted(malformed),
+                    """
+                    {"streams": [{"codec_type": "video"}, %s]}
+                    """
+                        .formatted(malformed)));
+  }
+
+  @Test
+  @DisplayName("Should retain unknown streams when ffprobe explicitly reports their type")
+  void shouldRetainUnknownStreamsWhenFfprobeExplicitlyReportsTheirType() {
+    var json =
+        """
+        {"streams": [
+          {"index": 0, "codec_type": "unknown"},
+          {"index": 1, "codec_type": "video", "codec_name": "h264"}
+        ]}
+        """;
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    assertThat(service.probe(Path.of("/test/movie.mkv")))
+        .isInstanceOfSatisfying(
+            ProbeOutcome.Success.class,
+            success -> {
+              assertThat(success.streams()).hasSize(2);
+              assertThat(success.streams().getFirst().codecType()).isEqualTo("unknown");
+              assertThat(success.mediaProbe().videoCodec()).isEqualTo("h264");
+            });
+  }
+
+  @Test
+  @DisplayName("Should return a terminal media failure when a truncated input ends during probing")
+  void shouldReturnATerminalMediaFailureWhenATruncatedInputEndsDuringProbing() {
+    var json =
+        """
+        {"error": {"code": -541478725, "string": "End of file"}}
+        """;
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 1));
+
+    assertThat(service.probe(Path.of("/test/truncated.m2ts")))
+        .isEqualTo(new ProbeOutcome.Failure(ProbeError.INVALID_MEDIA));
+  }
+
+  @Test
+  @DisplayName("Should summarize first tracks when later tracks have default flags")
+  void shouldSummarizeFirstTracksWhenLaterTracksHaveDefaultFlags() {
+    var json =
+        """
+        {
+          "streams": [
+            {"index": 0, "codec_type": "video", "codec_name": "h264", "width": 1920,
+             "height": 1080, "r_frame_rate": "24/1", "disposition": {"default": 0}},
+            {"index": 1, "codec_type": "audio", "codec_name": "ac3", "channels": 6,
+             "bit_rate": "384000", "disposition": {"default": 0}},
+            {"index": 2, "codec_type": "video", "codec_name": "hevc", "width": 3840,
+             "height": 2160, "r_frame_rate": "60/1", "disposition": {"default": 1}},
+            {"index": 3, "codec_type": "audio", "codec_name": "aac", "channels": 2,
+             "bit_rate": "128000", "disposition": {"default": 1}},
+            {"index": 4, "codec_type": "data", "bit_rate": "1000"},
+            {"index": 5, "codec_type": "attachment", "codec_name": "ttf"}
+          ],
+          "format": {"duration": "90", "bit_rate": "15000000"}
+        }
+        """;
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    var probe = service.probeMedia(Path.of("/test/movie.mkv"));
+
+    assertThat(probe.videoCodec()).isEqualTo("h264");
+    assertThat(probe.width()).isEqualTo(1920);
+    assertThat(probe.height()).isEqualTo(1080);
+    assertThat(probe.framerate()).isEqualTo(24);
+    assertThat(probe.audioCodec()).isEqualTo("ac3");
+    assertThat(probe.audioChannels()).hasValue(6);
+    assertThat(probe.audioBitrate()).hasValue(384_000L);
+    assertThat(probe.streams()).hasSize(6);
+    assertThat(probe.streams().get(4).codecType()).isEqualTo("data");
+    assertThat(probe.streams().get(4).bitrate()).hasValue(1000L);
+    assertThat(probe.streams().getLast().codecType()).isEqualTo("attachment");
+  }
+
+  @Test
+  @DisplayName("Should retain a retryable failure when ffprobe cannot start")
+  void shouldRetainARetryableFailureWhenFfprobeCannotStart() {
+    var filepath = Path.of("/test/movie.mkv");
+    var cause = new UncheckedIOException(new IOException("executable unavailable"));
+    var service =
+        new LocalFfprobeService(
+            objectMapper,
+            path -> {
+              throw cause;
+            });
+
+    assertThatThrownBy(() -> service.probe(filepath))
+        .isInstanceOf(ProbeExecutionException.class)
+        .hasCause(cause)
+        .hasMessage(TranscodeException.GENERIC_MESSAGE);
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {-5, -2, -13, -12345})
+  @DisplayName("Should retain a retryable failure when ffprobe reports storage or execution errors")
+  void shouldRetainARetryableFailureWhenFfprobeReportsStorageOrExecutionErrors(int code) {
+    var filepath = Path.of("/test/movie.mkv");
+    var json =
+        """
+        {"error": {"code": %d, "string": "input unavailable"}}
+        """
+            .formatted(code);
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 1));
+
+    assertThatThrownBy(() -> service.probe(filepath))
+        .isInstanceOf(ProbeExecutionException.class)
+        .hasMessage(TranscodeException.GENERIC_MESSAGE);
+  }
+
+  @Test
+  @DisplayName("Should return a terminal outcome when the media has no video stream")
+  void shouldReturnATerminalOutcomeWhenTheMediaHasNoVideoStream() {
+    var filepath = Path.of("/test/audio.m4a");
+    var service =
+        new LocalFfprobeService(
+            objectMapper,
+            path ->
+                createFakeProcess(
+                    """
+        {"streams": [{"codec_type": "audio", "codec_name": "aac"}]}
+        """,
+                    0));
+
+    assertThat(service.probe(filepath))
+        .isEqualTo(new ProbeOutcome.Failure(ProbeError.NO_VIDEO_STREAM));
+    assertThatThrownBy(() -> service.probeMedia(filepath))
+        .isInstanceOf(TranscodeException.class)
+        .hasMessage(TranscodeException.GENERIC_MESSAGE);
+  }
+
+  @Test
+  @DisplayName("Should preserve unknown numeric properties when ffprobe reports unavailable values")
+  void shouldPreserveUnknownNumericPropertiesWhenFfprobeReportsUnavailableValues() {
+    var service =
+        new LocalFfprobeService(
+            objectMapper,
+            path ->
+                createFakeProcess(
+                    """
+        {"streams": [{"codec_type": "video", "width": "N/A", "height": null,
+                      "r_frame_rate": "0/0", "bit_rate": "N/A"}],
+         "format": {"duration": "N/A", "bit_rate": "N/A"}}
+        """,
+                    0));
+
+    assertThat(service.probe(Path.of("/test/movie.mkv")))
+        .isInstanceOfSatisfying(
+            ProbeOutcome.Success.class,
+            success -> {
+              assertThat(success.container().duration()).isEmpty();
+              assertThat(success.container().bitrate()).isEmpty();
+              var stream = success.streams().getFirst();
+              assertThat(stream.width()).isEmpty();
+              assertThat(stream.height()).isEmpty();
+              assertThat(stream.framerate()).isEmpty();
+              assertThat(stream.bitrate()).isEmpty();
+            });
+  }
+
+  @Test
+  @DisplayName("Should preserve unknown properties when ffprobe omits optional fields")
+  void shouldPreserveUnknownPropertiesWhenFfprobeOmitsOptionalFields() {
+    var service =
+        new LocalFfprobeService(
+            objectMapper,
+            path ->
+                createFakeProcess(
+                    """
+        {"streams": [{"index": 0, "codec_type": "video"}]}
+        """,
+                    0));
+
+    assertThat(service.probe(Path.of("/test/movie.mkv")))
+        .isInstanceOfSatisfying(
+            ProbeOutcome.Success.class,
+            success -> {
+              assertThat(success.container().format()).isEmpty();
+              assertThat(success.container().duration()).isEmpty();
+              assertThat(success.container().bitrate()).isEmpty();
+              var stream = success.streams().getFirst();
+              assertThat(stream.codec()).isEmpty();
+              assertThat(stream.width()).isEmpty();
+              assertThat(stream.height()).isEmpty();
+              assertThat(stream.framerate()).isEmpty();
+              assertThat(stream.bitrate()).isEmpty();
+            });
+  }
+
+  @Test
+  @DisplayName("Should keep optional text properties unknown when ffprobe reports null")
+  void shouldKeepOptionalTextPropertiesUnknownWhenFfprobeReportsNull() {
+    var json =
+        """
+        {"streams": [{"codec_type": "video", "codec_name": null, "r_frame_rate": null}],
+         "format": {"format_name": null, "duration": null}}
+        """;
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    assertThat(service.probe(Path.of("/test/movie.mkv")))
+        .isInstanceOfSatisfying(
+            ProbeOutcome.Success.class,
+            success -> {
+              assertThat(success.container().format()).isEmpty();
+              assertThat(success.container().duration()).isEmpty();
+              assertThat(success.streams().getFirst().codec()).isEmpty();
+              assertThat(success.streams().getFirst().framerate()).isEmpty();
+              var summary = success.mediaProbe();
+              assertThat(summary.containerFormat()).isEmpty();
+              assertThat(summary.duration()).isEqualTo(Duration.ZERO);
+              assertThat(summary.videoCodec()).isNull();
+              assertThat(summary.framerate()).isZero();
+            });
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"N/A", "0/1", "-24/1", "1/0"})
+  @DisplayName("Should keep frame rate unknown when ffprobe reports an invalid value")
+  void shouldKeepFrameRateUnknownWhenFfprobeReportsAnInvalidValue(String frameRate) {
+    var json =
+        """
+        {"streams": [{"codec_type": "video", "codec_name": "h264", "r_frame_rate": "%s"}]}
+        """
+            .formatted(frameRate);
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    assertThat(service.probe(Path.of("/test/movie.mkv")))
+        .isInstanceOfSatisfying(
+            ProbeOutcome.Success.class,
+            success -> {
+              assertThat(success.streams().getFirst().framerate()).isEmpty();
+              assertThat(success.mediaProbe().framerate()).isZero();
+              assertThat(success.mediaProbe().videoCodec()).isEqualTo("h264");
+            });
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"-1", "NaN", "Infinity"})
+  @DisplayName("Should keep duration unknown when ffprobe reports an invalid value")
+  void shouldKeepDurationUnknownWhenFfprobeReportsAnInvalidValue(String duration) {
+    var json =
+        """
+        {"streams": [{"codec_type": "video", "codec_name": "h264"}],
+         "format": {"duration": "%s"}}
+        """
+            .formatted(duration);
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    assertThat(service.probe(Path.of("/test/movie.mkv")))
+        .isInstanceOfSatisfying(
+            ProbeOutcome.Success.class,
+            success -> {
+              assertThat(success.container().duration()).isEmpty();
+              assertThat(success.mediaProbe().duration()).isEqualTo(Duration.ZERO);
+              assertThat(success.mediaProbe().videoCodec()).isEqualTo("h264");
+            });
+  }
+
+  @Test
+  @DisplayName("Should preserve known zero duration when ffprobe reports zero")
+  void shouldPreserveKnownZeroDurationWhenFfprobeReportsZero() {
+    var json =
+        """
+        {"streams": [{"codec_type": "video"}], "format": {"duration": 0}}
+        """;
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    assertThat(service.probe(Path.of("/test/movie.mkv")))
+        .isInstanceOfSatisfying(
+            ProbeOutcome.Success.class,
+            success -> {
+              assertThat(success.container().duration()).hasValue(Duration.ZERO);
+              assertThat(success.mediaProbe().duration()).isEqualTo(Duration.ZERO);
+            });
+  }
+
+  @Test
+  @DisplayName("Should retain each video stream when probing multiple video tracks")
+  void shouldRetainEachVideoStreamWhenProbingMultipleVideoTracks() {
+    var json =
+        """
+        {
+          "streams": [
+            {"index": 0, "codec_type": "video", "codec_name": "h264", "width": 1920,
+             "height": 1080, "r_frame_rate": "24000/1001", "bit_rate": "4000000"},
+            {"index": 2, "codec_type": "video", "codec_name": "hevc", "width": 3840,
+             "height": 2160, "r_frame_rate": "60/1", "bit_rate": "12000000"}
+          ],
+          "format": {"format_name": "matroska,webm", "duration": "7200.123",
+                     "bit_rate": "16000000"}
+        }
+        """;
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    var outcome = service.probe(Path.of("/test/movie.mkv"));
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            ProbeOutcome.Success.class,
+            success -> {
+              assertThat(success.container().format()).hasValue("matroska,webm");
+              assertThat(success.container().duration()).hasValue(Duration.ofMillis(7_200_123));
+              assertThat(success.container().bitrate()).hasValue(16_000_000L);
+              assertThat(success.streams()).hasSize(2);
+              assertThat(success.streams().getFirst().width()).hasValue(1920);
+              assertThat(success.streams().getFirst().height()).hasValue(1080);
+              assertThat(success.streams().getFirst().framerate()).hasValue(24000.0 / 1001);
+              assertThat(success.streams().getFirst().bitrate()).hasValue(4_000_000L);
+              assertThat(success.streams().getLast().width()).hasValue(3840);
+              assertThat(success.streams().getLast().height()).hasValue(2160);
+              assertThat(success.streams().getLast().framerate()).hasValue(60);
+              assertThat(success.streams().getLast().bitrate()).hasValue(12_000_000L);
+            });
+  }
 
   @Test
   @DisplayName("Should parse into media probe when ffprobe output is valid")
@@ -46,7 +423,7 @@ class LocalFfprobeServiceTest {
 
     var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
 
-    var probe = service.probe(Path.of("/test/movie.mkv"));
+    var probe = service.probeMedia(Path.of("/test/movie.mkv"));
 
     assertThat(probe.videoCodec()).isEqualTo("h264");
     assertThat(probe.audioCodec()).isEqualTo("aac");
@@ -85,7 +462,7 @@ class LocalFfprobeServiceTest {
 
     var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
 
-    var probe = service.probe(Path.of("/test/movie.mkv"));
+    var probe = service.probeMedia(Path.of("/test/movie.mkv"));
 
     assertThat(probe.framerate()).isCloseTo(30.0, within(0.001));
   }
@@ -113,7 +490,7 @@ class LocalFfprobeServiceTest {
 
     var filePath = Path.of("/test/audio-only.mkv");
 
-    assertThatThrownBy(() -> service.probe(filePath))
+    assertThatThrownBy(() -> service.probeMedia(filePath))
         .isInstanceOf(TranscodeException.class)
         .hasMessage(TranscodeException.GENERIC_MESSAGE);
   }
@@ -126,8 +503,8 @@ class LocalFfprobeServiceTest {
     var filePath = Path.of("/test/movie.mkv");
 
     assertThatThrownBy(() -> service.probe(filePath))
-        .isInstanceOf(FfmpegNotAvailableException.class)
-        .hasMessage(FfmpegNotAvailableException.GENERIC_MESSAGE);
+        .isInstanceOf(ProbeExecutionException.class)
+        .hasMessage(TranscodeException.GENERIC_MESSAGE);
   }
 
   @Test
@@ -154,7 +531,7 @@ class LocalFfprobeServiceTest {
 
     var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
 
-    var probe = service.probe(Path.of("/test/silent.mkv"));
+    var probe = service.probeMedia(Path.of("/test/silent.mkv"));
 
     assertThat(probe.videoCodec()).isEqualTo("h264");
     assertThat(probe.audioCodec()).isNull();
@@ -191,7 +568,7 @@ class LocalFfprobeServiceTest {
 
     var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
 
-    var probe = service.probe(Path.of("/test/movie.mkv"));
+    var probe = service.probeMedia(Path.of("/test/movie.mkv"));
 
     assertThat(probe.audioChannels()).hasValue(6);
     assertThat(probe.audioBitrate()).hasValue(384_000L);
@@ -227,7 +604,7 @@ class LocalFfprobeServiceTest {
 
     var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
 
-    var probe = service.probe(Path.of("/test/movie.mkv"));
+    var probe = service.probeMedia(Path.of("/test/movie.mkv"));
 
     assertThat(probe.audioBitrate()).isEmpty();
     assertThat(probe.audioChannels()).hasValue(2);
@@ -261,7 +638,7 @@ class LocalFfprobeServiceTest {
 
     var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
 
-    var probe = service.probe(Path.of("/test/movie.mkv"));
+    var probe = service.probeMedia(Path.of("/test/movie.mkv"));
 
     assertThat(probe.framerate()).isCloseTo(25.0, within(0.001));
   }
@@ -294,7 +671,7 @@ class LocalFfprobeServiceTest {
 
     var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
 
-    var probe = service.probe(Path.of("/test/movie.mkv"));
+    var probe = service.probeMedia(Path.of("/test/movie.mkv"));
 
     assertThat(probe.audioChannels()).isEmpty();
     assertThat(probe.audioBitrate()).isEmpty();
@@ -325,7 +702,7 @@ class LocalFfprobeServiceTest {
 
     var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
 
-    var probe = service.probe(Path.of("/test/movie.mkv"));
+    var probe = service.probeMedia(Path.of("/test/movie.mkv"));
 
     assertThat(probe.containerFormat()).hasValue("matroska,webm");
   }
@@ -354,7 +731,7 @@ class LocalFfprobeServiceTest {
 
     var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
 
-    var probe = service.probe(Path.of("/test/movie.mkv"));
+    var probe = service.probeMedia(Path.of("/test/movie.mkv"));
 
     assertThat(probe.containerFormat()).isEmpty();
   }
@@ -410,33 +787,33 @@ class LocalFfprobeServiceTest {
 
     var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
 
-    var probe = service.probe(Path.of("/test/movie.mkv"));
+    var probe = service.probeMedia(Path.of("/test/movie.mkv"));
 
     assertThat(probe.streams()).hasSize(4);
 
     var video = probe.streams().get(0);
     assertThat(video.index()).isZero();
     assertThat(video.codecType()).isEqualTo("video");
-    assertThat(video.codec()).isEqualTo("h264");
+    assertThat(video.codec()).hasValue("h264");
     assertThat(video.language()).hasValue("und");
     assertThat(video.isDefault()).isTrue();
 
     var audio = probe.streams().get(1);
     assertThat(audio.index()).isEqualTo(1);
     assertThat(audio.codecType()).isEqualTo("audio");
-    assertThat(audio.codec()).isEqualTo("ac3");
+    assertThat(audio.codec()).hasValue("ac3");
     assertThat(audio.language()).hasValue("eng");
     assertThat(audio.channels()).hasValue(6);
     assertThat(audio.bitrate()).hasValue(384_000L);
 
     var srtSub = probe.streams().get(2);
     assertThat(srtSub.codecType()).isEqualTo("subtitle");
-    assertThat(srtSub.codec()).isEqualTo("subrip");
+    assertThat(srtSub.codec()).hasValue("subrip");
     assertThat(srtSub.language()).hasValue("eng");
     assertThat(srtSub.isForced()).isFalse();
 
     var pgsSub = probe.streams().get(3);
-    assertThat(pgsSub.codec()).isEqualTo("hdmv_pgs_subtitle");
+    assertThat(pgsSub.codec()).hasValue("hdmv_pgs_subtitle");
     assertThat(pgsSub.language()).hasValue("spa");
     assertThat(pgsSub.isForced()).isTrue();
   }
@@ -477,7 +854,7 @@ class LocalFfprobeServiceTest {
 
     var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
 
-    var probe = service.probe(Path.of("/test/movie.mkv"));
+    var probe = service.probeMedia(Path.of("/test/movie.mkv"));
 
     assertThat(probe.streams()).hasSize(3);
     assertThat(probe.streams().get(0).index()).isZero();
@@ -509,7 +886,7 @@ class LocalFfprobeServiceTest {
 
     var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
 
-    var probe = service.probe(Path.of("/test/movie.mkv"));
+    var probe = service.probeMedia(Path.of("/test/movie.mkv"));
 
     assertThat(probe.streams()).isNotEmpty();
     assertThat(probe.subtitleStreams()).isEmpty();
@@ -551,7 +928,7 @@ class LocalFfprobeServiceTest {
 
     var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
 
-    var probe = service.probe(Path.of("/test/movie.mkv"));
+    var probe = service.probeMedia(Path.of("/test/movie.mkv"));
 
     assertThat(probe.audioStreams()).hasSize(2);
     assertThat(probe.audioStreams().get(0).language()).hasValue("eng");
@@ -582,12 +959,27 @@ class LocalFfprobeServiceTest {
 
     var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
 
-    var probe = service.probe(Path.of("/test/movie.mkv"));
+    var probe = service.probeMedia(Path.of("/test/movie.mkv"));
 
     var video = probe.streams().getFirst();
     assertThat(video.language()).isEmpty();
     assertThat(video.isDefault()).isFalse();
     assertThat(video.isForced()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should keep language unknown when stream tags omit language")
+  void shouldKeepLanguageUnknownWhenStreamTagsOmitLanguage() {
+    var json =
+        """
+        {"streams": [{"codec_type": "video", "tags": {"title": "Main video"}}]}
+        """;
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    assertThat(service.probe(Path.of("/test/movie.mkv")))
+        .isInstanceOfSatisfying(
+            ProbeOutcome.Success.class,
+            success -> assertThat(success.streams().getFirst().language()).isEmpty());
   }
 
   @Test
@@ -598,13 +990,14 @@ class LocalFfprobeServiceTest {
     var filePath = Path.of("/test/corrupt.mkv");
 
     assertThatThrownBy(() -> service.probe(filePath))
-        .isInstanceOf(TranscodeException.class)
+        .isInstanceOf(ProbeExecutionException.class)
         .hasMessage(TranscodeException.GENERIC_MESSAGE);
   }
 
   @Test
   @DisplayName("Should throw with generic message when ffprobe is interrupted")
   void shouldThrowWithGenericMessageWhenFfprobeIsInterrupted() {
+    var interruption = new InterruptedException("thread interrupted");
     var service =
         new LocalFfprobeService(
             objectMapper,
@@ -612,15 +1005,21 @@ class LocalFfprobeServiceTest {
                 new FakeProcess("{}", 0) {
                   @Override
                   public int waitFor() throws InterruptedException {
-                    throw new InterruptedException("thread interrupted");
+                    throw interruption;
                   }
                 });
 
     var filePath = Path.of("/test/movie.mkv");
 
-    assertThatThrownBy(() -> service.probe(filePath))
-        .isInstanceOf(TranscodeException.class)
-        .hasMessage(TranscodeException.GENERIC_MESSAGE);
+    try {
+      assertThatThrownBy(() -> service.probe(filePath))
+          .isInstanceOf(ProbeExecutionException.class)
+          .hasCause(interruption)
+          .hasMessage(TranscodeException.GENERIC_MESSAGE);
+      assertThat(Thread.currentThread().isInterrupted()).isTrue();
+    } finally {
+      Thread.interrupted();
+    }
   }
 
   @Test
@@ -658,7 +1057,7 @@ class LocalFfprobeServiceTest {
 
     var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
 
-    var probe = service.probe(Path.of("/test/movie.mkv"));
+    var probe = service.probeMedia(Path.of("/test/movie.mkv"));
 
     var video = probe.streams().getFirst();
     assertThat(video.index()).isZero();
@@ -691,7 +1090,7 @@ class LocalFfprobeServiceTest {
 
     var filePath = Path.of("/test/movie.mkv");
 
-    assertThatThrownBy(() -> service.probe(filePath))
+    assertThatThrownBy(() -> service.probeMedia(filePath))
         .isInstanceOf(TranscodeException.class)
         .hasMessage(TranscodeException.GENERIC_MESSAGE);
   }
