@@ -101,8 +101,8 @@ class TranscodeWorkerHealthIT {
           .until(() -> processes.isRunning(active.sessionId(), active.variantLabel()));
 
       assertThat(executor.availableSlots()).isZero();
-      assertThatThrownBy(() -> executor.start(request(media)))
-          .isInstanceOf(TranscodeException.class);
+      var overCapacity = request(media);
+      assertThatThrownBy(() -> executor.start(overCapacity)).isInstanceOf(TranscodeException.class);
       assertThat(check(worker.healthPort(), "readiness")).isEqualTo(ServingStatus.SERVING);
       assertThat(check(worker.healthPort(), "liveness")).isEqualTo(ServingStatus.SERVING);
     }
