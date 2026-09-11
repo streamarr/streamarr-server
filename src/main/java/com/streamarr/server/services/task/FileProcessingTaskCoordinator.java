@@ -1,7 +1,6 @@
 package com.streamarr.server.services.task;
 
 import com.streamarr.server.domain.task.FileProcessingTask;
-import com.streamarr.server.domain.task.FileProcessingTaskStatus;
 import com.streamarr.server.repositories.task.FileProcessingTaskRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import java.lang.management.ManagementFactory;
@@ -16,17 +15,16 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Retires the watcher's legacy task rows. Probes themselves run through db-scheduler; this
+ * coordinator only drains what earlier releases left in {@code file_processing_task}.
+ */
 @Slf4j
 @Service
 public class FileProcessingTaskCoordinator {
-
-  private static final List<FileProcessingTaskStatus> ACTIVE_STATUSES =
-      List.of(FileProcessingTaskStatus.PENDING, FileProcessingTaskStatus.PROCESSING);
 
   private final FileProcessingTaskRepository repository;
   private final Clock clock;
@@ -49,54 +47,8 @@ public class FileProcessingTaskCoordinator {
     this.instanceId = generateInstanceId();
   }
 
-  public FileProcessingTask createTask(Path path, UUID libraryId) {
-    var filepath = FilepathCodec.encode(path);
-
-    var existing = repository.findByFilepathUriAndStatusIn(filepath, ACTIVE_STATUSES);
-    if (existing.isPresent()) {
-      log.debug("Task already exists for filepath: {}", filepath);
-      return existing.get();
-    }
-
-    var task =
-        FileProcessingTask.builder()
-            .filepathUri(filepath)
-            .libraryId(libraryId)
-            .status(FileProcessingTaskStatus.PENDING)
-            .createdOn(clock.instant())
-            .build();
-
-    try {
-      return repository.save(task);
-    } catch (DataIntegrityViolationException e) {
-      log.debug("Concurrent task creation detected for filepath: {}", filepath);
-      return repository
-          .findByFilepathUriAndStatusIn(filepath, ACTIVE_STATUSES)
-          .orElseThrow(
-              () ->
-                  new IllegalStateException(
-                      "Task should exist after constraint violation for: " + filepath, e));
-    }
-  }
-
-  public Optional<FileProcessingTask> claimNextTask() {
-    var leaseExpiresAt = clock.instant().plus(leaseDuration);
-    return repository.claimNextTask(instanceId, leaseExpiresAt);
-  }
-
-  public List<FileProcessingTask> reclaimOrphanedTasks(int limit) {
-    var now = clock.instant();
-    var leaseExpiresAt = now.plus(leaseDuration);
-    return repository.reclaimOrphanedTasks(instanceId, leaseExpiresAt, now, limit);
-  }
-
-  @Scheduled(fixedDelayString = "${task.coordinator.heartbeat-interval-ms:15000}")
-  public void extendLeases() {
-    var newLeaseExpiresAt = clock.instant().plus(leaseDuration);
-    var count = repository.extendLeases(instanceId, newLeaseExpiresAt);
-    if (count > 0) {
-      log.debug("Extended leases for {} tasks", count);
-    }
+  public List<FileProcessingTask> findLegacyTasks(Optional<UUID> afterId, int limit) {
+    return repository.findLegacyTasks(afterId, limit);
   }
 
   public Optional<FileProcessingTask> complete(UUID taskId) {
@@ -122,8 +74,8 @@ public class FileProcessingTaskCoordinator {
   @Transactional
   public void cancelTask(Path path) {
     var filepath = FilepathCodec.encode(path);
-    repository.deleteByFilepathUriAndStatusIn(filepath, List.of(FileProcessingTaskStatus.PENDING));
-    log.info("Cancelled pending task for: {}", filepath);
+    repository.cancelTask(filepath);
+    log.info("Cancelled task for: {}", filepath);
   }
 
   private static String generateInstanceId() {
