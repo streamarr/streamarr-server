@@ -41,6 +41,16 @@ public class MediaFileContainerInfoRepositoryCustomImpl
     return true;
   }
 
+  @Override
+  @Transactional
+  public void invalidateOutcomeUnlessSnapshotMatches(
+      UUID mediaFileId, SourceFileSnapshot snapshot) {
+    dsl.deleteFrom(MEDIA_FILE_CONTAINER_INFO)
+        .where(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(mediaFileId))
+        .and(snapshotMatches(snapshot).not())
+        .execute();
+  }
+
   private boolean lockMediaFile(UUID mediaFileId) {
     return dsl.select(MEDIA_FILE.ID)
         .from(MEDIA_FILE)

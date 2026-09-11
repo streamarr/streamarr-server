@@ -159,6 +159,30 @@ class ProbeOutcomePublicationIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should delete the stored outcome when the source snapshot no longer matches")
+  void shouldDeleteTheStoredOutcomeWhenTheSourceSnapshotNoLongerMatches() {
+    var file = createMediaFile();
+    repository.publish(publication(file.getId(), SNAPSHOT_A, 1, success("h264", "aac")));
+
+    repository.invalidateOutcomeUnlessSnapshotMatches(file.getId(), SNAPSHOT_B);
+
+    assertThat(repository.findByMediaFileId(file.getId())).isEmpty();
+    assertThat(streamRowCount(file.getId())).isZero();
+  }
+
+  @Test
+  @DisplayName("Should keep the stored outcome when the source snapshot still matches")
+  void shouldKeepTheStoredOutcomeWhenTheSourceSnapshotStillMatches() {
+    var file = createMediaFile();
+    repository.publish(publication(file.getId(), SNAPSHOT_A, 1, success("h264", "aac")));
+
+    repository.invalidateOutcomeUnlessSnapshotMatches(file.getId(), SNAPSHOT_A);
+
+    assertThat(repository.findByMediaFileId(file.getId())).isPresent();
+    assertThat(streamRowCount(file.getId())).isEqualTo(2);
+  }
+
+  @Test
   @DisplayName("Should reject publication when the media file no longer exists")
   void shouldRejectPublicationWhenTheMediaFileNoLongerExists() {
     var missingMediaFileId = UUID.randomUUID();
