@@ -54,17 +54,7 @@ class RemoteTranscodeConfigurationTest {
   @Test
   @DisplayName("Should reject a blank remote media source root when configured")
   void shouldRejectBlankRemoteMediaSourceRootWhenConfigured() {
-    assertThatThrownBy(
-            () ->
-                new RemoteTranscodeProperties(
-                    true,
-                    0,
-                    "streamarr.test",
-                    SOURCE_NAMESPACE_ID,
-                    " ",
-                    "server.crt",
-                    "server.key",
-                    "ca.crt"))
+    assertThatThrownBy(() -> new RemoteTranscodeProperties(true, SOURCE_NAMESPACE_ID, " "))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Remote source root is required");
   }
@@ -73,6 +63,7 @@ class RemoteTranscodeConfigurationTest {
   @DisplayName("Should start the outbound worker listener when explicitly configured")
   void shouldStartOutboundWorkerListenerWhenExplicitlyConfigured() throws URISyntaxException {
     contextRunner
+        .withUserConfiguration(WorkerSessionConfiguration.class)
         .withPropertyValues(remoteProperties())
         .run(
             context -> {
@@ -89,13 +80,14 @@ class RemoteTranscodeConfigurationTest {
     var certificate = resource("server-cert.pem");
     return new String[] {
       "streaming.remote.enabled=true",
-      "streaming.remote.port=0",
-      "streaming.remote.trust-domain=streamarr.test",
+      "streaming.worker-session.mutual-tls.enabled=true",
+      "streaming.worker-session.mutual-tls.port=0",
+      "streaming.worker-session.mutual-tls.trust-domain=streamarr.test",
       "streaming.remote.source-namespace-id=" + SOURCE_NAMESPACE_ID,
       "streaming.remote.source-root=" + certificate.getParent(),
-      "streaming.remote.certificate=" + certificate,
-      "streaming.remote.private-key=" + resource("server-key.fixture"),
-      "streaming.remote.trust-bundle=" + resource("ca-cert.pem")
+      "streaming.worker-session.mutual-tls.certificate=" + certificate,
+      "streaming.worker-session.mutual-tls.private-key=" + resource("server-key.fixture"),
+      "streaming.worker-session.mutual-tls.trust-bundle=" + resource("ca-cert.pem")
     };
   }
 
