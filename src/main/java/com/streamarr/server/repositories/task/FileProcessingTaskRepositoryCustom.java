@@ -8,12 +8,10 @@ import java.util.UUID;
 
 public interface FileProcessingTaskRepositoryCustom {
 
-  Optional<FileProcessingTask> claimNextTask(String ownerInstanceId, Instant leaseExpiresAt);
+  /** Active rows left by the watcher before probes moved to db-scheduler, in id order. */
+  List<FileProcessingTask> findLegacyTasks(Optional<UUID> afterId, int limit);
 
-  List<FileProcessingTask> reclaimOrphanedTasks(
-      String ownerInstanceId, Instant leaseExpiresAt, Instant now, int limit);
-
-  int extendLeases(String ownerInstanceId, Instant newLeaseExpiresAt);
+  void cancelTask(String filepathUri);
 
   Optional<FileProcessingTask> completeTask(UUID taskId, Instant completedOn);
 

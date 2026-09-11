@@ -63,6 +63,7 @@ class FileEventProcessorTest {
   private FileSystem fileSystem;
   private LibraryRepository libraryRepository;
   private FakeMediaFileRepository mediaFileRepository;
+  private FakeFileProcessingTaskRepository taskRepository;
   private AtomicReference<FileStabilityChecker> stabilityCheckerRef;
   private FileEventProcessor eventProcessor;
   private UUID specialLibraryId;
@@ -151,7 +152,7 @@ class FileEventProcessorTest {
             new FakeLibraryMutationTransaction(),
             mutationTransactions);
 
-    var taskRepository = new FakeFileProcessingTaskRepository();
+    taskRepository = new FakeFileProcessingTaskRepository();
     var clock = Clock.fixed(Instant.now(), ZoneId.of("UTC"));
     var taskCoordinator =
         new FileProcessingTaskCoordinator(taskRepository, clock, Duration.ofSeconds(60));
@@ -240,6 +241,22 @@ class FileEventProcessorTest {
                   mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
               assertThat(mediaFile).isPresent();
             });
+  }
+
+  @Test
+  @DisplayName("Should leave task ownership to probe scheduling when processing a stable file")
+  void shouldLeaveTaskOwnershipToProbeSchedulingWhenProcessingStableFile() throws Exception {
+    var path = createFile("/media/movies/Movie (2024).mkv");
+
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () ->
+                assertThat(mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path)))
+                    .isPresent());
+    assertThat(taskRepository.count()).isZero();
   }
 
   @Test

@@ -34,10 +34,12 @@ import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.CapturingProbeRequests;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.fakes.FakeLibraryMutationTransaction;
 import com.streamarr.server.fakes.FakeLibraryRepository;
+import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
@@ -63,6 +65,7 @@ import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.events.library.ItemProcessedEvent;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
+import com.streamarr.server.services.events.library.MediaFileProbeRequested;
 import com.streamarr.server.services.events.library.RefreshEndedEvent;
 import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
@@ -90,9 +93,11 @@ import com.streamarr.server.services.parsers.show.regex.EpisodeRegexFixtures;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
@@ -111,6 +116,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -122,6 +128,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessResourceFailureException;
 
 @Tag("UnitTest")
 @ExtendWith(MockitoExtension.class)
@@ -228,6 +235,7 @@ class LibraryManagementServiceTest {
     assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath)))
         .as("Media file should have been created before scanLibrary returned")
         .isPresent();
+    assertThat(capturingEventPublisher.getEventsOfType(MediaFileProbeRequested.class)).hasSize(1);
   }
 
   @Test
@@ -642,6 +650,161 @@ class LibraryManagementServiceTest {
         fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
 
     assertThat(mediaFileAfterRefresh).contains(mediaFileBeforeRefresh);
+  }
+
+  @Test
+  @DisplayName("Should request probe work when scanning an already matched file")
+  void shouldRequestProbeWorkWhenScanningAlreadyMatchedFile() throws IOException {
+    var rootPath = createRootLibraryDirectory();
+    var path = createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
+    var mediaFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(savedLibraryId)
+                .filepathUri(FilepathCodec.encode(path))
+                .filename(path.getFileName().toString())
+                .status(MediaFileStatus.MATCHED)
+                .build());
+
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    assertThat(capturingEventPublisher.getEventsOfType(MediaFileProbeRequested.class))
+        .containsExactly(new MediaFileProbeRequested(mediaFile.getId()));
+  }
+
+  @Test
+  @DisplayName("Should wait for durable probe enqueue before completing a scan")
+  void shouldWaitForDurableProbeEnqueueBeforeCompletingScan() throws Exception {
+    var rootPath = createRootLibraryDirectory();
+    var path = createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
+    saveMatchedMediaFile(path);
+    var enqueueStarted = new CountDownLatch(1);
+    var enqueueReleased = new CountDownLatch(1);
+    capturingEventPublisher.probeRequested =
+        _ -> {
+          enqueueStarted.countDown();
+          awaitEnqueueRelease(enqueueReleased);
+        };
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var scan = executor.submit(() -> libraryManagementService.scanLibrary(savedLibraryId));
+      try {
+        assertThat(enqueueStarted.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(scan).isNotDone();
+        assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
+      } finally {
+        enqueueReleased.countDown();
+      }
+
+      scan.get(5, TimeUnit.SECONDS);
+    }
+
+    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).hasSize(1);
+    assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
+        .isEqualTo(LibraryStatus.HEALTHY);
+  }
+
+  @Test
+  @DisplayName("Should fail the scan when required probe enqueue fails")
+  void shouldFailScanWhenRequiredProbeEnqueueFails() throws IOException {
+    var rootPath = createRootLibraryDirectory();
+    var path = createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
+    saveMatchedMediaFile(path);
+    capturingEventPublisher.probeRequested =
+        _ -> {
+          throw new DataAccessResourceFailureException("Queue unavailable");
+        };
+
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
+    assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
+        .isEqualTo(LibraryStatus.UNHEALTHY);
+  }
+
+  @Test
+  @DisplayName(
+      "Should complete a scan when one source disappears after enumeration before probe scheduling")
+  void shouldCompleteScanWhenSourceDisappearsAfterEnumerationBeforeProbeScheduling()
+      throws Exception {
+    var rootPath = createRootLibraryDirectory();
+    var path = createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
+    saveMatchedMediaFile(path);
+    var scheduler = probeScheduler(fileSystem);
+    capturingEventPublisher.probeRequested =
+        event -> {
+          try {
+            Files.delete(path);
+          } catch (IOException exception) {
+            throw new UncheckedIOException(exception);
+          }
+
+          scheduler.onProbeRequested(event);
+        };
+
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    assertThat(Files.exists(path)).isFalse();
+    assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
+        .isEqualTo(LibraryStatus.HEALTHY);
+    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).hasSize(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should mark the scan unhealthy when the source becomes a symbolic-link loop after enumeration")
+  void shouldMarkScanUnhealthyWhenSourceBecomesASymbolicLinkLoopAfterEnumeration()
+      throws Exception {
+    var rootPath = createRootLibraryDirectory();
+    var path = createMovieFile(rootPath, "Unavailable mount", "movie.mkv");
+    saveMatchedMediaFile(path);
+    var scheduler = probeScheduler(fileSystem);
+    capturingEventPublisher.probeRequested =
+        event -> {
+          try {
+            Files.delete(path);
+            Files.createSymbolicLink(path, path.getFileName());
+          } catch (IOException exception) {
+            throw new UncheckedIOException(exception);
+          }
+
+          scheduler.onProbeRequested(event);
+        };
+
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    assertThat(Files.isSymbolicLink(path)).isTrue();
+    assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
+        .isEqualTo(LibraryStatus.UNHEALTHY);
+    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
+  }
+
+  private MediaFileProbeScheduler probeScheduler(FileSystem observedFileSystem) {
+    return MediaFileProbeScheduler.builder()
+        .mediaFileRepository(fakeMediaFileRepository)
+        .reader(new PersistedProbeReader(new FakeMediaFileContainerInfoRepository()))
+        .probeRequests(new CapturingProbeRequests())
+        .fileSystem(observedFileSystem)
+        .build();
+  }
+
+  private void saveMatchedMediaFile(Path path) {
+    fakeMediaFileRepository.save(
+        MediaFile.builder()
+            .libraryId(savedLibraryId)
+            .filepathUri(FilepathCodec.encode(path))
+            .filename(path.getFileName().toString())
+            .status(MediaFileStatus.MATCHED)
+            .build());
+  }
+
+  private static void awaitEnqueueRelease(CountDownLatch release) {
+    try {
+      assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
+    } catch (InterruptedException exception) {
+      Thread.currentThread().interrupt();
+      throw new AssertionError(exception);
+    }
   }
 
   @Test
@@ -1709,10 +1872,15 @@ class LibraryManagementServiceTest {
   private static final class SignalingEventPublisher extends CapturingEventPublisher {
 
     private final CountDownLatch refreshEnded = new CountDownLatch(1);
+    private Consumer<MediaFileProbeRequested> probeRequested = _ -> {};
 
     @Override
     public void publishEvent(Object event) {
       super.publishEvent(event);
+      if (event instanceof MediaFileProbeRequested requested) {
+        probeRequested.accept(requested);
+      }
+
       if (event instanceof RefreshEndedEvent) {
         refreshEnded.countDown();
       }

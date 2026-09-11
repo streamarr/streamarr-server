@@ -5,6 +5,7 @@ import com.streamarr.server.domain.task.FileProcessingTaskStatus;
 import com.streamarr.server.repositories.task.FileProcessingTaskRepository;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,63 +27,23 @@ public class FakeFileProcessingTaskRepository implements FileProcessingTaskRepos
   private final Map<UUID, FileProcessingTask> database = new HashMap<>();
 
   @Override
-  public Optional<FileProcessingTask> findByFilepathUriAndStatusIn(
-      String filepathUri, List<FileProcessingTaskStatus> statuses) {
+  public List<FileProcessingTask> findLegacyTasks(Optional<UUID> afterId, int limit) {
     return database.values().stream()
-        .filter(task -> filepathUri.equals(task.getFilepathUri()))
-        .filter(task -> statuses.contains(task.getStatus()))
-        .findFirst();
-  }
-
-  @Override
-  public List<FileProcessingTask> findByOwnerInstanceId(String ownerInstanceId) {
-    return database.values().stream()
-        .filter(task -> ownerInstanceId.equals(task.getOwnerInstanceId()))
+        .filter(task -> ACTIVE_STATUSES.contains(task.getStatus()))
+        .filter(task -> afterId.map(id -> task.getId().compareTo(id) > 0).orElse(true))
+        .sorted(Comparator.comparing(FileProcessingTask::getId))
+        .limit(limit)
         .toList();
   }
 
   @Override
-  public void deleteByFilepathUriAndStatusIn(
-      String filepathUri, List<FileProcessingTaskStatus> statuses) {
+  public void cancelTask(String filepathUri) {
     database
         .entrySet()
         .removeIf(
             entry ->
                 filepathUri.equals(entry.getValue().getFilepathUri())
-                    && statuses.contains(entry.getValue().getStatus()));
-  }
-
-  @Override
-  public Optional<FileProcessingTask> claimNextTask(
-      String ownerInstanceId, Instant leaseExpiresAt) {
-    return database.values().stream()
-        .filter(task -> task.getStatus() == FileProcessingTaskStatus.PENDING)
-        .filter(task -> task.getOwnerInstanceId() == null)
-        .findFirst()
-        .map(
-            task -> {
-              task.setOwnerInstanceId(ownerInstanceId);
-              task.setLeaseExpiresAt(leaseExpiresAt);
-              task.setStatus(FileProcessingTaskStatus.PROCESSING);
-              return task;
-            });
-  }
-
-  @Override
-  public List<FileProcessingTask> reclaimOrphanedTasks(
-      String ownerInstanceId, Instant leaseExpiresAt, Instant now, int limit) {
-    return database.values().stream()
-        .filter(task -> ACTIVE_STATUSES.contains(task.getStatus()))
-        .filter(task -> task.getLeaseExpiresAt() == null || task.getLeaseExpiresAt().isBefore(now))
-        .limit(limit)
-        .map(
-            task -> {
-              task.setOwnerInstanceId(ownerInstanceId);
-              task.setLeaseExpiresAt(leaseExpiresAt);
-              task.setStatus(FileProcessingTaskStatus.PENDING);
-              return task;
-            })
-        .toList();
+                    && entry.getValue().getStatus() == FileProcessingTaskStatus.PENDING);
   }
 
   @Override
@@ -113,17 +74,6 @@ public class FakeFileProcessingTaskRepository implements FileProcessingTaskRepos
               task.setLeaseExpiresAt(null);
               return task;
             });
-  }
-
-  @Override
-  public int extendLeases(String ownerInstanceId, Instant newLeaseExpiresAt) {
-    var tasks =
-        database.values().stream()
-            .filter(task -> ownerInstanceId.equals(task.getOwnerInstanceId()))
-            .filter(task -> ACTIVE_STATUSES.contains(task.getStatus()))
-            .toList();
-    tasks.forEach(task -> task.setLeaseExpiresAt(newLeaseExpiresAt));
-    return tasks.size();
   }
 
   @Override
