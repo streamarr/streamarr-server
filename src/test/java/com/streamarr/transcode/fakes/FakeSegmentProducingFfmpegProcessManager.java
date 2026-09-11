@@ -1,4 +1,4 @@
-package com.streamarr.server.fakes;
+package com.streamarr.transcode.fakes;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;

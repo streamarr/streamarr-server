@@ -1,6 +1,5 @@
-package com.streamarr.server.services.streaming.ffmpeg;
+package com.streamarr.transcode.engine;
 
-import com.streamarr.transcode.engine.TranscodeException;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;

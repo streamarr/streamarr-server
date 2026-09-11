@@ -5,11 +5,11 @@ import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-import com.streamarr.server.fakes.FakeFfmpegProcessManager;
-import com.streamarr.server.fakes.FakeSegmentProducingFfmpegProcessManager;
-import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
+import com.streamarr.transcode.engine.FfmpegCommandBuilder;
 import com.streamarr.transcode.engine.FfmpegTranscodeEngine;
 import com.streamarr.transcode.engine.TranscodeCapabilityService;
+import com.streamarr.transcode.fakes.FakeFfmpegProcessManager;
+import com.streamarr.transcode.fakes.FakeSegmentProducingFfmpegProcessManager;
 import com.streamarr.transcode.tls.PemTlsIdentity;
 import com.streamarr.transcode.v1.AudioDecision;
 import com.streamarr.transcode.v1.AudioMode;
