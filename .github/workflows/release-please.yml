@@ -1,0 +1,88 @@
+name: Release Please
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-please-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Maintain Maven releases
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint release bot token
+        id: bot
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+
+      - name: Verify repository auto-merge
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+        run: |
+          auto_merge="$(gh api "repos/${GITHUB_REPOSITORY}" --jq '.allow_auto_merge')"
+          case "${auto_merge}" in
+            true) ;;
+            false) echo "::error::Enable repository auto-merge before running release automation"; exit 1 ;;
+            *) echo "::error::Cannot determine repository auto-merge setting: allow_auto_merge=${auto_merge}. Check release App access."; exit 1 ;;
+          esac
+
+      - name: Publish merged releases
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.bot.outputs.token }}
+          target-branch: main
+          skip-github-pull-request: true
+
+      - name: Verify merged releases were processed
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+        run: |
+          pending="$(gh pr list --repo "${GITHUB_REPOSITORY}" --base main --state merged \
+            --label 'autorelease: pending' --limit 1 --json number --jq '.[0].number // empty')"
+          if [[ -n "${pending}" ]]; then
+            echo "::error::Unprocessed merged release PR #${pending}: restore its release title and body, then rerun Release Please"
+            exit 1
+          fi
+
+      - name: Maintain release PR
+        id: release_pr
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.bot.outputs.token }}
+          target-branch: main
+          skip-github-release: true
+
+      - name: Queue snapshot auto-merge
+        if: steps.release_pr.outputs.prs_created == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+          RELEASE_PR: ${{ steps.release_pr.outputs.pr }}
+        run: |
+          if ! jq -e '.labels | index("autorelease: snapshot")' <<<"${RELEASE_PR}" >/dev/null; then
+            exit 0
+          fi
+          number="$(jq -r '.number' <<<"${RELEASE_PR}")"
+          title="$(jq -r '.title' <<<"${RELEASE_PR}")"
+          head="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${number}" --jq '.head.sha')"
+          if [[ ! "${head}" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "::error::Release PR has no head revision"
+            exit 1
+          fi
+          gh pr merge "${number}" --repo "${GITHUB_REPOSITORY}" --auto --squash \
+            --match-head-commit "${head}" --subject "${title}" --body ''

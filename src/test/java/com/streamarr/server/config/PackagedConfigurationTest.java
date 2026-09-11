@@ -153,16 +153,18 @@ class PackagedConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should grant repository contents access only to release image build job")
-  void shouldGrantRepositoryContentsAccessOnlyToReleaseImageBuildJob() throws IOException {
+  @DisplayName("Should grant only read access to release jobs that need GitHub metadata")
+  void shouldGrantOnlyReadAccessToReleaseJobsThatNeedGitHubMetadata() throws IOException {
     var workflow = yaml(".github/workflows/publish-release.yml");
     var jobs = map(workflow.get("jobs"));
     var buildReleaseImages = map(jobs.get("build_release_images"));
     var publishRelease = map(jobs.get("publish_release"));
+    var validateRelease = map(jobs.get("validate_release"));
 
     assertThat(map(workflow.get("permissions"))).isEmpty();
     assertThat(map(buildReleaseImages.get("permissions"))).isEqualTo(Map.of("contents", "read"));
-    assertThat(publishRelease).doesNotContainKey("permissions");
+    assertThat(map(validateRelease.get("permissions"))).isEqualTo(Map.of("contents", "read"));
+    assertThat(map(publishRelease.get("permissions"))).isEqualTo(Map.of("contents", "read"));
   }
 
   @Test
@@ -190,9 +192,7 @@ class PackagedConfigurationTest {
             "\"${image_revision}\"")
         .doesNotContain("BP_OCI_REVISION=${GITHUB_SHA}");
     assertThat(map(releasePackStep.get("with")))
-        .containsEntry(
-            "image-version",
-            "${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}");
+        .containsEntry("image-version", "${{ needs.validate_release.outputs.version }}");
   }
 
   @Test
@@ -251,7 +251,8 @@ class PackagedConfigurationTest {
     var stepNames =
         listOfMaps(publishRelease.get("steps")).stream().map(step -> step.get("name")).toList();
 
-    assertThat(publishRelease).containsEntry("needs", "build_release_images");
+    assertThat(publishRelease)
+        .containsEntry("needs", List.of("validate_release", "build_release_images"));
     assertThat(stepNames)
         .containsSubsequence(
             "Publish immutable multi-architecture image",

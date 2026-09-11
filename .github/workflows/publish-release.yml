@@ -2,15 +2,81 @@ name: Release Publisher
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Published GitHub release tag to retry (vX.Y.Z)
+        required: true
+        type: string
   release:
     types:
       - released
 
 permissions: {}
 
+concurrency:
+  group: publish-release
+  cancel-in-progress: false
+
 jobs:
+  validate_release:
+    name: Validate release version and revision
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      revision: ${{ steps.release.outputs.revision }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          java-version: '25'
+          distribution: zulu
+          cache: maven
+
+      - name: Verify tagged Maven version
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
+        run: |
+          revision="$(git rev-parse HEAD)"
+          tagged_revision="$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")"
+          if [[ "${revision}" != "${tagged_revision}" ]]; then
+            echo "::error::Release tag does not match the checked-out revision"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "${revision}" origin/main; then
+            echo "::error::Release revision is not an ancestor of main"
+            exit 1
+          fi
+          pom_version="$(./mvnw --batch-mode --quiet help:evaluate -Dexpression=project.version -DforceStdout)"
+          if [[ ! "${RELEASE_TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::Release tag must be stable SemVer (vX.Y.Z)"
+            exit 1
+          fi
+          if [[ "${RELEASE_TAG}" != "v${pom_version}" ]]; then
+            echo "::error::Release tag and Maven version must agree"
+            exit 1
+          fi
+          release_draft="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.draft')"
+          if [[ "${release_draft}" != "false" ]]; then
+            echo "::error::Publish the GitHub release before publishing images"
+            exit 1
+          fi
+          echo "version=${pom_version}" >> "${GITHUB_OUTPUT}"
+          echo "revision=${revision}" >> "${GITHUB_OUTPUT}"
+
   build_release_images:
     name: Build and verify ${{ matrix.architecture }} image
+    needs: validate_release
     permissions:
       contents: read
     strategy:
@@ -26,40 +92,31 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ needs.validate_release.outputs.revision }}
           fetch-depth: 0
           persist-credentials: false
 
       - name: Verify FFmpeg lock
         uses: ./.github/actions/prepare-ffmpeg
 
-      - name: Docker Metadata
-        id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
-        with:
-          images: streamarr/streamarr-server
-
       - name: Build and publish
         uses: ./.github/actions/pack-build
         with:
           tags: >-
-            streamarr/streamarr-server:${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}-${{ matrix.architecture }}
+            streamarr/streamarr-server:${{ needs.validate_release.outputs.version }}-${{ matrix.architecture }}
           publish: "true"
-          image-version: ${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
+          image-version: ${{ needs.validate_release.outputs.version }}
           dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
 
   publish_release:
     name: Publish multi-architecture release image
-    needs: build_release_images
+    needs: [validate_release, build_release_images]
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
 
     steps:
-      - name: Docker Metadata
-        id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
-        with:
-          images: streamarr/streamarr-server
-
       - name: Login to Docker Hub
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
@@ -67,8 +124,9 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Publish immutable multi-architecture image
+        shell: bash
         env:
-          IMAGE_VERSION: ${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
+          IMAGE_VERSION: ${{ needs.validate_release.outputs.version }}
         run: |
           immutable_image="index.docker.io/streamarr/streamarr-server:${IMAGE_VERSION}"
           docker buildx imagetools create \
@@ -83,8 +141,15 @@ jobs:
 
       - name: Publish latest multi-architecture image
         env:
-          IMAGE_VERSION: ${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
+          IMAGE_VERSION: ${{ needs.validate_release.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
+          latest_tag="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name')"
+          if [[ "${latest_tag}" != "v${IMAGE_VERSION}" ]]; then
+            echo "Keeping latest at ${latest_tag}; published version ${IMAGE_VERSION}."
+            exit 0
+          fi
+
           docker buildx imagetools create \
             --tag "index.docker.io/streamarr/streamarr-server:latest" \
             "index.docker.io/streamarr/streamarr-server:${IMAGE_VERSION}-amd64" \

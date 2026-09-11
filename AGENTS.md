@@ -40,6 +40,7 @@
 - Only commit when ALL tests pass and ALL warnings are resolved
 - Each commit is a single logical unit of work
 - Commit subjects start with the lowercase prefix `structural:` or `behavioral:` (e.g. `structural: extract password verifier`); this is the server repository's casing — streamarr-web uses the same lowercase prefixes
+- The dedicated release bot uses Release Please's `chore(main): release X` subjects for stable and snapshot version updates, with an empty squash commit body; this exception does not change human commit subjects
 - Small, frequent commits over large, infrequent ones
 - Commit messages must be under 200 words
 - Always use signed commits (`git commit -S`)
