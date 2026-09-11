@@ -3,6 +3,7 @@ package com.streamarr.server;
 import static com.tngtech.archunit.core.domain.JavaCall.Predicates.target;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.RECORDS;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.assignableTo;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.equivalentTo;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
 import static com.tngtech.archunit.core.domain.properties.HasName.Predicates.name;
 import static com.tngtech.archunit.core.domain.properties.HasOwner.Predicates.With.owner;
@@ -13,6 +14,19 @@ import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.sli
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.architecturefixture.WorkerBoundaryFixtures.BenignRuntimeInspection;
+import com.streamarr.server.architecturefixture.WorkerBoundaryFixtures.EngineDependency;
+import com.streamarr.server.architecturefixture.WorkerBoundaryFixtures.ProbeDependency;
+import com.streamarr.server.architecturefixture.WorkerBoundaryFixtures.ProcessBuilderLaunch;
+import com.streamarr.server.architecturefixture.WorkerBoundaryFixtures.ProcessBuilderReference;
+import com.streamarr.server.architecturefixture.WorkerBoundaryFixtures.RuntimeArrayCommand;
+import com.streamarr.server.architecturefixture.WorkerBoundaryFixtures.RuntimeArrayDirectory;
+import com.streamarr.server.architecturefixture.WorkerBoundaryFixtures.RuntimeArrayEnvironment;
+import com.streamarr.server.architecturefixture.WorkerBoundaryFixtures.RuntimeMethodReference;
+import com.streamarr.server.architecturefixture.WorkerBoundaryFixtures.RuntimeStringCommand;
+import com.streamarr.server.architecturefixture.WorkerBoundaryFixtures.RuntimeStringDirectory;
+import com.streamarr.server.architecturefixture.WorkerBoundaryFixtures.RuntimeStringEnvironment;
+import com.streamarr.server.architecturefixture.WorkerBoundaryFixtures.WorkerDependency;
 import com.streamarr.server.config.security.PasswordEncoderConfig;
 import com.streamarr.server.controllers.architecturefixture.DirectControllerAccountPasswordMatchFixture;
 import com.streamarr.server.graphql.architecturefixture.PasswordEncodingResolverFixture;
@@ -32,6 +46,11 @@ import com.streamarr.server.services.authorization.DirectAuthorizationDeciderFix
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.library.MovieFileProcessor;
 import com.streamarr.server.services.library.SeriesFileProcessor;
+import com.streamarr.server.services.streaming.remote.architecturefixture.AllowedWorkerProtocolFixture;
+import com.streamarr.transcode.engine.FfmpegTranscodeEngine;
+import com.streamarr.transcode.probe.FfprobeExecutor;
+import com.streamarr.transcode.worker.TranscodeWorker;
+import com.tngtech.archunit.core.domain.JavaAccess;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
@@ -43,10 +62,13 @@ import com.tngtech.archunit.lang.CompositeArchRule;
 import com.tngtech.archunit.library.dependencies.SliceAssignment;
 import com.tngtech.archunit.library.dependencies.SliceIdentifier;
 import java.nio.file.Path;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -90,9 +112,42 @@ class ArchitectureTest {
           .resideInAnyPackage("com.streamarr.transcode.v1..", "com.streamarr.transcode.protocol..")
           .as("Worker wire-protocol types must not be used outside services.streaming.remote");
 
+  private static final ArchRule serverClassesMustNotDependOnProcessBuilder =
+      noClasses()
+          .that()
+          .resideInAPackage("com.streamarr.server..")
+          .should()
+          .dependOnClassesThat(equivalentTo(ProcessBuilder.class))
+          .as("Server classes must not depend on ProcessBuilder");
+
+  private static final ArchRule serverClassesMustNotExecuteRuntimeProcesses =
+      noClasses()
+          .that()
+          .resideInAPackage("com.streamarr.server..")
+          .should()
+          .accessTargetWhere(
+              JavaAccess.Predicates.target(owner(equivalentTo(Runtime.class)))
+                  .and(JavaAccess.Predicates.target(name("exec"))))
+          .as("Server classes must not execute processes through Runtime.exec");
+
+  private static final ArchRule serverClassesMustNotDependOnWorkerImplementations =
+      noClasses()
+          .that()
+          .resideInAPackage("com.streamarr.server..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAnyPackage(
+              "com.streamarr.transcode.engine..",
+              "com.streamarr.transcode.probe..",
+              "com.streamarr.transcode.worker..")
+          .as("Server classes must not depend on worker execution implementations");
+
   @ArchTest
   static final ArchRule serverWorkerBoundary =
-      CompositeArchRule.of(workerProtocolTypesMustNotLeakOutsideRemotePackage);
+      CompositeArchRule.of(workerProtocolTypesMustNotLeakOutsideRemotePackage)
+          .and(serverClassesMustNotDependOnProcessBuilder)
+          .and(serverClassesMustNotExecuteRuntimeProcesses)
+          .and(serverClassesMustNotDependOnWorkerImplementations);
 
   @ArchTest
   static final ArchRule controllersMustNotDependOnRepositories =
@@ -431,6 +486,67 @@ class ArchitectureTest {
     assertThatThrownBy(() -> servicesMustNotDependOnDrivingAdapterTypes.check(services))
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining("HTTP");
+  }
+
+  @ParameterizedTest
+  @ValueSource(classes = ProcessBuilderLaunch.class)
+  @DisplayName("Should reject ProcessBuilder dependencies when server code launches a process")
+  void shouldRejectProcessBuilderDependenciesWhenServerCodeLaunchesProcess(Class<?> fixture) {
+    var classes = new ClassFileImporter().importClasses(fixture);
+
+    assertThat(serverWorkerBoundary.evaluate(classes).getFailureReport().getDetails())
+        .anySatisfy(
+            detail ->
+                assertThat(detail).contains(fixture.getName(), ProcessBuilder.class.getName()));
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      classes = {
+        RuntimeArrayCommand.class, RuntimeArrayEnvironment.class, RuntimeArrayDirectory.class,
+        RuntimeStringCommand.class, RuntimeStringEnvironment.class, RuntimeStringDirectory.class,
+        RuntimeMethodReference.class
+      })
+  @DisplayName("Should reject Runtime execution when server code launches a process")
+  void shouldRejectRuntimeExecutionWhenServerCodeLaunchesProcess(Class<?> fixture) {
+    var classes = new ClassFileImporter().importClasses(fixture);
+
+    assertThat(serverWorkerBoundary.evaluate(classes).getFailureReport().getDetails())
+        .singleElement()
+        .satisfies(
+            detail ->
+                assertThat(detail).contains(fixture.getName(), Runtime.class.getName() + ".exec("));
+  }
+
+  @ParameterizedTest
+  @MethodSource("executionDependencies")
+  @DisplayName(
+      "Should reject implementation dependencies when server code references execution types")
+  void shouldRejectImplementationDependenciesWhenServerCodeReferencesExecutionTypes(
+      Class<?> fixture, Class<?> executionType) {
+    var classes = new ClassFileImporter().importClasses(fixture);
+
+    assertThat(serverWorkerBoundary.evaluate(classes).getFailureReport().getDetails())
+        .anySatisfy(
+            detail -> assertThat(detail).contains(fixture.getName(), executionType.getName()));
+  }
+
+  @Test
+  @DisplayName("Should allow protocol and runtime inspection when server code avoids execution")
+  void shouldAllowProtocolAndRuntimeInspectionWhenServerCodeAvoidsExecution() {
+    var classes =
+        new ClassFileImporter()
+            .importClasses(BenignRuntimeInspection.class, AllowedWorkerProtocolFixture.class);
+
+    assertThat(serverWorkerBoundary.evaluate(classes).getFailureReport().getDetails()).isEmpty();
+  }
+
+  private static Stream<Arguments> executionDependencies() {
+    return Stream.of(
+        Arguments.of(ProcessBuilderReference.class, ProcessBuilder.class),
+        Arguments.of(EngineDependency.class, FfmpegTranscodeEngine.class),
+        Arguments.of(ProbeDependency.class, FfprobeExecutor.class),
+        Arguments.of(WorkerDependency.class, TranscodeWorker.class));
   }
 
   private static ArchRule accountPasswordMatchesMustUseVerifier() {
