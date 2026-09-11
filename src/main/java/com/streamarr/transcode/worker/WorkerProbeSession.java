@@ -12,6 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -57,12 +58,12 @@ final class WorkerProbeSession implements AutoCloseable {
   private final class ProbeAttempt implements Runnable {
 
     private final ProbeRequest request;
-    private volatile Thread thread;
+    private final AtomicReference<Thread> thread = new AtomicReference<>();
     private volatile boolean cancelled;
 
     private void cancel() {
       cancelled = true;
-      var runningThread = thread;
+      var runningThread = thread.get();
       if (runningThread != null) {
         runningThread.interrupt();
       }
@@ -70,9 +71,10 @@ final class WorkerProbeSession implements AutoCloseable {
 
     @Override
     public void run() {
-      thread = Thread.currentThread();
+      var runningThread = Thread.currentThread();
+      thread.set(runningThread);
       if (cancelled) {
-        thread.interrupt();
+        runningThread.interrupt();
       }
 
       complete(execute());
