@@ -1,4 +1,4 @@
-package com.streamarr.server.services.probe;
+package com.streamarr.server.services.library;
 
 import com.github.kagkarlsson.scheduler.SchedulerClient;
 import com.github.kagkarlsson.scheduler.exceptions.TaskInstanceCurrentlyExecutingException;
@@ -7,6 +7,7 @@ import com.github.kagkarlsson.scheduler.task.Task;
 import com.github.kagkarlsson.scheduler.task.TaskInstance;
 import com.streamarr.server.domain.task.ProbeRequest;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
+import com.streamarr.server.services.probe.ProbeRequests;
 import java.time.Clock;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;

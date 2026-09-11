@@ -1,4 +1,4 @@
-package com.streamarr.server.services.probe;
+package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
@@ -8,7 +8,7 @@ import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
-import com.streamarr.server.services.library.FileStabilityChecker;
+import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.streaming.FfprobeService;
 import java.io.IOException;
 import java.nio.file.FileSystem;

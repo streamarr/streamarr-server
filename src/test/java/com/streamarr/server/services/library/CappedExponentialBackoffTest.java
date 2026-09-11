@@ -1,4 +1,4 @@
-package com.streamarr.server.services.probe;
+package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
