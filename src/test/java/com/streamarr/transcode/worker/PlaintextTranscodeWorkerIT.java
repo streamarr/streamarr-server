@@ -3,10 +3,10 @@ package com.streamarr.transcode.worker;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.remuxEngine;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.fakes.FakeFfmpegProcessManager;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.services.streaming.remote.WorkerSessionListeners;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
+import com.streamarr.transcode.fakes.FakeFfmpegProcessManager;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.OptionalInt;

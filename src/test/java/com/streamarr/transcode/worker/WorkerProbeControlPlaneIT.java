@@ -7,7 +7,7 @@ import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
 import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.fakes.FakeFfmpegProcessManager;
+import com.streamarr.transcode.fakes.FakeFfmpegProcessManager;
 import com.streamarr.transcode.probe.FfprobeExecutor;
 import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;

@@ -1,6 +1,6 @@
-package com.streamarr.server.fakes;
+package com.streamarr.transcode.fakes;
 
-import com.streamarr.server.services.streaming.ffmpeg.FfmpegProcessManager;
+import com.streamarr.transcode.engine.FfmpegProcessManager;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
