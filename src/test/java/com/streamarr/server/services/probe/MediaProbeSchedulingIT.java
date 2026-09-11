@@ -50,7 +50,7 @@ class MediaProbeSchedulingIT extends AbstractIntegrationTest {
 
   @TempDir Path tempDir;
 
-  @Autowired private ProbeScheduling scheduling;
+  @Autowired private ProbeRequests scheduling;
   @Autowired private DataSource dataSource;
   @Autowired private Serializer probeTaskSerializer;
   @Autowired private MediaFileContainerInfoRepository outcomes;

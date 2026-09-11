@@ -19,7 +19,7 @@ import org.springframework.stereotype.Service;
  */
 @Service
 @RequiredArgsConstructor
-public class ProbeScheduling {
+public class SchedulerProbeRequests implements ProbeRequests {
 
   @Qualifier("probeSchedulerClient")
   private final SchedulerClient client;
@@ -28,6 +28,7 @@ public class ProbeScheduling {
   private final MediaFileContainerInfoRepository outcomes;
   private final Clock clock;
 
+  @Override
   public void request(ProbeRequest request) {
     outcomes.invalidateOutcomeUnlessSnapshotMatches(request.mediaFileId(), request.snapshot());
     var instance = task.instance(request.mediaFileId().toString(), request);
