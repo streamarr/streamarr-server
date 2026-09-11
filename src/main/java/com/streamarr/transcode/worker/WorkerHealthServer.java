@@ -37,9 +37,12 @@ final class WorkerHealthServer implements AutoCloseable {
   }
 
   @Override
-  public void close() {
-    health.enterTerminalState();
-    server.shutdownNow();
+  public synchronized void close() {
+    if (!server.isShutdown()) {
+      health.enterTerminalState();
+      server.shutdownNow();
+    }
+
     try {
       server.awaitTermination(5, TimeUnit.SECONDS);
     } catch (InterruptedException _) {
