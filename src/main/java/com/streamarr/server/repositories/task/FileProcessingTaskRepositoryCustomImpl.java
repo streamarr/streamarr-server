@@ -2,6 +2,7 @@ package com.streamarr.server.repositories.task;
 
 import static com.streamarr.server.jooq.generated.Tables.FILE_PROCESSING_TASK;
 import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.noCondition;
 
 import com.streamarr.server.domain.task.FileProcessingTask;
 import com.streamarr.server.jooq.generated.enums.FileProcessingTaskStatus;
@@ -28,86 +29,27 @@ public class FileProcessingTaskRepositoryCustomImpl implements FileProcessingTas
   private final EntityManager entityManager;
 
   @Override
-  @Transactional
-  public Optional<FileProcessingTask> claimNextTask(
-      String ownerInstanceId, Instant leaseExpiresAt) {
-    var selectQuery =
+  public List<FileProcessingTask> findLegacyTasks(Optional<UUID> afterId, int limit) {
+    var query =
         context
-            .select(FILE_PROCESSING_TASK.ID)
-            .from(FILE_PROCESSING_TASK)
-            .where(FILE_PROCESSING_TASK.STATUS.eq(inline(FileProcessingTaskStatus.PENDING)))
-            .and(FILE_PROCESSING_TASK.OWNER_INSTANCE_ID.isNull())
-            .orderBy(FILE_PROCESSING_TASK.CREATED_ON.asc())
-            .limit(1)
-            .forUpdate()
-            .skipLocked();
-
-    var ids = executeJooqQuery(entityManager, selectQuery, UUID.class);
-
-    if (ids.isEmpty()) {
-      return Optional.empty();
-    }
-
-    var taskId = ids.getFirst();
-
-    return context
-        .update(FILE_PROCESSING_TASK)
-        .set(FILE_PROCESSING_TASK.STATUS, inline(FileProcessingTaskStatus.PROCESSING))
-        .set(FILE_PROCESSING_TASK.OWNER_INSTANCE_ID, ownerInstanceId)
-        .set(FILE_PROCESSING_TASK.LEASE_EXPIRES_AT, leaseExpiresAt.atOffset(ZoneOffset.UTC))
-        .where(FILE_PROCESSING_TASK.ID.eq(taskId))
-        .returning()
-        .fetchOptional()
-        .map(FileProcessingTaskRepositoryCustomImpl::toEntity);
-  }
-
-  @Override
-  @Transactional
-  public List<FileProcessingTask> reclaimOrphanedTasks(
-      String ownerInstanceId, Instant leaseExpiresAt, Instant now, int limit) {
-    var selectQuery =
-        context
-            .select(FILE_PROCESSING_TASK.ID)
-            .from(FILE_PROCESSING_TASK)
+            .selectFrom(FILE_PROCESSING_TASK)
             .where(
                 FILE_PROCESSING_TASK.STATUS.in(
                     inline(FileProcessingTaskStatus.PENDING),
                     inline(FileProcessingTaskStatus.PROCESSING)))
-            .and(
-                FILE_PROCESSING_TASK
-                    .LEASE_EXPIRES_AT
-                    .isNull()
-                    .or(FILE_PROCESSING_TASK.LEASE_EXPIRES_AT.lt(now.atOffset(ZoneOffset.UTC))))
-            .orderBy(FILE_PROCESSING_TASK.CREATED_ON.asc())
-            .limit(limit)
-            .forUpdate()
-            .skipLocked();
-
-    var ids = executeJooqQuery(entityManager, selectQuery, UUID.class);
-
-    if (ids.isEmpty()) {
-      return List.of();
-    }
-
-    return context
-        .update(FILE_PROCESSING_TASK)
-        .set(FILE_PROCESSING_TASK.STATUS, inline(FileProcessingTaskStatus.PENDING))
-        .set(FILE_PROCESSING_TASK.OWNER_INSTANCE_ID, ownerInstanceId)
-        .set(FILE_PROCESSING_TASK.LEASE_EXPIRES_AT, leaseExpiresAt.atOffset(ZoneOffset.UTC))
-        .where(FILE_PROCESSING_TASK.ID.in(ids))
-        .returning()
-        .fetch()
-        .map(FileProcessingTaskRepositoryCustomImpl::toEntity);
+            .and(afterId.map(FILE_PROCESSING_TASK.ID::gt).orElse(noCondition()))
+            .orderBy(FILE_PROCESSING_TASK.ID)
+            .limit(limit);
+    return executeJooqQuery(entityManager, query, FileProcessingTask.class);
   }
 
   @Override
   @Transactional
-  public int extendLeases(String ownerInstanceId, Instant newLeaseExpiresAt) {
-    return context
-        .update(FILE_PROCESSING_TASK)
-        .set(FILE_PROCESSING_TASK.LEASE_EXPIRES_AT, newLeaseExpiresAt.atOffset(ZoneOffset.UTC))
-        .where(FILE_PROCESSING_TASK.OWNER_INSTANCE_ID.eq(ownerInstanceId))
-        .and(FILE_PROCESSING_TASK.STATUS.in(ACTIVE_STATUSES))
+  public void cancelTask(String filepathUri) {
+    context
+        .deleteFrom(FILE_PROCESSING_TASK)
+        .where(FILE_PROCESSING_TASK.FILEPATH_URI.eq(filepathUri))
+        .and(FILE_PROCESSING_TASK.STATUS.eq(inline(FileProcessingTaskStatus.PENDING)))
         .execute();
   }
 

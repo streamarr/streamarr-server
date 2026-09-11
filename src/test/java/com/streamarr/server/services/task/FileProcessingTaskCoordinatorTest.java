@@ -35,62 +35,10 @@ class FileProcessingTaskCoordinatorTest {
   }
 
   @Test
-  @DisplayName("Should create pending task when file event received")
-  void shouldCreatePendingTaskWhenFileEventReceived() {
-    var path = Path.of("/media/movies/Test (2024).mkv");
-    var libraryId = UUID.randomUUID();
-
-    var task = coordinator.createTask(path, libraryId);
-
-    assertThat(task.getFilepathUri()).isEqualTo(path.toAbsolutePath().toUri().toString());
-    assertThat(task.getLibraryId()).isEqualTo(libraryId);
-    assertThat(task.getStatus()).isEqualTo(FileProcessingTaskStatus.PENDING);
-    assertThat(task.getCreatedOn()).isEqualTo(NOW);
-  }
-
-  @Test
-  @DisplayName("Should return existing task when duplicate event received")
-  void shouldReturnExistingTaskWhenDuplicateEventReceived() {
-    var path = Path.of("/media/movies/Duplicate (2024).mkv");
-    var libraryId = UUID.randomUUID();
-
-    var task1 = coordinator.createTask(path, libraryId);
-    var task2 = coordinator.createTask(path, libraryId);
-
-    assertThat(task1.getId()).isEqualTo(task2.getId());
-    assertThat(repository.count()).isEqualTo(1);
-  }
-
-  @Test
-  @DisplayName("Should set owner and lease when task claimed")
-  void shouldSetOwnerAndLeaseWhenTaskClaimed() {
-    var path = Path.of("/media/movies/Claim (2024).mkv");
-    var libraryId = UUID.randomUUID();
-    coordinator.createTask(path, libraryId);
-
-    var claimed = coordinator.claimNextTask();
-
-    assertThat(claimed).isPresent();
-    assertThat(claimed.get().getOwnerInstanceId()).isEqualTo(coordinator.getInstanceId());
-    assertThat(claimed.get().getLeaseExpiresAt()).isEqualTo(NOW.plus(LEASE_DURATION));
-    assertThat(claimed.get().getStatus()).isEqualTo(FileProcessingTaskStatus.PROCESSING);
-  }
-
-  @Test
-  @DisplayName("Should return empty when no tasks to claim")
-  void shouldReturnEmptyWhenNoTasksToClaim() {
-    var claimed = coordinator.claimNextTask();
-
-    assertThat(claimed).isEmpty();
-  }
-
-  @Test
   @DisplayName("Should transition to completed when task completed")
   void shouldTransitionToCompletedWhenTaskCompleted() {
     var path = Path.of("/media/movies/Complete (2024).mkv");
-    var libraryId = UUID.randomUUID();
-    coordinator.createTask(path, libraryId);
-    var claimed = coordinator.claimNextTask().orElseThrow();
+    var claimed = repository.save(legacyTask(path).build());
 
     coordinator.complete(claimed.getId());
 
@@ -105,9 +53,7 @@ class FileProcessingTaskCoordinatorTest {
   @DisplayName("Should store error message when task failed")
   void shouldStoreErrorMessageWhenTaskFailed() {
     var path = Path.of("/media/movies/Fail (2024).mkv");
-    var libraryId = UUID.randomUUID();
-    coordinator.createTask(path, libraryId);
-    var claimed = coordinator.claimNextTask().orElseThrow();
+    var claimed = repository.save(legacyTask(path).build());
 
     coordinator.fail(claimed.getId(), "Processing error");
 
@@ -121,8 +67,12 @@ class FileProcessingTaskCoordinatorTest {
   @DisplayName("Should delete pending task when file is deleted")
   void shouldDeletePendingTaskWhenFileDeleted() {
     var path = Path.of("/media/movies/Delete (2024).mkv");
-    var libraryId = UUID.randomUUID();
-    coordinator.createTask(path, libraryId);
+    repository.save(
+        legacyTask(path)
+            .status(FileProcessingTaskStatus.PENDING)
+            .ownerInstanceId(null)
+            .leaseExpiresAt(null)
+            .build());
 
     coordinator.cancelTask(path);
 
@@ -133,83 +83,11 @@ class FileProcessingTaskCoordinatorTest {
   @DisplayName("Should not delete processing task when file is deleted")
   void shouldNotDeleteProcessingTaskWhenFileDeleted() {
     var path = Path.of("/media/movies/NoDelete (2024).mkv");
-    var libraryId = UUID.randomUUID();
-    coordinator.createTask(path, libraryId);
-    coordinator.claimNextTask();
+    repository.save(legacyTask(path).build());
 
     coordinator.cancelTask(path);
 
     assertThat(repository.count()).isEqualTo(1);
-  }
-
-  @Test
-  @DisplayName("Should create task with null lease when file event received")
-  void shouldCreateTaskWithNullLeaseWhenFileEventReceived() {
-    var path = Path.of("/media/movies/NullLease (2024).mkv");
-    var libraryId = UUID.randomUUID();
-
-    var task = coordinator.createTask(path, libraryId);
-
-    assertThat(task.getLeaseExpiresAt()).isNull();
-  }
-
-  @Test
-  @DisplayName("Should reclaim task when lease is null")
-  void shouldReclaimTaskWhenLeaseIsNull() {
-    var path = Path.of("/media/movies/NullLease (2024).mkv");
-    var libraryId = UUID.randomUUID();
-    var task = coordinator.createTask(path, libraryId);
-
-    var reclaimed = coordinator.reclaimOrphanedTasks(10);
-
-    assertThat(reclaimed).hasSize(1);
-    assertThat(reclaimed.getFirst().getId()).isEqualTo(task.getId());
-  }
-
-  @Test
-  @DisplayName("Should extend lease expiration when heartbeat fires")
-  void shouldExtendLeaseExpirationWhenHeartbeatFires() {
-    var path = Path.of("/media/movies/Extend (2024).mkv");
-    var libraryId = UUID.randomUUID();
-    coordinator.createTask(path, libraryId);
-    var claimed = coordinator.claimNextTask().orElseThrow();
-    var originalLease = claimed.getLeaseExpiresAt();
-
-    var laterClock = Clock.fixed(NOW.plusSeconds(30), ZoneId.of("UTC"));
-    var laterCoordinator =
-        new FileProcessingTaskCoordinator(repository, laterClock, LEASE_DURATION);
-
-    laterCoordinator.extendLeases();
-
-    var updated = repository.findById(claimed.getId()).orElseThrow();
-    assertThat(updated.getLeaseExpiresAt()).isAfter(originalLease);
-  }
-
-  @Test
-  @DisplayName("Should not extend lease when task is completed")
-  void shouldNotExtendLeaseWhenTaskIsCompleted() {
-    var completedTask =
-        FileProcessingTask.builder()
-            .filepathUri("/media/movies/Completed (2024).mkv")
-            .libraryId(UUID.randomUUID())
-            .status(FileProcessingTaskStatus.COMPLETED)
-            .ownerInstanceId(coordinator.getInstanceId())
-            .leaseExpiresAt(NOW.plusSeconds(30))
-            .createdOn(NOW)
-            .completedOn(NOW)
-            .build();
-    repository.save(completedTask);
-
-    var originalLease = completedTask.getLeaseExpiresAt();
-
-    var laterClock = Clock.fixed(NOW.plusSeconds(60), ZoneId.of("UTC"));
-    var laterCoordinator =
-        new FileProcessingTaskCoordinator(repository, laterClock, LEASE_DURATION);
-
-    laterCoordinator.extendLeases();
-
-    var afterExtend = repository.findById(completedTask.getId()).orElseThrow();
-    assertThat(afterExtend.getLeaseExpiresAt()).isEqualTo(originalLease);
   }
 
   @Test
@@ -236,9 +114,7 @@ class FileProcessingTaskCoordinatorTest {
   @DisplayName("Should return task when completing existing task")
   void shouldReturnTaskWhenCompletingExistingTask() {
     var path = Path.of("/media/movies/ReturnComplete (2024).mkv");
-    var libraryId = UUID.randomUUID();
-    coordinator.createTask(path, libraryId);
-    var claimed = coordinator.claimNextTask().orElseThrow();
+    var claimed = repository.save(legacyTask(path).build());
 
     var result = coordinator.complete(claimed.getId());
 
@@ -250,9 +126,7 @@ class FileProcessingTaskCoordinatorTest {
   @DisplayName("Should return task when failing existing task")
   void shouldReturnTaskWhenFailingExistingTask() {
     var path = Path.of("/media/movies/ReturnFail (2024).mkv");
-    var libraryId = UUID.randomUUID();
-    coordinator.createTask(path, libraryId);
-    var claimed = coordinator.claimNextTask().orElseThrow();
+    var claimed = repository.save(legacyTask(path).build());
 
     var result = coordinator.fail(claimed.getId(), "Processing error");
 
@@ -264,9 +138,7 @@ class FileProcessingTaskCoordinatorTest {
   @DisplayName("Should return empty when completing already completed task")
   void shouldReturnEmptyWhenCompletingAlreadyCompletedTask() {
     var path = Path.of("/media/movies/AlreadyCompleted (2024).mkv");
-    var libraryId = UUID.randomUUID();
-    coordinator.createTask(path, libraryId);
-    var claimed = coordinator.claimNextTask().orElseThrow();
+    var claimed = repository.save(legacyTask(path).build());
     coordinator.complete(claimed.getId());
 
     var result = coordinator.complete(claimed.getId());
@@ -278,13 +150,21 @@ class FileProcessingTaskCoordinatorTest {
   @DisplayName("Should return empty when failing already failed task")
   void shouldReturnEmptyWhenFailingAlreadyFailedTask() {
     var path = Path.of("/media/movies/AlreadyFailed (2024).mkv");
-    var libraryId = UUID.randomUUID();
-    coordinator.createTask(path, libraryId);
-    var claimed = coordinator.claimNextTask().orElseThrow();
+    var claimed = repository.save(legacyTask(path).build());
     coordinator.fail(claimed.getId(), "First failure");
 
     var result = coordinator.fail(claimed.getId(), "Second failure");
 
     assertThat(result).isEmpty();
+  }
+
+  private FileProcessingTask.FileProcessingTaskBuilder legacyTask(Path path) {
+    return FileProcessingTask.builder()
+        .filepathUri(path.toAbsolutePath().toUri().toString())
+        .libraryId(UUID.randomUUID())
+        .status(FileProcessingTaskStatus.PROCESSING)
+        .ownerInstanceId("previous-server")
+        .leaseExpiresAt(NOW.plusSeconds(60))
+        .createdOn(NOW);
   }
 }

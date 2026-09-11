@@ -1,7 +1,6 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
-import com.streamarr.server.domain.task.FileProcessingTask;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.task.FileProcessingTaskCoordinator;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
@@ -102,10 +101,7 @@ class FileEventProcessor {
     try {
       scheduleStabilityCheck(path, optionalLibraryId.get());
     } catch (RejectedExecutionException _) {
-      log.warn(
-          "Executor shut down while scheduling stability check for: {}. "
-              + "Any created task will be reclaimed by distributed lease recovery.",
-          path);
+      log.warn("Executor shut down while scheduling stability check for: {}", path);
     }
   }
 
@@ -121,8 +117,7 @@ class FileEventProcessor {
               log.debug("Stability check already in progress for: {}", path);
               return existing;
             }
-            var task = taskCoordinator.createTask(key, libraryId);
-            var future = executor.submit(() -> runStabilityCheckWithCleanup(key, token, task));
+            var future = executor.submit(() -> runStabilityCheckWithCleanup(key, token, libraryId));
             return new InFlightTask(future, token);
           });
     } finally {
@@ -130,44 +125,28 @@ class FileEventProcessor {
     }
   }
 
-  private void runStabilityCheckWithCleanup(
-      Path path, StabilityToken token, FileProcessingTask task) {
+  private void runStabilityCheckWithCleanup(Path path, StabilityToken token, UUID libraryId) {
     try {
-      processStableFile(path, task);
+      processStableFile(path, libraryId);
     } finally {
       inFlightChecks.compute(
           path, (k, current) -> current != null && current.token() == token ? null : current);
     }
   }
 
-  private void processStableFile(Path path, FileProcessingTask task) {
+  private void processStableFile(Path path, UUID libraryId) {
     log.info("Starting stability check for: {}", path);
 
     if (!fileStabilityChecker.waitForStability(path)) {
       log.warn("File did not stabilize: {}", path);
-      var result = taskCoordinator.fail(task.getId(), "File did not stabilize within timeout");
-      logIfTaskAlreadyCancelled(result, path);
       return;
     }
 
     try {
-      libraryManagementService.processDiscoveredFile(task.getLibraryId(), path);
-      var result = taskCoordinator.complete(task.getId());
-      logIfTaskAlreadyCancelled(result, path);
+      libraryManagementService.processDiscoveredFile(libraryId, path);
     } catch (Exception e) {
       log.error("Failed to process discovered file: {}", path, e);
-      var result =
-          taskCoordinator.fail(
-              task.getId(), Optional.ofNullable(e.getMessage()).orElse(e.toString()));
-      logIfTaskAlreadyCancelled(result, path);
     }
-  }
-
-  private void logIfTaskAlreadyCancelled(Optional<FileProcessingTask> result, Path path) {
-    if (result.isPresent()) {
-      return;
-    }
-    log.info("Task already cancelled for: {}", path);
   }
 
   private void handleDelete(Path path) {
