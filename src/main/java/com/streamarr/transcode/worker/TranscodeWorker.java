@@ -5,8 +5,10 @@ import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 
 import com.google.protobuf.ByteString;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
+import com.streamarr.transcode.probe.FfprobeExecutor;
 import com.streamarr.transcode.protocol.ProtoUuid;
 import com.streamarr.transcode.protocol.WorkerIdentityMetadata;
+import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.ContainerFormat;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
@@ -15,8 +17,10 @@ import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.JobAttemptStopped;
+import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
+import com.streamarr.transcode.v1.StartProbeCommand;
 import com.streamarr.transcode.v1.StartVariantCommand;
 import com.streamarr.transcode.v1.StopVariantCommand;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
@@ -51,6 +55,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 
@@ -64,18 +69,35 @@ public final class TranscodeWorker implements AutoCloseable {
   private final TranscodeWorkerConfiguration configuration;
   private final FfmpegTranscodeEngine engine;
   private final WorkerVariantJobMapper jobMapper;
+  private final Optional<FfprobeExecutor> ffprobe;
   private final Map<UUID, ActiveVariant> activeVariants = new HashMap<>();
 
   private ManagedChannel channel;
   private ExecutorService executor;
   private StreamObserver<EstablishWorkerSessionRequest> requests;
   private WorkerSessionAccepted workerSession;
+  private WorkerProbeSession probeSession;
   private CompletableFuture<Void> disconnected;
   private final AtomicReference<WorkerHealthServer> healthServer = new AtomicReference<>();
 
   public TranscodeWorker(TranscodeWorkerConfiguration configuration, FfmpegTranscodeEngine engine) {
+    this(configuration, engine, Optional.empty());
+  }
+
+  public TranscodeWorker(
+      TranscodeWorkerConfiguration configuration,
+      FfmpegTranscodeEngine engine,
+      @NonNull FfprobeExecutor ffprobe) {
+    this(configuration, engine, Optional.of(ffprobe));
+  }
+
+  private TranscodeWorker(
+      TranscodeWorkerConfiguration configuration,
+      FfmpegTranscodeEngine engine,
+      Optional<FfprobeExecutor> ffprobe) {
     this.configuration = configuration;
     this.engine = engine;
+    this.ffprobe = ffprobe;
     jobMapper =
         new WorkerVariantJobMapper(new WorkerMediaSourceResolver(configuration.sourceNamespaces()));
   }
@@ -99,10 +121,18 @@ public final class TranscodeWorker implements AutoCloseable {
             .keepAliveTimeout(configuration.keepAliveTimeout().toMillis(), TimeUnit.MILLISECONDS)
             .build();
     var accepted = new CompletableFuture<WorkerSessionAccepted>();
+    var sessionRequests = new AtomicReference<StreamObserver<EstablishWorkerSessionRequest>>();
+    probeSession =
+        new WorkerProbeSession(
+            ffprobe,
+            new WorkerMediaSourceResolver(configuration.sourceNamespaces()),
+            result -> sendProbeResult(sessionRequests.get(), result));
     disconnected = new CompletableFuture<>();
     requests =
         TranscodeWorkerServiceGrpc.newStub(channel)
-            .establishWorkerSession(new WorkerResponseObserver(accepted, sessionHealth));
+            .establishWorkerSession(
+                new WorkerResponseObserver(accepted, sessionHealth, probeSession));
+    sessionRequests.set(requests);
     send(registration());
     accepted.get(CONNECTION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
   }
@@ -143,6 +173,7 @@ public final class TranscodeWorker implements AutoCloseable {
 
   private EstablishWorkerSessionRequest registration() {
     var capabilities = WorkerCapabilities.newBuilder();
+    ffprobe.ifPresent(_ -> capabilities.addProbeVersions(FfprobeExecutor.PROBE_VERSION));
     configuration.sourceNamespaces().keySet().stream()
         .map(ProtoUuid::toProto)
         .forEach(capabilities::addSourceNamespaceIds);
@@ -159,6 +190,15 @@ public final class TranscodeWorker implements AutoCloseable {
         .setWorkerId(toProto(configuration.workerId()))
         .setBootId(toProto(configuration.bootId()))
         .build();
+  }
+
+  private synchronized void sendProbeResult(
+      StreamObserver<EstablishWorkerSessionRequest> sessionRequests, ProbeAttemptResult result) {
+    if (requests == null || requests != sessionRequests) {
+      return;
+    }
+
+    send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(result).build());
   }
 
   @SuppressWarnings("java:S3398") // Job lifecycle belongs to the worker, not its gRPC observer.
@@ -460,21 +500,32 @@ public final class TranscodeWorker implements AutoCloseable {
     activeVariants.clear();
   }
 
-  @Override
-  public void close() {
-    closeConnection();
+  @SuppressWarnings("java:S3398") // The fence shares the worker monitor with close and restart.
+  private synchronized void endSession(WorkerProbeSession sessionProbes) {
+    if (probeSession != sessionProbes) {
+      return;
+    }
+
+    logAbandonedAttempts();
+    stopActiveVariants();
   }
 
-  private synchronized void closeConnection() {
+  @Override
+  public void close() {
+    closeConnection().ifPresent(WorkerProbeSession::close);
+  }
+
+  private synchronized Optional<WorkerProbeSession> closeConnection() {
     var server = healthServer.get();
     if (server != null) {
       server.close();
     }
 
     if (channel == null) {
-      return;
+      return Optional.empty();
     }
 
+    probeSession.shutdown();
     stopActiveVariants();
     try {
       requests.onCompleted();
@@ -495,6 +546,9 @@ public final class TranscodeWorker implements AutoCloseable {
     workerSession = null;
     channel = null;
     executor = null;
+    var closedProbes = probeSession;
+    probeSession = null;
+    return Optional.of(closedProbes);
   }
 
   private final class WorkerResponseObserver
@@ -502,11 +556,16 @@ public final class TranscodeWorker implements AutoCloseable {
 
     private final CompletableFuture<WorkerSessionAccepted> accepted;
     private final WorkerHealthServer sessionHealth;
+    private final WorkerProbeSession sessionProbes;
+    private final CompletableFuture<Void> sessionDisconnected = disconnected;
 
     private WorkerResponseObserver(
-        CompletableFuture<WorkerSessionAccepted> accepted, WorkerHealthServer sessionHealth) {
+        CompletableFuture<WorkerSessionAccepted> accepted,
+        WorkerHealthServer sessionHealth,
+        WorkerProbeSession sessionProbes) {
       this.accepted = accepted;
       this.sessionHealth = sessionHealth;
+      this.sessionProbes = sessionProbes;
     }
 
     @Override
@@ -521,6 +580,16 @@ public final class TranscodeWorker implements AutoCloseable {
         startVariant(response.getStartVariant());
         return;
       }
+      if (response.hasStartProbe()) {
+        startProbe(response.getStartProbe());
+        return;
+      }
+
+      if (response.hasCancelProbe()) {
+        cancelProbe(response.getCancelProbe());
+        return;
+      }
+
       if (response.hasStopVariant()) {
         stopVariant(response.getStopVariant());
         return;
@@ -528,24 +597,40 @@ public final class TranscodeWorker implements AutoCloseable {
       log.warn("Worker received unexpected control command {}", response.getCommandCase());
     }
 
+    private void startProbe(StartProbeCommand command) {
+      if (!command.getTarget().equals(identity())) {
+        return;
+      }
+
+      sessionProbes.start(command.getRequest());
+    }
+
+    private void cancelProbe(CancelProbeCommand command) {
+      if (!command.getTarget().equals(identity())) {
+        return;
+      }
+
+      sessionProbes.cancel(fromProto(command.getProbeAttemptId()));
+    }
+
     @Override
     public void onError(Throwable throwable) {
       sessionHealth.sessionDisconnected();
       accepted.completeExceptionally(throwable);
-      logAbandonedAttempts();
-      stopActiveVariants();
-      disconnected.completeExceptionally(throwable);
+      sessionProbes.shutdown();
+      endSession(sessionProbes);
+      sessionDisconnected.completeExceptionally(throwable);
     }
 
     @Override
     public void onCompleted() {
       sessionHealth.sessionDisconnected();
+      sessionProbes.shutdown();
       if (!accepted.isDone()) {
         accepted.completeExceptionally(new IllegalStateException("Worker session closed"));
       }
-      logAbandonedAttempts();
-      stopActiveVariants();
-      disconnected.complete(null);
+      endSession(sessionProbes);
+      sessionDisconnected.complete(null);
     }
   }
 

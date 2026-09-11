@@ -2,11 +2,15 @@ package com.streamarr.transcode.worker;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.tlsResource;
+import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
+import com.streamarr.transcode.probe.FfprobeExecutor;
+import com.streamarr.transcode.v1.MediaSourceRef;
+import com.streamarr.transcode.v1.ProbeRequest;
 import java.lang.management.ManagementFactory;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
@@ -31,6 +35,54 @@ class TranscodeWorkerApplicationIT {
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
 
   @TempDir Path tempDir;
+
+  @Test
+  @DisplayName(
+      "Should execute probes with the configured binary when starting the worker application")
+  void shouldExecuteProbesWithTheConfiguredBinaryWhenStartingTheWorkerApplication()
+      throws Exception {
+    Files.writeString(tempDir.resolve("movie.mkv"), "media");
+    var binary = tempDir.resolve("custom-probe");
+    Files.writeString(
+        binary,
+        """
+        #!/bin/sh
+        echo '{"streams":[{"index":0,"codec_type":"video","codec_name":"configured-codec"}]}'
+        """);
+    assertThat(binary.toFile().setExecutable(true)).isTrue();
+    var request =
+        ProbeRequest.newBuilder()
+            .setProbeAttemptId(toProto(UUID.randomUUID()))
+            .setProbeVersion(FfprobeExecutor.PROBE_VERSION)
+            .setSource(
+                MediaSourceRef.newBuilder()
+                    .setSourceNamespaceId(toProto(SOURCE_NAMESPACE_ID))
+                    .setRelativeKey("movie.mkv"))
+            .build();
+
+    try (var server = server()) {
+      server.start();
+      var processBuilder = workerProcess(server.port());
+      processBuilder.environment().put("TRANSCODE_WORKER_FFPROBE_PATH", binary.toString());
+      var process = processBuilder.start();
+
+      try {
+        await()
+            .atMost(10, TimeUnit.SECONDS)
+            .until(() -> server.hasConnectedWorker(SOURCE_NAMESPACE_ID));
+
+        var dispatched = server.dispatchProbe(request);
+        assertThat(dispatched).as("the application must advertise its probe producer").isPresent();
+        var result = dispatched.orElseThrow().get(5, TimeUnit.SECONDS);
+        assertThat(result.getMedia().getStreams(0).getCodec()).isEqualTo("configured-codec");
+      } finally {
+        process.destroy();
+        if (!process.waitFor(5, TimeUnit.SECONDS)) {
+          process.destroyForcibly();
+        }
+      }
+    }
+  }
 
   @Test
   @DisplayName(
