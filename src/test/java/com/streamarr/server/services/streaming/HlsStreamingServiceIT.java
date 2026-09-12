@@ -19,7 +19,7 @@ import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
-import com.streamarr.server.domain.task.ProbeRequest;
+import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
@@ -30,7 +30,7 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.library.MediaProbeTask;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.probe.ProbeRequests;
+import com.streamarr.server.services.probe.ProbeTaskRequests;
 import jakarta.persistence.EntityManager;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -57,7 +57,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 class HlsStreamingServiceIT extends AbstractIntegrationTest {
 
   @Autowired private StreamingService streamingService;
-  @Autowired private ProbeRequests probeRequests;
+  @Autowired private ProbeTaskRequests probeTaskRequests;
   @Autowired private HlsPlaylistService playlistService;
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private LibraryRepository libraryRepository;
@@ -192,14 +192,14 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
             .build();
     storeProbe(storedProbe);
     var refresh =
-        ProbeRequest.builder()
+        ProbeTaskRequest.builder()
             .mediaFileId(savedMediaFile.getId())
             .libraryId(savedMediaFile.getLibraryId())
             .filepathUri(savedMediaFile.getFilepathUri())
             .snapshot(sourceSnapshot)
             .probeVersion(ProbeVersion.CURRENT + 1)
             .build();
-    probeRequests.request(refresh);
+    probeTaskRequests.request(refresh);
 
     var session = createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
 
@@ -223,11 +223,11 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
         .executeWithoutResult(_ -> PersistedProbeFixture.storeProbe(entityManager, row));
   }
 
-  private Optional<ProbeRequest> scheduledRequest() {
+  private Optional<ProbeTaskRequest> scheduledRequest() {
     return client
         .getScheduledExecution(
             TaskInstanceId.of(MediaProbeTask.NAME, savedMediaFile.getId().toString()))
-        .map(execution -> (ProbeRequest) execution.getData());
+        .map(execution -> (ProbeTaskRequest) execution.getData());
   }
 
   private int scheduledCount() {

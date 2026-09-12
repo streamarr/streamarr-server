@@ -2,7 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
-import com.streamarr.server.services.events.library.MediaFileProbeRequested;
+import com.streamarr.server.services.events.library.MediaFileProbeTaskRequested;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import java.util.UUID;
@@ -21,7 +21,7 @@ public class PlaybackProbeService {
   public Outcome<MediaProbe, CreateStreamSessionRejection> read(@NonNull UUID mediaFileId) {
     var stored = reader.find(mediaFileId);
     if (stored.isEmpty()) {
-      eventPublisher.publishEvent(new MediaFileProbeRequested(mediaFileId));
+      eventPublisher.publishEvent(new MediaFileProbeTaskRequested(mediaFileId));
       return Outcome.rejected(new CreateStreamSessionRejection.ProbeNotReady());
     }
 

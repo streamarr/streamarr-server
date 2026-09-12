@@ -12,7 +12,7 @@ import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
-import com.streamarr.server.services.events.library.MediaFileProbeRequested;
+import com.streamarr.server.services.events.library.MediaFileProbeTaskRequested;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import java.time.Duration;
@@ -49,7 +49,7 @@ class PlaybackProbeServiceTest {
 
     assertThat(service.read(mediaFileId))
         .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.ProbeFailed(reason)));
-    assertThat(events.getEventsOfType(MediaFileProbeRequested.class)).isEmpty();
+    assertThat(events.getEventsOfType(MediaFileProbeTaskRequested.class)).isEmpty();
   }
 
   @Test
@@ -63,8 +63,8 @@ class PlaybackProbeServiceTest {
 
     assertThat(service.read(mediaFileId))
         .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.ProbeNotReady()));
-    assertThat(events.getEventsOfType(MediaFileProbeRequested.class))
-        .containsExactly(new MediaFileProbeRequested(mediaFileId));
+    assertThat(events.getEventsOfType(MediaFileProbeTaskRequested.class))
+        .containsExactly(new MediaFileProbeTaskRequested(mediaFileId));
   }
 
   @Test
@@ -126,7 +126,7 @@ class PlaybackProbeServiceTest {
     assertThat(probe.videoCodec()).isEqualTo("h264");
     assertThat(probe.width()).isEqualTo(1920);
     assertThat(probe.height()).isEqualTo(1080);
-    assertThat(events.getEventsOfType(MediaFileProbeRequested.class)).isEmpty();
+    assertThat(events.getEventsOfType(MediaFileProbeTaskRequested.class)).isEmpty();
   }
 
   private static FakeMediaFileContainerInfoRepository storing(MediaFileContainerInfo row) {
