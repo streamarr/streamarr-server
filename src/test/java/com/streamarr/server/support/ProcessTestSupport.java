@@ -11,6 +11,18 @@ public final class ProcessTestSupport {
 
   public static void awaitCompletion(Process process, Duration timeout, String description)
       throws InterruptedException {
-    assertThat(process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)).as(description).isTrue();
+    try {
+      assertThat(process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS))
+          .as(description)
+          .isTrue();
+    } finally {
+      terminate(process.toHandle());
+    }
+  }
+
+  private static void terminate(ProcessHandle process) {
+    process.children().forEach(ProcessTestSupport::terminate);
+    process.destroyForcibly();
+    process.onExit().orTimeout(5, TimeUnit.SECONDS).join();
   }
 }
