@@ -47,7 +47,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   }
 
   @Override
-  public boolean publish(ProbePublication publication) {
+  public synchronized boolean publish(ProbePublication publication) {
     if (!mediaFileExists.test(publication.mediaFileId())) {
       return false;
     }
@@ -74,7 +74,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   }
 
   @Override
-  public boolean recordProbeRequest(UUID mediaFileId, ProbeInputs inputs) {
+  public synchronized boolean recordProbeRequest(UUID mediaFileId, ProbeInputs inputs) {
     if (!mediaFileExists.test(mediaFileId)) {
       return false;
     }
@@ -104,7 +104,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     this.mediaFileExists = predicate;
   }
 
-  public List<ProbePublication> publications() {
+  public synchronized List<ProbePublication> publications() {
     return List.copyOf(publications);
   }
 
