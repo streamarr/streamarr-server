@@ -6,6 +6,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBui
 import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest;
+import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
@@ -25,16 +26,17 @@ import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
-import com.streamarr.server.exceptions.MaxConcurrentTranscodesException;
-import com.streamarr.server.exceptions.MediaFileNotFoundException;
 import com.streamarr.server.exceptions.TranscodeException;
-import com.streamarr.server.fakes.FakeFfprobeService;
+import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.probe.PersistedProbeReader;
 import java.net.URI;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -57,17 +59,33 @@ class HlsStreamingServiceTest {
   private FakeMediaFileRepository mediaFileRepository;
   private FakeTranscodeExecutor transcodeExecutor;
   private FakeSegmentStore segmentStore;
-  private FakeFfprobeService ffprobeService;
+  private FakeMediaFileContainerInfoRepository probeResults;
+  private CapturingEventPublisher probeEvents;
   private FakePlaybackAuthorityGate authorityGate;
   private FakeRuntimeStreamSessionRegistry runtimeRegistry;
   private HlsStreamingService service;
+
+  @Test
+  @DisplayName("Should reject session creation when the media file has no persisted probe outcome")
+  void shouldRejectSessionCreationWhenTheMediaFileHasNoPersistedProbeOutcome() {
+    probeResults.clear();
+    var file = seedMediaFile();
+    var command = createStreamSessionCommand(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(service.createSession(command))
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.ProbeNotReady()));
+    assertThat(service.getActiveSessionCount()).isZero();
+    assertThat(transcodeExecutor.getRunningCount()).isZero();
+  }
 
   @BeforeEach
   void setUp() {
     mediaFileRepository = new FakeMediaFileRepository();
     transcodeExecutor = new FakeTranscodeExecutor();
     segmentStore = new FakeSegmentStore();
-    ffprobeService = new FakeFfprobeService();
+    probeResults = new FakeMediaFileContainerInfoRepository();
+    probeResults.setDefaultProbe(defaultProbeBuilder().framerate(23.976).build());
+    probeEvents = new CapturingEventPublisher();
     authorityGate = new FakePlaybackAuthorityGate();
     runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
     service = serviceWith(transcodeExecutor, runtimeRegistry);
@@ -92,7 +110,8 @@ class HlsStreamingServiceTest {
         .mediaFileRepository(mediaFileRepository)
         .transcodeExecutor(executor)
         .segmentStore(segmentStore)
-        .ffprobeService(ffprobeService)
+        .playbackProbeService(
+            new PlaybackProbeService(new PersistedProbeReader(probeResults), probeEvents))
         .transcodeDecisionService(new TranscodeDecisionService())
         .qualityLadderService(new QualityLadderService())
         .properties(properties)
@@ -122,7 +141,8 @@ class HlsStreamingServiceTest {
   }
 
   private StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
-    return service.createSession(createStreamSessionCommand(mediaFileId, profileId, options));
+    return accepted(
+        service.createSession(createStreamSessionCommand(mediaFileId, profileId, options)));
   }
 
   private Optional<StreamSession> accessSession(StreamSession session) {
@@ -226,15 +246,15 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should throw when media file not found")
-  void shouldThrowWhenMediaFileNotFound() {
+  @DisplayName("Should reject creation when media file is not found")
+  void shouldRejectCreationWhenMediaFileIsNotFound() {
     var invalidId = UUID.randomUUID();
     var profileId = UUID.randomUUID();
 
     var options = defaultOptions();
 
-    assertThatThrownBy(() -> createSession(invalidId, profileId, options))
-        .isInstanceOf(MediaFileNotFoundException.class);
+    assertThat(service.createSession(createStreamSessionCommand(invalidId, profileId, options)))
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.MediaFileNotFound(invalidId)));
   }
 
   @Test
@@ -365,7 +385,7 @@ class HlsStreamingServiceTest {
   @Test
   @DisplayName("Should reject full transcode when at concurrency limit")
   void shouldRejectFullTranscodeWhenAtConcurrencyLimit() {
-    ffprobeService.setDefaultProbe(
+    probeResults.setDefaultProbe(
         defaultProbeBuilder().framerate(23.976).videoCodec("hevc").build());
 
     var options =
@@ -383,14 +403,15 @@ class HlsStreamingServiceTest {
     var oneMoreId = oneMore.getId();
     var profileId = UUID.randomUUID();
 
-    assertThatThrownBy(() -> createSession(oneMoreId, profileId, options))
-        .isInstanceOf(MaxConcurrentTranscodesException.class);
+    assertThat(service.createSession(createStreamSessionCommand(oneMoreId, profileId, options)))
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
   }
 
   @Test
   @DisplayName("Should not count a session against the transcode limit when suspended")
   void shouldNotCountSessionAgainstTranscodeLimitWhenSuspended() {
-    ffprobeService.setDefaultProbe(
+    probeResults.setDefaultProbe(
         defaultProbeBuilder().framerate(23.976).videoCodec("hevc").build());
 
     var options =
@@ -417,7 +438,7 @@ class HlsStreamingServiceTest {
   @Test
   @DisplayName("Should allow remux sessions when at transcode concurrency limit")
   void shouldAllowRemuxSessionsWhenAtTranscodeConcurrencyLimit() {
-    ffprobeService.setDefaultProbe(
+    probeResults.setDefaultProbe(
         defaultProbeBuilder().framerate(23.976).videoCodec("hevc").build());
 
     var transcodeOptions =
@@ -431,7 +452,7 @@ class HlsStreamingServiceTest {
       createSession(file.getId(), UUID.randomUUID(), transcodeOptions);
     }
 
-    ffprobeService.setDefaultProbe(defaultProbeBuilder().framerate(23.976).build());
+    probeResults.setDefaultProbe(defaultProbeBuilder().framerate(23.976).build());
 
     var remuxOptions = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
     var file = seedMediaFile();
@@ -444,7 +465,7 @@ class HlsStreamingServiceTest {
   @Test
   @DisplayName("Should transcode video when video codec is incompatible")
   void shouldTranscodeVideoWhenVideoCodecIsIncompatible() {
-    ffprobeService.setDefaultProbe(
+    probeResults.setDefaultProbe(
         defaultProbeBuilder()
             .duration(Duration.ofMinutes(90))
             .videoCodec("hevc")
@@ -464,7 +485,7 @@ class HlsStreamingServiceTest {
   @Test
   @DisplayName("Should start multiple variants when auto quality with full transcode")
   void shouldStartMultipleVariantsWhenAutoQualityWithFullTranscode() {
-    ffprobeService.setDefaultProbe(
+    probeResults.setDefaultProbe(
         defaultProbeBuilder().framerate(23.976).videoCodec("hevc").bitrate(8_000_000L).build());
 
     var file = seedMediaFile();
@@ -494,7 +515,7 @@ class HlsStreamingServiceTest {
   @Test
   @DisplayName("Should roll back running transcodes when a later variant startup fails")
   void shouldRollbackRunningTranscodesWhenLaterVariantStartupFails() {
-    ffprobeService.setDefaultProbe(
+    probeResults.setDefaultProbe(
         defaultProbeBuilder().framerate(23.976).videoCodec("hevc").bitrate(8_000_000L).build());
     var failingExecutor = new FailingStartupTranscodeExecutor(1, segmentStore);
     service = serviceWith(failingExecutor, runtimeRegistry);
@@ -555,7 +576,7 @@ class HlsStreamingServiceTest {
   @Test
   @DisplayName("Should use single variant when explicit quality is specified")
   void shouldUseSingleVariantWhenExplicitQualityIsSpecified() {
-    ffprobeService.setDefaultProbe(
+    probeResults.setDefaultProbe(
         defaultProbeBuilder().framerate(23.976).videoCodec("hevc").bitrate(8_000_000L).build());
 
     var file = seedMediaFile();
@@ -575,7 +596,7 @@ class HlsStreamingServiceTest {
   @DisplayName(
       "Should pass variant label to transcode request for ABR session when managing a session")
   void shouldPassVariantLabelToTranscodeRequestForAbrSessionWhenManagingSession() {
-    ffprobeService.setDefaultProbe(
+    probeResults.setDefaultProbe(
         defaultProbeBuilder().framerate(23.976).videoCodec("hevc").bitrate(8_000_000L).build());
 
     var file = seedMediaFile();
@@ -703,7 +724,8 @@ class HlsStreamingServiceTest {
             .mediaFileRepository(mediaFileRepository)
             .transcodeExecutor(limitedExecutor)
             .segmentStore(segmentStore)
-            .ffprobeService(ffprobeService)
+            .playbackProbeService(
+                new PlaybackProbeService(new PersistedProbeReader(probeResults), probeEvents))
             .transcodeDecisionService(new TranscodeDecisionService())
             .qualityLadderService(new QualityLadderService())
             .properties(properties)
@@ -713,15 +735,16 @@ class HlsStreamingServiceTest {
             .deliveryCoordinator(limitedRig.coordinator())
             .build();
 
-    ffprobeService.setDefaultProbe(
+    probeResults.setDefaultProbe(
         defaultProbeBuilder().framerate(23.976).videoCodec("hevc").bitrate(8_000_000L).build());
 
     var file = seedMediaFile();
     var options = defaultOptions();
 
     var session =
-        limitedService.createSession(
-            createStreamSessionCommand(file.getId(), UUID.randomUUID(), options));
+        accepted(
+            limitedService.createSession(
+                createStreamSessionCommand(file.getId(), UUID.randomUUID(), options)));
 
     assertThat(session.getVariants()).hasSize(2);
   }
@@ -730,7 +753,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should truncate variants to executor slots available now when managing a session")
   void shouldTruncateVariantsToExecutorSlotsAvailableNowWhenManagingSession() {
     transcodeExecutor.setAvailableSlots(2);
-    ffprobeService.setDefaultProbe(
+    probeResults.setDefaultProbe(
         defaultProbeBuilder().framerate(23.976).videoCodec("hevc").bitrate(8_000_000L).build());
     var file = seedMediaFile();
     var options = defaultOptions();
@@ -744,7 +767,7 @@ class HlsStreamingServiceTest {
   @Test
   @DisplayName("Should truncate to one variant when only one slot is available")
   void shouldTruncateToOneVariantWhenOnlyOneSlotAvailable() {
-    ffprobeService.setDefaultProbe(
+    probeResults.setDefaultProbe(
         defaultProbeBuilder().framerate(23.976).videoCodec("hevc").bitrate(8_000_000L).build());
 
     var singleVariantOptions =
@@ -769,7 +792,7 @@ class HlsStreamingServiceTest {
   @Test
   @DisplayName("Should reject ABR session when all transcode slots are full")
   void shouldRejectAbrSessionWhenAllTranscodeSlotsAreFull() {
-    ffprobeService.setDefaultProbe(
+    probeResults.setDefaultProbe(
         defaultProbeBuilder().framerate(23.976).videoCodec("hevc").build());
 
     var singleVariantOptions =
@@ -788,8 +811,9 @@ class HlsStreamingServiceTest {
     var abrFileId = abrFile.getId();
     var profileId = UUID.randomUUID();
 
-    assertThatThrownBy(() -> createSession(abrFileId, profileId, abrOptions))
-        .isInstanceOf(MaxConcurrentTranscodesException.class);
+    assertThat(service.createSession(createStreamSessionCommand(abrFileId, profileId, abrOptions)))
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
   }
 
   private static final class FailingStartupTranscodeExecutor extends FakeTranscodeExecutor {

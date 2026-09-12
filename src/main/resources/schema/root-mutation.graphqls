@@ -4,7 +4,7 @@ type Mutation {
     removeLibrary(id: ID!): Boolean!
     scanLibrary(id: ID!): Boolean!
     refreshLibrary(id: ID!, imageRefreshMode: ImageRefreshMode! = PRESERVE): Boolean!
-    createStreamSession(mediaFileId: ID!, options: StreamingOptionsInput): StreamSession!
+    createStreamSession(input: CreateStreamSessionInput!): CreateStreamSessionPayload
     destroyStreamSession(sessionId: ID!): Boolean!
     reportStreamSessionTimeline(sessionId: ID!, positionSeconds: Int!, state: PlaybackState!): Boolean!
     markWatched(id: ID!): Boolean!

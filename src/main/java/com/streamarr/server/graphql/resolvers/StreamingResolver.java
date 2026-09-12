@@ -5,15 +5,22 @@ import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.PlaybackState;
+import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.graphql.dto.StreamSessionDto;
 import com.streamarr.server.graphql.dto.StreamingOptionsInput;
+import com.streamarr.server.graphql.mutation.InputPath;
+import com.streamarr.server.graphql.mutation.MutationPayloads;
+import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionError;
+import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionInput;
+import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionPayload;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
+import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
@@ -33,26 +40,67 @@ public class StreamingResolver {
   private final SessionProgressService sessionProgressService;
   private final WatchStatusService watchStatusService;
 
-  @DgsMutation
-  public StreamSessionDto createStreamSession(
-      @InputArgument String mediaFileId, @InputArgument StreamingOptionsInput options) {
-    var opts = mapOptions(options);
-    authorizationService.requireProfile();
-    var identity = authorizationService.currentIdentity();
-    var session =
-        streamingService.createSession(
-            CreateStreamSessionCommand.builder()
-                .mediaFileId(parseUuid(mediaFileId))
-                .identity(identity)
-                .options(opts)
-                .build());
-
+  private StreamSessionDto toCreatedSessionDto(StreamSession session) {
     try {
       return toDto(session);
     } catch (RuntimeException exception) {
       streamingService.destroySession(session.getSessionId());
       throw exception;
     }
+  }
+
+  @DgsMutation
+  public CreateStreamSessionPayload createStreamSession(
+      @InputArgument CreateStreamSessionInput input) {
+    authorizationService.requireProfile();
+    return MutationPayloads.withUuid(
+        input.mediaFileId(),
+        id -> createSession(id, input.options()),
+        () ->
+            MutationPayloads.inputError(
+                new CreateStreamSessionError.InvalidIdError(
+                    "Enter a valid media file ID.", InputPath.of("mediaFileId")),
+                CreateStreamSessionPayload::new));
+  }
+
+  private CreateStreamSessionPayload createSession(
+      UUID mediaFileId, StreamingOptionsInput options) {
+    var outcome =
+        streamingService.createSession(
+            CreateStreamSessionCommand.builder()
+                .mediaFileId(mediaFileId)
+                .identity(authorizationService.currentIdentity())
+                .options(mapOptions(options))
+                .build());
+    return MutationPayloads.payload(
+        outcome.map(this::toCreatedSessionDto),
+        this::createSessionError,
+        CreateStreamSessionPayload::new);
+  }
+
+  private CreateStreamSessionError createSessionError(CreateStreamSessionRejection rejection) {
+    return switch (rejection) {
+      case CreateStreamSessionRejection.TranscodeCapacityUnavailable _ ->
+          new CreateStreamSessionError.TranscodeCapacityUnavailableError(
+              "The server is busy and can't start playback right now. Please try again later.");
+      case CreateStreamSessionRejection.MediaFileNotFound _ ->
+          new CreateStreamSessionError.MediaFileNotFoundError(
+              "This media file no longer exists.", InputPath.of("mediaFileId"));
+      case CreateStreamSessionRejection.ProbeNotReady() ->
+          new CreateStreamSessionError.MediaFileProbeNotReadyError(
+              "This file is being prepared for playback. Try again shortly.");
+      case CreateStreamSessionRejection.ProbeFailed(var reason) -> probeFailureError(reason);
+    };
+  }
+
+  private CreateStreamSessionError probeFailureError(ProbeError reason) {
+    return switch (reason) {
+      case INVALID_MEDIA ->
+          new CreateStreamSessionError.InvalidMediaFileError(
+              "This file cannot be read as supported media.");
+      case NO_VIDEO_STREAM ->
+          new CreateStreamSessionError.MediaFileHasNoVideoError("This file has no video stream.");
+    };
   }
 
   @DgsMutation
