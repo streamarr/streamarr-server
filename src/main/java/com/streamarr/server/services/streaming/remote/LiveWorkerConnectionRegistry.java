@@ -465,14 +465,17 @@ final class LiveWorkerConnectionRegistry {
       return drained;
     }
 
-    private synchronized List<VariantJob> closeAsReplaced() {
+    private List<VariantJob> closeAsReplaced() {
       var abandonedJobs = abandonAllJobsWithoutWaiting();
-      try {
-        responseObserver.onError(
-            Status.ABORTED.withDescription("Worker connection replaced").asRuntimeException());
-      } catch (RuntimeException _) {
-        // The previous call is already dead; the replacement proceeds regardless.
+      synchronized (this) {
+        try {
+          responseObserver.onError(
+              Status.ABORTED.withDescription("Worker connection replaced").asRuntimeException());
+        } catch (RuntimeException _) {
+          // The previous call is already dead; the replacement proceeds regardless.
+        }
       }
+
       return abandonedJobs;
     }
 
