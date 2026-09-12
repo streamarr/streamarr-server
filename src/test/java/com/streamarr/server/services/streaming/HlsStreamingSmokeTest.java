@@ -61,6 +61,7 @@ class HlsStreamingSmokeTest {
   @BeforeAll
   static void checkPrerequisites() {
     assumeTrue(isToolAvailable("ffmpeg"), "FFmpeg not found on PATH");
+    assumeTrue(isToolAvailable("ffprobe"), "ffprobe not found on PATH");
     assumeTrue(Files.exists(TEST_VIDEO), "Test video not found: " + TEST_VIDEO);
   }
 
