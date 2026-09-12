@@ -137,14 +137,16 @@ public final class FfprobeExecutor {
     }
 
     if (exitCode != 0) {
+      var error = json.path("error");
+      var errorCode = error.path("code").asInt();
       log.warn(
           "ffprobe attempt {} for source {} exited with code {}: error {} ({})",
           fromProto(result.getProbeAttemptId()),
           attempt.source(),
           exitCode,
-          json.path("error").path("code").asInt(),
-          json.path("error").path("string").asString());
-      return result.setFailure(failureFor(json.path("error").path("code").asInt())).build();
+          errorCode,
+          error.path("string").asString());
+      return result.setFailure(failureFor(errorCode)).build();
     }
 
     var media = parseMedia(json);
