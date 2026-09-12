@@ -24,3 +24,9 @@ streamarr:
 springdoc:
   api-docs:
     enabled: true
+
+streaming:
+  worker-session:
+    loopback:
+      enabled: true
+      port: 0
