@@ -60,8 +60,8 @@ class FfmpegLockWorkflowTest {
   }
 
   @Test
-  @DisplayName("Should aggregate every applicable CI result behind the required build status")
-  void shouldAggregateEveryApplicableCiResultBehindRequiredBuildStatus() throws IOException {
+  @DisplayName("Should aggregate every applicable CI result when verifying required build status")
+  void shouldAggregateEveryApplicableCiResultWhenVerifyingRequiredBuildStatus() throws IOException {
     var workflow = yaml(".github/workflows/ci.yml");
     var jobs = map(workflow.get("jobs"));
 
