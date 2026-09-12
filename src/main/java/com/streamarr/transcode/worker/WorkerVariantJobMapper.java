@@ -2,14 +2,14 @@ package com.streamarr.transcode.worker;
 
 import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
 
-import com.streamarr.server.domain.streaming.AudioDecision;
-import com.streamarr.server.domain.streaming.AudioMode;
-import com.streamarr.server.domain.streaming.ContainerFormat;
-import com.streamarr.server.domain.streaming.SubtitleDecision;
-import com.streamarr.server.domain.streaming.SubtitleMode;
-import com.streamarr.server.domain.streaming.TranscodeDecision;
-import com.streamarr.server.domain.streaming.TranscodeMode;
-import com.streamarr.server.domain.streaming.TranscodeRequest;
+import com.streamarr.transcode.engine.AudioDecision;
+import com.streamarr.transcode.engine.AudioMode;
+import com.streamarr.transcode.engine.ContainerFormat;
+import com.streamarr.transcode.engine.SubtitleDecision;
+import com.streamarr.transcode.engine.SubtitleMode;
+import com.streamarr.transcode.engine.TranscodeDecision;
+import com.streamarr.transcode.engine.TranscodeMode;
+import com.streamarr.transcode.engine.TranscodeRequest;
 import com.streamarr.transcode.v1.VariantJob;
 import java.util.Optional;
 import java.util.OptionalInt;

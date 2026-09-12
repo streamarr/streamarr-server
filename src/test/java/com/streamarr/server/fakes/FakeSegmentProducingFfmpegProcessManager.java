@@ -35,6 +35,7 @@ public class FakeSegmentProducingFfmpegProcessManager extends FakeFfmpegProcessM
     } catch (IOException e) {
       throw new UncheckedIOException(e);
     }
+
     return process;
   }
 }
