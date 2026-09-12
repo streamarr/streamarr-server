@@ -158,14 +158,16 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
     assertThat(executionFinished.await(15, TimeUnit.SECONDS))
         .as("The original execution must finish before observing its durable outcome")
         .isTrue();
-    var stored = reader.find(file.getId());
     var remainingWork = client.getScheduledExecution(instance);
+    var stored = reader.find(file.getId());
 
     assertThat(
             stored
                     .filter(outcome -> outcome.matches(changed.snapshot(), ProbeVersion.CURRENT))
                     .isPresent()
-                || remainingWork.isPresent())
+                || remainingWork
+                    .filter(execution -> changed.equals(execution.getData()))
+                    .isPresent())
         .as(
             "Changed source must have a current outcome or durable work. Stored snapshot: %s, requested snapshot: %s, remaining work: %s",
             stored.map(outcome -> outcome.snapshot()), changed.snapshot(), remainingWork)
@@ -217,14 +219,18 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
     }
 
     assertThat(executionFinished.await(15, TimeUnit.SECONDS)).isTrue();
-    var stored = reader.find(file.getId());
     var remainingWork = client.getScheduledExecution(instance);
+    var stored = reader.find(file.getId());
     assertThat(
             stored
                     .filter(outcome -> outcome.matches(changed.snapshot(), ProbeVersion.CURRENT))
                     .isPresent()
-                || remainingWork.isPresent())
-        .as("The changed source must remain represented after the original task completes")
+                || remainingWork
+                    .filter(execution -> changed.equals(execution.getData()))
+                    .isPresent())
+        .as(
+            "Changed-source work must use %s after original completion, but its task carried %s",
+            changed, remainingWork.map(execution -> execution.getData()))
         .isTrue();
   }
 
