@@ -72,13 +72,12 @@ class WorkerSessionConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should start loopback independently when remote transcoding is disabled")
-  void shouldStartLoopbackIndependentlyWhenRemoteTranscodingIsDisabled() {
+  @DisplayName("Should start loopback when its listener is enabled alone")
+  void shouldStartLoopbackWhenItsListenerIsEnabledAlone() {
     contextRunner
         .withPropertyValues(
             "streaming.worker-session.loopback.enabled=true",
-            "streaming.worker-session.loopback.port=0",
-            "streaming.remote.enabled=false")
+            "streaming.worker-session.loopback.port=0")
         .run(
             context -> {
               assertThat(context).hasNotFailed();
@@ -145,7 +144,6 @@ class WorkerSessionConfigurationTest {
         .withPropertyValues(
             "streaming.worker-session.loopback.enabled=true",
             "streaming.worker-session.loopback.port=0",
-            "streaming.remote.enabled=true",
             "streaming.remote.source-namespace-id=cccccccc-cccc-cccc-cccc-cccccccccccc",
             "streaming.remote.source-root=/media")
         .run(

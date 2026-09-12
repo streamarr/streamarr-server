@@ -21,9 +21,7 @@ public record StreamingProperties(
     // A producer that publishes nothing for this long is classified stalled and replaced; the
     // recovery budget is attempt-bounded (targets × threshold), never a wall clock.
     Duration producerStallThreshold,
-    String segmentBasePath,
-    String ffmpegPath,
-    String ffprobePath) {
+    String segmentBasePath) {
 
   public StreamingProperties {
     if (maxConcurrentTranscodes == null) {

@@ -290,7 +290,7 @@ public final class TranscodeWorker implements AutoCloseable {
   private void uploadProducedSegments(VariantJob job, Path outputDirectory)
       throws IOException, InterruptedException, ExecutionException, TimeoutException {
     if (job.getDecision().getContainer() == ContainerFormat.CONTAINER_FORMAT_FMP4
-        && !uploadWhenProduced(job, outputDirectory, "init.mp4")) {
+        && !uploadInitializationWhenProduced(job, outputDirectory)) {
       finishEndedVariant(job, false);
       return;
     }
@@ -306,6 +306,18 @@ public final class TranscodeWorker implements AutoCloseable {
       uploadedMediaSegment = true;
       segmentNumber++;
     }
+  }
+
+  private boolean uploadInitializationWhenProduced(VariantJob job, Path outputDirectory)
+      throws IOException, InterruptedException, ExecutionException, TimeoutException {
+    // FFmpeg opens init.mp4 before writing its header. The first atomically renamed media fragment
+    // establishes that the header has been closed, including when a replacement starts after zero.
+    var firstSegment = segmentName(job, job.getExecution().getStartSequenceNumber());
+    if (awaitSegment(job, outputDirectory.resolve(firstSegment)).isEmpty()) {
+      return false;
+    }
+
+    return uploadWhenProduced(job, outputDirectory, "init.mp4");
   }
 
   private boolean uploadWhenProduced(VariantJob job, Path outputDirectory, String segmentName)
