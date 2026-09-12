@@ -4,6 +4,7 @@ import com.streamarr.server.domain.media.MediaFileContainerInfo;
 import com.streamarr.server.domain.media.MediaFileStreamInfo;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import java.util.ArrayList;
@@ -17,6 +18,7 @@ import java.util.function.Predicate;
 public class FakeMediaFileContainerInfoRepository implements MediaFileContainerInfoRepository {
 
   private final Map<UUID, MediaFileContainerInfo> rows = new ConcurrentHashMap<>();
+  private final Map<UUID, ProbeInputs> desiredInputs = new ConcurrentHashMap<>();
   private final List<ProbePublication> publications = new ArrayList<>();
   private Predicate<UUID> mediaFileExists = _ -> true;
 
@@ -28,6 +30,14 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   @Override
   public boolean publish(ProbePublication publication) {
     if (!mediaFileExists.test(publication.mediaFileId())) {
+      return false;
+    }
+
+    if (Optional.ofNullable(desiredInputs.get(publication.mediaFileId()))
+        .filter(
+            inputs ->
+                !inputs.equals(new ProbeInputs(publication.snapshot(), publication.probeVersion())))
+        .isPresent()) {
       return false;
     }
 
@@ -45,7 +55,22 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   }
 
   @Override
-  public void invalidateOutcomeUnlessSnapshotMatches(
+  public boolean recordProbeRequest(UUID mediaFileId, ProbeInputs inputs) {
+    if (!mediaFileExists.test(mediaFileId)) {
+      return false;
+    }
+
+    desiredInputs.put(mediaFileId, inputs);
+    invalidateOutcomeUnlessSnapshotMatches(mediaFileId, inputs.snapshot());
+    return true;
+  }
+
+  @Override
+  public Optional<ProbeInputs> lockProbeInputs(UUID mediaFileId) {
+    return Optional.ofNullable(desiredInputs.get(mediaFileId));
+  }
+
+  private void invalidateOutcomeUnlessSnapshotMatches(
       UUID mediaFileId, SourceFileSnapshot snapshot) {
     findByMediaFileId(mediaFileId)
         .filter(row -> !row.getSnapshot().equals(snapshot))

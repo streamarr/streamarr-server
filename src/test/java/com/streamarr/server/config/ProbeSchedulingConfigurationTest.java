@@ -10,6 +10,8 @@ import java.util.concurrent.ExecutionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import tools.jackson.databind.json.JsonMapper;
 
 @Tag("UnitTest")
 @DisplayName("Probe scheduling configuration")
@@ -21,7 +23,9 @@ class ProbeSchedulingConfigurationTest {
   @DisplayName("Should run scheduler executions on virtual threads when customizing db-scheduler")
   void shouldRunSchedulerExecutionsOnVirtualThreadsWhenCustomizingDbScheduler()
       throws InterruptedException, ExecutionException {
-    var customizer = configuration.dbSchedulerCustomizer(configuration.probeTaskSerializer());
+    var customizer =
+        configuration.dbSchedulerCustomizer(
+            configuration.probeTaskSerializer(), new DriverManagerDataSource());
 
     try (var executor = customizer.executorService().orElseThrow()) {
       assertThat(executor.submit(() -> Thread.currentThread().isVirtual()).get()).isTrue();
@@ -43,8 +47,12 @@ class ProbeSchedulingConfigurationTest {
 
     var restored = serializer.deserialize(ProbeRequest.class, serializer.serialize(request));
 
-    assertThat(serializer).isInstanceOf(JacksonTaskDataSerializer.class);
+    assertThat(new JsonMapper().readTree(serializer.serialize(request)).isObject()).isTrue();
     assertThat(restored).isEqualTo(request);
-    assertThat(configuration.dbSchedulerCustomizer(serializer).serializer()).contains(serializer);
+    assertThat(
+            configuration
+                .dbSchedulerCustomizer(serializer, new DriverManagerDataSource())
+                .serializer())
+        .contains(serializer);
   }
 }

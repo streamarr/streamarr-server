@@ -1,6 +1,5 @@
 package com.streamarr.server.services.library;
 
-import com.github.kagkarlsson.scheduler.task.CompletionHandler;
 import com.github.kagkarlsson.scheduler.task.Task;
 import com.github.kagkarlsson.scheduler.task.helper.Tasks;
 import com.streamarr.server.domain.task.ProbeRequest;
@@ -14,22 +13,17 @@ public final class MediaProbeTask {
 
   public static final String NAME = "media-file-probe";
 
-  public static Task<ProbeRequest> create(ProbeExecution execution) {
-    return create(execution, Clock.systemUTC());
+  public static Task<ProbeRequest> create(
+      ProbeExecution execution, ProbeTaskCompletion completion) {
+    return create(execution, completion, Clock.systemUTC());
   }
 
-  public static Task<ProbeRequest> create(ProbeExecution execution, Clock clock) {
+  public static Task<ProbeRequest> create(
+      ProbeExecution execution, ProbeTaskCompletion completion, Clock clock) {
     return Tasks.custom(NAME, ProbeRequest.class)
         .onFailure(new CappedExponentialBackoff<>(clock))
-        .execute((instance, _) -> completion(execution.execute(instance.getData()), clock));
-  }
-
-  private static CompletionHandler<ProbeRequest> completion(
-      ProbeExecutionResult result, Clock clock) {
-    return switch (result) {
-      case ProbeExecutionResult.Completed _ -> new CompletionHandler.OnCompleteRemove<>();
-      case ProbeExecutionResult.Rescheduled(var request) ->
-          (complete, operations) -> operations.reschedule(complete, clock.instant(), request);
-    };
+        .execute(
+            (instance, _) ->
+                completion.handlerFor(instance.getData(), execution.execute(instance.getData())));
   }
 }

@@ -5,6 +5,7 @@ import com.github.kagkarlsson.scheduler.exceptions.TaskInstanceCurrentlyExecutin
 import com.github.kagkarlsson.scheduler.exceptions.TaskInstanceNotFoundException;
 import com.github.kagkarlsson.scheduler.task.Task;
 import com.github.kagkarlsson.scheduler.task.TaskInstance;
+import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbeRequest;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.probe.ProbeRequests;
@@ -12,11 +13,12 @@ import java.time.Clock;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * The single entry point for requesting a probe. Requests are idempotent per media file: a pending
- * instance keeps its inputs unless the request carries new ones, and a running execution re-checks
- * the source itself.
+ * instance keeps its inputs unless the request carries new ones. Desired inputs remain durable
+ * while an execution is running and are checked again when it completes.
  */
 @Service
 @RequiredArgsConstructor
@@ -30,8 +32,13 @@ public class SchedulerProbeRequests implements ProbeRequests {
   private final Clock clock;
 
   @Override
+  @Transactional
   public void request(ProbeRequest request) {
-    outcomes.invalidateOutcomeUnlessSnapshotMatches(request.mediaFileId(), request.snapshot());
+    if (!outcomes.recordProbeRequest(
+        request.mediaFileId(), new ProbeInputs(request.snapshot(), request.probeVersion()))) {
+      return;
+    }
+
     var instance = task.instance(request.mediaFileId().toString(), request);
     if (client.scheduleIfNotExists(instance, clock.instant())) {
       return;
@@ -51,7 +58,7 @@ public class SchedulerProbeRequests implements ProbeRequests {
     try {
       client.reschedule(instance, clock.instant(), request);
     } catch (TaskInstanceCurrentlyExecutingException _) {
-      // The running execution compares the source snapshot itself and reschedules on change.
+      // Completion compares the retained desired inputs before removing the running instance.
     } catch (TaskInstanceNotFoundException _) {
       client.scheduleIfNotExists(instance, clock.instant());
     }

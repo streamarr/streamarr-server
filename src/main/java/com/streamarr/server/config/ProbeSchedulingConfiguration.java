@@ -7,6 +7,7 @@ import com.github.kagkarlsson.scheduler.task.Task;
 import com.streamarr.server.domain.task.ProbeRequest;
 import com.streamarr.server.services.library.MediaProbeTask;
 import com.streamarr.server.services.library.ProbeExecution;
+import com.streamarr.server.services.library.ProbeTaskCompletion;
 import java.time.Clock;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
@@ -26,13 +27,15 @@ public class ProbeSchedulingConfiguration {
   }
 
   @Bean
-  public DbSchedulerCustomizer dbSchedulerCustomizer(Serializer probeTaskSerializer) {
-    return new VirtualThreadCustomizer(probeTaskSerializer);
+  public DbSchedulerCustomizer dbSchedulerCustomizer(
+      Serializer probeTaskSerializer, DataSource dataSource) {
+    return new VirtualThreadCustomizer(probeTaskSerializer, dataSource);
   }
 
   @Bean
-  public Task<ProbeRequest> mediaProbeTask(ProbeExecution execution, Clock clock) {
-    return MediaProbeTask.create(execution, clock);
+  public Task<ProbeRequest> mediaProbeTask(
+      ProbeExecution execution, ProbeTaskCompletion completion, Clock clock) {
+    return MediaProbeTask.create(execution, completion, clock);
   }
 
   /**
@@ -52,6 +55,12 @@ public class ProbeSchedulingConfiguration {
   private static final class VirtualThreadCustomizer implements DbSchedulerCustomizer {
 
     private final Serializer serializer;
+    private final DataSource dataSource;
+
+    @Override
+    public Optional<DataSource> dataSource() {
+      return Optional.of(new SchedulerTransactionDataSource(dataSource));
+    }
 
     @Override
     public Optional<ExecutorService> executorService() {
