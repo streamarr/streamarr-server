@@ -3,14 +3,14 @@ package com.streamarr.server.services.library;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
-import com.streamarr.server.domain.task.ProbeRequest;
+import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
-import com.streamarr.server.exceptions.ProbeSchedulingException;
+import com.streamarr.server.exceptions.ProbeTaskSchedulingException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
-import com.streamarr.server.services.events.library.MediaFileProbeRequested;
+import com.streamarr.server.services.events.library.MediaFileProbeTaskRequested;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
-import com.streamarr.server.services.probe.ProbeRequests;
+import com.streamarr.server.services.probe.ProbeTaskRequests;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
@@ -25,15 +25,15 @@ import org.springframework.stereotype.Service;
 @Service
 @Builder
 @RequiredArgsConstructor
-public class MediaFileProbeScheduler {
+public class MediaFileProbeTaskScheduler {
 
   private final MediaFileRepository mediaFileRepository;
   private final PersistedProbeReader reader;
-  private final ProbeRequests probeRequests;
+  private final ProbeTaskRequests probeTaskRequests;
   private final FileSystem fileSystem;
 
   @EventListener
-  public void onProbeRequested(MediaFileProbeRequested event) {
+  public void onProbeTaskRequested(MediaFileProbeTaskRequested event) {
     var mediaFile =
         mediaFileRepository
             .findById(event.mediaFileId())
@@ -52,8 +52,8 @@ public class MediaFileProbeScheduler {
       return;
     }
 
-    probeRequests.request(
-        ProbeRequest.builder()
+    probeTaskRequests.request(
+        ProbeTaskRequest.builder()
             .mediaFileId(mediaFile.getId())
             .libraryId(mediaFile.getLibraryId())
             .filepathUri(mediaFile.getFilepathUri())
@@ -71,7 +71,7 @@ public class MediaFileProbeScheduler {
     } catch (NoSuchFileException _) {
       return Optional.empty();
     } catch (IOException exception) {
-      throw new ProbeSchedulingException(mediaFile.getId(), exception);
+      throw new ProbeTaskSchedulingException(mediaFile.getId(), exception);
     }
   }
 }

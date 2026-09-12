@@ -34,7 +34,7 @@ import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
-import com.streamarr.server.fakes.CapturingProbeRequests;
+import com.streamarr.server.fakes.CapturingProbeTaskRequests;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.fakes.FakeLibraryMutationTransaction;
@@ -65,7 +65,7 @@ import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.events.library.ItemProcessedEvent;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
-import com.streamarr.server.services.events.library.MediaFileProbeRequested;
+import com.streamarr.server.services.events.library.MediaFileProbeTaskRequested;
 import com.streamarr.server.services.events.library.RefreshEndedEvent;
 import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
@@ -235,7 +235,8 @@ class LibraryManagementServiceTest {
     assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath)))
         .as("Media file should have been created before scanLibrary returned")
         .isPresent();
-    assertThat(capturingEventPublisher.getEventsOfType(MediaFileProbeRequested.class)).hasSize(1);
+    assertThat(capturingEventPublisher.getEventsOfType(MediaFileProbeTaskRequested.class))
+        .hasSize(1);
   }
 
   @Test
@@ -668,8 +669,8 @@ class LibraryManagementServiceTest {
 
     libraryManagementService.scanLibrary(savedLibraryId);
 
-    assertThat(capturingEventPublisher.getEventsOfType(MediaFileProbeRequested.class))
-        .containsExactly(new MediaFileProbeRequested(mediaFile.getId()));
+    assertThat(capturingEventPublisher.getEventsOfType(MediaFileProbeTaskRequested.class))
+        .containsExactly(new MediaFileProbeTaskRequested(mediaFile.getId()));
   }
 
   @Test
@@ -680,7 +681,7 @@ class LibraryManagementServiceTest {
     saveMatchedMediaFile(path);
     var enqueueStarted = new CountDownLatch(1);
     var enqueueReleased = new CountDownLatch(1);
-    capturingEventPublisher.probeRequested =
+    capturingEventPublisher.probeTaskRequested =
         _ -> {
           enqueueStarted.countDown();
           awaitEnqueueRelease(enqueueReleased);
@@ -710,7 +711,7 @@ class LibraryManagementServiceTest {
     var rootPath = createRootLibraryDirectory();
     var path = createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
     saveMatchedMediaFile(path);
-    capturingEventPublisher.probeRequested =
+    capturingEventPublisher.probeTaskRequested =
         _ -> {
           throw new DataAccessResourceFailureException("Queue unavailable");
         };
@@ -730,8 +731,8 @@ class LibraryManagementServiceTest {
     var rootPath = createRootLibraryDirectory();
     var path = createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
     saveMatchedMediaFile(path);
-    var scheduler = probeScheduler(fileSystem);
-    capturingEventPublisher.probeRequested =
+    var scheduler = probeTaskScheduler(fileSystem);
+    capturingEventPublisher.probeTaskRequested =
         event -> {
           try {
             Files.delete(path);
@@ -739,7 +740,7 @@ class LibraryManagementServiceTest {
             throw new UncheckedIOException(exception);
           }
 
-          scheduler.onProbeRequested(event);
+          scheduler.onProbeTaskRequested(event);
         };
 
     libraryManagementService.scanLibrary(savedLibraryId);
@@ -758,8 +759,8 @@ class LibraryManagementServiceTest {
     var rootPath = createRootLibraryDirectory();
     var path = createMovieFile(rootPath, "Unavailable mount", "movie.mkv");
     saveMatchedMediaFile(path);
-    var scheduler = probeScheduler(fileSystem);
-    capturingEventPublisher.probeRequested =
+    var scheduler = probeTaskScheduler(fileSystem);
+    capturingEventPublisher.probeTaskRequested =
         event -> {
           try {
             Files.delete(path);
@@ -768,7 +769,7 @@ class LibraryManagementServiceTest {
             throw new UncheckedIOException(exception);
           }
 
-          scheduler.onProbeRequested(event);
+          scheduler.onProbeTaskRequested(event);
         };
 
     libraryManagementService.scanLibrary(savedLibraryId);
@@ -779,11 +780,11 @@ class LibraryManagementServiceTest {
     assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
   }
 
-  private MediaFileProbeScheduler probeScheduler(FileSystem observedFileSystem) {
-    return MediaFileProbeScheduler.builder()
+  private MediaFileProbeTaskScheduler probeTaskScheduler(FileSystem observedFileSystem) {
+    return MediaFileProbeTaskScheduler.builder()
         .mediaFileRepository(fakeMediaFileRepository)
         .reader(new PersistedProbeReader(new FakeMediaFileContainerInfoRepository()))
-        .probeRequests(new CapturingProbeRequests())
+        .probeTaskRequests(new CapturingProbeTaskRequests())
         .fileSystem(observedFileSystem)
         .build();
   }
@@ -1872,13 +1873,13 @@ class LibraryManagementServiceTest {
   private static final class SignalingEventPublisher extends CapturingEventPublisher {
 
     private final CountDownLatch refreshEnded = new CountDownLatch(1);
-    private Consumer<MediaFileProbeRequested> probeRequested = _ -> {};
+    private Consumer<MediaFileProbeTaskRequested> probeTaskRequested = _ -> {};
 
     @Override
     public void publishEvent(Object event) {
       super.publishEvent(event);
-      if (event instanceof MediaFileProbeRequested requested) {
-        probeRequested.accept(requested);
+      if (event instanceof MediaFileProbeTaskRequested requested) {
+        probeTaskRequested.accept(requested);
       }
 
       if (event instanceof RefreshEndedEvent) {

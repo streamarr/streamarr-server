@@ -21,7 +21,7 @@ import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.events.library.ItemProcessedEvent;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
-import com.streamarr.server.services.events.library.MediaFileProbeRequested;
+import com.streamarr.server.services.events.library.MediaFileProbeTaskRequested;
 import com.streamarr.server.services.events.library.RefreshEndedEvent;
 import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
@@ -490,7 +490,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     }
 
     var mediaFile = findOrCreateMediaFile(library, path);
-    eventPublisher.publishEvent(new MediaFileProbeRequested(mediaFile.getId()));
+    eventPublisher.publishEvent(new MediaFileProbeTaskRequested(mediaFile.getId()));
 
     if (isAlreadyMatched(mediaFile)) {
       return false;

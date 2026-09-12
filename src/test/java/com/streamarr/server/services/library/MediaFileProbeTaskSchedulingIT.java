@@ -14,7 +14,7 @@ import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.task.ProbePublication;
-import com.streamarr.server.domain.task.ProbeRequest;
+import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
@@ -22,7 +22,7 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
-import com.streamarr.server.services.probe.ProbeRequests;
+import com.streamarr.server.services.probe.ProbeTaskRequests;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -43,8 +43,8 @@ import org.springframework.test.context.event.RecordApplicationEvents;
 
 @RecordApplicationEvents
 @Tag("IntegrationTest")
-@DisplayName("Durable media file probe scheduling")
-class MediaFileProbeSchedulingIT extends AbstractIntegrationTest {
+@DisplayName("Durable media file probe task scheduling")
+class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
 
   @TempDir Path directory;
 
@@ -55,7 +55,7 @@ class MediaFileProbeSchedulingIT extends AbstractIntegrationTest {
   @Autowired private LibraryManagementService libraryManagementService;
   @Autowired private PersistedProbeReader reader;
   @Autowired private MediaFileContainerInfoRepository outcomes;
-  @Autowired private ProbeRequests probeRequests;
+  @Autowired private ProbeTaskRequests probeTaskRequests;
 
   @Qualifier("probeSchedulerClient")
   @Autowired
@@ -90,7 +90,7 @@ class MediaFileProbeSchedulingIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should fail the scan when the probe request cannot be recorded")
   void shouldFailTheScanWhenTheProbeRequestCannotBeRecorded() throws Exception {
-    try (var _ = rejectProbeRequests()) {
+    try (var _ = rejectProbeTaskRequests()) {
       libraryManagementService.scanLibrary(library.getId());
 
       assertThat(libraries.findById(library.getId()).orElseThrow().getStatus())
@@ -101,9 +101,9 @@ class MediaFileProbeSchedulingIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should complete the scan when probe requests recover after a failure")
-  void shouldCompleteTheScanWhenProbeRequestsRecoverAfterAFailure() throws Exception {
-    try (var _ = rejectProbeRequests()) {
+  @DisplayName("Should complete the scan when probe task requests recover after a failure")
+  void shouldCompleteTheScanWhenProbeTaskRequestsRecoverAfterAFailure() throws Exception {
+    try (var _ = rejectProbeTaskRequests()) {
       libraryManagementService.scanLibrary(library.getId());
     }
 
@@ -117,7 +117,7 @@ class MediaFileProbeSchedulingIT extends AbstractIntegrationTest {
             request -> assertThat(request.mediaFileId()).isEqualTo(mediaFile.getId()));
   }
 
-  private AutoCloseable rejectProbeRequests() {
+  private AutoCloseable rejectProbeTaskRequests() {
     jdbc.execute(
         """
         CREATE FUNCTION adversarial_reject_probe_request() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -153,13 +153,13 @@ class MediaFileProbeSchedulingIT extends AbstractIntegrationTest {
           executor.submit(
               () -> {
                 awaitStart(start);
-                probeRequests.request(request);
+                probeTaskRequests.request(request);
               });
       var second =
           executor.submit(
               () -> {
                 awaitStart(start);
-                probeRequests.request(request);
+                probeTaskRequests.request(request);
               });
       start.countDown();
       first.get(10, TimeUnit.SECONDS);
@@ -238,20 +238,20 @@ class MediaFileProbeSchedulingIT extends AbstractIntegrationTest {
         .isEqualTo(MediaFileStatus.MATCHED);
   }
 
-  private Optional<ProbeRequest> scheduledRequest() {
+  private Optional<ProbeTaskRequest> scheduledRequest() {
     return client
         .getScheduledExecution(TaskInstanceId.of(MediaProbeTask.NAME, mediaFile.getId().toString()))
-        .map(execution -> (ProbeRequest) execution.getData());
+        .map(execution -> (ProbeTaskRequest) execution.getData());
   }
 
   private int scheduledCount() {
     return jdbc.queryForObject("SELECT count(*) FROM scheduled_tasks", Integer.class);
   }
 
-  private static ProbeRequest requestFor(MediaFile file) throws Exception {
+  private static ProbeTaskRequest requestFor(MediaFile file) throws Exception {
     var source = FilepathCodec.decode(file.getFilepathUri());
     var attributes = Files.readAttributes(source, BasicFileAttributes.class);
-    return ProbeRequest.builder()
+    return ProbeTaskRequest.builder()
         .mediaFileId(file.getId())
         .libraryId(file.getLibraryId())
         .filepathUri(file.getFilepathUri())
