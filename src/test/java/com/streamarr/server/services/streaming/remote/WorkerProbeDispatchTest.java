@@ -5,6 +5,7 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.WORKER_ID;
 import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.transcode.v1.CancelProbeCommand;
@@ -41,6 +42,74 @@ import org.junit.jupiter.params.provider.ValueSource;
 @Tag("UnitTest")
 @DisplayName("Worker Probe Dispatch Tests")
 class WorkerProbeDispatchTest {
+
+  @ParameterizedTest(name = "advertised version={0}, explicit zero={1}")
+  @CsvSource({"0,false", "0,true", "1,false", "1,true"})
+  @DisplayName("Should reject unversioned probes even when a worker advertises version zero")
+  void shouldRejectUnversionedProbesEvenWhenWorkerAdvertisesVersionZero(
+      int advertisedVersion, boolean explicitZero) throws Exception {
+    var registry = new LiveWorkerConnectionRegistry();
+    var registration = registration();
+    registration.getCapabilitiesBuilder().addProbeVersions(advertisedVersion);
+    var responses = new CapturingResponses();
+    var sessionId = registry.register(WORKER_ID, registration.build(), responses);
+    var request = probe().clearProbeVersion();
+    var reply =
+        ProbeAttemptResult.newBuilder()
+            .setProbeAttemptId(request.getProbeAttemptId())
+            .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA);
+    if (explicitZero) {
+      request.setProbeVersion(0);
+      reply.setProbeVersion(0);
+    }
+
+    var decodedRequest = ProbeRequest.parseFrom(request.build().toByteArray());
+    var decodedReply = ProbeAttemptResult.parseFrom(reply.build().toByteArray());
+    var dispatched = registry.dispatchProbe(decodedRequest);
+    var replyAccepted =
+        dispatched
+            .map(_ -> registry.completeProbe(WORKER_ID, sessionId, decodedReply))
+            .orElse(false);
+
+    assertSoftly(
+        softly -> {
+          softly.assertThat(dispatched).as("unversioned request must be rejected").isEmpty();
+          softly.assertThat(replyAccepted).as("unversioned reply must not be accepted").isFalse();
+          softly
+              .assertThat(
+                  responses.values.stream().filter(EstablishWorkerSessionResponse::hasStartProbe))
+              .as("worker must not receive an unversioned start command")
+              .isEmpty();
+        });
+  }
+
+  @ParameterizedTest(name = "explicit zero={0}")
+  @ValueSource(booleans = {false, true})
+  @DisplayName("Should reject an unversioned reply when the pending probe requested version one")
+  void shouldRejectUnversionedReplyWhenPendingProbeRequestedVersionOne(boolean explicitZero)
+      throws Exception {
+    var registry = new LiveWorkerConnectionRegistry();
+    var registration = registration();
+    registration.getCapabilitiesBuilder().addProbeVersions(1);
+    var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
+    var request = probe().build();
+    var pending = registry.dispatchProbe(request).orElseThrow();
+    var reply =
+        ProbeAttemptResult.newBuilder()
+            .setProbeAttemptId(request.getProbeAttemptId())
+            .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA);
+    if (explicitZero) {
+      reply.setProbeVersion(0);
+    }
+
+    var decoded = ProbeAttemptResult.parseFrom(reply.build().toByteArray());
+
+    assertThat(registry.completeProbe(WORKER_ID, sessionId, decoded)).isFalse();
+    assertThatThrownBy(() -> pending.get(1, TimeUnit.SECONDS))
+        .isInstanceOf(ExecutionException.class)
+        .hasCauseInstanceOf(ProbeExecutionException.class);
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
+  }
 
   @Test
   @DisplayName("Should keep a worker available for transcodes when it advertises no probe support")

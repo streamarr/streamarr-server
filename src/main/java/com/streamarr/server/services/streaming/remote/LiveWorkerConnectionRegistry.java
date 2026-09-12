@@ -104,6 +104,10 @@ final class LiveWorkerConnectionRegistry {
   }
 
   Optional<Future<ProbeAttemptResult>> dispatchProbe(ProbeRequest request) {
+    if (request.getProbeVersion() == 0) {
+      return Optional.empty();
+    }
+
     for (var connection : connections.values()) {
       var dispatched = connection.tryDispatchProbe(request);
       if (dispatched.isEmpty()) {
