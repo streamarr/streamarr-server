@@ -2,6 +2,7 @@ package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.github.kagkarlsson.scheduler.ScheduledExecution;
 import com.github.kagkarlsson.scheduler.Scheduler;
 import com.github.kagkarlsson.scheduler.SchedulerClient;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerConfigurationSupport;
@@ -166,7 +167,7 @@ class SchedulerProbeCapacityIT extends AbstractIntegrationTest {
                   request ->
                       client
                           .getScheduledExecution(instanceOf(request))
-                          .filter(scheduled -> scheduled.isPicked())
+                          .filter(ScheduledExecution::isPicked)
                           .isPresent())
               .toList();
       assertThat(firstBatch).isNotEmpty();

@@ -3,6 +3,7 @@ package com.streamarr.server.services.library;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import com.github.kagkarlsson.scheduler.ScheduledExecution;
 import com.github.kagkarlsson.scheduler.Scheduler;
 import com.github.kagkarlsson.scheduler.SchedulerClient;
 import com.github.kagkarlsson.scheduler.SchedulerName;
@@ -230,7 +231,7 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
                     .isPresent())
         .as(
             "Changed-source work must use %s after original completion, but its task carried %s",
-            changed, remainingWork.map(execution -> execution.getData()))
+            changed, remainingWork.map(ScheduledExecution::getData))
         .isTrue();
   }
 
