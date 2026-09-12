@@ -421,19 +421,39 @@ class StreamingResolverTest {
             "markUnwatched", "mutation { markUnwatched(id: \"%s\") }", "data.markUnwatched"));
   }
 
-  @Test
-  @DisplayName("Should return error when destroy session ID is invalid")
-  void shouldReturnErrorWhenDestroySessionIdIsInvalid() {
-    var result =
-        dgsQueryExecutor.execute(
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("invalidIdMutations")
+  @DisplayName("Should return error when mutation ID is invalid")
+  void shouldReturnErrorWhenMutationIdIsInvalid(String name, String mutation) {
+    var result = dgsQueryExecutor.execute(mutation);
+
+    assertThat(result.getErrors()).isNotEmpty();
+    assertThat(result.getErrors().getFirst().getMessage()).contains("Invalid ID format");
+  }
+
+  static Stream<Arguments> invalidIdMutations() {
+    return Stream.of(
+        Arguments.of(
+            "destroyStreamSession",
             """
             mutation {
               destroyStreamSession(sessionId: "bad-id")
             }
-            """);
-
-    assertThat(result.getErrors()).isNotEmpty();
-    assertThat(result.getErrors().getFirst().getMessage()).contains("Invalid ID format");
+            """),
+        Arguments.of(
+            "reportStreamSessionTimeline",
+            """
+            mutation {
+              reportStreamSessionTimeline(sessionId: "bad-id", positionSeconds: 300, state: PLAYING)
+            }
+            """),
+        Arguments.of(
+            "markUnwatched",
+            """
+            mutation {
+              markUnwatched(id: "bad-id")
+            }
+            """));
   }
 
   private static class StubStreamingService implements StreamingService {
@@ -540,35 +560,5 @@ class StreamingResolverTest {
     public void markUnwatched(UUID profileId, UUID collectableId) {
       // no-op for test fake
     }
-  }
-
-  @Test
-  @DisplayName("Should return error when report timeline session ID is invalid")
-  void shouldReturnErrorWhenReportTimelineSessionIdIsInvalid() {
-    var result =
-        dgsQueryExecutor.execute(
-            """
-            mutation {
-              reportStreamSessionTimeline(sessionId: "bad-id", positionSeconds: 300, state: PLAYING)
-            }
-            """);
-
-    assertThat(result.getErrors()).isNotEmpty();
-    assertThat(result.getErrors().getFirst().getMessage()).contains("Invalid ID format");
-  }
-
-  @Test
-  @DisplayName("Should return error when mark unwatched ID is invalid")
-  void shouldReturnErrorWhenMarkUnwatchedIdIsInvalid() {
-    var result =
-        dgsQueryExecutor.execute(
-            """
-            mutation {
-              markUnwatched(id: "bad-id")
-            }
-            """);
-
-    assertThat(result.getErrors()).isNotEmpty();
-    assertThat(result.getErrors().getFirst().getMessage()).contains("Invalid ID format");
   }
 }
