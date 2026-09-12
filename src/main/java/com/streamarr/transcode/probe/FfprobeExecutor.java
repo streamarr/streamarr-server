@@ -1,5 +1,7 @@
 package com.streamarr.transcode.probe;
 
+import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
+
 import com.google.protobuf.Duration;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeContainerInfo;
@@ -17,10 +19,12 @@ import java.util.concurrent.Future;
 import java.util.function.Function;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @RequiredArgsConstructor
+@Slf4j
 public final class FfprobeExecutor {
 
   public static final int PROBE_VERSION = 1;
@@ -67,18 +71,22 @@ public final class FfprobeExecutor {
     }
 
     try {
-      var process = processFactory.apply(source);
-      return execute(process, result);
-    } catch (Exception _) {
+      return execute(new Attempt(source, result));
+    } catch (Exception failure) {
+      log.warn(
+          "ffprobe attempt {} failed for source {}",
+          fromProto(request.getProbeAttemptId()),
+          source,
+          failure);
       return result.setFailure(ProbeFailure.PROBE_FAILURE_EXECUTION_FAILED).build();
     }
   }
 
-  private ProbeAttemptResult execute(Process process, ProbeAttemptResult.Builder result)
-      throws ExecutionException {
+  private ProbeAttemptResult execute(Attempt attempt) throws ExecutionException {
+    var process = processFactory.apply(attempt.source());
     try (var readers = Executors.newVirtualThreadPerTaskExecutor()) {
       var output = readers.submit(() -> readOutput(process));
-      return collect(process, output, result);
+      return collect(process, output, attempt);
     }
   }
 
@@ -88,15 +96,14 @@ public final class FfprobeExecutor {
     }
   }
 
-  private ProbeAttemptResult collect(
-      Process process, Future<byte[]> output, ProbeAttemptResult.Builder result)
+  private ProbeAttemptResult collect(Process process, Future<byte[]> output, Attempt attempt)
       throws ExecutionException {
     try {
       var exitCode = process.waitFor();
-      return interpret(objectMapper.readTree(output.get()), exitCode, result);
+      return readResult(output.get(), exitCode, attempt);
     } catch (InterruptedException _) {
       Thread.currentThread().interrupt();
-      return result.setFailure(ProbeFailure.PROBE_FAILURE_CANCELLED).build();
+      return attempt.result().setFailure(ProbeFailure.PROBE_FAILURE_CANCELLED).build();
     } finally {
       if (process.isAlive()) {
         terminate(process);
@@ -109,13 +116,34 @@ public final class FfprobeExecutor {
     process.onExit().join();
   }
 
-  private ProbeAttemptResult interpret(
-      JsonNode json, int exitCode, ProbeAttemptResult.Builder result) {
+  private ProbeAttemptResult readResult(byte[] output, int exitCode, Attempt attempt) {
+    try {
+      return interpret(objectMapper.readTree(output), exitCode, attempt);
+    } catch (Exception failure) {
+      log.warn(
+          "ffprobe attempt {} for source {} returned unusable output with exit code {}",
+          fromProto(attempt.result().getProbeAttemptId()),
+          attempt.source(),
+          exitCode,
+          failure);
+      return attempt.result().setFailure(ProbeFailure.PROBE_FAILURE_EXECUTION_FAILED).build();
+    }
+  }
+
+  private ProbeAttemptResult interpret(JsonNode json, int exitCode, Attempt attempt) {
+    var result = attempt.result();
     if (json == null || !json.isObject()) {
-      return result.setFailure(ProbeFailure.PROBE_FAILURE_EXECUTION_FAILED).build();
+      throw new IllegalArgumentException("ffprobe returned no result object");
     }
 
     if (exitCode != 0) {
+      log.warn(
+          "ffprobe attempt {} for source {} exited with code {}: error {} ({})",
+          fromProto(result.getProbeAttemptId()),
+          attempt.source(),
+          exitCode,
+          json.path("error").path("code").asInt(),
+          json.path("error").path("string").asString());
       return result.setFailure(failureFor(json.path("error").path("code").asInt())).build();
     }
 
@@ -216,4 +244,6 @@ public final class FfprobeExecutor {
         .setNanos((int) (millis % 1000) * 1_000_000)
         .build();
   }
+
+  private record Attempt(Path source, ProbeAttemptResult.Builder result) {}
 }

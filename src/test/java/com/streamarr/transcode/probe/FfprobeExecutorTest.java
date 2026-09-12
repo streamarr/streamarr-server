@@ -139,6 +139,30 @@ class FfprobeExecutorTest {
   }
 
   @ParameterizedTest
+  @ValueSource(strings = {"1.5", "\"invalid\"", "2147483648"})
+  @DisplayName("Should reject malformed indices when ffprobe reports an invalid stream identity")
+  void shouldRejectMalformedIndicesWhenFfprobeReportsAnInvalidStreamIdentity(String index) {
+    var executor =
+        executor(
+            """
+            {"streams":[{"index":%s,"codec_type":"video"}]}
+            """
+                .formatted(index),
+            0);
+    var request = request();
+
+    var result = executor.probe(SOURCE, request);
+
+    assertThat(result)
+        .isEqualTo(
+            ProbeAttemptResult.newBuilder()
+                .setProbeAttemptId(request.getProbeAttemptId())
+                .setProbeVersion(request.getProbeVersion())
+                .setFailure(ProbeFailure.PROBE_FAILURE_EXECUTION_FAILED)
+                .build());
+  }
+
+  @ParameterizedTest
   @ValueSource(ints = {0, -12345})
   @DisplayName("Should retain a retryable failure when ffprobe reports an unknown execution error")
   void shouldRetainARetryableFailureWhenFfprobeReportsAnUnknownExecutionError(int errorCode) {
