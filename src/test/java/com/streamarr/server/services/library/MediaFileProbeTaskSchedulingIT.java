@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.github.kagkarlsson.scheduler.SchedulerClient;
 import com.github.kagkarlsson.scheduler.task.TaskInstanceId;
@@ -23,9 +24,11 @@ import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
+import com.streamarr.server.services.validation.IgnoredFileValidator;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -56,6 +59,7 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
   @Autowired private PersistedProbeReader reader;
   @Autowired private MediaFileContainerInfoRepository outcomes;
   @Autowired private ProbeTaskRequests probeTaskRequests;
+  @Autowired private IgnoredFileValidator ignoredFileValidator;
 
   @Qualifier("probeSchedulerClient")
   @Autowired
@@ -118,10 +122,12 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
   }
 
   private AutoCloseable rejectProbeTaskRequests() {
+    jdbc.execute("CREATE SEQUENCE adversarial_probe_request_attempt");
     jdbc.execute(
         """
         CREATE FUNCTION adversarial_reject_probe_request() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
+          PERFORM nextval('adversarial_probe_request_attempt');
           RAISE EXCEPTION 'adversarial probe queue unavailable';
         END;
         $$
@@ -134,13 +140,54 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
           """);
     } catch (RuntimeException exception) {
       jdbc.execute("DROP FUNCTION adversarial_reject_probe_request()");
+      jdbc.execute("DROP SEQUENCE adversarial_probe_request_attempt");
       throw exception;
     }
 
     return () -> {
       jdbc.execute("DROP TRIGGER IF EXISTS adversarial_reject_probe_request ON scheduled_tasks");
       jdbc.execute("DROP FUNCTION adversarial_reject_probe_request()");
+      jdbc.execute("DROP SEQUENCE adversarial_probe_request_attempt");
     };
+  }
+
+  @Test
+  @DisplayName(
+      "Should recover watcher scheduling when the database recovers without another file event")
+  void shouldRecoverWatcherSchedulingWhenTheDatabaseRecoversWithoutAnotherFileEvent()
+      throws Exception {
+    var watcher =
+        new DirectoryWatchingService(
+            libraries, _ -> true, libraryManagementService, ignoredFileValidator);
+    try {
+      watcher.addDirectory(directory);
+      try (var _ = rejectProbeTaskRequests()) {
+        Files.writeString(path, "replacement media");
+        await()
+            .atMost(Duration.ofSeconds(10))
+            .until(
+                () ->
+                    Boolean.TRUE.equals(
+                        jdbc.queryForObject(
+                            "SELECT is_called FROM adversarial_probe_request_attempt",
+                            Boolean.class)));
+        assertThat(scheduledRequest()).isEmpty();
+      }
+
+      var replacementSize = Files.size(path);
+      await()
+          .atMost(Duration.ofSeconds(10))
+          .untilAsserted(
+              () ->
+                  assertThat(scheduledRequest())
+                      .hasValueSatisfying(
+                          request -> {
+                            assertThat(request.mediaFileId()).isEqualTo(mediaFile.getId());
+                            assertThat(request.snapshot().size()).isEqualTo(replacementSize);
+                          }));
+    } finally {
+      watcher.stopWatching();
+    }
   }
 
   @Test

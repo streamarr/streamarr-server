@@ -1,11 +1,13 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.exceptions.ProbeTaskSchedulingException;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import io.methvin.watcher.DirectoryChangeEvent;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.SQLException;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -17,6 +19,8 @@ import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.springframework.util.backoff.ExponentialBackOff;
 
 @Slf4j
 class FileEventProcessor {
@@ -123,10 +127,38 @@ class FileEventProcessor {
 
   private void runStabilityCheckWithCleanup(Path path, StabilityToken token, UUID libraryId) {
     try {
-      processStableFile(path, libraryId);
+      processWithRetry(path, libraryId);
+    } catch (InterruptedException _) {
+      Thread.currentThread().interrupt();
+    } catch (RuntimeException exception) {
+      log.error("Failed to process discovered file: {}", path, exception);
     } finally {
       inFlightChecks.compute(
           path, (k, current) -> current != null && current.token() == token ? null : current);
+    }
+  }
+
+  private void processWithRetry(Path path, UUID libraryId) throws InterruptedException {
+    // Enqueue failures precede db-scheduler's durable retry boundary, so retain this in-flight
+    // path.
+    var backOff = new ExponentialBackOff().start();
+    while (!Thread.currentThread().isInterrupted() && !tryProcessStableFile(path, libraryId)) {
+      Thread.sleep(backOff.nextBackOff());
+    }
+  }
+
+  private boolean tryProcessStableFile(Path path, UUID libraryId) {
+    try {
+      processStableFile(path, libraryId);
+      return true;
+    } catch (RuntimeException exception) {
+      if (!(exception instanceof ProbeTaskSchedulingException)
+          && ExceptionUtils.indexOfType(exception, SQLException.class) < 0) {
+        throw exception;
+      }
+
+      log.warn("Retaining discovered file for retry after scheduling failure: {}", path, exception);
+      return false;
     }
   }
 
@@ -138,11 +170,7 @@ class FileEventProcessor {
       return;
     }
 
-    try {
-      libraryManagementService.processDiscoveredFile(libraryId, path);
-    } catch (Exception e) {
-      log.error("Failed to process discovered file: {}", path, e);
-    }
+    libraryManagementService.processDiscoveredFile(libraryId, path);
   }
 
   private void handleDelete(Path path) {
