@@ -46,6 +46,7 @@ import javax.sql.DataSource;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -54,11 +55,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.core.env.Environment;
-import org.springframework.test.context.TestPropertySource;
 
 @Tag("IntegrationTest")
 @DisplayName("Configured probe concurrency")
-@TestPropertySource(properties = "PROBE_MAX_CONCURRENT=2")
 class SchedulerProbeCapacityIT extends AbstractIntegrationTest {
 
   @TempDir Path tempDir;
@@ -78,6 +77,11 @@ class SchedulerProbeCapacityIT extends AbstractIntegrationTest {
   private final List<MediaFile> createdFiles = new ArrayList<>();
   private UUID libraryId;
   private Scheduler scheduler;
+
+  @BeforeEach
+  void setUp() {
+    dsl.deleteFrom(DSL.table("scheduled_tasks")).execute();
+  }
 
   @AfterEach
   void tearDown() {
@@ -137,6 +141,7 @@ class SchedulerProbeCapacityIT extends AbstractIntegrationTest {
         Binder.get(environment)
             .bind("db-scheduler", Bindable.of(DbSchedulerProperties.class))
             .get();
+    properties.setThreads(2);
     scheduler =
         DbSchedulerConfigurationSupport.buildScheduler(
             properties,
@@ -184,7 +189,7 @@ class SchedulerProbeCapacityIT extends AbstractIntegrationTest {
     }
 
     assertThat(producer.peakConcurrency())
-        .as("PROBE_MAX_CONCURRENT=2 must limit active probe producers")
+        .as("Configured capacity of 2 must limit active probe producers")
         .isLessThanOrEqualTo(2);
   }
 
