@@ -5,6 +5,27 @@ interface MutationError {
     message: String!
 }
 
+type MediaFileProbeNotReadyError implements MutationError {
+    message: String!
+}
+
+type TranscodeCapacityUnavailableError implements MutationError {
+    message: String!
+}
+
+type InvalidMediaFileError implements MutationError {
+    message: String!
+}
+
+type MediaFileHasNoVideoError implements MutationError {
+    message: String!
+}
+
+type MediaFileNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
 interface InputMutationError implements MutationError {
     message: String!
     "Path of the offending field relative to the mutation's input object; list indexes are decimal strings."

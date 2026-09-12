@@ -1,7 +1,9 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
+import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
 import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.StreamingService;
 import java.util.Collection;
@@ -36,7 +38,8 @@ public final class FakeStreamingService implements StreamingService {
   }
 
   @Override
-  public StreamSession createSession(CreateStreamSessionCommand command) {
+  public Outcome<StreamSession, CreateStreamSessionRejection> createSession(
+      CreateStreamSessionCommand command) {
     throw new UnsupportedOperationException("Session creation is not configured in this fake");
   }
 

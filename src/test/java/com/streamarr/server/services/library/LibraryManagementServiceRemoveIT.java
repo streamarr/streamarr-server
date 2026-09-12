@@ -2,6 +2,7 @@ package com.streamarr.server.services.library;
 
 import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.defaultIdentityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
+import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
@@ -25,6 +26,9 @@ import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.fixtures.PersistedProbeFixture;
+import com.streamarr.server.fixtures.ProbeFixture;
+import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.PersonRepository;
@@ -40,6 +44,7 @@ import com.streamarr.server.services.streaming.PlaybackAuthorityGate;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
+import jakarta.persistence.EntityManager;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -58,6 +63,8 @@ import org.junit.jupiter.api.parallel.Isolated;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.test.context.bean.override.convention.TestBean;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Isolated
 @Tag("IntegrationTest")
@@ -85,6 +92,8 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
   @Autowired private GenreRepository genreRepository;
 
   @Autowired private StreamingService streamingService;
+  @Autowired private EntityManager entityManager;
+  @Autowired private PlatformTransactionManager transactionManager;
 
   @TestBean TranscodeExecutor transcodeExecutor;
   @TestBean FfprobeService ffprobeService;
@@ -257,14 +266,23 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
                 .status(MediaFileStatus.MATCHED)
                 .build());
 
+    var storedProbe =
+        PersistedProbeFixture.storedProbeBuilder(
+                mediaFile.getId(),
+                ProbeFixture.completeProbe(StreamSessionFixture.defaultProbeBuilder().build()))
+            .build();
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(_ -> PersistedProbeFixture.storeProbe(entityManager, storedProbe));
+
     var options =
         StreamingOptions.builder()
             .quality(VideoQuality.AUTO)
             .supportedCodecs(List.of("h264"))
             .build();
     var session =
-        streamingService.createSession(
-            createStreamSessionCommand(mediaFile.getId(), UUID.randomUUID(), options));
+        accepted(
+            streamingService.createSession(
+                createStreamSessionCommand(mediaFile.getId(), UUID.randomUUID(), options)));
 
     assertThat(streamingService.getActiveSessionCount()).isEqualTo(1);
 
