@@ -13,7 +13,8 @@ import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.fakes.FakeFileProcessingTaskRepository;
+import com.streamarr.server.exceptions.ProbeTaskSchedulingException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.fakes.FakeLibraryMutationTransaction;
 import com.streamarr.server.fakes.FakeLibraryRepository;
@@ -23,6 +24,7 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.events.library.MediaFileProbeTaskRequested;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
@@ -31,7 +33,6 @@ import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataParser;
-import com.streamarr.server.services.task.FileProcessingTaskCoordinator;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import io.methvin.watcher.DirectoryChangeEvent;
@@ -39,10 +40,7 @@ import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -55,6 +53,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.springframework.context.ApplicationEventPublisher;
 
 @Tag("UnitTest")
 @DisplayName("File Event Processor Tests")
@@ -64,6 +65,7 @@ class FileEventProcessorTest {
   private LibraryRepository libraryRepository;
   private FakeMediaFileRepository mediaFileRepository;
   private AtomicReference<FileStabilityChecker> stabilityCheckerRef;
+  private AtomicReference<ApplicationEventPublisher> eventPublisherRef;
   private FileEventProcessor eventProcessor;
   private UUID specialLibraryId;
 
@@ -76,6 +78,7 @@ class FileEventProcessorTest {
         new IgnoredFileValidator(new LibraryScanProperties(null, null, null));
     var videoExtensionValidator = new VideoExtensionValidator();
     stabilityCheckerRef = new AtomicReference<>(path -> true);
+    eventPublisherRef = new AtomicReference<>(_ -> {});
 
     // Plain paths instead of file:// URIs because file:// URIs can't round-trip through Jimfs.
     var library =
@@ -144,24 +147,18 @@ class FileEventProcessorTest {
             mediaFileRepository,
             movieService,
             seriesService,
-            event -> {},
+            event -> eventPublisherRef.get().publishEvent(event),
             new MutexFactoryProvider(),
             mock(LibraryRefreshService.class),
             fileSystem,
             new FakeLibraryMutationTransaction(),
             mutationTransactions);
 
-    var taskRepository = new FakeFileProcessingTaskRepository();
-    var clock = Clock.fixed(Instant.now(), ZoneId.of("UTC"));
-    var taskCoordinator =
-        new FileProcessingTaskCoordinator(taskRepository, clock, Duration.ofSeconds(60));
-
     eventProcessor =
         new FileEventProcessor(
             path -> stabilityCheckerRef.get().waitForStability(path),
             libraryManagementService,
-            ignoredFileValidator,
-            taskCoordinator);
+            ignoredFileValidator);
 
     eventProcessor.reset(libraryRepository.findAll());
   }
@@ -170,6 +167,105 @@ class FileEventProcessorTest {
   void tearDown() throws IOException {
     eventProcessor.shutdown();
     fileSystem.close();
+  }
+
+  @Test
+  @DisplayName(
+      "Should recover a probe request when snapshot reading fails without another file event")
+  void shouldRecoverAProbeRequestWhenSnapshotReadingFailsWithoutAnotherFileEvent()
+      throws Exception {
+    var path = createFile("/media/shows/Show.S01E01.mkv");
+    var events = new CapturingEventPublisher();
+    var unavailable = new AtomicBoolean(true);
+    eventPublisherRef.set(
+        event -> {
+          if (event instanceof MediaFileProbeTaskRequested request
+              && unavailable.getAndSet(false)) {
+            throw new ProbeTaskSchedulingException(
+                request.mediaFileId(), new IOException("offline"));
+          }
+
+          events.publishEvent(event);
+        });
+
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> assertThat(events.getEventsOfType(MediaFileProbeTaskRequested.class)).hasSize(1));
+  }
+
+  private enum Cancellation {
+    DELETE,
+    RESET,
+    SHUTDOWN
+  }
+
+  @ParameterizedTest
+  @EnumSource(Cancellation.class)
+  @DisplayName("Should cancel a pending probe request when its watcher work is cancelled")
+  void shouldCancelAPendingProbeRequestWhenItsWatcherWorkIsCancelled(Cancellation cancellation)
+      throws Exception {
+    var path = createFile("/media/shows/Show.S01E01.mkv");
+    var attempted = new CountDownLatch(1);
+    var worker = new AtomicReference<Thread>();
+    var attempts = new AtomicInteger();
+    eventPublisherRef.set(
+        event -> {
+          if (event instanceof MediaFileProbeTaskRequested request) {
+            worker.set(Thread.currentThread());
+            attempts.incrementAndGet();
+            attempted.countDown();
+            throw new ProbeTaskSchedulingException(
+                request.mediaFileId(), new IOException("offline"));
+          }
+        });
+
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    assertThat(attempted.await(5, TimeUnit.SECONDS)).isTrue();
+
+    Runnable cancel =
+        switch (cancellation) {
+          case DELETE ->
+              () -> eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.DELETE, path);
+          case RESET -> () -> eventProcessor.reset(libraryRepository.findAll());
+          case SHUTDOWN -> eventProcessor::shutdown;
+        };
+    cancel.run();
+
+    assertThat(worker.get().join(Duration.ofSeconds(5))).isTrue();
+    assertThat(attempts).hasValue(1);
+  }
+
+  @Test
+  @DisplayName("Should accept a later file event when processing fails for a non-retryable reason")
+  void shouldAcceptALaterFileEventWhenProcessingFailsForANonRetryableReason() throws Exception {
+    var path = createFile("/media/shows/Show.S01E01.mkv");
+    var attempted = new CountDownLatch(1);
+    var worker = new AtomicReference<Thread>();
+    var attempts = new AtomicInteger();
+    eventPublisherRef.set(
+        _ -> {
+          worker.set(Thread.currentThread());
+          attempts.incrementAndGet();
+          attempted.countDown();
+          throw new IllegalStateException("unsupported request");
+        });
+
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    assertThat(attempted.await(5, TimeUnit.SECONDS)).isTrue();
+    assertThat(worker.get().join(Duration.ofSeconds(5))).isTrue();
+    assertThat(attempts).hasValue(1);
+
+    var events = new CapturingEventPublisher();
+    eventPublisherRef.set(events);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.MODIFY, path);
+
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> assertThat(events.getEventsOfType(MediaFileProbeTaskRequested.class)).hasSize(1));
   }
 
   @Test
