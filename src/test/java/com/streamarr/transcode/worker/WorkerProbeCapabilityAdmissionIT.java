@@ -63,8 +63,9 @@ class WorkerProbeCapabilityAdmissionIT {
         switch (outcome) {
           case StartupOutcome.Registered(var registration) ->
               assertThat(registration.getCapabilities().getProbeVersionsList())
-                  .as("an application without an executable probe producer cannot claim version 1")
-                  .doesNotContain(1);
+                  .as(
+                      "an application without an executable probe producer cannot claim probe support")
+                  .isEmpty();
           case StartupOutcome.Exited(var code) -> {
             assertThat(code).as("startup refusal must be explicit").isNotZero();
             assertThat(Files.readString(tempDir.resolve("worker.log")))
