@@ -1,7 +1,7 @@
 version: v2
 modules:
   - path: src/main/protobuf
-    name: buf.build/streamarr/transcode
+    name: buf.build/streamarr-org/transcode
 lint:
   use:
     - STANDARD

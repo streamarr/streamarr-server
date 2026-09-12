@@ -90,7 +90,7 @@ class BufConsumerVerificationTest {
         .contains("--file\n.github/buf-consumer/pom.xml\n", "-Dbuf.sdk.version=" + SDK_VERSION);
     assertThat(Files.readString(workspace.resolve("target/buf-consumer-pin.properties")))
         .contains(
-            "module=buf.build/streamarr/transcode\n",
+            "module=buf.build/streamarr-org/transcode\n",
             "commit=" + COMMIT + "\n",
             "grpc.sdk.version=" + SDK_VERSION + "\n");
   }
@@ -103,13 +103,13 @@ class BufConsumerVerificationTest {
         #!/bin/bash
         set -eu
         case "$*" in
-          'registry module commit resolve buf.build/streamarr/transcode:main --format json')
+          'registry module commit resolve buf.build/streamarr-org/transcode:main --format json')
             echo '{"commit":"%s"}' ;;
-          'registry sdk version --module=buf.build/streamarr/transcode:%s --plugin=buf.build/grpc/java:v1.84.0')
+          'registry sdk version --module=buf.build/streamarr-org/transcode:%s --plugin=buf.build/grpc/java:v1.84.0')
             echo '%s' ;;
           'build . --as-file-descriptor-set --exclude-source-info --output '*)
             cp local-contract "${!#}" ;;
-          'build buf.build/streamarr/transcode:%s --as-file-descriptor-set --exclude-source-info --output '*)
+          'build buf.build/streamarr-org/transcode:%s --as-file-descriptor-set --exclude-source-info --output '*)
             cp remote-contract "${!#}" ;;
           *) exit 91 ;;
         esac

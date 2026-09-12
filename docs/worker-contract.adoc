@@ -1,6 +1,6 @@
 = Published worker contract
 
-The server owns `src/main/protobuf` and publishes it as `buf.build/streamarr/transcode`.
+The server owns `src/main/protobuf` and publishes it as `buf.build/streamarr-org/transcode`.
 The worker consumes generated Java stubs from the Buf Schema Registry.
 No engine artifact or copy of the proto is needed by the consumer.
 
@@ -27,7 +27,7 @@ Use this artifact as the source of the worker's dependency pin.
 == Java dependency
 
 The Maven repository is `https://buf.build/gen/maven`.
-The dependency is `build.buf.gen:streamarr_transcode_grpc_java`.
+The dependency is `build.buf.gen:streamarr-org_transcode_grpc_java`.
 Its generated POM brings in the matching Protobuf SDK and required runtime libraries.
 
 The SDK version contains the generator version, generator revision, registry commit timestamp and shortened commit ID.

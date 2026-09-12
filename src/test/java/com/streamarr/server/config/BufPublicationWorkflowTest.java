@@ -66,7 +66,7 @@ class BufPublicationWorkflowTest {
     assertThat(xpath.evaluate("/project/dependencies/dependency/groupId", project))
         .isEqualTo("build.buf.gen");
     assertThat(xpath.evaluate("/project/dependencies/dependency/artifactId", project))
-        .isEqualTo("streamarr_transcode_grpc_java");
+        .isEqualTo("streamarr-org_transcode_grpc_java");
     assertThat(xpath.evaluate("/project/dependencies/dependency/version", project))
         .isEqualTo("${buf.sdk.version}");
     assertThat(xpath.evaluate("/project/repositories/repository/url", project))
@@ -85,7 +85,8 @@ class BufPublicationWorkflowTest {
       assertThat(module.get("modules"))
           .isEqualTo(
               List.of(
-                  Map.of("path", "src/main/protobuf", "name", "buf.build/streamarr/transcode")));
+                  Map.of(
+                      "path", "src/main/protobuf", "name", "buf.build/streamarr-org/transcode")));
     }
   }
 

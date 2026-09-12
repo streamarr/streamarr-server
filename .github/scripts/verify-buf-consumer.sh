@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-module=buf.build/streamarr/transcode
+module=buf.build/streamarr-org/transcode
 commit=$(buf registry module commit resolve "$module:main" --format json | jq -er '.commit')
 
 descriptors=$(mktemp -d)
