@@ -82,7 +82,7 @@ public class StreamingResolver {
     return switch (rejection) {
       case CreateStreamSessionRejection.TranscodeCapacityUnavailable _ ->
           new CreateStreamSessionError.TranscodeCapacityUnavailableError(
-              "All transcode slots are in use. Try again shortly.");
+              "The server is busy and can't start playback right now. Please try again later.");
       case CreateStreamSessionRejection.MediaFileNotFound _ ->
           new CreateStreamSessionError.MediaFileNotFoundError(
               "This media file no longer exists.", InputPath.of("mediaFileId"));
