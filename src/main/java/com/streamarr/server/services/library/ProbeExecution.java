@@ -3,7 +3,7 @@ package com.streamarr.server.services.library;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.task.ProbePublication;
-import com.streamarr.server.domain.task.ProbeRequest;
+import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -39,7 +39,7 @@ public class ProbeExecution {
   private final FileSystem fileSystem;
   private final MediaFileContainerInfoRepository outcomes;
 
-  public ProbeExecutionResult execute(ProbeRequest request) {
+  public ProbeExecutionResult execute(ProbeTaskRequest request) {
     if (request.probeVersion() > ProbeVersion.CURRENT) {
       log.warn(
           "Removing probe request for media file {} at unsupported version {}",

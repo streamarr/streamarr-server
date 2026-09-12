@@ -3,7 +3,7 @@ package com.streamarr.server.config;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.media.SourceFileSnapshot;
-import com.streamarr.server.domain.task.ProbeRequest;
+import com.streamarr.server.domain.task.ProbeTaskRequest;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
@@ -33,11 +33,11 @@ class ProbeSchedulingConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should round-trip a probe request when serializing task data")
-  void shouldRoundTripAProbeRequestWhenSerializingTaskData() {
+  @DisplayName("Should round-trip a probe task request when serializing task data")
+  void shouldRoundTripAProbeTaskRequestWhenSerializingTaskData() {
     var serializer = configuration.probeTaskSerializer();
     var request =
-        ProbeRequest.builder()
+        ProbeTaskRequest.builder()
             .mediaFileId(UUID.randomUUID())
             .libraryId(UUID.randomUUID())
             .filepathUri("file:///library/movie.mkv")
@@ -45,7 +45,7 @@ class ProbeSchedulingConfigurationTest {
             .probeVersion(1)
             .build();
 
-    var restored = serializer.deserialize(ProbeRequest.class, serializer.serialize(request));
+    var restored = serializer.deserialize(ProbeTaskRequest.class, serializer.serialize(request));
 
     assertThat(new JsonMapper().readTree(serializer.serialize(request)).isObject()).isTrue();
     assertThat(restored).isEqualTo(request);

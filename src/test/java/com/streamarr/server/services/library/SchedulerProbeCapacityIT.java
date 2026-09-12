@@ -18,7 +18,7 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
-import com.streamarr.server.domain.task.ProbeRequest;
+import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
@@ -27,7 +27,7 @@ import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
-import com.streamarr.server.services.probe.ProbeRequests;
+import com.streamarr.server.services.probe.ProbeTaskRequests;
 import com.streamarr.server.services.streaming.FfprobeService;
 import java.io.IOException;
 import java.nio.file.FileSystems;
@@ -63,7 +63,7 @@ class SchedulerProbeCapacityIT extends AbstractIntegrationTest {
 
   @TempDir Path tempDir;
 
-  @Autowired private ProbeRequests scheduling;
+  @Autowired private ProbeTaskRequests scheduling;
   @Autowired private DataSource dataSource;
   @Autowired private MediaFileContainerInfoRepository outcomes;
   @Autowired private PersistedProbeReader reader;
@@ -105,7 +105,7 @@ class SchedulerProbeCapacityIT extends AbstractIntegrationTest {
       throws Exception {
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     libraryId = library.getId();
-    var requests = new ArrayList<ProbeRequest>();
+    var requests = new ArrayList<ProbeTaskRequest>();
     for (var index = 0; index < 6; index++) {
       var request = request(createMediaFile());
       requests.add(request);
@@ -210,10 +210,10 @@ class SchedulerProbeCapacityIT extends AbstractIntegrationTest {
     return file;
   }
 
-  private static ProbeRequest request(MediaFile file) throws IOException {
+  private static ProbeTaskRequest request(MediaFile file) throws IOException {
     var path = FilepathCodec.decode(file.getFilepathUri());
     var attributes = Files.readAttributes(path, BasicFileAttributes.class);
-    return ProbeRequest.builder()
+    return ProbeTaskRequest.builder()
         .mediaFileId(file.getId())
         .libraryId(file.getLibraryId())
         .filepathUri(file.getFilepathUri())
@@ -223,7 +223,7 @@ class SchedulerProbeCapacityIT extends AbstractIntegrationTest {
         .build();
   }
 
-  private static TaskInstanceId instanceOf(ProbeRequest request) {
+  private static TaskInstanceId instanceOf(ProbeTaskRequest request) {
     return TaskInstanceId.of(MediaProbeTask.NAME, request.mediaFileId().toString());
   }
 

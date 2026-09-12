@@ -2,7 +2,7 @@ package com.streamarr.server.services.library;
 
 import com.github.kagkarlsson.scheduler.task.CompletionHandler;
 import com.streamarr.server.domain.task.ProbeInputs;
-import com.streamarr.server.domain.task.ProbeRequest;
+import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import java.time.Clock;
 import lombok.RequiredArgsConstructor;
@@ -18,8 +18,8 @@ public class ProbeTaskCompletion {
   private final PlatformTransactionManager transactionManager;
   private final Clock clock;
 
-  public CompletionHandler<ProbeRequest> handlerFor(
-      ProbeRequest request, ProbeExecutionResult result) {
+  public CompletionHandler<ProbeTaskRequest> handlerFor(
+      ProbeTaskRequest request, ProbeExecutionResult result) {
     return (complete, operations) ->
         new TransactionTemplate(transactionManager)
             .executeWithoutResult(
@@ -32,7 +32,7 @@ public class ProbeTaskCompletion {
                 });
   }
 
-  private ProbeExecutionResult latestResult(ProbeRequest request, ProbeExecutionResult result) {
+  private ProbeExecutionResult latestResult(ProbeTaskRequest request, ProbeExecutionResult result) {
     var desired = outcomes.lockProbeInputs(request.mediaFileId());
     if (desired.isEmpty()) {
       return new ProbeExecutionResult.Completed();

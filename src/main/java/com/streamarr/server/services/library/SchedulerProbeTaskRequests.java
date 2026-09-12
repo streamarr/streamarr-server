@@ -6,9 +6,9 @@ import com.github.kagkarlsson.scheduler.exceptions.TaskInstanceNotFoundException
 import com.github.kagkarlsson.scheduler.task.Task;
 import com.github.kagkarlsson.scheduler.task.TaskInstance;
 import com.streamarr.server.domain.task.ProbeInputs;
-import com.streamarr.server.domain.task.ProbeRequest;
+import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
-import com.streamarr.server.services.probe.ProbeRequests;
+import com.streamarr.server.services.probe.ProbeTaskRequests;
 import java.time.Clock;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -22,18 +22,18 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 @RequiredArgsConstructor
-public class SchedulerProbeRequests implements ProbeRequests {
+public class SchedulerProbeTaskRequests implements ProbeTaskRequests {
 
   @Qualifier("probeSchedulerClient")
   private final SchedulerClient client;
 
-  private final Task<ProbeRequest> task;
+  private final Task<ProbeTaskRequest> task;
   private final MediaFileContainerInfoRepository outcomes;
   private final Clock clock;
 
   @Override
   @Transactional
-  public void request(ProbeRequest request) {
+  public void request(ProbeTaskRequest request) {
     if (!outcomes.recordProbeRequest(
         request.mediaFileId(), new ProbeInputs(request.snapshot(), request.probeVersion()))) {
       return;
@@ -54,7 +54,8 @@ public class SchedulerProbeRequests implements ProbeRequests {
     replacePendingInputs(instance, request);
   }
 
-  private void replacePendingInputs(TaskInstance<ProbeRequest> instance, ProbeRequest request) {
+  private void replacePendingInputs(
+      TaskInstance<ProbeTaskRequest> instance, ProbeTaskRequest request) {
     try {
       client.reschedule(instance, clock.instant(), request);
     } catch (TaskInstanceCurrentlyExecutingException _) {

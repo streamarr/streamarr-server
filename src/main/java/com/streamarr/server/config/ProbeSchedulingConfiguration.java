@@ -4,7 +4,7 @@ import com.github.kagkarlsson.scheduler.SchedulerClient;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
 import com.github.kagkarlsson.scheduler.serializer.Serializer;
 import com.github.kagkarlsson.scheduler.task.Task;
-import com.streamarr.server.domain.task.ProbeRequest;
+import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.services.library.MediaProbeTask;
 import com.streamarr.server.services.library.ProbeExecution;
 import com.streamarr.server.services.library.ProbeTaskCompletion;
@@ -33,7 +33,7 @@ public class ProbeSchedulingConfiguration {
   }
 
   @Bean
-  public Task<ProbeRequest> mediaProbeTask(
+  public Task<ProbeTaskRequest> mediaProbeTask(
       ProbeExecution execution, ProbeTaskCompletion completion, Clock clock) {
     return MediaProbeTask.create(execution, completion, clock);
   }
@@ -44,7 +44,9 @@ public class ProbeSchedulingConfiguration {
    */
   @Bean
   public SchedulerClient probeSchedulerClient(
-      DataSource dataSource, Task<ProbeRequest> mediaProbeTask, Serializer probeTaskSerializer) {
+      DataSource dataSource,
+      Task<ProbeTaskRequest> mediaProbeTask,
+      Serializer probeTaskSerializer) {
     return SchedulerClient.Builder.create(
             new TransactionAwareDataSourceProxy(dataSource), mediaProbeTask)
         .serializer(probeTaskSerializer)

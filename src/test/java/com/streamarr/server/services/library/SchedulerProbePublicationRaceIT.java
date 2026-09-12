@@ -21,7 +21,7 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.task.ProbeInputs;
-import com.streamarr.server.domain.task.ProbeRequest;
+import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -29,7 +29,7 @@ import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
-import com.streamarr.server.services.probe.ProbeRequests;
+import com.streamarr.server.services.probe.ProbeTaskRequests;
 import java.io.IOException;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
@@ -65,7 +65,7 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
 
   @TempDir Path tempDir;
 
-  @Autowired private ProbeRequests scheduling;
+  @Autowired private ProbeTaskRequests scheduling;
   @Autowired private DataSource dataSource;
   @Autowired private Serializer probeTaskSerializer;
   @Autowired private MediaFileContainerInfoRepository outcomes;
@@ -82,7 +82,7 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
   private final CountDownLatch executionFinished = new CountDownLatch(1);
   private UUID libraryId;
   private UUID mediaFileId;
-  private Task<ProbeRequest> task;
+  private Task<ProbeTaskRequest> task;
   private ProbeExecution probeExecution;
   private SchedulerClient client;
   private Scheduler scheduler;
@@ -127,7 +127,7 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
     var original = request(file);
     scheduling.request(original);
     var instance = TaskInstanceId.of(MediaProbeTask.NAME, file.getId().toString());
-    ProbeRequest changed;
+    ProbeTaskRequest changed;
 
     try (var requester = Executors.newVirtualThreadPerTaskExecutor();
         var publicationGate = dataSource.getConnection()) {
@@ -182,7 +182,7 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
     var allowCompletion = new CountDownLatch(1);
     var originalTask = task;
     task =
-        Tasks.custom(MediaProbeTask.NAME, ProbeRequest.class)
+        Tasks.custom(MediaProbeTask.NAME, ProbeTaskRequest.class)
             .execute(
                 (instance, context) -> {
                   var completion = originalTask.execute(instance, context);
@@ -203,7 +203,7 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
     var instance = TaskInstanceId.of(MediaProbeTask.NAME, file.getId().toString());
     startScheduler();
 
-    ProbeRequest changed;
+    ProbeTaskRequest changed;
     try {
       assertThat(publicationFinished.await(15, TimeUnit.SECONDS)).isTrue();
       assertThat(reader.find(file.getId()))
@@ -253,7 +253,7 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
             new ProbeTaskCompletion(
                 outcomes, transactionManager, Clock.offset(Clock.systemUTC(), Duration.ofDays(1))));
     task =
-        Tasks.custom(MediaProbeTask.NAME, ProbeRequest.class)
+        Tasks.custom(MediaProbeTask.NAME, ProbeTaskRequest.class)
             .execute((instance, context) -> rollbackAfter(originalTask.execute(instance, context)));
 
     startScheduler();
@@ -304,7 +304,8 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
         .isEmpty();
   }
 
-  private CompletionHandler<ProbeRequest> rollbackAfter(CompletionHandler<ProbeRequest> handler) {
+  private CompletionHandler<ProbeTaskRequest> rollbackAfter(
+      CompletionHandler<ProbeTaskRequest> handler) {
     return (complete, operations) ->
         new TransactionTemplate(transactionManager)
             .executeWithoutResult(
@@ -387,11 +388,11 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
     return file;
   }
 
-  private static ProbeRequest request(MediaFile file) throws IOException {
+  private static ProbeTaskRequest request(MediaFile file) throws IOException {
     var attributes =
         Files.readAttributes(
             FilepathCodec.decode(file.getFilepathUri()), BasicFileAttributes.class);
-    return ProbeRequest.builder()
+    return ProbeTaskRequest.builder()
         .mediaFileId(file.getId())
         .libraryId(file.getLibraryId())
         .filepathUri(file.getFilepathUri())

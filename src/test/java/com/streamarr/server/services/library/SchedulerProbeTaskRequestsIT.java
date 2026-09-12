@@ -18,7 +18,7 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.task.ProbePublication;
-import com.streamarr.server.domain.task.ProbeRequest;
+import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
@@ -27,7 +27,7 @@ import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
-import com.streamarr.server.services.probe.ProbeRequests;
+import com.streamarr.server.services.probe.ProbeTaskRequests;
 import java.io.IOException;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
@@ -53,11 +53,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 @Tag("IntegrationTest")
 @DisplayName("Media probe scheduling")
-class SchedulerProbeRequestsIT extends AbstractIntegrationTest {
+class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
 
   @TempDir Path tempDir;
 
-  @Autowired private ProbeRequests scheduling;
+  @Autowired private ProbeTaskRequests scheduling;
   @Autowired private DataSource dataSource;
   @Autowired private Serializer probeTaskSerializer;
   @Autowired private MediaFileContainerInfoRepository outcomes;
@@ -71,7 +71,7 @@ class SchedulerProbeRequestsIT extends AbstractIntegrationTest {
   private final FakeFfprobeService producer = new FakeFfprobeService();
   private final List<MediaFile> createdFiles = new ArrayList<>();
   private final CountDownLatch twoExecutionsFinished = new CountDownLatch(2);
-  private Task<ProbeRequest> task;
+  private Task<ProbeTaskRequest> task;
   private SchedulerClient client;
   private Scheduler scheduler;
 
@@ -260,10 +260,10 @@ class SchedulerProbeRequestsIT extends AbstractIntegrationTest {
     return file;
   }
 
-  private static ProbeRequest request(MediaFile file) throws IOException {
+  private static ProbeTaskRequest request(MediaFile file) throws IOException {
     var path = FilepathCodec.decode(file.getFilepathUri());
     var attributes = Files.readAttributes(path, BasicFileAttributes.class);
-    return ProbeRequest.builder()
+    return ProbeTaskRequest.builder()
         .mediaFileId(file.getId())
         .libraryId(file.getLibraryId())
         .filepathUri(file.getFilepathUri())
@@ -273,7 +273,7 @@ class SchedulerProbeRequestsIT extends AbstractIntegrationTest {
         .build();
   }
 
-  private static TaskInstanceId instanceOf(ProbeRequest request) {
+  private static TaskInstanceId instanceOf(ProbeTaskRequest request) {
     return TaskInstanceId.of(MediaProbeTask.NAME, request.mediaFileId().toString());
   }
 }

@@ -9,7 +9,7 @@ import lombok.NonNull;
  * The inputs of one probe task instance: which file, and the snapshot and version it was seen at.
  */
 @Builder(toBuilder = true)
-public record ProbeRequest(
+public record ProbeTaskRequest(
     @NonNull UUID mediaFileId,
     @NonNull UUID libraryId,
     @NonNull String filepathUri,

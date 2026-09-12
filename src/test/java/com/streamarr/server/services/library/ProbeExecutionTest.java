@@ -9,7 +9,7 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.ProbeContainer;
-import com.streamarr.server.domain.task.ProbeRequest;
+import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
@@ -208,8 +208,8 @@ class ProbeExecutionTest {
         .build();
   }
 
-  private ProbeRequest request(int probeVersion) {
-    return ProbeRequest.builder()
+  private ProbeTaskRequest request(int probeVersion) {
+    return ProbeTaskRequest.builder()
         .mediaFileId(mediaFile.getId())
         .libraryId(mediaFile.getLibraryId())
         .filepathUri(mediaFile.getFilepathUri())
