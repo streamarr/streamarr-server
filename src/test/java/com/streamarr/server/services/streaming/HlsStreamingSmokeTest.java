@@ -60,13 +60,13 @@ class HlsStreamingSmokeTest {
 
   @BeforeAll
   static void checkPrerequisites() {
-    assumeTrue(isFfmpegAvailable(), "FFmpeg not found on PATH");
+    assumeTrue(isToolAvailable("ffmpeg"), "FFmpeg not found on PATH");
     assumeTrue(Files.exists(TEST_VIDEO), "Test video not found: " + TEST_VIDEO);
   }
 
-  private static boolean isFfmpegAvailable() {
+  private static boolean isToolAvailable(String tool) {
     try {
-      var process = new ProcessBuilder("ffmpeg", "-version").start();
+      var process = new ProcessBuilder(tool, "-version").start();
       return process.waitFor() == 0;
     } catch (Exception _) {
       return false;
