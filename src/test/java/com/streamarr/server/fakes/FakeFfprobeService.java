@@ -13,8 +13,14 @@ import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class FakeFfprobeService implements FfprobeService {
+
+  private RuntimeException failure;
+  private Runnable duringProbe = () -> {};
+  private final AtomicInteger probeCount = new AtomicInteger();
+  private volatile boolean lastProbeOnVirtualThread;
 
   private MediaProbe defaultProbe =
       MediaProbe.builder()
@@ -29,6 +35,13 @@ public class FakeFfprobeService implements FfprobeService {
 
   @Override
   public ProbeOutcome probe(Path filepath) {
+    probeCount.incrementAndGet();
+    lastProbeOnVirtualThread = Thread.currentThread().isVirtual();
+    duringProbe.run();
+    if (failure != null) {
+      throw failure;
+    }
+
     return new ProbeOutcome.Success(
         ProbeContainer.builder()
             .format(defaultProbe.containerFormat())
@@ -69,5 +82,21 @@ public class FakeFfprobeService implements FfprobeService {
 
   public void setDefaultProbe(MediaProbe probe) {
     this.defaultProbe = probe;
+  }
+
+  public void failWith(RuntimeException failure) {
+    this.failure = failure;
+  }
+
+  public void runDuringProbe(Runnable action) {
+    this.duringProbe = action;
+  }
+
+  public int probeCount() {
+    return probeCount.get();
+  }
+
+  public boolean wasLastProbeOnVirtualThread() {
+    return lastProbeOnVirtualThread;
   }
 }

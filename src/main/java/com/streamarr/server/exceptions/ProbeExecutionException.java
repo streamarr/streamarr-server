@@ -9,4 +9,8 @@ public class ProbeExecutionException extends TranscodeException {
   public ProbeExecutionException(Throwable cause) {
     super(GENERIC_MESSAGE, cause);
   }
+
+  public ProbeExecutionException(String message) {
+    super(message);
+  }
 }
