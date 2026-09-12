@@ -10,16 +10,13 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.InvalidIdException;
-import com.streamarr.server.exceptions.MaxConcurrentTranscodesException;
-import com.streamarr.server.exceptions.MediaFileNotFoundException;
-import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.graphql.dto.StreamSessionDto;
 import com.streamarr.server.graphql.dto.StreamingOptionsInput;
 import com.streamarr.server.graphql.mutation.InputPath;
 import com.streamarr.server.graphql.mutation.MutationPayloads;
-import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionV2Error;
-import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionV2Input;
-import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionV2Payload;
+import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionError;
+import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionInput;
+import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionPayload;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
@@ -43,29 +40,6 @@ public class StreamingResolver {
   private final SessionProgressService sessionProgressService;
   private final WatchStatusService watchStatusService;
 
-  @DgsMutation
-  public StreamSessionDto createStreamSession(
-      @InputArgument String mediaFileId, @InputArgument StreamingOptionsInput options) {
-    var opts = mapOptions(options);
-    authorizationService.requireProfile();
-    var identity = authorizationService.currentIdentity();
-    var session =
-        streamingService
-            .createSession(
-                CreateStreamSessionCommand.builder()
-                    .mediaFileId(parseUuid(mediaFileId))
-                    .identity(identity)
-                    .options(opts)
-                    .build())
-            .fold(
-                value -> value,
-                rejections -> {
-                  throw legacyCreationFailure(rejections.getFirst());
-                });
-
-    return toCreatedSessionDto(session);
-  }
-
   private StreamSessionDto toCreatedSessionDto(StreamSession session) {
     try {
       return toDto(session);
@@ -75,33 +49,21 @@ public class StreamingResolver {
     }
   }
 
-  private RuntimeException legacyCreationFailure(CreateStreamSessionRejection rejection) {
-    return switch (rejection) {
-      case CreateStreamSessionRejection.TranscodeCapacityUnavailable(var maximumConcurrent) ->
-          new MaxConcurrentTranscodesException(maximumConcurrent);
-      case CreateStreamSessionRejection.MediaFileNotFound(var mediaFileId) ->
-          new MediaFileNotFoundException(mediaFileId);
-      case CreateStreamSessionRejection.ProbeNotReady _,
-          CreateStreamSessionRejection.ProbeFailed _ ->
-          new TranscodeException(TranscodeException.GENERIC_MESSAGE);
-    };
-  }
-
   @DgsMutation
-  public CreateStreamSessionV2Payload createStreamSessionV2(
-      @InputArgument CreateStreamSessionV2Input input) {
+  public CreateStreamSessionPayload createStreamSession(
+      @InputArgument CreateStreamSessionInput input) {
     authorizationService.requireProfile();
     return MutationPayloads.withUuid(
         input.mediaFileId(),
-        id -> createV2Session(id, input.options()),
+        id -> createSession(id, input.options()),
         () ->
             MutationPayloads.inputError(
-                new CreateStreamSessionV2Error.InvalidIdError(
+                new CreateStreamSessionError.InvalidIdError(
                     "Enter a valid media file ID.", InputPath.of("mediaFileId")),
-                CreateStreamSessionV2Payload::new));
+                CreateStreamSessionPayload::new));
   }
 
-  private CreateStreamSessionV2Payload createV2Session(
+  private CreateStreamSessionPayload createSession(
       UUID mediaFileId, StreamingOptionsInput options) {
     var outcome =
         streamingService.createSession(
@@ -113,31 +75,31 @@ public class StreamingResolver {
     return MutationPayloads.payload(
         outcome.map(this::toCreatedSessionDto),
         this::createSessionError,
-        CreateStreamSessionV2Payload::new);
+        CreateStreamSessionPayload::new);
   }
 
-  private CreateStreamSessionV2Error createSessionError(CreateStreamSessionRejection rejection) {
+  private CreateStreamSessionError createSessionError(CreateStreamSessionRejection rejection) {
     return switch (rejection) {
       case CreateStreamSessionRejection.TranscodeCapacityUnavailable _ ->
-          new CreateStreamSessionV2Error.TranscodeCapacityUnavailableError(
+          new CreateStreamSessionError.TranscodeCapacityUnavailableError(
               "All transcode slots are in use. Try again shortly.");
       case CreateStreamSessionRejection.MediaFileNotFound _ ->
-          new CreateStreamSessionV2Error.MediaFileNotFoundError(
+          new CreateStreamSessionError.MediaFileNotFoundError(
               "This media file no longer exists.", InputPath.of("mediaFileId"));
       case CreateStreamSessionRejection.ProbeNotReady() ->
-          new CreateStreamSessionV2Error.MediaFileProbeNotReadyError(
+          new CreateStreamSessionError.MediaFileProbeNotReadyError(
               "This file is being prepared for playback. Try again shortly.");
       case CreateStreamSessionRejection.ProbeFailed(var reason) -> probeFailureError(reason);
     };
   }
 
-  private CreateStreamSessionV2Error probeFailureError(ProbeError reason) {
+  private CreateStreamSessionError probeFailureError(ProbeError reason) {
     return switch (reason) {
       case INVALID_MEDIA ->
-          new CreateStreamSessionV2Error.InvalidMediaFileError(
+          new CreateStreamSessionError.InvalidMediaFileError(
               "This file cannot be read as supported media.");
       case NO_VIDEO_STREAM ->
-          new CreateStreamSessionV2Error.MediaFileHasNoVideoError("This file has no video stream.");
+          new CreateStreamSessionError.MediaFileHasNoVideoError("This file has no video stream.");
     };
   }
 

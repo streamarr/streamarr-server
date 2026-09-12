@@ -4,17 +4,17 @@ type StreamSession {
     transcodeMode: TranscodeMode!
 }
 
-input CreateStreamSessionV2Input {
+input CreateStreamSessionInput {
     mediaFileId: ID!
     options: StreamingOptionsInput
 }
 
-type CreateStreamSessionV2Payload {
+type CreateStreamSessionPayload {
     session: StreamSession
-    userErrors: [CreateStreamSessionV2Error!]!
+    userErrors: [CreateStreamSessionError!]!
 }
 
-union CreateStreamSessionV2Error = InvalidIdError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | TranscodeCapacityUnavailableError
+union CreateStreamSessionError = InvalidIdError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | TranscodeCapacityUnavailableError
 
 enum TranscodeMode {
     REMUX
