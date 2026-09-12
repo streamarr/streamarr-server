@@ -27,6 +27,8 @@ enum ContainerFormat {
 
 message WorkerCapabilities {
   repeated Uuid source_namespace_ids = 1;
+  // Supported versions of Streamarr's retained probe fields and their interpretation.
+  // These are independent of the installed FFmpeg and ffprobe versions.
   repeated uint32 probe_versions = 2;
 }
 
@@ -167,6 +169,7 @@ message StartVariantCommand {
 
 message ProbeRequest {
   Uuid probe_attempt_id = 1;
+  // Requested Streamarr probe result contract version.
   uint32 probe_version = 2;
   MediaSourceRef source = 3;
 }
@@ -198,6 +201,7 @@ message ProbeMediaInfo {
 
 message ProbeAttemptResult {
   Uuid probe_attempt_id = 1;
+  // Streamarr probe result contract version. Must match the request.
   uint32 probe_version = 2;
   oneof outcome {
     ProbeMediaInfo media = 3;
