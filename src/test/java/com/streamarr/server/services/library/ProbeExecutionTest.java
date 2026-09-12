@@ -132,8 +132,9 @@ class ProbeExecutionTest {
   @DisplayName("Should fail transiently when the source does not stabilize")
   void shouldFailTransientlyWhenTheSourceDoesNotStabilize() {
     var execution = execution().toBuilder().stabilityChecker(_ -> false).build();
+    var request = request(ProbeVersion.CURRENT);
 
-    assertThatThrownBy(() -> execution.execute(request(ProbeVersion.CURRENT)))
+    assertThatThrownBy(() -> execution.execute(request))
         .isInstanceOf(ProbeExecutionException.class);
     assertThat(producer.probeCount()).isZero();
   }
@@ -185,12 +186,13 @@ class ProbeExecutionTest {
   }
 
   @Test
-  @DisplayName("Should propagate a transient producer failure without publishing")
-  void shouldPropagateATransientProducerFailureWithoutPublishing() {
+  @DisplayName("Should propagate failure without publishing when the producer fails transiently")
+  void shouldPropagateFailureWithoutPublishingWhenTheProducerFailsTransiently() {
     producer.failWith(new ProbeExecutionException("worker unavailable"));
     var execution = execution();
+    var request = request(ProbeVersion.CURRENT);
 
-    assertThatThrownBy(() -> execution.execute(request(ProbeVersion.CURRENT)))
+    assertThatThrownBy(() -> execution.execute(request))
         .isInstanceOf(ProbeExecutionException.class);
     assertThat(outcomes.publications()).isEmpty();
   }

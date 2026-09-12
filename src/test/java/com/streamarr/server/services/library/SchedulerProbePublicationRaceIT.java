@@ -73,7 +73,7 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
   @Autowired private LibraryRepository libraries;
   @Autowired private DSLContext dsl;
   @Autowired private JdbcTemplate jdbc;
-  @Autowired private ProbeTaskCompletion completion;
+  @Autowired private ProbeTaskCompletion probeTaskCompletion;
   @Autowired private DbSchedulerCustomizer schedulerCustomizer;
   @Autowired private PlatformTransactionManager transactionManager;
 
@@ -82,14 +82,14 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
   private UUID libraryId;
   private UUID mediaFileId;
   private Task<ProbeRequest> task;
-  private ProbeExecution execution;
+  private ProbeExecution probeExecution;
   private SchedulerClient client;
   private Scheduler scheduler;
 
   @BeforeEach
   void setUp() {
     dsl.deleteFrom(DSL.table("scheduled_tasks")).execute();
-    execution =
+    probeExecution =
         ProbeExecution.builder()
             .mediaFiles(mediaFiles)
             .reader(reader)
@@ -98,7 +98,7 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
             .fileSystem(FileSystems.getDefault())
             .outcomes(outcomes)
             .build();
-    task = MediaProbeTask.create(execution, completion);
+    task = MediaProbeTask.create(probeExecution, probeTaskCompletion);
     client =
         SchedulerClient.Builder.create(dataSource, task).serializer(probeTaskSerializer).build();
   }
@@ -242,7 +242,7 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
 
     var originalTask =
         MediaProbeTask.create(
-            execution,
+            probeExecution,
             new ProbeTaskCompletion(
                 outcomes, transactionManager, Clock.offset(Clock.systemUTC(), Duration.ofDays(1))));
     task =
