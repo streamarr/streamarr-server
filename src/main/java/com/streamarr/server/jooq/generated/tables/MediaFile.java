@@ -11,7 +11,7 @@ import com.streamarr.server.jooq.generated.enums.MediaFileStatus;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable.BaseCollectablePath;
 import com.streamarr.server.jooq.generated.tables.Library.LibraryPath;
 import com.streamarr.server.jooq.generated.tables.MediaFileContainerInfo.MediaFileContainerInfoPath;
-import com.streamarr.server.jooq.generated.tables.MediaFileProbeRequest.MediaFileProbeRequestPath;
+import com.streamarr.server.jooq.generated.tables.MediaFileProbeTaskRequest.MediaFileProbeTaskRequestPath;
 import com.streamarr.server.jooq.generated.tables.SessionProgress.SessionProgressPath;
 import com.streamarr.server.jooq.generated.tables.records.MediaFileRecord;
 
@@ -254,17 +254,17 @@ public class MediaFile extends TableImpl<MediaFileRecord> {
         return _mediaFileContainerInfo;
     }
 
-    private transient MediaFileProbeRequestPath _mediaFileProbeRequest;
+    private transient MediaFileProbeTaskRequestPath _mediaFileProbeTaskRequest;
 
     /**
      * Get the implicit to-many join path to the
-     * <code>public.media_file_probe_request</code> table
+     * <code>public.media_file_probe_task_request</code> table
      */
-    public MediaFileProbeRequestPath mediaFileProbeRequest() {
-        if (_mediaFileProbeRequest == null)
-            _mediaFileProbeRequest = new MediaFileProbeRequestPath(this, null, Keys.MEDIA_FILE_PROBE_REQUEST__MEDIA_FILE_PROBE_REQUEST_MEDIA_FILE_ID_FKEY.getInverseKey());
+    public MediaFileProbeTaskRequestPath mediaFileProbeTaskRequest() {
+        if (_mediaFileProbeTaskRequest == null)
+            _mediaFileProbeTaskRequest = new MediaFileProbeTaskRequestPath(this, null, Keys.MEDIA_FILE_PROBE_TASK_REQUEST__MEDIA_FILE_PROBE_TASK_REQUEST_MEDIA_FILE_ID_FKEY.getInverseKey());
 
-        return _mediaFileProbeRequest;
+        return _mediaFileProbeTaskRequest;
     }
 
     @Override

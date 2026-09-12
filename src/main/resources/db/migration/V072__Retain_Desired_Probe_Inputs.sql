@@ -1,4 +1,4 @@
-CREATE TABLE media_file_probe_request
+CREATE TABLE media_file_probe_task_request
 (
     media_file_id UUID PRIMARY KEY REFERENCES media_file (id) ON DELETE CASCADE,
     source_size BIGINT NOT NULL CHECK (source_size >= 0),

@@ -2,7 +2,7 @@ package com.streamarr.server.repositories.media;
 
 import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE;
 import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE_CONTAINER_INFO;
-import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE_PROBE_REQUEST;
+import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE_PROBE_TASK_REQUEST;
 import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE_STREAM_INFO;
 
 import com.streamarr.server.domain.media.SourceFileSnapshot;
@@ -61,26 +61,26 @@ public class MediaFileContainerInfoRepositoryCustomImpl
       return false;
     }
 
-    dsl.insertInto(MEDIA_FILE_PROBE_REQUEST)
-        .set(MEDIA_FILE_PROBE_REQUEST.MEDIA_FILE_ID, mediaFileId)
-        .set(MEDIA_FILE_PROBE_REQUEST.SOURCE_SIZE, inputs.snapshot().size())
+    dsl.insertInto(MEDIA_FILE_PROBE_TASK_REQUEST)
+        .set(MEDIA_FILE_PROBE_TASK_REQUEST.MEDIA_FILE_ID, mediaFileId)
+        .set(MEDIA_FILE_PROBE_TASK_REQUEST.SOURCE_SIZE, inputs.snapshot().size())
         .set(
-            MEDIA_FILE_PROBE_REQUEST.SOURCE_MODIFIED_EPOCH_SECOND,
+            MEDIA_FILE_PROBE_TASK_REQUEST.SOURCE_MODIFIED_EPOCH_SECOND,
             inputs.snapshot().modifiedAt().getEpochSecond())
         .set(
-            MEDIA_FILE_PROBE_REQUEST.SOURCE_MODIFIED_NANOS,
+            MEDIA_FILE_PROBE_TASK_REQUEST.SOURCE_MODIFIED_NANOS,
             inputs.snapshot().modifiedAt().getNano())
-        .set(MEDIA_FILE_PROBE_REQUEST.PROBE_VERSION, inputs.probeVersion())
-        .onConflict(MEDIA_FILE_PROBE_REQUEST.MEDIA_FILE_ID)
+        .set(MEDIA_FILE_PROBE_TASK_REQUEST.PROBE_VERSION, inputs.probeVersion())
+        .onConflict(MEDIA_FILE_PROBE_TASK_REQUEST.MEDIA_FILE_ID)
         .doUpdate()
-        .set(MEDIA_FILE_PROBE_REQUEST.SOURCE_SIZE, inputs.snapshot().size())
+        .set(MEDIA_FILE_PROBE_TASK_REQUEST.SOURCE_SIZE, inputs.snapshot().size())
         .set(
-            MEDIA_FILE_PROBE_REQUEST.SOURCE_MODIFIED_EPOCH_SECOND,
+            MEDIA_FILE_PROBE_TASK_REQUEST.SOURCE_MODIFIED_EPOCH_SECOND,
             inputs.snapshot().modifiedAt().getEpochSecond())
         .set(
-            MEDIA_FILE_PROBE_REQUEST.SOURCE_MODIFIED_NANOS,
+            MEDIA_FILE_PROBE_TASK_REQUEST.SOURCE_MODIFIED_NANOS,
             inputs.snapshot().modifiedAt().getNano())
-        .set(MEDIA_FILE_PROBE_REQUEST.PROBE_VERSION, inputs.probeVersion())
+        .set(MEDIA_FILE_PROBE_TASK_REQUEST.PROBE_VERSION, inputs.probeVersion())
         .execute();
     invalidateOutcomeUnlessSnapshotMatches(mediaFileId, inputs.snapshot());
     return true;
@@ -98,12 +98,12 @@ public class MediaFileContainerInfoRepositoryCustomImpl
 
   private Optional<ProbeInputs> requestedInputs(UUID mediaFileId) {
     return dsl.select(
-            MEDIA_FILE_PROBE_REQUEST.SOURCE_SIZE,
-            MEDIA_FILE_PROBE_REQUEST.SOURCE_MODIFIED_EPOCH_SECOND,
-            MEDIA_FILE_PROBE_REQUEST.SOURCE_MODIFIED_NANOS,
-            MEDIA_FILE_PROBE_REQUEST.PROBE_VERSION)
-        .from(MEDIA_FILE_PROBE_REQUEST)
-        .where(MEDIA_FILE_PROBE_REQUEST.MEDIA_FILE_ID.eq(mediaFileId))
+            MEDIA_FILE_PROBE_TASK_REQUEST.SOURCE_SIZE,
+            MEDIA_FILE_PROBE_TASK_REQUEST.SOURCE_MODIFIED_EPOCH_SECOND,
+            MEDIA_FILE_PROBE_TASK_REQUEST.SOURCE_MODIFIED_NANOS,
+            MEDIA_FILE_PROBE_TASK_REQUEST.PROBE_VERSION)
+        .from(MEDIA_FILE_PROBE_TASK_REQUEST)
+        .where(MEDIA_FILE_PROBE_TASK_REQUEST.MEDIA_FILE_ID.eq(mediaFileId))
         .fetchOptional(
             row ->
                 new ProbeInputs(
