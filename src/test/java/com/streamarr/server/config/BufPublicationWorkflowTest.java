@@ -1,12 +1,13 @@
 package com.streamarr.server.config;
 
+import static com.streamarr.server.support.ProcessTestSupport.awaitCompletion;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.xpath.XPathFactory;
 import org.junit.jupiter.api.DisplayName;
@@ -47,8 +48,8 @@ class BufPublicationWorkflowTest {
 
     assertThat(steps.indexOf(verification)).isGreaterThan(steps.indexOf(publication));
     assertThat(steps.indexOf(artifact)).isGreaterThan(steps.indexOf(verification));
-    assertThat(map(artifact.get("with")).get("path"))
-        .isEqualTo("target/buf-consumer-pin.properties");
+    assertThat(map(artifact.get("with")))
+        .containsEntry("path", "target/buf-consumer-pin.properties");
     assertThat(map(workflow.get("permissions"))).containsExactly(Map.entry("contents", "read"));
   }
 
@@ -82,8 +83,9 @@ class BufPublicationWorkflowTest {
     try (var input = Files.newInputStream(Path.of("buf.yaml"))) {
       Map<String, Object> module = new Yaml().load(input);
 
-      assertThat(module.get("modules"))
-          .isEqualTo(
+      assertThat(module)
+          .containsEntry(
+              "modules",
               List.of(
                   Map.of(
                       "path", "src/main/protobuf", "name", "buf.build/streamarr-org/transcode")));
@@ -105,7 +107,7 @@ class BufPublicationWorkflowTest {
     var trigger = map(workflow.get("on"));
     assertThat(trigger).containsOnlyKeys("push");
     assertThat(map(trigger.get("push"))).containsOnlyKeys("branches");
-    assertThat(map(trigger.get("push")).get("branches")).isEqualTo(List.of("main"));
+    assertThat(map(trigger.get("push"))).containsEntry("branches", List.of("main"));
     var job = map(map(workflow.get("jobs")).get("publish"));
     var condition =
         job.get("if")
@@ -116,7 +118,7 @@ class BufPublicationWorkflowTest {
 
     var process = new ProcessBuilder("bash", "-c", "[[ " + condition + " ]]").start();
 
-    assertThat(process.waitFor(5, TimeUnit.SECONDS)).as("publication guard completed").isTrue();
+    awaitCompletion(process, Duration.ofSeconds(5), "publication guard completed");
     assertThat(process.exitValue()).isEqualTo(expected ? 0 : 1);
   }
 

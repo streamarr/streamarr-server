@@ -1,12 +1,13 @@
 package com.streamarr.server.config;
 
+import static com.streamarr.server.support.ProcessTestSupport.awaitCompletion;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import javax.tools.ToolProvider;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -136,9 +137,7 @@ class BufConsumerVerificationTest {
     builder.environment().put("PATH", workspace.resolve("bin") + ":" + System.getenv("PATH"));
     builder.environment().putAll(environment);
     var process = builder.start();
-    assertThat(process.waitFor(10, TimeUnit.SECONDS))
-        .as("consumer verification completed")
-        .isTrue();
+    awaitCompletion(process, Duration.ofSeconds(10), "consumer verification completed");
     return new Result(process.exitValue(), new String(process.getInputStream().readAllBytes()));
   }
 
