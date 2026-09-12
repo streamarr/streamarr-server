@@ -25,9 +25,11 @@ import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -181,7 +183,8 @@ class WorkerProbeDispatchTest {
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
-    var attempt = registry.dispatchProbe(probe().build()).orElseThrow();
+    var request = probe().build();
+    var attempt = registry.dispatchProbe(request).orElseThrow();
 
     registry.disconnect(WORKER_ID, sessionId);
 
@@ -189,6 +192,8 @@ class WorkerProbeDispatchTest {
         .isInstanceOf(ExecutionException.class)
         .hasCauseInstanceOf(ProbeExecutionException.class);
     assertThat(registry.dispatchProbe(probe().build())).isEmpty();
+    registry.register(WORKER_ID, registration.build(), new CapturingResponses());
+    assertThat(registry.dispatchProbe(request)).isPresent();
   }
 
   @Test
@@ -310,6 +315,39 @@ class WorkerProbeDispatchTest {
   }
 
   @ParameterizedTest
+  @ValueSource(ints = {1, 2})
+  @DisplayName(
+      "Should start an attempt only once when the same probe is dispatched to eligible workers")
+  void shouldStartAttemptOnlyOnceWhenSameProbeIsDispatchedToEligibleWorkers(int workerCount) {
+    var registry = new LiveWorkerConnectionRegistry();
+    var responses = new CapturingResponses();
+    for (var workerIndex = 0; workerIndex < workerCount; workerIndex++) {
+      var workerId = UUID.randomUUID();
+      var registration = registration().setAvailableSlots(2);
+      registration.getWorkerBuilder().setWorkerId(toProto(workerId));
+      registration.getCapabilitiesBuilder().addProbeVersions(1);
+      registry.register(workerId, registration.build(), responses);
+    }
+
+    var request = probe().build();
+    var original = registry.dispatchProbe(request).orElseThrow();
+
+    var duplicate = registry.dispatchProbe(request);
+
+    assertThat(
+            responses.values.stream()
+                .filter(EstablishWorkerSessionResponse::hasStartProbe)
+                .map(EstablishWorkerSessionResponse::getStartProbe))
+        .as(
+            "one start command across %s eligible worker(s) for attempt %s",
+            workerCount, request.getProbeAttemptId())
+        .hasSize(1);
+    assertThat(duplicate).isEmpty();
+    assertThat(original).isNotDone();
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(workerCount * 2 - 1);
+  }
+
+  @ParameterizedTest
   @ValueSource(strings = {"worker", "session", "attempt"})
   @DisplayName(
       "Should retain the pending probe when a reply belongs to another worker session or attempt")
@@ -361,9 +399,10 @@ class WorkerProbeDispatchTest {
               }
             });
     var sessionId = registry.register(WORKER_ID, registration.build(), responses);
+    var request = probe().build();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var dispatch = executor.submit(() -> registry.dispatchProbe(probe().build()));
+      var dispatch = executor.submit(() -> registry.dispatchProbe(request));
       try {
         assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
 
@@ -374,6 +413,80 @@ class WorkerProbeDispatchTest {
 
       assertThat(dispatch.get(5, TimeUnit.SECONDS)).isEmpty();
     }
+
+    registry.register(WORKER_ID, registration.build(), new CapturingResponses());
+    assertThat(registry.dispatchProbe(request)).isPresent();
+  }
+
+  @Test
+  @DisplayName(
+      "Should reserve a cancelled attempt across workers until termination is acknowledged")
+  void shouldReserveCancelledAttemptAcrossWorkersUntilTerminationIsAcknowledged() {
+    var registry = new LiveWorkerConnectionRegistry();
+    var registration = registration();
+    registration.getCapabilitiesBuilder().addProbeVersions(1);
+    var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
+    var request = probe().build();
+    var attempt = registry.dispatchProbe(request).orElseThrow();
+    var otherWorker = UUID.randomUUID();
+    registration.getWorkerBuilder().setWorkerId(toProto(otherWorker));
+    registry.register(otherWorker, registration.build(), new CapturingResponses());
+
+    assertThat(attempt.cancel(true)).isTrue();
+
+    assertThat(registry.dispatchProbe(request)).isEmpty();
+    var acknowledgement =
+        ProbeAttemptResult.newBuilder()
+            .setProbeAttemptId(request.getProbeAttemptId())
+            .setProbeVersion(1)
+            .setFailure(ProbeFailure.PROBE_FAILURE_CANCELLED)
+            .build();
+    assertThat(registry.completeProbe(WORKER_ID, sessionId, acknowledgement)).isTrue();
+    assertThat(registry.dispatchProbe(request)).isPresent();
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {1, 2})
+  @DisplayName("Should release an attempt reservation when the worker replies with any version")
+  void shouldReleaseAttemptReservationWhenWorkerRepliesWithAnyVersion(int replyVersion) {
+    var registry = new LiveWorkerConnectionRegistry();
+    var registration = registration();
+    registration.getCapabilitiesBuilder().addProbeVersions(1);
+    var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
+    var request = probe().build();
+    assertThat(registry.dispatchProbe(request)).isPresent();
+    var reply =
+        ProbeAttemptResult.newBuilder()
+            .setProbeAttemptId(request.getProbeAttemptId())
+            .setProbeVersion(replyVersion)
+            .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA)
+            .build();
+
+    assertThat(registry.completeProbe(WORKER_ID, sessionId, reply)).isEqualTo(replyVersion == 1);
+
+    assertThat(registry.dispatchProbe(request)).isPresent();
+  }
+
+  @Test
+  @DisplayName("Should release an attempt reservation when its first delivery fails")
+  void shouldReleaseAttemptReservationWhenItsFirstDeliveryFails() {
+    var registry = new LiveWorkerConnectionRegistry();
+    var registration = registration();
+    registration.getCapabilitiesBuilder().addProbeVersions(1);
+    var failNextDelivery = new AtomicBoolean(true);
+    var responses =
+        new CapturingResponses(
+            response -> {
+              if (response.hasStartProbe() && failNextDelivery.getAndSet(false)) {
+                throw new IllegalStateException("Simulated command delivery failure");
+              }
+            });
+    registry.register(WORKER_ID, registration.build(), responses);
+    var request = probe().build();
+
+    assertThat(registry.dispatchProbe(request)).isEmpty();
+
+    assertThat(registry.dispatchProbe(request)).isPresent();
   }
 
   private WorkerRegistration.Builder registration() {
@@ -422,6 +535,68 @@ class WorkerProbeDispatchTest {
         .setProbeAttemptId(toProto(UUID.randomUUID()))
         .setProbeVersion(1)
         .setSource(source());
+  }
+
+  @Test
+  @DisplayName("Should fail the superseded probe before a replacement starts the same attempt")
+  void shouldFailSupersededProbeBeforeReplacementStartsSameAttempt() throws Exception {
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (var trial = 0; trial < 2_000; trial++) {
+        assertThat(replacementStartsBeforeSupersededProbeFails(executor))
+            .as(
+                "replacement must not start while the superseded future is pending (trial %s)",
+                trial)
+            .isFalse();
+      }
+    }
+  }
+
+  private boolean replacementStartsBeforeSupersededProbeFails(ExecutorService executor)
+      throws Exception {
+    var registry = new LiveWorkerConnectionRegistry();
+    var registration = registration();
+    registration.getCapabilitiesBuilder().addProbeVersions(1);
+    registry.register(WORKER_ID, registration.build(), new CapturingResponses());
+    var request = probe().build();
+    var superseded = registry.dispatchProbe(request).orElseThrow();
+    var acceptanceEntered = new CountDownLatch(1);
+    var releaseAcceptance = new Semaphore(0);
+    var dispatchStarted = new CountDownLatch(1);
+    var startedBeforeFailure = new AtomicBoolean();
+    var responses =
+        new CapturingResponses(
+            response -> {
+              if (response.hasSessionAccepted()) {
+                acceptanceEntered.countDown();
+                releaseAcceptance.acquireUninterruptibly();
+              }
+
+              if (response.hasStartProbe()) {
+                startedBeforeFailure.set(!superseded.isDone());
+              }
+            });
+    var replacing =
+        executor.submit(() -> registry.register(WORKER_ID, registration.build(), responses));
+    try {
+      assertThat(acceptanceEntered.await(5, TimeUnit.SECONDS)).isTrue();
+      var dispatching =
+          executor.submit(
+              () -> {
+                dispatchStarted.countDown();
+                return registry.dispatchProbe(request);
+              });
+      assertThat(dispatchStarted.await(5, TimeUnit.SECONDS)).isTrue();
+      releaseAcceptance.release();
+      var replacementSession = replacing.get(5, TimeUnit.SECONDS);
+      assertThat(dispatching.get(5, TimeUnit.SECONDS)).isPresent();
+      assertThatThrownBy(() -> superseded.get(1, TimeUnit.SECONDS))
+          .isInstanceOf(ExecutionException.class)
+          .hasCauseInstanceOf(ProbeExecutionException.class);
+      registry.disconnect(WORKER_ID, replacementSession);
+      return startedBeforeFailure.get();
+    } finally {
+      releaseAcceptance.release();
+    }
   }
 
   @Test

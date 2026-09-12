@@ -51,6 +51,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLException;
@@ -134,6 +135,59 @@ class WorkerSessionServerIT {
     registration.getRegistrationBuilder().getCapabilitiesBuilder().addProbeVersions(1);
     requests.onNext(registration.build());
     return new TestWorkerConnection(requests, responses, closed);
+  }
+
+  @Test
+  @DisplayName(
+      "Should dispatch a replacement probe when the superseded segment publication is blocked")
+  void shouldDispatchReplacementProbeWhenSupersededSegmentPublicationIsBlocked() throws Exception {
+    var segmentStore = new PausedPublicationStore();
+    try (var server = server(segmentStore)) {
+      server.start();
+      var channel = workerChannel(server.port());
+      var identity = workerIdentity(UUID.randomUUID());
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var worker = connectProbeWorker(channel, identity);
+        var session = worker.nextResponse().getSessionAccepted();
+        var job = variantJob();
+        assertThat(server.dispatch(job)).isTrue();
+        assertThat(worker.nextResponse().hasStartVariant()).isTrue();
+        var request =
+            ProbeRequest.newBuilder()
+                .setProbeAttemptId(toProto(UUID.randomUUID()))
+                .setProbeVersion(1)
+                .setSource(job.getSource())
+                .build();
+        var superseded = server.dispatchProbe(request).orElseThrow();
+        assertThat(worker.nextResponse().hasStartProbe()).isTrue();
+        var bytes = ByteString.copyFromUtf8("segment").toByteArray();
+        var metadata =
+            segmentMetadata(session, identity, job).setContentLengthBytes(bytes.length).build();
+        var upload = upload(channel, metadata, bytes);
+        try {
+          assertThat(segmentStore.entered.await(5, TimeUnit.SECONDS)).isTrue();
+          var replacement = connectProbeWorker(channel, workerIdentity(UUID.randomUUID()));
+          assertThat(replacement.nextResponse().hasSessionAccepted()).isTrue();
+          assertThatThrownBy(() -> superseded.get(5, TimeUnit.SECONDS))
+              .isInstanceOf(ExecutionException.class)
+              .hasCauseInstanceOf(ProbeExecutionException.class);
+
+          var dispatched = executor.submit(() -> server.dispatchProbe(request));
+          var pending = dispatched.get(5, TimeUnit.SECONDS).orElseThrow();
+
+          assertThat(replacement.nextResponse().getStartProbe().getRequest()).isEqualTo(request);
+          assertThat(pending).isNotDone();
+          assertThat(upload).isNotDone();
+        } finally {
+          segmentStore.release.countDown();
+        }
+
+        upload.get(5, TimeUnit.SECONDS);
+      } finally {
+        segmentStore.release.countDown();
+        shutdown(channel);
+      }
+    }
   }
 
   private enum SessionEnd {
