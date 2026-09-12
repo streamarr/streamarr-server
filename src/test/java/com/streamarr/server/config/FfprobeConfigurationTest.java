@@ -1,49 +1,53 @@
 package com.streamarr.server.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streamarr.server.domain.streaming.ProbeError;
-import com.streamarr.server.domain.streaming.ProbeOutcome;
-import java.io.IOException;
-import java.nio.file.Files;
+import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
+import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.services.streaming.FfprobeService;
+import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import java.nio.file.Path;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import tools.jackson.databind.ObjectMapper;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 @Tag("UnitTest")
 @DisplayName("Ffprobe configuration tests")
 class FfprobeConfigurationTest {
 
-  @TempDir Path directory;
+  private final ApplicationContextRunner contextRunner =
+      new ApplicationContextRunner()
+          .withUserConfiguration(RemoteProbeConfiguration.class, WorkerSessionConfiguration.class)
+          .withBean(SegmentStore.class, FakeSegmentStore::new)
+          .withPropertyValues(
+              "streaming.worker-session.loopback.enabled=true",
+              "streaming.worker-session.loopback.port=0",
+              "streaming.remote.enabled=false",
+              "streaming.remote.source-namespace-id=cccccccc-cccc-cccc-cccc-cccccccccccc",
+              "streaming.remote.source-root=/media");
 
   @Test
-  @DisplayName(
-      "Should return a terminal media failure when the configured producer reports invalid input")
-  void shouldReturnATerminalMediaFailureWhenTheConfiguredProducerReportsInvalidInput()
-      throws IOException {
-    var executable = directory.resolve("ffprobe");
-    Files.writeString(
-        executable,
-        """
-        #!/bin/sh
-        for argument in "$@"; do
-          if [ "$argument" = "-show_error" ]; then
-            printf '%s\n' '{"error":{"code":-1094995529,"string":"Invalid data found when processing input"}}'
-            exit 1
-          fi
-        done
-        printf '%s\n' '{}'
-        exit 1
-        """);
-    assertThat(executable.toFile().setExecutable(true)).isTrue();
-    var service =
-        new StreamingConfig()
-            .ffprobeService(new ObjectMapper(), new FfmpegPaths("unused", executable.toString()));
+  @DisplayName("Should use worker probing when local transcoding is still selected")
+  void shouldUseWorkerProbingWhenLocalTranscodingIsStillSelected() {
+    contextRunner.run(
+        context -> {
+          assertThat(context).hasNotFailed().hasSingleBean(FfprobeService.class);
+          var service = context.getBean(FfprobeService.class);
+          assertThat(service).isInstanceOf(RemoteFfprobeService.class);
+          var request =
+              ProbeExecutionRequest.builder()
+                  .sourcePath(Path.of("/media/movie.mkv"))
+                  .attemptId(UUID.randomUUID())
+                  .probeVersion(1)
+                  .build();
 
-    assertThat(service.probe(directory.resolve("corrupt.mkv")))
-        .isEqualTo(new ProbeOutcome.Failure(ProbeError.INVALID_MEDIA));
+          assertThatThrownBy(() -> service.probe(request))
+              .isInstanceOf(ProbeExecutionException.class);
+        });
   }
 }

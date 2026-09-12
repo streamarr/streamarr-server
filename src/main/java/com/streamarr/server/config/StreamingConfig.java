@@ -2,7 +2,6 @@ package com.streamarr.server.config;
 
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
-import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.PlaybackAuthorityGate;
 import com.streamarr.server.services.streaming.PlaybackProbeService;
@@ -17,18 +16,14 @@ import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegProcessManager;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
-import com.streamarr.server.services.streaming.ffmpeg.LocalFfprobeService;
 import com.streamarr.server.services.streaming.ffmpeg.LocalTranscodeExecutor;
 import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import tools.jackson.databind.ObjectMapper;
 
 @Configuration
 public class StreamingConfig {
@@ -57,29 +52,6 @@ public class StreamingConfig {
     service.detectCapabilities();
 
     return service;
-  }
-
-  @Bean
-  public FfprobeService ffprobeService(ObjectMapper objectMapper, FfmpegPaths ffmpegPaths) {
-    return new LocalFfprobeService(
-        objectMapper,
-        filepath -> {
-          try {
-            return new ProcessBuilder(
-                    ffmpegPaths.ffprobe(),
-                    "-v",
-                    "quiet",
-                    "-print_format",
-                    "json",
-                    "-show_streams",
-                    "-show_format",
-                    "-show_error",
-                    filepath.toString())
-                .start();
-          } catch (IOException e) {
-            throw new UncheckedIOException("Failed to start ffprobe", e);
-          }
-        });
   }
 
   @Bean
