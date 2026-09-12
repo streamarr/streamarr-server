@@ -78,7 +78,7 @@ class FileEventProcessorTest {
         new IgnoredFileValidator(new LibraryScanProperties(null, null, null));
     var videoExtensionValidator = new VideoExtensionValidator();
     stabilityCheckerRef = new AtomicReference<>(path -> true);
-    eventPublisherRef = new AtomicReference<>(event -> {});
+    eventPublisherRef = new AtomicReference<>(_ -> {});
 
     // Plain paths instead of file:// URIs because file:// URIs can't round-trip through Jimfs.
     var library =
