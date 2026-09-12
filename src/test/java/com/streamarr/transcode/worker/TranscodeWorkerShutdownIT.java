@@ -5,9 +5,9 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigura
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.workerConfigurationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.fakes.FakeFfmpegProcessManager;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
+import com.streamarr.transcode.fakes.FakeFfmpegProcessManager;
 import io.grpc.protobuf.services.HealthStatusManager;
 import java.nio.file.Path;
 import java.util.List;

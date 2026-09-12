@@ -14,7 +14,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.streamarr.server.fakes.FakeFfmpegProcessManager;
+import com.streamarr.transcode.fakes.FakeFfmpegProcessManager;
 import com.streamarr.transcode.v1.AudioDecision;
 import com.streamarr.transcode.v1.AudioMode;
 import com.streamarr.transcode.v1.ContainerFormat;

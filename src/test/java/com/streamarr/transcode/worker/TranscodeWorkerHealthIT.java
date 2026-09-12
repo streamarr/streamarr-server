@@ -13,10 +13,10 @@ import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.exceptions.TranscodeException;
-import com.streamarr.server.fakes.FakeFfmpegProcessManager;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
+import com.streamarr.transcode.fakes.FakeFfmpegProcessManager;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
