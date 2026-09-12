@@ -152,6 +152,7 @@ db-scheduler:
   threads: ${PROBE_MAX_CONCURRENT:2}
   polling-interval: ${PROBE_POLLING_INTERVAL:1s}
   polling-strategy: lock-and-fetch
+  polling-strategy-upper-limit-fraction-of-threads: 1.0
   heartbeat-interval: ${PROBE_HEARTBEAT_INTERVAL:15s}
   missed-heartbeats-limit: 4
   immediate-execution-enabled: true
