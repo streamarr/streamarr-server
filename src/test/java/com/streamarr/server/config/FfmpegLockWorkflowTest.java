@@ -74,9 +74,10 @@ class FfmpegLockWorkflowTest {
         .containsEntry("needs", List.of("changes", "ffmpeg_lock"))
         .containsEntry("if", "needs.changes.outputs.packaging == 'true'");
     assertThat(aggregate)
+        .as("Required verification must honor cancellation without skipping failed prerequisites")
         .containsEntry(
             "needs", List.of("changes", "ffmpeg_lock", "application", "analysis", "package_image"))
-        .containsEntry("if", "${{ always() }}");
+        .containsEntry("if", "${{ !cancelled() }}");
   }
 
   @Test
