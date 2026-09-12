@@ -93,6 +93,17 @@ class RemoteProbeResultMapperTest {
   }
 
   @ParameterizedTest
+  @MethodSource("transientFailures")
+  @DisplayName("Should retain the reported failure reason when a worker probe remains retryable")
+  void shouldRetainReportedFailureReasonWhenWorkerProbeRemainsRetryable(ProbeFailure failure) {
+    var result = ProbeAttemptResult.newBuilder().setFailure(failure).build();
+
+    assertThatThrownBy(() -> new RemoteProbeResultMapper().map(result))
+        .isInstanceOf(ProbeExecutionException.class)
+        .hasStackTraceContaining(failure.name());
+  }
+
+  @ParameterizedTest
   @MethodSource("unknownOutcomes")
   @DisplayName("Should leave an unknown or missing worker outcome retryable")
   void shouldLeaveUnknownOrMissingWorkerOutcomeRetryable(ProbeAttemptResult result) {

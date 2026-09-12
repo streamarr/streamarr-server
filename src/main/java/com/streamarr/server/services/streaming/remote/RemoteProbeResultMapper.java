@@ -25,7 +25,10 @@ final class RemoteProbeResultMapper {
     return switch (result.getFailure()) {
       case PROBE_FAILURE_INVALID_MEDIA -> new ProbeOutcome.Failure(ProbeError.INVALID_MEDIA);
       case PROBE_FAILURE_NO_VIDEO_STREAM -> new ProbeOutcome.Failure(ProbeError.NO_VIDEO_STREAM);
-      default -> throw new ProbeExecutionException();
+      default ->
+          throw new ProbeExecutionException(
+              new IllegalStateException(
+                  "Worker probe reported a retryable failure: " + result.getFailure()));
     };
   }
 
