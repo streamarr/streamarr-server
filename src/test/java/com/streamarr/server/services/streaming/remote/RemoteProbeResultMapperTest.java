@@ -96,9 +96,10 @@ class RemoteProbeResultMapperTest {
   @MethodSource("transientFailures")
   @DisplayName("Should retain the reported failure reason when a worker probe remains retryable")
   void shouldRetainReportedFailureReasonWhenWorkerProbeRemainsRetryable(ProbeFailure failure) {
+    var mapper = new RemoteProbeResultMapper();
     var result = ProbeAttemptResult.newBuilder().setFailure(failure).build();
 
-    assertThatThrownBy(() -> new RemoteProbeResultMapper().map(result))
+    assertThatThrownBy(() -> mapper.map(result))
         .isInstanceOf(ProbeExecutionException.class)
         .hasStackTraceContaining(failure.name());
   }
