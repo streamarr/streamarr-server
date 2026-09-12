@@ -47,6 +47,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 
@@ -67,6 +68,7 @@ public final class TranscodeWorker implements AutoCloseable {
   private StreamObserver<EstablishWorkerSessionRequest> requests;
   private WorkerSessionAccepted workerSession;
   private CompletableFuture<Void> disconnected;
+  private final AtomicReference<WorkerHealthServer> healthServer = new AtomicReference<>();
 
   public TranscodeWorker(TranscodeWorkerConfiguration configuration, FfmpegTranscodeEngine engine) {
     this.configuration = configuration;
@@ -87,6 +89,9 @@ public final class TranscodeWorker implements AutoCloseable {
             .keyManager(tlsIdentity.certificate().toFile(), tlsIdentity.privateKey().toFile())
             .trustManager(tlsIdentity.trustBundle().toFile())
             .build();
+    var sessionHealth = new WorkerHealthServer(configuration.healthPort());
+    healthServer.set(sessionHealth);
+    sessionHealth.start();
     executor = Executors.newVirtualThreadPerTaskExecutor();
     // Client keepalive detects a half-open control-plane connection (server power loss, dropped
     // NAT mapping); without it an idle worker would wait on a dead session until TCP gives up.
@@ -100,9 +105,18 @@ public final class TranscodeWorker implements AutoCloseable {
     disconnected = new CompletableFuture<>();
     requests =
         TranscodeWorkerServiceGrpc.newStub(channel)
-            .establishWorkerSession(new WorkerResponseObserver(accepted));
+            .establishWorkerSession(new WorkerResponseObserver(accepted, sessionHealth));
     send(registration());
     accepted.get(CONNECTION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+  }
+
+  public int healthPort() {
+    var server = healthServer.get();
+    if (server == null) {
+      throw new IllegalStateException("Worker health server is not started");
+    }
+
+    return server.port();
   }
 
   public void awaitDisconnection() throws InterruptedException {
@@ -434,6 +448,11 @@ public final class TranscodeWorker implements AutoCloseable {
 
   @Override
   public synchronized void close() {
+    var server = healthServer.get();
+    if (server != null) {
+      server.close();
+    }
+
     if (channel == null) {
       return;
     }
@@ -464,15 +483,19 @@ public final class TranscodeWorker implements AutoCloseable {
       implements StreamObserver<EstablishWorkerSessionResponse> {
 
     private final CompletableFuture<WorkerSessionAccepted> accepted;
+    private final WorkerHealthServer sessionHealth;
 
-    private WorkerResponseObserver(CompletableFuture<WorkerSessionAccepted> accepted) {
+    private WorkerResponseObserver(
+        CompletableFuture<WorkerSessionAccepted> accepted, WorkerHealthServer sessionHealth) {
       this.accepted = accepted;
+      this.sessionHealth = sessionHealth;
     }
 
     @Override
     public void onNext(EstablishWorkerSessionResponse response) {
       if (response.hasSessionAccepted()) {
         workerSession = response.getSessionAccepted();
+        sessionHealth.sessionAccepted();
         accepted.complete(workerSession);
         return;
       }
@@ -489,6 +512,7 @@ public final class TranscodeWorker implements AutoCloseable {
 
     @Override
     public void onError(Throwable throwable) {
+      sessionHealth.sessionDisconnected();
       accepted.completeExceptionally(throwable);
       logAbandonedAttempts();
       stopActiveVariants();
@@ -497,6 +521,7 @@ public final class TranscodeWorker implements AutoCloseable {
 
     @Override
     public void onCompleted() {
+      sessionHealth.sessionDisconnected();
       if (!accepted.isDone()) {
         accepted.completeExceptionally(new IllegalStateException("Worker session closed"));
       }
