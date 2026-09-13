@@ -37,9 +37,14 @@ import io.grpc.stub.MetadataUtils;
 import io.grpc.stub.StreamObserver;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.UnknownHostException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -103,11 +108,12 @@ public final class TranscodeWorker implements AutoCloseable {
   }
 
   private NettyChannelBuilder connectionBuilder(String host, int port) throws IOException {
-    var builder = NettyChannelBuilder.forAddress(host, port);
     if (configuration.plaintext()) {
       var headers = new Metadata();
       headers.put(WorkerIdentityMetadata.WORKER_ID, configuration.workerId().toString());
-      return builder.usePlaintext().intercept(MetadataUtils.newAttachHeadersInterceptor(headers));
+      return NettyChannelBuilder.forAddress(localhostAddress(host, port))
+          .usePlaintext()
+          .intercept(MetadataUtils.newAttachHeadersInterceptor(headers));
     }
 
     var tlsIdentity = configuration.tlsIdentity().orElseThrow();
@@ -116,7 +122,23 @@ public final class TranscodeWorker implements AutoCloseable {
             .keyManager(tlsIdentity.certificate().toFile(), tlsIdentity.privateKey().toFile())
             .trustManager(tlsIdentity.trustBundle().toFile())
             .build();
-    return builder.sslContext(sslContext);
+    return NettyChannelBuilder.forAddress(host, port).sslContext(sslContext);
+  }
+
+  private InetSocketAddress localhostAddress(String host, int port) throws UnknownHostException {
+    var addresses = InetAddress.getAllByName(host);
+    if (Arrays.stream(addresses).anyMatch(address -> !address.isLoopbackAddress())) {
+      throw new IllegalArgumentException(
+          "Plaintext worker connections require a localhost destination: " + host);
+    }
+
+    // Prefer IPv4 to match the server's fixed 127.0.0.1 listener, and pin the validated address.
+    var address =
+        Arrays.stream(addresses)
+            .filter(Inet4Address.class::isInstance)
+            .findFirst()
+            .orElse(addresses[0]);
+    return new InetSocketAddress(address, port);
   }
 
   public void awaitDisconnection() throws InterruptedException {

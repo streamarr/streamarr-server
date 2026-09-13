@@ -21,6 +21,8 @@ Enable the listener with `STREAMING_WORKER_SESSION_LOCALHOST_ENABLED=true` and s
 The default port is `9090`.
 The worker needs `TRANSCODE_WORKER_PLAINTEXT=true`, `TRANSCODE_WORKER_CONTROL_PLANE_HOST=127.0.0.1`, the same port in `TRANSCODE_WORKER_CONTROL_PLANE_PORT`, and a UUID in `TRANSCODE_WORKER_ID`.
 It does not need certificates in this mode.
+The worker rejects plaintext destinations outside localhost, including hostnames with any non-localhost DNS answer.
+It connects to the validated address, preferring IPv4 to match the server's `127.0.0.1` listener.
 
 The dev profile enables the localhost listener. Full application test contexts use an ephemeral localhost listener port.
 Listener enablement remains independent of local or remote executor selection. A server with both listeners disabled can still start with local execution.
