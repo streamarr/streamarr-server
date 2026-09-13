@@ -12,6 +12,8 @@ Their dedicated inbound port serves only health checks.
 Workers also run background media probes through the same session and execution slots.
 Set `TRANSCODE_WORKER_FFPROBE_PATH` to the worker's ffprobe binary. It defaults to `ffprobe` on `PATH`.
 Probe requests use the same source namespace and mount mapping as transcode jobs.
+Closing a worker connection cancels its probes and waits for their native processes to terminate.
+This wait has no separate deadline; an unresponsive filesystem can delay worker shutdown.
 
 == Identity and media contract
 

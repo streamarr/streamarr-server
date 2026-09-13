@@ -65,6 +65,7 @@ public final class TranscodeWorker implements AutoCloseable {
 
   private final TranscodeWorkerConfiguration configuration;
   private final FfmpegTranscodeEngine engine;
+  private final WorkerMediaSourceResolver sources;
   private final WorkerVariantJobMapper jobMapper;
   private final Optional<FfprobeExecutor> ffprobe;
   private final WorkerRuntime runtime;
@@ -99,8 +100,8 @@ public final class TranscodeWorker implements AutoCloseable {
     this.engine = engine;
     this.ffprobe = ffprobe;
     this.runtime = runtime;
-    jobMapper =
-        new WorkerVariantJobMapper(new WorkerMediaSourceResolver(configuration.sourceNamespaces()));
+    sources = new WorkerMediaSourceResolver(configuration.sourceNamespaces());
+    jobMapper = new WorkerVariantJobMapper(sources);
   }
 
   public synchronized void start(String host, int port)
@@ -127,7 +128,7 @@ public final class TranscodeWorker implements AutoCloseable {
     probeSession =
         WorkerProbeSession.builder()
             .ffprobe(ffprobe)
-            .sources(new WorkerMediaSourceResolver(configuration.sourceNamespaces()))
+            .sources(sources)
             .results(result -> sendProbeResult(sessionRequests.get(), result))
             .executor(runtime.newProbeScope())
             .build();
@@ -487,7 +488,7 @@ public final class TranscodeWorker implements AutoCloseable {
     activeVariants.clear();
   }
 
-  @SuppressWarnings("java:S3398") // The fence shares the worker monitor with close and restart.
+  @SuppressWarnings("java:S3398") // The fence shares the worker monitor with close() and start().
   private synchronized void endSession(WorkerProbeSession sessionProbes) {
     if (probeSession != sessionProbes) {
       return;
@@ -499,6 +500,7 @@ public final class TranscodeWorker implements AutoCloseable {
 
   @Override
   public void close() {
+    // Probe completion needs the worker monitor, so join only after closeConnection releases it.
     closeConnection().ifPresent(WorkerProbeSession::close);
   }
 
@@ -563,10 +565,12 @@ public final class TranscodeWorker implements AutoCloseable {
         accepted.complete(workerSession);
         return;
       }
+
       if (response.hasStartVariant()) {
         startVariant(response.getStartVariant());
         return;
       }
+
       if (response.hasStartProbe()) {
         startProbe(response.getStartProbe());
         return;
@@ -581,6 +585,7 @@ public final class TranscodeWorker implements AutoCloseable {
         stopVariant(response.getStopVariant());
         return;
       }
+
       log.warn("Worker received unexpected control command {}", response.getCommandCase());
     }
 
