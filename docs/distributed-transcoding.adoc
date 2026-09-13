@@ -32,6 +32,8 @@ Set `STREAMING_WORKER_SESSION_MUTUAL_TLS_ENABLED=true` on the server and leave `
 The server's port, trust domain, certificate, private key, and trust bundle settings use the `STREAMING_WORKER_SESSION_MUTUAL_TLS_` prefix.
 These listener settings replace their former `STREAMING_REMOTE_` equivalents.
 The localhost and mutual-TLS listeners may run together. Choose different ports when configuring both with fixed ports.
+Both default to `9090`; enabling both requires overriding at least one port.
+The server rejects equal fixed ports before starting either listener. Port `0` requests an independently assigned ephemeral port for tests.
 
 Streamarr consumes PEM files issued by the operator's existing tooling.
 It does not issue or enroll certificates.

@@ -16,6 +16,16 @@ public record WorkerSessionListeners(
       throw new IllegalArgumentException(
           "Localhost worker session port must be between 0 and 65535");
     }
+
+    if (localhostPort.isPresent()
+        && localhostPort.getAsInt() != 0
+        && mutualTls
+            .filter(configuration -> configuration.port() == localhostPort.getAsInt())
+            .isPresent()) {
+      throw new IllegalArgumentException(
+          "streaming.worker-session.localhost.port and streaming.worker-session.mutual-tls.port"
+              + " must be distinct when both worker listeners use fixed ports");
+    }
   }
 
   public static class WorkerSessionListenersBuilder {

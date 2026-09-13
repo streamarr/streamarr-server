@@ -26,6 +26,30 @@ class WorkerSessionConfigurationTest {
           .withBean(SegmentStore.class, FakeSegmentStore::new);
 
   @Test
+  @DisplayName("Should explain conflicting ports when both worker listeners use their defaults")
+  void shouldExplainConflictingPortsWhenBothWorkerListenersUseTheirDefaults() throws Exception {
+    contextRunner
+        .withPropertyValues(
+            "streaming.worker-session.localhost.enabled=true",
+            "streaming.worker-session.mutual-tls.enabled=true",
+            "streaming.worker-session.mutual-tls.trust-domain=streamarr.test",
+            "streaming.worker-session.mutual-tls.certificate=" + tlsResource("server-cert.pem"),
+            "streaming.worker-session.mutual-tls.private-key=" + tlsResource("server-key.fixture"),
+            "streaming.worker-session.mutual-tls.trust-bundle=" + tlsResource("ca-cert.pem"))
+        .run(
+            context -> {
+              assertThat(context).hasFailed();
+              assertThat(context.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(IllegalArgumentException.class)
+                  .hasMessageContainingAll(
+                      "streaming.worker-session.localhost.port",
+                      "streaming.worker-session.mutual-tls.port",
+                      "distinct");
+            });
+  }
+
+  @Test
   @DisplayName("Should leave both listeners disabled when no listeners are configured")
   void shouldLeaveBothListenersDisabledWhenNoListenersAreConfigured() {
     contextRunner.run(
