@@ -61,6 +61,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("IntegrationTest")
 @DisplayName("Worker Session Server Integration Tests")
@@ -70,6 +71,34 @@ class WorkerSessionServerIT {
       UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
   private static final UUID SOURCE_NAMESPACE_ID =
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  @DisplayName("Should refuse an unidentified probe when its attempt ID is omitted or nil")
+  void shouldRefuseUnidentifiedProbeWhenItsAttemptIdIsOmittedOrNil(boolean explicitNil)
+      throws Exception {
+    var request = ProbeRequest.newBuilder().setProbeVersion(1).setSource(variantJob().getSource());
+    if (explicitNil) {
+      request.setProbeAttemptId(toProto(new UUID(0, 0)));
+    }
+
+    var decoded = ProbeRequest.parseFrom(request.build().toByteArray());
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+      try {
+        var worker = connectProbeWorker(channel, workerIdentity(UUID.randomUUID()));
+        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
+        assertThat(server.dispatchProbe(decoded)).isEmpty();
+        assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(2);
+        var identified = request.setProbeAttemptId(toProto(new UUID(0, 1))).build();
+        assertThat(server.dispatchProbe(identified)).isPresent();
+        assertThat(worker.nextResponse().getStartProbe().getRequest()).isEqualTo(identified);
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
 
   @ParameterizedTest
   @EnumSource(SessionEnd.class)

@@ -27,7 +27,7 @@ enum ContainerFormat {
 
 message WorkerCapabilities {
   repeated Uuid source_namespace_ids = 1;
-  // Supported versions of Streamarr's retained probe fields and their interpretation.
+  // Supported nonzero versions of Streamarr's retained probe fields and their interpretation.
   // These are independent of the installed FFmpeg and ffprobe versions.
   repeated uint32 probe_versions = 2;
 }
@@ -37,7 +37,7 @@ message WorkerRegistration {
   WorkerIdentity worker = 1;
   WorkerCapabilities capabilities = 2;
   // Configured slot capacity for this connection, fixed at registration; the server derives
-  // remaining capacity from its own active-attempt accounting.
+  // remaining capacity from its own active-attempt accounting. Probes and variants share it.
   uint32 available_slots = 3;
 }
 
@@ -168,8 +168,9 @@ message StartVariantCommand {
 }
 
 message ProbeRequest {
+  // Present, non-nil identifier for this execution attempt. Every retry uses a fresh identifier.
   Uuid probe_attempt_id = 1;
-  // Requested Streamarr probe result contract version.
+  // Requested Streamarr probe result contract version. Zero, including omission, is invalid.
   uint32 probe_version = 2;
   MediaSourceRef source = 3;
 }
@@ -201,9 +202,10 @@ message ProbeMediaInfo {
 
 message ProbeAttemptResult {
   Uuid probe_attempt_id = 1;
-  // Streamarr probe result contract version. Must match the request.
+  // Nonzero Streamarr probe result contract version. Must match the request.
   uint32 probe_version = 2;
   oneof outcome {
+    // Success requires a video stream; audio-only media reports PROBE_FAILURE_NO_VIDEO_STREAM.
     ProbeMediaInfo media = 3;
     ProbeFailure failure = 4;
   }
@@ -225,6 +227,8 @@ message StartProbeCommand {
 }
 
 message CancelProbeCommand {
+  // The worker must still return a terminal ProbeAttemptResult with the original attempt ID and
+  // version once execution ends. Capacity remains reserved until that result or session termination.
   WorkerIdentity target = 1;
   Uuid probe_attempt_id = 2;
 }

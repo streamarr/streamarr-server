@@ -8,7 +8,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.transcode.v1.CancelProbeCommand;
+import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
@@ -20,6 +22,7 @@ import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
+import io.grpc.Context;
 import io.grpc.stub.StreamObserver;
 import java.util.List;
 import java.util.UUID;
@@ -42,6 +45,99 @@ import org.junit.jupiter.params.provider.ValueSource;
 @Tag("UnitTest")
 @DisplayName("Worker Probe Dispatch Tests")
 class WorkerProbeDispatchTest {
+
+  @Test
+  @DisplayName("Should refuse a probe when its attempt identifier is missing")
+  void shouldRefuseProbeWhenItsAttemptIdentifierIsMissing() {
+    var registry = new LiveWorkerConnectionRegistry();
+    var registration = registration();
+    registration.getCapabilitiesBuilder().addProbeVersions(1);
+    registry.register(WORKER_ID, registration.build(), new CapturingResponses());
+
+    assertThat(registry.dispatchProbe(probe().clearProbeAttemptId().build())).isEmpty();
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should complete another worker probe when replacement waits for segment publication")
+  void shouldCompleteAnotherWorkerProbeWhenReplacementWaitsForSegmentPublication()
+      throws Exception {
+    var registry = new LiveWorkerConnectionRegistry();
+    var oldRegistration = registration().build();
+    var oldSession = registry.register(WORKER_ID, oldRegistration, new CapturingResponses());
+    var job =
+        VariantJob.newBuilder()
+            .setStreamSessionId(toProto(UUID.randomUUID()))
+            .setJobId(toProto(UUID.randomUUID()))
+            .setJobAttemptId(toProto(UUID.randomUUID()))
+            .setSource(source())
+            .build();
+    assertThat(registry.dispatch(job)).isTrue();
+    var secondWorker = UUID.randomUUID();
+    var secondRegistration = registration();
+    secondRegistration.getWorkerBuilder().setWorkerId(toProto(secondWorker));
+    secondRegistration.getCapabilitiesBuilder().addProbeVersions(1);
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var secondSession =
+        Context.current()
+            .withValue(WorkerIdentityServerInterceptor.AUTHENTICATED_WORKER_ID, secondWorker)
+            .call(() -> service.establishWorkerSession(new CapturingResponses()));
+    secondSession.onNext(
+        EstablishWorkerSessionRequest.newBuilder().setRegistration(secondRegistration).build());
+    var request = probe().build();
+    var pending = registry.dispatchProbe(request).orElseThrow();
+    var result =
+        ProbeAttemptResult.newBuilder()
+            .setProbeAttemptId(request.getProbeAttemptId())
+            .setProbeVersion(1)
+            .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA)
+            .build();
+    var event = EstablishWorkerSessionRequest.newBuilder().setProbeResult(result).build();
+    var metadata =
+        SegmentUploadMetadata.newBuilder()
+            .setWorker(oldRegistration.getWorker())
+            .setWorkerSessionId(toProto(oldSession))
+            .setStreamSessionId(job.getStreamSessionId())
+            .setJobId(job.getJobId())
+            .setJobAttemptId(job.getJobAttemptId())
+            .build();
+    var publicationEntered = new CountDownLatch(1);
+    var releasePublication = new CountDownLatch(1);
+    var replacementAccepted = new CountDownLatch(1);
+    var replacementResponses =
+        new CapturingResponses(
+            response -> {
+              if (response.hasSessionAccepted()) {
+                replacementAccepted.countDown();
+              }
+            });
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var publishing =
+          executor.submit(
+              () ->
+                  registry.publishIfAuthorized(
+                      WORKER_ID,
+                      metadata,
+                      () -> holdPublication(publicationEntered, releasePublication)));
+      try {
+        assertThat(publicationEntered.await(5, TimeUnit.SECONDS)).isTrue();
+        var replacing =
+            executor.submit(
+                () -> registry.register(WORKER_ID, oldRegistration, replacementResponses));
+        assertThat(replacementAccepted.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(replacing).isNotDone();
+        var receiving = executor.submit(() -> secondSession.onNext(event));
+        assertThat(pending.get(1, TimeUnit.SECONDS)).isEqualTo(result);
+        receiving.get(1, TimeUnit.SECONDS);
+        assertThat(publishing).isNotDone();
+      } finally {
+        releasePublication.countDown();
+      }
+
+      assertThat(publishing.get(5, TimeUnit.SECONDS)).isTrue();
+    }
+  }
 
   @ParameterizedTest(name = "advertised version={0}, explicit zero={1}")
   @CsvSource({"0,false", "0,true", "1,false", "1,true"})
@@ -220,20 +316,28 @@ class WorkerProbeDispatchTest {
     assertThat(registry.dispatchProbe(probe().setProbeVersion(2).build())).isPresent();
   }
 
-  @Test
+  @ParameterizedTest
+  @CsvSource(
+      value = {
+        "2|1|Worker probe reply version mismatch: expected 2, received 1",
+        "-1|1|Worker probe reply version mismatch: expected 4294967295, received 1",
+        "2|-1|Worker probe reply version mismatch: expected 2, received 4294967295"
+      },
+      delimiter = '|')
   @DisplayName(
       "Should fail the pending probe without accepting data when its reply has another version")
-  void shouldFailPendingProbeWithoutAcceptingDataWhenItsReplyHasAnotherVersion() {
+  void shouldFailPendingProbeWithoutAcceptingDataWhenItsReplyHasAnotherVersion(
+      int requestedVersion, int reportedVersion, String diagnostic) {
     var registry = new LiveWorkerConnectionRegistry();
     var registration = registration();
-    registration.getCapabilitiesBuilder().addProbeVersions(2);
+    registration.getCapabilitiesBuilder().addProbeVersions(requestedVersion);
     var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
-    var request = probe().setProbeVersion(2).build();
+    var request = probe().setProbeVersion(requestedVersion).build();
     var attempt = registry.dispatchProbe(request).orElseThrow();
     var result =
         ProbeAttemptResult.newBuilder()
             .setProbeAttemptId(request.getProbeAttemptId())
-            .setProbeVersion(1)
+            .setProbeVersion(reportedVersion)
             .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA)
             .build();
 
@@ -241,7 +345,8 @@ class WorkerProbeDispatchTest {
 
     assertThatThrownBy(() -> attempt.get(1, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
-        .hasCauseInstanceOf(ProbeExecutionException.class);
+        .hasCauseInstanceOf(ProbeExecutionException.class)
+        .hasRootCauseMessage(diagnostic);
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
   }
 

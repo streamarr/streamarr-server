@@ -104,7 +104,9 @@ final class LiveWorkerConnectionRegistry {
   }
 
   Optional<Future<ProbeAttemptResult>> dispatchProbe(ProbeRequest request) {
-    if (request.getProbeVersion() == 0) {
+    var attemptId = request.getProbeAttemptId();
+    if (request.getProbeVersion() == 0
+        || (attemptId.getMostSignificantBits() == 0 && attemptId.getLeastSignificantBits() == 0)) {
       return Optional.empty();
     }
 
@@ -124,8 +126,7 @@ final class LiveWorkerConnectionRegistry {
     return Optional.empty();
   }
 
-  synchronized boolean completeProbe(
-      UUID workerId, UUID workerSessionId, ProbeAttemptResult result) {
+  boolean completeProbe(UUID workerId, UUID workerSessionId, ProbeAttemptResult result) {
     var connection = connections.get(workerId);
     if (connection == null || !connection.workerSessionId().equals(workerSessionId)) {
       return false;
@@ -348,7 +349,11 @@ final class LiveWorkerConnectionRegistry {
             .result()
             .completeExceptionally(
                 new ProbeExecutionException(
-                    new IllegalArgumentException("Worker reply has a different probe version")));
+                    new IllegalArgumentException(
+                        "Worker probe reply version mismatch: expected %s, received %s"
+                            .formatted(
+                                Integer.toUnsignedString(pending.request().getProbeVersion()),
+                                Integer.toUnsignedString(result.getProbeVersion())))));
         return false;
       }
 

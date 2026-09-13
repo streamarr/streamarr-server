@@ -84,6 +84,14 @@ public final class WorkerSessionServer implements AutoCloseable {
     return workerConnections.dispatch(job);
   }
 
+  /**
+   * Returns empty for an invalid request or when no eligible worker has capacity. Each execution
+   * attempt requires a fresh, non-nil ID, a nonzero contract version, and a source.
+   *
+   * <p>Cancelling the future requests worker termination; its reservation remains until a terminal
+   * reply or session end. This API has no deadline; callers must bound execution and cancellation
+   * recovery before retrying with a fresh attempt ID.
+   */
   public synchronized Optional<Future<ProbeAttemptResult>> dispatchProbe(ProbeRequest request) {
     requireStarted();
     return workerConnections.dispatchProbe(request);
