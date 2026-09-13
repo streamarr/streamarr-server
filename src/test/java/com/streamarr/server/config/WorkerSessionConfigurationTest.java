@@ -39,8 +39,8 @@ class WorkerSessionConfigurationTest {
 
   @ParameterizedTest
   @ValueSource(ints = {-1, 65536})
-  @DisplayName("Should reject an invalid port when the loopback listener is enabled")
-  void shouldRejectInvalidPortWhenLoopbackListenerIsEnabled(int port) {
+  @DisplayName("Should reject an invalid port when the localhost listener is enabled")
+  void shouldRejectInvalidPortWhenLocalhostListenerIsEnabled(int port) {
     contextRunner
         .withPropertyValues(
             "streaming.worker-session.loopback.enabled=true",
@@ -71,8 +71,8 @@ class WorkerSessionConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should start loopback independently when remote transcoding is disabled")
-  void shouldStartLoopbackIndependentlyWhenRemoteTranscodingIsDisabled() {
+  @DisplayName("Should start localhost independently when remote transcoding is disabled")
+  void shouldStartLocalhostIndependentlyWhenRemoteTranscodingIsDisabled() {
     contextRunner
         .withPropertyValues(
             "streaming.worker-session.loopback.enabled=true",
@@ -81,7 +81,7 @@ class WorkerSessionConfigurationTest {
         .run(
             context -> {
               assertThat(context).hasNotFailed();
-              assertThat(context.getBean(WorkerSessionServer.class).loopbackPort()).isPositive();
+              assertThat(context.getBean(WorkerSessionServer.class).localhostPort()).isPositive();
               assertThat(context).doesNotHaveBean(TranscodeExecutor.class);
             });
   }
@@ -107,7 +107,7 @@ class WorkerSessionConfigurationTest {
               var server = context.getBean(WorkerSessionServer.class);
               assertThat(server.port()).isPositive();
               if (loopbackEnabled) {
-                assertThat(server.loopbackPort()).isPositive().isNotEqualTo(server.port());
+                assertThat(server.localhostPort()).isPositive().isNotEqualTo(server.port());
               }
             });
   }
@@ -137,8 +137,8 @@ class WorkerSessionConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should select remote execution without TLS when loopback is enabled")
-  void shouldSelectRemoteExecutionWithoutTlsWhenLoopbackIsEnabled() {
+  @DisplayName("Should select remote execution without TLS when localhost is enabled")
+  void shouldSelectRemoteExecutionWithoutTlsWhenLocalhostIsEnabled() {
     contextRunner
         .withUserConfiguration(RemoteTranscodeConfiguration.class)
         .withPropertyValues(
@@ -153,7 +153,7 @@ class WorkerSessionConfigurationTest {
               assertThat(context).hasSingleBean(WorkerSessionServer.class);
               assertThat(context.getBean(TranscodeExecutor.class))
                   .isInstanceOf(RemoteTranscodeExecutor.class);
-              assertThat(context.getBean(WorkerSessionServer.class).loopbackPort()).isPositive();
+              assertThat(context.getBean(WorkerSessionServer.class).localhostPort()).isPositive();
             });
   }
 }

@@ -46,8 +46,8 @@ import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("IntegrationTest")
-@DisplayName("Loopback Worker Session Integration Tests")
-class LoopbackWorkerSessionIT {
+@DisplayName("Localhost Worker Connection Integration Tests")
+class LocalhostWorkerSessionIT {
 
   private static final UUID WORKER_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
   private static final UUID SOURCE_ID = UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
@@ -58,7 +58,7 @@ class LoopbackWorkerSessionIT {
     try (var occupied = new ServerSocket(0, 0, InetAddress.getByName("127.0.0.1"))) {
       var listeners =
           WorkerSessionListeners.builder()
-              .loopbackPort(OptionalInt.of(occupied.getLocalPort()))
+              .localhostPort(OptionalInt.of(occupied.getLocalPort()))
               .mutualTls(Optional.of(serverConfigurationBuilder().build()))
               .build();
       try (var server = WorkerSessionServer.forListeners(listeners, new FakeSegmentStore())) {
@@ -69,22 +69,22 @@ class LoopbackWorkerSessionIT {
         server.start();
 
         assertThat(server.port()).isPositive();
-        assertThat(server.loopbackPort()).isPositive();
+        assertThat(server.localhostPort()).isPositive();
       }
     }
   }
 
   @Test
-  @DisplayName("Should accept a plaintext worker when connecting through loopback")
-  void shouldAcceptPlaintextWorkerWhenConnectingThroughLoopback() throws Exception {
-    var listeners = WorkerSessionListeners.builder().loopbackPort(OptionalInt.of(0)).build();
+  @DisplayName("Should accept a plaintext worker when connecting through localhost")
+  void shouldAcceptPlaintextWorkerWhenConnectingThroughLocalhost() throws Exception {
+    var listeners = WorkerSessionListeners.builder().localhostPort(OptionalInt.of(0)).build();
     try (var server = WorkerSessionServer.forListeners(listeners, new FakeSegmentStore())) {
       server.start();
-      var channel = plaintextChannel(server.loopbackPort());
+      var channel = plaintextChannel(server.localhostPort());
       try {
         var accepted = register(channel).get(5, TimeUnit.SECONDS);
 
-        assertThat(server.loopbackPort()).isPositive();
+        assertThat(server.localhostPort()).isPositive();
         assertThat(accepted.hasSessionAccepted()).isTrue();
         assertThat(server.availableSlots(SOURCE_ID)).isEqualTo(1);
       } finally {
@@ -101,12 +101,12 @@ class LoopbackWorkerSessionIT {
       throws Exception {
     var listeners =
         WorkerSessionListeners.builder()
-            .loopbackPort(OptionalInt.of(0))
+            .localhostPort(OptionalInt.of(0))
             .mutualTls(Optional.of(serverConfigurationBuilder().build()))
             .build();
     try (var server = WorkerSessionServer.forListeners(listeners, new FakeSegmentStore())) {
       server.start();
-      var plaintext = plaintextChannel(server.loopbackPort());
+      var plaintext = plaintextChannel(server.localhostPort());
       var encrypted = tlsChannel(server.port());
       try {
         var firstChannel = firstPlaintext ? plaintext : encrypted;
@@ -147,20 +147,22 @@ class LoopbackWorkerSessionIT {
   }
 
   @Test
-  @DisplayName("Should be unreachable through non-loopback addresses when plaintext is enabled")
-  void shouldBeUnreachableThroughNonLoopbackAddressesWhenPlaintextIsEnabled() throws Exception {
+  @DisplayName("Should be unreachable through other interfaces when plaintext is enabled")
+  void shouldBeUnreachableThroughOtherInterfacesWhenPlaintextIsEnabled() throws Exception {
     var addresses =
         NetworkInterface.networkInterfaces()
             .flatMap(NetworkInterface::inetAddresses)
             .filter(address -> address instanceof Inet4Address && !address.isLoopbackAddress())
             .toList();
-    assertThat(addresses).as("This network test needs a non-loopback interface").isNotEmpty();
-    var listeners = WorkerSessionListeners.builder().loopbackPort(OptionalInt.of(0)).build();
+    assertThat(addresses)
+        .as("This network test needs an interface other than localhost")
+        .isNotEmpty();
+    var listeners = WorkerSessionListeners.builder().localhostPort(OptionalInt.of(0)).build();
     try (var server = WorkerSessionServer.forListeners(listeners, new FakeSegmentStore())) {
       server.start();
       for (var address : addresses) {
         try (var socket = new Socket()) {
-          var destination = new InetSocketAddress(address, server.loopbackPort());
+          var destination = new InetSocketAddress(address, server.localhostPort());
           assertThatThrownBy(() -> socket.connect(destination, 1000))
               .isInstanceOf(ConnectException.class);
         }
@@ -171,13 +173,13 @@ class LoopbackWorkerSessionIT {
   @ParameterizedTest
   @NullAndEmptySource
   @ValueSource(strings = {"not-a-worker-id"})
-  @DisplayName("Should reject missing or malformed identity when connecting through loopback")
-  void shouldRejectMissingOrMalformedIdentityWhenConnectingThroughLoopback(String claimedIdentity)
+  @DisplayName("Should reject missing or malformed identity when connecting through localhost")
+  void shouldRejectMissingOrMalformedIdentityWhenConnectingThroughLocalhost(String claimedIdentity)
       throws Exception {
-    var listeners = WorkerSessionListeners.builder().loopbackPort(OptionalInt.of(0)).build();
+    var listeners = WorkerSessionListeners.builder().localhostPort(OptionalInt.of(0)).build();
     try (var server = WorkerSessionServer.forListeners(listeners, new FakeSegmentStore())) {
       server.start();
-      var channel = plaintextChannel(server.loopbackPort(), Optional.ofNullable(claimedIdentity));
+      var channel = plaintextChannel(server.localhostPort(), Optional.ofNullable(claimedIdentity));
       try {
         var response = register(channel);
 

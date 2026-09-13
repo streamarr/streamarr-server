@@ -17,8 +17,8 @@ class WorkerSessionProfilesTest {
 
   @ParameterizedTest
   @CsvSource({"dev,9090", "test,0"})
-  @DisplayName("Should enable loopback with the profile port when development or test starts")
-  void shouldEnableLoopbackWithProfilePortWhenDevelopmentOrTestStarts(String profile, int port) {
+  @DisplayName("Should enable localhost with the profile port when development or test starts")
+  void shouldEnableLocalhostWithProfilePortWhenDevelopmentOrTestStarts(String profile, int port) {
     new ApplicationContextRunner()
         .withInitializer(new ConfigDataApplicationContextInitializer())
         .withUserConfiguration(ProfileConfiguration.class)

@@ -44,12 +44,12 @@ class WorkerIdentityServerInterceptorTest {
   }
 
   @Test
-  @DisplayName("Should propagate downstream failure when the loopback worker identity is valid")
-  void shouldPropagateDownstreamFailureWhenLoopbackWorkerIdentityIsValid() {
+  @DisplayName("Should propagate downstream failure when the localhost worker identity is valid")
+  void shouldPropagateDownstreamFailureWhenLocalhostWorkerIdentityIsValid() {
     var call = new RecordingServerCall(Attributes.EMPTY);
     var headers = new Metadata();
     headers.put(WorkerIdentityMetadata.WORKER_ID, UUID.randomUUID().toString());
-    var interceptor = new LoopbackWorkerIdentityInterceptor();
+    var interceptor = new LocalhostWorkerIdentityInterceptor();
     var downstreamFailure = new IllegalArgumentException("downstream setup failed");
     ServerCallHandler<Object, Object> handler =
         (_, _) -> {

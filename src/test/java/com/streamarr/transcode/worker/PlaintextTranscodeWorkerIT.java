@@ -27,7 +27,7 @@ class PlaintextTranscodeWorkerIT {
   void shouldConnectWithoutCertificatesWhenPlaintextIsExplicitlyEnabled() throws Exception {
     var sourceId = UUID.randomUUID();
     var workerId = UUID.randomUUID();
-    var listeners = WorkerSessionListeners.builder().loopbackPort(OptionalInt.of(0)).build();
+    var listeners = WorkerSessionListeners.builder().localhostPort(OptionalInt.of(0)).build();
     try (var server = WorkerSessionServer.forListeners(listeners, new FakeSegmentStore())) {
       server.start();
       var settings =
@@ -36,7 +36,7 @@ class PlaintextTranscodeWorkerIT {
                   "TRANSCODE_WORKER_PLAINTEXT", "true",
                   "TRANSCODE_WORKER_ID", workerId.toString(),
                   "TRANSCODE_WORKER_CONTROL_PLANE_HOST", "127.0.0.1",
-                  "TRANSCODE_WORKER_CONTROL_PLANE_PORT", Integer.toString(server.loopbackPort()),
+                  "TRANSCODE_WORKER_CONTROL_PLANE_PORT", Integer.toString(server.localhostPort()),
                   "TRANSCODE_WORKER_SOURCE_NAMESPACE_ID", sourceId.toString(),
                   "TRANSCODE_WORKER_SOURCE_ROOT", tempDir.toString()));
 

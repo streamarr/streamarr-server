@@ -37,6 +37,6 @@ class WorkerListenerFreeStartupIT extends AbstractIntegrationTest {
     assertThat(probe).isInstanceOf(LocalFfprobeService.class);
     assertThat(workerSessions.availableSlots(UUID.randomUUID())).isZero();
     assertThatThrownBy(workerSessions::port).isInstanceOf(IllegalStateException.class);
-    assertThatThrownBy(workerSessions::loopbackPort).isInstanceOf(IllegalStateException.class);
+    assertThatThrownBy(workerSessions::localhostPort).isInstanceOf(IllegalStateException.class);
   }
 }

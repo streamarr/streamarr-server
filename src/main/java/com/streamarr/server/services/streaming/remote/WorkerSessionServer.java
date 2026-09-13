@@ -34,7 +34,7 @@ public final class WorkerSessionServer implements AutoCloseable {
   private final SegmentStore segmentStore;
   private final LiveWorkerConnectionRegistry workerConnections = new LiveWorkerConnectionRegistry();
   private final WorkerSessionServerRuntime runtime = new WorkerSessionServerRuntime(log);
-  private final WorkerSessionServerRuntime loopbackRuntime = new WorkerSessionServerRuntime(log);
+  private final WorkerSessionServerRuntime localhostRuntime = new WorkerSessionServerRuntime(log);
   private boolean started;
 
   public WorkerSessionServer(
@@ -65,14 +65,14 @@ public final class WorkerSessionServer implements AutoCloseable {
         startMutualTls(listeners.mutualTls().orElseThrow(), service);
       }
 
-      if (listeners.loopbackPort().isPresent()) {
+      if (listeners.localhostPort().isPresent()) {
         startListener(
-            loopbackRuntime,
+            localhostRuntime,
             NettyServerBuilder.forAddress(
-                    new InetSocketAddress("127.0.0.1", listeners.loopbackPort().getAsInt()))
+                    new InetSocketAddress("127.0.0.1", listeners.localhostPort().getAsInt()))
                 .addService(
                     ServerInterceptors.intercept(
-                        service, new LoopbackWorkerIdentityInterceptor())));
+                        service, new LocalhostWorkerIdentityInterceptor())));
       }
 
       started = true;
@@ -124,8 +124,8 @@ public final class WorkerSessionServer implements AutoCloseable {
     return runtime.server().getPort();
   }
 
-  public synchronized int loopbackPort() {
-    return loopbackRuntime.server().getPort();
+  public synchronized int localhostPort() {
+    return localhostRuntime.server().getPort();
   }
 
   public synchronized boolean dispatch(VariantJob job) {
@@ -190,7 +190,7 @@ public final class WorkerSessionServer implements AutoCloseable {
   @Override
   public synchronized void close() {
     runtime.close();
-    loopbackRuntime.close();
+    localhostRuntime.close();
     started = false;
   }
 }

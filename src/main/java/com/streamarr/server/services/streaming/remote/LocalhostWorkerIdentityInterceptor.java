@@ -12,7 +12,7 @@ import io.grpc.ServerInterceptor;
 import io.grpc.Status;
 import java.util.UUID;
 
-final class LoopbackWorkerIdentityInterceptor implements ServerInterceptor {
+final class LocalhostWorkerIdentityInterceptor implements ServerInterceptor {
 
   @Override
   public <R, S> ServerCall.Listener<R> interceptCall(

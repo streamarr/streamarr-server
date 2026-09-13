@@ -22,7 +22,7 @@ public class WorkerSessionConfiguration {
     var loopback = properties.loopback();
     var listeners =
         WorkerSessionListeners.builder()
-            .loopbackPort(
+            .localhostPort(
                 loopback.enabled() ? OptionalInt.of(loopback.port()) : OptionalInt.empty())
             .mutualTls(mutualTls(properties.mutualTls()))
             .build();
