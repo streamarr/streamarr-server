@@ -64,7 +64,6 @@ class TranscodeWorkerSettingsTest {
     assertThat(settings.controlPlaneHost()).isEqualTo("streamarr-server");
     assertThat(settings.controlPlanePort()).isEqualTo(9090);
     assertThat(settings.ffmpegPath()).isEqualTo("ffmpeg");
-    assertThat(settings.ffprobePath()).isEqualTo("ffprobe");
     assertThat(worker.workerId()).isEqualTo(WORKER_ID);
     assertThat(worker.availableSlots()).isEqualTo(1);
     assertThat(worker.sourceNamespaces()).containsEntry(SOURCE_NAMESPACE_ID, Path.of("/media"));
@@ -178,14 +177,12 @@ class TranscodeWorkerSettingsTest {
     environment.put("TRANSCODE_WORKER_CONTROL_PLANE_PORT", "65535");
     environment.put("TRANSCODE_WORKER_SLOTS", "2");
     environment.put("TRANSCODE_WORKER_FFMPEG_PATH", "/usr/local/bin/ffmpeg");
-    environment.put("TRANSCODE_WORKER_FFPROBE_PATH", "/usr/local/bin/ffprobe");
     environment.put("TRANSCODE_WORKER_SEGMENT_BASE_PATH", "/transcode");
 
     var settings = TranscodeWorkerSettings.fromEnvironment(environment);
 
     assertThat(settings.controlPlanePort()).isEqualTo(65_535);
     assertThat(settings.ffmpegPath()).isEqualTo("/usr/local/bin/ffmpeg");
-    assertThat(settings.ffprobePath()).isEqualTo("/usr/local/bin/ffprobe");
     assertThat(settings.workerConfiguration().availableSlots()).isEqualTo(2);
     assertThat(settings.workerConfiguration().segmentBasePath()).isEqualTo(Path.of("/transcode"));
   }
@@ -200,6 +197,25 @@ class TranscodeWorkerSettingsTest {
         "TRANSCODE_WORKER_CONTROL_PLANE_PORT must not exceed 65535");
     assertInvalidSetting(
         "TRANSCODE_WORKER_SLOTS", "two", "TRANSCODE_WORKER_SLOTS must be an integer");
+  }
+
+  @Test
+  @DisplayName("Should default to ffprobe on PATH when its executable is not configured")
+  void shouldDefaultToFfprobeOnPathWhenItsExecutableIsNotConfigured() {
+    var settings = TranscodeWorkerSettings.fromEnvironment(requiredEnvironment());
+
+    assertThat(settings.ffprobePath()).isEqualTo("ffprobe");
+  }
+
+  @Test
+  @DisplayName("Should use the configured ffprobe executable when loading settings")
+  void shouldUseTheConfiguredFfprobeExecutableWhenLoadingSettings() {
+    var environment = new HashMap<>(requiredEnvironment());
+    environment.put("TRANSCODE_WORKER_FFPROBE_PATH", "/usr/local/bin/ffprobe");
+
+    var settings = TranscodeWorkerSettings.fromEnvironment(environment);
+
+    assertThat(settings.ffprobePath()).isEqualTo("/usr/local/bin/ffprobe");
   }
 
   private void assertInvalidSetting(String key, String value, String expectedMessage) {
