@@ -17,6 +17,9 @@ import java.util.OptionalLong;
 
 final class RemoteProbeResultMapper {
 
+  private static final long MAXIMUM_PROTOBUF_DURATION_SECONDS = 315_576_000_000L;
+  private static final int MAXIMUM_PROTOBUF_DURATION_NANOS = 999_999_999;
+
   ProbeOutcome map(ProbeAttemptResult result) {
     if (result.hasMedia()) {
       return success(result.getMedia());
@@ -47,12 +50,7 @@ final class RemoteProbeResultMapper {
   private ProbeContainer container(ProbeContainerInfo container) {
     return ProbeContainer.builder()
         .format(container.hasFormat() ? Optional.of(container.getFormat()) : Optional.empty())
-        .duration(
-            container.hasDuration()
-                ? Optional.of(
-                    Duration.ofSeconds(
-                        container.getDuration().getSeconds(), container.getDuration().getNanos()))
-                : Optional.empty())
+        .duration(duration(container))
         .bitrate(
             container.hasBitrateBitsPerSecond()
                 ? OptionalLong.of(container.getBitrateBitsPerSecond())
@@ -60,7 +58,37 @@ final class RemoteProbeResultMapper {
         .build();
   }
 
+  private Optional<Duration> duration(ProbeContainerInfo container) {
+    if (!container.hasDuration()) {
+      return Optional.empty();
+    }
+
+    var seconds = container.getDuration().getSeconds();
+    var nanos = container.getDuration().getNanos();
+    var validSeconds =
+        seconds >= -MAXIMUM_PROTOBUF_DURATION_SECONDS
+            && seconds <= MAXIMUM_PROTOBUF_DURATION_SECONDS;
+    var validNanos =
+        nanos >= -MAXIMUM_PROTOBUF_DURATION_NANOS && nanos <= MAXIMUM_PROTOBUF_DURATION_NANOS;
+    var consistentSign =
+        seconds == 0 || nanos == 0 || Long.signum(seconds) == Integer.signum(nanos);
+    if (!validSeconds || !validNanos || !consistentSign) {
+      throw new ProbeExecutionException(
+          new IllegalArgumentException("Worker probe duration violates the protobuf contract"));
+    }
+
+    return seconds < 0 || nanos < 0
+        ? Optional.empty()
+        : Optional.of(Duration.ofSeconds(seconds, nanos));
+  }
+
   private StreamInfo stream(ProbeStreamInfo stream) {
+    if (stream.getIndex() < 0) {
+      throw new ProbeExecutionException(
+          new IllegalArgumentException(
+              "Worker probe stream index exceeds the supported integer range"));
+    }
+
     if (stream.getCodecType().isBlank()) {
       throw new ProbeExecutionException(
           new IllegalArgumentException("Worker probe stream is missing codec_type"));
@@ -71,19 +99,23 @@ final class RemoteProbeResultMapper {
         .codecType(stream.getCodecType())
         .codec(stream.hasCodec() ? Optional.of(stream.getCodec()) : Optional.empty())
         .language(stream.hasLanguage() ? Optional.of(stream.getLanguage()) : Optional.empty())
-        .channels(stream.hasChannels() ? OptionalInt.of(stream.getChannels()) : OptionalInt.empty())
+        .channels(optionalUnsignedInt(stream.hasChannels(), stream.getChannels()))
         .bitrate(
             stream.hasBitrateBitsPerSecond()
                 ? OptionalLong.of(stream.getBitrateBitsPerSecond())
                 : OptionalLong.empty())
-        .width(stream.hasWidth() ? OptionalInt.of(stream.getWidth()) : OptionalInt.empty())
-        .height(stream.hasHeight() ? OptionalInt.of(stream.getHeight()) : OptionalInt.empty())
+        .width(optionalUnsignedInt(stream.hasWidth(), stream.getWidth()))
+        .height(optionalUnsignedInt(stream.hasHeight(), stream.getHeight()))
         .framerate(
-            stream.hasFramerate()
+            Double.isFinite(stream.getFramerate()) && stream.getFramerate() > 0
                 ? OptionalDouble.of(stream.getFramerate())
                 : OptionalDouble.empty())
         .isDefault(stream.getIsDefault())
         .isForced(stream.getIsForced())
         .build();
+  }
+
+  private OptionalInt optionalUnsignedInt(boolean present, int value) {
+    return present && value >= 0 ? OptionalInt.of(value) : OptionalInt.empty();
   }
 }

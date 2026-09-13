@@ -24,11 +24,105 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Remote Probe Result Mapper Tests")
 class RemoteProbeResultMapperTest {
+
+  @ParameterizedTest
+  @ValueSource(ints = {-1, Integer.MIN_VALUE})
+  @DisplayName("Should reject a stream when its required index exceeds the supported integer range")
+  void shouldRejectStreamWhenItsRequiredIndexExceedsSupportedIntegerRange(int index)
+      throws Exception {
+    var mapper = new RemoteProbeResultMapper();
+    var result = resultWithStream(ProbeStreamInfo.newBuilder().setIndex(index));
+
+    assertThatThrownBy(() -> mapper.map(result)).isInstanceOf(ProbeExecutionException.class);
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {-1, Integer.MIN_VALUE})
+  @DisplayName(
+      "Should leave optional integers unknown when unsigned worker values exceed Java range")
+  void shouldLeaveOptionalIntegersUnknownWhenUnsignedWorkerValuesExceedJavaRange(int value)
+      throws Exception {
+    var result =
+        resultWithStream(
+            ProbeStreamInfo.newBuilder().setWidth(value).setHeight(value).setChannels(value));
+    var outcome = (ProbeOutcome.Success) new RemoteProbeResultMapper().map(result);
+    var stream = outcome.streams().getFirst();
+
+    assertThat(stream.width()).isEmpty();
+    assertThat(stream.height()).isEmpty();
+    assertThat(stream.channels()).isEmpty();
+  }
+
+  @ParameterizedTest
+  @ValueSource(doubles = {0, -1, Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY})
+  @DisplayName("Should leave framerate unknown when a worker reports an invalid rate")
+  void shouldLeaveFramerateUnknownWhenWorkerReportsInvalidRate(double rate) throws Exception {
+    var result = resultWithStream(ProbeStreamInfo.newBuilder().setFramerate(rate));
+    var outcome = (ProbeOutcome.Success) new RemoteProbeResultMapper().map(result);
+
+    assertThat(outcome.streams().getFirst().framerate()).isEmpty();
+  }
+
+  private ProbeAttemptResult resultWithStream(ProbeStreamInfo.Builder stream) throws Exception {
+    return ProbeAttemptResult.parseFrom(
+        ProbeAttemptResult.newBuilder()
+            .setMedia(ProbeMediaInfo.newBuilder().addStreams(stream.setCodecType("video")))
+            .build()
+            .toByteArray());
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "9223372036854775807,1000000000",
+    "-9223372036854775808,0",
+    "315576000001,0",
+    "-315576000001,0",
+    "0,1000000000",
+    "0,-1000000000",
+    "1,-1",
+    "-1,1"
+  })
+  @DisplayName("Should reject a malformed duration when a worker violates the protobuf contract")
+  void shouldRejectMalformedDurationWhenWorkerViolatesProtobufContract(long seconds, int nanos)
+      throws Exception {
+    var mapper = new RemoteProbeResultMapper();
+    var result = resultWithDuration(seconds, nanos);
+
+    assertThatThrownBy(() -> mapper.map(result)).isInstanceOf(ProbeExecutionException.class);
+  }
+
+  private ProbeAttemptResult resultWithDuration(long seconds, int nanos) throws Exception {
+    var media =
+        ProbeMediaInfo.newBuilder().addStreams(ProbeStreamInfo.newBuilder().setCodecType("video"));
+    media.getContainerBuilder().getDurationBuilder().setSeconds(seconds).setNanos(nanos);
+    return ProbeAttemptResult.parseFrom(
+        ProbeAttemptResult.newBuilder().setMedia(media).build().toByteArray());
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "-1,0,false",
+    "0,-1,false",
+    "-315576000000,-999999999,false",
+    "0,0,true",
+    "315576000000,999999999,true"
+  })
+  @DisplayName("Should retain a valid duration only when the worker reports nonnegative media time")
+  void shouldRetainValidDurationOnlyWhenWorkerReportsNonnegativeMediaTime(
+      long seconds, int nanos, boolean known) throws Exception {
+    var result = resultWithDuration(seconds, nanos);
+    var outcome = (ProbeOutcome.Success) new RemoteProbeResultMapper().map(result);
+
+    assertThat(outcome.container().duration())
+        .isEqualTo(known ? Optional.of(Duration.ofSeconds(seconds, nanos)) : Optional.empty());
+  }
 
   @Test
   @DisplayName(
