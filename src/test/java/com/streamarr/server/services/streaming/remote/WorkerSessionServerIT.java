@@ -11,6 +11,7 @@ import static org.awaitility.Awaitility.await;
 
 import com.google.protobuf.ByteString;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
+import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamSessionFixture;
@@ -22,6 +23,9 @@ import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.JobAttemptStopped;
 import com.streamarr.transcode.v1.MediaSourceRef;
+import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeFailure;
+import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
@@ -45,6 +49,9 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLException;
@@ -52,6 +59,9 @@ import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("IntegrationTest")
 @DisplayName("Worker Session Server Integration Tests")
@@ -61,6 +71,236 @@ class WorkerSessionServerIT {
       UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
   private static final UUID SOURCE_NAMESPACE_ID =
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  @DisplayName("Should refuse an unidentified probe when its attempt ID is omitted or nil")
+  void shouldRefuseUnidentifiedProbeWhenItsAttemptIdIsOmittedOrNil(boolean explicitNil)
+      throws Exception {
+    var request = ProbeRequest.newBuilder().setProbeVersion(1).setSource(variantJob().getSource());
+    if (explicitNil) {
+      request.setProbeAttemptId(toProto(new UUID(0, 0)));
+    }
+
+    var decoded = ProbeRequest.parseFrom(request.build().toByteArray());
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+      try {
+        var worker = connectProbeWorker(channel, workerIdentity(UUID.randomUUID()));
+        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
+        assertThat(server.dispatchProbe(decoded)).isEmpty();
+        assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(2);
+        var identified = request.setProbeAttemptId(toProto(new UUID(0, 1))).build();
+        assertThat(server.dispatchProbe(identified)).isPresent();
+        assertThat(worker.nextResponse().getStartProbe().getRequest()).isEqualTo(identified);
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
+  @ParameterizedTest
+  @EnumSource(SessionEnd.class)
+  @DisplayName("Should fail a pending probe when its session ends during segment publication")
+  void shouldFailPendingProbeWhenItsSessionEndsDuringSegmentPublication(SessionEnd ending)
+      throws Exception {
+    var segmentStore = new PausedPublicationStore();
+    try (var server = server(segmentStore)) {
+      server.start();
+      var channel = workerChannel(server.port());
+      var identity = workerIdentity(UUID.randomUUID());
+      try {
+        var worker = connectProbeWorker(channel, identity);
+        var session = worker.nextResponse().getSessionAccepted();
+        var job = variantJob();
+        assertThat(server.dispatch(job)).isTrue();
+        assertThat(worker.nextResponse().hasStartVariant()).isTrue();
+        var request =
+            ProbeRequest.newBuilder()
+                .setProbeAttemptId(toProto(UUID.randomUUID()))
+                .setProbeVersion(1)
+                .setSource(job.getSource())
+                .build();
+        var pending = server.dispatchProbe(request).orElseThrow();
+        assertThat(worker.nextResponse().getStartProbe().getRequest()).isEqualTo(request);
+        var bytes = ByteString.copyFromUtf8("segment").toByteArray();
+        var metadata =
+            segmentMetadata(session, identity, job).setContentLengthBytes(bytes.length).build();
+        var upload = upload(channel, metadata, bytes);
+        try {
+          assertThat(segmentStore.entered.await(5, TimeUnit.SECONDS)).isTrue();
+          if (ending == SessionEnd.DISCONNECTED) {
+            worker.close();
+          } else {
+            var replacement = connect(channel, workerIdentity(UUID.randomUUID()));
+            assertThat(replacement.nextResponse().hasSessionAccepted()).isTrue();
+          }
+
+          assertThatThrownBy(() -> pending.get(5, TimeUnit.SECONDS))
+              .as("ended-session probe must fail while segment publication remains blocked")
+              .isInstanceOf(ExecutionException.class)
+              .hasCauseInstanceOf(ProbeExecutionException.class);
+        } finally {
+          segmentStore.release.countDown();
+        }
+
+        upload.get(5, TimeUnit.SECONDS);
+      } finally {
+        segmentStore.release.countDown();
+        shutdown(channel);
+      }
+    }
+  }
+
+  private TestWorkerConnection connectProbeWorker(ManagedChannel channel, WorkerIdentity identity) {
+    var responses = new LinkedBlockingQueue<EstablishWorkerSessionResponse>();
+    var closed = new CompletableFuture<Void>();
+    var requests =
+        TranscodeWorkerServiceGrpc.newStub(channel)
+            .establishWorkerSession(new QueuedResponseObserver(responses, closed));
+    var registration = registration(identity).toBuilder();
+    registration.getRegistrationBuilder().setAvailableSlots(2);
+    registration.getRegistrationBuilder().getCapabilitiesBuilder().addProbeVersions(1);
+    requests.onNext(registration.build());
+    return new TestWorkerConnection(requests, responses, closed);
+  }
+
+  @Test
+  @DisplayName(
+      "Should dispatch a replacement probe when the superseded segment publication is blocked")
+  void shouldDispatchReplacementProbeWhenSupersededSegmentPublicationIsBlocked() throws Exception {
+    var segmentStore = new PausedPublicationStore();
+    try (var server = server(segmentStore)) {
+      server.start();
+      var channel = workerChannel(server.port());
+      var identity = workerIdentity(UUID.randomUUID());
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var worker = connectProbeWorker(channel, identity);
+        var session = worker.nextResponse().getSessionAccepted();
+        var job = variantJob();
+        assertThat(server.dispatch(job)).isTrue();
+        assertThat(worker.nextResponse().hasStartVariant()).isTrue();
+        var request =
+            ProbeRequest.newBuilder()
+                .setProbeAttemptId(toProto(UUID.randomUUID()))
+                .setProbeVersion(1)
+                .setSource(job.getSource())
+                .build();
+        var superseded = server.dispatchProbe(request).orElseThrow();
+        assertThat(worker.nextResponse().hasStartProbe()).isTrue();
+        var bytes = ByteString.copyFromUtf8("segment").toByteArray();
+        var metadata =
+            segmentMetadata(session, identity, job).setContentLengthBytes(bytes.length).build();
+        var upload = upload(channel, metadata, bytes);
+        try {
+          assertThat(segmentStore.entered.await(5, TimeUnit.SECONDS)).isTrue();
+          var replacement = connectProbeWorker(channel, workerIdentity(UUID.randomUUID()));
+          assertThat(replacement.nextResponse().hasSessionAccepted()).isTrue();
+          assertThatThrownBy(() -> superseded.get(5, TimeUnit.SECONDS))
+              .isInstanceOf(ExecutionException.class)
+              .hasCauseInstanceOf(ProbeExecutionException.class);
+
+          var dispatched = executor.submit(() -> server.dispatchProbe(request));
+          var pending = dispatched.get(5, TimeUnit.SECONDS).orElseThrow();
+
+          assertThat(replacement.nextResponse().getStartProbe().getRequest()).isEqualTo(request);
+          assertThat(pending).isNotDone();
+          assertThat(upload).isNotDone();
+        } finally {
+          segmentStore.release.countDown();
+        }
+
+        upload.get(5, TimeUnit.SECONDS);
+      } finally {
+        segmentStore.release.countDown();
+        shutdown(channel);
+      }
+    }
+  }
+
+  private enum SessionEnd {
+    DISCONNECTED,
+    REPLACED
+  }
+
+  private static final class PausedPublicationStore extends FakeSegmentStore {
+
+    private final CountDownLatch entered = new CountDownLatch(1);
+    private final CountDownLatch release = new CountDownLatch(1);
+
+    @Override
+    public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] bytes) {
+      var prepared = super.prepareSegment(sessionId, segmentName, bytes);
+      return new PreparedSegment() {
+        @Override
+        public void publish() {
+          entered.countDown();
+          try {
+            assertThat(release.await(30, TimeUnit.SECONDS)).isTrue();
+          } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError(exception);
+          }
+
+          prepared.publish();
+        }
+
+        @Override
+        public void close() {
+          prepared.close();
+        }
+      };
+    }
+  }
+
+  @Test
+  @DisplayName("Should deliver a typed probe result when a capable worker replies over mutual TLS")
+  void shouldDeliverTypedProbeResultWhenCapableWorkerRepliesOverMutualTls() throws Exception {
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+      try {
+        var responses = new LinkedBlockingQueue<EstablishWorkerSessionResponse>();
+        var closed = new CompletableFuture<Void>();
+        var session =
+            TranscodeWorkerServiceGrpc.newStub(channel)
+                .establishWorkerSession(new QueuedResponseObserver(responses, closed));
+        var registration = registration(AUTHENTICATED_WORKER_ID).toBuilder();
+        registration.getRegistrationBuilder().getCapabilitiesBuilder().addProbeVersions(2);
+        session.onNext(registration.build());
+        assertThat(responses.poll(5, TimeUnit.SECONDS))
+            .isNotNull()
+            .satisfies(response -> assertThat(response.hasSessionAccepted()).isTrue());
+        var request =
+            ProbeRequest.newBuilder()
+                .setProbeAttemptId(toProto(UUID.randomUUID()))
+                .setProbeVersion(2)
+                .setSource(variantJob().getSource())
+                .build();
+
+        var pending = server.dispatchProbe(request).orElseThrow();
+
+        var command = responses.poll(5, TimeUnit.SECONDS);
+        assertThat(command).isNotNull();
+        assertThat(command.getStartProbe().getRequest()).isEqualTo(request);
+        assertThat(command.getStartProbe().getTarget())
+            .isEqualTo(registration.getRegistration().getWorker());
+        var result =
+            ProbeAttemptResult.newBuilder()
+                .setProbeAttemptId(request.getProbeAttemptId())
+                .setProbeVersion(2)
+                .setFailure(ProbeFailure.PROBE_FAILURE_NO_VIDEO_STREAM)
+                .build();
+        session.onNext(EstablishWorkerSessionRequest.newBuilder().setProbeResult(result).build());
+
+        assertThat(pending.get(5, TimeUnit.SECONDS)).isEqualTo(result);
+        assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
 
   @Test
   @DisplayName(
