@@ -6,9 +6,10 @@ import lombok.NonNull;
 
 /**
  * The protocol-independent result of a mutation service (ADR 0026): the work was accepted and
- * produced {@code T}, or it was rejected for one or more typed reasons {@code R} and nothing was
- * written. Expected rejections are returned as results. Exceptions indicate failures or
- * request-wide denials.
+ * produced {@code T}, or it was rejected for one or more typed reasons {@code R} without producing
+ * an accepted command result. A rejected playback request may enqueue background probe work without
+ * creating a stream session (ADR 0032). Expected rejections are returned as results. Exceptions
+ * indicate failures or request-wide denials.
  */
 public sealed interface Outcome<T, R> {
 

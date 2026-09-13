@@ -4,7 +4,6 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
-import com.streamarr.server.services.task.FileProcessingTaskCoordinator;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import io.methvin.watcher.DirectoryWatcher;
 import io.methvin.watcher.hashing.FileHasher;
@@ -37,12 +36,11 @@ public class DirectoryWatchingService implements InitializingBean, LibraryWatchT
       LibraryRepository libraryRepository,
       FileStabilityChecker fileStabilityChecker,
       LibraryManagementService libraryManagementService,
-      IgnoredFileValidator ignoredFileValidator,
-      FileProcessingTaskCoordinator taskCoordinator) {
+      IgnoredFileValidator ignoredFileValidator) {
     this.libraryRepository = libraryRepository;
     this.fileEventProcessor =
         new FileEventProcessor(
-            fileStabilityChecker, libraryManagementService, ignoredFileValidator, taskCoordinator);
+            fileStabilityChecker, libraryManagementService, ignoredFileValidator);
   }
 
   public void setup(List<Library> libraries) throws IOException {
@@ -126,9 +124,8 @@ public class DirectoryWatchingService implements InitializingBean, LibraryWatchT
         });
   }
 
-  // Watcher may detect files before the initial async scan processes them.
-  // FileProcessingTaskCoordinator deduplicates, so concurrent discovery is safe. Watching starts
-  // only after the library row commits; a rolled-back addLibrary must leave no watcher behind.
+  // Watching starts only after the library row commits. A rolled-back addLibrary must leave no
+  // watcher behind.
   @Override
   public void triggerAsyncWatch(String filepathUri) {
     Thread.startVirtualThread(

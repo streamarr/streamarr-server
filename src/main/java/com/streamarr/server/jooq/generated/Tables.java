@@ -24,6 +24,7 @@ import com.streamarr.server.jooq.generated.tables.Library;
 import com.streamarr.server.jooq.generated.tables.LibraryMetadata;
 import com.streamarr.server.jooq.generated.tables.MediaFile;
 import com.streamarr.server.jooq.generated.tables.MediaFileContainerInfo;
+import com.streamarr.server.jooq.generated.tables.MediaFileProbeTaskRequest;
 import com.streamarr.server.jooq.generated.tables.MediaFileStreamInfo;
 import com.streamarr.server.jooq.generated.tables.Movie;
 import com.streamarr.server.jooq.generated.tables.MovieCompany;
@@ -158,6 +159,11 @@ public class Tables {
      * The table <code>public.media_file_container_info</code>.
      */
     public static final MediaFileContainerInfo MEDIA_FILE_CONTAINER_INFO = MediaFileContainerInfo.MEDIA_FILE_CONTAINER_INFO;
+
+    /**
+     * The table <code>public.media_file_probe_task_request</code>.
+     */
+    public static final MediaFileProbeTaskRequest MEDIA_FILE_PROBE_TASK_REQUEST = MediaFileProbeTaskRequest.MEDIA_FILE_PROBE_TASK_REQUEST;
 
     /**
      * The table <code>public.media_file_stream_info</code>.

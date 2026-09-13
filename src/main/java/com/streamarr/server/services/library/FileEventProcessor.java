@@ -1,13 +1,13 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
-import com.streamarr.server.domain.task.FileProcessingTask;
+import com.streamarr.server.exceptions.ProbeTaskSchedulingException;
 import com.streamarr.server.services.filepath.FilepathCodec;
-import com.streamarr.server.services.task.FileProcessingTaskCoordinator;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import io.methvin.watcher.DirectoryChangeEvent;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.SQLException;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -19,6 +19,8 @@ import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.springframework.util.backoff.ExponentialBackOff;
 
 @Slf4j
 class FileEventProcessor {
@@ -31,7 +33,6 @@ class FileEventProcessor {
   private final FileStabilityChecker fileStabilityChecker;
   private final LibraryManagementService libraryManagementService;
   private final IgnoredFileValidator ignoredFileValidator;
-  private final FileProcessingTaskCoordinator taskCoordinator;
 
   private final ConcurrentHashMap<Path, InFlightTask> inFlightChecks = new ConcurrentHashMap<>();
   private final ReentrantReadWriteLock stateLock = new ReentrantReadWriteLock();
@@ -42,12 +43,10 @@ class FileEventProcessor {
   FileEventProcessor(
       FileStabilityChecker fileStabilityChecker,
       LibraryManagementService libraryManagementService,
-      IgnoredFileValidator ignoredFileValidator,
-      FileProcessingTaskCoordinator taskCoordinator) {
+      IgnoredFileValidator ignoredFileValidator) {
     this.fileStabilityChecker = fileStabilityChecker;
     this.libraryManagementService = libraryManagementService;
     this.ignoredFileValidator = ignoredFileValidator;
-    this.taskCoordinator = taskCoordinator;
   }
 
   void handleFileEvent(DirectoryChangeEvent.EventType eventType, Path path) {
@@ -102,10 +101,7 @@ class FileEventProcessor {
     try {
       scheduleStabilityCheck(path, optionalLibraryId.get());
     } catch (RejectedExecutionException _) {
-      log.warn(
-          "Executor shut down while scheduling stability check for: {}. "
-              + "Any created task will be reclaimed by distributed lease recovery.",
-          path);
+      log.warn("Executor shut down while scheduling stability check for: {}", path);
     }
   }
 
@@ -121,8 +117,7 @@ class FileEventProcessor {
               log.debug("Stability check already in progress for: {}", path);
               return existing;
             }
-            var task = taskCoordinator.createTask(key, libraryId);
-            var future = executor.submit(() -> runStabilityCheckWithCleanup(key, token, task));
+            var future = executor.submit(() -> runStabilityCheckWithCleanup(key, token, libraryId));
             return new InFlightTask(future, token);
           });
     } finally {
@@ -130,44 +125,52 @@ class FileEventProcessor {
     }
   }
 
-  private void runStabilityCheckWithCleanup(
-      Path path, StabilityToken token, FileProcessingTask task) {
+  private void runStabilityCheckWithCleanup(Path path, StabilityToken token, UUID libraryId) {
     try {
-      processStableFile(path, task);
+      processWithRetry(path, libraryId);
+    } catch (InterruptedException _) {
+      Thread.currentThread().interrupt();
+    } catch (RuntimeException exception) {
+      log.error("Failed to process discovered file: {}", path, exception);
     } finally {
       inFlightChecks.compute(
           path, (k, current) -> current != null && current.token() == token ? null : current);
     }
   }
 
-  private void processStableFile(Path path, FileProcessingTask task) {
+  private void processWithRetry(Path path, UUID libraryId) throws InterruptedException {
+    // Enqueue failures precede db-scheduler's durable retry boundary, so retain this in-flight
+    // path.
+    var backOff = new ExponentialBackOff().start();
+    while (!Thread.currentThread().isInterrupted() && !tryProcessStableFile(path, libraryId)) {
+      Thread.sleep(backOff.nextBackOff());
+    }
+  }
+
+  private boolean tryProcessStableFile(Path path, UUID libraryId) {
+    try {
+      processStableFile(path, libraryId);
+      return true;
+    } catch (RuntimeException exception) {
+      if (!(exception instanceof ProbeTaskSchedulingException)
+          && ExceptionUtils.indexOfType(exception, SQLException.class) < 0) {
+        throw exception;
+      }
+
+      log.warn("Retaining discovered file for retry after scheduling failure: {}", path, exception);
+      return false;
+    }
+  }
+
+  private void processStableFile(Path path, UUID libraryId) {
     log.info("Starting stability check for: {}", path);
 
     if (!fileStabilityChecker.waitForStability(path)) {
       log.warn("File did not stabilize: {}", path);
-      var result = taskCoordinator.fail(task.getId(), "File did not stabilize within timeout");
-      logIfTaskAlreadyCancelled(result, path);
       return;
     }
 
-    try {
-      libraryManagementService.processDiscoveredFile(task.getLibraryId(), path);
-      var result = taskCoordinator.complete(task.getId());
-      logIfTaskAlreadyCancelled(result, path);
-    } catch (Exception e) {
-      log.error("Failed to process discovered file: {}", path, e);
-      var result =
-          taskCoordinator.fail(
-              task.getId(), Optional.ofNullable(e.getMessage()).orElse(e.toString()));
-      logIfTaskAlreadyCancelled(result, path);
-    }
-  }
-
-  private void logIfTaskAlreadyCancelled(Optional<FileProcessingTask> result, Path path) {
-    if (result.isPresent()) {
-      return;
-    }
-    log.info("Task already cancelled for: {}", path);
+    libraryManagementService.processDiscoveredFile(libraryId, path);
   }
 
   private void handleDelete(Path path) {
@@ -178,7 +181,6 @@ class FileEventProcessor {
       log.info("Cancelled in-flight check for deleted file: {}", path);
     }
 
-    taskCoordinator.cancelTask(path);
     log.info("Watcher event type: DELETE -- filepath: {}", path);
   }
 

@@ -6,7 +6,8 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.repository.Repository;
 
-public interface MediaFileContainerInfoRepository extends Repository<MediaFileContainerInfo, UUID> {
+public interface MediaFileContainerInfoRepository
+    extends Repository<MediaFileContainerInfo, UUID>, MediaFileContainerInfoRepositoryCustom {
 
   @EntityGraph(attributePaths = "streams")
   Optional<MediaFileContainerInfo> findByMediaFileId(UUID mediaFileId);

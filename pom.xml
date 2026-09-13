@@ -84,6 +84,7 @@
              refuses) without this flag, so every JVM that loads it gets it. -->
         <native.access.args>--enable-native-access=ALL-UNNAMED</native.access.args>
         <grpc.version>1.84.0</grpc.version>
+        <db-scheduler.version>16.12.0</db-scheduler.version>
         <protobuf-maven-plugin.version>5.1.8</protobuf-maven-plugin.version>
     </properties>
 
@@ -147,6 +148,11 @@
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.github.kagkarlsson</groupId>
+            <artifactId>db-scheduler-spring-boot-4-starter</artifactId>
+            <version>${db-scheduler.version}</version>
         </dependency>
         <dependency>
             <groupId>com.netflix.graphql.dgs</groupId>
@@ -780,6 +786,8 @@
                                 <database>
                                     <name>org.jooq.meta.postgres.PostgresDatabase</name>
                                     <includes>.*</includes>
+                                    <!-- db-scheduler owns this table; nothing in the server queries it. -->
+                                    <excludes>scheduled_tasks</excludes>
                                     <inputSchema>public</inputSchema>
                                 </database>
                                 <generate>

@@ -5,7 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
+import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
+import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
 import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.StreamingService;
 import java.util.Collection;
@@ -85,7 +87,8 @@ class StreamingSessionCleanupListenerTest {
     }
 
     @Override
-    public StreamSession createSession(CreateStreamSessionCommand command) {
+    public Outcome<StreamSession, CreateStreamSessionRejection> createSession(
+        CreateStreamSessionCommand command) {
       throw new UnsupportedOperationException();
     }
 

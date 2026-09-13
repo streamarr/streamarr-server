@@ -5,6 +5,7 @@ import static com.streamarr.server.support.TokenTestSupport.decode;
 import static com.streamarr.server.support.TokenTestSupport.tokenProperties;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.jayway.jsonpath.DocumentContext;
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.config.StreamingProperties;
@@ -13,6 +14,7 @@ import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
+import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -25,7 +27,9 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
+import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
+import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
 import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
@@ -39,6 +43,7 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -68,6 +73,167 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
     })
 @DisplayName("Streaming Resolver Tests")
 class StreamingResolverTest {
+
+  @Test
+  @DisplayName("Should return a typed capacity error when playback has no transcode slots")
+  void shouldReturnATypedCapacityErrorWhenPlaybackHasNoTranscodeSlots() {
+    STUB_SERVICE.setRejection(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3));
+    var context = requestSession(UUID.randomUUID().toString());
+
+    assertThat(context.read("data.createStreamSession.session", Object.class)).isNull();
+    assertThat(context.read("data.createStreamSession.userErrors[0].__typename", String.class))
+        .isEqualTo("TranscodeCapacityUnavailableError");
+  }
+
+  @Test
+  @DisplayName("Should return a typed file error when the media file no longer exists")
+  void shouldReturnATypedFileErrorWhenTheMediaFileNoLongerExists() {
+    var mediaFileId = UUID.randomUUID();
+    STUB_SERVICE.setRejection(new CreateStreamSessionRejection.MediaFileNotFound(mediaFileId));
+    var context = requestSession(mediaFileId.toString());
+
+    assertThat(context.read("data.createStreamSession.session", Object.class)).isNull();
+    assertThat(context.read("data.createStreamSession.userErrors[0].__typename", String.class))
+        .isEqualTo("MediaFileNotFoundError");
+    List<String> inputPath = context.read("data.createStreamSession.userErrors[0].inputPath");
+    assertThat(inputPath).containsExactly("mediaFileId");
+  }
+
+  @Test
+  @DisplayName("Should return an input error when the media file ID is malformed")
+  void shouldReturnAnInputErrorWhenTheMediaFileIdIsMalformed() {
+    var context = requestSession("not-a-uuid");
+
+    assertThat(context.read("data.createStreamSession.session", Object.class)).isNull();
+    assertThat(context.read("data.createStreamSession.userErrors[0].__typename", String.class))
+        .isEqualTo("InvalidIdError");
+    List<String> inputPath = context.read("data.createStreamSession.userErrors[0].inputPath");
+    assertThat(inputPath).containsExactly("mediaFileId");
+    assertThat(STUB_SERVICE.getLastCreateProfileId()).isNull();
+  }
+
+  @ParameterizedTest
+  @MethodSource("terminalProbeErrors")
+  @DisplayName("Should return the typed terminal failure when playback has a failed probe")
+  void shouldReturnTheTypedTerminalFailureWhenPlaybackHasAFailedProbe(
+      ProbeError reason, String errorType, String message) {
+    STUB_SERVICE.setRejection(new CreateStreamSessionRejection.ProbeFailed(reason));
+    var context = requestSession(UUID.randomUUID().toString());
+    List<Map<String, String>> errors = context.read("data.createStreamSession.userErrors");
+
+    assertThat(context.read("data.createStreamSession.session", Object.class)).isNull();
+    assertThat(errors).containsExactly(Map.of("__typename", errorType, "message", message));
+  }
+
+  static Stream<Arguments> terminalProbeErrors() {
+    return Stream.of(
+        Arguments.of(
+            ProbeError.INVALID_MEDIA,
+            "InvalidMediaFileError",
+            "This file cannot be read as supported media."),
+        Arguments.of(
+            ProbeError.NO_VIDEO_STREAM,
+            "MediaFileHasNoVideoError",
+            "This file has no video stream."));
+  }
+
+  @Test
+  @DisplayName("Should return a typed not-ready payload when playback has no probe outcome")
+  void shouldReturnATypedNotReadyPayloadWhenPlaybackHasNoProbeOutcome() {
+    STUB_SERVICE.setRejection(new CreateStreamSessionRejection.ProbeNotReady());
+    var context = requestSession(UUID.randomUUID().toString());
+    List<Map<String, String>> errors = context.read("data.createStreamSession.userErrors");
+
+    assertThat(context.read("data.createStreamSession.session", Object.class)).isNull();
+    assertThat(errors)
+        .containsExactly(
+            Map.of(
+                "__typename", "MediaFileProbeNotReadyError",
+                "message", "This file is being prepared for playback. Try again shortly."));
+  }
+
+  @Test
+  @DisplayName("Should return a playable session payload when creation succeeds")
+  void shouldReturnAPlayableSessionPayloadWhenCreationSucceeds() {
+    var session = buildSession(UUID.randomUUID());
+    STUB_SERVICE.setNextResult(session);
+    var context =
+        dgsQueryExecutor.executeAndGetDocumentContext(
+            """
+        mutation {
+          createStreamSession(input: {
+            mediaFileId: "%s"
+            options: {quality: HIGH_720P, supportedCodecs: ["h264"],
+              supportedAudioCodecs: ["aac", "ac3"], maxAudioChannels: 6}
+          }) {
+            session { id streamUrl transcodeMode }
+            userErrors { __typename }
+          }
+        }
+        """
+                .formatted(session.getMediaFileId()));
+
+    assertThat(context.read("data.createStreamSession.session.id", String.class))
+        .isEqualTo(session.getSessionId().toString());
+    assertThat(context.read("data.createStreamSession.session.transcodeMode", String.class))
+        .isEqualTo("REMUX");
+    List<Object> errors = context.read("data.createStreamSession.userErrors");
+    assertThat(errors).isEmpty();
+    var streamUrl = context.read("data.createStreamSession.session.streamUrl", String.class);
+    assertThat(streamUrl)
+        .startsWith("/api/stream/" + session.getSessionId() + "/multivariant.m3u8?t=");
+    var decoded = decodeToken(streamUrl.substring(streamUrl.indexOf("?t=") + 3));
+    assertThat(Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt()))
+        .isEqualTo(session.getMediaProbe().duration().plus(streamingProperties.sessionRetention()));
+    assertThat(STUB_SERVICE.getLastCreateProfileId()).isEqualTo(TestIdentityConstants.PROFILE_ID);
+    var options = STUB_SERVICE.getLastReceivedOptions();
+    assertThat(options.quality()).isEqualTo(VideoQuality.HIGH_720P);
+    assertThat(options.supportedCodecs()).containsExactly("h264");
+    assertThat(options.supportedAudioCodecs()).containsExactly("aac", "ac3");
+    assertThat(options.maxAudioChannels()).isEqualTo(6);
+  }
+
+  @Test
+  @DisplayName("Should destroy the accepted session when playback token issuance fails")
+  void shouldDestroyTheAcceptedSessionWhenPlaybackTokenIssuanceFails() {
+    var sessionId = UUID.randomUUID();
+    STUB_SERVICE.setNextResult(buildSessionOwnedBy(sessionId, UUID.randomUUID()));
+
+    var result =
+        dgsQueryExecutor.execute(
+            """
+        mutation {
+          createStreamSession(input: {mediaFileId: "%s"}) {
+            session { id streamUrl }
+            userErrors { __typename }
+          }
+        }
+        """
+                .formatted(UUID.randomUUID()));
+
+    assertThat(result.getErrors()).hasSize(1);
+    assertThat(result.getErrors().getFirst().getMessage())
+        .contains("Streaming session not found: " + sessionId);
+    assertThat(result.toSpecification().toString()).doesNotContain("?t=");
+    assertThat(STUB_SERVICE.getActiveSessionCount()).isZero();
+  }
+
+  private DocumentContext requestSession(String mediaFileId) {
+    return dgsQueryExecutor.executeAndGetDocumentContext(
+        """
+        mutation {
+          createStreamSession(input: {mediaFileId: "%s"}) {
+            session { id }
+            userErrors {
+              __typename
+              ... on MutationError { message }
+              ... on InputMutationError { inputPath }
+            }
+          }
+        }
+        """
+            .formatted(mediaFileId));
+  }
 
   private static final StubStreamingService STUB_SERVICE = new StubStreamingService();
 
@@ -159,37 +325,6 @@ class StreamingResolverTest {
   }
 
   @Test
-  @DisplayName("Should return session DTO when creating stream session")
-  void shouldReturnSessionDtoWhenCreatingStreamSession() {
-    var sessionId = UUID.randomUUID();
-    var session = buildSession(sessionId);
-    STUB_SERVICE.setNextResult(session);
-
-    var mutation =
-        String.format(
-            """
-            mutation {
-              createStreamSession(mediaFileId: "%s") {
-                id
-                streamUrl
-                transcodeMode
-              }
-            }
-            """,
-            UUID.randomUUID());
-
-    var context = dgsQueryExecutor.executeAndGetDocumentContext(mutation);
-    String id = context.read("data.createStreamSession.id");
-    String streamUrl = context.read("data.createStreamSession.streamUrl");
-    String transcodeMode = context.read("data.createStreamSession.transcodeMode");
-
-    assertThat(id).isEqualTo(sessionId.toString());
-    assertThat(streamUrl).contains("/api/stream/" + sessionId + "/multivariant.m3u8");
-    assertThat(transcodeMode).isEqualTo("REMUX");
-    assertThat(STUB_SERVICE.getLastCreateProfileId()).isEqualTo(TestIdentityConstants.PROFILE_ID);
-  }
-
-  @Test
   @DisplayName("Should return stream URL with URL-safe playback token when creating session")
   void shouldReturnStreamUrlWithUrlSafePlaybackTokenWhenCreatingSession() {
     var sessionId = UUID.randomUUID();
@@ -199,114 +334,23 @@ class StreamingResolverTest {
         String.format(
             """
             mutation {
-              createStreamSession(mediaFileId: "%s") {
-                streamUrl
+              createStreamSession(input: {mediaFileId: "%s"}) {
+                session { streamUrl }
               }
             }
             """,
             UUID.randomUUID());
 
     String streamUrl =
-        dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.createStreamSession.streamUrl");
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            mutation, "data.createStreamSession.session.streamUrl");
 
     assertThat(streamUrl).startsWith("/api/stream/" + sessionId + "/multivariant.m3u8?t=");
     assertThat(streamUrl.substring(streamUrl.indexOf("?t=") + 3)).matches("[A-Za-z0-9._-]+");
   }
 
-  @Test
-  @DisplayName("Should mint playback token for media duration plus session retention")
-  void shouldMintPlaybackTokenForMediaDurationPlusSessionRetention() {
-    var sessionId = UUID.randomUUID();
-    var session = buildSession(sessionId);
-    STUB_SERVICE.setNextResult(session);
-
-    var mutation =
-        String.format(
-            """
-            mutation {
-              createStreamSession(mediaFileId: "%s") {
-                streamUrl
-              }
-            }
-            """,
-            UUID.randomUUID());
-
-    String streamUrl =
-        dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.createStreamSession.streamUrl");
-    var token = streamUrl.substring(streamUrl.indexOf("?t=") + 3);
-    var decoded = decodeToken(token);
-    var tokenLifetime = Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt());
-
-    assertThat(tokenLifetime)
-        .isEqualTo(session.getMediaProbe().duration().plus(streamingProperties.sessionRetention()));
-  }
-
   private static Jwt decodeToken(String token) {
     return decode(token, tokenProperties());
-  }
-
-  @Test
-  @DisplayName("Should destroy session when playback token issuance fails")
-  void shouldDestroySessionWhenPlaybackTokenIssuanceFails() {
-    // Simulates a future internal path handing back a foreign session: the resolver must never
-    // turn it into a playable URL, whatever the service layer does.
-    var sessionId = UUID.randomUUID();
-    STUB_SERVICE.setNextResult(buildSessionOwnedBy(sessionId, UUID.randomUUID()));
-
-    var mutation =
-        String.format(
-            """
-            mutation {
-              createStreamSession(mediaFileId: "%s") {
-                id
-                streamUrl
-              }
-            }
-            """,
-            UUID.randomUUID());
-
-    var result = dgsQueryExecutor.execute(mutation);
-
-    assertThat(result.getErrors()).hasSize(1);
-    assertThat(result.getErrors().getFirst().getMessage())
-        .contains("Streaming session not found: " + sessionId);
-    assertThat(result.toSpecification().toString()).doesNotContain("?t=");
-    assertThat(STUB_SERVICE.getActiveSessionCount()).isZero();
-  }
-
-  @Test
-  @DisplayName("Should map GraphQL options input to streaming options when options provided")
-  void shouldMapGraphqlOptionsInputToStreamingOptionsWhenOptionsProvided() {
-    var sessionId = UUID.randomUUID();
-    var session = buildSession(sessionId);
-    STUB_SERVICE.setNextResult(session);
-
-    var mutation =
-        String.format(
-            """
-            mutation {
-              createStreamSession(
-                mediaFileId: "%s",
-                options: {
-                  quality: HIGH_720P,
-                  supportedCodecs: ["h264"],
-                  supportedAudioCodecs: ["aac", "ac3"],
-                  maxAudioChannels: 6
-                }
-              ) {
-                id
-              }
-            }
-            """,
-            UUID.randomUUID());
-
-    dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.createStreamSession.id");
-
-    var receivedOptions = STUB_SERVICE.getLastReceivedOptions();
-    assertThat(receivedOptions.quality()).isEqualTo(VideoQuality.HIGH_720P);
-    assertThat(receivedOptions.supportedCodecs()).containsExactly("h264");
-    assertThat(receivedOptions.supportedAudioCodecs()).containsExactly("aac", "ac3");
-    assertThat(receivedOptions.maxAudioChannels()).isEqualTo(6);
   }
 
   @Test
@@ -320,14 +364,14 @@ class StreamingResolverTest {
         String.format(
             """
             mutation {
-              createStreamSession(mediaFileId: "%s") {
-                id
+              createStreamSession(input: {mediaFileId: "%s"}) {
+                session { id }
               }
             }
             """,
             UUID.randomUUID());
 
-    dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.createStreamSession.id");
+    dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.createStreamSession.session.id");
 
     var receivedOptions = STUB_SERVICE.getLastReceivedOptions();
     assertThat(receivedOptions.quality()).isEqualTo(VideoQuality.AUTO);
@@ -337,23 +381,6 @@ class StreamingResolverTest {
         .isEqualTo(StreamingOptions.DEFAULT_SUPPORTED_AUDIO_CODECS);
     assertThat(receivedOptions.maxAudioChannels())
         .isEqualTo(StreamingOptions.DEFAULT_MAX_AUDIO_CHANNELS);
-  }
-
-  @Test
-  @DisplayName("Should return error when create session media file ID is invalid")
-  void shouldReturnErrorWhenMediaFileIdIsInvalid() {
-    var result =
-        dgsQueryExecutor.execute(
-            """
-            mutation {
-              createStreamSession(mediaFileId: "not-a-uuid") {
-                id
-              }
-            }
-            """);
-
-    assertThat(result.getErrors()).isNotEmpty();
-    assertThat(result.getErrors().getFirst().getMessage()).contains("Invalid ID format");
   }
 
   @Test
@@ -394,30 +421,52 @@ class StreamingResolverTest {
             "markUnwatched", "mutation { markUnwatched(id: \"%s\") }", "data.markUnwatched"));
   }
 
-  @Test
-  @DisplayName("Should return error when destroy session ID is invalid")
-  void shouldReturnErrorWhenDestroySessionIdIsInvalid() {
-    var result =
-        dgsQueryExecutor.execute(
-            """
-            mutation {
-              destroyStreamSession(sessionId: "bad-id")
-            }
-            """);
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("invalidIdMutations")
+  @DisplayName("Should return error when mutation ID is invalid")
+  void shouldReturnErrorWhenMutationIdIsInvalid(String name, String mutation) {
+    var result = dgsQueryExecutor.execute(mutation);
 
     assertThat(result.getErrors()).isNotEmpty();
     assertThat(result.getErrors().getFirst().getMessage()).contains("Invalid ID format");
   }
 
+  static Stream<Arguments> invalidIdMutations() {
+    return Stream.of(
+        Arguments.of(
+            "destroyStreamSession",
+            """
+            mutation {
+              destroyStreamSession(sessionId: "bad-id")
+            }
+            """),
+        Arguments.of(
+            "reportStreamSessionTimeline",
+            """
+            mutation {
+              reportStreamSessionTimeline(sessionId: "bad-id", positionSeconds: 300, state: PLAYING)
+            }
+            """),
+        Arguments.of(
+            "markUnwatched",
+            """
+            mutation {
+              markUnwatched(id: "bad-id")
+            }
+            """));
+  }
+
   private static class StubStreamingService implements StreamingService {
 
     private StreamSession nextResult;
+    private Optional<CreateStreamSessionRejection> rejection = Optional.empty();
     private StreamingOptions lastReceivedOptions;
     private UUID lastCreateProfileId;
     private UUID lastDestroyProfileId;
 
     void reset() {
       nextResult = null;
+      rejection = Optional.empty();
       lastReceivedOptions = null;
       lastCreateProfileId = null;
       lastDestroyProfileId = null;
@@ -425,6 +474,10 @@ class StreamingResolverTest {
 
     void setNextResult(StreamSession session) {
       this.nextResult = session;
+    }
+
+    void setRejection(CreateStreamSessionRejection reason) {
+      rejection = Optional.of(reason);
     }
 
     StreamingOptions getLastReceivedOptions() {
@@ -440,10 +493,15 @@ class StreamingResolverTest {
     }
 
     @Override
-    public StreamSession createSession(CreateStreamSessionCommand command) {
+    public Outcome<StreamSession, CreateStreamSessionRejection> createSession(
+        CreateStreamSessionCommand command) {
       this.lastReceivedOptions = command.options();
       this.lastCreateProfileId = command.identity().profileId();
-      return nextResult;
+      if (rejection.isPresent()) {
+        return Outcome.rejected(rejection.get());
+      }
+
+      return Outcome.accepted(nextResult);
     }
 
     @Override
@@ -502,35 +560,5 @@ class StreamingResolverTest {
     public void markUnwatched(UUID profileId, UUID collectableId) {
       // no-op for test fake
     }
-  }
-
-  @Test
-  @DisplayName("Should return error when report timeline session ID is invalid")
-  void shouldReturnErrorWhenReportTimelineSessionIdIsInvalid() {
-    var result =
-        dgsQueryExecutor.execute(
-            """
-            mutation {
-              reportStreamSessionTimeline(sessionId: "bad-id", positionSeconds: 300, state: PLAYING)
-            }
-            """);
-
-    assertThat(result.getErrors()).isNotEmpty();
-    assertThat(result.getErrors().getFirst().getMessage()).contains("Invalid ID format");
-  }
-
-  @Test
-  @DisplayName("Should return error when mark unwatched ID is invalid")
-  void shouldReturnErrorWhenMarkUnwatchedIdIsInvalid() {
-    var result =
-        dgsQueryExecutor.execute(
-            """
-            mutation {
-              markUnwatched(id: "bad-id")
-            }
-            """);
-
-    assertThat(result.getErrors()).isNotEmpty();
-    assertThat(result.getErrors().getFirst().getMessage()).contains("Invalid ID format");
   }
 }

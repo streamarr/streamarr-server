@@ -145,6 +145,20 @@ otel:
   sdk:
     disabled: true
 
+# Media file probes run as db-scheduler task instances (ADR 0032). threads caps concurrent probes
+# even though executions run on virtual threads.
+db-scheduler:
+  enabled: ${PROBE_SCHEDULER_ENABLED:true}
+  threads: ${PROBE_MAX_CONCURRENT:2}
+  polling-interval: ${PROBE_POLLING_INTERVAL:1s}
+  polling-strategy: lock-and-fetch
+  polling-strategy-upper-limit-fraction-of-threads: 1.0
+  heartbeat-interval: ${PROBE_HEARTBEAT_INTERVAL:15s}
+  missed-heartbeats-limit: 4
+  immediate-execution-enabled: true
+  delay-startup-until-context-ready: true
+  shutdown-max-wait: 30s
+
 library:
   watcher:
     stabilization-period-seconds: ${LIBRARY_WATCHER_STABILIZATION_PERIOD:30}

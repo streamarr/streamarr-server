@@ -46,8 +46,7 @@ class DirectoryWatchingServiceTest {
             fakeLibraryRepository,
             path -> true,
             null,
-            new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
-            null);
+            new IgnoredFileValidator(new LibraryScanProperties(null, null, null)));
   }
 
   @AfterEach
@@ -232,8 +231,7 @@ class DirectoryWatchingServiceTest {
         fakeLibraryRepository,
         path -> true,
         null,
-        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
-        null) {
+        new IgnoredFileValidator(new LibraryScanProperties(null, null, null))) {
       @Override
       public void setup(List<Library> libraries) throws IOException {
         throw new IOException("simulated failure");
@@ -247,8 +245,7 @@ class DirectoryWatchingServiceTest {
         fakeLibraryRepository,
         path -> true,
         null,
-        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
-        null) {
+        new IgnoredFileValidator(new LibraryScanProperties(null, null, null))) {
       @Override
       public void setup(List<Library> libraries) throws IOException {
         setupStarted.countDown();

@@ -45,7 +45,6 @@ class MutationContractTest {
           "removeLibrary",
           "scanLibrary",
           "refreshLibrary",
-          "createStreamSession",
           "destroyStreamSession",
           "reportStreamSessionTimeline",
           "markWatched",

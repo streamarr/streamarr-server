@@ -5,6 +5,7 @@ import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.PlaybackAuthorityGate;
+import com.streamarr.server.services.streaming.PlaybackProbeService;
 import com.streamarr.server.services.streaming.ProducerLifecycleService;
 import com.streamarr.server.services.streaming.QualityLadderService;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
@@ -135,7 +136,7 @@ public class StreamingConfig {
       MediaFileRepository mediaFileRepository,
       TranscodeExecutor transcodeExecutor,
       SegmentStore segmentStore,
-      FfprobeService ffprobeService,
+      PlaybackProbeService playbackProbeService,
       TranscodeDecisionService transcodeDecisionService,
       QualityLadderService qualityLadderService,
       StreamingProperties properties,
@@ -147,7 +148,7 @@ public class StreamingConfig {
         .mediaFileRepository(mediaFileRepository)
         .transcodeExecutor(transcodeExecutor)
         .segmentStore(segmentStore)
-        .ffprobeService(ffprobeService)
+        .playbackProbeService(playbackProbeService)
         .transcodeDecisionService(transcodeDecisionService)
         .qualityLadderService(qualityLadderService)
         .properties(properties)
