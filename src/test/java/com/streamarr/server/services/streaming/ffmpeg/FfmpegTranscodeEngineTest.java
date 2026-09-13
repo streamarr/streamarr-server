@@ -265,6 +265,7 @@ class FfmpegTranscodeEngineTest {
         new TranscodeCapabilityService(
             "ffmpeg", command -> new FakeProcess("ffmpeg version 7.0", available ? 0 : 1));
     if (!available) {
+      service.detectCapabilities();
       return service;
     }
 
