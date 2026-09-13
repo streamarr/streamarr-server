@@ -19,11 +19,11 @@ public class WorkerSessionConfiguration {
   @Bean(initMethod = "start", destroyMethod = "close")
   public WorkerSessionServer workerSessionServer(
       WorkerSessionProperties properties, SegmentStore segmentStore) {
-    var loopback = properties.loopback();
+    var localhost = properties.localhost();
     var listeners =
         WorkerSessionListeners.builder()
             .localhostPort(
-                loopback.enabled() ? OptionalInt.of(loopback.port()) : OptionalInt.empty())
+                localhost.enabled() ? OptionalInt.of(localhost.port()) : OptionalInt.empty())
             .mutualTls(mutualTls(properties.mutualTls()))
             .build();
     return WorkerSessionServer.forListeners(listeners, segmentStore);

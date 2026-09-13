@@ -98,7 +98,7 @@ spec:
                   key: datasource-password
             - name: STREAMING_REMOTE_ENABLED
               value: "true"
-            - name: STREAMING_WORKER_SESSION_LOOPBACK_ENABLED
+            - name: STREAMING_WORKER_SESSION_LOCALHOST_ENABLED
               value: "false"
             - name: STREAMING_WORKER_SESSION_MUTUAL_TLS_ENABLED
               value: "true"

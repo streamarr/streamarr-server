@@ -77,9 +77,9 @@ streaming:
   producer-stall-threshold: ${STREAMING_PRODUCER_STALL_THRESHOLD:10s}
   segment-base-path: ${STREAMING_SEGMENT_BASE_PATH:}
   worker-session:
-    loopback:
-      enabled: ${STREAMING_WORKER_SESSION_LOOPBACK_ENABLED:false}
-      port: ${STREAMING_WORKER_SESSION_LOOPBACK_PORT:9090}
+    localhost:
+      enabled: ${STREAMING_WORKER_SESSION_LOCALHOST_ENABLED:false}
+      port: ${STREAMING_WORKER_SESSION_LOCALHOST_PORT:9090}
     mutual-tls:
       enabled: ${STREAMING_WORKER_SESSION_MUTUAL_TLS_ENABLED:false}
       port: ${STREAMING_WORKER_SESSION_MUTUAL_TLS_PORT:9090}

@@ -36,9 +36,12 @@ class WorkerSessionDeploymentTest {
     assertThat(environment.path("TRANSCODE_WORKER_CONTROL_PLANE_HOST").asString())
         .isEqualTo("127.0.0.1");
     assertThat(environment.path("TRANSCODE_WORKER_CONTROL_PLANE_PORT"))
-        .isEqualTo(server.path("environment").path("STREAMING_WORKER_SESSION_LOOPBACK_PORT"));
+        .isEqualTo(server.path("environment").path("STREAMING_WORKER_SESSION_LOCALHOST_PORT"));
     assertThat(
-            server.path("environment").path("STREAMING_WORKER_SESSION_LOOPBACK_ENABLED").asString())
+            server
+                .path("environment")
+                .path("STREAMING_WORKER_SESSION_LOCALHOST_ENABLED")
+                .asString())
         .isEqualTo("true");
     assertThat(worker.path("volumes")).isEqualTo(server.path("volumes"));
     assertThat(worker.has("ports")).isFalse();
@@ -64,7 +67,7 @@ class WorkerSessionDeploymentTest {
 
     assertThat(server)
         .containsEntry("STREAMING_WORKER_SESSION_MUTUAL_TLS_ENABLED", "true")
-        .containsEntry("STREAMING_WORKER_SESSION_LOOPBACK_ENABLED", "false")
+        .containsEntry("STREAMING_WORKER_SESSION_LOCALHOST_ENABLED", "false")
         .containsEntry("STREAMING_WORKER_SESSION_MUTUAL_TLS_PORT", "9090")
         .containsKey("STREAMING_WORKER_SESSION_MUTUAL_TLS_TRUST_BUNDLE");
     assertThat(worker)

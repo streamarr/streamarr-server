@@ -14,7 +14,7 @@ public record WorkerSessionListeners(
     if (localhostPort.isPresent()
         && (localhostPort.getAsInt() < 0 || localhostPort.getAsInt() > 65535)) {
       throw new IllegalArgumentException(
-          "Loopback worker session port must be between 0 and 65535");
+          "Localhost worker session port must be between 0 and 65535");
     }
   }
 

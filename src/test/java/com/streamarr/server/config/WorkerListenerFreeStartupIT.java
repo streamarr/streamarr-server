@@ -20,7 +20,7 @@ import org.springframework.test.context.TestPropertySource;
 @DisplayName("Worker Listener-Free Startup Integration Tests")
 @TestPropertySource(
     properties = {
-      "streaming.worker-session.loopback.enabled=false",
+      "streaming.worker-session.localhost.enabled=false",
       "streaming.worker-session.mutual-tls.enabled=false",
       "streaming.remote.enabled=false"
     })

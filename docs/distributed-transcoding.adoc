@@ -12,17 +12,17 @@ Workers do not accept inbound connections and never connect to PostgreSQL.
 
 === Colocated workers
 
-The plaintext listener binds only `127.0.0.1` inside the server's network namespace.
+A localhost worker connection uses a plaintext listener bound only to `127.0.0.1` inside the server's network namespace.
 Its bind address is not configurable.
 Every process that can reach this listener is trusted. Reusing a worker ID replaces its previous connection and abandons that connection's active jobs.
 Share this namespace only with trusted processes.
 
-Enable the listener with `STREAMING_WORKER_SESSION_LOOPBACK_ENABLED=true` and set its port with `STREAMING_WORKER_SESSION_LOOPBACK_PORT`.
+Enable the listener with `STREAMING_WORKER_SESSION_LOCALHOST_ENABLED=true` and set its port with `STREAMING_WORKER_SESSION_LOCALHOST_PORT`.
 The default port is `9090`.
 The worker needs `TRANSCODE_WORKER_PLAINTEXT=true`, `TRANSCODE_WORKER_CONTROL_PLANE_HOST=127.0.0.1`, the same port in `TRANSCODE_WORKER_CONTROL_PLANE_PORT`, and a UUID in `TRANSCODE_WORKER_ID`.
 It does not need certificates in this mode.
 
-The dev profile enables loopback. Full application test contexts use an ephemeral loopback port.
+The dev profile enables the localhost listener. Full application test contexts use an ephemeral localhost listener port.
 Listener enablement remains independent of local or remote executor selection. A server with both listeners disabled can still start with local execution.
 
 === Remote workers
@@ -31,7 +31,7 @@ Workers outside the server's network namespace use mutual TLS.
 Set `STREAMING_WORKER_SESSION_MUTUAL_TLS_ENABLED=true` on the server and leave `TRANSCODE_WORKER_PLAINTEXT` unset or `false` on each worker.
 The server's port, trust domain, certificate, private key, and trust bundle settings use the `STREAMING_WORKER_SESSION_MUTUAL_TLS_` prefix.
 These listener settings replace their former `STREAMING_REMOTE_` equivalents.
-The loopback and mutual-TLS listeners may run together. Choose different ports when configuring both with fixed ports.
+The localhost and mutual-TLS listeners may run together. Choose different ports when configuring both with fixed ports.
 
 Streamarr consumes PEM files issued by the operator's existing tooling.
 It does not issue or enroll certificates.
@@ -67,7 +67,7 @@ Alert on the aggregate `/actuator/health` instead.
 
 == Docker Compose
 
-The default worker uses `network_mode: service:streamarr-server` to reach the server over loopback.
+The default worker uses `network_mode: service:streamarr-server` to reach the server over localhost.
 Set `STREAMARR_MEDIA_PATH` to the host media directory. Both containers mount it read-only at `/media`, which is the library root inside the server.
 The worker writes segments in its own temporary directory.
 `STREAMARR_WORKER_ID` and `STREAMARR_SOURCE_NAMESPACE_ID` override the example UUIDs in the default configuration.

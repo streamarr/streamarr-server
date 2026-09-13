@@ -32,7 +32,7 @@ class WorkerSessionConfigurationTest {
         context -> {
           assertThat(context).hasNotFailed();
           var properties = context.getBean(WorkerSessionProperties.class);
-          assertThat(properties.loopback().enabled()).isFalse();
+          assertThat(properties.localhost().enabled()).isFalse();
           assertThat(properties.mutualTls().enabled()).isFalse();
         });
   }
@@ -43,15 +43,15 @@ class WorkerSessionConfigurationTest {
   void shouldRejectInvalidPortWhenLocalhostListenerIsEnabled(int port) {
     contextRunner
         .withPropertyValues(
-            "streaming.worker-session.loopback.enabled=true",
-            "streaming.worker-session.loopback.port=" + port)
+            "streaming.worker-session.localhost.enabled=true",
+            "streaming.worker-session.localhost.port=" + port)
         .run(
             context -> {
               assertThat(context).hasFailed();
               assertThat(context.getStartupFailure())
                   .rootCause()
                   .isInstanceOf(IllegalArgumentException.class)
-                  .hasMessage("Loopback worker session port must be between 0 and 65535");
+                  .hasMessage("Localhost worker session port must be between 0 and 65535");
             });
   }
 
@@ -75,8 +75,8 @@ class WorkerSessionConfigurationTest {
   void shouldStartLocalhostIndependentlyWhenRemoteTranscodingIsDisabled() {
     contextRunner
         .withPropertyValues(
-            "streaming.worker-session.loopback.enabled=true",
-            "streaming.worker-session.loopback.port=0",
+            "streaming.worker-session.localhost.enabled=true",
+            "streaming.worker-session.localhost.port=0",
             "streaming.remote.enabled=false")
         .run(
             context -> {
@@ -89,12 +89,12 @@ class WorkerSessionConfigurationTest {
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   @DisplayName("Should start mutual TLS independently when its listener is enabled")
-  void shouldStartMutualTlsIndependentlyWhenItsListenerIsEnabled(boolean loopbackEnabled)
+  void shouldStartMutualTlsIndependentlyWhenItsListenerIsEnabled(boolean localhostEnabled)
       throws Exception {
     contextRunner
         .withPropertyValues(
-            "streaming.worker-session.loopback.enabled=" + loopbackEnabled,
-            "streaming.worker-session.loopback.port=0",
+            "streaming.worker-session.localhost.enabled=" + localhostEnabled,
+            "streaming.worker-session.localhost.port=0",
             "streaming.worker-session.mutual-tls.enabled=true",
             "streaming.worker-session.mutual-tls.port=0",
             "streaming.worker-session.mutual-tls.trust-domain=streamarr.test",
@@ -106,7 +106,7 @@ class WorkerSessionConfigurationTest {
               assertThat(context).hasNotFailed();
               var server = context.getBean(WorkerSessionServer.class);
               assertThat(server.port()).isPositive();
-              if (loopbackEnabled) {
+              if (localhostEnabled) {
                 assertThat(server.localhostPort()).isPositive().isNotEqualTo(server.port());
               }
             });
@@ -142,8 +142,8 @@ class WorkerSessionConfigurationTest {
     contextRunner
         .withUserConfiguration(RemoteTranscodeConfiguration.class)
         .withPropertyValues(
-            "streaming.worker-session.loopback.enabled=true",
-            "streaming.worker-session.loopback.port=0",
+            "streaming.worker-session.localhost.enabled=true",
+            "streaming.worker-session.localhost.port=0",
             "streaming.remote.enabled=true",
             "streaming.remote.source-namespace-id=cccccccc-cccc-cccc-cccc-cccccccccccc",
             "streaming.remote.source-root=/media")

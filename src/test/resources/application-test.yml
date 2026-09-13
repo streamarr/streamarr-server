@@ -27,7 +27,7 @@ springdoc:
 
 streaming:
   worker-session:
-    loopback:
+    localhost:
       enabled: true
       port: 0
 

@@ -27,8 +27,8 @@ class WorkerSessionProfilesTest {
             context -> {
               assertThat(context).hasNotFailed();
               var properties = context.getBean(WorkerSessionProperties.class);
-              assertThat(properties.loopback().enabled()).isTrue();
-              assertThat(properties.loopback().port()).isEqualTo(port);
+              assertThat(properties.localhost().enabled()).isTrue();
+              assertThat(properties.localhost().port()).isEqualTo(port);
               assertThat(properties.mutualTls().enabled()).isFalse();
             });
   }
