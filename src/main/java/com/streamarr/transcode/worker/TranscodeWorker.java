@@ -7,7 +7,6 @@ import com.google.protobuf.ByteString;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
 import com.streamarr.transcode.probe.FfprobeExecutor;
 import com.streamarr.transcode.protocol.ProtoUuid;
-import com.streamarr.transcode.protocol.WorkerIdentityMetadata;
 import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.ContainerFormat;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
@@ -32,15 +31,12 @@ import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerSessionAccepted;
 import io.grpc.ManagedChannel;
-import io.grpc.Metadata;
-import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
-import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.ClientCallStreamObserver;
 import io.grpc.stub.ClientResponseObserver;
-import io.grpc.stub.MetadataUtils;
 import io.grpc.stub.StreamObserver;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -55,6 +51,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
+import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
@@ -70,6 +67,7 @@ public final class TranscodeWorker implements AutoCloseable {
   private final FfmpegTranscodeEngine engine;
   private final WorkerVariantJobMapper jobMapper;
   private final Optional<FfprobeExecutor> ffprobe;
+  private final WorkerRuntime runtime;
   private final Map<UUID, ActiveVariant> activeVariants = new HashMap<>();
 
   private ManagedChannel channel;
@@ -81,23 +79,26 @@ public final class TranscodeWorker implements AutoCloseable {
   private final AtomicReference<WorkerHealthServer> healthServer = new AtomicReference<>();
 
   public TranscodeWorker(TranscodeWorkerConfiguration configuration, FfmpegTranscodeEngine engine) {
-    this(configuration, engine, Optional.empty());
+    this(configuration, engine, Optional.empty(), new GrpcWorkerRuntime());
   }
 
   public TranscodeWorker(
       TranscodeWorkerConfiguration configuration,
       FfmpegTranscodeEngine engine,
       @NonNull FfprobeExecutor ffprobe) {
-    this(configuration, engine, Optional.of(ffprobe));
+    this(configuration, engine, Optional.of(ffprobe), new GrpcWorkerRuntime());
   }
 
+  @Builder
   private TranscodeWorker(
-      TranscodeWorkerConfiguration configuration,
-      FfmpegTranscodeEngine engine,
-      Optional<FfprobeExecutor> ffprobe) {
+      @NonNull TranscodeWorkerConfiguration configuration,
+      @NonNull FfmpegTranscodeEngine engine,
+      @NonNull Optional<FfprobeExecutor> ffprobe,
+      @NonNull WorkerRuntime runtime) {
     this.configuration = configuration;
     this.engine = engine;
     this.ffprobe = ffprobe;
+    this.runtime = runtime;
     jobMapper =
         new WorkerVariantJobMapper(new WorkerMediaSourceResolver(configuration.sourceNamespaces()));
   }
@@ -108,7 +109,8 @@ public final class TranscodeWorker implements AutoCloseable {
       throw new IllegalStateException("Transcode worker is already started");
     }
 
-    var channelBuilder = connectionBuilder(host, port);
+    var channelBuilder =
+        runtime.channelBuilder(configuration, InetSocketAddress.createUnresolved(host, port));
     var sessionHealth = new WorkerHealthServer(configuration.healthPort());
     healthServer.set(sessionHealth);
     sessionHealth.start();
@@ -123,10 +125,12 @@ public final class TranscodeWorker implements AutoCloseable {
     var accepted = new CompletableFuture<WorkerSessionAccepted>();
     var sessionRequests = new AtomicReference<StreamObserver<EstablishWorkerSessionRequest>>();
     probeSession =
-        new WorkerProbeSession(
-            ffprobe,
-            new WorkerMediaSourceResolver(configuration.sourceNamespaces()),
-            result -> sendProbeResult(sessionRequests.get(), result));
+        WorkerProbeSession.builder()
+            .ffprobe(ffprobe)
+            .sources(new WorkerMediaSourceResolver(configuration.sourceNamespaces()))
+            .results(result -> sendProbeResult(sessionRequests.get(), result))
+            .executor(runtime.newProbeScope())
+            .build();
     disconnected = new CompletableFuture<>();
     requests =
         TranscodeWorkerServiceGrpc.newStub(channel)
@@ -135,23 +139,6 @@ public final class TranscodeWorker implements AutoCloseable {
     sessionRequests.set(requests);
     send(registration());
     accepted.get(CONNECTION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-  }
-
-  private NettyChannelBuilder connectionBuilder(String host, int port) throws IOException {
-    var builder = NettyChannelBuilder.forAddress(host, port);
-    if (configuration.plaintext()) {
-      var headers = new Metadata();
-      headers.put(WorkerIdentityMetadata.WORKER_ID, configuration.workerId().toString());
-      return builder.usePlaintext().intercept(MetadataUtils.newAttachHeadersInterceptor(headers));
-    }
-
-    var tlsIdentity = configuration.tlsIdentity().orElseThrow();
-    var sslContext =
-        GrpcSslContexts.forClient()
-            .keyManager(tlsIdentity.certificate().toFile(), tlsIdentity.privateKey().toFile())
-            .trustManager(tlsIdentity.trustBundle().toFile())
-            .build();
-    return builder.sslContext(sslContext);
   }
 
   public int healthPort() {
@@ -666,6 +653,16 @@ public final class TranscodeWorker implements AutoCloseable {
     @Override
     public void onCompleted() {
       // gRPC routes a client-streaming close without its single response through onError.
+    }
+  }
+
+  public static class TranscodeWorkerBuilder {
+    private Optional<FfprobeExecutor> ffprobe = Optional.empty();
+    private WorkerRuntime runtime = new GrpcWorkerRuntime();
+
+    public TranscodeWorkerBuilder ffprobe(@NonNull FfprobeExecutor producer) {
+      ffprobe = Optional.of(producer);
+      return this;
     }
   }
 

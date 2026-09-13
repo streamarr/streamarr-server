@@ -12,6 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -32,8 +33,12 @@ class WorkerProbeSessionTest {
             .build();
 
     try (var session =
-        new WorkerProbeSession(
-            Optional.empty(), new WorkerMediaSourceResolver(Map.of()), result::complete)) {
+        WorkerProbeSession.builder()
+            .ffprobe(Optional.empty())
+            .sources(new WorkerMediaSourceResolver(Map.of()))
+            .results(result::complete)
+            .executor(Executors.newVirtualThreadPerTaskExecutor())
+            .build()) {
       session.start(request);
 
       assertThat(result.get(5, TimeUnit.SECONDS).getFailure())
@@ -52,8 +57,12 @@ class WorkerProbeSessionTest {
             .build();
 
     try (var session =
-        new WorkerProbeSession(
-            Optional.empty(), new WorkerMediaSourceResolver(Map.of()), results::add)) {
+        WorkerProbeSession.builder()
+            .ffprobe(Optional.empty())
+            .sources(new WorkerMediaSourceResolver(Map.of()))
+            .results(results::add)
+            .executor(Executors.newVirtualThreadPerTaskExecutor())
+            .build()) {
       session.shutdown();
 
       assertThatCode(() -> session.start(request)).doesNotThrowAnyException();

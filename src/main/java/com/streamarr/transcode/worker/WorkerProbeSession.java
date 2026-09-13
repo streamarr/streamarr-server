@@ -11,19 +11,19 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import lombok.AccessLevel;
+import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 
-@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
+@Builder(access = AccessLevel.PACKAGE)
 final class WorkerProbeSession implements AutoCloseable {
 
   private final Optional<FfprobeExecutor> ffprobe;
   private final WorkerMediaSourceResolver sources;
   private final Consumer<ProbeAttemptResult> results;
-  private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+  private final ExecutorService executor;
   private final Map<UUID, ProbeAttempt> attempts = new HashMap<>();
 
   synchronized void start(ProbeRequest request) {
