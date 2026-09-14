@@ -124,7 +124,9 @@ class PlaintextTranscodeWorkerIT {
               }
 
               @Override
-              public void onError(Throwable failure) {}
+              public void onError(Throwable failure) {
+                // Client cancellation needs no response in this test service.
+              }
 
               @Override
               public void onCompleted() {
@@ -148,7 +150,9 @@ class PlaintextTranscodeWorkerIT {
             .build();
     try (var worker =
         new TranscodeWorker(configuration, remuxEngine(new FakeFfmpegProcessManager()))) {
-      assertThatThrownBy(() -> worker.start(destination.getHostAddress(), server.getPort()))
+      var host = destination.getHostAddress();
+      var port = server.getPort();
+      assertThatThrownBy(() -> worker.start(host, port))
           .isInstanceOf(IllegalArgumentException.class);
     } finally {
       server.shutdownNow();
