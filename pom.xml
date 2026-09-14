@@ -48,7 +48,7 @@
         <dgs-graphql.version>12.0.1</dgs-graphql.version>
         <!-- DGS 12 requires json-path 3.x (Jackson3JsonProvider); Spring Boot manages 2.10.0 -->
         <json-path.version>3.0.0</json-path.version>
-        <springdoc.version>3.1.0</springdoc.version>
+        <springdoc.version>3.1.1</springdoc.version>
         <lombok.version>1.18.48</lombok.version>
 
         <postgresql.version>42.7.13</postgresql.version>
@@ -85,7 +85,7 @@
         <native.access.args>--enable-native-access=ALL-UNNAMED</native.access.args>
         <grpc.version>1.84.0</grpc.version>
         <db-scheduler.version>16.12.0</db-scheduler.version>
-        <protobuf-maven-plugin.version>5.1.8</protobuf-maven-plugin.version>
+        <protobuf-maven-plugin.version>5.1.9</protobuf-maven-plugin.version>
     </properties>
 
     <dependencies>
