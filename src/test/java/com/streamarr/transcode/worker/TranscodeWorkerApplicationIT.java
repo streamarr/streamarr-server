@@ -6,6 +6,7 @@ import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.transcode.v1.MediaSourceRef;
+import com.streamarr.transcode.v1.ProbeFailure;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.worker.support.WorkerApplicationControlPlane;
 import java.io.IOException;
@@ -32,6 +33,43 @@ import org.junit.jupiter.params.provider.EnumSource;
 class TranscodeWorkerApplicationIT {
 
   @TempDir Path tempDir;
+
+  @Test
+  @DisplayName("Should return a source failure when a POSIX worker receives a Unicode source")
+  void shouldReturnASourceFailureWhenAPosixWorkerReceivesAUnicodeSource() throws Exception {
+    var request =
+        ProbeRequest.newBuilder()
+            .setProbeAttemptId(toProto(UUID.randomUUID()))
+            .setProbeVersion(1)
+            .setSource(
+                MediaSourceRef.newBuilder()
+                    .setSourceNamespaceId(toProto(SOURCE_NAMESPACE_ID))
+                    .setRelativeKey("caf\u00e9.mkv"))
+            .build();
+
+    try (var controlPlane = WorkerApplicationControlPlane.builder().build()) {
+      var fixture =
+          ApplicationFixture.builder()
+              .port(controlPlane.port())
+              .ffprobe(versionOnlyFfprobe())
+              .build();
+      var processBuilder = applicationProcess(fixture);
+      processBuilder.environment().put("LC_ALL", "C");
+      processBuilder.environment().put("LANG", "C");
+      var process = processBuilder.start();
+      try {
+        controlPlane.awaitRegistration();
+        controlPlane.startProbe(request);
+
+        var result = controlPlane.awaitResult();
+        assertThat(result.getProbeAttemptId()).isEqualTo(request.getProbeAttemptId());
+        assertThat(result.getProbeVersion()).isEqualTo(request.getProbeVersion());
+        assertThat(result.getFailure()).isEqualTo(ProbeFailure.PROBE_FAILURE_SOURCE_UNAVAILABLE);
+      } finally {
+        stop(process);
+      }
+    }
+  }
 
   @ParameterizedTest(name = "{displayName} [{0}]")
   @EnumSource(UnavailableBinary.class)

@@ -15,15 +15,18 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import lombok.AccessLevel;
 import lombok.Builder;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Builder(access = AccessLevel.PACKAGE)
 final class WorkerProbeSession implements AutoCloseable {
 
-  private final Optional<FfprobeExecutor> ffprobe;
-  private final WorkerMediaSourceResolver sources;
-  private final Consumer<ProbeAttemptResult> results;
-  private final ExecutorService executor;
+  @NonNull private final Optional<FfprobeExecutor> ffprobe;
+  @NonNull private final WorkerMediaSourceResolver sources;
+  @NonNull private final Consumer<ProbeAttemptResult> results;
+  @NonNull private final ExecutorService executor;
   private final Map<UUID, ProbeAttempt> attempts = new HashMap<>();
 
   synchronized void start(ProbeRequest request) {
@@ -87,8 +90,22 @@ final class WorkerProbeSession implements AutoCloseable {
 
       try {
         return ffprobe.orElseThrow().probe(sources.resolve(request.getSource()), request);
-      } catch (WorkerJobException _) {
+      } catch (WorkerJobException exception) {
+        log.warn(
+            "Probe {} cannot resolve source namespace {} key {}",
+            fromProto(request.getProbeAttemptId()),
+            fromProto(request.getSource().getSourceNamespaceId()),
+            request.getSource().getRelativeKey(),
+            exception);
         return failed(ProbeFailure.PROBE_FAILURE_SOURCE_UNAVAILABLE);
+      } catch (RuntimeException exception) {
+        log.error(
+            "Probe {} failed unexpectedly for source namespace {} key {}",
+            fromProto(request.getProbeAttemptId()),
+            fromProto(request.getSource().getSourceNamespaceId()),
+            request.getSource().getRelativeKey(),
+            exception);
+        return failed(ProbeFailure.PROBE_FAILURE_EXECUTION_FAILED);
       }
     }
 
