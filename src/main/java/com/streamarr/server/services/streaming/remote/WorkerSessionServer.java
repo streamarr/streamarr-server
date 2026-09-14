@@ -66,13 +66,7 @@ public final class WorkerSessionServer implements AutoCloseable {
       }
 
       if (listeners.localhostPort().isPresent()) {
-        startListener(
-            localhostRuntime,
-            NettyServerBuilder.forAddress(
-                    new InetSocketAddress("127.0.0.1", listeners.localhostPort().getAsInt()))
-                .addService(
-                    ServerInterceptors.intercept(
-                        service, new LocalhostWorkerIdentityInterceptor())));
+        startLocalhost(service);
       }
 
       started = true;
@@ -81,6 +75,15 @@ public final class WorkerSessionServer implements AutoCloseable {
         close();
       }
     }
+  }
+
+  private void startLocalhost(WorkerSessionGrpcService service) throws IOException {
+    startListener(
+        localhostRuntime,
+        NettyServerBuilder.forAddress(
+                new InetSocketAddress("127.0.0.1", listeners.localhostPort().getAsInt()))
+            .addService(
+                ServerInterceptors.intercept(service, new LocalhostWorkerIdentityInterceptor())));
   }
 
   private void startMutualTls(
