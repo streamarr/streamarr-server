@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.transcode.protocol.WorkerIdentityMetadata;
+import com.streamarr.transcode.tls.PemTlsIdentity;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.MediaSourceRef;
@@ -33,6 +34,8 @@ import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.UUID;
@@ -41,6 +44,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -55,12 +59,15 @@ class LocalhostWorkerSessionIT {
   @Test
   @DisplayName("Should release started listeners when another listener fails to bind")
   void shouldReleaseStartedListenersWhenAnotherListenerFailsToBind() throws Exception {
-    try (var occupied = new ServerSocket(0, 0, InetAddress.getByName("127.0.0.1"))) {
+    try (var occupied = new ServerSocket(0, 0, InetAddress.getByName("127.0.0.1"));
+        var available = new ServerSocket(0, 0, InetAddress.getByName("127.0.0.1"))) {
+      var mutualTlsPort = available.getLocalPort();
       var listeners =
           WorkerSessionListeners.builder()
               .localhostPort(OptionalInt.of(occupied.getLocalPort()))
-              .mutualTls(Optional.of(serverConfigurationBuilder().build()))
+              .mutualTls(Optional.of(serverConfigurationBuilder().port(mutualTlsPort).build()))
               .build();
+      available.close();
       try (var server = WorkerSessionServer.forListeners(listeners, new FakeSegmentStore())) {
         assertThatThrownBy(server::start).isInstanceOf(IOException.class);
         assertThatThrownBy(server::port).isInstanceOf(IllegalStateException.class);
@@ -68,8 +75,46 @@ class LocalhostWorkerSessionIT {
 
         server.start();
 
-        assertThat(server.port()).isPositive();
+        assertThat(server.port()).isEqualTo(mutualTlsPort);
         assertThat(server.localhostPort()).isPositive();
+      }
+    }
+  }
+
+  @Test
+  @DisplayName("Should release localhost when mutual TLS initialization fails")
+  void shouldReleaseLocalhostWhenMutualTlsInitializationFails(@TempDir Path temporaryDirectory)
+      throws Exception {
+    var identity = tlsIdentity("server-cert.pem", "server-key.fixture");
+    var missingCertificate = temporaryDirectory.resolve("server-cert.pem");
+    var configuration =
+        serverConfigurationBuilder()
+            .tlsIdentity(
+                PemTlsIdentity.builder()
+                    .certificate(missingCertificate)
+                    .privateKey(identity.privateKey())
+                    .trustBundle(identity.trustBundle())
+                    .build())
+            .build();
+    try (var available = new ServerSocket(0, 0, InetAddress.getByName("127.0.0.1"))) {
+      var localhostPort = available.getLocalPort();
+      var listeners =
+          WorkerSessionListeners.builder()
+              .localhostPort(OptionalInt.of(localhostPort))
+              .mutualTls(Optional.of(configuration))
+              .build();
+      available.close();
+      try (var server = WorkerSessionServer.forListeners(listeners, new FakeSegmentStore())) {
+        assertThatThrownBy(server::start)
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("File does not contain valid certificates");
+        assertThatThrownBy(server::localhostPort).isInstanceOf(IllegalStateException.class);
+        Files.copy(identity.certificate(), missingCertificate);
+
+        server.start();
+
+        assertThat(server.localhostPort()).isEqualTo(localhostPort);
+        assertThat(server.port()).isPositive();
       }
     }
   }

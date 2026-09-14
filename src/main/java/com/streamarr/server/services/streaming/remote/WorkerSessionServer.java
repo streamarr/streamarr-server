@@ -60,12 +60,20 @@ public final class WorkerSessionServer implements AutoCloseable {
     }
 
     var service = new WorkerSessionGrpcService(workerConnections, segmentStore);
+    // Reserve a fixed port before an ephemeral bind can claim it.
+    var localhostFirst =
+        listeners.localhostPort().orElse(0) > 0
+            && listeners.mutualTls().filter(configuration -> configuration.port() == 0).isPresent();
     try {
+      if (localhostFirst) {
+        startLocalhost(service);
+      }
+
       if (listeners.mutualTls().isPresent()) {
         startMutualTls(listeners.mutualTls().orElseThrow(), service);
       }
 
-      if (listeners.localhostPort().isPresent()) {
+      if (listeners.localhostPort().isPresent() && !localhostFirst) {
         startLocalhost(service);
       }
 
