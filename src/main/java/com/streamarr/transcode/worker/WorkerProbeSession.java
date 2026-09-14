@@ -35,7 +35,12 @@ final class WorkerProbeSession implements AutoCloseable {
     }
 
     var attempt = new ProbeAttempt(request);
-    attempts.put(fromProto(request.getProbeAttemptId()), attempt);
+    var attemptId = fromProto(request.getProbeAttemptId());
+    if (attempts.putIfAbsent(attemptId, attempt) != null) {
+      log.warn("Ignoring duplicate probe attempt {}", attemptId);
+      return;
+    }
+
     executor.execute(attempt);
   }
 

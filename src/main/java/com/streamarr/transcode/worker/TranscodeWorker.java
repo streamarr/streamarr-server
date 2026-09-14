@@ -591,6 +591,11 @@ public final class TranscodeWorker implements AutoCloseable {
 
     private void startProbe(StartProbeCommand command) {
       if (!command.getTarget().equals(identity())) {
+        log.warn(
+            "Ignoring probe {} addressed to worker {} boot {}",
+            fromProto(command.getRequest().getProbeAttemptId()),
+            fromProto(command.getTarget().getWorkerId()),
+            fromProto(command.getTarget().getBootId()));
         return;
       }
 
