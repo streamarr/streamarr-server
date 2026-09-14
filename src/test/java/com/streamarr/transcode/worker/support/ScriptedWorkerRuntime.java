@@ -85,16 +85,15 @@ public final class ScriptedWorkerRuntime implements WorkerRuntime {
     }
 
     @Override
-    public <RequestT, ResponseT> ClientCall<RequestT, ResponseT> newCall(
-        MethodDescriptor<RequestT, ResponseT> method, CallOptions options) {
+    public <Q, R> ClientCall<Q, R> newCall(MethodDescriptor<Q, R> method, CallOptions options) {
       assertThat(method).isEqualTo(TranscodeWorkerServiceGrpc.getEstablishWorkerSessionMethod());
       return sessionCall();
     }
 
     @SuppressWarnings("unchecked")
-    private <RequestT, ResponseT> ClientCall<RequestT, ResponseT> sessionCall() {
+    private <Q, R> ClientCall<Q, R> sessionCall() {
       // newCall checks the descriptor, so these type parameters are the session envelope types.
-      return (ClientCall<RequestT, ResponseT>) call;
+      return (ClientCall<Q, R>) call;
     }
 
     @Override
@@ -120,7 +119,7 @@ public final class ScriptedWorkerRuntime implements WorkerRuntime {
 
     @Override
     public boolean isTerminated() {
-      return shutdown;
+      return isShutdown();
     }
 
     @Override
