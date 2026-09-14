@@ -46,7 +46,7 @@ runs:
         pack_args=(
           --builder paketobuildpacks/ubuntu-noble-builder:0.0.190
           --buildpack paketo-buildpacks/java
-          --buildpack paketo-buildpacks/procfile@5.13.7
+          --buildpack paketo-buildpacks/procfile@5.14.0
           --buildpack ./buildpacks/ffmpeg
           --env BP_JVM_VERSION=25
           --env BP_INCLUDE_FILES=Procfile
