@@ -1,4 +1,4 @@
-package com.streamarr.server.services.streaming.ffmpeg;
+package com.streamarr.transcode.engine;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -134,9 +134,11 @@ public class TranscodeCapabilityService {
       if (process.waitFor() != 0) {
         return CapabilityProbeResult.failure("FFmpeg HLS capability probe failed");
       }
+
       if (!output.contains(REQUIRED_HLS_OPTION)) {
         return CapabilityProbeResult.failure("Missing " + REQUIRED_HLS_OPTION);
       }
+
       return CapabilityProbeResult.success();
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
@@ -217,12 +219,15 @@ public class TranscodeCapabilityService {
         if (trimmed.isEmpty() || trimmed.startsWith("Hardware")) {
           continue;
         }
+
         if (!result.isEmpty()) {
           result.append(",");
         }
+
         result.append(trimmed);
       }
     }
+
     return result;
   }
 

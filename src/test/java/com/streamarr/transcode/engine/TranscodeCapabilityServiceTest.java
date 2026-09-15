@@ -1,4 +1,4 @@
-package com.streamarr.server.services.streaming.ffmpeg;
+package com.streamarr.transcode.engine;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -120,6 +120,7 @@ class TranscodeCapabilityServiceTest {
               if (String.join(" ", command).contains("muxer=hls")) {
                 throw new IllegalStateException("probe failed");
               }
+
               return createProcess("ffmpeg version 8.1.2", 0);
             });
 
@@ -285,15 +286,19 @@ class TranscodeCapabilityServiceTest {
     if (cmdStr.contains("-version")) {
       return outputs.get("ffmpeg");
     }
+
     if (cmdStr.contains("muxer=hls")) {
       return outputs.getOrDefault("hls", createProcess("-hls_segment_options <dictionary>", 0));
     }
+
     if (cmdStr.contains("-hwaccels")) {
       return outputs.get("hwaccels");
     }
+
     if (cmdStr.contains("-encoders")) {
       return outputs.get("encoders");
     }
+
     return createProcess("", 1);
   }
 

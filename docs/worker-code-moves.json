@@ -1,0 +1,10 @@
+{
+  "src/main/java/com/streamarr/server/domain/streaming/TranscodeJob.java": "src/main/java/com/streamarr/transcode/engine/TranscodeJob.java",
+  "src/main/java/com/streamarr/server/services/streaming/ffmpeg/FfmpegTranscodeEngine.java": "src/main/java/com/streamarr/transcode/engine/FfmpegTranscodeEngine.java",
+  "src/main/java/com/streamarr/server/services/streaming/ffmpeg/HardwareEncodingCapability.java": "src/main/java/com/streamarr/transcode/engine/HardwareEncodingCapability.java",
+  "src/main/java/com/streamarr/server/services/streaming/ffmpeg/TranscodeCapabilityService.java": "src/main/java/com/streamarr/transcode/engine/TranscodeCapabilityService.java",
+  "src/test/java/com/streamarr/server/services/streaming/ffmpeg/FakeProcess.java": "src/test/java/com/streamarr/transcode/engine/FakeProcess.java",
+  "src/test/java/com/streamarr/server/services/streaming/ffmpeg/FfmpegTranscodeEngineTest.java": "src/test/java/com/streamarr/transcode/engine/FfmpegTranscodeEngineTest.java",
+  "src/test/java/com/streamarr/server/services/streaming/ffmpeg/LocalFfmpegProcessManagerTest.java": "src/test/java/com/streamarr/transcode/engine/LocalFfmpegProcessManagerTest.java",
+  "src/test/java/com/streamarr/server/services/streaming/ffmpeg/TranscodeCapabilityServiceTest.java": "src/test/java/com/streamarr/transcode/engine/TranscodeCapabilityServiceTest.java"
+}

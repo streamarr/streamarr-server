@@ -1,4 +1,4 @@
-package com.streamarr.server.services.streaming.ffmpeg;
+package com.streamarr.transcode.engine;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
@@ -9,8 +9,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.UnsynchronizedAppenderBase;
 import ch.qos.logback.core.read.ListAppender;
-import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.services.streaming.ffmpeg.LocalFfmpegProcessManager;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
@@ -38,8 +37,7 @@ class LocalFfmpegProcessManagerTest {
   void shouldReportRunningWhenProcessIsStarted() {
     var sessionId = UUID.randomUUID();
 
-    var process =
-        manager.startProcess(sessionId, StreamSession.defaultVariant(), QUIT_ON_STDIN, tempDir);
+    var process = manager.startProcess(sessionId, "default", QUIT_ON_STDIN, tempDir);
 
     assertThat(process).isNotNull();
     assertThat(process.isAlive()).isTrue();
@@ -53,8 +51,7 @@ class LocalFfmpegProcessManagerTest {
   void shouldStopProcessGracefullyWhenRequested() throws Exception {
     var sessionId = UUID.randomUUID();
 
-    var process =
-        manager.startProcess(sessionId, StreamSession.defaultVariant(), QUIT_ON_STDIN, tempDir);
+    var process = manager.startProcess(sessionId, "default", QUIT_ON_STDIN, tempDir);
 
     manager.stopProcess(sessionId);
 
@@ -74,9 +71,7 @@ class LocalFfmpegProcessManagerTest {
   void shouldReportNotRunningWhenProcessHasExitedNaturally() throws Exception {
     var sessionId = UUID.randomUUID();
 
-    var process =
-        manager.startProcess(
-            sessionId, StreamSession.defaultVariant(), List.of("echo", "done"), tempDir);
+    var process = manager.startProcess(sessionId, "default", List.of("echo", "done"), tempDir);
     assertThat(process.waitFor(5, TimeUnit.SECONDS)).isTrue();
 
     assertThat(manager.isRunning(sessionId)).isFalse();
@@ -156,9 +151,7 @@ class LocalFfmpegProcessManagerTest {
   @DisplayName("Should force-kill process when it ignores the quit signal")
   void shouldForceKillProcessWhenItIgnoresQuitSignal() throws Exception {
     var sessionId = UUID.randomUUID();
-    var process =
-        manager.startProcess(
-            sessionId, StreamSession.defaultVariant(), List.of("sleep", "30"), tempDir);
+    var process = manager.startProcess(sessionId, "default", List.of("sleep", "30"), tempDir);
 
     manager.stopProcess(sessionId);
 
@@ -189,8 +182,7 @@ class LocalFfmpegProcessManagerTest {
     var script = "for i in $(seq 1 5000); do echo \"stderr line $i\" >&2; done; exit 0";
 
     var process =
-        manager.startProcess(
-            sessionId, StreamSession.defaultVariant(), List.of("bash", "-c", script), tempDir);
+        manager.startProcess(sessionId, "default", List.of("bash", "-c", script), tempDir);
 
     process.onExit().get(10, TimeUnit.SECONDS);
     assertThat(process.isAlive()).isFalse();
@@ -203,9 +195,7 @@ class LocalFfmpegProcessManagerTest {
   @DisplayName("Should force-kill the process when the stopping thread is interrupted")
   void shouldForceKillTheProcessWhenTheStoppingThreadIsInterrupted() throws Exception {
     var sessionId = UUID.randomUUID();
-    var process =
-        manager.startProcess(
-            sessionId, StreamSession.defaultVariant(), List.of("sleep", "30"), tempDir);
+    var process = manager.startProcess(sessionId, "default", List.of("sleep", "30"), tempDir);
 
     var stopper =
         new Thread(
@@ -229,8 +219,7 @@ class LocalFfmpegProcessManagerTest {
   void shouldKeepTrackingALiveReplacementWhenCorpseCleanupRacesIt() throws Exception {
     var sessionId = UUID.randomUUID();
     var leader =
-        manager.startProcess(
-            sessionId, StreamSession.defaultVariant(), List.of("bash", "-c", "exit 7"), tempDir);
+        manager.startProcess(sessionId, "default", List.of("bash", "-c", "exit 7"), tempDir);
     leader.waitFor();
 
     // Park the cleanup thread inside logObservedExit's warn — after it has read the corpse's map
@@ -239,27 +228,20 @@ class LocalFfmpegProcessManagerTest {
     var gate = new LatchingWarnAppender("corpse-cleanup-race");
     gate.start();
     logger.addAppender(gate);
-    var cleanup =
-        new Thread(
-            () -> manager.isRunning(sessionId, StreamSession.defaultVariant()),
-            "corpse-cleanup-race");
+    var cleanup = new Thread(() -> manager.isRunning(sessionId, "default"), "corpse-cleanup-race");
     Process replacement = null;
     try {
       cleanup.start();
       assertThat(gate.reached.await(5, TimeUnit.SECONDS)).isTrue();
 
       replacement =
-          manager.startProcess(
-              sessionId,
-              StreamSession.defaultVariant(),
-              List.of("bash", "-c", "read -n 1"),
-              tempDir);
+          manager.startProcess(sessionId, "default", List.of("bash", "-c", "read -n 1"), tempDir);
       gate.release.countDown();
       cleanup.join(5000);
       assertThat(cleanup.isAlive()).as("cleanup thread must have completed its removal").isFalse();
       assertThat(gate.timedOut).as("cleanup must resume through the explicit release").isFalse();
 
-      assertThat(manager.isRunning(sessionId, StreamSession.defaultVariant()))
+      assertThat(manager.isRunning(sessionId, "default"))
           .as("corpse cleanup must not unregister the live replacement")
           .isTrue();
       manager.stopProcess(sessionId);
@@ -293,6 +275,7 @@ class LocalFfmpegProcessManagerTest {
           || !event.getFormattedMessage().contains("FFmpeg exited with code")) {
         return;
       }
+
       reached.countDown();
       try {
         timedOut = !release.await(10, TimeUnit.SECONDS);
@@ -306,9 +289,7 @@ class LocalFfmpegProcessManagerTest {
   @DisplayName("Should log completion without warning when a clean exit is observed")
   void shouldLogCompletionWithoutWarningWhenACleanExitIsObserved() throws Exception {
     var sessionId = UUID.randomUUID();
-    var process =
-        manager.startProcess(
-            sessionId, StreamSession.defaultVariant(), List.of("echo", "done"), tempDir);
+    var process = manager.startProcess(sessionId, "default", List.of("echo", "done"), tempDir);
     assertThat(process.waitFor(5, TimeUnit.SECONDS)).isTrue();
 
     var logger = (Logger) LoggerFactory.getLogger(LocalFfmpegProcessManager.class);
@@ -336,7 +317,7 @@ class LocalFfmpegProcessManagerTest {
     var process =
         manager.startProcess(
             sessionId,
-            StreamSession.defaultVariant(),
+            "default",
             List.of("bash", "-c", "echo 'error output' >&2; exit 1"),
             tempDir);
     assertThat(process.waitFor(5, TimeUnit.SECONDS)).isTrue();
@@ -369,7 +350,7 @@ class LocalFfmpegProcessManagerTest {
     var process =
         manager.startProcess(
             sessionId,
-            StreamSession.defaultVariant(),
+            "default",
             List.of("bash", "-c", "echo 'crash detail' >&2; exit 1"),
             tempDir);
     assertThat(process.waitFor(5, TimeUnit.SECONDS)).isTrue();

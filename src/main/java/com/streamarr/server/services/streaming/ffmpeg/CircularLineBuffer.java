@@ -13,6 +13,7 @@ final class CircularLineBuffer {
     if (capacity <= 0) {
       throw new IllegalArgumentException("Capacity must be positive, got: " + capacity);
     }
+
     this.buffer = new String[capacity];
   }
 
@@ -30,6 +31,7 @@ final class CircularLineBuffer {
     for (var i = 0; i < size; i++) {
       lines.add(buffer[(start + i) % buffer.length]);
     }
+
     return lines;
   }
 }
