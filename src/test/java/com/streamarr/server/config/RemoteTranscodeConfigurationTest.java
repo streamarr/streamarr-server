@@ -14,8 +14,6 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.validation.autoconfigure.ValidationAutoConfiguration;
@@ -36,29 +34,27 @@ class RemoteTranscodeConfigurationTest {
               RemoteTranscodeConfiguration.class, SegmentStoreConfiguration.class);
 
   @Test
-  @DisplayName("Should leave remote transcoding inactive when not configured")
-  void shouldLeaveRemoteTranscodingInactiveWhenNotConfigured() {
-    contextRunner.run(
-        context -> {
-          assertThat(context).doesNotHaveBean(WorkerSessionServer.class);
-          assertThat(context).doesNotHaveBean(RemoteTranscodeExecutor.class);
-        });
+  @DisplayName("Should reject missing source mapping when a worker listener is enabled")
+  void shouldRejectMissingSourceMappingWhenAWorkerListenerIsEnabled() {
+    contextRunner
+        .withUserConfiguration(WorkerSessionConfiguration.class)
+        .withPropertyValues(
+            "streaming.worker-session.loopback.enabled=true",
+            "streaming.worker-session.loopback.port=0")
+        .run(
+            context -> {
+              assertThat(context).hasFailed();
+              assertThat(context.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(IllegalArgumentException.class)
+                  .hasMessage("Remote source namespace ID is required");
+            });
   }
 
   @Test
-  @DisplayName("Should fail startup when remote transcoding has no identity configuration")
-  void shouldFailStartupWhenRemoteTranscodingHasNoIdentityConfiguration() {
-    contextRunner
-        .withPropertyValues("streaming.remote.enabled=true")
-        .run(context -> assertThat(context).hasFailed());
-  }
-
-  @ParameterizedTest
-  @ValueSource(booleans = {false, true})
-  @DisplayName("Should require a source root regardless of local transcode selection")
-  void shouldRequireASourceRootRegardlessOfLocalTranscodeSelection(boolean remoteTranscoding) {
-    assertThatThrownBy(
-            () -> new RemoteTranscodeProperties(remoteTranscoding, SOURCE_NAMESPACE_ID, " "))
+  @DisplayName("Should require a source root when configuring worker execution")
+  void shouldRequireASourceRootWhenConfiguringWorkerExecution() {
+    assertThatThrownBy(() -> new RemoteTranscodeProperties(SOURCE_NAMESPACE_ID, " "))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Remote source root is required");
   }
@@ -83,7 +79,6 @@ class RemoteTranscodeConfigurationTest {
   private String[] remoteProperties() throws URISyntaxException {
     var certificate = resource("server-cert.pem");
     return new String[] {
-      "streaming.remote.enabled=true",
       "streaming.worker-session.mutual-tls.enabled=true",
       "streaming.worker-session.mutual-tls.port=0",
       "streaming.worker-session.mutual-tls.trust-domain=streamarr.test",
