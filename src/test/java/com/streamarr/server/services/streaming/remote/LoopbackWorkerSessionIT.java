@@ -1,7 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
-import static com.streamarr.server.fixtures.RemoteWorkerFixtures.tlsIdentity;
 import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -21,7 +20,6 @@ import io.grpc.ManagedChannel;
 import io.grpc.Metadata;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
-import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.MetadataUtils;
 import io.grpc.stub.StreamObserver;
@@ -34,7 +32,6 @@ import java.net.NetworkInterface;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Optional;
-import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -53,15 +50,11 @@ class LoopbackWorkerSessionIT {
   private static final UUID SOURCE_ID = UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
 
   @Test
-  @DisplayName("Should release started listeners when another listener fails to bind")
-  void shouldReleaseStartedListenersWhenAnotherListenerFailsToBind() throws Exception {
+  @DisplayName("Should release startup resources when the worker listener fails to bind")
+  void shouldReleaseStartupResourcesWhenWorkerListenerFailsToBind() throws Exception {
     try (var occupied = new ServerSocket(0, 0, InetAddress.getByName("127.0.0.1"))) {
-      var listeners =
-          WorkerSessionListeners.builder()
-              .loopbackPort(OptionalInt.of(occupied.getLocalPort()))
-              .mutualTls(Optional.of(serverConfigurationBuilder().build()))
-              .build();
-      try (var server = WorkerSessionServer.forListeners(listeners, new FakeSegmentStore())) {
+      var listeners = serverConfigurationBuilder().port(occupied.getLocalPort()).build();
+      try (var server = new WorkerSessionServer(listeners, new FakeSegmentStore())) {
         assertThatThrownBy(server::start).isInstanceOf(IOException.class);
         assertThatThrownBy(server::port).isInstanceOf(IllegalStateException.class);
         occupied.close();
@@ -69,7 +62,6 @@ class LoopbackWorkerSessionIT {
         server.start();
 
         assertThat(server.port()).isPositive();
-        assertThat(server.loopbackPort()).isPositive();
       }
     }
   }
@@ -77,14 +69,14 @@ class LoopbackWorkerSessionIT {
   @Test
   @DisplayName("Should accept a plaintext worker when connecting through loopback")
   void shouldAcceptPlaintextWorkerWhenConnectingThroughLoopback() throws Exception {
-    var listeners = WorkerSessionListeners.builder().loopbackPort(OptionalInt.of(0)).build();
-    try (var server = WorkerSessionServer.forListeners(listeners, new FakeSegmentStore())) {
+    var listeners = serverConfigurationBuilder().build();
+    try (var server = new WorkerSessionServer(listeners, new FakeSegmentStore())) {
       server.start();
-      var channel = plaintextChannel(server.loopbackPort());
+      var channel = plaintextChannel(server.port());
       try {
         var accepted = register(channel).get(5, TimeUnit.SECONDS);
 
-        assertThat(server.loopbackPort()).isPositive();
+        assertThat(server.port()).isPositive();
         assertThat(accepted.hasSessionAccepted()).isTrue();
         assertThat(server.availableSlots(SOURCE_ID)).isEqualTo(1);
       } finally {
@@ -93,24 +85,16 @@ class LoopbackWorkerSessionIT {
     }
   }
 
-  @ParameterizedTest
-  @ValueSource(booleans = {false, true})
-  @DisplayName(
-      "Should replace the old session and abandon its jobs when an identity changes transport")
-  void shouldReplaceOldSessionAndAbandonItsJobsWhenIdentityChangesTransport(boolean firstPlaintext)
-      throws Exception {
-    var listeners =
-        WorkerSessionListeners.builder()
-            .loopbackPort(OptionalInt.of(0))
-            .mutualTls(Optional.of(serverConfigurationBuilder().build()))
-            .build();
-    try (var server = WorkerSessionServer.forListeners(listeners, new FakeSegmentStore())) {
+  @Test
+  @DisplayName("Should replace the old session and abandon its jobs when a worker id reconnects")
+  void shouldReplaceOldSessionAndAbandonItsJobsWhenWorkerIdReconnects() throws Exception {
+    var listeners = serverConfigurationBuilder().build();
+    try (var server = new WorkerSessionServer(listeners, new FakeSegmentStore())) {
       server.start();
-      var plaintext = plaintextChannel(server.loopbackPort());
-      var encrypted = tlsChannel(server.port());
+      var plaintext = plaintextChannel(server.port());
+      var replacementChannel = plaintextChannel(server.port());
       try {
-        var firstChannel = firstPlaintext ? plaintext : encrypted;
-        var replacementChannel = firstPlaintext ? encrypted : plaintext;
+        var firstChannel = plaintext;
         var disconnected = new CompletableFuture<Void>();
         var first = register(firstChannel, disconnected).get(5, TimeUnit.SECONDS);
         var streamId = UUID.randomUUID();
@@ -141,7 +125,7 @@ class LoopbackWorkerSessionIT {
         assertThat(server.dispatch(job)).isTrue();
       } finally {
         plaintext.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
-        encrypted.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
+        replacementChannel.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
       }
     }
   }
@@ -155,15 +139,47 @@ class LoopbackWorkerSessionIT {
             .filter(address -> address instanceof Inet4Address && !address.isLoopbackAddress())
             .toList();
     assertThat(addresses).as("This network test needs a non-loopback interface").isNotEmpty();
-    var listeners = WorkerSessionListeners.builder().loopbackPort(OptionalInt.of(0)).build();
-    try (var server = WorkerSessionServer.forListeners(listeners, new FakeSegmentStore())) {
+    var listeners = serverConfigurationBuilder().build();
+    try (var server = new WorkerSessionServer(listeners, new FakeSegmentStore())) {
       server.start();
       for (var address : addresses) {
         try (var socket = new Socket()) {
-          var destination = new InetSocketAddress(address, server.loopbackPort());
+          var destination = new InetSocketAddress(address, server.port());
           assertThatThrownBy(() -> socket.connect(destination, 1000))
               .isInstanceOf(ConnectException.class);
         }
+      }
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should accept a worker through a network interface when its bind address is explicit")
+  void shouldAcceptWorkerThroughNetworkInterfaceWhenItsBindAddressIsExplicit() throws Exception {
+    var addresses =
+        NetworkInterface.networkInterfaces()
+            .flatMap(NetworkInterface::inetAddresses)
+            .filter(address -> address instanceof Inet4Address && !address.isLoopbackAddress())
+            .toList();
+    assertThat(addresses).as("This network test needs a non-loopback interface").isNotEmpty();
+    var address = addresses.getFirst();
+    var configuration = serverConfigurationBuilder().address(address.getHostAddress()).build();
+    try (var server = new WorkerSessionServer(configuration, new FakeSegmentStore())) {
+      server.start();
+      var headers = new Metadata();
+      headers.put(WorkerIdentityMetadata.WORKER_ID, WORKER_ID.toString());
+      var channel =
+          NettyChannelBuilder.forAddress(address.getHostAddress(), server.port())
+              .usePlaintext()
+              .intercept(MetadataUtils.newAttachHeadersInterceptor(headers))
+              .build();
+      try {
+        var accepted = register(channel).get(5, TimeUnit.SECONDS);
+
+        assertThat(accepted.hasSessionAccepted()).isTrue();
+        assertThat(server.availableSlots(SOURCE_ID)).isEqualTo(1);
+      } finally {
+        channel.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
       }
     }
   }
@@ -174,10 +190,10 @@ class LoopbackWorkerSessionIT {
   @DisplayName("Should reject missing or malformed identity when connecting through loopback")
   void shouldRejectMissingOrMalformedIdentityWhenConnectingThroughLoopback(String claimedIdentity)
       throws Exception {
-    var listeners = WorkerSessionListeners.builder().loopbackPort(OptionalInt.of(0)).build();
-    try (var server = WorkerSessionServer.forListeners(listeners, new FakeSegmentStore())) {
+    var listeners = serverConfigurationBuilder().build();
+    try (var server = new WorkerSessionServer(listeners, new FakeSegmentStore())) {
       server.start();
-      var channel = plaintextChannel(server.loopbackPort(), Optional.ofNullable(claimedIdentity));
+      var channel = plaintextChannel(server.port(), Optional.ofNullable(claimedIdentity));
       try {
         var response = register(channel);
 
@@ -210,21 +226,6 @@ class LoopbackWorkerSessionIT {
 
   private CompletableFuture<EstablishWorkerSessionResponse> register(ManagedChannel channel) {
     return register(channel, new CompletableFuture<>());
-  }
-
-  private ManagedChannel tlsChannel(int port) throws Exception {
-    var identity = tlsIdentity("worker-cert.pem", "worker-key.fixture");
-    var sslContext =
-        GrpcSslContexts.forClient()
-            .keyManager(identity.certificate().toFile(), identity.privateKey().toFile())
-            .trustManager(identity.trustBundle().toFile())
-            .build();
-    var headers = new Metadata();
-    headers.put(WorkerIdentityMetadata.WORKER_ID, UUID.randomUUID().toString());
-    return NettyChannelBuilder.forAddress("localhost", port)
-        .sslContext(sslContext)
-        .intercept(MetadataUtils.newAttachHeadersInterceptor(headers))
-        .build();
   }
 
   private CompletableFuture<EstablishWorkerSessionResponse> register(

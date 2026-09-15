@@ -9,7 +9,6 @@ import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import java.net.URISyntaxException;
-import java.nio.file.Path;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -38,9 +37,7 @@ class RemoteTranscodeConfigurationTest {
   void shouldRejectMissingSourceMappingWhenAWorkerListenerIsEnabled() {
     contextRunner
         .withUserConfiguration(WorkerSessionConfiguration.class)
-        .withPropertyValues(
-            "streaming.worker-session.loopback.enabled=true",
-            "streaming.worker-session.loopback.port=0")
+        .withPropertyValues("streaming.worker-session.port=0")
         .run(
             context -> {
               assertThat(context).hasFailed();
@@ -77,23 +74,11 @@ class RemoteTranscodeConfigurationTest {
   }
 
   private String[] remoteProperties() throws URISyntaxException {
-    var certificate = resource("server-cert.pem");
     return new String[] {
-      "streaming.worker-session.mutual-tls.enabled=true",
-      "streaming.worker-session.mutual-tls.port=0",
-      "streaming.worker-session.mutual-tls.trust-domain=streamarr.test",
+      "streaming.worker-session.port=0",
       "streaming.remote.source-namespace-id=" + SOURCE_NAMESPACE_ID,
-      "streaming.remote.source-root=" + certificate.getParent(),
-      "streaming.worker-session.mutual-tls.certificate=" + certificate,
-      "streaming.worker-session.mutual-tls.private-key=" + resource("server-key.fixture"),
-      "streaming.worker-session.mutual-tls.trust-bundle=" + resource("ca-cert.pem")
+      "streaming.remote.source-root=/media"
     };
-  }
-
-  private Path resource(String name) throws URISyntaxException {
-    var url = getClass().getResource("/tls/" + name);
-    assertThat(url).as("TLS resource %s must exist", name).isNotNull();
-    return Path.of(url.toURI());
   }
 
   @Configuration(proxyBeanMethods = false)

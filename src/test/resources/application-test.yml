@@ -30,9 +30,7 @@ streaming:
     source-namespace-id: cccccccc-cccc-cccc-cccc-cccccccccccc
     source-root: /media
   worker-session:
-    loopback:
-      enabled: true
-      port: 0
+    port: 0
 
 # Integration tests that need executions build their own scheduler against the test database;
 # the shared context only records requests.

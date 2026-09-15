@@ -3,8 +3,8 @@ package com.streamarr.server.services.streaming.remote;
 import static com.google.protobuf.Duration.newBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.WORKER_ID;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChannelBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
-import static com.streamarr.server.fixtures.RemoteWorkerFixtures.tlsIdentity;
 import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -28,8 +28,6 @@ import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import io.grpc.ManagedChannel;
-import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
-import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.StreamObserver;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -327,15 +325,7 @@ class RemoteFfprobeServiceIT {
         new LinkedBlockingQueue<>();
 
     ProbeWorker(int port, int version) throws Exception {
-      var identity = tlsIdentity("worker-cert.pem", "worker-key.fixture");
-      channel =
-          NettyChannelBuilder.forAddress("localhost", port)
-              .sslContext(
-                  GrpcSslContexts.forClient()
-                      .keyManager(identity.certificate().toFile(), identity.privateKey().toFile())
-                      .trustManager(identity.trustBundle().toFile())
-                      .build())
-              .build();
+      channel = plaintextChannelBuilder(port, WORKER_ID).build();
       requests =
           TranscodeWorkerServiceGrpc.newStub(channel)
               .establishWorkerSession(

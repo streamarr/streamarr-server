@@ -1,9 +1,9 @@
 package com.streamarr.transcode.worker;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextWorkerConfigurationBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.remuxEngine;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
-import static com.streamarr.server.fixtures.RemoteWorkerFixtures.workerConfigurationBuilder;
 import static com.streamarr.transcode.worker.support.WorkerProbeFixtures.processBuilder;
 import static com.streamarr.transcode.worker.support.WorkerProbeFixtures.requestBuilder;
 import static com.streamarr.transcode.worker.support.WorkerProbeFixtures.sourceBuilder;
@@ -49,7 +49,7 @@ class TranscodeWorkerProbeIT {
     var nextRequest =
         requestBuilder().setSource(sourceBuilder().setRelativeKey("next.mkv")).build();
     var configuration =
-        workerConfigurationBuilder()
+        plaintextWorkerConfigurationBuilder()
             .availableSlots(1)
             .sourceNamespaces(Map.of(SOURCE_NAMESPACE_ID, mediaRoot))
             .segmentBasePath(tempDir.resolve("segments"))

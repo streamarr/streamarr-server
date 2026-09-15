@@ -5,15 +5,4 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 
 @ConfigurationProperties(prefix = "streaming.worker-session")
 public record WorkerSessionProperties(
-    @DefaultValue Loopback loopback, @DefaultValue MutualTls mutualTls) {
-
-  public record Loopback(@DefaultValue("false") boolean enabled, @DefaultValue("9090") int port) {}
-
-  public record MutualTls(
-      @DefaultValue("false") boolean enabled,
-      @DefaultValue("9090") int port,
-      String trustDomain,
-      String certificate,
-      String privateKey,
-      String trustBundle) {}
-}
+    @DefaultValue("127.0.0.1") String address, @DefaultValue("9090") int port) {}
