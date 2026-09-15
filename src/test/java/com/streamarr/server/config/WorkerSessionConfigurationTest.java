@@ -26,14 +26,15 @@ class WorkerSessionConfigurationTest {
           .withBean(SegmentStore.class, FakeSegmentStore::new);
 
   @Test
-  @DisplayName("Should leave both listeners disabled when no listeners are configured")
-  void shouldLeaveBothListenersDisabledWhenNoListenersAreConfigured() {
+  @DisplayName("Should refuse startup when neither worker session listener is enabled")
+  void shouldRefuseStartupWhenNeitherWorkerSessionListenerIsEnabled() {
     contextRunner.run(
         context -> {
-          assertThat(context).hasNotFailed();
-          var properties = context.getBean(WorkerSessionProperties.class);
-          assertThat(properties.loopback().enabled()).isFalse();
-          assertThat(properties.mutualTls().enabled()).isFalse();
+          assertThat(context).hasFailed();
+          assertThat(context.getStartupFailure())
+              .rootCause()
+              .isInstanceOf(IllegalArgumentException.class)
+              .hasMessage("At least one worker session listener must be enabled");
         });
   }
 

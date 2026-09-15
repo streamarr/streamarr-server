@@ -1,18 +1,21 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.services.streaming.FfprobeService;
-import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class FakeFfprobeService implements FfprobeService {
 
   private RuntimeException failure;
   private Runnable duringProbe = () -> {};
   private final AtomicInteger probeCount = new AtomicInteger();
+  private final AtomicReference<ProbeExecutionRequest> lastRequest = new AtomicReference<>();
   private volatile boolean lastProbeOnVirtualThread;
 
   private MediaProbe defaultProbe =
@@ -27,8 +30,9 @@ public class FakeFfprobeService implements FfprobeService {
           .build();
 
   @Override
-  public ProbeOutcome probe(Path filepath) {
+  public ProbeOutcome probe(ProbeExecutionRequest request) {
     probeCount.incrementAndGet();
+    lastRequest.set(request);
     lastProbeOnVirtualThread = Thread.currentThread().isVirtual();
     duringProbe.run();
     if (failure != null) {
@@ -52,6 +56,10 @@ public class FakeFfprobeService implements FfprobeService {
 
   public int probeCount() {
     return probeCount.get();
+  }
+
+  public Optional<ProbeExecutionRequest> lastRequest() {
+    return Optional.ofNullable(lastRequest.get());
   }
 
   public boolean wasLastProbeOnVirtualThread() {

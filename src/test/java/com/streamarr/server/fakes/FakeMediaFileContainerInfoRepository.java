@@ -28,7 +28,11 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
 
   /** Answers every media file id with this probe unless a row was stored for it. */
   public void setDefaultProbe(MediaProbe probe) {
-    defaultProbe = Optional.of(ProbeFixture.completeProbe(probe));
+    setDefaultOutcome(ProbeFixture.completeProbe(probe));
+  }
+
+  public void setDefaultOutcome(ProbeOutcome.Success outcome) {
+    defaultProbe = Optional.of(outcome);
   }
 
   public void clear() {

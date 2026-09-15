@@ -17,6 +17,7 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
@@ -37,6 +38,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -146,7 +148,13 @@ class SchedulerProbeRequestsIT extends AbstractIntegrationTest {
             .mediaFileId(file.getId())
             .snapshot(stale.snapshot())
             .probeVersion(ProbeVersion.CURRENT)
-            .outcome(producer.probe(FilepathCodec.decode(file.getFilepathUri())))
+            .outcome(
+                producer.probe(
+                    ProbeExecutionRequest.builder()
+                        .sourcePath(FilepathCodec.decode(file.getFilepathUri()))
+                        .attemptId(UUID.randomUUID())
+                        .probeVersion(ProbeVersion.CURRENT)
+                        .build()))
             .build());
 
     scheduling.request(

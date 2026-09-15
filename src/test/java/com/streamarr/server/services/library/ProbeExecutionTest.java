@@ -9,6 +9,7 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.ProbeContainer;
+import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.task.ProbeRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fakes.FakeFfprobeService;
@@ -73,7 +74,23 @@ class ProbeExecutionTest {
               assertThat(publication.mediaFileId()).isEqualTo(mediaFile.getId());
               assertThat(publication.snapshot()).isEqualTo(request.snapshot());
               assertThat(publication.probeVersion()).isEqualTo(ProbeVersion.CURRENT);
-              assertThat(publication.outcome()).isEqualTo(producer.probe(source));
+              assertThat(publication.outcome()).isEqualTo(producer.probe(anyRequestFor(source)));
+            });
+  }
+
+  @Test
+  @DisplayName("Should carry the source and requested version with a fresh attempt id when probing")
+  void shouldCarryTheSourceAndRequestedVersionWithAFreshAttemptIdWhenProbing() {
+    var request = request(ProbeVersion.CURRENT);
+
+    execution().execute(request);
+
+    assertThat(producer.lastRequest())
+        .hasValueSatisfying(
+            invoked -> {
+              assertThat(invoked.sourcePath()).isEqualTo(source);
+              assertThat(invoked.probeVersion()).isEqualTo(ProbeVersion.CURRENT);
+              assertThat(invoked.attemptId()).isNotNull();
             });
   }
 
@@ -215,6 +232,14 @@ class ProbeExecutionTest {
         .filepathUri(mediaFile.getFilepathUri())
         .snapshot(snapshot(source))
         .probeVersion(probeVersion)
+        .build();
+  }
+
+  private static ProbeExecutionRequest anyRequestFor(Path path) {
+    return ProbeExecutionRequest.builder()
+        .sourcePath(path)
+        .attemptId(UUID.randomUUID())
+        .probeVersion(ProbeVersion.CURRENT)
         .build();
   }
 
