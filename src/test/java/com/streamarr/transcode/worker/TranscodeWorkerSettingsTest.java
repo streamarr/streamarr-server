@@ -199,6 +199,25 @@ class TranscodeWorkerSettingsTest {
         "TRANSCODE_WORKER_SLOTS", "two", "TRANSCODE_WORKER_SLOTS must be an integer");
   }
 
+  @Test
+  @DisplayName("Should default to ffprobe on PATH when its executable is not configured")
+  void shouldDefaultToFfprobeOnPathWhenItsExecutableIsNotConfigured() {
+    var settings = TranscodeWorkerSettings.fromEnvironment(requiredEnvironment());
+
+    assertThat(settings.ffprobePath()).isEqualTo("ffprobe");
+  }
+
+  @Test
+  @DisplayName("Should use the configured ffprobe executable when loading settings")
+  void shouldUseTheConfiguredFfprobeExecutableWhenLoadingSettings() {
+    var environment = new HashMap<>(requiredEnvironment());
+    environment.put("TRANSCODE_WORKER_FFPROBE_PATH", "/usr/local/bin/ffprobe");
+
+    var settings = TranscodeWorkerSettings.fromEnvironment(environment);
+
+    assertThat(settings.ffprobePath()).isEqualTo("/usr/local/bin/ffprobe");
+  }
+
   private void assertInvalidSetting(String key, String value, String expectedMessage) {
     var environment = new HashMap<>(requiredEnvironment());
     environment.put(key, value);

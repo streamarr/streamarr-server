@@ -12,6 +12,7 @@ record TranscodeWorkerSettings(
     String controlPlaneHost,
     int controlPlanePort,
     String ffmpegPath,
+    String ffprobePath,
     TranscodeWorkerConfiguration workerConfiguration) {
 
   private static final String PREFIX = "TRANSCODE_WORKER_";
@@ -40,6 +41,7 @@ record TranscodeWorkerSettings(
         .controlPlaneHost(required(environment, PREFIX + "CONTROL_PLANE_HOST"))
         .controlPlanePort(port(environment, PREFIX + "CONTROL_PLANE_PORT", 9090))
         .ffmpegPath(optional(environment, PREFIX + "FFMPEG_PATH", "ffmpeg"))
+        .ffprobePath(optional(environment, PREFIX + "FFPROBE_PATH", "ffprobe"))
         .workerConfiguration(workerConfiguration)
         .build();
   }
