@@ -1,201 +1,147 @@
 = Distributed Transcoding
 
 The default Compose deployment starts one server and one colocated worker.
-All transcoding and remuxing run on workers. The server does not execute FFmpeg.
-Background probes always run on workers that support the requested probe version.
+Workers perform all transcoding, remuxing, and background media probes.
+The server does not execute FFmpeg.
 
-The supported first topology is one Streamarr server and zero or more outbound workers.
-Workers read the same media through an administrator-defined source namespace, run the variant engine, and upload segments over their worker session.
-Workers connect outward for control and never connect to PostgreSQL.
-Their dedicated inbound port serves only health checks.
+Workers connect outward for control and upload segments over their worker session.
+They read media through an administrator-defined source namespace and never connect to PostgreSQL.
+Their inbound management port serves health checks. The server does not use it to dispatch work.
 
-Workers also run background media probes through the same session and execution slots.
-Set `TRANSCODE_WORKER_FFPROBE_PATH` to the worker's ffprobe binary. It defaults to `ffprobe` on `PATH`.
-Probe requests use the same source namespace and mount mapping as transcode jobs.
-Closing a worker connection cancels its probes and waits for their native processes to terminate.
-This wait has no separate deadline; an unresponsive filesystem can delay worker shutdown.
+== Worker connections
 
-== Identity and media contract
+The server exposes one plaintext gRPC listener.
+`STREAMING_WORKER_SESSION_ADDRESS` defaults to `127.0.0.1` and `STREAMING_WORKER_SESSION_PORT` defaults to `9090`.
+The server can start without connected workers. Probe tasks retain their retry schedule until a capable worker connects.
 
-=== Colocated workers
+For colocated workers, keep the loopback address and share the server's network namespace.
+Every process that can reach this listener is trusted.
+Reusing a worker UUID replaces its previous connection and abandons that connection's active jobs.
+Share the namespace only with trusted processes.
 
-The plaintext listener binds only `127.0.0.1` inside the server's network namespace.
-Its bind address is not configurable.
-Every process that can reach this listener is trusted. Reusing a worker ID replaces its previous connection and abandons that connection's active jobs.
-Share this namespace only with trusted processes.
-
-Enable the listener with `STREAMING_WORKER_SESSION_LOOPBACK_ENABLED=true` and set its port with `STREAMING_WORKER_SESSION_LOOPBACK_PORT`.
-The default port is `9090`.
-The worker needs `TRANSCODE_WORKER_PLAINTEXT=true`, `TRANSCODE_WORKER_CONTROL_PLANE_HOST=127.0.0.1`, the same port in `TRANSCODE_WORKER_CONTROL_PLANE_PORT`, and a UUID in `TRANSCODE_WORKER_ID`.
-It does not need certificates in this mode.
-
-The dev profile enables loopback. Full application test contexts use an ephemeral loopback port.
-The server requires at least one enabled worker listener for probing and playback.
-It refuses startup when both listeners are disabled.
-It can start with no connected workers. Probe tasks retain their retry schedule until a capable worker connects.
-
-Set `STREAMING_REMOTE_SOURCE_NAMESPACE_ID` and `STREAMING_REMOTE_SOURCE_ROOT` for the server's media mapping.
-Both settings are required.
-The dev profile defaults to the Compose namespace UUID and `/media`. When running the server on the host, set the source root to the host media directory and configure the same namespace on the worker.
-
-=== Remote workers
-
-Workers outside the server's network namespace use mutual TLS.
-Set `STREAMING_WORKER_SESSION_MUTUAL_TLS_ENABLED=true` on the server and leave `TRANSCODE_WORKER_PLAINTEXT` unset or `false` on each worker.
-The server's port, trust domain, certificate, private key, and trust bundle settings use the `STREAMING_WORKER_SESSION_MUTUAL_TLS_` prefix.
-These listener settings replace their former `STREAMING_REMOTE_` equivalents.
-The loopback and mutual-TLS listeners may run together. Choose different ports when configuring both with fixed ports.
-
-Streamarr consumes PEM files issued by the operator's existing tooling.
-It does not issue or enroll certificates.
-
-* The server certificate must be valid for the DNS name workers use and permit TLS server authentication.
-* Each worker certificate must permit TLS client authentication and contain exactly one URI SAN shaped as `spiffe://<trust-domain>/streamarr/worker/<worker-uuid>`.
-* `TRANSCODE_WORKER_ID` must equal the `<worker-uuid>` in that URI.
-* Server and worker trust bundles must trust the issuing CA.
-* Every process maps the same source namespace UUID to the same media content. Container paths may differ, but the relative path beneath each configured source root must identify the same file.
-
-Certificates are loaded at process start.
-Restart the affected server or worker after replacing a certificate or trust bundle.
+For distributed Kubernetes workers, set the address to `0.0.0.0` and protect port `9090` with the service mesh.
+The example requires Istio sidecar interception, strict mutual TLS on the worker port, and authorization for the dedicated worker ServiceAccount.
+The server does not load certificates or inspect forwarded identity headers.
+Keep both inbound and outbound worker traffic inside the mesh.
 
 [IMPORTANT]
 ====
-Because certificates are read only at startup, a certificate's lifetime must exceed the process's expected uptime.
-Issuers that rotate short-lived certificates in place (SPIRE and cert-manager's csi-driver-spiffe default to about one hour) will break new connections once the in-memory certificate expires, even though a fresh file sits on disk.
-Configure an explicit certificate duration well beyond your restart cadence — the Kubernetes example requests 90 days — and restart each process before its certificate expires.
+Binding the worker listener to a network interface requires the mesh policies to be enforced.
+Plaintext traffic to the Pod IP must also be rejected.
+The mesh authenticates the worker ServiceAccount. The worker UUID remains a claimed instance identifier.
+An authorized worker can claim another worker's UUID. Workers in that role therefore share trust.
 ====
 
-=== Service meshes
+== Media and health
 
-Streamarr terminates its own mTLS on the worker port; Istio and similar meshes keep their certificates inside the sidecar proxy (delivered over SDS) and cannot provide these files to the application.
-When deploying inside a mesh, source certificates from cert-manager, SPIRE (via csi-driver-spiffe or spiffe-helper), Vault, or static Secrets, and keep the worker gRPC port out of sidecar interception: exclude it with `traffic.sidecar.istio.io/excludeInboundPorts` on the server pod (plus `excludeOutboundPorts` on worker pods), or set a `PeerAuthentication` with `portLevelMtls: DISABLE` for that port.
-If the port stays meshed, both endpoints must be meshed too, and the Service port must be declared `tcp` or `tls` — never `grpc`, or the sidecar will try to parse the TLS handshake as HTTP/2.
+Set `STREAMING_REMOTE_SOURCE_NAMESPACE_ID` and `STREAMING_REMOTE_SOURCE_ROOT` for the server's media mapping.
+Configure the same namespace UUID on each worker with `TRANSCODE_WORKER_SOURCE_NAMESPACE_ID` and `TRANSCODE_WORKER_SOURCE_ROOT`.
+Container paths may differ, but a relative key beneath each source root must identify the same media.
+Mount media read-only and give each worker its own writable temporary output directory.
+Workers on different nodes need storage that supports those simultaneous mounts.
 
-=== Health probes
+Set `TRANSCODE_WORKER_FFPROBE_PATH` to the worker's ffprobe binary. It defaults to `ffprobe` on `PATH`.
+Closing a worker connection cancels its probes and waits for their native processes to terminate.
+An unresponsive filesystem can delay worker shutdown.
 
-The server exposes Spring Boot's Kubernetes probe groups at `/actuator/health/liveness` and `/actuator/health/readiness`; the example manifest wires startup, liveness, and readiness probes to them.
-Leave the `transcodeExecutor` health indicator out of both probe groups: it reports DOWN whenever zero workers are connected, which is an alerting signal, not a restart or unrouting signal.
-Restarting the server cannot conjure workers, and marking it unready would remove the worker gRPC port from the shared Service — leaving workers permanently unable to connect and make it ready again.
-Alert on the aggregate `/actuator/health` instead.
+The server exposes Spring Boot probe groups at `/actuator/health/liveness` and `/actuator/health/readiness` on port `8080`.
+The standalone Spring Boot worker exposes the same paths on port `9091`.
+Worker readiness requires successful initialization and an accepted server session.
+A busy worker stays ready. Losing its server session changes readiness without failing liveness.
+The server still dispatches through the worker session using advertised capabilities and available slots.
 
-Workers expose plaintext gRPC health checks on `TRANSCODE_WORKER_HEALTH_PORT`, which defaults to `9091`.
-The port listens on all interfaces so Kubernetes can probe the Pod IP.
-The `liveness` service reports local process health.
-The `readiness` service requires successful initialization and a session accepted by the server.
-A worker stays ready when all execution slots are occupied.
-Losing the server connection changes readiness without failing liveness.
-The server never dials this health port.
-It continues to dispatch work through the worker session using advertised capabilities and available slots.
-Tests may set the health port to `0` and read the bound port from the worker after startup.
+Keep worker availability out of the server's liveness and readiness groups.
+A server with zero workers must remain reachable so workers can connect.
+The Istio policy restricts only the worker port. HTTP and Kubernetes health probes retain their existing mesh policies.
 
 == Docker Compose
 
 The default worker uses `network_mode: service:streamarr-server` to reach the server over loopback.
-Set `STREAMARR_MEDIA_PATH` to the host media directory. Both containers mount it read-only at `/media`, which is the library root inside the server.
-The worker writes segments in its own temporary directory.
-`STREAMARR_WORKER_ID` and `STREAMARR_SOURCE_NAMESPACE_ID` override the example UUIDs in the default configuration.
+Set `STREAMARR_MEDIA_PATH` to the host media directory.
+Both containers mount it read-only at `/media`, which is the library root inside the server.
+`STREAMARR_WORKER_ID` and `STREAMARR_SOURCE_NAMESPACE_ID` override the example UUIDs.
 
 [source,bash]
 ----
 STREAMARR_MEDIA_PATH=/absolute/path/to/media docker compose up -d
 ----
 
-The distributed override moves the worker onto the Compose network and enables mutual TLS.
-It clears the default worker's shared network namespace and explicitly disables plaintext mode.
-Provide these values in the shell or `.env`:
+The current server image still contains the interim `worker` process.
+The default Compose worker enables its plaintext connection setting until the standalone image cutover.
+The former distributed Compose override has been retired with application-managed worker TLS.
+
+Hardware transcoding is a separate opt-in overlay.
+Find the numeric group ID that owns the host's `/dev/dri/render*` device and set `STREAMARR_RENDER_GID`:
 
 [source,bash]
 ----
-STREAMARR_TRUST_DOMAIN=streamarr.home
-STREAMARR_SOURCE_NAMESPACE_ID=cccccccc-cccc-cccc-cccc-cccccccccccc
-STREAMARR_MEDIA_PATH=/absolute/path/to/media
-STREAMARR_SERVER_TLS_PATH=/absolute/path/to/server-pems
-STREAMARR_WORKER_ID=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
-STREAMARR_WORKER_TLS_PATH=/absolute/path/to/worker-pems
-----
-
-Each PEM directory contains `tls.crt`, `tls.key`, and `ca.crt`.
-The server certificate needs a DNS SAN for `streamarr-server`; the worker certificate's URI SAN uses `STREAMARR_TRUST_DOMAIN` and `STREAMARR_WORKER_ID`.
-
-Start the server and worker with:
-
-[source,bash]
-----
-docker compose \
+STREAMARR_MEDIA_PATH=/absolute/path/to/media STREAMARR_RENDER_GID=109 docker compose \
   -f docker-compose.yml \
-  -f deploy/compose/distributed-transcoding.yml \
-  up -d
-----
-
-Hardware transcoding is a separate opt-in overlay. Find the numeric group id that owns the host's
-`/dev/dri/render*` device, export it as `STREAMARR_RENDER_GID`, and add the hardware file:
-
-[source,bash]
-----
-STREAMARR_RENDER_GID=109 docker compose \
-  -f docker-compose.yml \
-  -f deploy/compose/distributed-transcoding.yml \
   -f deploy/compose/hardware-transcoding.yml \
   up -d
 ----
 
-The group id is host-specific; `109` is only an example. The overlay passes `/dev/dri` only to the
-worker. CPU deployments need no hardware overlay.
-
-The release image exposes `web` as its default process and `worker` as a second Cloud Native Buildpacks process type.
-To add remote Compose workers, give every worker a distinct UUID and matching certificate.
-Duplicating the example service unchanged replaces the prior connection for that identity.
+The group ID is host-specific. `109` is only an example.
+The overlay passes `/dev/dri` only to the worker. CPU deployments need no hardware overlay.
 
 == Kubernetes
 
-link:../deploy/kubernetes/distributed-transcoding.yaml[`deploy/kubernetes/distributed-transcoding.yaml`] is an opt-in starting manifest with one server replica and two worker replicas.
-It assumes:
+[NOTE]
+====
+The Kubernetes manifest is a preview of the standalone worker deployment.
+It uses placeholder image versions. Deploy it only after the first immutable worker image is verified in https://github.com/streamarr/streamarr-transcode-worker/issues/4[worker issue #4] and the server cutover in https://github.com/streamarr/streamarr-server/issues/352[server issue #352] is complete.
+====
 
-* the cert-manager CSI driver is installed;
-* a `ClusterIssuer` named `streamarr-ca` exists;
-* a `PersistentVolumeClaim` named `streamarr-media` exposes the same media to the server and workers; and
-* a Secret named `streamarr-runtime` contains `datasource-url`, `datasource-username`, and `datasource-password`.
+link:../deploy/kubernetes/distributed-transcoding.yaml[The example manifest] creates the `streamarr` namespace with sidecar injection enabled, separate server and worker ServiceAccounts, one server replica, and two worker replicas.
+It requires:
 
-Before applying it, replace the example image tag, trust domain, source namespace UUID, issuer, storage, and runtime Secret names for the deployment.
-The CSI driver requests a unique worker certificate whose URI SAN ends in `${POD_UID}`; the downward API supplies that same pod UID as `TRANSCODE_WORKER_ID`.
-This lets the worker Deployment scale without shared identities or per-replica Streamarr configuration.
+* an installed Istio sidecar control plane with the `cluster.local` trust domain
+* a `streamarr-media` PersistentVolumeClaim in the `streamarr` namespace
+* a `streamarr-runtime` Secret in that namespace with `datasource-url`, `datasource-username`, and `datasource-password`
 
-The server replica count must remain one in this version.
-Multiple server replicas require worker-session affinity or a broker and are deliberately deferred.
-The worker replica count may scale horizontally as long as every worker can read the configured source namespace.
+Replace the placeholder image tags with verified immutable versions and adapt the storage, source namespace, and runtime Secret.
+If you change the Kubernetes namespace or mesh trust domain, update the authorized principal in the `AuthorizationPolicy` too.
+The worker ID comes from the Pod UID. Scaling the Deployment produces distinct instance identifiers without per-replica configuration.
 
-Apply the adapted manifest with:
+Port `9090` requires mesh mutual TLS and the `streamarr-transcode-worker` ServiceAccount.
+Port `8080` retains its existing mesh and application access controls.
+If the namespace already has an allow policy, it must also permit the authorized worker's traffic to port `9090`.
+Do not add exclusions for the worker port to the sidecar annotations.
+
+Keep one server replica and `Recreate` replacement. Its worker and playback session registries are in memory.
+Worker replicas may scale horizontally as long as each can read the configured media namespace.
 
 [source,bash]
 ----
 kubectl apply -f deploy/kubernetes/distributed-transcoding.yaml
 ----
 
-For direct-rendering hardware on Kubernetes nodes, first edit the example group id in
-`deploy/kubernetes/hardware-transcoding-patch.yaml` to match the group that owns
-`/dev/dri/render*` on those nodes. After applying the base manifest, opt in with:
+For direct-rendering hardware, edit the group ID in `deploy/kubernetes/hardware-transcoding-patch.yaml` to match the node's render device group, then apply the patch:
 
 [source,bash]
 ----
-kubectl patch deployment streamarr-transcode-worker \
+kubectl -n streamarr patch deployment streamarr-transcode-worker \
   --type strategic \
   --patch-file deploy/kubernetes/hardware-transcoding-patch.yaml
 ----
 
-The patch mounts the node's `/dev/dri` directory only into worker pods. A device plugin is usually
-preferable in a heterogeneous or managed cluster; use its advertised resource instead of this
-host-path example when one is installed.
+The patch mounts `/dev/dri` only into worker pods.
+Use a device plugin's advertised resource when one is installed.
 
-The manifest uses cert-manager only as an example external issuer adapter.
-Static Secrets, Vault, a cloud CA, or another platform mechanism are equally valid when they mount the same three PEM files and preserve the worker URI identity contract.
+== Validate the mesh
+
+link:../deploy/kubernetes/test/README.md[The isolated mesh test] creates a temporary kind cluster and runs the real worker-session service behind Istio.
+A scripted worker registers and completes a correlated probe exchange.
+The test proves that a different ServiceAccount is denied and an unmeshed client cannot connect through either the Service or the direct Pod IP.
+Ordinary HTTP remains accessible. Existing HTTP authorization and namespace-wide strict mutual TLS policies remain effective.
+It removes its cluster afterward and uses a separate kubeconfig throughout.
 
 == Operational tradeoffs
 
-The live worker connection is the job fence and the server keeps runtime stream sessions in memory.
-A server restart therefore drops active playback and worker sessions; clients reconnect and workers dial out again.
-This keeps the single-server path disposable and avoids a durable job ledger, leases, a shared worker database, or NATS before multi-server demand exists.
+A server restart drops active playback and worker sessions.
+Clients reconnect and workers establish a new session.
+This single-server design avoids a shared worker database or message broker.
 
-Segment bytes travel on separate bounded HTTP/2 streams over the worker channel, so bulk uploads do not share the control-message stream.
-Clients continue to fetch playlists and segments from the Streamarr HTTP endpoint; workers are never exposed to players.
-
-See https://github.com/streamarr/streamarr-adr/blob/main/adr/0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] for the decision and deferred multi-server boundary.
+Segment bytes travel on separate bounded HTTP/2 streams over the worker channel.
+Players continue to fetch playlists and segments from the server's HTTP endpoint.
+See https://github.com/streamarr/streamarr-adr/blob/main/adr/0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] for the deferred multi-server boundary.

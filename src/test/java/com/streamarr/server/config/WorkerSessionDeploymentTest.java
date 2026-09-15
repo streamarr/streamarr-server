@@ -36,17 +36,18 @@ class WorkerSessionDeploymentTest {
     assertThat(environment.path("TRANSCODE_WORKER_CONTROL_PLANE_HOST").asString())
         .isEqualTo("127.0.0.1");
     assertThat(environment.path("TRANSCODE_WORKER_CONTROL_PLANE_PORT"))
-        .isEqualTo(server.path("environment").path("STREAMING_WORKER_SESSION_LOOPBACK_PORT"));
-    assertThat(
-            server.path("environment").path("STREAMING_WORKER_SESSION_LOOPBACK_ENABLED").asString())
-        .isEqualTo("true");
+        .isEqualTo(server.path("environment").path("STREAMING_WORKER_SESSION_PORT"));
+    assertThat(server.path("environment").has("STREAMING_WORKER_SESSION_LOOPBACK_ENABLED"))
+        .isFalse();
     assertThat(worker.path("volumes")).isEqualTo(server.path("volumes"));
     assertThat(worker.has("ports")).isFalse();
   }
 
   @Test
-  @DisplayName("Should retain mutual TLS through the Service when using Kubernetes workers")
-  void shouldRetainMutualTlsThroughServiceWhenUsingKubernetesWorkers() throws IOException {
+  @DisplayName(
+      "Should delegate transport protection when Kubernetes workers connect through the Service")
+  void shouldDelegateTransportProtectionWhenKubernetesWorkersConnectThroughService()
+      throws IOException {
     var documents =
         new Yaml()
             .loadAll(Files.readString(Path.of("deploy/kubernetes/distributed-transcoding.yaml")));
@@ -63,14 +64,14 @@ class WorkerSessionDeploymentTest {
     var worker = environment(deployments.get("streamarr-transcode-worker"));
 
     assertThat(server)
-        .containsEntry("STREAMING_WORKER_SESSION_MUTUAL_TLS_ENABLED", "true")
-        .containsEntry("STREAMING_WORKER_SESSION_LOOPBACK_ENABLED", "false")
-        .containsEntry("STREAMING_WORKER_SESSION_MUTUAL_TLS_PORT", "9090")
-        .containsKey("STREAMING_WORKER_SESSION_MUTUAL_TLS_TRUST_BUNDLE");
+        .containsEntry("STREAMING_WORKER_SESSION_ADDRESS", "0.0.0.0")
+        .containsEntry("STREAMING_WORKER_SESSION_PORT", "9090");
+    assertThat(server.keySet()).noneMatch(name -> name.contains("TLS") || name.endsWith("ENABLED"));
     assertThat(worker)
-        .containsEntry("TRANSCODE_WORKER_PLAINTEXT", "false")
         .containsEntry("TRANSCODE_WORKER_CONTROL_PLANE_HOST", "streamarr-server")
         .containsEntry("TRANSCODE_WORKER_CONTROL_PLANE_PORT", "9090");
+    assertThat(worker.keySet())
+        .noneMatch(name -> name.contains("TLS") || name.contains("PLAINTEXT"));
   }
 
   private Map<String, String> environment(JsonNode deployment) {

@@ -1,0 +1,21 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: existing-api-policy
+  namespace: streamarr
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: streamarr-server
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            ports: ["9090"]
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/streamarr/sa/streamarr-transcode-worker
+      to:
+        - operation:
+            ports: ["8080"]
