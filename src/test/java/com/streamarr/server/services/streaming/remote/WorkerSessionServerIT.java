@@ -268,6 +268,7 @@ class WorkerSessionServerIT {
     var negativePort = serverConfigurationBuilder().port(-1);
     var excessivePort = serverConfigurationBuilder().port(65_536);
     var blankAddress = serverConfigurationBuilder().address(" ");
+    var nullAddress = serverConfigurationBuilder();
 
     assertThatThrownBy(negativePort::build)
         .isInstanceOf(IllegalArgumentException.class)
@@ -275,8 +276,7 @@ class WorkerSessionServerIT {
     assertThatThrownBy(excessivePort::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Worker session port must be between 0 and 65535");
-    assertThatThrownBy(() -> serverConfigurationBuilder().address(null))
-        .isInstanceOf(NullPointerException.class);
+    assertThatThrownBy(() -> nullAddress.address(null)).isInstanceOf(NullPointerException.class);
     assertThatThrownBy(blankAddress::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Worker session address is required");

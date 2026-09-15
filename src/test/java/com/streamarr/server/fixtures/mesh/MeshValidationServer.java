@@ -23,7 +23,7 @@ public final class MeshValidationServer {
 
   private MeshValidationServer() {}
 
-  public static void main(String[] args) throws Exception {
+  public static void main() throws Exception {
     var configuration =
         WorkerSessionServerConfiguration.builder().address("0.0.0.0").port(9090).build();
     try (var server = new WorkerSessionServer(configuration, new FakeSegmentStore());

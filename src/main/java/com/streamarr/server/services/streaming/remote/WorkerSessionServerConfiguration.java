@@ -17,6 +17,7 @@ public record WorkerSessionServerConfiguration(@NonNull String address, int port
   }
 
   public static class WorkerSessionServerConfigurationBuilder {
+    @SuppressWarnings("java:S1068") // Lombok's generated build() reads this default.
     private String address = "127.0.0.1";
   }
 }
