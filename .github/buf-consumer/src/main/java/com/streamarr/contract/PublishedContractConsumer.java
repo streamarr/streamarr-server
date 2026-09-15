@@ -1,8 +1,8 @@
 package com.streamarr.contract;
 
-import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
-import com.streamarr.transcode.v1.WorkerIdentity;
-import com.streamarr.transcode.v1.WorkerRegistration;
+import build.buf.gen.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
+import build.buf.gen.streamarr.transcode.v1.WorkerIdentity;
+import build.buf.gen.streamarr.transcode.v1.WorkerRegistration;
 import io.grpc.Channel;
 
 public final class PublishedContractConsumer {

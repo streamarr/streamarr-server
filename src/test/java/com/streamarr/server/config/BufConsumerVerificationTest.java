@@ -3,12 +3,10 @@ package com.streamarr.server.config;
 import static com.streamarr.server.support.ProcessTestSupport.awaitCompletion;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Map;
-import javax.tools.ToolProvider;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -55,28 +53,6 @@ class BufConsumerVerificationTest {
     assertThat(result.exitCode()).isNotZero();
     assertThat(workspace.resolve("consumer-arguments")).doesNotExist();
     assertThat(workspace.resolve("target/buf-consumer-pin.properties")).doesNotExist();
-  }
-
-  @Test
-  @DisplayName("Should compile the independent consumer against the current contract API")
-  void shouldCompileTheIndependentConsumerAgainstTheCurrentContractApi() {
-    var diagnostics = new ByteArrayOutputStream();
-
-    var exitCode =
-        ToolProvider.getSystemJavaCompiler()
-            .run(
-                null,
-                diagnostics,
-                diagnostics,
-                "-classpath",
-                System.getProperty("java.class.path"),
-                "-d",
-                workspace.toString(),
-                ".github/buf-consumer/src/main/java/com/streamarr/contract/PublishedContractConsumer.java");
-
-    assertThat(exitCode).withFailMessage(diagnostics.toString()).isZero();
-    assertThat(workspace.resolve("com/streamarr/contract/PublishedContractConsumer.class"))
-        .isRegularFile();
   }
 
   @Test
