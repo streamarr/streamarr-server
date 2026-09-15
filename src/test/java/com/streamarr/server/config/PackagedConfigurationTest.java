@@ -314,15 +314,6 @@ class PackagedConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should ship a mutual TLS Docker Compose worker path when packaged")
-  void shouldShipAMutualTlsDockerComposeWorkerPathWhenPackaged() throws IOException {
-    var deployment = Files.readString(Path.of("deploy/compose/distributed-transcoding.yml"));
-
-    assertThat(deployment)
-        .contains("entrypoint: worker", "TRANSCODE_WORKER_CONTROL_PLANE_HOST: streamarr-server");
-  }
-
-  @Test
   @DisplayName(
       "Should ship opt-in hardware transcoding for the Docker Compose worker when packaged")
   void shouldShipOptInHardwareTranscodingForDockerComposeWorkerWhenPackaged() throws IOException {
@@ -343,7 +334,7 @@ class PackagedConfigurationTest {
             "replicas: 1",
             "replicas: 2",
             "fieldPath: metadata.uid",
-            "spiffe://streamarr.example/streamarr/worker/${POD_UID}");
+            "cluster.local/ns/streamarr/sa/streamarr-transcode-worker");
   }
 
   private static Map<String, Object> yaml(String file) throws IOException {

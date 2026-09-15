@@ -1,10 +1,9 @@
 package com.streamarr.transcode.worker;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextWorkerConfigurationBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.remuxEngine;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
-import static com.streamarr.server.fixtures.RemoteWorkerFixtures.tlsResource;
-import static com.streamarr.server.fixtures.RemoteWorkerFixtures.workerConfigurationBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -26,10 +25,8 @@ import io.grpc.Server;
 import io.grpc.health.v1.HealthCheckRequest;
 import io.grpc.health.v1.HealthCheckResponse.ServingStatus;
 import io.grpc.health.v1.HealthGrpc;
-import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
-import io.grpc.netty.shaded.io.netty.handler.ssl.ClientAuth;
 import io.grpc.stub.StreamObserver;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -203,7 +200,7 @@ class TranscodeWorkerHealthIT {
 
   private TranscodeWorker worker(FakeFfmpegProcessManager processes) throws Exception {
     var configuration =
-        workerConfigurationBuilder()
+        plaintextWorkerConfigurationBuilder()
             .healthPort(0)
             .availableSlots(1)
             .sourceNamespaces(Map.of(SOURCE_NAMESPACE_ID, directory))
@@ -236,14 +233,7 @@ class TranscodeWorkerHealthIT {
     private StreamObserver<EstablishWorkerSessionResponse> responses;
 
     private DeferredControlPlane() throws Exception {
-      var tls =
-          GrpcSslContexts.forServer(
-                  tlsResource("server-cert.pem").toFile(),
-                  tlsResource("server-key.fixture").toFile())
-              .trustManager(tlsResource("ca-cert.pem").toFile())
-              .clientAuth(ClientAuth.REQUIRE)
-              .build();
-      server = NettyServerBuilder.forPort(0).sslContext(tls).addService(this).build().start();
+      server = NettyServerBuilder.forPort(0).addService(this).build().start();
     }
 
     @Override

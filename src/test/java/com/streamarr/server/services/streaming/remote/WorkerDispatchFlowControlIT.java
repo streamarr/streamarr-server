@@ -1,9 +1,9 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChannelBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.fakes.FakeSegmentStore;
-import com.streamarr.transcode.tls.PemTlsIdentity;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.MediaSourceRef;
@@ -15,11 +15,7 @@ import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import io.grpc.ManagedChannel;
-import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
-import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.StreamObserver;
-import java.net.URISyntaxException;
-import java.nio.file.Path;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -104,29 +100,13 @@ class WorkerDispatchFlowControlIT {
     }
   }
 
-  private WorkerSessionServer server() throws URISyntaxException {
-    var configuration =
-        WorkerSessionServerConfiguration.builder()
-            .port(0)
-            .trustDomain("streamarr.test")
-            .tlsIdentity(
-                PemTlsIdentity.builder()
-                    .certificate(resource("server-cert.pem"))
-                    .privateKey(resource("server-key.fixture"))
-                    .trustBundle(resource("ca-cert.pem"))
-                    .build())
-            .build();
+  private WorkerSessionServer server() {
+    var configuration = WorkerSessionServerConfiguration.builder().port(0).build();
     return new WorkerSessionServer(configuration, new FakeSegmentStore());
   }
 
-  private ManagedChannel workerChannel(int port) throws Exception {
-    var sslContext =
-        GrpcSslContexts.forClient()
-            .keyManager(
-                resource("worker-cert.pem").toFile(), resource("worker-key.fixture").toFile())
-            .trustManager(resource("ca-cert.pem").toFile())
-            .build();
-    return NettyChannelBuilder.forAddress("localhost", port).sslContext(sslContext).build();
+  private ManagedChannel workerChannel(int port) {
+    return plaintextChannelBuilder(port, AUTHENTICATED_WORKER_ID).build();
   }
 
   private EstablishWorkerSessionRequest registration() {
@@ -162,12 +142,6 @@ class WorkerDispatchFlowControlIT {
         .setMostSignificantBits(value.getMostSignificantBits())
         .setLeastSignificantBits(value.getLeastSignificantBits())
         .build();
-  }
-
-  private Path resource(String name) throws URISyntaxException {
-    var url = getClass().getResource("/tls/" + name);
-    assertThat(url).as("TLS resource %s must exist", name).isNotNull();
-    return Path.of(url.toURI());
   }
 
   /**

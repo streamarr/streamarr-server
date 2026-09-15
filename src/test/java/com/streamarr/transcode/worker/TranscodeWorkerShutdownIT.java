@@ -1,8 +1,8 @@
 package com.streamarr.transcode.worker;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextWorkerConfigurationBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.remuxEngine;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
-import static com.streamarr.server.fixtures.RemoteWorkerFixtures.workerConfigurationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.fakes.FakeSegmentStore;
@@ -38,7 +38,7 @@ class TranscodeWorkerShutdownIT {
             new WorkerSessionServer(serverConfigurationBuilder().build(), new FakeSegmentStore());
         var worker =
             new TranscodeWorker(
-                workerConfigurationBuilder()
+                plaintextWorkerConfigurationBuilder()
                     .healthPort(0)
                     .availableSlots(1)
                     .sourceNamespaces(Map.of(UUID.randomUUID(), directory))

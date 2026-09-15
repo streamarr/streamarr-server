@@ -1,8 +1,8 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextWorkerConfigurationBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.remuxEngine;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
-import static com.streamarr.server.fixtures.RemoteWorkerFixtures.workerConfigurationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
@@ -301,7 +301,7 @@ class RemotePlaybackIT {
   private TranscodeWorker worker(Path mediaRoot, FakeFfmpegProcessManager processManager)
       throws URISyntaxException {
     var configuration =
-        workerConfigurationBuilder()
+        plaintextWorkerConfigurationBuilder()
             .availableSlots(1)
             .sourceNamespaces(Map.of(SOURCE_NAMESPACE_ID, mediaRoot))
             .segmentBasePath(tempDir.resolve("worker-segments"))

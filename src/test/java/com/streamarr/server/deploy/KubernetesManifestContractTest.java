@@ -13,11 +13,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.yaml.snakeyaml.Yaml;
 
-/**
- * Pins the deployment invariants the example Kubernetes manifest documents: the single-server
- * topology must survive rollouts, probes must target the auto-enabled actuator endpoints, and
- * workload certificates must declare an explicit lifetime because they are only read at startup.
- */
 @Tag("UnitTest")
 @DisplayName("Kubernetes Manifest Contract Tests")
 class KubernetesManifestContractTest {
@@ -69,27 +64,27 @@ class KubernetesManifestContractTest {
   }
 
   @Test
-  @DisplayName("Should probe distinct worker health services on the configured dedicated port")
-  void shouldProbeDistinctWorkerHealthServicesOnTheConfiguredDedicatedPort() {
+  @DisplayName("Should probe worker Actuator groups when deploying worker")
+  void shouldProbeWorkerActuatorGroupsWhenDeployingWorker() {
     var worker = container(workerDeployment);
 
-    assertThat(asMap(asMap(worker.get("livenessProbe")).get("grpc")))
-        .containsEntry("port", 9091)
-        .containsEntry("service", "liveness");
-    assertThat(asMap(asMap(worker.get("readinessProbe")).get("grpc")))
-        .containsEntry("port", 9091)
-        .containsEntry("service", "readiness");
+    assertThat(asMap(asMap(worker.get("livenessProbe")).get("httpGet")))
+        .containsEntry("port", "http-health")
+        .containsEntry("path", "/actuator/health/liveness");
+    assertThat(asMap(asMap(worker.get("readinessProbe")).get("httpGet")))
+        .containsEntry("port", "http-health")
+        .containsEntry("path", "/actuator/health/readiness");
     assertThat(((List<?>) worker.get("ports")).stream().map(KubernetesManifestContractTest::asMap))
         .anySatisfy(
             port ->
                 assertThat(port)
-                    .containsEntry("name", "health-grpc")
+                    .containsEntry("name", "http-health")
                     .containsEntry("containerPort", 9091));
     assertThat(((List<?>) worker.get("env")).stream().map(KubernetesManifestContractTest::asMap))
         .anySatisfy(
             value ->
                 assertThat(value)
-                    .containsEntry("name", "TRANSCODE_WORKER_HEALTH_PORT")
+                    .containsEntry("name", "SERVER_PORT")
                     .containsEntry("value", "9091"));
   }
 
@@ -126,19 +121,6 @@ class KubernetesManifestContractTest {
   }
 
   @Test
-  @DisplayName(
-      "Should declare certificate lifetimes because certificates load only at startup when deployed")
-  void shouldDeclareCertificateLifetimesBecauseCertificatesLoadOnlyAtStartupWhenDeployed() {
-    for (var deployment : List.of(serverDeployment, workerDeployment)) {
-      var attributes = csiVolumeAttributes(deployment);
-
-      assertThat(attributes)
-          .containsKey("csi.cert-manager.io/duration")
-          .containsKey("csi.cert-manager.io/renew-before");
-    }
-  }
-
-  @Test
   @DisplayName("Should ship opt-in DRI passthrough for the transcode worker when deployed")
   void shouldShipOptInDriPassthroughForTranscodeWorkerWhenDeployed() throws IOException {
     var patch = asMap(new Yaml().load(Files.readString(HARDWARE_PATCH)));
@@ -164,17 +146,6 @@ class KubernetesManifestContractTest {
   private static String probePath(Map<String, Object> container, String probeName) {
     var probe = asMap(container.get(probeName));
     return (String) asMap(probe.get("httpGet")).get("path");
-  }
-
-  private static Map<String, Object> csiVolumeAttributes(Map<String, Object> deployment) {
-    var podSpec = asMap(asMap(asMap(deployment.get("spec")).get("template")).get("spec"));
-    for (var volume : (List<?>) podSpec.get("volumes")) {
-      var csi = asMap(volume).get("csi");
-      if (csi != null) {
-        return asMap(asMap(csi).get("volumeAttributes"));
-      }
-    }
-    throw new AssertionError("No CSI volume found in deployment");
   }
 
   @SuppressWarnings("unchecked")

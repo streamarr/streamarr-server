@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
-import com.streamarr.server.services.streaming.remote.WorkerSessionListeners;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
+import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
 import com.streamarr.transcode.engine.FfmpegCommandBuilder;
 import com.streamarr.transcode.engine.FfmpegProcessManager;
 import com.streamarr.transcode.engine.FfmpegTranscodeEngine;
@@ -15,7 +15,6 @@ import com.streamarr.transcode.worker.TranscodeWorker;
 import com.streamarr.transcode.worker.TranscodeWorkerConfiguration;
 import java.nio.file.Path;
 import java.util.Map;
-import java.util.OptionalInt;
 import java.util.UUID;
 import lombok.Builder;
 
@@ -39,8 +38,8 @@ final class WorkerStreamingSmokeFixture implements AutoCloseable {
         new FfmpegTranscodeEngine(
             new FfmpegCommandBuilder("ffmpeg"), processManager, capabilityService);
     workerSessions =
-        WorkerSessionServer.forListeners(
-            WorkerSessionListeners.builder().loopbackPort(OptionalInt.of(0)).build(), segmentStore);
+        new WorkerSessionServer(
+            WorkerSessionServerConfiguration.builder().port(0).build(), segmentStore);
     worker =
         new TranscodeWorker(
             TranscodeWorkerConfiguration.builder()
@@ -57,7 +56,7 @@ final class WorkerStreamingSmokeFixture implements AutoCloseable {
 
   void start() throws Exception {
     workerSessions.start();
-    worker.start("127.0.0.1", workerSessions.loopbackPort());
+    worker.start("127.0.0.1", workerSessions.port());
     await()
         .untilAsserted(
             () -> assertThat(workerSessions.availableSlots(sourceNamespaceId)).isEqualTo(3));
