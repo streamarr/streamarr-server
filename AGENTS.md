@@ -9,7 +9,7 @@
 - `docs/openapi.json` is generated — never hand-edit it; change the controller or its records and refresh
 - `./mvnw generate-sources -Pgenerate-jooq-code` — regenerate jOOQ classes after adding a migration. Requires the local Postgres from `docker compose up -d`; migrates it, then generates into `src/main/java/com/streamarr/server/jooq/generated` (checked in — commit regenerated files with the migration)
 - Smoke tests (`@Tag("SmokeTest")`, e.g. `HlsStreamingSmokeTest`) are excluded from all normal builds; run with `./mvnw test -Dsurefire.excludedGroups=`
-- Local run: `docker compose up -d` (PostgreSQL), then `./mvnw spring-boot:run`. Every config value has an env-var default except `TMDB_API_TOKEN` (required for metadata enrichment); `IMAGE_STORAGE_PATH` and `STREAMING_SEGMENT_BASE_PATH` default to empty
+- Local server: `docker compose up -d postgres`, then `./mvnw spring-boot:run`. Playback and media probing require a connected worker. The dev profile enables loopback and provides example source mappings. Set the server and worker source roots to their respective media mounts. See [Distributed Transcoding](docs/distributed-transcoding.adoc) for deployment settings. `TMDB_API_TOKEN` is required for metadata enrichment.
 
 ## Engineering Philosophy
 
@@ -270,7 +270,7 @@ We follow these factors from the Twelve-Factor App methodology:
 - Java 25 (LTS), Spring Boot 4.x, PostgreSQL 18 — exact versions live in `pom.xml` (Renovate keeps them current; don't pin patch versions here)
 - GraphQL via Netflix DGS, jOOQ for complex queries, Flyway for migrations
 - Methanol (JDK `HttpClient`) for outbound HTTP; virtual threads for concurrency
-- FFmpeg via ProcessBuilder for HLS transcoding
+- Transcode workers execute FFmpeg via ProcessBuilder for HLS transcoding and remuxing. The server reads persisted probe results and dispatches worker jobs.
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence

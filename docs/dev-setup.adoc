@@ -36,6 +36,11 @@ This starts PostgreSQL 18 on port 5432 with credentials from `.env`.
 
 The server starts on `http://localhost:8080` with the `dev` profile active.
 
+Playback and media probing also require a connected transcode worker.
+The dev profile enables the loopback worker listener.
+See link:distributed-transcoding.adoc[Distributed Transcoding] for worker setup and source namespace mappings.
+When running the server on the host, set `STREAMING_REMOTE_SOURCE_ROOT` to its media directory and map the same content on the worker.
+
 The `dev` profile enables GraphiQL at `http://localhost:8080/graphiql` and auto-populates the database with sample data via `DevDataInitializer`.
 
 === Cookie-Mode Login in Safari

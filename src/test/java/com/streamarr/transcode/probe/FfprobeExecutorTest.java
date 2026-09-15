@@ -24,6 +24,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Stream;
+import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -172,7 +173,9 @@ class FfprobeExecutorTest {
   @MethodSource("malformedProbeOutput")
   @DisplayName("Should return a retryable failure when ffprobe output is absent or malformed")
   void shouldReturnARetryableFailureWhenFfprobeOutputIsAbsentOrMalformed(String json) {
-    var result = executor(json, 0).probe(SOURCE, request());
+    var process = CompletedProcess.builder().stdout(json).exitCode(0).build();
+    var executor = new FfprobeExecutor(new ObjectMapper(), _ -> process);
+    var result = executor.probe(SOURCE, request());
 
     assertThat(result.hasMedia()).isFalse();
     assertThat(result.getFailure()).isEqualTo(ProbeFailure.PROBE_FAILURE_EXECUTION_FAILED);
@@ -208,6 +211,24 @@ class FfprobeExecutorTest {
                         """
                             .formatted(codecType)));
     return Stream.concat(missingResults, malformedCodecTypes);
+  }
+
+  @Test
+  @DisplayName("Should retain execution failure when ffprobe returns a malformed stream index")
+  void shouldRetainExecutionFailureWhenFfprobeReturnsAMalformedStreamIndex() {
+    var process =
+        CompletedProcess.builder()
+            .stdout(
+                """
+                {"streams":[{"codec_type":"video","index":"N/A"}]}
+                """)
+            .exitCode(0)
+            .build();
+    var executor = new FfprobeExecutor(new ObjectMapper(), _ -> process);
+    var result = executor.probe(SOURCE, request());
+
+    assertThat(result.hasMedia()).isFalse();
+    assertThat(result.getFailure()).isEqualTo(ProbeFailure.PROBE_FAILURE_EXECUTION_FAILED);
   }
 
   @ParameterizedTest
@@ -444,6 +465,7 @@ class FfprobeExecutorTest {
     private final InputStream stdout;
     private final int exitCode;
 
+    @Builder
     CompletedProcess(String stdout, int exitCode) {
       this.stdout = new ByteArrayInputStream(stdout.getBytes(StandardCharsets.UTF_8));
       this.exitCode = exitCode;
