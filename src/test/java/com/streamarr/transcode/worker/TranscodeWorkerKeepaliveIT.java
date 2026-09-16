@@ -5,9 +5,9 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigura
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.workerConfigurationBuilder;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 
-import com.streamarr.server.fakes.FakeFfmpegProcessManager;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
+import com.streamarr.transcode.fakes.FakeFfmpegProcessManager;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;

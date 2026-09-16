@@ -6,6 +6,7 @@ import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.transcode.engine.FfmpegTranscodeEngine;
 import java.nio.file.Path;
 import java.util.Set;
 import java.util.UUID;

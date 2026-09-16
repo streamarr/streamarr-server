@@ -1,4 +1,4 @@
-package com.streamarr.server.services.streaming.ffmpeg;
+package com.streamarr.transcode.engine;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -8,6 +8,7 @@ import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.services.streaming.ffmpeg.LocalFfprobeService;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;

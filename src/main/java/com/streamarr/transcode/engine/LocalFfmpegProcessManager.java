@@ -1,4 +1,4 @@
-package com.streamarr.server.services.streaming.ffmpeg;
+package com.streamarr.transcode.engine;
 
 import com.streamarr.server.exceptions.TranscodeException;
 import java.io.IOException;

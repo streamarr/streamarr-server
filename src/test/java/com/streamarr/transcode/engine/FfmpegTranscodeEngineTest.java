@@ -1,4 +1,4 @@
-package com.streamarr.server.services.streaming.ffmpeg;
+package com.streamarr.transcode.engine;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
@@ -12,7 +12,7 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.exceptions.TranscodeException;
-import com.streamarr.server.fakes.FakeFfmpegProcessManager;
+import com.streamarr.transcode.fakes.FakeFfmpegProcessManager;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
