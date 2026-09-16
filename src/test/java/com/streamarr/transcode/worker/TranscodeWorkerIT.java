@@ -509,11 +509,11 @@ class TranscodeWorkerIT {
     }
   }
 
-  private WorkerSessionServer server() throws URISyntaxException {
+  private WorkerSessionServer server() {
     return server(new LocalSegmentStore(tempDir.resolve("server-segments")));
   }
 
-  private WorkerSessionServer server(SegmentStore segmentStore) throws URISyntaxException {
+  private WorkerSessionServer server(SegmentStore segmentStore) {
     return new WorkerSessionServer(serverConfigurationBuilder().build(), segmentStore);
   }
 

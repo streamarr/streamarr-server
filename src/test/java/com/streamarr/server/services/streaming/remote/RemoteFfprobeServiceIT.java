@@ -306,7 +306,7 @@ class RemoteFfprobeServiceIT {
     }
   }
 
-  private WorkerSessionServer server() throws Exception {
+  private WorkerSessionServer server() {
     return new WorkerSessionServer(serverConfigurationBuilder().build(), new FakeSegmentStore());
   }
 

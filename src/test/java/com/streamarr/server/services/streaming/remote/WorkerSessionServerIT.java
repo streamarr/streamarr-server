@@ -40,7 +40,6 @@ import io.grpc.ManagedChannel;
 import io.grpc.Status;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.StreamObserver;
-import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -347,7 +346,7 @@ class WorkerSessionServerIT {
 
   @Test
   @DisplayName("Should reject configuration when worker session server settings are invalid")
-  void shouldRejectConfigurationWhenWorkerSessionServerSettingsAreInvalid() throws Exception {
+  void shouldRejectConfigurationWhenWorkerSessionServerSettingsAreInvalid() {
     var negativePort = serverConfigurationBuilder().port(-1);
     var excessivePort = serverConfigurationBuilder().port(65_536);
     var blankAddress = serverConfigurationBuilder().address(" ");
@@ -1167,11 +1166,11 @@ class WorkerSessionServerIT {
     }
   }
 
-  private WorkerSessionServer server() throws URISyntaxException {
+  private WorkerSessionServer server() {
     return server(new FakeSegmentStore());
   }
 
-  private WorkerSessionServer server(FakeSegmentStore segmentStore) throws URISyntaxException {
+  private WorkerSessionServer server(FakeSegmentStore segmentStore) {
     return new WorkerSessionServer(serverConfigurationBuilder().build(), segmentStore);
   }
 

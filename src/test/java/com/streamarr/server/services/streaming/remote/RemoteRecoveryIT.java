@@ -180,7 +180,7 @@ class RemoteRecoveryIT {
     return new RecoveryRig(rig.coordinator(), session);
   }
 
-  private WorkerSessionServer server(LocalSegmentStore segmentStore) throws URISyntaxException {
+  private WorkerSessionServer server(LocalSegmentStore segmentStore) {
     return new WorkerSessionServer(serverConfigurationBuilder().build(), segmentStore);
   }
 
