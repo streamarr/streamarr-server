@@ -8,7 +8,6 @@ import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
-import java.net.URISyntaxException;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -58,7 +57,7 @@ class RemoteTranscodeConfigurationTest {
 
   @Test
   @DisplayName("Should start the outbound worker listener when explicitly configured")
-  void shouldStartOutboundWorkerListenerWhenExplicitlyConfigured() throws URISyntaxException {
+  void shouldStartOutboundWorkerListenerWhenExplicitlyConfigured() {
     contextRunner
         .withUserConfiguration(WorkerSessionConfiguration.class)
         .withPropertyValues(remoteProperties())
@@ -73,7 +72,7 @@ class RemoteTranscodeConfigurationTest {
             });
   }
 
-  private String[] remoteProperties() throws URISyntaxException {
+  private String[] remoteProperties() {
     return new String[] {
       "streaming.worker-session.port=0",
       "streaming.remote.source-namespace-id=" + SOURCE_NAMESPACE_ID,

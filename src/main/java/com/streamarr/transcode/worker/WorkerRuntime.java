@@ -7,6 +7,7 @@ import java.util.concurrent.ExecutorService;
 
 public interface WorkerRuntime {
 
+  @SuppressWarnings("java:S1452") // Netty and in-process transports use distinct builder subtypes.
   ManagedChannelBuilder<?> channelBuilder(
       TranscodeWorkerConfiguration configuration, InetSocketAddress address) throws IOException;
 

@@ -47,6 +47,7 @@ public record TranscodeWorkerConfiguration(
   }
 
   public static class TranscodeWorkerConfigurationBuilder {
+    @SuppressWarnings({"java:S1068", "java:S1450"}) // Read by Lombok's generated build().
     private Optional<PemTlsIdentity> tlsIdentity = Optional.empty();
 
     public TranscodeWorkerConfigurationBuilder tlsIdentity(@NonNull PemTlsIdentity identity) {

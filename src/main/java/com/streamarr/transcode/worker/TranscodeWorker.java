@@ -653,7 +653,10 @@ public final class TranscodeWorker implements AutoCloseable {
   }
 
   public static class TranscodeWorkerBuilder {
+    @SuppressWarnings({"java:S1068", "java:S1450"}) // Read by Lombok's generated build().
     private Optional<FfprobeExecutor> ffprobe = Optional.empty();
+
+    @SuppressWarnings("java:S1068") // Read by Lombok's generated build().
     private WorkerRuntime runtime = new GrpcWorkerRuntime();
 
     public TranscodeWorkerBuilder ffprobe(@NonNull FfprobeExecutor producer) {

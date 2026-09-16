@@ -55,7 +55,7 @@ class HlsStreamingSmokeTest {
   private HlsPlaylistService playlistService;
   private Path segmentBaseDir;
   private WorkerStreamingSmokeFixture workerFixture;
-  private RecordingProcessManager processManager;
+  private RecordingProcessManager recordingProcesses;
 
   @BeforeAll
   static void checkPrerequisites() {
@@ -77,11 +77,11 @@ class HlsStreamingSmokeTest {
   void setUp() throws Exception {
     segmentBaseDir = Files.createTempDirectory("streamarr-smoke-");
     segmentStore = new LocalSegmentStore(segmentBaseDir);
-    processManager = new RecordingProcessManager();
+    recordingProcesses = new RecordingProcessManager();
 
     workerFixture =
         WorkerStreamingSmokeFixture.builder()
-            .processManager(processManager)
+            .processManager(recordingProcesses)
             .sourceRoot(TEST_VIDEO.getParent())
             .segmentBaseDir(segmentBaseDir)
             .segmentStore(segmentStore)
@@ -354,7 +354,7 @@ class HlsStreamingSmokeTest {
 
     var handle = session.getHandle().orElseThrow();
     assertThat(handle.status()).isEqualTo(TranscodeStatus.ACTIVE);
-    var process = processManager.lastProcessFor(sessionId).orElseThrow();
+    var process = recordingProcesses.lastProcessFor(sessionId).orElseThrow();
 
     streamingService.destroySession(sessionId);
 

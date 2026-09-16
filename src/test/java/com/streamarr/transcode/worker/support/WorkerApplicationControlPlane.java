@@ -133,6 +133,7 @@ public final class WorkerApplicationControlPlane
   }
 
   public static class WorkerApplicationControlPlaneBuilder {
+    @SuppressWarnings("java:S1068") // Read by Lombok's generated build().
     private BooleanSupplier producerAdmitted = () -> true;
   }
 }

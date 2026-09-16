@@ -47,7 +47,7 @@ public final class RemoteWorkerFixtures {
   }
 
   public static WorkerSessionServerConfiguration.WorkerSessionServerConfigurationBuilder
-      serverConfigurationBuilder() throws URISyntaxException {
+      serverConfigurationBuilder() {
     return WorkerSessionServerConfiguration.builder().port(0);
   }
 
