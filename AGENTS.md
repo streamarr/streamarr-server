@@ -1,7 +1,7 @@
 # Streamarr Server - Project Guidelines
 
 ## Commands
-- Prerequisites: install/select the tested Node.js 24 LTS toolchain from `buildpacks/ffmpeg/.nvmrc` with `nvm install "$(cat buildpacks/ffmpeg/.nvmrc)"` and `nvm use "$(cat buildpacks/ffmpeg/.nvmrc)"`. Maven's FFmpeg coverage thresholds require APIs introduced in Node 22.8; 24.x is the supported/tested major. Keep Node version markers out of the repository root: Paketo treats them as application dependencies.
+- Worker integration and HLS smoke tests require `STREAMARR_WORKER_IMAGE` or `-Dstreamarr.worker.image=<image>`. Select the verified standalone worker image. Missing configuration fails these tests. FFmpeg runs inside that image. Keep Node version markers out of the repository root: Paketo treats them as application dependencies.
 - `./mvnw verify` — full build: unit tests (Surefire, `*Test`) + integration tests (Failsafe, `*IT`) + Checkstyle + Spotless
 - `./mvnw test` — unit tests only
 - `./mvnw spotless:apply` — format before committing
@@ -268,7 +268,7 @@ We follow these factors from the Twelve-Factor App methodology:
 - **III. Config** — All environment-specific config via environment variables, never hardcoded. Spring profiles for behavioral switches, env vars for secrets and connection strings.
 - **IV. Backing Services** — PostgreSQL, TMDB API, OTel Collector are attached resources swappable via config. No code changes to point at a different database or metadata provider.
 - **VI. Processes** — Application processes are stateless. In-memory session state (streaming sessions) is designed behind interfaces (`SegmentStore`, `TranscodeExecutor`) to allow externalization when scaling horizontally.
-- **IX. Disposability** — Fast startup, graceful shutdown. FFmpeg processes shut down cleanly (write `q` to stdin → wait → `destroyForcibly()`). JVM shutdown hooks clean up temp directories.
+- **IX. Disposability** — Fast startup and graceful shutdown. The server closes worker sessions. Each standalone worker stops its FFmpeg processes and cleans up its temporary files.
 - **X. Dev/Prod Parity** — TestContainers runs real PostgreSQL in tests. Docker Compose gives identical infrastructure locally and in production. No H2 or in-memory database substitutes.
 - **XI. Logs** — Treat logs as event streams. No file-based logging. Structured output via OTel, consumed by the collector. Human-readable console output in dev.
 
@@ -276,7 +276,7 @@ We follow these factors from the Twelve-Factor App methodology:
 - Java 25 (LTS), Spring Boot 4.x, PostgreSQL 18 — exact versions live in `pom.xml` (Renovate keeps them current; don't pin patch versions here)
 - GraphQL via Netflix DGS, jOOQ for complex queries, Flyway for migrations
 - Methanol (JDK `HttpClient`) for outbound HTTP; virtual threads for concurrency
-- Transcode workers execute FFmpeg via ProcessBuilder for HLS transcoding and remuxing. The server reads persisted probe results and dispatches worker jobs.
+- The server reads persisted probe results and dispatches probe and transcode jobs to standalone workers over gRPC.
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence

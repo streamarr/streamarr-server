@@ -8,7 +8,7 @@ import shutil
 import sys
 
 repository, output, image = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
-worker_image = sys.argv[4] if len(sys.argv) > 4 else None
+worker_image = sys.argv[4]
 context = output / "image"
 (context / "lib").mkdir(parents=True)
 for directory in ("classes", "test-classes"):
@@ -65,26 +65,25 @@ for name, items in (("bootstrap", bootstrap), ("policies", policies)):
     (output / f"{name}.json").write_text(json.dumps({"apiVersion": "v1", "kind": "List",
                                                   "items": items}, indent=2) + "\n")
 
-if worker_image:
-    worker = copy.deepcopy(next(r for r in resources if r["kind"] == "Deployment"
-                               and r["metadata"]["name"] == "streamarr-transcode-worker"))
-    worker["spec"]["replicas"] = 1
-    pod = worker["spec"]["template"]["spec"]
-    container = pod["containers"][0]
-    container["image"] = worker_image
-    container["imagePullPolicy"] = "Never"
-    pod["securityContext"] = {"fsGroup": 1000}
-    pod["volumes"] = [{"name": "media", "emptyDir": {}}]
-    pod["initContainers"] = [{
-        "name": "media-fixture", "image": image, "imagePullPolicy": "Never",
-        "command": ["cp", "/app/test-classes/BigBuckBunny_320x180_10s.mp4",
-                    "/fixture/mesh-fixture.mkv"],
-        "securityContext": container["securityContext"],
-        "volumeMounts": [{"name": "media", "mountPath": "/fixture"}]}]
-    health_service = {
-        "apiVersion": "v1", "kind": "Service",
-        "metadata": {"name": "mesh-worker-health", "namespace": "streamarr"},
-        "spec": {"selector": worker["spec"]["selector"]["matchLabels"],
-                 "ports": [{"name": "http-health", "port": 9091, "targetPort": "http-health"}]}}
-    (output / "worker.json").write_text(json.dumps({
-        "apiVersion": "v1", "kind": "List", "items": [health_service, worker]}, indent=2) + "\n")
+worker = copy.deepcopy(next(r for r in resources if r["kind"] == "Deployment"
+                           and r["metadata"]["name"] == "streamarr-transcode-worker"))
+worker["spec"]["replicas"] = 1
+pod = worker["spec"]["template"]["spec"]
+container = pod["containers"][0]
+container["image"] = worker_image
+container["imagePullPolicy"] = "Never"
+pod["securityContext"] = {"fsGroup": 1000}
+pod["volumes"] = [{"name": "media", "emptyDir": {}}]
+pod["initContainers"] = [{
+    "name": "media-fixture", "image": image, "imagePullPolicy": "Never",
+    "command": ["cp", "/app/test-classes/BigBuckBunny_320x180_10s.mp4",
+                "/fixture/mesh-fixture.mkv"],
+    "securityContext": container["securityContext"],
+    "volumeMounts": [{"name": "media", "mountPath": "/fixture"}]}]
+health_service = {
+    "apiVersion": "v1", "kind": "Service",
+    "metadata": {"name": "mesh-worker-health", "namespace": "streamarr"},
+    "spec": {"selector": worker["spec"]["selector"]["matchLabels"],
+             "ports": [{"name": "http-health", "port": 9091, "targetPort": "http-health"}]}}
+(output / "worker.json").write_text(json.dumps({
+    "apiVersion": "v1", "kind": "List", "items": [health_service, worker]}, indent=2) + "\n")

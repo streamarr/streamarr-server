@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+worker_image=${STREAMARR_WORKER_IMAGE:?Set STREAMARR_WORKER_IMAGE to the verified standalone worker image}
+
 repository=$(cd "$(dirname "$0")/../../.." && pwd)
 kind_bin=${KIND_BIN:-kind}
 istioctl_bin=${ISTIOCTL_BIN:-istioctl}
 runtime=$(mktemp -d "${TMPDIR:-/tmp}/streamarr-mesh.XXXXXX")
 cluster="streamarr-mesh-$$"
 fixture_image="streamarr-mesh-fixture:$$"
-worker_image=${WORKER_IMAGE:-}
 export KUBECONFIG="$runtime/kubeconfig"
 
 cleanup() {
@@ -17,10 +18,8 @@ cleanup() {
     kubectl -n streamarr get pods -o wide > "$runtime/pods.txt" 2>&1 || true
     kubectl -n streamarr logs deployment/streamarr-server -c server > "$runtime/server.log" 2>&1 || true
     kubectl -n streamarr logs deployment/streamarr-server -c istio-proxy > "$runtime/proxy.log" 2>&1 || true
-    if [[ -n "$worker_image" ]]; then
-      kubectl -n streamarr logs deployment/streamarr-transcode-worker -c worker > "$runtime/worker.log" 2>&1 || true
-      kubectl -n streamarr logs deployment/streamarr-transcode-worker -c istio-proxy > "$runtime/worker-proxy.log" 2>&1 || true
-    fi
+    kubectl -n streamarr logs deployment/streamarr-transcode-worker -c worker > "$runtime/worker.log" 2>&1 || true
+    kubectl -n streamarr logs deployment/streamarr-transcode-worker -c istio-proxy > "$runtime/worker-proxy.log" 2>&1 || true
     "$kind_bin" delete cluster --name "$cluster" >> "$runtime/cleanup.log" 2>&1 || true
   fi
   docker image rm "$fixture_image" >> "$runtime/cleanup.log" 2>&1 || true
@@ -49,7 +48,7 @@ expect_unprotected() {
 }
 
 cd "$repository"
-echo "Building the real server and scripted worker fixture"
+echo "Building the worker-session service and scripted authorization clients"
 ./mvnw -q -DskipTests test-compile dependency:build-classpath \
   -Dmdep.includeScope=test -Dmdep.outputFile="$runtime/classpath.txt" > "$runtime/build.log" 2>&1
 
@@ -59,7 +58,8 @@ echo "Building the real server and scripted worker fixture"
 "$istioctl_bin" install --set profile=minimal --set tag=1.31.0 \
   --set meshConfig.accessLogFile=/dev/stdout --skip-confirmation > "$runtime/istio-install.log" 2>&1
 
-kubectl create --dry-run=client -f deploy/kubernetes/distributed-transcoding.yaml -o json \
+python3 deploy/kubernetes/render-deployment.py > "$runtime/deployment.yaml"
+kubectl create --dry-run=client -f "$runtime/deployment.yaml" -o json \
   > "$runtime/deployment.json"
 python3 deploy/kubernetes/test/prepare-fixture.py "$repository" "$runtime" "$fixture_image" "$worker_image"
 docker build -t "$fixture_image" "$runtime/image" > "$runtime/image.log" 2>&1
@@ -108,38 +108,36 @@ server_ip=$(kubectl -n streamarr get pod -l app.kubernetes.io/name=streamarr-ser
   -o jsonpath='{.items[0].status.podIP}')
 client authorized-worker allowed streamarr-server | tee "$runtime/existing-mtls-allowed.log"
 client unmeshed-worker tls-required "$server_ip" | tee "$runtime/existing-mtls-denied.log"
-if [[ -n "$worker_image" ]]; then
-  docker image inspect "$worker_image" > "$runtime/worker-image.json"
-  "$kind_bin" load docker-image "$worker_image" --name "$cluster" >> "$runtime/image.log" 2>&1
-  kubectl apply -f "$runtime/worker.json" >> "$runtime/apply.log"
-  kubectl -n streamarr rollout status deployment/streamarr-transcode-worker --timeout=180s
-  worker_pod=$(kubectl -n streamarr get pod -l app.kubernetes.io/name=streamarr-transcode-worker \
-    -o jsonpath='{.items[0].metadata.name}')
-  client authorized-worker worker-health mesh-worker-health | tee "$runtime/worker-health.log"
-  client authorized-worker media streamarr-server | tee "$runtime/media.log"
-  kubectl -n streamarr exec authorized-worker -c client -- cat /tmp/mesh-segment.ts \
-    > "$runtime/mesh-segment.ts"
-  kubectl -n streamarr exec -i "$worker_pod" -c worker -- sh -c 'cat > /tmp/mesh-segment.ts' \
-    < "$runtime/mesh-segment.ts"
-  kubectl -n streamarr exec "$worker_pod" -c worker -- /cnb/lifecycle/launcher \
-    ffprobe -v error -show_streams -of json -o /tmp/mesh-segment.json /tmp/mesh-segment.ts \
-    > "$runtime/decode.log" 2>&1
-  kubectl -n streamarr exec "$worker_pod" -c worker -- cat /tmp/mesh-segment.json \
-    > "$runtime/mesh-segment.json"
-  python3 - "$runtime/mesh-segment.json" <<'PY'
+docker image inspect "$worker_image" > "$runtime/worker-image.json"
+"$kind_bin" load docker-image "$worker_image" --name "$cluster" >> "$runtime/image.log" 2>&1
+kubectl apply -f "$runtime/worker.json" >> "$runtime/apply.log"
+kubectl -n streamarr rollout status deployment/streamarr-transcode-worker --timeout=180s
+worker_pod=$(kubectl -n streamarr get pod -l app.kubernetes.io/name=streamarr-transcode-worker \
+  -o jsonpath='{.items[0].metadata.name}')
+client authorized-worker worker-health mesh-worker-health | tee "$runtime/worker-health.log"
+client authorized-worker media streamarr-server | tee "$runtime/media.log"
+kubectl -n streamarr exec authorized-worker -c client -- cat /tmp/mesh-segment.ts \
+  > "$runtime/mesh-segment.ts"
+kubectl -n streamarr exec -i "$worker_pod" -c worker -- sh -c 'cat > /tmp/mesh-segment.ts' \
+  < "$runtime/mesh-segment.ts"
+kubectl -n streamarr exec "$worker_pod" -c worker -- /cnb/lifecycle/launcher \
+  ffprobe -v error -show_streams -of json -o /tmp/mesh-segment.json /tmp/mesh-segment.ts \
+  > "$runtime/decode.log" 2>&1
+kubectl -n streamarr exec "$worker_pod" -c worker -- cat /tmp/mesh-segment.json \
+  > "$runtime/mesh-segment.json"
+python3 - "$runtime/mesh-segment.json" <<'PY'
 import json
 import sys
 streams = json.load(open(sys.argv[1]))["streams"]
 assert any(s.get("codec_type") == "video" and s.get("codec_name") == "h264"
-           and s.get("width") == 320 and s.get("height") == 180 for s in streams), streams
+         and s.get("width") == 320 and s.get("height") == 180 for s in streams), streams
 assert any(s.get("codec_type") == "audio" and s.get("codec_name") == "aac" for s in streams), streams
 PY
-  kubectl -n streamarr exec "$worker_pod" -c worker -- /cnb/lifecycle/launcher \
-    ffmpeg -v error -xerror -i /tmp/mesh-segment.ts -f null - >> "$runtime/decode.log" 2>&1
-  client other-worker PERMISSION_DENIED streamarr-server | tee "$runtime/media-wrong-account.log"
-  client unmeshed-worker UNAVAILABLE streamarr-server | tee "$runtime/media-unmeshed-service.log"
-  client unmeshed-worker UNAVAILABLE "$server_ip" | tee "$runtime/media-unmeshed-pod.log"
-  echo "GREEN: real worker Actuator probes, media probe, and decoded HLS upload through Istio"
-fi
+kubectl -n streamarr exec "$worker_pod" -c worker -- /cnb/lifecycle/launcher \
+  ffmpeg -v error -xerror -i /tmp/mesh-segment.ts -f null - >> "$runtime/decode.log" 2>&1
+client other-worker PERMISSION_DENIED streamarr-server | tee "$runtime/media-wrong-account.log"
+client unmeshed-worker UNAVAILABLE streamarr-server | tee "$runtime/media-unmeshed-service.log"
+client unmeshed-worker UNAVAILABLE "$server_ip" | tee "$runtime/media-unmeshed-pod.log"
+echo "GREEN: real worker Actuator probes, media probe, and decoded HLS upload through Istio"
 "$istioctl_bin" proxy-status > "$runtime/proxy-status.txt"
 echo "GREEN: worker identity enforced, plaintext bypass denied, existing API policies preserved"

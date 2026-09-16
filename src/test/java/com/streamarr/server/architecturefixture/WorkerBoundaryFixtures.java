@@ -1,8 +1,8 @@
 package com.streamarr.server.architecturefixture;
 
-import com.streamarr.transcode.engine.FfmpegTranscodeEngine;
-import com.streamarr.transcode.probe.FfprobeExecutor;
-import com.streamarr.transcode.worker.TranscodeWorker;
+import com.streamarr.transcode.engine.architecturefixture.EngineImplementationFixture;
+import com.streamarr.transcode.probe.architecturefixture.ProbeImplementationFixture;
+import com.streamarr.transcode.worker.architecturefixture.WorkerImplementationFixture;
 import java.io.File;
 import java.io.IOException;
 
@@ -68,11 +68,11 @@ public final class WorkerBoundaryFixtures {
     }
   }
 
-  public record EngineDependency(FfmpegTranscodeEngine engine) {}
+  public record EngineDependency(EngineImplementationFixture engine) {}
 
-  public record ProbeDependency(FfprobeExecutor probe) {}
+  public record ProbeDependency(ProbeImplementationFixture probe) {}
 
-  public record WorkerDependency(TranscodeWorker worker) {}
+  public record WorkerDependency(WorkerImplementationFixture worker) {}
 
   public static final class BenignRuntimeInspection {
 

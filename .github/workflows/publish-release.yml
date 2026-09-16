@@ -96,9 +96,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify FFmpeg lock
-        uses: ./.github/actions/prepare-ffmpeg
-
       - name: Build and publish
         uses: ./.github/actions/pack-build
         with:

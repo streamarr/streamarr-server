@@ -196,7 +196,7 @@ spec:
       containers:
         - name: worker
           # Replace with the release you are deploying; :latest breaks rollback.
-          image: streamarr/streamarr-transcode-worker:vX.Y.Z
+          image: ${STREAMARR_WORKER_IMAGE}
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000

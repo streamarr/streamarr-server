@@ -4,7 +4,6 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSes
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
@@ -29,18 +28,17 @@ import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.support.OutcomeTestSupport;
-import com.streamarr.transcode.engine.LocalFfmpegProcessManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 @Tag("SmokeTest")
 @DisplayName("HLS Streaming Smoke Tests")
@@ -55,51 +53,52 @@ class HlsStreamingSmokeTest {
   private HlsPlaylistService playlistService;
   private Path segmentBaseDir;
   private WorkerStreamingSmokeFixture workerFixture;
-  private RecordingProcessManager recordingProcesses;
-
-  @BeforeAll
-  static void checkPrerequisites() {
-    assumeTrue(isToolAvailable("ffmpeg"), "FFmpeg not found on PATH");
-    assumeTrue(isToolAvailable("ffprobe"), "ffprobe not found on PATH");
-    assumeTrue(Files.exists(TEST_VIDEO), "Test video not found: " + TEST_VIDEO);
-  }
-
-  private static boolean isToolAvailable(String tool) {
-    try {
-      var process = new ProcessBuilder(tool, "-version").start();
-      return process.waitFor() == 0;
-    } catch (Exception _) {
-      return false;
-    }
-  }
+  @TempDir private Path temporaryDirectory;
+  private Path testVideo;
 
   @BeforeEach
   void setUp() throws Exception {
-    segmentBaseDir = Files.createTempDirectory("streamarr-smoke-");
+    assertThat(TEST_VIDEO).isRegularFile();
+    var sourceRoot = Files.createDirectory(temporaryDirectory.resolve("media"));
+    testVideo = Files.copy(TEST_VIDEO, sourceRoot.resolve(TEST_VIDEO.getFileName()));
+    segmentBaseDir = Files.createDirectory(temporaryDirectory.resolve("segments"));
     segmentStore = new LocalSegmentStore(segmentBaseDir);
-    recordingProcesses = new RecordingProcessManager();
 
     workerFixture =
         WorkerStreamingSmokeFixture.builder()
-            .processManager(recordingProcesses)
-            .sourceRoot(TEST_VIDEO.getParent())
-            .segmentBaseDir(segmentBaseDir)
+            .sourceRoot(sourceRoot)
+            .ffmpegScript(
+                """
+                if [[ -f /media/hold-producer ]]; then
+                  printf '\\107\\000\\000\\000' > segment0.ts.tmp
+                  mv segment0.ts.tmp segment0.ts
+                  while IFS= read -r -n 1 input; do
+                    if [[ "$input" == q ]]; then exit 0; fi
+                  done
+                  exit 0
+                fi
+                if [[ -f /media/verbose-stderr ]]; then
+                  for ((line=0; line<4096; line++)); do
+                    printf '%064d\n' 0 >&2
+                  done
+                fi
+                """)
             .segmentStore(segmentStore)
             .build();
     var transcodeExecutor =
         new RemoteTranscodeExecutor(
             workerFixture.workerSessions(),
             workerFixture.sourceNamespaceId(),
-            TEST_VIDEO.getParent());
+            testVideo.getParent());
     workerFixture.start();
     var outcome =
         new RemoteFfprobeService(
                 workerFixture.workerSessions(),
                 workerFixture.sourceNamespaceId(),
-                TEST_VIDEO.getParent())
+                testVideo.getParent())
             .probe(
                 ProbeExecutionRequest.builder()
-                    .sourcePath(TEST_VIDEO)
+                    .sourcePath(testVideo)
                     .attemptId(UUID.randomUUID())
                     .probeVersion(ProbeVersion.CURRENT)
                     .build());
@@ -154,17 +153,22 @@ class HlsStreamingSmokeTest {
   @AfterEach
   void tearDown() {
     try {
-      streamingService
-          .getAllSessions()
-          .forEach(s -> streamingService.destroySession(s.getSessionId()));
-    } catch (Exception _) {
-      // best-effort cleanup
+      if (streamingService != null) {
+        streamingService
+            .getAllSessions()
+            .forEach(session -> streamingService.destroySession(session.getSessionId()));
+      }
+    } finally {
+      try {
+        if (workerFixture != null) {
+          workerFixture.close();
+        }
+      } finally {
+        if (segmentStore != null) {
+          segmentStore.shutdown();
+        }
+      }
     }
-    if (workerFixture != null) {
-      workerFixture.close();
-    }
-
-    segmentStore.shutdown();
   }
 
   private StreamingOptions defaultOptions() {
@@ -177,10 +181,10 @@ class HlsStreamingSmokeTest {
   private MediaFile seedMediaFile() {
     var file =
         MediaFile.builder()
-            .filepathUri(FilepathCodec.encode(TEST_VIDEO))
+            .filepathUri(FilepathCodec.encode(testVideo))
             .filename("BigBuckBunny_320x180.mp4")
             .status(MediaFileStatus.MATCHED)
-            .size(TEST_VIDEO.toFile().length())
+            .size(testVideo.toFile().length())
             .build();
     return mediaFileRepository.save(file);
   }
@@ -337,7 +341,8 @@ class HlsStreamingSmokeTest {
 
   @Test
   @DisplayName("Should terminate FFmpeg process when session is destroyed")
-  void shouldTerminateFfmpegProcessWhenSessionIsDestroyed() {
+  void shouldTerminateFfmpegProcessWhenSessionIsDestroyed() throws Exception {
+    Files.createFile(testVideo.getParent().resolve("hold-producer"));
     var file = seedMediaFile();
     var options =
         StreamingOptions.builder()
@@ -354,13 +359,14 @@ class HlsStreamingSmokeTest {
 
     var handle = session.getHandle().orElseThrow();
     assertThat(handle.status()).isEqualTo(TranscodeStatus.ACTIVE);
-    var process = recordingProcesses.lastProcessFor(sessionId).orElseThrow();
+    assertThat(workerFixture.worker().processRunning(handle.attemptId())).isTrue();
 
     streamingService.destroySession(sessionId);
 
     await()
         .atMost(Duration.ofSeconds(30))
-        .untilAsserted(() -> assertThat(process.isAlive()).isFalse());
+        .untilAsserted(
+            () -> assertThat(workerFixture.worker().processRunning(handle.attemptId())).isFalse());
   }
 
   @Test
@@ -387,27 +393,22 @@ class HlsStreamingSmokeTest {
 
   @Test
   @DisplayName("Should not deadlock when FFmpeg produces verbose stderr output")
-  void shouldNotDeadlockWhenFfmpegProducesVerboseStderrOutput() {
-    var sessionId = UUID.randomUUID();
-    var processManager = new LocalFfmpegProcessManager();
+  void shouldNotDeadlockWhenFfmpegProducesVerboseStderrOutput() throws Exception {
+    Files.createFile(testVideo.getParent().resolve("verbose-stderr"));
+    var file = seedMediaFile();
 
-    // -loglevel debug produces ~200KB+ of stderr for a 10s video, well beyond the ~64KB pipe
-    // buffer.
-    // Without stderr draining, FFmpeg blocks on write() and the process never exits.
-    var command =
-        List.of("ffmpeg", "-loglevel", "debug", "-i", TEST_VIDEO.toString(), "-f", "null", "-");
-
-    var process =
-        processManager.startProcess(sessionId, "deadlock-test", command, TEST_VIDEO.getParent());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var attemptId = session.getHandle().orElseThrow().attemptId();
 
     await()
         .atMost(Duration.ofSeconds(30))
         .untilAsserted(
             () -> {
-              assertThat(process.isAlive()).isFalse();
-              assertThat(process.exitValue()).isZero();
+              assertThat(segmentStore.segmentExists(session.getSessionId(), "segment0.ts"))
+                  .isTrue();
+              assertThat(segmentStore.segmentExists(session.getSessionId(), "segment1.ts"))
+                  .isTrue();
+              assertThat(workerFixture.worker().processRunning(attemptId)).isFalse();
             });
-
-    processManager.stopProcess(sessionId);
   }
 }

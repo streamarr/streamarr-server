@@ -21,9 +21,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Prepare FFmpeg redistribution materials
-      uses: ./.github/actions/prepare-ffmpeg
-
     - name: Login to Docker Hub
       if: inputs.publish == 'true'
       uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
@@ -47,7 +44,6 @@ runs:
           --builder paketobuildpacks/ubuntu-noble-builder:0.0.190
           --buildpack paketo-buildpacks/java
           --buildpack paketo-buildpacks/procfile@5.14.0
-          --buildpack ./buildpacks/ffmpeg
           --env BP_JVM_VERSION=25
           --env BP_INCLUDE_FILES=Procfile
           --env "BP_OCI_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
@@ -66,7 +62,7 @@ runs:
           pack build "${build_image}" "${pack_args[@]}"
         fi
 
-        .github/actions/pack-build/verify-ffmpeg-image.sh \
+        .github/actions/pack-build/verify-server-image.sh \
           "${build_image}" \
           "${INPUT_IMAGE_VERSION}" \
           "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \

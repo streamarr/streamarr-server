@@ -6,20 +6,25 @@
     "helpers:pinGitHubActionDigests",
     "schedule:earlyMondays"
   ],
-  "labels": ["dependencies"],
-  "gitIgnoredAuthors": [
-    "streamarr-ffmpeg-lock[bot]@users.noreply.github.com",
-    "315986519+streamarr-ffmpeg-lock[bot]@users.noreply.github.com"
+  "labels": [
+    "dependencies"
   ],
   "vulnerabilityAlerts": {
-    "labels": ["dependencies", "security"],
-    "schedule": ["at any time"]
+    "labels": [
+      "dependencies",
+      "security"
+    ],
+    "schedule": [
+      "at any time"
+    ]
   },
   "customManagers": [
     {
       "customType": "regex",
       "description": "Update the Pack builder used by container-image workflows",
-      "managerFilePatterns": ["/^\\.github/actions/pack-build/action\\.yml$/"],
+      "managerFilePatterns": [
+        "/^\\.github/actions/pack-build/action\\.yml$/"
+      ],
       "matchStrings": [
         "--builder (?<depName>paketobuildpacks/ubuntu-noble-builder):(?<currentValue>\\d+\\.\\d+\\.\\d+)"
       ],
@@ -29,54 +34,38 @@
     {
       "customType": "regex",
       "description": "Update pinned Paketo buildpacks used by container-image workflows",
-      "managerFilePatterns": ["/^\\.github/actions/pack-build/action\\.yml$/"],
+      "managerFilePatterns": [
+        "/^\\.github/actions/pack-build/action\\.yml$/"
+      ],
       "matchStrings": [
         "--buildpack (?<depName>paketo-buildpacks/procfile)@(?<currentValue>\\d+\\.\\d+\\.\\d+)"
       ],
       "datasourceTemplate": "buildpacks-registry",
       "versioningTemplate": "semver"
-    },
-    {
-      "customType": "regex",
-      "description": "Compare Jellyfin's fourth numeric component as a stable packaging revision; default SemVer treats the hyphen suffix as a prerelease",
-      "managerFilePatterns": [
-        "/^buildpacks/ffmpeg/release$/"
-      ],
-      "matchStrings": [
-        "^(?<currentValue>v\\d+\\.\\d+\\.\\d+-\\d+)\\n?$"
-      ],
-      "depNameTemplate": "jellyfin/jellyfin-ffmpeg",
-      "datasourceTemplate": "github-releases",
-      "versioningTemplate": "regex:^v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-(?<build>\\d+)$"
     }
   ],
   "packageRules": [
     {
       "description": "Group patch updates and automerge when CI passes",
-      "matchUpdateTypes": ["patch", "digest"],
+      "matchUpdateTypes": [
+        "patch",
+        "digest"
+      ],
       "groupName": "patch dependencies",
       "automerge": true
     },
     {
       "description": "Group minor updates into a single PR",
-      "matchUpdateTypes": ["minor"],
+      "matchUpdateTypes": [
+        "minor"
+      ],
       "groupName": "minor dependencies"
     },
     {
-      "description": "Keep FFmpeg runtime updates isolated for lock synchronization",
-      "matchDepNames": ["jellyfin/jellyfin-ffmpeg"],
-      "groupName": "FFmpeg runtime",
-      "automerge": false
-    },
-    {
-      "description": "Require explicit dashboard approval before proposing a new FFmpeg major",
-      "matchDepNames": ["jellyfin/jellyfin-ffmpeg"],
-      "matchUpdateTypes": ["major"],
-      "dependencyDashboardApproval": true
-    },
-    {
       "description": "Cedar bundles a native engine: every upgrade is a deliberate PR that re-runs the multi-arch image self-check and CedarDependencyAlignmentTest, never an automerge",
-      "matchPackageNames": ["com.cedarpolicy:cedar-java"],
+      "matchPackageNames": [
+        "com.cedarpolicy:cedar-java"
+      ],
       "groupName": "Cedar policy engine",
       "automerge": false
     }

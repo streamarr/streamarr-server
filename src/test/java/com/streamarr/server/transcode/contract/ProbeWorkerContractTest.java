@@ -1,6 +1,6 @@
 package com.streamarr.server.transcode.contract;
 
-import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
+import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.protobuf.Duration;

@@ -138,18 +138,25 @@ class PackagedConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should package FFmpeg through its launch buildpack when building an image")
-  void shouldPackageFfmpegThroughItsLaunchBuildpackWhenBuildingAnImage() throws IOException {
+  @DisplayName("Should avoid a Node runtime dependency when packaging the server image")
+  void shouldAvoidNodeRuntimeDependencyWhenPackagingServerImage() {
+    assertThat(Path.of(".nvmrc")).doesNotExist();
+    assertThat(Path.of(".node-version")).doesNotExist();
+  }
+
+  @Test
+  @DisplayName("Should exclude media executables when packaging the server image")
+  void shouldExcludeMediaExecutablesWhenPackagingServerImage() throws IOException {
     var action = yaml(".github/actions/pack-build/action.yml");
-    var steps = listOfMaps(map(action.get("runs")).get("steps"));
-    var buildStep = stepNamed(steps, "Build with pack CLI");
+    var buildStep =
+        stepNamed(listOfMaps(map(action.get("runs")).get("steps")), "Build with pack CLI");
     var buildCommand = (String) buildStep.get("run");
 
-    assertThat(buildCommand).contains("--buildpack ./buildpacks/ffmpeg");
-    assertThat(steps).noneMatch(step -> "Install pinned FFmpeg runtime".equals(step.get("name")));
-    assertThat(buildCommand).doesNotContain(".profile", "BP_INCLUDE_FILES=.ffmpeg");
-    assertThat(Path.of(".profile")).doesNotExist();
-    assertThat(Path.of(".github/actions/pack-build/install-ffmpeg.sh")).doesNotExist();
+    assertThat(buildCommand)
+        .doesNotContain("buildpacks/ffmpeg")
+        .contains(".github/actions/pack-build/verify-server-image.sh");
+    assertThat(Path.of("buildpacks/ffmpeg/buildpack.toml")).doesNotExist();
+    assertThat(Path.of("buildpacks/ffmpeg/bin/build")).doesNotExist();
   }
 
   @Test

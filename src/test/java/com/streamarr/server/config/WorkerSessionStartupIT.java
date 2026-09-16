@@ -14,10 +14,6 @@ import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
-import com.streamarr.transcode.engine.FfmpegCommandBuilder;
-import com.streamarr.transcode.engine.FfmpegProcessManager;
-import com.streamarr.transcode.engine.FfmpegTranscodeEngine;
-import com.streamarr.transcode.engine.TranscodeCapabilityService;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
@@ -54,10 +50,6 @@ class WorkerSessionStartupIT extends AbstractIntegrationTest {
     assertThat(context.getBeansOfType(FfprobeService.class).values())
         .singleElement()
         .isInstanceOf(RemoteFfprobeService.class);
-    assertThat(context.getBeansOfType(FfmpegCommandBuilder.class)).isEmpty();
-    assertThat(context.getBeansOfType(FfmpegTranscodeEngine.class)).isEmpty();
-    assertThat(context.getBeansOfType(TranscodeCapabilityService.class)).isEmpty();
-    assertThat(context.getBeansOfType(FfmpegProcessManager.class)).isEmpty();
     assertThat(workerSessions.port()).isPositive();
     assertThat(workerSessions.availableSlots(UUID.randomUUID())).isZero();
     var request =

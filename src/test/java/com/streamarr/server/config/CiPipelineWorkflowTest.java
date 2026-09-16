@@ -13,6 +13,7 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.xpath.XPathFactory;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -102,12 +103,86 @@ class CiPipelineWorkflowTest {
         .isEmpty();
   }
 
+  @ParameterizedTest
+  @CsvSource({
+    "needs.changes.result, failure, Change detection failed",
+    "needs.changes.outputs.packaging, missing, Invalid packaging change result",
+    "needs.application.result, failure, Application verification failed",
+    "needs.application.result, skipped, Application verification failed",
+    "needs.application.result, cancelled, Application verification failed",
+    "needs.package_image.result, failure, Unexpected package image result"
+  })
+  @DisplayName("Should fail the required build when an applicable prerequisite is unsuccessful")
+  void shouldFailRequiredBuildWhenApplicablePrerequisiteIsUnsuccessful(
+      String key, String value, String message) throws Exception {
+    var context = successfulChecks();
+    context.put(key, value);
+
+    var result =
+        runBash(render(step("build", "Verify required checks").get("run").toString(), context));
+
+    assertThat(result.exitCode()).as(result.output()).isEqualTo(1);
+    assertThat(result.output()).contains(message);
+  }
+
+  @Test
+  @DisplayName("Should fail before worker tests when the required image is missing")
+  void shouldFailBeforeWorkerTestsWhenRequiredImageIsMissing() throws Exception {
+    var command = step("application", "Require standalone worker image").get("run").toString();
+
+    var result = runBash("unset STREAMARR_WORKER_IMAGE\n" + command);
+
+    assertThat(result.exitCode()).as(result.output()).isNotZero();
+    assertThat(result.output()).contains("STREAMARR_WORKER_IMAGE");
+  }
+
+  @Test
+  @DisplayName("Should accept an immutable worker image when running required CI tests")
+  void shouldAcceptImmutableWorkerImageWhenRunningRequiredCiTests() throws Exception {
+    var command = step("application", "Require standalone worker image").get("run").toString();
+
+    var result =
+        runBash(
+            "export STREAMARR_WORKER_IMAGE=streamarr/streamarr-transcode-worker@sha256:"
+                + "a".repeat(64)
+                + "\n"
+                + command);
+
+    assertThat(result.exitCode()).as(result.output()).isZero();
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "streamarr/streamarr-transcode-worker:latest",
+    "streamarr/streamarr-transcode-worker:1.2.3",
+    "streamarr/streamarr-transcode-worker@sha256:abc123"
+  })
+  @DisplayName("Should reject an unpinned worker image when running required CI tests")
+  void shouldRejectUnpinnedWorkerImageWhenRunningRequiredCiTests(String image) throws Exception {
+    var command = step("application", "Require standalone worker image").get("run").toString();
+
+    var result = runBash("export STREAMARR_WORKER_IMAGE=" + image + "\n" + command);
+
+    assertThat(result.exitCode()).as(result.output()).isNotZero();
+    assertThat(result.output()).contains("immutable", "sha256");
+  }
+
+  @Test
+  @DisplayName("Should aggregate every applicable CI result when verifying required build status")
+  void shouldAggregateEveryApplicableCiResultWhenVerifyingRequiredBuildStatus() throws Exception {
+    assertThat(job("package_image"))
+        .containsEntry("needs", "changes")
+        .containsEntry("if", "needs.changes.outputs.packaging == 'true'");
+    assertThat(job("build"))
+        .containsEntry("needs", List.of("changes", "application", "analysis", "package_image"))
+        .containsEntry("if", "${{ !cancelled() }}");
+  }
+
   private static Map<String, String> successfulChecks() {
     return new HashMap<>(
         Map.of(
             "needs.changes.result", "success",
             "needs.changes.outputs.packaging", "false",
-            "needs.ffmpeg_lock.result", "success",
             "needs.application.result", "success",
             "needs.package_image.result", "success",
             "needs.analysis.result", "success"));

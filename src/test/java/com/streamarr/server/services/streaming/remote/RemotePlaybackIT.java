@@ -1,7 +1,5 @@
 package com.streamarr.server.services.streaming.remote;
 
-import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextWorkerConfigurationBuilder;
-import static com.streamarr.server.fixtures.RemoteWorkerFixtures.remuxEngine;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -9,8 +7,11 @@ import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.controllers.StreamController;
+import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
+import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
+import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.SubtitleMode;
@@ -24,14 +25,11 @@ import com.streamarr.server.fakes.FakeStreamingService;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
-import com.streamarr.transcode.fakes.FakeFfmpegProcessManager;
-import com.streamarr.transcode.fakes.FakeSegmentProducingFfmpegProcessManager;
-import com.streamarr.transcode.worker.TranscodeWorker;
-import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -40,7 +38,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
@@ -59,11 +57,13 @@ class RemotePlaybackIT {
 
   @Test
   @DisplayName(
-      "Should serve sequential segments produced by an outbound transcode worker when using a remote worker")
-  void shouldServeSequentialSegmentsProducedByOutboundTranscodeWorkerWhenUsingRemoteWorker()
+      "Should serve sequential segments of probed media when using the standalone worker image")
+  void shouldServeSequentialSegmentsOfProbedMediaWhenUsingTheStandaloneWorkerImage()
       throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var source = getClass().getResource("/BigBuckBunny_320x180_10s.mp4");
+    assertThat(source).isNotNull();
+    var mediaFile = Files.copy(Path.of(source.toURI()), mediaRoot.resolve("movie.mkv"));
     var segments =
         Map.of(
             "segment0.ts", "first remote segment".getBytes(),
@@ -72,10 +72,38 @@ class RemotePlaybackIT {
     var streamSessionId = UUID.randomUUID();
 
     try (var server = server(segmentStore);
-        var worker = worker(mediaRoot, segments)) {
+        var worker =
+            WorkerContainerFixture.builder()
+                .workerSessions(server)
+                .sourceNamespaceId(SOURCE_NAMESPACE_ID)
+                .sourceRoot(mediaRoot)
+                .ffmpegScript(
+                    """
+                    printf 'first remote segment' > segment0.ts
+                    printf 'second remote segment' > segment1.ts
+                    exit 0
+                    """)
+                .build()) {
       server.start();
-      worker.start("localhost", server.port());
+      worker.start();
       var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
+      var probe =
+          new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, mediaRoot)
+              .probe(
+                  ProbeExecutionRequest.builder()
+                      .sourcePath(mediaFile)
+                      .attemptId(UUID.randomUUID())
+                      .probeVersion(ProbeVersion.CURRENT)
+                      .build());
+
+      assertThat(probe)
+          .isInstanceOfSatisfying(
+              ProbeOutcome.Success.class,
+              outcome -> {
+                assertThat(outcome.mediaProbe().videoCodec()).isEqualTo("h264");
+                assertThat(outcome.mediaProbe().width()).isEqualTo(320);
+                assertThat(outcome.mediaProbe().height()).isEqualTo(180);
+              });
 
       executor.start(transcodeRequest(streamSessionId, mediaFile));
       await()
@@ -121,9 +149,12 @@ class RemotePlaybackIT {
     var streamSessionId = UUID.randomUUID();
 
     try (var server = server(segmentStore);
-        var worker = worker(mediaRoot, segments)) {
+        var worker =
+            workerBuilder(server, mediaRoot)
+                .ffmpegScript(WorkerContainerFixture.emitSegments(segments))
+                .build()) {
       server.start();
-      worker.start("localhost", server.port());
+      worker.start();
       var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
 
       executor.start(transcodeRequest(streamSessionId, mediaFile, ContainerFormat.FMP4));
@@ -157,12 +188,16 @@ class RemotePlaybackIT {
     var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
     var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
     var streamSessionId = UUID.randomUUID();
-    var processes = new IncompleteInitializationProcessManager();
 
     try (var server = server(segmentStore);
-        var worker = worker(mediaRoot, processes)) {
+        var worker =
+            workerBuilder(server, mediaRoot)
+                .ffmpegScript(
+                    WorkerContainerFixture.emitSegments(
+                        Map.of("init.mp4", new byte[] {0, 0, 0, 24, 'f', 't', 'y', 'p'})))
+                .build()) {
       server.start();
-      worker.start("localhost", server.port());
+      worker.start();
       var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
 
       executor.start(transcodeRequest(streamSessionId, mediaFile, ContainerFormat.FMP4));
@@ -184,13 +219,16 @@ class RemotePlaybackIT {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
     var segments = Map.of("segment0.ts", "first remote segment".getBytes());
-    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var segmentStore = new FirstRequestSegmentStore(tempDir.resolve("server-segments"));
     var streamSessionId = UUID.randomUUID();
 
     try (var server = server(segmentStore);
-        var worker = worker(mediaRoot, segments)) {
+        var worker =
+            workerBuilder(server, mediaRoot)
+                .ffmpegScript(WorkerContainerFixture.emitSegments(segments))
+                .build()) {
       server.start();
-      worker.start("localhost", server.port());
+      worker.start();
       var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
       var playback =
           rig(
@@ -216,13 +254,15 @@ class RemotePlaybackIT {
       throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
-    var processManager = new RecordingFfmpegProcessManager();
     var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
 
     try (var server = server(segmentStore);
-        var worker = worker(mediaRoot, processManager)) {
+        var worker =
+            workerBuilder(server, mediaRoot)
+                .ffmpegScript("read -r -n 1 command\nexit 0\n")
+                .build()) {
       server.start();
-      worker.start("localhost", server.port());
+      worker.start();
       var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
 
       for (var decision : supportedTranscodeDecisions()) {
@@ -240,13 +280,16 @@ class RemotePlaybackIT {
                 .variantLabel(StreamSession.defaultVariant())
                 .build();
 
-        executor.start(request);
+        var handle = executor.start(request);
         await()
             .atMost(2, TimeUnit.SECONDS)
-            .until(() -> processManager.commandFor(streamSessionId).isPresent());
+            .until(() -> worker.commandFor(handle.attemptId()).isPresent());
         assertCommandPreservesDecision(
-            processManager.commandFor(streamSessionId).orElseThrow(), decision);
+            worker.commandFor(handle.attemptId()).orElseThrow(), decision);
         executor.stop(streamSessionId);
+        await()
+            .atMost(5, TimeUnit.SECONDS)
+            .until(() -> server.availableSlots(SOURCE_NAMESPACE_ID) == 1);
       }
     }
   }
@@ -290,23 +333,16 @@ class RemotePlaybackIT {
   }
 
   private WorkerSessionServer server(LocalSegmentStore segmentStore) {
-    return new WorkerSessionServer(serverConfigurationBuilder().build(), segmentStore);
+    return new WorkerSessionServer(
+        serverConfigurationBuilder().address("127.0.0.1").build(), segmentStore);
   }
 
-  private TranscodeWorker worker(Path mediaRoot, Map<String, byte[]> segments)
-      throws URISyntaxException {
-    return worker(mediaRoot, new FakeSegmentProducingFfmpegProcessManager(segments));
-  }
-
-  private TranscodeWorker worker(Path mediaRoot, FakeFfmpegProcessManager processManager)
-      throws URISyntaxException {
-    var configuration =
-        plaintextWorkerConfigurationBuilder()
-            .availableSlots(1)
-            .sourceNamespaces(Map.of(SOURCE_NAMESPACE_ID, mediaRoot))
-            .segmentBasePath(tempDir.resolve("worker-segments"))
-            .build();
-    return new TranscodeWorker(configuration, remuxEngine(processManager));
+  private WorkerContainerFixture.WorkerContainerFixtureBuilder workerBuilder(
+      WorkerSessionServer server, Path mediaRoot) {
+    return WorkerContainerFixture.builder()
+        .workerSessions(server)
+        .sourceNamespaceId(SOURCE_NAMESPACE_ID)
+        .sourceRoot(mediaRoot);
   }
 
   @Test
@@ -488,33 +524,48 @@ class RemotePlaybackIT {
         .build();
   }
 
-  private static final class IncompleteInitializationProcessManager
-      extends FakeSegmentProducingFfmpegProcessManager {
+  private static final class FirstRequestSegmentStore extends LocalSegmentStore {
+    private final CountDownLatch requestedWhileMissing = new CountDownLatch(1);
 
-    private IncompleteInitializationProcessManager() {
-      // A partial, nonempty ftyp box is visible before FFmpeg publishes a complete media fragment.
-      super(Map.of("init.mp4", new byte[] {0, 0, 0, 24, 'f', 't', 'y', 'p'}));
+    private FirstRequestSegmentStore(Path baseDir) {
+      super(baseDir);
     }
 
     @Override
-    public boolean isRunning(UUID sessionId, String variantLabel) {
-      return false;
+    public boolean segmentExists(UUID sessionId, String segmentName) {
+      var exists = super.segmentExists(sessionId, segmentName);
+      if (!exists) {
+        requestedWhileMissing.countDown();
+      }
+
+      return exists;
     }
-  }
-
-  private static final class RecordingFfmpegProcessManager extends FakeFfmpegProcessManager {
-
-    private final Map<UUID, List<String>> commands = new ConcurrentHashMap<>();
 
     @Override
-    public Process startProcess(
-        UUID sessionId, String variantLabel, List<String> command, Path workingDirectory) {
-      commands.put(sessionId, List.copyOf(command));
-      return super.startProcess(sessionId, variantLabel, command, workingDirectory);
-    }
+    public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
+      var prepared = super.prepareSegment(sessionId, segmentName, data);
+      return new PreparedSegment() {
+        @Override
+        public void publish() {
+          try {
+            assertThat(requestedWhileMissing.await(5, TimeUnit.SECONDS))
+                .as(
+                    "Playback must observe the missing segment before the first upload is published")
+                .isTrue();
+          } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(
+                "Interrupted while awaiting the first segment request", exception);
+          }
 
-    private Optional<List<String>> commandFor(UUID streamSessionId) {
-      return Optional.ofNullable(commands.get(streamSessionId));
+          prepared.publish();
+        }
+
+        @Override
+        public void close() {
+          prepared.close();
+        }
+      };
     }
   }
 }
