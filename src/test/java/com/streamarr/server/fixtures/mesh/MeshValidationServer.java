@@ -2,7 +2,6 @@ package com.streamarr.server.fixtures.mesh;
 
 import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 
-import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
 import com.streamarr.transcode.v1.MediaSourceRef;
@@ -26,13 +25,15 @@ public final class MeshValidationServer {
   public static void main() throws Exception {
     var configuration =
         WorkerSessionServerConfiguration.builder().address("0.0.0.0").port(9090).build();
-    try (var server = new WorkerSessionServer(configuration, new FakeSegmentStore());
+    var segments = new MeshSegmentStore();
+    try (var server = new WorkerSessionServer(configuration, segments);
         var httpThreads = Executors.newVirtualThreadPerTaskExecutor()) {
       server.start();
       var http = HttpServer.create(new InetSocketAddress("0.0.0.0", 8080), 0);
       http.setExecutor(httpThreads);
       http.createContext("/health", exchange -> respond(exchange, "HTTP_ACCESS_OK"));
       http.createContext("/probe", exchange -> probe(server, exchange));
+      http.createContext("/media/", new MeshMediaHandler(server, segments));
       http.start();
       try {
         new CountDownLatch(1).await();

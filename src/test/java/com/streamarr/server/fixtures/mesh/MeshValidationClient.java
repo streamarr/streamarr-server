@@ -22,6 +22,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -42,6 +44,20 @@ public final class MeshValidationClient {
 
     if (mode.equals("http")) {
       requireHttpResponse("http://" + host + ":8080/health", "HTTP_ACCESS_OK");
+      return;
+    }
+
+    if (mode.equals("media")) {
+      requireHttpResponse("http://" + host + ":8080/media/probe", "MEDIA_PROBE_COMPLETED");
+      downloadSegment(host);
+      return;
+    }
+
+    if (mode.equals("worker-health")) {
+      requireHttpResponse(
+          "http://" + host + ":9091/actuator/health/liveness", "{\"status\":\"UP\"}");
+      requireHttpResponse(
+          "http://" + host + ":9091/actuator/health/readiness", "{\"status\":\"UP\"}");
       return;
     }
 
@@ -70,6 +86,22 @@ public final class MeshValidationClient {
       if (!channel.awaitTermination(5, TimeUnit.SECONDS)) {
         throw new IllegalStateException("Worker channel did not terminate");
       }
+    }
+  }
+
+  private static void downloadSegment(String host) throws Exception {
+    try (var client = HttpClient.newHttpClient()) {
+      var request =
+          HttpRequest.newBuilder(URI.create("http://" + host + ":8080/media/segment"))
+              .timeout(Duration.ofSeconds(45))
+              .build();
+      var response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
+      if (response.statusCode() != 200 || response.body().length == 0) {
+        throw new IllegalStateException("Media segment exchange failed: " + response.statusCode());
+      }
+
+      Files.write(Path.of("/tmp/mesh-segment.ts"), response.body());
+      System.out.println("MEDIA_SEGMENT_RECEIVED");
     }
   }
 
