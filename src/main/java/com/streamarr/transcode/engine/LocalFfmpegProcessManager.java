@@ -1,6 +1,5 @@
 package com.streamarr.transcode.engine;
 
-import com.streamarr.server.exceptions.TranscodeException;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -9,10 +8,8 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 
 @Slf4j
-@Component
 public class LocalFfmpegProcessManager implements FfmpegProcessManager {
 
   private static final long GRACEFUL_SHUTDOWN_SECONDS = 5;
@@ -94,6 +91,7 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
       if (exitCode == 0) {
         return;
       }
+
       log.warn(
           "FFmpeg had already exited with code {} for session {} before its planned stop: {}",
           exitCode,
@@ -165,6 +163,7 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
         log.info("FFmpeg completed for session {} variant {}", key.sessionId(), key.variantLabel());
         return;
       }
+
       log.warn(
           "FFmpeg exited with code {} for session {} variant {}: {}",
           exitCode,

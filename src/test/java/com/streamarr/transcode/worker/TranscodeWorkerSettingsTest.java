@@ -1,5 +1,6 @@
 package com.streamarr.transcode.worker;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.workerConfigurationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -7,6 +8,7 @@ import com.streamarr.transcode.tls.PemTlsIdentity;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -34,9 +36,39 @@ class TranscodeWorkerSettingsTest {
     assertThat(worker.availableSlots()).isEqualTo(1);
     assertThat(worker.sourceNamespaces()).containsEntry(SOURCE_NAMESPACE_ID, Path.of("/media"));
     assertThat(worker.segmentBasePath().toString()).contains("streamarr-worker-segments");
-    assertThat(worker.tlsIdentity().certificate()).isEqualTo(Path.of("/tls/worker.crt"));
-    assertThat(worker.tlsIdentity().privateKey()).isEqualTo(Path.of("/tls/worker.key"));
-    assertThat(worker.tlsIdentity().trustBundle()).isEqualTo(Path.of("/tls/ca.crt"));
+    assertThat(worker.tlsIdentity().orElseThrow().certificate())
+        .isEqualTo(Path.of("/tls/worker.crt"));
+    assertThat(worker.tlsIdentity().orElseThrow().privateKey())
+        .isEqualTo(Path.of("/tls/worker.key"));
+    assertThat(worker.tlsIdentity().orElseThrow().trustBundle()).isEqualTo(Path.of("/tls/ca.crt"));
+  }
+
+  @Test
+  @DisplayName("Should require exactly one transport mode when building worker configuration")
+  void shouldRequireExactlyOneTransportModeWhenBuildingWorkerConfiguration() throws Exception {
+    var builder =
+        workerConfigurationBuilder()
+            .availableSlots(1)
+            .sourceNamespaces(Map.of(SOURCE_NAMESPACE_ID, Path.of("/media")))
+            .segmentBasePath(Path.of("/segments"))
+            .plaintext(true);
+
+    assertThatThrownBy(builder::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Plaintext workers must not configure a TLS identity");
+
+    builder.plaintext(false).tlsIdentity(Optional.empty());
+
+    assertThatThrownBy(builder::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Mutual TLS worker identity is required");
+  }
+
+  @Test
+  @DisplayName("Should reject an ambiguous transport mode when loading settings")
+  void shouldRejectAmbiguousTransportModeWhenLoadingSettings() {
+    assertInvalidSetting(
+        "TRANSCODE_WORKER_PLAINTEXT", "yes", "TRANSCODE_WORKER_PLAINTEXT must be true or false");
   }
 
   @Test
@@ -133,6 +165,25 @@ class TranscodeWorkerSettingsTest {
         "TRANSCODE_WORKER_CONTROL_PLANE_PORT must not exceed 65535");
     assertInvalidSetting(
         "TRANSCODE_WORKER_SLOTS", "two", "TRANSCODE_WORKER_SLOTS must be an integer");
+  }
+
+  @Test
+  @DisplayName("Should default to ffprobe on PATH when its executable is not configured")
+  void shouldDefaultToFfprobeOnPathWhenItsExecutableIsNotConfigured() {
+    var settings = TranscodeWorkerSettings.fromEnvironment(requiredEnvironment());
+
+    assertThat(settings.ffprobePath()).isEqualTo("ffprobe");
+  }
+
+  @Test
+  @DisplayName("Should use the configured ffprobe executable when loading settings")
+  void shouldUseTheConfiguredFfprobeExecutableWhenLoadingSettings() {
+    var environment = new HashMap<>(requiredEnvironment());
+    environment.put("TRANSCODE_WORKER_FFPROBE_PATH", "/usr/local/bin/ffprobe");
+
+    var settings = TranscodeWorkerSettings.fromEnvironment(environment);
+
+    assertThat(settings.ffprobePath()).isEqualTo("/usr/local/bin/ffprobe");
   }
 
   private void assertInvalidSetting(String key, String value, String expectedMessage) {

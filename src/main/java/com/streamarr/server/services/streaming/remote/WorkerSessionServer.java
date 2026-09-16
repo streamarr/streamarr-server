@@ -6,10 +6,9 @@ import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.VariantJob;
 import io.grpc.ServerInterceptors;
-import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
 import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
-import io.grpc.netty.shaded.io.netty.handler.ssl.ClientAuth;
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -33,6 +32,7 @@ public final class WorkerSessionServer implements AutoCloseable {
   private final SegmentStore segmentStore;
   private final LiveWorkerConnectionRegistry workerConnections = new LiveWorkerConnectionRegistry();
   private final WorkerSessionServerRuntime runtime = new WorkerSessionServerRuntime(log);
+  private boolean started;
 
   public WorkerSessionServer(
       @NonNull WorkerSessionServerConfiguration configuration, @NonNull SegmentStore segmentStore) {
@@ -41,25 +41,31 @@ public final class WorkerSessionServer implements AutoCloseable {
   }
 
   public synchronized void start() throws IOException {
-    if (runtime.isStarted()) {
+    if (started) {
       throw new IllegalStateException("Worker session server is already started");
     }
 
-    var tlsIdentity = configuration.tlsIdentity();
-    var sslContext =
-        GrpcSslContexts.forServer(
-                tlsIdentity.certificate().toFile(), tlsIdentity.privateKey().toFile())
-            .trustManager(tlsIdentity.trustBundle().toFile())
-            .clientAuth(ClientAuth.REQUIRE)
-            .build();
-    var identityInterceptor =
-        new WorkerIdentityServerInterceptor(
-            new WorkerSpiffeIdentityMapper(configuration.trustDomain()));
+    var service = new WorkerSessionGrpcService(workerConnections, segmentStore);
+    try {
+      startListener(
+          NettyServerBuilder.forAddress(
+                  new InetSocketAddress(configuration.address(), configuration.port()))
+              .addService(
+                  ServerInterceptors.intercept(service, new WorkerIdentityServerInterceptor())));
+
+      started = true;
+    } finally {
+      if (!started) {
+        close();
+      }
+    }
+  }
+
+  private void startListener(NettyServerBuilder builder) throws IOException {
     runtime.start(
         Executors.newVirtualThreadPerTaskExecutor(),
         startingExecutor ->
-            NettyServerBuilder.forPort(configuration.port())
-                .sslContext(sslContext)
+            builder
                 .executor(startingExecutor)
                 .maxConcurrentCallsPerConnection(MAXIMUM_CONCURRENT_CALLS_PER_CONNECTION)
                 .maxInboundMessageSize(MAXIMUM_INBOUND_MESSAGE_BYTES)
@@ -67,10 +73,6 @@ public final class WorkerSessionServer implements AutoCloseable {
                 .keepAliveTimeout(KEEPALIVE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 .permitKeepAliveTime(PERMITTED_CLIENT_KEEPALIVE_SECONDS, TimeUnit.SECONDS)
                 .permitKeepAliveWithoutCalls(true)
-                .addService(
-                    ServerInterceptors.intercept(
-                        new WorkerSessionGrpcService(workerConnections, segmentStore),
-                        identityInterceptor))
                 .build()
                 .start());
   }
@@ -133,11 +135,14 @@ public final class WorkerSessionServer implements AutoCloseable {
   }
 
   private void requireStarted() {
-    runtime.server();
+    if (!started) {
+      throw new IllegalStateException("Worker session server is not started");
+    }
   }
 
   @Override
   public synchronized void close() {
     runtime.close();
+    started = false;
   }
 }

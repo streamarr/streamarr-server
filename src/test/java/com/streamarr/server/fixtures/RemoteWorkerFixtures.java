@@ -7,8 +7,12 @@ import com.streamarr.transcode.engine.FfmpegCommandBuilder;
 import com.streamarr.transcode.engine.FfmpegProcessManager;
 import com.streamarr.transcode.engine.FfmpegTranscodeEngine;
 import com.streamarr.transcode.engine.TranscodeCapabilityService;
+import com.streamarr.transcode.protocol.WorkerIdentityMetadata;
 import com.streamarr.transcode.tls.PemTlsIdentity;
 import com.streamarr.transcode.worker.TranscodeWorkerConfiguration;
+import io.grpc.Metadata;
+import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
+import io.grpc.stub.MetadataUtils;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -16,6 +20,7 @@ import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Optional;
 import java.util.UUID;
 
 public final class RemoteWorkerFixtures {
@@ -43,10 +48,7 @@ public final class RemoteWorkerFixtures {
 
   public static WorkerSessionServerConfiguration.WorkerSessionServerConfigurationBuilder
       serverConfigurationBuilder() throws URISyntaxException {
-    return WorkerSessionServerConfiguration.builder()
-        .port(0)
-        .trustDomain("streamarr.test")
-        .tlsIdentity(tlsIdentity("server-cert.pem", "server-key.fixture"));
+    return WorkerSessionServerConfiguration.builder().port(0);
   }
 
   public static TranscodeWorkerConfiguration.TranscodeWorkerConfigurationBuilder
@@ -55,6 +57,19 @@ public final class RemoteWorkerFixtures {
         .workerId(WORKER_ID)
         .bootId(UUID.randomUUID())
         .tlsIdentity(tlsIdentity("worker-cert.pem", "worker-key.fixture"));
+  }
+
+  public static TranscodeWorkerConfiguration.TranscodeWorkerConfigurationBuilder
+      plaintextWorkerConfigurationBuilder() throws URISyntaxException {
+    return workerConfigurationBuilder().tlsIdentity(Optional.empty()).plaintext(true);
+  }
+
+  public static NettyChannelBuilder plaintextChannelBuilder(int port, UUID workerId) {
+    var headers = new Metadata();
+    headers.put(WorkerIdentityMetadata.WORKER_ID, workerId.toString());
+    return NettyChannelBuilder.forAddress("127.0.0.1", port)
+        .usePlaintext()
+        .intercept(MetadataUtils.newAttachHeadersInterceptor(headers));
   }
 
   public static FfmpegTranscodeEngine remuxEngine(FfmpegProcessManager processManager) {

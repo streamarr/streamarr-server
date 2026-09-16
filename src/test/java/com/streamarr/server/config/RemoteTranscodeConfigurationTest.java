@@ -9,7 +9,6 @@ import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import java.net.URISyntaxException;
-import java.nio.file.Path;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -34,37 +33,25 @@ class RemoteTranscodeConfigurationTest {
               RemoteTranscodeConfiguration.class, SegmentStoreConfiguration.class);
 
   @Test
-  @DisplayName("Should leave remote transcoding inactive when not configured")
-  void shouldLeaveRemoteTranscodingInactiveWhenNotConfigured() {
-    contextRunner.run(
-        context -> {
-          assertThat(context).doesNotHaveBean(WorkerSessionServer.class);
-          assertThat(context).doesNotHaveBean(RemoteTranscodeExecutor.class);
-        });
-  }
-
-  @Test
-  @DisplayName("Should fail startup when remote transcoding has no identity configuration")
-  void shouldFailStartupWhenRemoteTranscodingHasNoIdentityConfiguration() {
+  @DisplayName("Should reject missing source mapping when a worker listener is enabled")
+  void shouldRejectMissingSourceMappingWhenAWorkerListenerIsEnabled() {
     contextRunner
-        .withPropertyValues("streaming.remote.enabled=true")
-        .run(context -> assertThat(context).hasFailed());
+        .withUserConfiguration(WorkerSessionConfiguration.class)
+        .withPropertyValues("streaming.worker-session.port=0")
+        .run(
+            context -> {
+              assertThat(context).hasFailed();
+              assertThat(context.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(IllegalArgumentException.class)
+                  .hasMessage("Remote source namespace ID is required");
+            });
   }
 
   @Test
-  @DisplayName("Should reject a blank remote media source root when configured")
-  void shouldRejectBlankRemoteMediaSourceRootWhenConfigured() {
-    assertThatThrownBy(
-            () ->
-                new RemoteTranscodeProperties(
-                    true,
-                    0,
-                    "streamarr.test",
-                    SOURCE_NAMESPACE_ID,
-                    " ",
-                    "server.crt",
-                    "server.key",
-                    "ca.crt"))
+  @DisplayName("Should require a source root when configuring worker execution")
+  void shouldRequireASourceRootWhenConfiguringWorkerExecution() {
+    assertThatThrownBy(() -> new RemoteTranscodeProperties(SOURCE_NAMESPACE_ID, " "))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Remote source root is required");
   }
@@ -73,6 +60,7 @@ class RemoteTranscodeConfigurationTest {
   @DisplayName("Should start the outbound worker listener when explicitly configured")
   void shouldStartOutboundWorkerListenerWhenExplicitlyConfigured() throws URISyntaxException {
     contextRunner
+        .withUserConfiguration(WorkerSessionConfiguration.class)
         .withPropertyValues(remoteProperties())
         .run(
             context -> {
@@ -86,23 +74,11 @@ class RemoteTranscodeConfigurationTest {
   }
 
   private String[] remoteProperties() throws URISyntaxException {
-    var certificate = resource("server-cert.pem");
     return new String[] {
-      "streaming.remote.enabled=true",
-      "streaming.remote.port=0",
-      "streaming.remote.trust-domain=streamarr.test",
+      "streaming.worker-session.port=0",
       "streaming.remote.source-namespace-id=" + SOURCE_NAMESPACE_ID,
-      "streaming.remote.source-root=" + certificate.getParent(),
-      "streaming.remote.certificate=" + certificate,
-      "streaming.remote.private-key=" + resource("server-key.fixture"),
-      "streaming.remote.trust-bundle=" + resource("ca-cert.pem")
+      "streaming.remote.source-root=/media"
     };
-  }
-
-  private Path resource(String name) throws URISyntaxException {
-    var url = getClass().getResource("/tls/" + name);
-    assertThat(url).as("TLS resource %s must exist", name).isNotNull();
-    return Path.of(url.toURI());
   }
 
   @Configuration(proxyBeanMethods = false)

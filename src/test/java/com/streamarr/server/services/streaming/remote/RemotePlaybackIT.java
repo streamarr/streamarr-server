@@ -1,8 +1,8 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextWorkerConfigurationBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.remuxEngine;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
-import static com.streamarr.server.fixtures.RemoteWorkerFixtures.workerConfigurationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
@@ -150,6 +150,34 @@ class RemotePlaybackIT {
 
   @Test
   @DisplayName(
+      "Should withhold unfinished initialization when the producer exits before its first fragment")
+  void shouldWithholdUnfinishedInitializationWhenProducerExitsBeforeItsFirstFragment()
+      throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var streamSessionId = UUID.randomUUID();
+    var processes = new IncompleteInitializationProcessManager();
+
+    try (var server = server(segmentStore);
+        var worker = worker(mediaRoot, processes)) {
+      server.start();
+      worker.start("localhost", server.port());
+      var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
+
+      executor.start(transcodeRequest(streamSessionId, mediaFile, ContainerFormat.FMP4));
+      await()
+          .atMost(5, TimeUnit.SECONDS)
+          .until(() -> !executor.isRunning(streamSessionId, StreamSession.defaultVariant()));
+
+      assertThat(segmentStore.segmentExists(streamSessionId, "init.mp4"))
+          .as("An unfinished initialization header must never become available to playback")
+          .isFalse();
+    }
+  }
+
+  @Test
+  @DisplayName(
       "Should serve a segment requested before the worker's first upload arrives when using a remote worker")
   void shouldServeSegmentRequestedBeforeWorkersFirstUploadArrivesWhenUsingRemoteWorker()
       throws Exception {
@@ -273,7 +301,7 @@ class RemotePlaybackIT {
   private TranscodeWorker worker(Path mediaRoot, FakeFfmpegProcessManager processManager)
       throws URISyntaxException {
     var configuration =
-        workerConfigurationBuilder()
+        plaintextWorkerConfigurationBuilder()
             .availableSlots(1)
             .sourceNamespaces(Map.of(SOURCE_NAMESPACE_ID, mediaRoot))
             .segmentBasePath(tempDir.resolve("worker-segments"))
@@ -458,6 +486,20 @@ class RemotePlaybackIT {
     return AuthenticatedIdentityFixture.defaultIdentityBuilder()
         .streamSessionId(streamSessionId)
         .build();
+  }
+
+  private static final class IncompleteInitializationProcessManager
+      extends FakeSegmentProducingFfmpegProcessManager {
+
+    private IncompleteInitializationProcessManager() {
+      // A partial, nonempty ftyp box is visible before FFmpeg publishes a complete media fragment.
+      super(Map.of("init.mp4", new byte[] {0, 0, 0, 24, 'f', 't', 'y', 'p'}));
+    }
+
+    @Override
+    public boolean isRunning(UUID sessionId, String variantLabel) {
+      return false;
+    }
   }
 
   private static final class RecordingFfmpegProcessManager extends FakeFfmpegProcessManager {

@@ -9,7 +9,10 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.ContainerFormat;
+import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
+import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -21,17 +24,12 @@ import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
-import com.streamarr.server.services.streaming.ffmpeg.LocalFfprobeService;
-import com.streamarr.server.services.streaming.ffmpeg.LocalTranscodeExecutor;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
+import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.support.OutcomeTestSupport;
-import com.streamarr.transcode.engine.FfmpegCommandBuilder;
-import com.streamarr.transcode.engine.FfmpegTranscodeEngine;
 import com.streamarr.transcode.engine.LocalFfmpegProcessManager;
-import com.streamarr.transcode.engine.TranscodeCapabilityService;
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -43,7 +41,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import tools.jackson.databind.ObjectMapper;
 
 @Tag("SmokeTest")
 @DisplayName("HLS Streaming Smoke Tests")
@@ -57,6 +54,8 @@ class HlsStreamingSmokeTest {
   private HlsStreamingService streamingService;
   private HlsPlaylistService playlistService;
   private Path segmentBaseDir;
+  private WorkerStreamingSmokeFixture workerFixture;
+  private RecordingProcessManager processManager;
 
   @BeforeAll
   static void checkPrerequisites() {
@@ -75,42 +74,40 @@ class HlsStreamingSmokeTest {
   }
 
   @BeforeEach
-  void setUp() throws IOException {
+  void setUp() throws Exception {
     segmentBaseDir = Files.createTempDirectory("streamarr-smoke-");
     segmentStore = new LocalSegmentStore(segmentBaseDir);
+    processManager = new RecordingProcessManager();
 
-    var objectMapper = new ObjectMapper();
-    var ffprobeService =
-        new LocalFfprobeService(
-            objectMapper,
-            filepath -> {
-              try {
-                return new ProcessBuilder(
-                        "ffprobe",
-                        "-v",
-                        "quiet",
-                        "-print_format",
-                        "json",
-                        "-show_streams",
-                        "-show_format",
-                        filepath.toString())
-                    .start();
-              } catch (IOException e) {
-                throw new UncheckedIOException("Failed to start ffprobe", e);
-              }
-            });
-
-    var capabilityService =
-        new TranscodeCapabilityService(
-            "ffmpeg", command -> new ProcessBuilder(command).redirectErrorStream(false).start());
-    capabilityService.detectCapabilities();
-
-    var commandBuilder = new FfmpegCommandBuilder("ffmpeg");
-    var processManager = new LocalFfmpegProcessManager();
+    workerFixture =
+        WorkerStreamingSmokeFixture.builder()
+            .processManager(processManager)
+            .sourceRoot(TEST_VIDEO.getParent())
+            .segmentBaseDir(segmentBaseDir)
+            .segmentStore(segmentStore)
+            .build();
     var transcodeExecutor =
-        new LocalTranscodeExecutor(
-            new FfmpegTranscodeEngine(commandBuilder, processManager, capabilityService),
-            segmentStore);
+        new RemoteTranscodeExecutor(
+            workerFixture.workerSessions(),
+            workerFixture.sourceNamespaceId(),
+            TEST_VIDEO.getParent());
+    workerFixture.start();
+    var outcome =
+        new RemoteFfprobeService(
+                workerFixture.workerSessions(),
+                workerFixture.sourceNamespaceId(),
+                TEST_VIDEO.getParent())
+            .probe(
+                ProbeExecutionRequest.builder()
+                    .sourcePath(TEST_VIDEO)
+                    .attemptId(UUID.randomUUID())
+                    .probeVersion(ProbeVersion.CURRENT)
+                    .build());
+    assertThat(outcome).isInstanceOf(ProbeOutcome.Success.class);
+    var completeProbe = (ProbeOutcome.Success) outcome;
+    var probeRepository = new FakeMediaFileContainerInfoRepository();
+    probeRepository.setDefaultOutcome(completeProbe);
+    var probeReader = new PersistedProbeReader(probeRepository);
 
     var decisionService = new TranscodeDecisionService();
     var qualityLadderService = new QualityLadderService();
@@ -121,8 +118,6 @@ class HlsStreamingSmokeTest {
             .sessionTimeout(Duration.ofSeconds(60))
             .build();
 
-    var probeResults = new FakeMediaFileContainerInfoRepository();
-    probeResults.setDefaultProbe(ffprobeService.probeMedia(TEST_VIDEO));
     mediaFileRepository = new FakeMediaFileRepository();
     var sessionRegistry = new InMemoryStreamSessionRegistry();
     var producerLifecycle =
@@ -139,8 +134,7 @@ class HlsStreamingSmokeTest {
             .transcodeExecutor(transcodeExecutor)
             .segmentStore(segmentStore)
             .playbackProbeService(
-                new PlaybackProbeService(
-                    new PersistedProbeReader(probeResults), new CapturingEventPublisher()))
+                new PlaybackProbeService(probeReader, new CapturingEventPublisher()))
             .transcodeDecisionService(decisionService)
             .qualityLadderService(qualityLadderService)
             .properties(properties)
@@ -166,6 +160,10 @@ class HlsStreamingSmokeTest {
     } catch (Exception _) {
       // best-effort cleanup
     }
+    if (workerFixture != null) {
+      workerFixture.close();
+    }
+
     segmentStore.shutdown();
   }
 
@@ -239,6 +237,7 @@ class HlsStreamingSmokeTest {
 
     var session = createSession(file.getId(), UUID.randomUUID(), options);
 
+    assertThat(session.getHandle().orElseThrow().processId()).isEmpty();
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(session.getTranscodeDecision().containerFormat()).isEqualTo(ContainerFormat.MPEGTS);
   }
@@ -355,13 +354,13 @@ class HlsStreamingSmokeTest {
 
     var handle = session.getHandle().orElseThrow();
     assertThat(handle.status()).isEqualTo(TranscodeStatus.ACTIVE);
+    var process = processManager.lastProcessFor(sessionId).orElseThrow();
 
     streamingService.destroySession(sessionId);
 
-    var processHandle = ProcessHandle.of(handle.processId().orElseThrow());
-    assertThat(processHandle)
-        .satisfiesAnyOf(
-            ph -> assertThat(ph).isEmpty(), ph -> assertThat(ph.get().isAlive()).isFalse());
+    await()
+        .atMost(Duration.ofSeconds(30))
+        .untilAsserted(() -> assertThat(process.isAlive()).isFalse());
   }
 
   @Test

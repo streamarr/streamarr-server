@@ -52,6 +52,7 @@ final class StderrDrainer implements AutoCloseable {
     } catch (InterruptedException _) {
       Thread.currentThread().interrupt();
     }
+
     return buffer.getLines();
   }
 

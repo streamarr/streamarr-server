@@ -1,3 +1,10 @@
+streaming:
+  remote:
+    source-namespace-id: ${STREAMING_REMOTE_SOURCE_NAMESPACE_ID:cccccccc-cccc-cccc-cccc-cccccccccccc}
+    source-root: ${STREAMING_REMOTE_SOURCE_ROOT:/media}
+  worker-session:
+    port: ${STREAMING_WORKER_SESSION_PORT:9090}
+
 spring:
   jpa:
     properties:

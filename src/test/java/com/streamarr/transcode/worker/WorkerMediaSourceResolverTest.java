@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.UUID;
@@ -24,6 +25,17 @@ class WorkerMediaSourceResolverTest {
   private static final UUID SOURCE_NAMESPACE_ID = UUID.randomUUID();
 
   @TempDir Path tempDir;
+
+  @Test
+  @DisplayName("Should return a domain failure when the filesystem cannot encode a source key")
+  void shouldReturnADomainFailureWhenTheFilesystemCannotEncodeASourceKey() {
+    var resolver = new WorkerMediaSourceResolver(Map.of(SOURCE_NAMESPACE_ID, tempDir));
+    var mediaSource = source("invalid-\ud800.mkv");
+
+    assertThatThrownBy(() -> resolver.resolve(mediaSource))
+        .isInstanceOf(WorkerJobException.class)
+        .hasCauseInstanceOf(InvalidPathException.class);
+  }
 
   @ParameterizedTest
   @ValueSource(strings = {"", "/movie.mkv"})

@@ -1,8 +1,7 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChannelBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
-import static com.streamarr.server.fixtures.RemoteWorkerFixtures.tlsIdentity;
-import static com.streamarr.server.fixtures.RemoteWorkerFixtures.tlsResource;
 import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
 import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,7 +38,6 @@ import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerSessionAccepted;
 import io.grpc.ManagedChannel;
 import io.grpc.Status;
-import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.StreamObserver;
 import java.net.URISyntaxException;
@@ -54,7 +52,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-import javax.net.ssl.SSLException;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -304,8 +301,8 @@ class WorkerSessionServerIT {
 
   @Test
   @DisplayName(
-      "Should register a worker whose reported identity matches its mTLS identity when handling a worker session")
-  void shouldRegisterWorkerWhoseReportedIdentityMatchesItsMtlsIdentityWhenHandlingWorkerSession()
+      "Should register a worker whose reported identity matches its claimed identity when handling a worker session")
+  void shouldRegisterWorkerWhoseReportedIdentityMatchesItsClaimedIdentityWhenHandlingWorkerSession()
       throws Exception {
     try (var server = server()) {
       server.start();
@@ -353,8 +350,8 @@ class WorkerSessionServerIT {
   void shouldRejectConfigurationWhenWorkerSessionServerSettingsAreInvalid() throws Exception {
     var negativePort = serverConfigurationBuilder().port(-1);
     var excessivePort = serverConfigurationBuilder().port(65_536);
-    var missingTrustDomain = serverConfigurationBuilder().trustDomain(null);
-    var blankTrustDomain = serverConfigurationBuilder().trustDomain(" ");
+    var blankAddress = serverConfigurationBuilder().address(" ");
+    var nullAddress = serverConfigurationBuilder();
 
     assertThatThrownBy(negativePort::build)
         .isInstanceOf(IllegalArgumentException.class)
@@ -362,19 +359,18 @@ class WorkerSessionServerIT {
     assertThatThrownBy(excessivePort::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Worker session port must be between 0 and 65535");
-    assertThatThrownBy(missingTrustDomain::build)
+    assertThatThrownBy(() -> nullAddress.address(null)).isInstanceOf(NullPointerException.class);
+    assertThatThrownBy(blankAddress::build)
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Worker trust domain is required");
-    assertThatThrownBy(blankTrustDomain::build)
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Worker trust domain is required");
+        .hasMessage("Worker session address is required");
   }
 
   @Test
   @DisplayName(
-      "Should reject a reported worker identity that differs from its mTLS identity when handling a worker session")
-  void shouldRejectReportedWorkerIdentityThatDiffersFromItsMtlsIdentityWhenHandlingWorkerSession()
-      throws Exception {
+      "Should reject a reported worker identity that differs from its claimed identity when handling a worker session")
+  void
+      shouldRejectReportedWorkerIdentityThatDiffersFromItsClaimedIdentityWhenHandlingWorkerSession()
+          throws Exception {
     try (var server = server()) {
       server.start();
       var channel = workerChannel(server.port());
@@ -391,9 +387,8 @@ class WorkerSessionServerIT {
 
   @Test
   @DisplayName(
-      "Should reject a worker that presents no client certificate when handling a worker session")
-  void shouldRejectWorkerThatPresentsNoClientCertificateWhenHandlingWorkerSession()
-      throws Exception {
+      "Should reject a worker that omits its identity header when handling a worker session")
+  void shouldRejectWorkerThatOmitsItsIdentityHeaderWhenHandlingWorkerSession() throws Exception {
     try (var server = server()) {
       server.start();
       var channel = unauthenticatedChannel(server.port());
@@ -401,10 +396,7 @@ class WorkerSessionServerIT {
       try {
         var response = register(channel, AUTHENTICATED_WORKER_ID);
 
-        assertThatThrownBy(() -> response.get(5, TimeUnit.SECONDS))
-            .rootCause()
-            .isInstanceOf(SSLException.class)
-            .hasMessageContaining("CERTIFICATE_REQUIRED");
+        assertUploadRejected(response, Status.Code.UNAUTHENTICATED);
       } finally {
         shutdown(channel);
       }
@@ -431,26 +423,6 @@ class WorkerSessionServerIT {
                     .build());
 
         assertUploadRejected(response, Status.Code.INVALID_ARGUMENT);
-      } finally {
-        shutdown(channel);
-      }
-    }
-  }
-
-  @Test
-  @DisplayName(
-      "Should reject a trusted certificate outside the worker trust domain when handling a worker session")
-  void shouldRejectTrustedCertificateOutsideWorkerTrustDomainWhenHandlingWorkerSession()
-      throws Exception {
-    try (var server = server()) {
-      server.start();
-      var channel =
-          workerChannel(server.port(), "unmapped-worker-cert.pem", "unmapped-worker-key.fixture");
-
-      try {
-        var response = register(channel, AUTHENTICATED_WORKER_ID);
-
-        assertUploadRejected(response, Status.Code.UNAUTHENTICATED);
       } finally {
         shutdown(channel);
       }
@@ -1203,25 +1175,12 @@ class WorkerSessionServerIT {
     return new WorkerSessionServer(serverConfigurationBuilder().build(), segmentStore);
   }
 
-  private ManagedChannel workerChannel(int port) throws Exception {
-    return workerChannel(port, "worker-cert.pem", "worker-key.fixture");
+  private ManagedChannel workerChannel(int port) {
+    return plaintextChannelBuilder(port, AUTHENTICATED_WORKER_ID).build();
   }
 
-  private ManagedChannel workerChannel(int port, String certificate, String privateKey)
-      throws Exception {
-    var identity = tlsIdentity(certificate, privateKey);
-    var sslContext =
-        GrpcSslContexts.forClient()
-            .keyManager(identity.certificate().toFile(), identity.privateKey().toFile())
-            .trustManager(identity.trustBundle().toFile())
-            .build();
-    return NettyChannelBuilder.forAddress("localhost", port).sslContext(sslContext).build();
-  }
-
-  private ManagedChannel unauthenticatedChannel(int port) throws Exception {
-    var sslContext =
-        GrpcSslContexts.forClient().trustManager(tlsResource("ca-cert.pem").toFile()).build();
-    return NettyChannelBuilder.forAddress("localhost", port).sslContext(sslContext).build();
+  private ManagedChannel unauthenticatedChannel(int port) {
+    return NettyChannelBuilder.forAddress("127.0.0.1", port).usePlaintext().build();
   }
 
   private CompletableFuture<EstablishWorkerSessionResponse> register(

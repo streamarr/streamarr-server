@@ -1,8 +1,8 @@
 package com.streamarr.transcode.worker;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextWorkerConfigurationBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.remuxEngine;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
-import static com.streamarr.server.fixtures.RemoteWorkerFixtures.workerConfigurationBuilder;
 import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
 import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -520,7 +520,7 @@ class TranscodeWorkerIT {
   private TranscodeWorker worker(FakeFfmpegProcessManager processManager, Path mediaRoot)
       throws URISyntaxException {
     var configuration =
-        workerConfigurationBuilder()
+        plaintextWorkerConfigurationBuilder()
             .availableSlots(2)
             .sourceNamespaces(Map.of(SOURCE_NAMESPACE_ID, mediaRoot))
             .segmentBasePath(tempDir.resolve("segments"))

@@ -5,6 +5,7 @@ import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.UUID;
@@ -33,7 +34,7 @@ final class WorkerMediaSourceResolver {
         throw new WorkerJobException("Media source is not a readable file in its namespace");
       }
       return mediaFile;
-    } catch (IOException e) {
+    } catch (IOException | InvalidPathException e) {
       throw new WorkerJobException("Media source is unavailable", e);
     }
   }

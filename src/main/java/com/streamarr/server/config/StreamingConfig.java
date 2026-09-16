@@ -2,7 +2,6 @@ package com.streamarr.server.config;
 
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
-import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.PlaybackAuthorityGate;
 import com.streamarr.server.services.streaming.PlaybackProbeService;
@@ -14,21 +13,11 @@ import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
-import com.streamarr.server.services.streaming.ffmpeg.LocalFfprobeService;
-import com.streamarr.server.services.streaming.ffmpeg.LocalTranscodeExecutor;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
-import com.streamarr.transcode.engine.FfmpegCommandBuilder;
-import com.streamarr.transcode.engine.FfmpegProcessManager;
-import com.streamarr.transcode.engine.FfmpegTranscodeEngine;
-import com.streamarr.transcode.engine.TranscodeCapabilityService;
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Path;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import tools.jackson.databind.ObjectMapper;
 
 @Configuration
 public class StreamingConfig {
@@ -36,69 +25,6 @@ public class StreamingConfig {
   @Bean
   public LocalSegmentStore segmentStore(StreamingProperties properties) {
     return new LocalSegmentStore(Path.of(properties.segmentBasePath()));
-  }
-
-  @Bean
-  public FfmpegPaths ffmpegPaths(StreamingProperties properties) {
-    return FfmpegPaths.resolve(properties.ffmpegPath(), properties.ffprobePath());
-  }
-
-  @Bean
-  public FfmpegCommandBuilder ffmpegCommandBuilder(FfmpegPaths ffmpegPaths) {
-    return new FfmpegCommandBuilder(ffmpegPaths.ffmpeg());
-  }
-
-  @Bean
-  public TranscodeCapabilityService transcodeCapabilityService(FfmpegPaths ffmpegPaths) {
-    var service =
-        new TranscodeCapabilityService(
-            ffmpegPaths.ffmpeg(),
-            command -> new ProcessBuilder(command).redirectErrorStream(false).start());
-    service.detectCapabilities();
-
-    return service;
-  }
-
-  @Bean
-  public FfprobeService ffprobeService(ObjectMapper objectMapper, FfmpegPaths ffmpegPaths) {
-    return new LocalFfprobeService(
-        objectMapper,
-        filepath -> {
-          try {
-            return new ProcessBuilder(
-                    ffmpegPaths.ffprobe(),
-                    "-v",
-                    "quiet",
-                    "-print_format",
-                    "json",
-                    "-show_streams",
-                    "-show_format",
-                    "-show_error",
-                    filepath.toString())
-                .start();
-          } catch (IOException e) {
-            throw new UncheckedIOException("Failed to start ffprobe", e);
-          }
-        });
-  }
-
-  @Bean
-  public FfmpegTranscodeEngine ffmpegTranscodeEngine(
-      FfmpegCommandBuilder commandBuilder,
-      FfmpegProcessManager processManager,
-      TranscodeCapabilityService capabilityService) {
-    return new FfmpegTranscodeEngine(commandBuilder, processManager, capabilityService);
-  }
-
-  @Bean
-  @ConditionalOnProperty(
-      prefix = "streaming.remote",
-      name = "enabled",
-      havingValue = "false",
-      matchIfMissing = true)
-  public TranscodeExecutor transcodeExecutor(
-      FfmpegTranscodeEngine engine, LocalSegmentStore segmentStore) {
-    return new LocalTranscodeExecutor(engine, segmentStore);
   }
 
   @Bean
