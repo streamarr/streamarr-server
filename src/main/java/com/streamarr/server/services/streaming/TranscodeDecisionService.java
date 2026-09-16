@@ -115,6 +115,10 @@ public class TranscodeDecisionService {
   private AudioDecision selectTranscodeAudio(
       Set<String> candidates, int effectiveChannels, ContainerFormat containerFormat) {
 
+    if (effectiveChannels == 1) {
+      return transcode("aac", 1);
+    }
+
     if (effectiveChannels <= 2) {
       return AudioDecision.stereoAac();
     }
