@@ -6,9 +6,7 @@ import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.VariantJob;
 import io.grpc.ServerInterceptors;
-import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
 import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
-import io.grpc.netty.shaded.io.netty.handler.ssl.ClientAuth;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Optional;
@@ -30,28 +28,16 @@ public final class WorkerSessionServer implements AutoCloseable {
   private static final int KEEPALIVE_TIME_SECONDS = 30;
   private static final int KEEPALIVE_TIMEOUT_SECONDS = 10;
   private static final int PERMITTED_CLIENT_KEEPALIVE_SECONDS = 10;
-  private final WorkerSessionListeners listeners;
+  private final WorkerSessionServerConfiguration configuration;
   private final SegmentStore segmentStore;
   private final LiveWorkerConnectionRegistry workerConnections = new LiveWorkerConnectionRegistry();
   private final WorkerSessionServerRuntime runtime = new WorkerSessionServerRuntime(log);
-  private final WorkerSessionServerRuntime loopbackRuntime = new WorkerSessionServerRuntime(log);
   private boolean started;
 
   public WorkerSessionServer(
       @NonNull WorkerSessionServerConfiguration configuration, @NonNull SegmentStore segmentStore) {
-    this(
-        WorkerSessionListeners.builder().mutualTls(Optional.of(configuration)).build(),
-        segmentStore);
-  }
-
-  private WorkerSessionServer(WorkerSessionListeners listeners, SegmentStore segmentStore) {
-    this.listeners = listeners;
+    this.configuration = configuration;
     this.segmentStore = segmentStore;
-  }
-
-  public static WorkerSessionServer forListeners(
-      @NonNull WorkerSessionListeners listeners, @NonNull SegmentStore segmentStore) {
-    return new WorkerSessionServer(listeners, segmentStore);
   }
 
   public synchronized void start() throws IOException {
@@ -61,19 +47,11 @@ public final class WorkerSessionServer implements AutoCloseable {
 
     var service = new WorkerSessionGrpcService(workerConnections, segmentStore);
     try {
-      if (listeners.mutualTls().isPresent()) {
-        startMutualTls(listeners.mutualTls().orElseThrow(), service);
-      }
-
-      if (listeners.loopbackPort().isPresent()) {
-        startListener(
-            loopbackRuntime,
-            NettyServerBuilder.forAddress(
-                    new InetSocketAddress("127.0.0.1", listeners.loopbackPort().getAsInt()))
-                .addService(
-                    ServerInterceptors.intercept(
-                        service, new LoopbackWorkerIdentityInterceptor())));
-      }
+      startListener(
+          NettyServerBuilder.forAddress(
+                  new InetSocketAddress(configuration.address(), configuration.port()))
+              .addService(
+                  ServerInterceptors.intercept(service, new WorkerIdentityServerInterceptor())));
 
       started = true;
     } finally {
@@ -83,29 +61,8 @@ public final class WorkerSessionServer implements AutoCloseable {
     }
   }
 
-  private void startMutualTls(
-      WorkerSessionServerConfiguration configuration, WorkerSessionGrpcService service)
-      throws IOException {
-    var tlsIdentity = configuration.tlsIdentity();
-    var sslContext =
-        GrpcSslContexts.forServer(
-                tlsIdentity.certificate().toFile(), tlsIdentity.privateKey().toFile())
-            .trustManager(tlsIdentity.trustBundle().toFile())
-            .clientAuth(ClientAuth.REQUIRE)
-            .build();
-    var identityInterceptor =
-        new WorkerIdentityServerInterceptor(
-            new WorkerSpiffeIdentityMapper(configuration.trustDomain()));
-    startListener(
-        runtime,
-        NettyServerBuilder.forPort(configuration.port())
-            .sslContext(sslContext)
-            .addService(ServerInterceptors.intercept(service, identityInterceptor)));
-  }
-
-  private void startListener(WorkerSessionServerRuntime listenerRuntime, NettyServerBuilder builder)
-      throws IOException {
-    listenerRuntime.start(
+  private void startListener(NettyServerBuilder builder) throws IOException {
+    runtime.start(
         Executors.newVirtualThreadPerTaskExecutor(),
         startingExecutor ->
             builder
@@ -122,10 +79,6 @@ public final class WorkerSessionServer implements AutoCloseable {
 
   public synchronized int port() {
     return runtime.server().getPort();
-  }
-
-  public synchronized int loopbackPort() {
-    return loopbackRuntime.server().getPort();
   }
 
   public synchronized boolean dispatch(VariantJob job) {
@@ -182,7 +135,6 @@ public final class WorkerSessionServer implements AutoCloseable {
   @Override
   public synchronized void close() {
     runtime.close();
-    loopbackRuntime.close();
     started = false;
   }
 }

@@ -25,8 +25,7 @@ class FfprobeConfigurationTest {
           .withUserConfiguration(RemoteProbeConfiguration.class, WorkerSessionConfiguration.class)
           .withBean(SegmentStore.class, FakeSegmentStore::new)
           .withPropertyValues(
-              "streaming.worker-session.loopback.enabled=true",
-              "streaming.worker-session.loopback.port=0",
+              "streaming.worker-session.port=0",
               "streaming.remote.source-namespace-id=cccccccc-cccc-cccc-cccc-cccccccccccc",
               "streaming.remote.source-root=/media");
 

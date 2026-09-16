@@ -4,12 +4,11 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.remuxEngine;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.fakes.FakeSegmentStore;
-import com.streamarr.server.services.streaming.remote.WorkerSessionListeners;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
+import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
 import com.streamarr.transcode.fakes.FakeFfmpegProcessManager;
 import java.nio.file.Path;
 import java.util.Map;
-import java.util.OptionalInt;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -27,8 +26,8 @@ class PlaintextTranscodeWorkerIT {
   void shouldConnectWithoutCertificatesWhenPlaintextIsExplicitlyEnabled() throws Exception {
     var sourceId = UUID.randomUUID();
     var workerId = UUID.randomUUID();
-    var listeners = WorkerSessionListeners.builder().loopbackPort(OptionalInt.of(0)).build();
-    try (var server = WorkerSessionServer.forListeners(listeners, new FakeSegmentStore())) {
+    var listeners = WorkerSessionServerConfiguration.builder().port(0).build();
+    try (var server = new WorkerSessionServer(listeners, new FakeSegmentStore())) {
       server.start();
       var settings =
           TranscodeWorkerSettings.fromEnvironment(
@@ -36,7 +35,7 @@ class PlaintextTranscodeWorkerIT {
                   "TRANSCODE_WORKER_PLAINTEXT", "true",
                   "TRANSCODE_WORKER_ID", workerId.toString(),
                   "TRANSCODE_WORKER_CONTROL_PLANE_HOST", "127.0.0.1",
-                  "TRANSCODE_WORKER_CONTROL_PLANE_PORT", Integer.toString(server.loopbackPort()),
+                  "TRANSCODE_WORKER_CONTROL_PLANE_PORT", Integer.toString(server.port()),
                   "TRANSCODE_WORKER_SOURCE_NAMESPACE_ID", sourceId.toString(),
                   "TRANSCODE_WORKER_SOURCE_ROOT", tempDir.toString()));
 

@@ -33,8 +33,8 @@ import com.streamarr.server.services.streaming.PlaybackProbeService;
 import com.streamarr.server.services.streaming.QualityLadderService;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
-import com.streamarr.server.services.streaming.remote.WorkerSessionListeners;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
+import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import com.streamarr.server.support.security.WithProfileContext;
@@ -46,7 +46,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.OptionalInt;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -253,8 +252,8 @@ class AdversarialPlaybackTest {
 
     @Bean(initMethod = "start", destroyMethod = "close")
     WorkerSessionServer sessions() {
-      return WorkerSessionServer.forListeners(
-          WorkerSessionListeners.builder().loopbackPort(OptionalInt.of(0)).build(), segments);
+      return new WorkerSessionServer(
+          WorkerSessionServerConfiguration.builder().port(0).build(), segments);
     }
 
     @Bean

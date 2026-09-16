@@ -35,12 +35,7 @@ import org.springframework.test.web.servlet.MockMvc;
 @Tag("IntegrationTest")
 @DisplayName("Worker Session Startup Integration Tests")
 @TestPropertySource(
-    properties = {
-      "streaming.worker-session.loopback.enabled=true",
-      "streaming.worker-session.loopback.port=0",
-      "streaming.worker-session.mutual-tls.enabled=false",
-      "spring.main.cloud-platform=kubernetes"
-    })
+    properties = {"streaming.worker-session.port=0", "spring.main.cloud-platform=kubernetes"})
 class WorkerSessionStartupIT extends AbstractIntegrationTest {
 
   @Autowired private ApplicationContext context;
@@ -63,7 +58,7 @@ class WorkerSessionStartupIT extends AbstractIntegrationTest {
     assertThat(context.getBeansOfType(FfmpegTranscodeEngine.class)).isEmpty();
     assertThat(context.getBeansOfType(TranscodeCapabilityService.class)).isEmpty();
     assertThat(context.getBeansOfType(FfmpegProcessManager.class)).isEmpty();
-    assertThat(workerSessions.loopbackPort()).isPositive();
+    assertThat(workerSessions.port()).isPositive();
     assertThat(workerSessions.availableSlots(UUID.randomUUID())).isZero();
     var request =
         ProbeExecutionRequest.builder()
