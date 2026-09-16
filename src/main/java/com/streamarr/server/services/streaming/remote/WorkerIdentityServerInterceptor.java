@@ -1,6 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
-import com.streamarr.transcode.protocol.WorkerIdentityMetadata;
+import com.streamarr.server.services.streaming.remote.protocol.WorkerIdentityMetadata;
 import io.grpc.Context;
 import io.grpc.Contexts;
 import io.grpc.Metadata;

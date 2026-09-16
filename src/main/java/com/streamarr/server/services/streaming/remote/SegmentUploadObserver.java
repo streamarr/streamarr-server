@@ -1,6 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
-import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
+import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.transcode.v1.SegmentContentType;

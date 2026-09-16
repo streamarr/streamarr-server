@@ -1,7 +1,7 @@
 package com.streamarr.server.services.streaming.remote;
 
-import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
-import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
+import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
+import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;

@@ -1,6 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
-import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
+import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
