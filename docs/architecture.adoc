@@ -139,11 +139,6 @@ The server image contains only the server application. Worker implementation cod
 The server can start and remain ready with zero connected workers, but playback and probing require worker capacity.
 Multi-server coordination remains deferred.
 
-The historical extraction manifests preserve pre-extraction provenance.
-link:worker-code-moves.json[Worker code moves] records paths whose targets now live in the worker repository.
-link:worker-code-copies.json[Worker code copies] records the server origins of worker value types whose server counterparts remain in use.
-The copy entries preserve provenance without treating those paths as renames.
-
 == Authentication and Invalidation
 
 Identity, sessions, and token security follow

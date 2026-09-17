@@ -77,6 +77,12 @@ A missing image fails the required tests. No host FFmpeg installation is needed.
 Local draft validation may select a verified local image. CI and the final cutover require the published immutable digest.
 The CI repository variable `STREAMARR_WORKER_IMAGE` supplies that image to both architecture jobs.
 
+== Worker Protocol
+
+The server publishes `src/main/protobuf` to `buf.build/streamarr-org/transcode` after merges to `main` through `.github/workflows/buf-publish.yml`.
+Use `buf-consumer-pin.properties` from a successful run's `worker-contract-pin-<git-sha>` artifact when updating the worker's exact SDK dependency version.
+To verify from a matching published checkout, run `bash .github/scripts/verify-buf-consumer.sh` with Java 25, Buf and jq available.
+
 == jOOQ Code Regeneration
 
 After modifying Flyway migrations, regenerate jOOQ types:
