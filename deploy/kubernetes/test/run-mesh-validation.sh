@@ -36,17 +36,6 @@ client() {
     com.streamarr.server.fixtures.mesh.MeshValidationClient "$@"
 }
 
-expect_unprotected() {
-  local pod=$1 expected=$2 host=$3
-  local evidence="$runtime/red-$pod-$host.log"
-  if client "$pod" "$expected" "$host" > "$evidence" 2>&1; then
-    echo "The unprotected baseline unexpectedly denied $pod" >&2
-    return 1
-  fi
-  grep -q 'Worker registration unexpectedly succeeded' "$evidence"
-  echo "RED confirmed: $pod could register before mesh policies"
-}
-
 restart_server() {
   # A fresh proxy receives the policy before accepting traffic.
   kubectl -n streamarr rollout restart deployment/streamarr-server >> "$runtime/apply.log"
@@ -67,7 +56,7 @@ prepare_cluster() {
   python3 deploy/kubernetes/render-deployment.py > "$runtime/deployment.yaml"
   kubectl create --dry-run=client -f "$runtime/deployment.yaml" -o json \
     > "$runtime/deployment.json"
-  python3 deploy/kubernetes/test/prepare-fixture.py "$repository" "$runtime" "$fixture_image" "$worker_image"
+  python3 deploy/kubernetes/test/prepare-fixture.py "$repository" "$runtime" "$fixture_image"
   docker build -t "$fixture_image" "$runtime/image" > "$runtime/image.log" 2>&1
   "$kind_bin" load docker-image "$fixture_image" --name "$cluster" >> "$runtime/image.log" 2>&1
 }
@@ -77,11 +66,11 @@ verify_unprotected_connections() {
   kubectl -n streamarr rollout status deployment/streamarr-server --timeout=180s
   kubectl -n streamarr wait pod --all --for=condition=Ready --timeout=180s
   client authorized-worker allowed streamarr-server | tee "$runtime/baseline-allowed.log"
-  expect_unprotected other-worker PERMISSION_DENIED streamarr-server
-  expect_unprotected unmeshed-worker UNAVAILABLE streamarr-server
+  client other-worker allowed streamarr-server | tee "$runtime/baseline-other-account.log"
+  client unmeshed-worker allowed streamarr-server | tee "$runtime/baseline-unmeshed-service.log"
   server_ip=$(kubectl -n streamarr get pod -l app.kubernetes.io/name=streamarr-server \
     -o jsonpath='{.items[0].status.podIP}')
-  expect_unprotected unmeshed-worker UNAVAILABLE "$server_ip"
+  client unmeshed-worker allowed "$server_ip" | tee "$runtime/baseline-unmeshed-pod.log"
 }
 
 verify_worker_policy() {
@@ -103,11 +92,8 @@ verify_existing_http_policy() {
   kubectl apply -f deploy/kubernetes/test/existing-api-policy.yaml >> "$runtime/apply.log"
   restart_server
   client authorized-worker allowed streamarr-server | tee "$runtime/existing-api-allowed.log"
-  if client other-worker http streamarr-server > "$runtime/existing-api-denied.log" 2>&1; then
-    echo "Worker policy broadened an existing HTTP authorization rule" >&2
-    exit 1
-  fi
-  grep -q 'HTTP exchange failed: 403' "$runtime/existing-api-denied.log"
+  client other-worker http-forbidden http://streamarr-server:8080/health \
+    | tee "$runtime/existing-api-denied.log"
 }
 
 verify_existing_mtls_policy() {

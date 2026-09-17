@@ -37,6 +37,11 @@ public final class MeshValidationClient {
   public static void main(String[] args) throws Exception {
     var mode = args[0];
     var host = args[1];
+    if (mode.equals("http-forbidden")) {
+      requireHttpForbidden(args[1]);
+      return;
+    }
+
     if (mode.equals("tls-required")) {
       requireHttpTls(host);
       return;
@@ -132,6 +137,19 @@ public final class MeshValidationClient {
       }
 
       System.out.println(expected);
+    }
+  }
+
+  private static void requireHttpForbidden(String address) throws Exception {
+    try (var client = HttpClient.newHttpClient()) {
+      var request =
+          HttpRequest.newBuilder(URI.create(address)).timeout(Duration.ofSeconds(15)).build();
+      var response = client.send(request, HttpResponse.BodyHandlers.discarding());
+      if (response.statusCode() != 403) {
+        throw new IllegalStateException("Expected HTTP 403 but received " + response.statusCode());
+      }
+
+      System.out.println("HTTP_FORBIDDEN");
     }
   }
 

@@ -94,7 +94,7 @@ def client_fixtures(image, security_context):
     return clients
 
 
-def worker_fixture(resources, image, worker_image):
+def worker_fixture(resources, image):
     worker = copy.deepcopy(next(
         resource for resource in resources
         if resource["kind"] == "Deployment" and resource["metadata"]["name"] == "streamarr-transcode-worker"
@@ -102,7 +102,6 @@ def worker_fixture(resources, image, worker_image):
     worker["spec"]["replicas"] = 1
     worker_pod = worker["spec"]["template"]["spec"]
     worker_container = worker_pod["containers"][0]
-    worker_container["image"] = worker_image
     worker_container["imagePullPolicy"] = "Never"
     worker_pod["securityContext"] = {"fsGroup": 1000}
     worker_pod["volumes"] = [{"name": "media", "emptyDir": {}}]
@@ -132,7 +131,6 @@ def write_resources(path, resources):
 
 def main():
     repository, output, image = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
-    worker_image = sys.argv[4]
     package_image(repository, output)
     resources = read_resources(output / "deployment.json")
     server = server_fixture(resources, image)
@@ -143,7 +141,7 @@ def main():
     policies = [resource for resource in resources if resource["kind"] in ("PeerAuthentication", "AuthorizationPolicy")]
     write_resources(output / "bootstrap.json", bootstrap)
     write_resources(output / "policies.json", policies)
-    write_resources(output / "worker.json", worker_fixture(resources, image, worker_image))
+    write_resources(output / "worker.json", worker_fixture(resources, image))
 
 
 if __name__ == "__main__":
