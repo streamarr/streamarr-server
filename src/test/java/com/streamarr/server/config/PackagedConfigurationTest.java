@@ -12,12 +12,15 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -227,8 +230,41 @@ class PackagedConfigurationTest {
             Map.of("architecture", "amd64", "runner", "ubuntu-24.04"),
             Map.of("architecture", "arm64", "runner", "ubuntu-24.04-arm"));
     assertThat(map(packStep.get("with")))
-        .containsEntry("publish", "false")
-        .doesNotContainKeys("dockerhub-username", "dockerhub-token");
+        .containsEntry("image-version", "${{ steps.image.outputs.version }}")
+        .containsEntry(
+            "tags", "streamarr/streamarr-server:sha-${{ github.sha }}-${{ matrix.architecture }}");
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "push, refs/heads/main, true",
+    "push, refs/heads/feature, false",
+    "pull_request, refs/pull/389/merge, false",
+    "pull_request, refs/heads/main, false",
+    "workflow_dispatch, refs/heads/main, false"
+  })
+  @DisplayName("Should publish verified native images only when building a reviewed main push")
+  void shouldPublishVerifiedNativeImagesOnlyWhenBuildingReviewedMainPush(
+      String event, String ref, boolean publish) throws Exception {
+    var workflow = yaml(".github/workflows/ci.yml");
+    var packageImage = map(map(workflow.get("jobs")).get("package_image"));
+    var packStep =
+        stepNamed(listOfMaps(packageImage.get("steps")), "Build and verify package image");
+    var expression =
+        map(packStep.get("with"))
+            .get("publish")
+            .toString()
+            .replace("${{", "")
+            .replace("}}", "")
+            .replace("github.event_name", "'" + event + "'")
+            .replace("github.ref", "'" + ref + "'");
+
+    var process = new ProcessBuilder("bash", "-c", "[[ " + expression + " ]]").start();
+
+    assertThat(process.waitFor(10, TimeUnit.SECONDS))
+        .as("Publication condition completed")
+        .isTrue();
+    assertThat(process.exitValue()).isEqualTo(publish ? 0 : 1);
   }
 
   @Test

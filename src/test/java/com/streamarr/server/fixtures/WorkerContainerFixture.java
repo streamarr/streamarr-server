@@ -12,6 +12,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
@@ -51,10 +52,20 @@ public final class WorkerContainerFixture implements AutoCloseable {
   }
 
   public void start() throws IOException {
+    var pin = new Properties();
+    try (var input = Files.newBufferedReader(Path.of("worker-image.env"))) {
+      pin.load(input);
+    }
+
     var image =
-        System.getProperty("streamarr.worker.image", System.getenv("STREAMARR_WORKER_IMAGE"));
+        System.getProperty(
+            "streamarr.worker.image",
+            Optional.ofNullable(System.getenv("STREAMARR_WORKER_IMAGE"))
+                .filter(value -> !value.isBlank())
+                .orElse(pin.getProperty("STREAMARR_WORKER_IMAGE")));
     assertThat(image)
-        .as("Set streamarr.worker.image or STREAMARR_WORKER_IMAGE to the verified worker image")
+        .as(
+            "Select a worker image in worker-image.env, STREAMARR_WORKER_IMAGE or streamarr.worker.image")
         .isNotBlank();
     makeMediaReadable();
     Testcontainers.exposeHostPorts(workerSessions.port());

@@ -12,18 +12,48 @@ REPOSITORY = Path(__file__).resolve().parents[3]
 
 
 class WorkerImageConfigurationTests(unittest.TestCase):
-    def test_renderer_rejects_missing_worker_image(self):
+    def test_compose_uses_pin_when_loading_example_environment(self):
+        reference = "streamarr/streamarr-transcode-worker:0.2.0-SNAPSHOT@sha256:" + "b" * 64
         environment = dict(os.environ)
         environment.pop("STREAMARR_WORKER_IMAGE", None)
+        with tempfile.TemporaryDirectory() as temporary:
+            pin = Path(temporary) / "worker-image.env"
+            pin.write_text("STREAMARR_WORKER_IMAGE=" + reference + "\n")
 
-        result = subprocess.run(
-            ["python3", str(REPOSITORY / "deploy/kubernetes/render-deployment.py")],
-            env=environment, capture_output=True, text=True, timeout=10, check=False,
-        )
+            result = subprocess.run(
+                ["docker", "compose", "--env-file", str(pin), "--env-file", ".env.example",
+                 "config", "--format", "json"],
+                cwd=REPOSITORY, env=environment, capture_output=True, text=True,
+                timeout=10, check=False,
+            )
 
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("STREAMARR_WORKER_IMAGE", result.stderr)
-        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        services = json.loads(result.stdout)["services"]
+        self.assertEqual(services["transcode-worker"]["image"], reference)
+
+    def test_renderer_uses_checked_in_pin_when_no_image_is_overridden(self):
+        environment = dict(os.environ)
+        environment.pop("STREAMARR_WORKER_IMAGE", None)
+        reference = "streamarr/streamarr-transcode-worker:0.2.0-SNAPSHOT@sha256:" + "b" * 64
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            renderer = root / "deploy/kubernetes/render-deployment.py"
+            renderer.parent.mkdir(parents=True)
+            shutil.copyfile(REPOSITORY / "deploy/kubernetes/render-deployment.py", renderer)
+            shutil.copyfile(
+                REPOSITORY / "deploy/kubernetes/distributed-transcoding.yaml",
+                renderer.with_name("distributed-transcoding.yaml"),
+            )
+            (root / "worker-image.env").write_text("STREAMARR_WORKER_IMAGE=" + reference + "\n")
+
+            result = subprocess.run(
+                ["python3", str(renderer)], env=environment,
+                capture_output=True, text=True, timeout=10, check=False,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("image: " + json.dumps(reference), result.stdout)
+        self.assertNotIn("${STREAMARR_WORKER_IMAGE}", result.stdout)
 
     def test_renderer_preserves_explicit_worker_image(self):
         reference = "streamarr/streamarr-transcode-worker@sha256:" + "a" * 64

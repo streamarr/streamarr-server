@@ -42,6 +42,18 @@
       ],
       "datasourceTemplate": "buildpacks-registry",
       "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "Update the standalone worker image shared by tests and deployments",
+      "managerFilePatterns": [
+        "/^worker-image\\.env$/"
+      ],
+      "matchStrings": [
+        "STREAMARR_WORKER_IMAGE=(?<depName>streamarr/streamarr-transcode-worker):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "semver"
     }
   ],
   "packageRules": [
@@ -67,6 +79,20 @@
         "com.cedarpolicy:cedar-java"
       ],
       "groupName": "Cedar policy engine",
+      "automerge": false
+    },
+    {
+      "description": "Review worker upgrades against server compatibility tests",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "streamarr/streamarr-transcode-worker"
+      ],
+      "versioning": "semver",
+      "pinDigests": true,
+      "ignoreUnstable": true,
+      "groupName": "transcode worker",
       "automerge": false
     }
   ],

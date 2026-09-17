@@ -1,15 +1,15 @@
 # Streamarr Server - Project Guidelines
 
 ## Commands
-- Worker integration and HLS smoke tests require `STREAMARR_WORKER_IMAGE` or `-Dstreamarr.worker.image=<image>`. Select the verified standalone worker image. Missing configuration fails these tests. FFmpeg runs inside that image. Keep Node version markers out of the repository root: Paketo treats them as application dependencies.
+- Worker integration and HLS smoke tests use the immutable image in `worker-image.env`. Override with `STREAMARR_WORKER_IMAGE` or `-Dstreamarr.worker.image=<image>` for a local worker build. FFmpeg runs inside that image. Keep Node version markers out of the repository root: Paketo treats them as application dependencies.
 - `./mvnw verify` — full build: unit tests (Surefire, `*Test`) + integration tests (Failsafe, `*IT`) + Checkstyle + Spotless
 - `./mvnw test` — unit tests only
 - `./mvnw spotless:apply` — format before committing
 - `./mvnw -Dtest=none -Dsurefire.failIfNoSpecifiedTests=false -Djacoco.skip=true -Dit.test=OpenApiContractIT -Dopenapi.update=true verify` — refresh `docs/openapi.json`, the REST contract as OpenAPI 3.1 that clients generate types from; springdoc serves it at `/v3/api-docs` under the dev and test profiles only, and `OpenApiContractIT` fails the build when the pin drifts
 - `docs/openapi.json` is generated — never hand-edit it; change the controller or its records and refresh
-- `./mvnw generate-sources -Pgenerate-jooq-code` — regenerate jOOQ classes after adding a migration. Requires the local Postgres from `docker compose up -d`; migrates it, then generates into `src/main/java/com/streamarr/server/jooq/generated` (checked in — commit regenerated files with the migration)
+- `./mvnw generate-sources -Pgenerate-jooq-code` — regenerate jOOQ classes after adding a migration. Requires the local Postgres from `docker compose --env-file worker-image.env --env-file .env up -d`; migrates it, then generates into `src/main/java/com/streamarr/server/jooq/generated` (checked in — commit regenerated files with the migration)
 - Smoke tests (`@Tag("SmokeTest")`, e.g. `HlsStreamingSmokeTest`) are excluded from all normal builds; run with `./mvnw test -Dsurefire.excludedGroups=`
-- Local server: `docker compose up -d postgres`, then `./mvnw spring-boot:run`. Playback and media probing require a connected worker. The listener defaults to loopback. The dev profile provides example source mappings. Production configuration requires `STREAMING_REMOTE_SOURCE_NAMESPACE_ID` and `STREAMING_REMOTE_SOURCE_ROOT`. Set the worker namespace to the same UUID and its source root to its media mount. See [Distributed Transcoding](docs/distributed-transcoding.adoc) for deployment settings. `TMDB_API_TOKEN` is required for metadata enrichment.
+- Local server: `docker compose --env-file worker-image.env --env-file .env up -d postgres`, then `./mvnw spring-boot:run`. Playback and media probing require a connected worker. The listener defaults to loopback. The dev profile provides example source mappings. Production configuration requires `STREAMING_REMOTE_SOURCE_NAMESPACE_ID` and `STREAMING_REMOTE_SOURCE_ROOT`. Set the worker namespace to the same UUID and its source root to its media mount. See [Distributed Transcoding](docs/distributed-transcoding.adoc) for deployment settings. `TMDB_API_TOKEN` is required for metadata enrichment.
 
 ## Engineering Philosophy
 

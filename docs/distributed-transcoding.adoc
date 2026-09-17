@@ -57,15 +57,15 @@ The Istio policy restricts only the worker port. HTTP and Kubernetes health prob
 == Docker Compose
 
 The default worker uses `network_mode: service:streamarr-server` to reach the server over loopback.
-Set `STREAMARR_WORKER_IMAGE` to the verified standalone worker image and `STREAMARR_MEDIA_PATH` to the host media directory.
-Compose fails configuration when the worker image is missing.
-Both containers mount it read-only at `/media`, which is the library root inside the server.
+Load the checked-in image from `worker-image.env` and set `STREAMARR_MEDIA_PATH` to the host media directory.
+Set `STREAMARR_WORKER_IMAGE` in `.env` or the shell to override the pin.
+Both containers mount the media directory read-only at `/media`, which is the library root inside the server.
 `STREAMARR_WORKER_ID` and `STREAMARR_SOURCE_NAMESPACE_ID` override the example UUIDs.
 
 [source,bash]
 ----
-export STREAMARR_WORKER_IMAGE='streamarr/streamarr-transcode-worker@sha256:<verified-digest>'
-STREAMARR_MEDIA_PATH=/absolute/path/to/media docker compose up -d
+STREAMARR_MEDIA_PATH=/absolute/path/to/media docker compose \
+  --env-file worker-image.env --env-file .env up -d
 ----
 
 The worker uses its own Spring Boot image and normal entrypoint.
@@ -78,6 +78,7 @@ Find the numeric group ID that owns the host's `/dev/dri/render*` device and set
 [source,bash]
 ----
 STREAMARR_MEDIA_PATH=/absolute/path/to/media STREAMARR_RENDER_GID=109 docker compose \
+  --env-file worker-image.env --env-file .env \
   -f docker-compose.yml \
   -f deploy/compose/hardware-transcoding.yml \
   up -d
@@ -88,13 +89,6 @@ The overlay passes `/dev/dri` only to the worker. CPU deployments need no hardwa
 
 == Kubernetes
 
-[NOTE]
-====
-The first published worker digest remains a merge gate for https://github.com/streamarr/streamarr-server/issues/352[server issue #352].
-Until that image is published after human review, local validation requires an explicitly selected, verified worker image.
-No default worker tag or server-image fallback is supplied.
-====
-
 link:../deploy/kubernetes/distributed-transcoding.yaml[The example manifest] creates the `streamarr` namespace with sidecar injection enabled, separate server and worker ServiceAccounts, one server replica, and two worker replicas.
 It requires:
 
@@ -103,7 +97,8 @@ It requires:
 * a `streamarr-runtime` Secret in that namespace with `datasource-url`, `datasource-username`, and `datasource-password`
 
 Replace the server image placeholder with a verified immutable version.
-Set `STREAMARR_WORKER_IMAGE` to the verified worker digest, then adapt the storage, source namespace, and runtime Secret.
+The renderer uses the checked-in `worker-image.env` pin unless `STREAMARR_WORKER_IMAGE` overrides it.
+Adapt the storage, source namespace, and runtime Secret.
 If you change the Kubernetes namespace or mesh trust domain, update the authorized principal in the `AuthorizationPolicy` too.
 The worker ID comes from the Pod UID. Scaling the Deployment produces distinct instance identifiers without per-replica configuration.
 

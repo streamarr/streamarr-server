@@ -14,7 +14,7 @@
 git clone git@github.com:streamarr/streamarr-server.git
 cd streamarr-server
 cp .env.example .env
-# Edit .env and set TMDB_API_TOKEN and the verified STREAMARR_WORKER_IMAGE
+# Edit .env and set TMDB_API_TOKEN
 ./mvnw clean compile
 ----
 
@@ -22,10 +22,10 @@ cp .env.example .env
 
 [source,bash]
 ----
-docker compose up -d postgres
+docker compose --env-file worker-image.env --env-file .env up -d postgres
 ----
 
-Compose requires `STREAMARR_WORKER_IMAGE` in `.env` even when starting only PostgreSQL.
+Compose loads the checked-in worker image pin before local settings from `.env`.
 This starts PostgreSQL 18 on port 5432 with credentials from `.env`.
 
 == Running the Server
@@ -68,14 +68,21 @@ Because the `__Host-` prefix requires `Secure`, the script-readable CSRF cookie 
 ./mvnw test
 
 # Unit + integration tests (PostgreSQL and the standalone worker use Testcontainers)
-STREAMARR_WORKER_IMAGE='streamarr/streamarr-transcode-worker@sha256:<verified-digest>' ./mvnw verify
+./mvnw verify
 ----
 
 Integration tests start PostgreSQL and the standalone worker with Testcontainers.
-Set `STREAMARR_WORKER_IMAGE` or pass `-Dstreamarr.worker.image=<image>` for worker integration and HLS smoke tests.
-A missing image fails the required tests. No host FFmpeg installation is needed.
-Local draft validation may select a verified local image. CI and the final cutover require the published immutable digest.
-The CI repository variable `STREAMARR_WORKER_IMAGE` supplies that image to both architecture jobs.
+Worker integration tests, HLS smoke tests and CI use the immutable image in `worker-image.env`.
+Renovate proposes digest and version updates. Server CI verifies compatibility before human merge.
+Set `STREAMARR_WORKER_IMAGE` or pass `-Dstreamarr.worker.image=<image>` to test a local worker build.
+No host FFmpeg installation is needed.
+
+== Container Images
+
+When the Maven version is `X.Y.Z-SNAPSHOT`, successful `main` CI publishes that exact tag for both architectures.
+Stable `X.Y.Z` tags are published by the release workflow.
+The worker follows the same convention. The server consumes its tag and digest from `worker-image.env`.
+Renovate refreshes snapshot digests and proposes the stable version when it is released. Later snapshots require an explicit opt-in.
 
 == Worker Protocol
 
@@ -89,7 +96,7 @@ After modifying Flyway migrations, regenerate jOOQ types:
 
 [source,bash]
 ----
-docker compose up -d postgres
+docker compose --env-file worker-image.env --env-file .env up -d postgres
 ./mvnw generate-sources -P generate-jooq-code
 ----
 
