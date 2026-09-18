@@ -31,7 +31,7 @@ Session` first: it captures `STREAM_URL`, `STREAM_SESSION_ID`, and `PLAYBACK_TOK
 `Get Media Playlist` then captures `SEGMENT_PATH` for `Get Segment`. Stream routes
 authenticate only through the short-lived `?t=` playback token embedded in each URL —
 no bearer header — and segment delivery is just-in-time, so a first segment fetch may
-wait a few seconds while FFmpeg produces it.
+wait a few seconds while a worker produces it.
 
 Requests tagged `manual` or `destructive` intentionally change durable state. Exclude
 them from broad collection runs unless that behavior is desired.

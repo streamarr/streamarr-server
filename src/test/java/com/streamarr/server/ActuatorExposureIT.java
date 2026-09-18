@@ -53,8 +53,8 @@ class ActuatorExposureIT extends AbstractIntegrationTest {
   void shouldServeHealthWhenActuatorQueried() throws Exception {
     var response = mockMvc.perform(get("/actuator/health")).andReturn().getResponse();
 
-    // Exposure, not liveness: the aggregate flips between 200 and 503 with the environment
-    // (the ffmpeg indicator goes DOWN on runners without it). Both statuses carry a health
+    // Exposure, not liveness: the aggregate is 503 while no worker offers transcode capacity
+    // (the transcode executor indicator is DOWN) and 200 otherwise. Both statuses carry a health
     // document, proving the endpoint is mapped.
     assertThat(response.getStatus()).isIn(200, 503);
     assertThat(response.getContentAsString()).contains("status");
