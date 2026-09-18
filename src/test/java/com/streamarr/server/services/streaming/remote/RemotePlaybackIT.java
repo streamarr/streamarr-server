@@ -249,8 +249,8 @@ class RemotePlaybackIT {
 
   @Test
   @DisplayName(
-      "Should preserve every supported transcode decision across the worker protocol when using a remote worker")
-  void shouldPreserveEverySupportedTranscodeDecisionAcrossWorkerProtocolWhenUsingRemoteWorker()
+      "Should preserve executable transcode settings when using a remote worker")
+  void shouldPreserveExecutableTranscodeSettingsWhenUsingRemoteWorker()
       throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");

@@ -20,8 +20,8 @@ class RemoteWorkerKeepaliveIT {
   @TempDir Path mediaRoot;
 
   @Test
-  @DisplayName("Should register before readiness and release the session when the worker is frozen")
-  void shouldRegisterBeforeReadinessAndReleaseSessionWhenWorkerIsFrozen() throws Exception {
+  @DisplayName("Should release the session and capacity when the worker is frozen")
+  void shouldReleaseSessionAndCapacityWhenWorkerIsFrozen() throws Exception {
     try (var server =
             new WorkerSessionServer(serverConfigurationBuilder().build(), new FakeSegmentStore());
         var worker =
