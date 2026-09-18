@@ -55,8 +55,9 @@ class RemoteProbeDeadlineIT {
       server.start();
       worker.start();
       var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, mediaRoot);
+      var heldRequest = request("held.mkv");
 
-      assertThatThrownBy(() -> service.probe(request("held.mkv")))
+      assertThatThrownBy(() -> service.probe(heldRequest))
           .isInstanceOf(ProbeExecutionException.class)
           .hasRootCauseInstanceOf(TimeoutException.class);
       await()
