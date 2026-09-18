@@ -7,7 +7,6 @@ import io.swagger.v3.oas.models.OpenAPI;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -112,7 +111,7 @@ class PackagedConfigurationTest {
         Files.readString(Path.of(".github/actions/pack-build/verify-cedar-image.sh"));
 
     assertThat(buildCommand)
-        .contains(".github/actions/pack-build/verify-cedar-image.sh \"${build_image}\"");
+        .contains("\"${ACTION_PATH}/verify-cedar-image.sh\" \"${build_image}\"");
     assertThat(verifyScript)
         .contains(
             "--enable-native-access=ALL-UNNAMED",
@@ -157,7 +156,7 @@ class PackagedConfigurationTest {
 
     assertThat(buildCommand)
         .doesNotContain("buildpacks/ffmpeg")
-        .contains(".github/actions/pack-build/verify-server-image.sh");
+        .contains("${ACTION_PATH}/verify-server-image.sh");
     assertThat(Path.of("buildpacks/ffmpeg/buildpack.toml")).doesNotExist();
     assertThat(Path.of("buildpacks/ffmpeg/bin/build")).doesNotExist();
   }
@@ -188,7 +187,7 @@ class PackagedConfigurationTest {
     var releaseBuild = map(map(releaseWorkflow.get("jobs")).get("build_release_images"));
     var releasePackStep =
         listOfMaps(releaseBuild.get("steps")).stream()
-            .filter(step -> "./.github/actions/pack-build".equals(step.get("uses")))
+            .filter(step -> "$/.github/actions/pack-build".equals(step.get("uses")))
             .findFirst()
             .orElseThrow();
 
@@ -220,7 +219,7 @@ class PackagedConfigurationTest {
     var steps = listOfMaps(packageImage.get("steps"));
     var packStep =
         steps.stream()
-            .filter(step -> "./.github/actions/pack-build".equals(step.get("uses")))
+            .filter(step -> "$/.github/actions/pack-build".equals(step.get("uses")))
             .findFirst()
             .orElseThrow();
 
@@ -230,9 +229,17 @@ class PackagedConfigurationTest {
             Map.of("architecture", "amd64", "runner", "ubuntu-24.04"),
             Map.of("architecture", "arm64", "runner", "ubuntu-24.04-arm"));
     assertThat(map(packStep.get("with")))
-        .containsEntry("image-version", "${{ steps.image.outputs.version }}")
-        .containsEntry(
-            "tags", "streamarr/streamarr-server:sha-${{ github.sha }}-${{ matrix.architecture }}");
+        .containsEntry("image-version", "${{ needs.changes.outputs.version }}");
+    assertThat(steps.stream().map(step -> step.get("name")).toList())
+        .containsSubsequence(
+            "Build and verify package image",
+            "Run HLS smoke tests",
+            "Login to Docker Hub",
+            "Publish verified native image",
+            "Upload verified native image");
+    assertThat(map(stepNamed(steps, "Publish verified native image").get("with")))
+        .containsEntry("image", "${{ steps.package.outputs.image }}")
+        .containsEntry("architecture", "${{ matrix.architecture }}");
   }
 
   @ParameterizedTest
@@ -248,11 +255,11 @@ class PackagedConfigurationTest {
       String event, String ref, boolean publish) throws Exception {
     var workflow = yaml(".github/workflows/ci.yml");
     var packageImage = map(map(workflow.get("jobs")).get("package_image"));
-    var packStep =
-        stepNamed(listOfMaps(packageImage.get("steps")), "Build and verify package image");
+    var publishStep =
+        stepNamed(listOfMaps(packageImage.get("steps")), "Publish verified native image");
     var expression =
-        map(packStep.get("with"))
-            .get("publish")
+        publishStep
+            .get("if")
             .toString()
             .replace("${{", "")
             .replace("}}", "")
@@ -265,41 +272,6 @@ class PackagedConfigurationTest {
         .as("Publication condition completed")
         .isTrue();
     assertThat(process.exitValue()).isEqualTo(publish ? 0 : 1);
-  }
-
-  @Test
-  @DisplayName("Should publish build when registry cache is used")
-  void shouldPublishBuildWhenRegistryCacheIsUsed() throws IOException {
-    var action = yaml(".github/actions/pack-build/action.yml");
-    var buildStep =
-        stepNamed(listOfMaps(map(action.get("runs")).get("steps")), "Build with pack CLI");
-    var cachedBuilds =
-        packBuildCommands((String) buildStep.get("run")).stream()
-            .filter(command -> command.contains("--cache-image"))
-            .toList();
-
-    assertThat(cachedBuilds)
-        .as("Pack requires every cached build to publish directly to its candidate image")
-        .isNotEmpty()
-        .allMatch(command -> command.contains("--publish"));
-  }
-
-  @Test
-  @DisplayName(
-      "Should publish immutable release image before latest when release architectures are verified")
-  void shouldPublishImmutableReleaseImageBeforeLatestWhenReleaseArchitecturesAreVerified()
-      throws IOException {
-    var workflow = yaml(".github/workflows/publish-release.yml");
-    var publishRelease = map(map(workflow.get("jobs")).get("publish_release"));
-    var stepNames =
-        listOfMaps(publishRelease.get("steps")).stream().map(step -> step.get("name")).toList();
-
-    assertThat(publishRelease)
-        .containsEntry("needs", List.of("validate_release", "build_release_images"));
-    assertThat(stepNames)
-        .containsSubsequence(
-            "Publish immutable multi-architecture image",
-            "Publish latest multi-architecture image");
   }
 
   @Test
@@ -344,7 +316,7 @@ class PackagedConfigurationTest {
     var architectures = listOfMaps(matrix.get("include"));
     var buildStep =
         listOfMaps(buildReleaseImages.get("steps")).stream()
-            .filter(step -> "./.github/actions/pack-build".equals(step.get("uses")))
+            .filter(step -> "$/.github/actions/pack-build".equals(step.get("uses")))
             .findFirst()
             .orElseThrow();
 
@@ -353,7 +325,17 @@ class PackagedConfigurationTest {
         .containsExactlyInAnyOrder(
             Map.of("architecture", "amd64", "runner", "ubuntu-24.04"),
             Map.of("architecture", "arm64", "runner", "ubuntu-24.04-arm"));
-    assertThat(map(buildStep.get("with"))).containsEntry("publish", "true");
+    assertThat(map(buildStep.get("with")))
+        .containsEntry("image-version", "${{ needs.validate_release.outputs.version }}");
+    assertThat(
+            listOfMaps(buildReleaseImages.get("steps")).stream()
+                .map(step -> step.get("name"))
+                .toList())
+        .containsSubsequence(
+            "Build and verify package image",
+            "Login to Docker Hub",
+            "Publish verified native image",
+            "Upload verified native image");
   }
 
   @Test
@@ -402,25 +384,6 @@ class PackagedConfigurationTest {
         .filter(step -> expectedName.equals(step.get("name")))
         .findFirst()
         .orElseThrow();
-  }
-
-  private static List<String> packBuildCommands(String script) {
-    var commands = new ArrayList<String>();
-    var command = new StringBuilder();
-
-    for (var line : script.lines().toList()) {
-      if (command.isEmpty() && !line.stripLeading().startsWith("pack build ")) {
-        continue;
-      }
-
-      command.append(' ').append(line.strip());
-      if (!line.stripTrailing().endsWith("\\")) {
-        commands.add(command.toString());
-        command.setLength(0);
-      }
-    }
-
-    return commands;
   }
 
   private static Set<String> dependencyPins(Pattern pattern, String content) {

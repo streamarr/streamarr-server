@@ -28,10 +28,8 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Build and verify preview image
-        uses: ./.github/actions/pack-build
+        uses: $/.github/actions/pack-build
         with:
-          tags: streamarr/streamarr-server:pr-${{ github.event.issue.number }}
-          publish: "false"
           image-version: ${{ steps.pr_head.outputs.sha }}
 
       - name: Archive preview image

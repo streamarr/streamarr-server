@@ -21,11 +21,18 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       packaging: ${{ github.ref == 'refs/heads/main' || steps.filter.outputs.packaging == 'true' }}
+      version: ${{ steps.image.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Read Maven image version
+        id: image
+        run: |
+          version=$(python3 -c 'import xml.etree.ElementTree as E; print(E.parse("pom.xml").find("{*}version").text)')
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
 
       - name: Filter changed paths
         id: filter
@@ -91,9 +98,9 @@ jobs:
         if: matrix.suite == 'unit'
         run: python3 -m unittest discover -s deploy/kubernetes/test -p 'test_*.py'
 
-      - name: Verify snapshot publication
+      - name: Verify native image publication
         if: matrix.suite == 'unit'
-        run: python3 -m unittest discover -s .github/actions/test -p 'test_*.py'
+        run: python3 -m unittest discover -s .github/actions/pack-build/test -p 'test_*.py'
 
       - name: Build and test
         run: >-
@@ -219,20 +226,11 @@ jobs:
         if: matrix.architecture == 'arm64'
         run: bash .github/actions/require-worker-image.sh
 
-      - name: Read Maven image version
-        id: image
-        run: |
-          version=$(python3 -c 'import xml.etree.ElementTree as E; print(E.parse("pom.xml").find("{*}version").text)')
-          echo "version=${version}" >> "${GITHUB_OUTPUT}"
-
       - name: Build and verify package image
-        uses: ./.github/actions/pack-build
+        id: package
+        uses: $/.github/actions/pack-build
         with:
-          tags: streamarr/streamarr-server:sha-${{ github.sha }}-${{ matrix.architecture }}
-          publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-          image-version: ${{ steps.image.outputs.version }}
-          dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
-          dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
+          image-version: ${{ needs.changes.outputs.version }}
 
       - name: Set up JDK 25
         if: matrix.architecture == 'arm64'
@@ -248,17 +246,19 @@ jobs:
           ./mvnw --batch-mode test -Dsurefire.excludedGroups= -Dgroups=SmokeTest
           -Djacoco.skip=true -Dcheckstyle.skip=true -Dspotless.check.skip=true
 
-      - name: Record verified native image
+      - name: Login to Docker Hub
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          ARCHITECTURE: ${{ matrix.architecture }}
-        run: |
-          image="streamarr/streamarr-server:sha-${GITHUB_SHA}-${ARCHITECTURE}"
-          reference=$(docker image inspect --format '{{index .RepoDigests 0}}' "${image}")
-          jq -n --arg source "${GITHUB_SHA}" --arg architecture "${ARCHITECTURE}" \
-            --arg image "streamarr/streamarr-server@${reference##*@}" \
-            '{sourceRevision: $source, architecture: $architecture, image: $image}' \
-            > "${ARCHITECTURE}-image.json"
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Publish verified native image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: $/.github/actions/pack-build/publish
+        with:
+          image: ${{ steps.package.outputs.image }}
+          architecture: ${{ matrix.architecture }}
 
       - name: Upload verified native image
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -271,33 +271,18 @@ jobs:
 
   publish_snapshot:
     name: Publish multi-architecture snapshot image
-    needs: [ build, package_image ]
+    needs: [ changes, build, package_image ]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    concurrency:
-      group: publish-snapshot-images
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - name: Download verified native images
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          pattern: server-image-*
-          merge-multiple: true
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Publish verified snapshot image
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash .github/actions/publish-snapshot.sh
+    uses: streamarr/streamarr-workflows/.github/workflows/publish-image.yml@768aa58c4d37fd4b049780b01adffdf38feb3b79
+    with:
+      image-repository: streamarr/streamarr-server
+      source-revision: ${{ github.sha }}
+      version: ${{ needs.changes.outputs.version }}
+      artifact-pattern: server-image-*
+      publication-kind: snapshot
+    secrets:
+      dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+      dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
 
   build:
     name: build

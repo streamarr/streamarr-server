@@ -17,13 +17,13 @@ import org.yaml.snakeyaml.Yaml;
 class PreviewWorkflowTest {
 
   @Test
-  @DisplayName("Should build untrusted preview images without write access or secrets")
-  void shouldBuildUntrustedPreviewImagesWithoutWriteAccessOrSecrets() throws IOException {
+  @DisplayName("Should build without write access or secrets when preparing a preview image")
+  void shouldBuildWithoutWriteAccessOrSecretsWhenPreparingAPreviewImage() throws IOException {
     var workflow = yaml(".github/workflows/preview.yml");
     var build = map(map(workflow.get("jobs")).get("build_preview"));
     var buildStep =
         listOfMaps(build.get("steps")).stream()
-            .filter(step -> "./.github/actions/pack-build".equals(step.get("uses")))
+            .filter(step -> "$/.github/actions/pack-build".equals(step.get("uses")))
             .findFirst()
             .orElseThrow();
 
@@ -32,8 +32,7 @@ class PreviewWorkflowTest {
         .containsOnlyKeys("contents")
         .containsEntry("contents", "read");
     assertThat(map(buildStep.get("with")))
-        .containsEntry("publish", "false")
-        .doesNotContainKeys("dockerhub-username", "dockerhub-token");
+        .containsOnly(Map.entry("image-version", "${{ steps.pr_head.outputs.sha }}"));
     assertThat(build.toString()).doesNotContain("secrets.");
   }
 
