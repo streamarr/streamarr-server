@@ -1,6 +1,5 @@
 package com.streamarr.server.config;
 
-import static com.streamarr.server.config.ReleaseWorkflowFixture.run;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
@@ -10,9 +9,6 @@ import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
 import org.yaml.snakeyaml.Yaml;
 
 @Tag("UnitTest")
@@ -20,77 +16,16 @@ import org.yaml.snakeyaml.Yaml;
 class ReleaseWorkflowTest {
 
   @Test
-  @DisplayName("Should use the official action when publishing releases and maintaining PRs")
-  void shouldUseOfficialActionWhenPublishingReleasesAndMaintainingPrs() throws Exception {
-    Map<String, Object> workflow =
-        new Yaml().load(Files.readString(Path.of(".github/workflows/release-please.yml")));
-    var steps = steps(map(map(workflow.get("jobs")).get("release")));
-    var actions =
-        steps.stream()
-            .filter(
-                step ->
-                    String.valueOf(step.get("uses"))
-                        .startsWith("googleapis/release-please-action@"))
-            .toList();
-    assertThat(actions).hasSize(2);
-    assertThat(actions.getFirst().get("uses").toString())
-        .matches("googleapis/release-please-action@[a-f0-9]{40}");
-    assertThat(actions.getLast()).containsEntry("uses", actions.getFirst().get("uses"));
-    assertThat(map(actions.getFirst().get("with"))).containsEntry("skip-github-pull-request", true);
-    assertThat(map(actions.getLast().get("with"))).containsEntry("skip-github-release", true);
-    for (var action : actions) {
-      assertThat(map(action.get("with")))
-          .containsEntry("target-branch", "main")
-          .containsEntry("token", "${{ steps.bot.outputs.token }}")
-          .doesNotContainKey("release-type");
-    }
+  @DisplayName("Should use the shared release workflow when maintaining releases")
+  void shouldUseSharedReleaseWorkflowWhenMaintainingReleases() throws Exception {
+    var release = map(jobs("release-please").get("release"));
 
-    assertThat(steps.stream().map(step -> step.get("name")).toList())
-        .containsSubsequence(
-            "Verify repository auto-merge",
-            "Publish merged releases",
-            "Verify merged releases were processed",
-            "Maintain release PR",
-            "Queue snapshot auto-merge");
-  }
-
-  @Test
-  @DisplayName("Should use dedicated release credentials when minting the App token")
-  void shouldUseDedicatedReleaseCredentialsWhenMintingAppToken() throws Exception {
-    Map<String, Object> workflow =
-        new Yaml().load(Files.readString(Path.of(".github/workflows/release-please.yml")));
-    var release = map(map(workflow.get("jobs")).get("release"));
-    var token =
-        steps(release).stream()
-            .filter(step -> "Mint release bot token".equals(step.get("name")))
-            .findFirst()
-            .orElseThrow();
-
-    assertThat(map(token.get("with")))
-        .containsEntry("client-id", "${{ secrets.RELEASE_APP_CLIENT_ID }}")
-        .containsEntry("private-key", "${{ secrets.RELEASE_APP_PRIVATE_KEY }}")
-        .containsEntry("permission-contents", "write")
-        .containsEntry("permission-pull-requests", "write")
-        .containsEntry("permission-issues", "write");
-  }
-
-  @ParameterizedTest
-  @CsvSource({"v1.2.3, true", "v1.2.4, false"})
-  @DisplayName("Should promote latest only when publishing the current GitHub release")
-  void shouldPromoteLatestOnlyWhenPublishingCurrentGitHubRelease(
-      String latestTag, boolean promoted, @TempDir Path directory) throws Exception {
-    var fixture = new ReleaseWorkflowFixture(directory);
-    fixture.stub("gh", "echo \"$LATEST_TAG\"\n");
-    fixture.stub("docker", "touch \"$PROMOTED_FILE\"\n");
-    var marker = directory.resolve("promoted");
-    var builder = fixture.step("publish-release", "Publish latest multi-architecture image");
-    builder.environment().put("LATEST_TAG", latestTag);
-    builder.environment().put("IMAGE_VERSION", "1.2.3");
-    builder.environment().put("GITHUB_REPOSITORY", "streamarr/streamarr-server");
-    builder.environment().put("PROMOTED_FILE", marker.toString());
-    var result = run(builder);
-    assertThat(result.exitCode()).as(result.output()).isZero();
-    assertThat(Files.exists(marker)).isEqualTo(promoted);
+    assertThat(release.get("uses").toString())
+        .matches("streamarr/streamarr-workflows/.github/workflows/release-please.yml@[a-f0-9]{40}");
+    assertThat(map(release.get("secrets")))
+        .containsOnly(
+            Map.entry("app-client-id", "${{ secrets.ORG_STREAMARR_RELEASE_CLIENT_ID }}"),
+            Map.entry("app-private-key", "${{ secrets.ORG_STREAMARR_RELEASE_PRIVATE_KEY }}"));
   }
 
   @Test
@@ -109,14 +44,20 @@ class ReleaseWorkflowTest {
   }
 
   @Test
+  @DisplayName("Should validate the requested tag when publishing or retrying a release")
+  void shouldValidateRequestedTagWhenPublishingOrRetryingRelease() throws Exception {
+    var validation = map(jobs("publish-release").get("validate_release"));
+
+    assertThat(validation.get("uses").toString())
+        .matches(
+            "streamarr/streamarr-workflows/.github/workflows/validate-release.yml@[a-f0-9]{40}");
+    assertThat(map(validation.get("with"))).containsEntry("tag", "${{ inputs.tag || '' }}");
+  }
+
+  @Test
   @DisplayName("Should pin both image architectures to the validated release revision")
   void shouldPinBothImageArchitecturesToValidatedReleaseRevision() throws Exception {
-    Map<String, Object> workflow =
-        new Yaml().load(Files.readString(Path.of(".github/workflows/publish-release.yml")));
-    var jobs = map(workflow.get("jobs"));
-
-    assertThat(jobs).containsKey("validate_release");
-    var build = map(jobs.get("build_release_images"));
+    var build = map(jobs("publish-release").get("build_release_images"));
     assertThat(build).containsEntry("needs", "validate_release");
     var steps = steps(build);
     var checkout =
@@ -128,11 +69,55 @@ class ReleaseWorkflowTest {
         .containsEntry("ref", "${{ needs.validate_release.outputs.revision }}");
     var pack =
         steps.stream()
-            .filter(step -> "./.github/actions/pack-build".equals(step.get("uses")))
+            .filter(step -> "$/.github/actions/pack-build".equals(step.get("uses")))
             .findFirst()
             .orElseThrow();
     assertThat(map(pack.get("with")))
         .containsEntry("image-version", "${{ needs.validate_release.outputs.version }}");
+    var nativePublish =
+        steps.stream()
+            .filter(step -> "Publish verified native image".equals(step.get("name")))
+            .findFirst()
+            .orElseThrow();
+    assertThat(nativePublish).containsEntry("uses", "$/.github/actions/pack-build/publish");
+    assertThat(map(nativePublish.get("with")))
+        .containsEntry("image", "${{ steps.package.outputs.image }}")
+        .containsEntry("architecture", "${{ matrix.architecture }}");
+    var upload =
+        steps.stream()
+            .filter(step -> "Upload verified native image".equals(step.get("name")))
+            .findFirst()
+            .orElseThrow();
+    assertThat(map(upload.get("with")))
+        .containsEntry("name", "server-release-image-${{ matrix.architecture }}")
+        .containsEntry("path", "${{ matrix.architecture }}-image.json")
+        .containsEntry("if-no-files-found", "error");
+  }
+
+  @Test
+  @DisplayName("Should publish validated native receipts when both release architectures succeed")
+  void shouldPublishValidatedNativeReceiptsWhenBothReleaseArchitecturesSucceed() throws Exception {
+    var publish = map(jobs("publish-release").get("publish_release"));
+
+    assertThat(publish).containsEntry("needs", List.of("validate_release", "build_release_images"));
+    assertThat(publish.get("uses").toString())
+        .matches("streamarr/streamarr-workflows/.github/workflows/publish-image.yml@[a-f0-9]{40}");
+    assertThat(map(publish.get("with")))
+        .containsEntry("image-repository", "streamarr/streamarr-server")
+        .containsEntry("source-revision", "${{ needs.validate_release.outputs.revision }}")
+        .containsEntry("version", "${{ needs.validate_release.outputs.version }}")
+        .containsEntry("artifact-pattern", "server-release-image-*")
+        .containsEntry("publication-kind", "release");
+    assertThat(map(publish.get("secrets")))
+        .containsOnly(
+            Map.entry("dockerhub-username", "${{ secrets.DOCKERHUB_USERNAME }}"),
+            Map.entry("dockerhub-token", "${{ secrets.DOCKERHUB_TOKEN }}"));
+  }
+
+  private static Map<String, Object> jobs(String name) throws Exception {
+    Map<String, Object> workflow =
+        new Yaml().load(Files.readString(Path.of(".github/workflows/" + name + ".yml")));
+    return map(workflow.get("jobs"));
   }
 
   @SuppressWarnings("unchecked")

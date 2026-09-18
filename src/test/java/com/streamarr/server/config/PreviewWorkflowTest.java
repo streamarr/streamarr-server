@@ -23,7 +23,7 @@ class PreviewWorkflowTest {
     var build = map(map(workflow.get("jobs")).get("build_preview"));
     var buildStep =
         listOfMaps(build.get("steps")).stream()
-            .filter(step -> "./.github/actions/pack-build".equals(step.get("uses")))
+            .filter(step -> "$/.github/actions/pack-build".equals(step.get("uses")))
             .findFirst()
             .orElseThrow();
 
@@ -32,8 +32,7 @@ class PreviewWorkflowTest {
         .containsOnlyKeys("contents")
         .containsEntry("contents", "read");
     assertThat(map(buildStep.get("with")))
-        .containsEntry("publish", "false")
-        .doesNotContainKeys("dockerhub-username", "dockerhub-token");
+        .containsOnly(Map.entry("image-version", "${{ steps.pr_head.outputs.sha }}"));
     assertThat(build.toString()).doesNotContain("secrets.");
   }
 

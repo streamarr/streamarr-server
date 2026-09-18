@@ -228,16 +228,28 @@ class CiPipelineWorkflowTest {
   @DisplayName("Should publish snapshots only when reviewed main CI succeeds")
   void shouldPublishSnapshotsOnlyWhenReviewedMainCiSucceeds(
       String event, String ref, boolean publish) throws Exception {
-    assertThat(job("publish_snapshot")).containsEntry("needs", List.of("build", "package_image"));
+    assertThat(job("publish_snapshot"))
+        .containsEntry("needs", List.of("changes", "build", "package_image"));
     var condition = job("publish_snapshot").get("if").toString();
     var context = Map.of("github.event_name", event, "github.ref", ref);
 
     var result = runBash("[[ " + substituteContext(condition, context) + " ]]");
 
     assertThat(result.exitCode()).as(result.output()).isEqualTo(publish ? 0 : 1);
-    assertThat(map(job("publish_snapshot").get("concurrency")))
-        .containsEntry("group", "publish-snapshot-images")
-        .containsEntry("cancel-in-progress", false);
+    assertThat(job("publish_snapshot").get("uses").toString())
+        .matches("streamarr/streamarr-workflows/.github/workflows/publish-image.yml@[a-f0-9]{40}");
+    assertThat(map(job("publish_snapshot").get("with")))
+        .containsEntry("image-repository", "streamarr/streamarr-server")
+        .containsEntry("source-revision", "${{ github.sha }}")
+        .containsEntry("version", "${{ needs.changes.outputs.version }}")
+        .containsEntry("artifact-pattern", "server-image-*")
+        .containsEntry("publication-kind", "snapshot");
+    assertThat(map(job("publish_snapshot").get("secrets")))
+        .containsOnly(
+            Map.entry("dockerhub-username", "${{ secrets.DOCKERHUB_USERNAME }}"),
+            Map.entry("dockerhub-token", "${{ secrets.DOCKERHUB_TOKEN }}"));
+    assertThat(map(job("changes").get("outputs")))
+        .containsEntry("version", "${{ steps.image.outputs.version }}");
   }
 
   @Test
