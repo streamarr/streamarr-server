@@ -6,7 +6,7 @@
 * **GraphQL** via Netflix DGS
 * **jOOQ** for complex queries (keyset pagination)
 * **Flyway** for database migrations
-* **FFmpeg** via ProcessBuilder in transcode workers for HLS transcoding and remuxing
+* **FFmpeg** for HLS transcoding and remuxing runs only in standalone transcode workers (https://github.com/streamarr/streamarr-transcode-worker[streamarr-transcode-worker]); the server executes no media processes
 
 == Dependency Boundaries
 
@@ -105,8 +105,8 @@ StreamingOptions (client)  +  MediaProbe (persisted probe rows)
                     |
             RemoteTranscodeExecutor → WorkerSession
                     |
-            Worker engine → resolves encoder (HW/SW)
-            → FfmpegCommandBuilder → FFmpeg
+            Worker engine (streamarr-transcode-worker) → resolves encoder (HW/SW)
+            → builds the FFmpeg command → FFmpeg
                     |
             Segment uploads → server segment store
             → HlsPlaylistService → master + media playlists
@@ -168,7 +168,7 @@ because a refetch on unknown `kid` can be answered with the cached pre-rotation 
 blank signing key generates an ephemeral key pair at startup (tokens die on restart; sessions
 recover through refresh).
 
-ES256 exists for the planned transcode split: horizontally scaled transcode nodes running
+ES256 exists because of the transcode split: horizontally scaled transcode workers running
 FFmpeg are the most exposed tier and must never hold a token-minting secret. Signature
 verification alone never authorizes a request, though -- revocation is authoritative state,
 not signature checking. Playback revocation is one indexed live-authority query rather than token
@@ -196,8 +196,8 @@ See https://github.com/streamarr/streamarr-adr/tree/main/adr[Architecture Decisi
 | Keyset pagination over offset
 | O(1) performance regardless of page depth
 
-| ProcessBuilder + FFmpeg over JNI
-| Full control over process lifecycle, proven pattern (Jellyfin/Plex/Emby)
+| ProcessBuilder + FFmpeg over JNI, in the worker
+| Full control over process lifecycle, proven pattern (Jellyfin/Plex/Emby); the server itself starts no processes (https://github.com/streamarr/streamarr-adr/blob/main/adr/0033-transcode-worker-is-a-separate-service.adoc[ADR 0033])
 
 | TDD and behavior testing
 | Tests at service boundary are protocol-agnostic and survive refactoring

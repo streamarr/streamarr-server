@@ -77,7 +77,6 @@ STREAMARR_MEDIA_PATH=/absolute/path/to/media docker compose \
 
 The worker uses its own Spring Boot image and normal entrypoint.
 The server image contains neither the worker application nor FFmpeg.
-The former distributed Compose override has been retired with application-managed worker TLS.
 
 Hardware transcoding is a separate opt-in overlay.
 Find the numeric group ID that owns the host's `/dev/dri/render*` device and set `STREAMARR_RENDER_GID`:

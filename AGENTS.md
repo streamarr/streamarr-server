@@ -4,12 +4,13 @@
 - Worker integration and HLS smoke tests use the immutable image in `worker-image.env`. Override with `STREAMARR_WORKER_IMAGE` or `-Dstreamarr.worker.image=<image>` for a local worker build. FFmpeg runs inside that image. Keep Node version markers out of the repository root: Paketo treats them as application dependencies.
 - `./mvnw verify` — full build: unit tests (Surefire, `*Test`) + integration tests (Failsafe, `*IT`) + Checkstyle + Spotless
 - `./mvnw test` — unit tests only
+- One unit test: `./mvnw test -Dtest=FilepathCodecTest -Djacoco.skip=true`. One integration test: `./mvnw verify -Dtest=none -Dsurefire.failIfNoSpecifiedTests=false -Dit.test=ActuatorExposureIT -Djacoco.skip=true`
 - `./mvnw spotless:apply` — format before committing
 - `./mvnw -Dtest=none -Dsurefire.failIfNoSpecifiedTests=false -Djacoco.skip=true -Dit.test=OpenApiContractIT -Dopenapi.update=true verify` — refresh `docs/openapi.json`, the REST contract as OpenAPI 3.1 that clients generate types from; springdoc serves it at `/v3/api-docs` under the dev and test profiles only, and `OpenApiContractIT` fails the build when the pin drifts
 - `docs/openapi.json` is generated — never hand-edit it; change the controller or its records and refresh
 - `./mvnw generate-sources -Pgenerate-jooq-code` — regenerate jOOQ classes after adding a migration. Requires the local Postgres from `docker compose --env-file worker-image.env --env-file .env up -d`; migrates it, then generates into `src/main/java/com/streamarr/server/jooq/generated` (checked in — commit regenerated files with the migration)
 - Smoke tests (`@Tag("SmokeTest")`, e.g. `HlsStreamingSmokeTest`) are excluded from all normal builds; run with `./mvnw test -Dsurefire.excludedGroups=`
-- Local server: `docker compose --env-file worker-image.env --env-file .env up -d postgres`, then `./mvnw spring-boot:run`. Playback and media probing require a connected worker. The listener defaults to loopback. The dev profile provides example source mappings. Production configuration requires `STREAMING_REMOTE_SOURCE_NAMESPACE_ID` and `STREAMING_REMOTE_SOURCE_ROOT`. Set the worker namespace to the same UUID and its source root to its media mount. See [Distributed Transcoding](docs/distributed-transcoding.adoc) for deployment settings. `TMDB_API_TOKEN` is required for metadata enrichment.
+- Local server: `cp .env.example .env` once (`.env` is Git-ignored and Compose fails without it), then `docker compose --env-file worker-image.env --env-file .env up -d postgres` and `./mvnw spring-boot:run`. Playback and media probing require a connected worker. The listener defaults to loopback. The dev profile provides example source mappings. Production configuration requires `STREAMING_REMOTE_SOURCE_NAMESPACE_ID` and `STREAMING_REMOTE_SOURCE_ROOT`. Set the worker namespace to the same UUID and its source root to its media mount. See [Distributed Transcoding](docs/distributed-transcoding.adoc) for deployment settings. `TMDB_API_TOKEN` is required for metadata enrichment.
 
 ## Engineering Philosophy
 
@@ -44,7 +45,7 @@
 ### Commit Discipline
 - Only commit when ALL tests pass and ALL warnings are resolved
 - Each commit is a single logical unit of work
-- Commit subjects start with the lowercase prefix `structural:` or `behavioral:` (e.g. `structural: extract password verifier`); this is the server repository's casing — streamarr-web uses the same lowercase prefixes
+- Commit subjects start with the lowercase prefix `structural:` or `behavioral:` (e.g. `structural: extract password verifier`); this is the server repository's casing — streamarr-web and streamarr-transcode-worker use the same lowercase prefixes
 - The dedicated release bot uses Release Please's `chore(main): release X` subjects for stable and snapshot version updates, with an empty squash commit body; this exception does not change human commit subjects
 - Small, frequent commits over large, infrequent ones
 - Commit messages must be under 200 words
@@ -260,6 +261,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - Integration tests: `*IT.java`, `@Tag("IntegrationTest")`; extend `AbstractIntegrationTest` — singleton reusable `postgres:18-alpine` container wired via `@ServiceConnection`
 - Unit tests: `*Test.java`, `@Tag("UnitTest")`
 - Resolver tests use a narrowed `@SpringBootTest(classes = {…})` — no test slices (`@DataJpaTest`, `@WebMvcTest`, etc.)
+- Wait on conditions with Awaitility or a bounded future — never a bare `Thread.sleep`
 - Test naming: `shouldExpectedBehaviorWhenCondition()` + `@DisplayName` in the same human-readable `Should ... when ...` phrasing
 
 ## Twelve-Factor Principles ([12factor.net](https://12factor.net))
