@@ -1,15 +1,20 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChannelBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
-import static com.streamarr.server.fixtures.RemoteWorkerFixtures.tlsIdentity;
-import static com.streamarr.server.fixtures.RemoteWorkerFixtures.tlsResource;
-import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
-import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
+import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
+import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import com.google.protobuf.ByteString;
+import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.ContainerFormat;
+import com.streamarr.server.domain.streaming.SubtitleDecision;
+import com.streamarr.server.domain.streaming.SubtitleMode;
+import com.streamarr.server.domain.streaming.TranscodeDecision;
+import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fakes.BlockingSegmentStore;
@@ -39,13 +44,13 @@ import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerSessionAccepted;
 import io.grpc.ManagedChannel;
 import io.grpc.Status;
-import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.StreamObserver;
-import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -54,12 +59,14 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-import javax.net.ssl.SSLException;
+import java.util.concurrent.TimeoutException;
+import lombok.Builder;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -106,7 +113,13 @@ class WorkerSessionServerIT {
   void shouldFailPendingProbeWhenItsSessionEndsDuringSegmentPublication(SessionEnd ending)
       throws Exception {
     var segmentStore = new PausedPublicationStore();
-    try (var server = server(segmentStore)) {
+    var configuration =
+        serverConfigurationBuilder()
+            .probeTimeout(
+                ending == SessionEnd.TIMED_OUT ? Duration.ofSeconds(2) : Duration.ofMinutes(1))
+            .probeCancellationTimeout(Duration.ofMillis(100))
+            .build();
+    try (var server = new WorkerSessionServer(configuration, segmentStore)) {
       server.start();
       var channel = workerChannel(server.port());
       var identity = workerIdentity(UUID.randomUUID());
@@ -130,17 +143,26 @@ class WorkerSessionServerIT {
         var upload = upload(channel, metadata, bytes);
         try {
           assertThat(segmentStore.entered.await(5, TimeUnit.SECONDS)).isTrue();
-          if (ending == SessionEnd.DISCONNECTED) {
-            worker.close();
-          } else {
-            var replacement = connect(channel, workerIdentity(UUID.randomUUID()));
-            assertThat(replacement.nextResponse().hasSessionAccepted()).isTrue();
+          switch (ending) {
+            case DISCONNECTED -> worker.close();
+            case REPLACED -> {
+              var replacement = connect(channel, workerIdentity(UUID.randomUUID()));
+              assertThat(replacement.nextResponse().hasSessionAccepted()).isTrue();
+            }
+            case TIMED_OUT ->
+                await()
+                    .atMost(5, TimeUnit.SECONDS)
+                    .untilAsserted(
+                        () -> assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isFalse());
           }
 
           assertThatThrownBy(() -> pending.get(5, TimeUnit.SECONDS))
               .as("ended-session probe must fail while segment publication remains blocked")
               .isInstanceOf(ExecutionException.class)
-              .hasCauseInstanceOf(ProbeExecutionException.class);
+              .hasCauseInstanceOf(
+                  ending == SessionEnd.TIMED_OUT
+                      ? TimeoutException.class
+                      : ProbeExecutionException.class);
         } finally {
           segmentStore.release.countDown();
         }
@@ -221,7 +243,8 @@ class WorkerSessionServerIT {
 
   private enum SessionEnd {
     DISCONNECTED,
-    REPLACED
+    REPLACED,
+    TIMED_OUT
   }
 
   private static final class PausedPublicationStore extends FakeSegmentStore {
@@ -304,8 +327,8 @@ class WorkerSessionServerIT {
 
   @Test
   @DisplayName(
-      "Should register a worker whose reported identity matches its mTLS identity when handling a worker session")
-  void shouldRegisterWorkerWhoseReportedIdentityMatchesItsMtlsIdentityWhenHandlingWorkerSession()
+      "Should register a worker whose reported identity matches its claimed identity when handling a worker session")
+  void shouldRegisterWorkerWhoseReportedIdentityMatchesItsClaimedIdentityWhenHandlingWorkerSession()
       throws Exception {
     try (var server = server()) {
       server.start();
@@ -350,11 +373,11 @@ class WorkerSessionServerIT {
 
   @Test
   @DisplayName("Should reject configuration when worker session server settings are invalid")
-  void shouldRejectConfigurationWhenWorkerSessionServerSettingsAreInvalid() throws Exception {
+  void shouldRejectConfigurationWhenWorkerSessionServerSettingsAreInvalid() {
     var negativePort = serverConfigurationBuilder().port(-1);
     var excessivePort = serverConfigurationBuilder().port(65_536);
-    var missingTrustDomain = serverConfigurationBuilder().trustDomain(null);
-    var blankTrustDomain = serverConfigurationBuilder().trustDomain(" ");
+    var blankAddress = serverConfigurationBuilder().address(" ");
+    var nullAddress = serverConfigurationBuilder();
 
     assertThatThrownBy(negativePort::build)
         .isInstanceOf(IllegalArgumentException.class)
@@ -362,19 +385,18 @@ class WorkerSessionServerIT {
     assertThatThrownBy(excessivePort::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Worker session port must be between 0 and 65535");
-    assertThatThrownBy(missingTrustDomain::build)
+    assertThatThrownBy(() -> nullAddress.address(null)).isInstanceOf(NullPointerException.class);
+    assertThatThrownBy(blankAddress::build)
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Worker trust domain is required");
-    assertThatThrownBy(blankTrustDomain::build)
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Worker trust domain is required");
+        .hasMessage("Worker session address is required");
   }
 
   @Test
   @DisplayName(
-      "Should reject a reported worker identity that differs from its mTLS identity when handling a worker session")
-  void shouldRejectReportedWorkerIdentityThatDiffersFromItsMtlsIdentityWhenHandlingWorkerSession()
-      throws Exception {
+      "Should reject a reported worker identity that differs from its claimed identity when handling a worker session")
+  void
+      shouldRejectReportedWorkerIdentityThatDiffersFromItsClaimedIdentityWhenHandlingWorkerSession()
+          throws Exception {
     try (var server = server()) {
       server.start();
       var channel = workerChannel(server.port());
@@ -391,9 +413,8 @@ class WorkerSessionServerIT {
 
   @Test
   @DisplayName(
-      "Should reject a worker that presents no client certificate when handling a worker session")
-  void shouldRejectWorkerThatPresentsNoClientCertificateWhenHandlingWorkerSession()
-      throws Exception {
+      "Should reject a worker that omits its identity header when handling a worker session")
+  void shouldRejectWorkerThatOmitsItsIdentityHeaderWhenHandlingWorkerSession() throws Exception {
     try (var server = server()) {
       server.start();
       var channel = unauthenticatedChannel(server.port());
@@ -401,10 +422,7 @@ class WorkerSessionServerIT {
       try {
         var response = register(channel, AUTHENTICATED_WORKER_ID);
 
-        assertThatThrownBy(() -> response.get(5, TimeUnit.SECONDS))
-            .rootCause()
-            .isInstanceOf(SSLException.class)
-            .hasMessageContaining("CERTIFICATE_REQUIRED");
+        assertUploadRejected(response, Status.Code.UNAUTHENTICATED);
       } finally {
         shutdown(channel);
       }
@@ -439,26 +457,6 @@ class WorkerSessionServerIT {
 
   @Test
   @DisplayName(
-      "Should reject a trusted certificate outside the worker trust domain when handling a worker session")
-  void shouldRejectTrustedCertificateOutsideWorkerTrustDomainWhenHandlingWorkerSession()
-      throws Exception {
-    try (var server = server()) {
-      server.start();
-      var channel =
-          workerChannel(server.port(), "unmapped-worker-cert.pem", "unmapped-worker-key.fixture");
-
-      try {
-        var response = register(channel, AUTHENTICATED_WORKER_ID);
-
-        assertUploadRejected(response, Status.Code.UNAUTHENTICATED);
-      } finally {
-        shutdown(channel);
-      }
-    }
-  }
-
-  @Test
-  @DisplayName(
       "Should dispatch a variant job to a registered worker when handling a worker session")
   void shouldDispatchVariantJobToRegisteredWorkerWhenHandlingWorkerSession() throws Exception {
     try (var server = server()) {
@@ -478,6 +476,61 @@ class WorkerSessionServerIT {
         shutdown(channel);
       }
     }
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "BURN_IN,SUBTITLE_MODE_BURN_IN",
+    "SIDECAR,SUBTITLE_MODE_SIDECAR",
+    "HLS,SUBTITLE_MODE_HLS",
+    "EMBED,SUBTITLE_MODE_EMBED"
+  })
+  @DisplayName("Should preserve subtitle selection when dispatching a remote transcode")
+  void shouldPreserveSubtitleSelectionWhenDispatchingRemoteTranscode(
+      SubtitleMode mode, String wireMode) throws Exception {
+    var decision =
+        TranscodeDecision.builder()
+            .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+            .videoCodecFamily("h264")
+            .audioDecision(AudioDecision.stereoAac())
+            .containerFormat(ContainerFormat.FMP4)
+            .subtitleDecision(
+                subtitleSelection().mode(mode).codec("srt").streamIndex(2).language("eng").build())
+            .build();
+    var request =
+        TranscodeRequest.builder()
+            .sessionId(UUID.randomUUID())
+            .sourcePath(Path.of("/media/movie.mkv"))
+            .transcodeDecision(decision)
+            .build();
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+      try (var worker = connect(channel, AUTHENTICATED_WORKER_ID)) {
+        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
+        var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, Path.of("/media"));
+
+        var handle = executor.start(request);
+
+        var job = worker.nextResponse().getStartVariant().getJob();
+        assertThat(fromProto(job.getJobAttemptId())).isEqualTo(handle.attemptId());
+        var subtitle = job.getDecision().getSubtitle();
+        assertThat(subtitle.getMode().name()).isEqualTo(wireMode);
+        assertThat(subtitle.getCodec()).isEqualTo("srt");
+        assertThat(subtitle.hasStreamIndex()).isTrue();
+        assertThat(subtitle.getStreamIndex()).isEqualTo(2);
+        assertThat(subtitle.getLanguage()).isEqualTo("eng");
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
+  @Builder(builderMethodName = "subtitleSelection")
+  private static SubtitleDecision subtitleDecision(
+      SubtitleMode mode, String codec, int streamIndex, String language) {
+    return new SubtitleDecision(
+        mode, Optional.of(codec), OptionalInt.of(streamIndex), Optional.of(language));
   }
 
   @Test
@@ -1195,33 +1248,20 @@ class WorkerSessionServerIT {
     }
   }
 
-  private WorkerSessionServer server() throws URISyntaxException {
+  private WorkerSessionServer server() {
     return server(new FakeSegmentStore());
   }
 
-  private WorkerSessionServer server(FakeSegmentStore segmentStore) throws URISyntaxException {
+  private WorkerSessionServer server(FakeSegmentStore segmentStore) {
     return new WorkerSessionServer(serverConfigurationBuilder().build(), segmentStore);
   }
 
-  private ManagedChannel workerChannel(int port) throws Exception {
-    return workerChannel(port, "worker-cert.pem", "worker-key.fixture");
+  private ManagedChannel workerChannel(int port) {
+    return plaintextChannelBuilder(port, AUTHENTICATED_WORKER_ID).build();
   }
 
-  private ManagedChannel workerChannel(int port, String certificate, String privateKey)
-      throws Exception {
-    var identity = tlsIdentity(certificate, privateKey);
-    var sslContext =
-        GrpcSslContexts.forClient()
-            .keyManager(identity.certificate().toFile(), identity.privateKey().toFile())
-            .trustManager(identity.trustBundle().toFile())
-            .build();
-    return NettyChannelBuilder.forAddress("localhost", port).sslContext(sslContext).build();
-  }
-
-  private ManagedChannel unauthenticatedChannel(int port) throws Exception {
-    var sslContext =
-        GrpcSslContexts.forClient().trustManager(tlsResource("ca-cert.pem").toFile()).build();
-    return NettyChannelBuilder.forAddress("localhost", port).sslContext(sslContext).build();
+  private ManagedChannel unauthenticatedChannel(int port) {
+    return NettyChannelBuilder.forAddress("127.0.0.1", port).usePlaintext().build();
   }
 
   private CompletableFuture<EstablishWorkerSessionResponse> register(

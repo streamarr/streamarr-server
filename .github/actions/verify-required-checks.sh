@@ -2,27 +2,22 @@
 
 set -euo pipefail
 
-if (( $# != 6 )); then
-  echo "Usage: $0 <changes> <packaging> <ffmpeg-lock> <application> <package-image> <analysis>" >&2
+if (( $# != 5 )); then
+  echo "Usage: $0 <changes> <packaging> <application> <package-image> <analysis>" >&2
   exit 2
 fi
 
 changes_result="$1"
 packaging_required="$2"
-ffmpeg_lock_result="$3"
-application_result="$4"
-package_image_result="$5"
-analysis_result="$6"
+application_result="$3"
+package_image_result="$4"
+analysis_result="$5"
 if [[ "${changes_result}" != "success" ]]; then
   echo "Change detection failed: ${changes_result}" >&2
   exit 1
 fi
 if [[ "${packaging_required}" != "true" && "${packaging_required}" != "false" ]]; then
   echo "Invalid packaging change result: ${packaging_required}" >&2
-  exit 1
-fi
-if [[ "${ffmpeg_lock_result}" != "success" ]]; then
-  echo "FFmpeg lock verification failed: ${ffmpeg_lock_result}" >&2
   exit 1
 fi
 if [[ "${application_result}" != "success" ]]; then

@@ -24,18 +24,11 @@ class ProcfileTest {
   private static final String NATIVE_ACCESS = "--enable-native-access=ALL-UNNAMED";
 
   @Test
-  // The Procfile is a literal external contract: launcher class names appear as text.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  @DisplayName("Should ship separate server and transcode worker process types")
-  void shouldShipSeparateServerAndTranscodeWorkerProcessTypes() throws IOException {
-    var processes = processes();
-
-    assertThat(processes)
-        .containsOnlyKeys("web", "worker")
-        .containsEntry(
-            "worker",
-            "java -Dloader.main=com.streamarr.transcode.worker.TranscodeWorkerApplication"
-                + " org.springframework.boot.loader.launch.PropertiesLauncher")
+  @DisplayName("Should ship only the server process when packaging the server image")
+  void shouldShipOnlyServerProcessWhenPackagingServerImage() throws IOException {
+    assertThat(processes())
+        .containsOnlyKeys("web")
         .hasEntrySatisfying(
             "web",
             web -> assertThat(web).endsWith("org.springframework.boot.loader.launch.JarLauncher"));

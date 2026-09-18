@@ -4,18 +4,34 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.fakes.FakeSegmentStore;
-import com.streamarr.transcode.tls.PemTlsIdentity;
 import com.streamarr.transcode.v1.ProbeRequest;
-import java.nio.file.Path;
 import java.util.UUID;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Worker Session Server Tests")
 class WorkerSessionServerTest {
+
+  @ParameterizedTest
+  @NullAndEmptySource
+  @ValueSource(strings = " ")
+  @DisplayName("Should reject listener configuration when its address is missing")
+  void shouldRejectListenerConfigurationWhenItsAddressIsMissing(String address) {
+    var defaults = WorkerSessionServerConfiguration.builder().port(0).build();
+    var probeTimeout = defaults.probeTimeout();
+    var cancellationTimeout = defaults.probeCancellationTimeout();
+
+    assertThatThrownBy(
+            () ->
+                new WorkerSessionServerConfiguration(address, 0, probeTimeout, cancellationTimeout))
+        .hasMessageContaining("address");
+  }
 
   @Test
   @DisplayName("Should reject a probe dispatch when the worker session server has not started")
@@ -27,17 +43,7 @@ class WorkerSessionServerTest {
   }
 
   private WorkerSessionServer unstartedServer() {
-    var configuration =
-        WorkerSessionServerConfiguration.builder()
-            .port(0)
-            .trustDomain("streamarr.test")
-            .tlsIdentity(
-                PemTlsIdentity.builder()
-                    .certificate(Path.of("unused-cert.pem"))
-                    .privateKey(Path.of("unused-key.pem"))
-                    .trustBundle(Path.of("unused-ca.pem"))
-                    .build())
-            .build();
+    var configuration = WorkerSessionServerConfiguration.builder().port(0).build();
     return new WorkerSessionServer(configuration, new FakeSegmentStore());
   }
 

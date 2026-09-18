@@ -1,6 +1,7 @@
 # Maven releases
 
 Release Please owns the Maven version, changelog, release tag, and GitHub release.
+The pinned reusable workflows in [`streamarr/streamarr-workflows`](https://github.com/streamarr/streamarr-workflows) own release automation, release validation, and final image publication. Server image builds and native checks stay in this repository.
 The architectural decision and alternatives are recorded in [ADR 0034](https://github.com/streamarr/streamarr-adr/pull/10).
 The serialized workflow runs after pushes to `main`; `always-update` refreshes the open release PR against the current base.
 Release PRs stay open until a maintainer chooses to merge them. The repository ruleset requires an up-to-date branch and successful build, Sonar, and Snyk checks.
@@ -17,15 +18,15 @@ Release Please also prepares the next Maven snapshot PR for auto-merge after its
 Choose the version and review the notes before merging. Each release records a fixed version and source revision; later commits belong to subsequent release PRs and do not move its tag.
 
 The release publisher checks that the tag is stable SemVer, the tagged commit belongs to `main`, and the POM version matches the tag.
-Both architectures build that validated commit and use its version in the image metadata and tags.
-Manual publishing retries require an already-published GitHub release and perform the same validation. A tag belonging to an unpublished draft is rejected.
+Both architectures build that validated commit locally and verify the server and Cedar engine before pushing a native image. The image metadata records the Maven version and Git revision. Native jobs upload digest receipts; the shared publisher combines those exact images after both jobs succeed. Main CI also waits for the arm64 HLS smoke check before its native push, and all required CI checks before final publication.
+Manual publishing retries require an already-published GitHub release and perform the same validation. Build actions come from the workflow revision, while application source comes from the validated tag; retries therefore use the current checks even when that tag predates the build workflow. A tag belonging to an unpublished draft is rejected.
 Only the current GitHub release can advance Docker's `latest` tag; retrying an older release preserves it.
 
 ## Setup
 
 - Enable repository auto-merge; retain the existing required-check ruleset and give the release App no bypass.
-- Create a dedicated, organization-owned release App with repository **Contents**, **Pull requests**, and **Issues** write permissions, installed only on `streamarr/streamarr-server`.
-- Store that App's credentials as `RELEASE_APP_CLIENT_ID` and `RELEASE_APP_PRIVATE_KEY`. Release automation requires these secrets and has no fallback to another App.
+- Create a dedicated, organization-owned release App with repository **Contents**, **Pull requests**, and **Issues** write permissions, installed on the Streamarr repositories that use release automation.
+- Store that App's credentials as `ORG_STREAMARR_RELEASE_CLIENT_ID` and `ORG_STREAMARR_RELEASE_PRIVATE_KEY`. Release automation requires these secrets and has no fallback to another App.
 - Keep the FFmpeg App's credentials and permissions separate. Rotate or revoke the release App's private keys independently.
 
 ## Migration from Release Drafter
@@ -52,11 +53,12 @@ Renovate explicitly uses semantic commits. Production Maven dependency updates u
 ## Verification and recovery
 
 ```sh
-./mvnw -Dtest=ReleaseAutomationTest,ReleasePublisherTest,ReleaseWorkflowTest test
+./mvnw -Dtest=ReleaseWorkflowTest,PackBuildActionTest,PackagedConfigurationTest,CiPipelineWorkflowTest test
+python3 -m unittest discover -s .github/actions/pack-build/test -p 'test_*.py'
 ```
 
-Workflow tests run the actual shell steps against fake external commands and temporary Git repositories. They cover snapshot-only auto-merge, pending-release recovery, version and revision validation, and image publication safeguards.
-The official action is pinned to a commit and maintained by Renovate. Upstream owns the Maven engine and its tests; this repository has no release SDK package or npm lockfile.
+Local tests cover workflow inputs and gates, build-before-push behavior, and native digest receipts. The shared repository tests snapshot-only auto-merge, pending-release recovery, release validation, and final image publication safeguards.
+Reusable workflows are pinned to a reviewed commit and maintained by Renovate. Merge the shared workflow change before adopting its commit here. The shared repository pins the official Release Please action; upstream owns the Maven engine and its tests.
 The action's documented `skip-github-pull-request` and `skip-github-release` inputs separate publication from PR preparation. Between those phases, **Verify merged releases were processed** checks for merged PRs still labeled `autorelease: pending` and fails with recovery instructions.
 
 Re-run **Release Please** with `workflow_dispatch` after an API failure; it reconciles already merged PRs and pending releases.

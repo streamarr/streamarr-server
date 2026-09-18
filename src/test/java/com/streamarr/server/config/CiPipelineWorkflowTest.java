@@ -13,6 +13,7 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.xpath.XPathFactory;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -102,12 +103,177 @@ class CiPipelineWorkflowTest {
         .isEmpty();
   }
 
+  @ParameterizedTest
+  @CsvSource({
+    "needs.changes.result, failure, Change detection failed",
+    "needs.changes.outputs.packaging, missing, Invalid packaging change result",
+    "needs.application.result, failure, Application verification failed",
+    "needs.application.result, skipped, Application verification failed",
+    "needs.application.result, cancelled, Application verification failed",
+    "needs.package_image.result, failure, Unexpected package image result"
+  })
+  @DisplayName("Should fail the required build when an applicable prerequisite is unsuccessful")
+  void shouldFailRequiredBuildWhenApplicablePrerequisiteIsUnsuccessful(
+      String key, String value, String message) throws Exception {
+    var context = successfulChecks();
+    context.put(key, value);
+
+    var result =
+        runBash(render(step("build", "Verify required checks").get("run").toString(), context));
+
+    assertThat(result.exitCode()).as(result.output()).isEqualTo(1);
+    assertThat(result.output()).contains(message);
+  }
+
+  @Test
+  @DisplayName("Should export the checked-in worker pin when CI has no image override")
+  void shouldExportCheckedInWorkerPinWhenCiHasNoImageOverride() throws Exception {
+    var script = temporaryDirectory.resolve(".github/actions/require-worker-image.sh");
+    Files.createDirectories(script.getParent());
+    Files.copy(Path.of(".github/actions/require-worker-image.sh"), script);
+    var expected =
+        "STREAMARR_WORKER_IMAGE=streamarr/streamarr-transcode-worker:0.2.0-SNAPSHOT@sha256:"
+            + "b".repeat(64)
+            + "\n";
+    Files.writeString(temporaryDirectory.resolve("worker-image.env"), expected);
+    var environment = temporaryDirectory.resolve("github-env");
+
+    var result =
+        runBash(
+            "unset STREAMARR_WORKER_IMAGE\nexport GITHUB_ENV='"
+                + environment
+                + "'\nbash '"
+                + script
+                + "'");
+
+    assertThat(result.exitCode()).as(result.output()).isZero();
+    assertThat(Files.readString(environment)).isEqualTo(expected);
+  }
+
+  @Test
+  @DisplayName("Should accept an immutable worker image when running required CI tests")
+  void shouldAcceptImmutableWorkerImageWhenRunningRequiredCiTests() throws Exception {
+    var command = step("application", "Require standalone worker image").get("run").toString();
+
+    var result =
+        runBash(
+            "export STREAMARR_WORKER_IMAGE=streamarr/streamarr-transcode-worker@sha256:"
+                + "a".repeat(64)
+                + "\n"
+                + command);
+
+    assertThat(result.exitCode()).as(result.output()).isZero();
+    assertThat(Files.readString(temporaryDirectory.resolve("github-env")))
+        .isEqualTo(
+            "STREAMARR_WORKER_IMAGE=streamarr/streamarr-transcode-worker@sha256:"
+                + "a".repeat(64)
+                + "\n");
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "streamarr/streamarr-transcode-worker:latest",
+    "streamarr/streamarr-transcode-worker:1.2.3",
+    "streamarr/streamarr-transcode-worker@sha256:abc123"
+  })
+  @DisplayName("Should reject an unpinned worker image when running required CI tests")
+  void shouldRejectUnpinnedWorkerImageWhenRunningRequiredCiTests(String image) throws Exception {
+    var command = step("application", "Require standalone worker image").get("run").toString();
+
+    var result = runBash("export STREAMARR_WORKER_IMAGE=" + image + "\n" + command);
+
+    assertThat(result.exitCode()).as(result.output()).isNotZero();
+    assertThat(result.output()).contains("immutable", "sha256");
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "refs/heads/main, false, true",
+    "refs/heads/main, true, true",
+    "refs/pull/389/merge, false, false",
+    "refs/pull/389/merge, true, true"
+  })
+  @DisplayName("Should build native images when main changes or pull request packaging changes")
+  void shouldBuildNativeImagesWhenMainChangesOrPullRequestPackagingChanges(
+      String ref, String packaging, boolean required) throws Exception {
+    var condition = job("package_image").get("if").toString();
+    var context = Map.of("github.ref", ref, "needs.changes.outputs.packaging", packaging);
+
+    var result = runBash("[[ " + substituteContext(condition, context) + " ]]");
+
+    assertThat(result.exitCode()).as(result.output()).isEqualTo(required ? 0 : 1);
+  }
+
+  @Test
+  @DisplayName("Should require packaging for main when reporting changed paths to the build gate")
+  void shouldRequirePackagingForMainWhenReportingChangedPathsToBuildGate() throws Exception {
+    assertThat(map(job("changes").get("outputs")))
+        .containsEntry(
+            "packaging",
+            "${{ github.ref == 'refs/heads/main' || steps.filter.outputs.packaging == 'true' }}");
+  }
+
+  @Test
+  @DisplayName("Should preserve main builds when workflow runs overlap")
+  void shouldPreserveMainBuildsWhenWorkflowRunsOverlap() throws Exception {
+    try (var input = Files.newInputStream(Path.of(".github/workflows/ci.yml"))) {
+      Map<String, Object> workflow = new Yaml().load(input);
+
+      assertThat(map(workflow.get("concurrency")))
+          .containsEntry("cancel-in-progress", "${{ github.ref != 'refs/heads/main' }}");
+    }
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "push, refs/heads/main, true",
+    "pull_request, refs/pull/389/merge, false",
+    "workflow_dispatch, refs/heads/main, false"
+  })
+  @DisplayName("Should publish snapshots only when reviewed main CI succeeds")
+  void shouldPublishSnapshotsOnlyWhenReviewedMainCiSucceeds(
+      String event, String ref, boolean publish) throws Exception {
+    assertThat(job("publish_snapshot"))
+        .containsEntry("needs", List.of("changes", "build", "package_image"));
+    var condition = job("publish_snapshot").get("if").toString();
+    var context = Map.of("github.event_name", event, "github.ref", ref);
+
+    var result = runBash("[[ " + substituteContext(condition, context) + " ]]");
+
+    assertThat(result.exitCode()).as(result.output()).isEqualTo(publish ? 0 : 1);
+    assertThat(job("publish_snapshot").get("uses").toString())
+        .matches("streamarr/streamarr-workflows/.github/workflows/publish-image.yml@[a-f0-9]{40}");
+    assertThat(map(job("publish_snapshot").get("with")))
+        .containsEntry("image-repository", "streamarr/streamarr-server")
+        .containsEntry("source-revision", "${{ github.sha }}")
+        .containsEntry("version", "${{ needs.changes.outputs.version }}")
+        .containsEntry("artifact-pattern", "server-image-*")
+        .containsEntry("publication-kind", "snapshot");
+    assertThat(map(job("publish_snapshot").get("secrets")))
+        .containsOnly(
+            Map.entry("dockerhub-username", "${{ secrets.DOCKERHUB_USERNAME }}"),
+            Map.entry("dockerhub-token", "${{ secrets.DOCKERHUB_TOKEN }}"));
+    assertThat(map(job("changes").get("outputs")))
+        .containsEntry("version", "${{ steps.image.outputs.version }}");
+  }
+
+  @Test
+  @DisplayName("Should aggregate every applicable CI result when verifying required build status")
+  void shouldAggregateEveryApplicableCiResultWhenVerifyingRequiredBuildStatus() throws Exception {
+    assertThat(job("package_image"))
+        .containsEntry("needs", "changes")
+        .containsEntry(
+            "if", "github.ref == 'refs/heads/main' || needs.changes.outputs.packaging == 'true'");
+    assertThat(job("build"))
+        .containsEntry("needs", List.of("changes", "application", "analysis", "package_image"))
+        .containsEntry("if", "${{ !cancelled() }}");
+  }
+
   private static Map<String, String> successfulChecks() {
     return new HashMap<>(
         Map.of(
             "needs.changes.result", "success",
             "needs.changes.outputs.packaging", "false",
-            "needs.ffmpeg_lock.result", "success",
             "needs.application.result", "success",
             "needs.package_image.result", "success",
             "needs.analysis.result", "success"));
@@ -171,11 +337,12 @@ class CiPipelineWorkflowTest {
 
   private CommandResult runBash(String command) throws Exception {
     var output = temporaryDirectory.resolve("command.log");
-    var process =
+    var builder =
         new ProcessBuilder("bash", "-e", "-c", command)
             .redirectErrorStream(true)
-            .redirectOutput(output.toFile())
-            .start();
+            .redirectOutput(output.toFile());
+    builder.environment().put("GITHUB_ENV", temporaryDirectory.resolve("github-env").toString());
+    var process = builder.start();
     assertThat(process.waitFor(10, TimeUnit.SECONDS)).as("CI command completed").isTrue();
     return new CommandResult(process.exitValue(), Files.readString(output));
   }

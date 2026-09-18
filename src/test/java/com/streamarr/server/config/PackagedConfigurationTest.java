@@ -7,17 +7,19 @@ import io.swagger.v3.oas.models.OpenAPI;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -109,7 +111,7 @@ class PackagedConfigurationTest {
         Files.readString(Path.of(".github/actions/pack-build/verify-cedar-image.sh"));
 
     assertThat(buildCommand)
-        .contains(".github/actions/pack-build/verify-cedar-image.sh \"${build_image}\"");
+        .contains("\"${ACTION_PATH}/verify-cedar-image.sh\" \"${build_image}\"");
     assertThat(verifyScript)
         .contains(
             "--enable-native-access=ALL-UNNAMED",
@@ -138,18 +140,25 @@ class PackagedConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should package FFmpeg through its launch buildpack when building an image")
-  void shouldPackageFfmpegThroughItsLaunchBuildpackWhenBuildingAnImage() throws IOException {
+  @DisplayName("Should avoid a Node runtime dependency when packaging the server image")
+  void shouldAvoidNodeRuntimeDependencyWhenPackagingServerImage() {
+    assertThat(Path.of(".nvmrc")).doesNotExist();
+    assertThat(Path.of(".node-version")).doesNotExist();
+  }
+
+  @Test
+  @DisplayName("Should exclude media executables when packaging the server image")
+  void shouldExcludeMediaExecutablesWhenPackagingServerImage() throws IOException {
     var action = yaml(".github/actions/pack-build/action.yml");
-    var steps = listOfMaps(map(action.get("runs")).get("steps"));
-    var buildStep = stepNamed(steps, "Build with pack CLI");
+    var buildStep =
+        stepNamed(listOfMaps(map(action.get("runs")).get("steps")), "Build with pack CLI");
     var buildCommand = (String) buildStep.get("run");
 
-    assertThat(buildCommand).contains("--buildpack ./buildpacks/ffmpeg");
-    assertThat(steps).noneMatch(step -> "Install pinned FFmpeg runtime".equals(step.get("name")));
-    assertThat(buildCommand).doesNotContain(".profile", "BP_INCLUDE_FILES=.ffmpeg");
-    assertThat(Path.of(".profile")).doesNotExist();
-    assertThat(Path.of(".github/actions/pack-build/install-ffmpeg.sh")).doesNotExist();
+    assertThat(buildCommand)
+        .doesNotContain("buildpacks/ffmpeg")
+        .contains("${ACTION_PATH}/verify-server-image.sh");
+    assertThat(Path.of("buildpacks/ffmpeg/buildpack.toml")).doesNotExist();
+    assertThat(Path.of("buildpacks/ffmpeg/bin/build")).doesNotExist();
   }
 
   @Test
@@ -178,7 +187,7 @@ class PackagedConfigurationTest {
     var releaseBuild = map(map(releaseWorkflow.get("jobs")).get("build_release_images"));
     var releasePackStep =
         listOfMaps(releaseBuild.get("steps")).stream()
-            .filter(step -> "./.github/actions/pack-build".equals(step.get("uses")))
+            .filter(step -> "$/.github/actions/pack-build".equals(step.get("uses")))
             .findFirst()
             .orElseThrow();
 
@@ -210,7 +219,7 @@ class PackagedConfigurationTest {
     var steps = listOfMaps(packageImage.get("steps"));
     var packStep =
         steps.stream()
-            .filter(step -> "./.github/actions/pack-build".equals(step.get("uses")))
+            .filter(step -> "$/.github/actions/pack-build".equals(step.get("uses")))
             .findFirst()
             .orElseThrow();
 
@@ -220,43 +229,49 @@ class PackagedConfigurationTest {
             Map.of("architecture", "amd64", "runner", "ubuntu-24.04"),
             Map.of("architecture", "arm64", "runner", "ubuntu-24.04-arm"));
     assertThat(map(packStep.get("with")))
-        .containsEntry("publish", "false")
-        .doesNotContainKeys("dockerhub-username", "dockerhub-token");
-  }
-
-  @Test
-  @DisplayName("Should publish build when registry cache is used")
-  void shouldPublishBuildWhenRegistryCacheIsUsed() throws IOException {
-    var action = yaml(".github/actions/pack-build/action.yml");
-    var buildStep =
-        stepNamed(listOfMaps(map(action.get("runs")).get("steps")), "Build with pack CLI");
-    var cachedBuilds =
-        packBuildCommands((String) buildStep.get("run")).stream()
-            .filter(command -> command.contains("--cache-image"))
-            .toList();
-
-    assertThat(cachedBuilds)
-        .as("Pack requires every cached build to publish directly to its candidate image")
-        .isNotEmpty()
-        .allMatch(command -> command.contains("--publish"));
-  }
-
-  @Test
-  @DisplayName(
-      "Should publish immutable release image before latest when release architectures are verified")
-  void shouldPublishImmutableReleaseImageBeforeLatestWhenReleaseArchitecturesAreVerified()
-      throws IOException {
-    var workflow = yaml(".github/workflows/publish-release.yml");
-    var publishRelease = map(map(workflow.get("jobs")).get("publish_release"));
-    var stepNames =
-        listOfMaps(publishRelease.get("steps")).stream().map(step -> step.get("name")).toList();
-
-    assertThat(publishRelease)
-        .containsEntry("needs", List.of("validate_release", "build_release_images"));
-    assertThat(stepNames)
+        .containsEntry("image-version", "${{ needs.changes.outputs.version }}");
+    assertThat(steps.stream().map(step -> step.get("name")).toList())
         .containsSubsequence(
-            "Publish immutable multi-architecture image",
-            "Publish latest multi-architecture image");
+            "Build and verify package image",
+            "Run HLS smoke tests",
+            "Login to Docker Hub",
+            "Publish verified native image",
+            "Upload verified native image");
+    assertThat(map(stepNamed(steps, "Publish verified native image").get("with")))
+        .containsEntry("image", "${{ steps.package.outputs.image }}")
+        .containsEntry("architecture", "${{ matrix.architecture }}");
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "push, refs/heads/main, true",
+    "push, refs/heads/feature, false",
+    "pull_request, refs/pull/389/merge, false",
+    "pull_request, refs/heads/main, false",
+    "workflow_dispatch, refs/heads/main, false"
+  })
+  @DisplayName("Should publish verified native images only when building a reviewed main push")
+  void shouldPublishVerifiedNativeImagesOnlyWhenBuildingReviewedMainPush(
+      String event, String ref, boolean publish) throws Exception {
+    var workflow = yaml(".github/workflows/ci.yml");
+    var packageImage = map(map(workflow.get("jobs")).get("package_image"));
+    var publishStep =
+        stepNamed(listOfMaps(packageImage.get("steps")), "Publish verified native image");
+    var expression =
+        publishStep
+            .get("if")
+            .toString()
+            .replace("${{", "")
+            .replace("}}", "")
+            .replace("github.event_name", "'" + event + "'")
+            .replace("github.ref", "'" + ref + "'");
+
+    var process = new ProcessBuilder("bash", "-c", "[[ " + expression + " ]]").start();
+
+    assertThat(process.waitFor(10, TimeUnit.SECONDS))
+        .as("Publication condition completed")
+        .isTrue();
+    assertThat(process.exitValue()).isEqualTo(publish ? 0 : 1);
   }
 
   @Test
@@ -301,7 +316,7 @@ class PackagedConfigurationTest {
     var architectures = listOfMaps(matrix.get("include"));
     var buildStep =
         listOfMaps(buildReleaseImages.get("steps")).stream()
-            .filter(step -> "./.github/actions/pack-build".equals(step.get("uses")))
+            .filter(step -> "$/.github/actions/pack-build".equals(step.get("uses")))
             .findFirst()
             .orElseThrow();
 
@@ -310,19 +325,17 @@ class PackagedConfigurationTest {
         .containsExactlyInAnyOrder(
             Map.of("architecture", "amd64", "runner", "ubuntu-24.04"),
             Map.of("architecture", "arm64", "runner", "ubuntu-24.04-arm"));
-    assertThat(map(buildStep.get("with"))).containsEntry("publish", "true");
-  }
-
-  @Test
-  @DisplayName("Should ship an opt-in Docker Compose worker path when packaged")
-  void shouldShipOptInDockerComposeWorkerPathWhenPackaged() throws IOException {
-    var deployment = Files.readString(Path.of("deploy/compose/distributed-transcoding.yml"));
-
-    assertThat(deployment)
-        .contains(
-            "entrypoint: worker",
-            "STREAMING_REMOTE_ENABLED: \"true\"",
-            "TRANSCODE_WORKER_CONTROL_PLANE_HOST: streamarr-server");
+    assertThat(map(buildStep.get("with")))
+        .containsEntry("image-version", "${{ needs.validate_release.outputs.version }}");
+    assertThat(
+            listOfMaps(buildReleaseImages.get("steps")).stream()
+                .map(step -> step.get("name"))
+                .toList())
+        .containsSubsequence(
+            "Build and verify package image",
+            "Login to Docker Hub",
+            "Publish verified native image",
+            "Upload verified native image");
   }
 
   @Test
@@ -339,14 +352,67 @@ class PackagedConfigurationTest {
       "Should ship a single-server Kubernetes path with per-pod worker identity when packaged")
   void shouldShipSingleServerKubernetesPathWithPerPodWorkerIdentityWhenPackaged()
       throws IOException {
-    var deployment = Files.readString(Path.of("deploy/kubernetes/distributed-transcoding.yaml"));
+    var yaml = Files.readString(Path.of("deploy/kubernetes/distributed-transcoding.yaml"));
+    var mapper = new ObjectMapper();
+    var resources =
+        StreamSupport.stream(new Yaml().loadAll(yaml).spliterator(), false)
+            .<JsonNode>map(mapper::valueToTree)
+            .collect(
+                Collectors.toMap(
+                    node ->
+                        node.path("kind").asString()
+                            + "/"
+                            + node.path("metadata").path("name").asString(),
+                    node -> node));
+    assertThat(resources)
+        .containsKeys(
+            "Deployment/streamarr-server",
+            "Deployment/streamarr-transcode-worker",
+            "AuthorizationPolicy/streamarr-worker-sessions");
+    var server = resources.get("Deployment/streamarr-server").path("spec");
+    assertThat(server.path("replicas").asInt()).as("server replicas").isEqualTo(1);
+    assertThat(server.path("strategy").path("type").asString()).isEqualTo("Recreate");
 
-    assertThat(deployment)
-        .contains(
-            "replicas: 1",
-            "replicas: 2",
-            "fieldPath: metadata.uid",
-            "spiffe://streamarr.example/streamarr/worker/${POD_UID}");
+    var worker = resources.get("Deployment/streamarr-transcode-worker").path("spec");
+    assertThat(worker.path("replicas").asInt()).as("worker replicas").isEqualTo(2);
+    var workerPod = worker.path("template").path("spec");
+    assertThat(workerPod.path("serviceAccountName").asString())
+        .isEqualTo("streamarr-transcode-worker");
+    assertThat(workerPod.path("containers"))
+        .filteredOn(container -> container.path("name").asString().equals("worker"))
+        .singleElement()
+        .satisfies(
+            container ->
+                assertThat(container.path("env"))
+                    .filteredOn(env -> env.path("name").asString().equals("TRANSCODE_WORKER_ID"))
+                    .singleElement()
+                    .satisfies(
+                        identity -> {
+                          assertThat(identity.has("value")).isFalse();
+                          assertThat(
+                                  identity
+                                      .path("valueFrom")
+                                      .path("fieldRef")
+                                      .path("fieldPath")
+                                      .asString())
+                              .isEqualTo("metadata.uid");
+                        }));
+    var policy = resources.get("AuthorizationPolicy/streamarr-worker-sessions").path("spec");
+    assertThat(policy.path("action").asString()).isEqualTo("DENY");
+    assertThat(
+            policy.path("selector").path("matchLabels").path("app.kubernetes.io/name").asString())
+        .isEqualTo("streamarr-server");
+    assertThat(policy.path("rules"))
+        .singleElement()
+        .satisfies(
+            rule -> {
+              assertThat(rule.path("from").path(0).path("source").path("notPrincipals"))
+                  .extracting(JsonNode::asString)
+                  .containsExactly("cluster.local/ns/streamarr/sa/streamarr-transcode-worker");
+              assertThat(rule.path("to").path(0).path("operation").path("ports"))
+                  .extracting(JsonNode::asString)
+                  .containsExactly("9090");
+            });
   }
 
   private static Map<String, Object> yaml(String file) throws IOException {
@@ -371,25 +437,6 @@ class PackagedConfigurationTest {
         .filter(step -> expectedName.equals(step.get("name")))
         .findFirst()
         .orElseThrow();
-  }
-
-  private static List<String> packBuildCommands(String script) {
-    var commands = new ArrayList<String>();
-    var command = new StringBuilder();
-
-    for (var line : script.lines().toList()) {
-      if (command.isEmpty() && !line.stripLeading().startsWith("pack build ")) {
-        continue;
-      }
-
-      command.append(' ').append(line.strip());
-      if (!line.stripTrailing().endsWith("\\")) {
-        commands.add(command.toString());
-        command.setLength(0);
-      }
-    }
-
-    return commands;
   }
 
   private static Set<String> dependencyPins(Pattern pattern, String content) {

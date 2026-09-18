@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+import json
+import os
+import sys
+from pathlib import Path
+
+path = Path(os.environ['FAKE_DOCKER'])
+state = json.loads(path.read_text())
+args = sys.argv[1:]
+if args[0] == 'tag':
+    state['local'][args[2]] = state['local'][args[1]]
+elif args[0] == 'push':
+    if os.environ.get('PUSH_FAILURE') == 'true':
+        sys.exit(23)
+    state['registry'][args[1]] = state['local'][args[1]]
+elif args[:2] == ['image', 'inspect']:
+    image = state['registry'][args[-1]]
+    print('streamarr/streamarr-server@' + image['digest'])
+else:
+    sys.exit(81)
+path.write_text(json.dumps(state))

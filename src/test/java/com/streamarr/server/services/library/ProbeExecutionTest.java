@@ -9,6 +9,8 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.ProbeContainer;
+import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
+import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fakes.FakeFfprobeService;
@@ -73,7 +75,47 @@ class ProbeExecutionTest {
               assertThat(publication.mediaFileId()).isEqualTo(mediaFile.getId());
               assertThat(publication.snapshot()).isEqualTo(request.snapshot());
               assertThat(publication.probeVersion()).isEqualTo(ProbeVersion.CURRENT);
-              assertThat(publication.outcome()).isEqualTo(producer.probe(source));
+              assertThat(publication.outcome()).isEqualTo(producer.probe(anyRequestFor(source)));
+            });
+  }
+
+  @Test
+  @DisplayName("Should carry the source and requested version with a fresh attempt id when probing")
+  void shouldCarryTheSourceAndRequestedVersionWithAFreshAttemptIdWhenProbing() {
+    var request = request(ProbeVersion.CURRENT);
+    var execution = execution();
+    producer.runDuringProbe(
+        () -> {
+          throw new ProbeExecutionException("worker disconnected");
+        });
+
+    assertThatThrownBy(() -> execution.execute(request))
+        .isInstanceOf(ProbeExecutionException.class)
+        .hasMessage("worker disconnected");
+    assertThat(outcomes.findByMediaFileId(mediaFile.getId())).isEmpty();
+    var failedAttempt = producer.lastRequest().orElseThrow().attemptId();
+
+    producer.runDuringProbe(() -> {});
+    var result = execution.execute(request);
+
+    assertThat(result).isEqualTo(new ProbeExecutionResult.Completed());
+    assertThat(producer.lastRequest())
+        .hasValueSatisfying(
+            invoked -> {
+              assertThat(invoked.sourcePath()).isEqualTo(source);
+              assertThat(invoked.probeVersion()).isEqualTo(ProbeVersion.CURRENT);
+              assertThat(invoked.attemptId()).isNotNull().isNotEqualTo(failedAttempt);
+            });
+    assertThat(outcomes.findByMediaFileId(mediaFile.getId()))
+        .hasValueSatisfying(
+            stored -> {
+              assertThat(stored.getSnapshot()).isEqualTo(request.snapshot());
+              assertThat(stored.getProbeVersion()).isEqualTo(ProbeVersion.CURRENT);
+              assertThat(stored.getProbeError()).isEmpty();
+              assertThat(stored.getOutcome())
+                  .isInstanceOfSatisfying(
+                      ProbeOutcome.Success.class,
+                      success -> assertThat(success.mediaProbe().videoCodec()).isEqualTo("h264"));
             });
   }
 
@@ -215,6 +257,14 @@ class ProbeExecutionTest {
         .filepathUri(mediaFile.getFilepathUri())
         .snapshot(snapshot(source))
         .probeVersion(probeVersion)
+        .build();
+  }
+
+  private static ProbeExecutionRequest anyRequestFor(Path path) {
+    return ProbeExecutionRequest.builder()
+        .sourcePath(path)
+        .attemptId(UUID.randomUUID())
+        .probeVersion(ProbeVersion.CURRENT)
         .build();
   }
 

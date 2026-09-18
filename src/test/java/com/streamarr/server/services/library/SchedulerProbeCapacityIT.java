@@ -17,6 +17,7 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
@@ -237,12 +238,13 @@ class SchedulerProbeCapacityIT extends AbstractIntegrationTest {
     private final AtomicInteger peak = new AtomicInteger();
 
     @Override
-    public ProbeOutcome probe(Path path) {
+    public ProbeOutcome probe(ProbeExecutionRequest request) {
+      var path = request.sourcePath();
       peak.accumulateAndGet(active.incrementAndGet(), Math::max);
       started.computeIfAbsent(path, _ -> new CompletableFuture<>()).complete(null);
       try {
         release.await();
-        return delegate.probe(path);
+        return delegate.probe(request);
       } catch (InterruptedException exception) {
         Thread.currentThread().interrupt();
         throw new ProbeExecutionException(exception);

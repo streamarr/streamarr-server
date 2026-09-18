@@ -18,6 +18,7 @@ import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
@@ -43,6 +44,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -213,6 +215,29 @@ class HlsStreamingServiceTest {
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     assertThat(session.getTranscodeDecision()).isNotNull();
+  }
+
+  @Test
+  @DisplayName("Should downmix stereo audio to mono when the client supports only one channel")
+  void shouldDownmixStereoAudioToMonoWhenTheClientSupportsOnlyOneChannel() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().audioChannels(OptionalInt.of(2)).build());
+    var file = seedMediaFile();
+    var options =
+        StreamingOptions.builder()
+            .supportedCodecs(List.of("av1"))
+            .supportedAudioCodecs(List.of("aac"))
+            .maxAudioChannels(1)
+            .build();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.FULL_TRANSCODE);
+    var audio = session.getTranscodeDecision().audioDecision();
+    assertThat(audio.mode()).isEqualTo(AudioMode.TRANSCODE);
+    assertThat(audio.codec()).isEqualTo("aac");
+    assertThat(audio.channels()).isEqualTo(1);
+    assertThat(audio.bitrate()).isEqualTo(64_000L);
   }
 
   @Test
@@ -460,6 +485,25 @@ class HlsStreamingServiceTest {
     var session = createSession(file.getId(), UUID.randomUUID(), remuxOptions);
 
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+  }
+
+  @Test
+  @DisplayName("Should reject remux session creation when no worker slot is available")
+  void shouldRejectRemuxSessionCreationWhenNoWorkerSlotIsAvailable() {
+    var file = seedMediaFile();
+    transcodeExecutor.setAvailableSlots(0);
+    var command =
+        CreateStreamSessionCommand.builder()
+            .mediaFileId(file.getId())
+            .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
+            .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
+            .build();
+
+    assertThat(service.createSession(command))
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(service.getActiveSessionCount()).isZero();
+    assertThat(transcodeExecutor.getRunningCount()).isZero();
   }
 
   @Test

@@ -1,8 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
-import static com.streamarr.server.fixtures.RemoteWorkerFixtures.remuxEngine;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
-import static com.streamarr.server.fixtures.RemoteWorkerFixtures.workerConfigurationBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackAuthorityFor;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -17,19 +15,15 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
-import com.streamarr.server.fakes.FakeFfmpegProcessManager;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
-import com.streamarr.server.fakes.FakeSegmentProducingFfmpegProcessManager;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.services.streaming.SegmentDelivery;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
-import com.streamarr.transcode.worker.TranscodeWorker;
-import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -76,8 +70,8 @@ class RemoteRecoveryIT {
                   .executor(executor)
                   .build());
 
-      try (var failingWorker = worker(mediaRoot, new FailingFfmpegProcessManager())) {
-        failingWorker.start("localhost", server.port());
+      try (var failingWorker = workerBuilder(server, mediaRoot).ffmpegScript("exit 73\n").build()) {
+        failingWorker.start();
         var handle = executor.start(transcodeRequest(streamSessionId, mediaFile));
         rig.session().setHandle(handle);
         await()
@@ -86,10 +80,10 @@ class RemoteRecoveryIT {
       }
 
       try (var healthyWorker =
-          worker(
-              mediaRoot,
-              new FakeSegmentProducingFfmpegProcessManager(Map.of("segment0.ts", segmentData)))) {
-        healthyWorker.start("localhost", server.port());
+          workerBuilder(server, mediaRoot)
+              .ffmpegScript(WorkerContainerFixture.emitSegments(Map.of("segment0.ts", segmentData)))
+              .build()) {
+        healthyWorker.start();
         await()
             .atMost(5, TimeUnit.SECONDS)
             .until(() -> !server.eligibleWorkers(SOURCE_NAMESPACE_ID).isEmpty());
@@ -115,9 +109,9 @@ class RemoteRecoveryIT {
     var streamSessionId = UUID.randomUUID();
 
     try (var server = server(segmentStore);
-        var failingWorker = worker(mediaRoot, new FailingFfmpegProcessManager())) {
+        var failingWorker = workerBuilder(server, mediaRoot).ffmpegScript("exit 73\n").build()) {
       server.start();
-      failingWorker.start("localhost", server.port());
+      failingWorker.start();
       var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
       var rig =
           recoveryRig(
@@ -180,19 +174,17 @@ class RemoteRecoveryIT {
     return new RecoveryRig(rig.coordinator(), session);
   }
 
-  private WorkerSessionServer server(LocalSegmentStore segmentStore) throws URISyntaxException {
-    return new WorkerSessionServer(serverConfigurationBuilder().build(), segmentStore);
+  private WorkerSessionServer server(LocalSegmentStore segmentStore) {
+    return new WorkerSessionServer(
+        serverConfigurationBuilder().address("127.0.0.1").build(), segmentStore);
   }
 
-  private TranscodeWorker worker(Path mediaRoot, FakeFfmpegProcessManager processManager)
-      throws URISyntaxException {
-    var configuration =
-        workerConfigurationBuilder()
-            .availableSlots(1)
-            .sourceNamespaces(Map.of(SOURCE_NAMESPACE_ID, mediaRoot))
-            .segmentBasePath(tempDir.resolve("worker-segments"))
-            .build();
-    return new TranscodeWorker(configuration, remuxEngine(processManager));
+  private WorkerContainerFixture.WorkerContainerFixtureBuilder workerBuilder(
+      WorkerSessionServer server, Path mediaRoot) {
+    return WorkerContainerFixture.builder()
+        .workerSessions(server)
+        .sourceNamespaceId(SOURCE_NAMESPACE_ID)
+        .sourceRoot(mediaRoot);
   }
 
   private TranscodeRequest transcodeRequest(UUID streamSessionId, Path mediaFile) {
@@ -218,14 +210,5 @@ class RemoteRecoveryIT {
         .containerFormat(ContainerFormat.MPEGTS)
         .needsKeyframeAlignment(true)
         .build();
-  }
-
-  private static final class FailingFfmpegProcessManager extends FakeFfmpegProcessManager {
-
-    @Override
-    public Process startProcess(
-        UUID sessionId, String variantLabel, List<String> command, Path workingDirectory) {
-      throw new IllegalStateException("Simulated worker transcode startup failure");
-    }
   }
 }

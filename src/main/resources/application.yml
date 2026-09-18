@@ -76,15 +76,14 @@ streaming:
   session-retention: ${STREAMING_SESSION_RETENTION:24h}
   producer-stall-threshold: ${STREAMING_PRODUCER_STALL_THRESHOLD:10s}
   segment-base-path: ${STREAMING_SEGMENT_BASE_PATH:}
+  worker-session:
+    address: ${STREAMING_WORKER_SESSION_ADDRESS:127.0.0.1}
+    port: ${STREAMING_WORKER_SESSION_PORT:9090}
+    probe-timeout: ${STREAMING_WORKER_SESSION_PROBE_TIMEOUT:1m}
+    probe-cancellation-timeout: ${STREAMING_WORKER_SESSION_PROBE_CANCELLATION_TIMEOUT:5s}
   remote:
-    enabled: ${STREAMING_REMOTE_ENABLED:false}
-    port: ${STREAMING_REMOTE_PORT:9090}
-    trust-domain: ${STREAMING_REMOTE_TRUST_DOMAIN:}
     source-namespace-id: ${STREAMING_REMOTE_SOURCE_NAMESPACE_ID:}
     source-root: ${STREAMING_REMOTE_SOURCE_ROOT:}
-    certificate: ${STREAMING_REMOTE_CERTIFICATE:}
-    private-key: ${STREAMING_REMOTE_PRIVATE_KEY:}
-    trust-bundle: ${STREAMING_REMOTE_TRUST_BUNDLE:}
   watch-progress:
     min-played-percent: ${STREAMING_WATCH_PROGRESS_MIN_RESUME_PERCENT:5.0}
     max-played-percent: ${STREAMING_WATCH_PROGRESS_MAX_RESUME_PERCENT:90.0}
