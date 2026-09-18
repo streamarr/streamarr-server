@@ -55,8 +55,8 @@ class ReleaseWorkflowTest {
   }
 
   @Test
-  @DisplayName("Should pin both image architectures to the validated release revision")
-  void shouldPinBothImageArchitecturesToValidatedReleaseRevision() throws Exception {
+  @DisplayName("Should pin both image architectures when building a validated release")
+  void shouldPinBothImageArchitecturesWhenBuildingAValidatedRelease() throws Exception {
     var build = map(jobs("publish-release").get("build_release_images"));
     assertThat(build).containsEntry("needs", "validate_release");
     var steps = steps(build);

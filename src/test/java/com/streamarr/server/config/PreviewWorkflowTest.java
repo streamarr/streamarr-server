@@ -17,8 +17,8 @@ import org.yaml.snakeyaml.Yaml;
 class PreviewWorkflowTest {
 
   @Test
-  @DisplayName("Should build untrusted preview images without write access or secrets")
-  void shouldBuildUntrustedPreviewImagesWithoutWriteAccessOrSecrets() throws IOException {
+  @DisplayName("Should build without write access or secrets when preparing a preview image")
+  void shouldBuildWithoutWriteAccessOrSecretsWhenPreparingAPreviewImage() throws IOException {
     var workflow = yaml(".github/workflows/preview.yml");
     var build = map(map(workflow.get("jobs")).get("build_preview"));
     var buildStep =
