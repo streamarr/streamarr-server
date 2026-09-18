@@ -151,8 +151,6 @@ jobs:
     name: Verify combined coverage and analyze
     needs: application
     runs-on: ubuntu-latest
-    env:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -190,19 +188,33 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      # Fork and Dependabot pull requests cannot see secrets; their code is analyzed once it
+      # reaches main. Everywhere else a missing token fails the build rather than skipping the gate.
       - name: Cache SonarCloud packages
-        if: env.SONAR_TOKEN != '' && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')
+        if: >-
+          (github.event_name != 'pull_request' && github.ref == 'refs/heads/main') ||
+          (github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          github.actor != 'dependabot[bot]')
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar
           restore-keys: ${{ runner.os }}-sonar
 
-      - name: SonarCloud analysis
-        if: env.SONAR_TOKEN != '' && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')
+      - name: Analyze coverage and require the SonarCloud quality gate
+        if: >-
+          (github.event_name != 'pull_request' && github.ref == 'refs/heads/main') ||
+          (github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          github.actor != 'dependabot[bot]')
         env:
+          SONAR_TOKEN: ${{ secrets.ORG_SONAR_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./mvnw --batch-mode org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
+        run: |
+          : "${SONAR_TOKEN:?Grant this repository access to ORG_SONAR_TOKEN and map it to SONAR_TOKEN}"
+          ./mvnw --batch-mode org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+            -Dsonar.qualitygate.wait=true
 
   package_image:
     name: Build and verify ${{ matrix.architecture }} package image
