@@ -36,6 +36,11 @@ client() {
     com.streamarr.server.fixtures.mesh.MeshValidationClient "$@"
 }
 
+server_pod_ip() {
+  kubectl -n streamarr get pods,endpointslices -o json \
+    | python3 deploy/kubernetes/test/ready-pod-ip.py
+}
+
 restart_server() {
   # A fresh proxy receives the policy before accepting traffic.
   kubectl -n streamarr rollout restart deployment/streamarr-server >> "$runtime/apply.log"
@@ -68,21 +73,24 @@ verify_unprotected_connections() {
   client authorized-worker allowed streamarr-server | tee "$runtime/baseline-allowed.log"
   client other-worker allowed streamarr-server | tee "$runtime/baseline-other-account.log"
   client unmeshed-worker allowed streamarr-server | tee "$runtime/baseline-unmeshed-service.log"
-  server_ip=$(kubectl -n streamarr get pod -l app.kubernetes.io/name=streamarr-server \
-    -o jsonpath='{.items[0].status.podIP}')
+  server_ip=$(server_pod_ip)
   client unmeshed-worker allowed "$server_ip" | tee "$runtime/baseline-unmeshed-pod.log"
 }
 
 verify_worker_policy() {
   kubectl apply -f "$runtime/policies.json" >> "$runtime/apply.log"
   restart_server
-  server_ip=$(kubectl -n streamarr get pod -l app.kubernetes.io/name=streamarr-server \
-    -o jsonpath='{.items[0].status.podIP}')
+  server_ip=$(server_pod_ip)
 
   client authorized-worker allowed streamarr-server | tee "$runtime/authorized.log"
   client other-worker PERMISSION_DENIED streamarr-server | tee "$runtime/wrong-account.log"
   client unmeshed-worker UNAVAILABLE streamarr-server | tee "$runtime/unmeshed-service.log"
+  # Direct Pod-IP traffic has no automatic mTLS. Prove the Service routes to this exact Pod.
+  client authorized-worker registered streamarr-server | tee "$runtime/authorized-pod.log"
+  test "$(server_pod_ip)" = "$server_ip"
   client unmeshed-worker UNAVAILABLE "$server_ip" | tee "$runtime/unmeshed.log"
+  client authorized-worker registered streamarr-server | tee "$runtime/authorized-pod-after-denial.log"
+  test "$(server_pod_ip)" = "$server_ip"
   client unmeshed-worker http "$server_ip" | tee "$runtime/http-direct.log"
   client other-worker http streamarr-server | tee "$runtime/http-service.log"
   client authorized-worker allowed streamarr-server | tee "$runtime/authorized-after-denials.log"
@@ -100,10 +108,13 @@ verify_existing_mtls_policy() {
   kubectl delete -f deploy/kubernetes/test/existing-api-policy.yaml >> "$runtime/apply.log"
   kubectl apply -f deploy/kubernetes/test/existing-mtls-policy.yaml >> "$runtime/apply.log"
   restart_server
-  server_ip=$(kubectl -n streamarr get pod -l app.kubernetes.io/name=streamarr-server \
-    -o jsonpath='{.items[0].status.podIP}')
+  server_ip=$(server_pod_ip)
   client authorized-worker allowed streamarr-server | tee "$runtime/existing-mtls-allowed.log"
-  client unmeshed-worker tls-required "$server_ip" | tee "$runtime/existing-mtls-denied.log"
+  client authorized-worker http streamarr-server | tee "$runtime/existing-mtls-http-control.log"
+  test "$(server_pod_ip)" = "$server_ip"
+  client unmeshed-worker tls-required "http://$server_ip:8080/health" | tee "$runtime/existing-mtls-denied.log"
+  client authorized-worker http streamarr-server | tee "$runtime/existing-mtls-http-after-denial.log"
+  test "$(server_pod_ip)" = "$server_ip"
 }
 
 verify_uploaded_segment() {
@@ -140,7 +151,11 @@ verify_real_worker() {
   verify_uploaded_segment
   client other-worker PERMISSION_DENIED streamarr-server | tee "$runtime/media-wrong-account.log"
   client unmeshed-worker UNAVAILABLE streamarr-server | tee "$runtime/media-unmeshed-service.log"
+  client authorized-worker registered streamarr-server | tee "$runtime/media-pod-control.log"
+  test "$(server_pod_ip)" = "$server_ip"
   client unmeshed-worker UNAVAILABLE "$server_ip" | tee "$runtime/media-unmeshed-pod.log"
+  client authorized-worker registered streamarr-server | tee "$runtime/media-pod-after-denial.log"
+  test "$(server_pod_ip)" = "$server_ip"
   echo "GREEN: real worker Actuator probes, media probe, and decoded HLS upload through Istio"
 }
 

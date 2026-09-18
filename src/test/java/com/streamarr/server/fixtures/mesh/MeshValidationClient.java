@@ -18,10 +18,12 @@ import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.MetadataUtils;
 import io.grpc.stub.StreamObserver;
 import java.io.IOException;
+import java.net.ConnectException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -79,6 +81,12 @@ public final class MeshValidationClient {
       session.requests =
           TranscodeWorkerServiceGrpc.newStub(channel).establishWorkerSession(session);
       session.register(workerId);
+      if (mode.equals("registered")) {
+        session.accepted.get(10, TimeUnit.SECONDS);
+        System.out.println("WORKER_REGISTERED");
+        return;
+      }
+
       if (mode.equals("allowed")) {
         session.accepted.get(10, TimeUnit.SECONDS);
         requireHttpResponse("http://" + host + ":8080/probe", "PROBE_COMPLETED");
@@ -153,11 +161,14 @@ public final class MeshValidationClient {
     }
   }
 
-  private static void requireHttpTls(String host) throws Exception {
+  private static void requireHttpTls(String address) throws Exception {
     try {
-      requireHttpResponse("http://" + host + ":8080/health", "HTTP_ACCESS_OK");
+      requireHttpResponse(address, "HTTP_ACCESS_OK");
+    } catch (ConnectException | HttpTimeoutException failure) {
+      throw new IllegalStateException(
+          "Mesh target unavailable. TLS enforcement was not verified", failure);
     } catch (IOException _) {
-      System.out.println("HTTP_TLS_REQUIRED");
+      System.out.println("HTTP_PLAINTEXT_REJECTED");
       return;
     }
 

@@ -19,6 +19,19 @@ import org.junit.jupiter.params.provider.ValueSource;
 class MeshValidationClientTest {
 
   @Test
+  @DisplayName("Should reject a TLS enforcement claim when the target cannot resolve")
+  void shouldRejectTlsEnforcementClaimWhenTargetCannotResolve() {
+    assertThatThrownBy(
+            () ->
+                MeshValidationClient.main(
+                    new String[] {
+                      "tls-required", "http://missing-mesh-validation.invalid:8080/health"
+                    }))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("unavailable");
+  }
+
+  @Test
   @DisplayName("Should confirm HTTP denial when the endpoint returns forbidden")
   void shouldConfirmHttpDenialWhenTheEndpointReturnsForbidden() throws Exception {
     try (var endpoint = HttpEndpoint.builder().status(403).build()) {
