@@ -163,6 +163,11 @@ class CiPipelineWorkflowTest {
                 + command);
 
     assertThat(result.exitCode()).as(result.output()).isZero();
+    assertThat(Files.readString(temporaryDirectory.resolve("github-env")))
+        .isEqualTo(
+            "STREAMARR_WORKER_IMAGE=streamarr/streamarr-transcode-worker@sha256:"
+                + "a".repeat(64)
+                + "\n");
   }
 
   @ParameterizedTest
@@ -332,11 +337,12 @@ class CiPipelineWorkflowTest {
 
   private CommandResult runBash(String command) throws Exception {
     var output = temporaryDirectory.resolve("command.log");
-    var process =
+    var builder =
         new ProcessBuilder("bash", "-e", "-c", command)
             .redirectErrorStream(true)
-            .redirectOutput(output.toFile())
-            .start();
+            .redirectOutput(output.toFile());
+    builder.environment().put("GITHUB_ENV", temporaryDirectory.resolve("github-env").toString());
+    var process = builder.start();
     assertThat(process.waitFor(10, TimeUnit.SECONDS)).as("CI command completed").isTrue();
     return new CommandResult(process.exitValue(), Files.readString(output));
   }

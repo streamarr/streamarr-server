@@ -273,7 +273,7 @@ jobs:
     name: Publish multi-architecture snapshot image
     needs: [ changes, build, package_image ]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    uses: streamarr/streamarr-workflows/.github/workflows/publish-image.yml@68ba96a9e641d659e5985aa76c3739e193927de2
+    uses: streamarr/streamarr-workflows/.github/workflows/publish-image.yml@768aa58c4d37fd4b049780b01adffdf38feb3b79
     with:
       image-repository: streamarr/streamarr-server
       source-revision: ${{ github.sha }}
