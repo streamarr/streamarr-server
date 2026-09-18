@@ -63,9 +63,7 @@ class CiPipelineWorkflowTest {
     var matrix = map(map(job("application").get("strategy")).get("matrix"));
     assertThat(matrix).containsEntry("suite", List.of("unit", "integration"));
     assertThat(job("analysis")).containsEntry("needs", "application");
-    var capture = temporaryDirectory.resolve("mvnw");
-    Files.writeString(capture, "#!/bin/sh\nprintf '%s\\n' \"$@\"\n");
-    assertThat(capture.toFile().setExecutable(true)).isTrue();
+    var capture = argumentCapturingMaven();
     var arguments =
         Map.of(
             "matrix.suite",
@@ -304,6 +302,14 @@ class CiPipelineWorkflowTest {
             .isEqualTo(allowedWithToken && !token.isEmpty() ? 0 : 1);
       }
     }
+  }
+
+  private Path argumentCapturingMaven() throws Exception {
+    var capture = temporaryDirectory.resolve("mvnw");
+    Files.writeString(capture, "#!/bin/sh\nprintf '%s\\n' \"$@\"\n");
+    assertThat(capture.toFile().setExecutable(true)).isTrue();
+
+    return capture;
   }
 
   private static String substituteContext(String expression, Map<String, String> context) {
