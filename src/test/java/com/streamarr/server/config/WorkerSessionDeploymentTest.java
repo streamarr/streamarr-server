@@ -3,6 +3,7 @@ package com.streamarr.server.config;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -18,6 +19,33 @@ import tools.jackson.databind.ObjectMapper;
 @Tag("UnitTest")
 @DisplayName("Worker Session Deployment Tests")
 class WorkerSessionDeploymentTest {
+
+  @Test
+  @DisplayName("Should require native image validation when the worker pin changes")
+  void shouldRequireNativeImageValidationWhenWorkerPinChanges() throws IOException {
+    var mapper = new ObjectMapper();
+    var workflow =
+        mapper.valueToTree(new Yaml().load(Files.readString(Path.of(".github/workflows/ci.yml"))));
+    var filter =
+        StreamSupport.stream(
+                workflow.path("jobs").path("changes").path("steps").spliterator(), false)
+            .filter(step -> "filter".equals(step.path("id").asString()))
+            .findFirst()
+            .orElseThrow();
+    var configuration =
+        mapper.valueToTree(new Yaml().load(filter.path("with").path("filters").asString()));
+    var patterns =
+        StreamSupport.stream(configuration.path("packaging").spliterator(), false)
+            .map(JsonNode::asString)
+            .toList();
+
+    assertThat(patterns)
+        .anyMatch(
+            pattern ->
+                FileSystems.getDefault()
+                    .getPathMatcher("glob:" + pattern)
+                    .matches(Path.of("worker-image.env")));
+  }
 
   @Test
   @DisplayName("Should share the server network and media when using the default Compose worker")

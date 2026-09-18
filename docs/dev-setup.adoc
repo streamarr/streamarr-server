@@ -38,7 +38,7 @@ This starts PostgreSQL 18 on port 5432 with credentials from `.env`.
 The server starts on `http://localhost:8080` with the `dev` profile active.
 
 Playback and media probing also require a connected transcode worker.
-The dev profile enables the loopback worker listener.
+The worker listener defaults to loopback in every profile.
 See link:distributed-transcoding.adoc[Distributed Transcoding] for worker setup and source namespace mappings.
 When running the server on the host, set `STREAMING_REMOTE_SOURCE_ROOT` to its media directory and map the same content on the worker.
 
@@ -130,7 +130,7 @@ GRAFANA_CLOUD_API_KEY=<your-key>
 GRAFANA_CLOUD_OTLP_ENDPOINT=<your-endpoint>
 
 # Start with observability:
-docker compose --profile observability up -d
+docker compose --env-file worker-image.env --env-file .env --profile observability up -d
 
 # Run server with observability profile:
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev,observability

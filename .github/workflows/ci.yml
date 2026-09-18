@@ -44,6 +44,7 @@ jobs:
               - '.github/workflows/ci.yml'
               - 'Procfile'
               - 'pom.xml'
+              - 'worker-image.env'
               - 'mvnw'
               - 'mvnw.cmd'
               - '.mvn/**'

@@ -63,6 +63,8 @@ The Istio policy restricts only the worker port. HTTP and Kubernetes health prob
 
 The default worker uses `network_mode: service:streamarr-server` to reach the server over loopback.
 Load the checked-in image from `worker-image.env` and set `STREAMARR_MEDIA_PATH` to the host media directory.
+The pin file contains one unquoted `STREAMARR_WORKER_IMAGE=<image>@sha256:<digest>` assignment.
+Blank lines and full-line comments are allowed. Do not add an `export` prefix or other assignments.
 Set `STREAMARR_WORKER_IMAGE` in `.env` or the shell to override the pin.
 Both containers mount the media directory read-only at `/media`, which is the library root inside the server.
 `STREAMARR_WORKER_ID` and `STREAMARR_SOURCE_NAMESPACE_ID` override the example UUIDs.
