@@ -3,7 +3,7 @@
 == Prerequisites
 
 * **JDK 25** (LTS) -- https://www.azul.com/downloads/?version=java-25-lts[Zulu] or https://adoptium.net/[Temurin]
-* **Docker** -- for PostgreSQL (development and integration tests)
+* **Docker** -- for PostgreSQL and the standalone worker (development and integration tests)
 * **Python 3** (`python3`) -- standard-library-only CI artifact regression tests
 * **Git** with GPG signing configured
 
@@ -14,7 +14,7 @@
 git clone git@github.com:streamarr/streamarr-server.git
 cd streamarr-server
 cp .env.example .env
-# Edit .env and add your TMDB API token
+# Edit .env and set TMDB_API_TOKEN
 ./mvnw clean compile
 ----
 
@@ -22,9 +22,10 @@ cp .env.example .env
 
 [source,bash]
 ----
-docker compose up -d postgres
+docker compose --env-file worker-image.env --env-file .env up -d postgres
 ----
 
+Compose loads the checked-in worker image pin before local settings from `.env`.
 This starts PostgreSQL 18 on port 5432 with credentials from `.env`.
 
 == Running the Server
@@ -66,11 +67,28 @@ Because the `__Host-` prefix requires `Secure`, the script-readable CSRF cookie 
 # Unit tests only
 ./mvnw test
 
-# Unit + integration tests (uses TestContainers -- no manual Docker setup needed)
+# Unit + integration tests (PostgreSQL and the standalone worker use Testcontainers)
 ./mvnw verify
 ----
 
-Integration tests use TestContainers to spin up a real PostgreSQL instance automatically.
+Integration tests start PostgreSQL and the standalone worker with Testcontainers.
+Worker integration tests, HLS smoke tests and CI use the immutable image in `worker-image.env`.
+Renovate proposes digest and version updates. Server CI verifies compatibility before human merge.
+Set `STREAMARR_WORKER_IMAGE` or pass `-Dstreamarr.worker.image=<image>` to test a local worker build.
+No host FFmpeg installation is needed.
+
+== Container Images
+
+When the Maven version is `X.Y.Z-SNAPSHOT`, successful `main` CI publishes that exact tag for both architectures.
+Stable `X.Y.Z` tags are published by the release workflow.
+The worker follows the same convention. The server consumes its tag and digest from `worker-image.env`.
+Renovate refreshes snapshot digests and proposes the stable version when it is released. Later snapshots require an explicit opt-in.
+
+== Worker Protocol
+
+The server publishes `src/main/protobuf` to `buf.build/streamarr-org/transcode` after merges to `main` through `.github/workflows/buf-publish.yml`.
+Use `buf-consumer-pin.properties` from a successful run's `worker-contract-pin-<git-sha>` artifact when updating the worker's exact SDK dependency version.
+To verify from a matching published checkout, run `bash .github/scripts/verify-buf-consumer.sh` with Java 25, Buf and jq available.
 
 == jOOQ Code Regeneration
 
@@ -78,7 +96,7 @@ After modifying Flyway migrations, regenerate jOOQ types:
 
 [source,bash]
 ----
-docker compose up -d postgres
+docker compose --env-file worker-image.env --env-file .env up -d postgres
 ./mvnw generate-sources -P generate-jooq-code
 ----
 

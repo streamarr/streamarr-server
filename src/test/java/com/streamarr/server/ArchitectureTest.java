@@ -47,9 +47,9 @@ import com.streamarr.server.services.authorization.SecurityContextAuthorizationS
 import com.streamarr.server.services.library.MovieFileProcessor;
 import com.streamarr.server.services.library.SeriesFileProcessor;
 import com.streamarr.server.services.streaming.remote.architecturefixture.AllowedWorkerProtocolFixture;
-import com.streamarr.transcode.engine.FfmpegTranscodeEngine;
-import com.streamarr.transcode.probe.FfprobeExecutor;
-import com.streamarr.transcode.worker.TranscodeWorker;
+import com.streamarr.transcode.engine.architecturefixture.EngineImplementationFixture;
+import com.streamarr.transcode.probe.architecturefixture.ProbeImplementationFixture;
+import com.streamarr.transcode.worker.architecturefixture.WorkerImplementationFixture;
 import com.tngtech.archunit.core.domain.JavaAccess;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
@@ -83,6 +83,23 @@ class ArchitectureTest {
 
   private static final String SERVICES_PACKAGE = "com.streamarr.server.services";
 
+  @Test
+  @DisplayName("Should exclude worker implementations when importing production code")
+  void shouldExcludeWorkerImplementationsWhenImportingProductionCode() {
+    var productionClasses =
+        new ClassFileImporter()
+            .withImportOption(new ImportOption.DoNotIncludeTests())
+            .importPackages("com.streamarr");
+
+    noClasses()
+        .that()
+        .resideOutsideOfPackage("com.streamarr.transcode.v1..")
+        .should()
+        .resideInAPackage("com.streamarr.transcode..")
+        .as("The server owns the wire contract and contains no worker implementation")
+        .check(productionClasses);
+  }
+
   @ArchTest
   static final ArchRule domainMustNotDependOnOuterLayers =
       noClasses()
@@ -109,7 +126,9 @@ class ArchitectureTest {
           .resideOutsideOfPackage("..services.streaming.remote..")
           .should()
           .dependOnClassesThat()
-          .resideInAnyPackage("com.streamarr.transcode.v1..", "com.streamarr.transcode.protocol..")
+          .resideInAnyPackage(
+              "com.streamarr.transcode.v1..",
+              "com.streamarr.server.services.streaming.remote.protocol..")
           .as("Worker wire-protocol types must not be used outside services.streaming.remote");
 
   private static final ArchRule serverClassesMustNotDependOnProcessBuilder =
@@ -544,9 +563,9 @@ class ArchitectureTest {
   private static Stream<Arguments> executionDependencies() {
     return Stream.of(
         Arguments.of(ProcessBuilderReference.class, ProcessBuilder.class),
-        Arguments.of(EngineDependency.class, FfmpegTranscodeEngine.class),
-        Arguments.of(ProbeDependency.class, FfprobeExecutor.class),
-        Arguments.of(WorkerDependency.class, TranscodeWorker.class));
+        Arguments.of(EngineDependency.class, EngineImplementationFixture.class),
+        Arguments.of(ProbeDependency.class, ProbeImplementationFixture.class),
+        Arguments.of(WorkerDependency.class, WorkerImplementationFixture.class));
   }
 
   private static ArchRule accountPasswordMatchesMustUseVerifier() {

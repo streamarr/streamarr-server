@@ -57,17 +57,19 @@ The Istio policy restricts only the worker port. HTTP and Kubernetes health prob
 == Docker Compose
 
 The default worker uses `network_mode: service:streamarr-server` to reach the server over loopback.
-Set `STREAMARR_MEDIA_PATH` to the host media directory.
-Both containers mount it read-only at `/media`, which is the library root inside the server.
+Load the checked-in image from `worker-image.env` and set `STREAMARR_MEDIA_PATH` to the host media directory.
+Set `STREAMARR_WORKER_IMAGE` in `.env` or the shell to override the pin.
+Both containers mount the media directory read-only at `/media`, which is the library root inside the server.
 `STREAMARR_WORKER_ID` and `STREAMARR_SOURCE_NAMESPACE_ID` override the example UUIDs.
 
 [source,bash]
 ----
-STREAMARR_MEDIA_PATH=/absolute/path/to/media docker compose up -d
+STREAMARR_MEDIA_PATH=/absolute/path/to/media docker compose \
+  --env-file worker-image.env --env-file .env up -d
 ----
 
-The current server image still contains the interim `worker` process.
-The default Compose worker enables its plaintext connection setting until the standalone image cutover.
+The worker uses its own Spring Boot image and normal entrypoint.
+The server image contains neither the worker application nor FFmpeg.
 The former distributed Compose override has been retired with application-managed worker TLS.
 
 Hardware transcoding is a separate opt-in overlay.
@@ -76,6 +78,7 @@ Find the numeric group ID that owns the host's `/dev/dri/render*` device and set
 [source,bash]
 ----
 STREAMARR_MEDIA_PATH=/absolute/path/to/media STREAMARR_RENDER_GID=109 docker compose \
+  --env-file worker-image.env --env-file .env \
   -f docker-compose.yml \
   -f deploy/compose/hardware-transcoding.yml \
   up -d
@@ -86,12 +89,6 @@ The overlay passes `/dev/dri` only to the worker. CPU deployments need no hardwa
 
 == Kubernetes
 
-[NOTE]
-====
-The Kubernetes manifest is a preview of the standalone worker deployment.
-It uses placeholder image versions. Deploy it only after the first immutable worker image is verified in https://github.com/streamarr/streamarr-transcode-worker/issues/4[worker issue #4] and the server cutover in https://github.com/streamarr/streamarr-server/issues/352[server issue #352] is complete.
-====
-
 link:../deploy/kubernetes/distributed-transcoding.yaml[The example manifest] creates the `streamarr` namespace with sidecar injection enabled, separate server and worker ServiceAccounts, one server replica, and two worker replicas.
 It requires:
 
@@ -99,7 +96,9 @@ It requires:
 * a `streamarr-media` PersistentVolumeClaim in the `streamarr` namespace
 * a `streamarr-runtime` Secret in that namespace with `datasource-url`, `datasource-username`, and `datasource-password`
 
-Replace the placeholder image tags with verified immutable versions and adapt the storage, source namespace, and runtime Secret.
+Replace the server image placeholder with a verified immutable version.
+The renderer uses the checked-in `worker-image.env` pin unless `STREAMARR_WORKER_IMAGE` overrides it.
+Adapt the storage, source namespace, and runtime Secret.
 If you change the Kubernetes namespace or mesh trust domain, update the authorized principal in the `AuthorizationPolicy` too.
 The worker ID comes from the Pod UID. Scaling the Deployment produces distinct instance identifiers without per-replica configuration.
 
@@ -113,7 +112,8 @@ Worker replicas may scale horizontally as long as each can read the configured m
 
 [source,bash]
 ----
-kubectl apply -f deploy/kubernetes/distributed-transcoding.yaml
+python3 deploy/kubernetes/render-deployment.py > /tmp/streamarr-deployment.yaml
+kubectl apply -f /tmp/streamarr-deployment.yaml
 ----
 
 For direct-rendering hardware, edit the group ID in `deploy/kubernetes/hardware-transcoding-patch.yaml` to match the node's render device group, then apply the patch:
@@ -131,7 +131,7 @@ Use a device plugin's advertised resource when one is installed.
 == Validate the mesh
 
 link:../deploy/kubernetes/test/README.md[The isolated mesh test] creates a temporary kind cluster and runs the real worker-session service behind Istio.
-A scripted worker registers and completes a correlated probe exchange.
+Scripted clients isolate authorization checks. The required standalone worker image then probes media and uploads a transcode segment that FFmpeg decodes.
 The test proves that a different ServiceAccount is denied and an unmeshed client cannot connect through either the Service or the direct Pod IP.
 Ordinary HTTP remains accessible. Existing HTTP authorization and namespace-wide strict mutual TLS policies remain effective.
 It removes its cluster afterward and uses a separate kubeconfig throughout.

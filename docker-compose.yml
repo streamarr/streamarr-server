@@ -29,14 +29,12 @@ services:
       - ${STREAMARR_MEDIA_PATH:-/mpool/media/clean/movies}:/media:ro
 
   transcode-worker:
-    image: streamarr/streamarr-server:latest
-    entrypoint: worker
+    image: ${STREAMARR_WORKER_IMAGE:?Set STREAMARR_WORKER_IMAGE to the verified standalone worker image}
     restart: unless-stopped
     network_mode: service:streamarr-server
     depends_on:
       - streamarr-server
     environment:
-      TRANSCODE_WORKER_PLAINTEXT: "true"
       TRANSCODE_WORKER_CONTROL_PLANE_HOST: 127.0.0.1
       TRANSCODE_WORKER_CONTROL_PLANE_PORT: ${STREAMARR_WORKER_SESSION_PORT:-9090}
       TRANSCODE_WORKER_ID: ${STREAMARR_WORKER_ID:-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa}

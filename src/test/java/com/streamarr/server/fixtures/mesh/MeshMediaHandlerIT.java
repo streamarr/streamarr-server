@@ -1,12 +1,12 @@
 package com.streamarr.server.fixtures.mesh;
 
-import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
-import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
+import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
+import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
-import com.streamarr.transcode.protocol.WorkerIdentityMetadata;
+import com.streamarr.server.services.streaming.remote.protocol.WorkerIdentityMetadata;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.ProbeAttemptResult;

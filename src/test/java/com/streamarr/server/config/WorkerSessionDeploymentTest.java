@@ -31,8 +31,11 @@ class WorkerSessionDeploymentTest {
     var environment = worker.path("environment");
 
     assertThat(worker.path("network_mode").asString()).isEqualTo("service:streamarr-server");
-    assertThat(worker.path("entrypoint").asString()).isEqualTo("worker");
-    assertThat(environment.path("TRANSCODE_WORKER_PLAINTEXT").asString()).isEqualTo("true");
+    assertThat(worker.path("image").asString())
+        .isEqualTo(
+            "${STREAMARR_WORKER_IMAGE:?Set STREAMARR_WORKER_IMAGE to the verified standalone worker image}");
+    assertThat(worker.has("entrypoint")).isFalse();
+    assertThat(environment.has("TRANSCODE_WORKER_PLAINTEXT")).isFalse();
     assertThat(environment.path("TRANSCODE_WORKER_CONTROL_PLANE_HOST").asString())
         .isEqualTo("127.0.0.1");
     assertThat(environment.path("TRANSCODE_WORKER_CONTROL_PLANE_PORT"))

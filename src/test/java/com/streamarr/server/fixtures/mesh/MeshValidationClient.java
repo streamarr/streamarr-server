@@ -1,8 +1,8 @@
 package com.streamarr.server.fixtures.mesh;
 
-import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
+import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 
-import com.streamarr.transcode.protocol.WorkerIdentityMetadata;
+import com.streamarr.server.services.streaming.remote.protocol.WorkerIdentityMetadata;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
@@ -37,6 +37,11 @@ public final class MeshValidationClient {
   public static void main(String[] args) throws Exception {
     var mode = args[0];
     var host = args[1];
+    if (mode.equals("http-forbidden")) {
+      requireHttpForbidden(args[1]);
+      return;
+    }
+
     if (mode.equals("tls-required")) {
       requireHttpTls(host);
       return;
@@ -132,6 +137,19 @@ public final class MeshValidationClient {
       }
 
       System.out.println(expected);
+    }
+  }
+
+  private static void requireHttpForbidden(String address) throws Exception {
+    try (var client = HttpClient.newHttpClient()) {
+      var request =
+          HttpRequest.newBuilder(URI.create(address)).timeout(Duration.ofSeconds(15)).build();
+      var response = client.send(request, HttpResponse.BodyHandlers.discarding());
+      if (response.statusCode() != 403) {
+        throw new IllegalStateException("Expected HTTP 403 but received " + response.statusCode());
+      }
+
+      System.out.println("HTTP_FORBIDDEN");
     }
   }
 

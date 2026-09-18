@@ -1,6 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
-import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
+import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.transcode.v1.MediaSourceRef;

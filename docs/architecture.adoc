@@ -135,13 +135,9 @@ Administrators map each source namespace to the same media content on the server
 The supported topology has one Streamarr server and independently scalable workers.
 Kubernetes workers run in a separate Deployment. The server uses stop-before-start replacement as specified by https://github.com/streamarr/streamarr-adr/blob/main/adr/0027-library-work-claimed-in-database-single-instance.adoc[ADR 0027].
 Workers have no database access. The standalone Spring Boot worker exposes Actuator health checks on its management port.
-The interim worker remains in the server image until the standalone image cutover.
+The server image contains only the server application. Worker implementation code and FFmpeg packaging live in the standalone worker repository.
 The server can start and remain ready with zero connected workers, but playback and probing require worker capacity.
 Multi-server coordination remains deferred.
-
-For repository extraction, link:worker-code-moves.json[worker code moves] records relocated paths.
-link:worker-code-copies.json[Worker code copies] records the server origins of worker value types whose server counterparts remain in use.
-The copy entries preserve provenance without treating those paths as renames.
 
 == Authentication and Invalidation
 
