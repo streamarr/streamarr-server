@@ -79,6 +79,8 @@ streaming:
   worker-session:
     address: ${STREAMING_WORKER_SESSION_ADDRESS:127.0.0.1}
     port: ${STREAMING_WORKER_SESSION_PORT:9090}
+    probe-timeout: ${STREAMING_WORKER_SESSION_PROBE_TIMEOUT:1m}
+    probe-cancellation-timeout: ${STREAMING_WORKER_SESSION_PROBE_CANCELLATION_TIMEOUT:5s}
   remote:
     source-namespace-id: ${STREAMING_REMOTE_SOURCE_NAMESPACE_ID:}
     source-root: ${STREAMING_REMOTE_SOURCE_ROOT:}

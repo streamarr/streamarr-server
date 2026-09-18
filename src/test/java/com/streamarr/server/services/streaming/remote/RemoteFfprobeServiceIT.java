@@ -8,6 +8,7 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigura
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
@@ -38,6 +39,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
@@ -53,6 +55,40 @@ import org.junit.jupiter.params.provider.ValueSource;
 class RemoteFfprobeServiceIT {
 
   @TempDir Path directory;
+
+  @Test
+  @DisplayName("Should fail the probe and fence its session when the worker ignores cancellation")
+  void shouldFailProbeAndFenceSessionWhenWorkerIgnoresCancellation() throws Exception {
+    var configuration =
+        serverConfigurationBuilder()
+            .probeTimeout(Duration.ofMillis(100))
+            .probeCancellationTimeout(Duration.ofMillis(100))
+            .build();
+    try (var server = new WorkerSessionServer(configuration, new FakeSegmentStore());
+        var calls = Executors.newVirtualThreadPerTaskExecutor()) {
+      server.start();
+      try (var worker = new ProbeWorker(server.port(), 1)) {
+        var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
+        var request = request().build();
+        var result = calls.submit(() -> service.probe(request));
+        try {
+          assertThat(worker.nextResponse().hasStartProbe()).isTrue();
+          assertThatThrownBy(() -> result.get(5, TimeUnit.SECONDS))
+              .hasCauseInstanceOf(ProbeExecutionException.class)
+              .hasRootCauseInstanceOf(TimeoutException.class);
+          assertThat(worker.nextResponse().getCancelProbe().getProbeAttemptId())
+              .isEqualTo(toProto(request.attemptId()));
+          await()
+              .atMost(5, TimeUnit.SECONDS)
+              .untilAsserted(
+                  () -> assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isFalse());
+          assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isZero();
+        } finally {
+          result.cancel(true);
+        }
+      }
+    }
+  }
 
   @Test
   @DisplayName("Should fail for persisted retry when the worker disconnects during probing")

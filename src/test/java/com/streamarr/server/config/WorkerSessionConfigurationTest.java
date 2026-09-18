@@ -11,6 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
@@ -22,6 +23,28 @@ class WorkerSessionConfigurationTest {
       new ApplicationContextRunner()
           .withUserConfiguration(WorkerSessionConfiguration.class)
           .withBean(SegmentStore.class, FakeSegmentStore::new);
+
+  @ParameterizedTest
+  @CsvSource({
+    "probe-timeout,0s",
+    "probe-timeout,-1s",
+    "probe-cancellation-timeout,0s",
+    "probe-cancellation-timeout,-1s"
+  })
+  @DisplayName("Should reject a nonpositive probe deadline when starting the listener")
+  void shouldRejectNonpositiveProbeDeadlineWhenStartingListener(String property, String value) {
+    contextRunner
+        .withPropertyValues(
+            "streaming.worker-session.port=0", "streaming.worker-session." + property + "=" + value)
+        .run(
+            context -> {
+              assertThat(context).hasFailed();
+              assertThat(context.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(IllegalArgumentException.class)
+                  .hasMessageContaining("must be positive");
+            });
+  }
 
   @ParameterizedTest
   @ValueSource(ints = {-1, 65536})

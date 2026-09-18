@@ -28,12 +28,29 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 final class LiveWorkerConnectionRegistry {
+
+  private static final Executor PROBE_DEADLINE_CALLBACKS =
+      command -> Thread.ofVirtual().name("worker-probe-deadline").start(command);
+  private final long probeTimeoutNanos;
+  private final long probeCancellationTimeoutNanos;
+
+  LiveWorkerConnectionRegistry() {
+    this(WorkerSessionServerConfiguration.builder().build());
+  }
+
+  LiveWorkerConnectionRegistry(WorkerSessionServerConfiguration configuration) {
+    probeTimeoutNanos = configuration.probeTimeout().toNanos();
+    probeCancellationTimeoutNanos = configuration.probeCancellationTimeout().toNanos();
+  }
 
   private final ConcurrentHashMap<UUID, WorkerConnection> connections = new ConcurrentHashMap<>();
   private final Map<UUID, CompletableFuture<ProbeAttemptResult>> pendingProbes =
@@ -292,13 +309,26 @@ final class LiveWorkerConnectionRegistry {
       }
 
       var attemptId = fromProto(request.getProbeAttemptId());
-      var pending = new PendingProbe(request, new CompletableFuture<>());
+      var pending = new PendingProbe(request, new CompletableFuture<>(), new CompletableFuture<>());
       if (pendingProbes.putIfAbsent(attemptId, pending.result()) != null) {
         return Optional.empty();
       }
 
       activeProbes.put(attemptId, pending);
-      pending.result().whenComplete((_, _) -> cancelProbeIfRequested(pending));
+      pending
+          .result()
+          .whenComplete(
+              (_, failure) -> {
+                if (pending.result().isCancelled()) {
+                  cancelProbeIfRequested(pending);
+                  return;
+                }
+
+                if (failure instanceof TimeoutException) {
+                  // Never run transport callbacks on CompletableFuture's shared timeout thread.
+                  PROBE_DEADLINE_CALLBACKS.execute(() -> cancelProbeIfRequested(pending));
+                }
+              });
       var command = StartProbeCommand.newBuilder().setTarget(worker).setRequest(request).build();
       if (!trySend(EstablishWorkerSessionResponse.newBuilder().setStartProbe(command).build())) {
         activeProbes.remove(attemptId, pending);
@@ -306,14 +336,19 @@ final class LiveWorkerConnectionRegistry {
         return Optional.empty();
       }
 
-      return Optional.of(pending.result());
+      return Optional.of(pending.result().orTimeout(probeTimeoutNanos, TimeUnit.NANOSECONDS));
     }
 
     private void cancelProbeIfRequested(PendingProbe pending) {
-      if (!pending.result().isCancelled()) {
-        return;
-      }
-
+      // Publication may hold the connection monitor. The recovery deadline must not wait for it.
+      pending
+          .terminated()
+          .orTimeout(probeCancellationTimeoutNanos, TimeUnit.NANOSECONDS)
+          .exceptionally(
+              failure -> {
+                PROBE_DEADLINE_CALLBACKS.execute(() -> fenceUnresponsiveProbe(pending));
+                return null;
+              });
       synchronized (this) {
         var attemptId = fromProto(pending.request().getProbeAttemptId());
         if (activeProbes.get(attemptId) != pending) {
@@ -329,6 +364,33 @@ final class LiveWorkerConnectionRegistry {
       }
     }
 
+    private void fenceUnresponsiveProbe(PendingProbe pending) {
+      var attemptId = fromProto(pending.request().getProbeAttemptId());
+      if (!activeProbes.remove(attemptId, pending)) {
+        return;
+      }
+
+      pendingProbes.remove(attemptId, pending.result());
+      if (!connections.remove(fromProto(worker.getWorkerId()), this)) {
+        return;
+      }
+
+      log.warn("Worker session {} ignored cancellation of probe {}", workerSessionId, attemptId);
+      abandonAllJobsWithoutWaiting()
+          .forEach(job -> logAbandonedJob(job, "probe cancellation timed out"));
+      synchronized (this) {
+        try {
+          responseObserver.onError(
+              Status.DEADLINE_EXCEEDED
+                  .withDescription("Worker did not stop a cancelled probe")
+                  .asRuntimeException());
+        } catch (RuntimeException failure) {
+          log.debug(
+              "Worker session {} already closed after probe timeout", workerSessionId, failure);
+        }
+      }
+    }
+
     private boolean completeProbe(ProbeAttemptResult result) {
       var attemptId = fromProto(result.getProbeAttemptId());
       var pending = activeProbes.remove(attemptId);
@@ -336,6 +398,7 @@ final class LiveWorkerConnectionRegistry {
         return false;
       }
 
+      pending.terminated().complete(null);
       try {
         return finishProbe(pending, result);
       } finally {
@@ -371,6 +434,7 @@ final class LiveWorkerConnectionRegistry {
         return;
       }
 
+      pending.terminated().complete(null);
       pending
           .result()
           .completeExceptionally(new ProbeExecutionException(new IllegalStateException(reason)));
@@ -498,6 +562,8 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private record PendingProbe(
-        ProbeRequest request, CompletableFuture<ProbeAttemptResult> result) {}
+        ProbeRequest request,
+        CompletableFuture<ProbeAttemptResult> result,
+        CompletableFuture<Void> terminated) {}
   }
 }

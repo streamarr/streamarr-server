@@ -51,6 +51,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -102,7 +103,13 @@ class WorkerSessionServerIT {
   void shouldFailPendingProbeWhenItsSessionEndsDuringSegmentPublication(SessionEnd ending)
       throws Exception {
     var segmentStore = new PausedPublicationStore();
-    try (var server = server(segmentStore)) {
+    var configuration =
+        serverConfigurationBuilder()
+            .probeTimeout(
+                ending == SessionEnd.TIMED_OUT ? Duration.ofSeconds(2) : Duration.ofMinutes(1))
+            .probeCancellationTimeout(Duration.ofMillis(100))
+            .build();
+    try (var server = new WorkerSessionServer(configuration, segmentStore)) {
       server.start();
       var channel = workerChannel(server.port());
       var identity = workerIdentity(UUID.randomUUID());
@@ -126,17 +133,26 @@ class WorkerSessionServerIT {
         var upload = upload(channel, metadata, bytes);
         try {
           assertThat(segmentStore.entered.await(5, TimeUnit.SECONDS)).isTrue();
-          if (ending == SessionEnd.DISCONNECTED) {
-            worker.close();
-          } else {
-            var replacement = connect(channel, workerIdentity(UUID.randomUUID()));
-            assertThat(replacement.nextResponse().hasSessionAccepted()).isTrue();
+          switch (ending) {
+            case DISCONNECTED -> worker.close();
+            case REPLACED -> {
+              var replacement = connect(channel, workerIdentity(UUID.randomUUID()));
+              assertThat(replacement.nextResponse().hasSessionAccepted()).isTrue();
+            }
+            case TIMED_OUT ->
+                await()
+                    .atMost(5, TimeUnit.SECONDS)
+                    .untilAsserted(
+                        () -> assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isFalse());
           }
 
           assertThatThrownBy(() -> pending.get(5, TimeUnit.SECONDS))
               .as("ended-session probe must fail while segment publication remains blocked")
               .isInstanceOf(ExecutionException.class)
-              .hasCauseInstanceOf(ProbeExecutionException.class);
+              .hasCauseInstanceOf(
+                  ending == SessionEnd.TIMED_OUT
+                      ? TimeoutException.class
+                      : ProbeExecutionException.class);
         } finally {
           segmentStore.release.countDown();
         }
@@ -217,7 +233,8 @@ class WorkerSessionServerIT {
 
   private enum SessionEnd {
     DISCONNECTED,
-    REPLACED
+    REPLACED,
+    TIMED_OUT
   }
 
   private static final class PausedPublicationStore extends FakeSegmentStore {

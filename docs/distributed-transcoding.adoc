@@ -41,6 +41,11 @@ Mount media read-only and give each worker its own writable temporary output dir
 Workers on different nodes need storage that supports those simultaneous mounts.
 
 Set `TRANSCODE_WORKER_FFPROBE_PATH` to the worker's ffprobe binary. It defaults to `ffprobe` on `PATH`.
+`STREAMING_WORKER_SESSION_PROBE_TIMEOUT` bounds each probe on the server. It defaults to `1m`.
+A timeout requests worker cancellation and lets the scheduler retry.
+`STREAMING_WORKER_SESSION_PROBE_CANCELLATION_TIMEOUT` allows `5s` for the worker to acknowledge termination.
+Until then, the probe retains its execution slot.
+A worker that misses this deadline is disconnected and fenced. Its other active jobs are abandoned and recover through the existing playback recovery path.
 Closing a worker connection cancels its probes and waits for their native processes to terminate.
 An unresponsive filesystem can delay worker shutdown.
 

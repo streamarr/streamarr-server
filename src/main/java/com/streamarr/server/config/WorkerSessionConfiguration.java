@@ -18,6 +18,8 @@ public class WorkerSessionConfiguration {
         WorkerSessionServerConfiguration.builder()
             .address(properties.address())
             .port(properties.port())
+            .probeTimeout(properties.probeTimeout())
+            .probeCancellationTimeout(properties.probeCancellationTimeout())
             .build();
     return new WorkerSessionServer(configuration, segmentStore);
   }
