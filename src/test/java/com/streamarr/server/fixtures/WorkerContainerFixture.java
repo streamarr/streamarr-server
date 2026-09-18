@@ -218,6 +218,39 @@ public final class WorkerContainerFixture implements AutoCloseable {
     return result.getExitCode() == 0;
   }
 
+  public boolean probeStarted() throws Exception {
+    var result = container.execInContainer("test", "-f", "/tmp/held-probe");
+    assertThat(result.getExitCode()).isIn(0, 1);
+    return result.getExitCode() == 0;
+  }
+
+  public long decodedVideoFrameCount(Path media) throws Exception {
+    var input = "/tmp/decode-" + UUID.randomUUID() + ".mp4";
+    container.copyFileToContainer(Transferable.of(Files.readAllBytes(media), 0644), input);
+    var decode =
+        container.execInContainer(
+            "/cnb/lifecycle/launcher",
+            "ffmpeg",
+            "-v",
+            "error",
+            "-xerror",
+            "-i",
+            input,
+            "-map",
+            "0:v:0",
+            "-f",
+            "framemd5",
+            input + ".frames");
+    assertThat(decode.getExitCode()).as("Decode video: %s", decode.getStderr()).isZero();
+    var frames = container.execInContainer("cat", input + ".frames");
+    assertThat(frames.getExitCode()).as(frames.getStderr()).isZero();
+    return frames
+        .getStdout()
+        .lines()
+        .filter(line -> !line.isBlank() && !line.startsWith("#"))
+        .count();
+  }
+
   public void pause() {
     container.getDockerClient().pauseContainerCmd(container.getContainerId()).exec();
   }

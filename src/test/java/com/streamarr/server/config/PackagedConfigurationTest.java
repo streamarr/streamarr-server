@@ -352,14 +352,67 @@ class PackagedConfigurationTest {
       "Should ship a single-server Kubernetes path with per-pod worker identity when packaged")
   void shouldShipSingleServerKubernetesPathWithPerPodWorkerIdentityWhenPackaged()
       throws IOException {
-    var deployment = Files.readString(Path.of("deploy/kubernetes/distributed-transcoding.yaml"));
+    var yaml = Files.readString(Path.of("deploy/kubernetes/distributed-transcoding.yaml"));
+    var mapper = new ObjectMapper();
+    var resources =
+        StreamSupport.stream(new Yaml().loadAll(yaml).spliterator(), false)
+            .<JsonNode>map(mapper::valueToTree)
+            .collect(
+                Collectors.toMap(
+                    node ->
+                        node.path("kind").asString()
+                            + "/"
+                            + node.path("metadata").path("name").asString(),
+                    node -> node));
+    assertThat(resources)
+        .containsKeys(
+            "Deployment/streamarr-server",
+            "Deployment/streamarr-transcode-worker",
+            "AuthorizationPolicy/streamarr-worker-sessions");
+    var server = resources.get("Deployment/streamarr-server").path("spec");
+    assertThat(server.path("replicas").asInt()).as("server replicas").isEqualTo(1);
+    assertThat(server.path("strategy").path("type").asString()).isEqualTo("Recreate");
 
-    assertThat(deployment)
-        .contains(
-            "replicas: 1",
-            "replicas: 2",
-            "fieldPath: metadata.uid",
-            "cluster.local/ns/streamarr/sa/streamarr-transcode-worker");
+    var worker = resources.get("Deployment/streamarr-transcode-worker").path("spec");
+    assertThat(worker.path("replicas").asInt()).as("worker replicas").isEqualTo(2);
+    var workerPod = worker.path("template").path("spec");
+    assertThat(workerPod.path("serviceAccountName").asString())
+        .isEqualTo("streamarr-transcode-worker");
+    assertThat(workerPod.path("containers"))
+        .filteredOn(container -> container.path("name").asString().equals("worker"))
+        .singleElement()
+        .satisfies(
+            container ->
+                assertThat(container.path("env"))
+                    .filteredOn(env -> env.path("name").asString().equals("TRANSCODE_WORKER_ID"))
+                    .singleElement()
+                    .satisfies(
+                        identity -> {
+                          assertThat(identity.has("value")).isFalse();
+                          assertThat(
+                                  identity
+                                      .path("valueFrom")
+                                      .path("fieldRef")
+                                      .path("fieldPath")
+                                      .asString())
+                              .isEqualTo("metadata.uid");
+                        }));
+    var policy = resources.get("AuthorizationPolicy/streamarr-worker-sessions").path("spec");
+    assertThat(policy.path("action").asString()).isEqualTo("DENY");
+    assertThat(
+            policy.path("selector").path("matchLabels").path("app.kubernetes.io/name").asString())
+        .isEqualTo("streamarr-server");
+    assertThat(policy.path("rules"))
+        .singleElement()
+        .satisfies(
+            rule -> {
+              assertThat(rule.path("from").path(0).path("source").path("notPrincipals"))
+                  .extracting(JsonNode::asString)
+                  .containsExactly("cluster.local/ns/streamarr/sa/streamarr-transcode-worker");
+              assertThat(rule.path("to").path(0).path("operation").path("ports"))
+                  .extracting(JsonNode::asString)
+                  .containsExactly("9090");
+            });
   }
 
   private static Map<String, Object> yaml(String file) throws IOException {

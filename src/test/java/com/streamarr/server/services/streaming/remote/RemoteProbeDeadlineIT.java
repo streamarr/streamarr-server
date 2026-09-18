@@ -16,6 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.DisplayName;
@@ -36,7 +37,8 @@ class RemoteProbeDeadlineIT {
     assertThat(source).isNotNull();
     Files.copy(Path.of(source.toURI()), mediaRoot.resolve("next.mp4"));
     var configuration = serverConfigurationBuilder().probeTimeout(Duration.ofSeconds(2)).build();
-    try (var server = new WorkerSessionServer(configuration, new FakeSegmentStore());
+    try (var calls = Executors.newVirtualThreadPerTaskExecutor();
+        var server = new WorkerSessionServer(configuration, new FakeSegmentStore());
         var worker =
             WorkerContainerFixture.builder()
                 .workerSessions(server)
@@ -57,9 +59,19 @@ class RemoteProbeDeadlineIT {
       var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, mediaRoot);
       var heldRequest = request("held.mkv");
 
-      assertThatThrownBy(() -> service.probe(heldRequest))
-          .isInstanceOf(ProbeExecutionException.class)
-          .hasRootCauseInstanceOf(TimeoutException.class);
+      var pending = calls.submit(() -> service.probe(heldRequest));
+      try {
+        await()
+            .alias("native probe start marker")
+            .atMost(5, TimeUnit.SECONDS)
+            .until(worker::probeStarted);
+        assertThatThrownBy(() -> pending.get(5, TimeUnit.SECONDS))
+            .hasCauseInstanceOf(ProbeExecutionException.class)
+            .hasRootCauseInstanceOf(TimeoutException.class);
+      } finally {
+        pending.cancel(true);
+      }
+
       await()
           .atMost(5, TimeUnit.SECONDS)
           .untilAsserted(

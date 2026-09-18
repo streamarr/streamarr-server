@@ -178,17 +178,17 @@ class HlsRecoveryContinuitySmokeTest {
     var delivery = coordinator.deliver(sessionId, StreamSession.defaultVariant(), "segment1.m4s");
 
     assertThat(delivery).isInstanceOf(SegmentDelivery.Ready.class);
-    var replacementCommand =
-        workerFixture
-            .worker()
-            .commandFor(session.getHandle().orElseThrow().attemptId())
-            .orElseThrow();
-    assertThat(replacementCommand)
-        .containsSubsequence("-ss", String.valueOf(SEGMENT_DURATION_SECONDS))
-        .containsSubsequence("-start_number", "1")
-        .containsSubsequence("-hls_fmp4_init_filename", "init.mp4")
-        .anyMatch(argument -> argument.contains("frag_discont"));
     assertThat(segmentStore.segmentExists(sessionId, "init.mp4")).isTrue();
+    var outputDir = segmentStore.getOutputDirectory(sessionId);
+    var recoveredMedia = outputDir.resolve("recovered.mp4");
+    try (var output = Files.newOutputStream(recoveredMedia)) {
+      Files.copy(outputDir.resolve("init.mp4"), output);
+      Files.copy(outputDir.resolve("segment1.m4s"), output);
+    }
+
+    assertThat(workerFixture.worker().decodedVideoFrameCount(recoveredMedia))
+        .as("recovered initialization and media fragment must decode together")
+        .isPositive();
   }
 
   private StreamSession startedSession(TranscodeDecision decision) {

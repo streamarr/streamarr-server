@@ -8,7 +8,6 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigura
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
@@ -29,6 +28,7 @@ import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import io.grpc.ManagedChannel;
+import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -36,6 +36,7 @@ import java.util.List;
 import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -78,10 +79,9 @@ class RemoteFfprobeServiceIT {
               .hasRootCauseInstanceOf(TimeoutException.class);
           assertThat(worker.nextResponse().getCancelProbe().getProbeAttemptId())
               .isEqualTo(toProto(request.attemptId()));
-          await()
-              .atMost(5, TimeUnit.SECONDS)
-              .untilAsserted(
-                  () -> assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isFalse());
+          assertThat(worker.terminated.get(5, TimeUnit.SECONDS).getCode())
+              .isEqualTo(Status.Code.DEADLINE_EXCEEDED);
+          assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isFalse();
           assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isZero();
         } finally {
           result.cancel(true);
@@ -359,6 +359,7 @@ class RemoteFfprobeServiceIT {
     private final StreamObserver<EstablishWorkerSessionRequest> requests;
     private final BlockingQueue<EstablishWorkerSessionResponse> responses =
         new LinkedBlockingQueue<>();
+    private final CompletableFuture<Status> terminated = new CompletableFuture<>();
 
     ProbeWorker(int port, int version) throws Exception {
       channel = plaintextChannelBuilder(port, WORKER_ID).build();
@@ -373,12 +374,12 @@ class RemoteFfprobeServiceIT {
 
                     @Override
                     public void onError(Throwable throwable) {
-                      // Server-side disconnect handling is observed through the pending probe call.
+                      terminated.complete(Status.fromThrowable(throwable));
                     }
 
                     @Override
                     public void onCompleted() {
-                      // Commands are asserted before this test peer closes its stream.
+                      terminated.complete(Status.OK);
                     }
                   });
       requests.onNext(

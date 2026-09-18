@@ -9,6 +9,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import com.google.protobuf.ByteString;
+import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.ContainerFormat;
+import com.streamarr.server.domain.streaming.SubtitleDecision;
+import com.streamarr.server.domain.streaming.SubtitleMode;
+import com.streamarr.server.domain.streaming.TranscodeDecision;
+import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fakes.BlockingSegmentStore;
@@ -43,6 +49,8 @@ import io.grpc.stub.StreamObserver;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -52,11 +60,13 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import lombok.Builder;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -466,6 +476,61 @@ class WorkerSessionServerIT {
         shutdown(channel);
       }
     }
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "BURN_IN,SUBTITLE_MODE_BURN_IN",
+    "SIDECAR,SUBTITLE_MODE_SIDECAR",
+    "HLS,SUBTITLE_MODE_HLS",
+    "EMBED,SUBTITLE_MODE_EMBED"
+  })
+  @DisplayName("Should preserve subtitle selection when dispatching a remote transcode")
+  void shouldPreserveSubtitleSelectionWhenDispatchingRemoteTranscode(
+      SubtitleMode mode, String wireMode) throws Exception {
+    var decision =
+        TranscodeDecision.builder()
+            .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+            .videoCodecFamily("h264")
+            .audioDecision(AudioDecision.stereoAac())
+            .containerFormat(ContainerFormat.FMP4)
+            .subtitleDecision(
+                subtitleSelection().mode(mode).codec("srt").streamIndex(2).language("eng").build())
+            .build();
+    var request =
+        TranscodeRequest.builder()
+            .sessionId(UUID.randomUUID())
+            .sourcePath(Path.of("/media/movie.mkv"))
+            .transcodeDecision(decision)
+            .build();
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+      try (var worker = connect(channel, AUTHENTICATED_WORKER_ID)) {
+        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
+        var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, Path.of("/media"));
+
+        var handle = executor.start(request);
+
+        var job = worker.nextResponse().getStartVariant().getJob();
+        assertThat(fromProto(job.getJobAttemptId())).isEqualTo(handle.attemptId());
+        var subtitle = job.getDecision().getSubtitle();
+        assertThat(subtitle.getMode().name()).isEqualTo(wireMode);
+        assertThat(subtitle.getCodec()).isEqualTo("srt");
+        assertThat(subtitle.hasStreamIndex()).isTrue();
+        assertThat(subtitle.getStreamIndex()).isEqualTo(2);
+        assertThat(subtitle.getLanguage()).isEqualTo("eng");
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
+  @Builder(builderMethodName = "subtitleSelection")
+  private static SubtitleDecision subtitleDecision(
+      SubtitleMode mode, String codec, int streamIndex, String language) {
+    return new SubtitleDecision(
+        mode, Optional.of(codec), OptionalInt.of(streamIndex), Optional.of(language));
   }
 
   @Test
