@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-if (( $# != 5 )); then
-  echo "Usage: $0 <changes> <packaging> <application> <package-image> <analysis>" >&2
+if (( $# != 6 )); then
+  echo "Usage: $0 <changes> <packaging> <application> <package-image> <analysis> <contracts>" >&2
   exit 2
 fi
 
@@ -12,8 +12,13 @@ packaging_required="$2"
 application_result="$3"
 package_image_result="$4"
 analysis_result="$5"
+contracts_result="$6"
 if [[ "${changes_result}" != "success" ]]; then
   echo "Change detection failed: ${changes_result}" >&2
+  exit 1
+fi
+if [[ "${contracts_result}" != "success" ]]; then
+  echo "Contract and deployment verification failed: ${contracts_result}" >&2
   exit 1
 fi
 if [[ "${packaging_required}" != "true" && "${packaging_required}" != "false" ]]; then
