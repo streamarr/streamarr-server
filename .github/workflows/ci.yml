@@ -50,6 +50,40 @@ jobs:
               - '.mvn/**'
               - 'src/main/java/com/streamarr/server/services/authorization/cedar/**'
 
+  contracts:
+    name: Verify contracts and deployment configuration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Buf
+        uses: bufbuild/buf-action@8c6a16e16f12ba20b6470afa9c2ba9b5ba8c97c3 # v1.5.0
+        with:
+          version: '1.71.0'
+          setup_only: true
+
+      - name: Validate Protobuf contract
+        run: |
+          buf format --diff --exit-code
+          buf lint
+
+      - name: Detect breaking Protobuf changes
+        if: github.event_name == 'pull_request'
+        run: |
+          if git ls-tree -r --name-only "${{ github.event.pull_request.base.sha }}" -- src/main/protobuf | grep -q '\.proto$'; then
+            git branch --force buf-base "${{ github.event.pull_request.base.sha }}"
+            buf breaking --against '.git#branch=buf-base'
+          fi
+
+      - name: Verify deployment image configuration
+        run: python3 -m unittest discover -s deploy/kubernetes/test -p 'test_*.py'
+
+      - name: Verify native image publication
+        run: python3 -m unittest discover -s .github/actions/pack-build/test -p 'test_*.py'
+
   application:
     name: Build and test application (${{ matrix.suite }})
     runs-on: ubuntu-latest
@@ -73,35 +107,6 @@ jobs:
           java-version: '25'
           distribution: 'zulu'
           cache: maven
-
-      - name: Set up Buf
-        if: matrix.suite == 'unit'
-        uses: bufbuild/buf-action@8c6a16e16f12ba20b6470afa9c2ba9b5ba8c97c3 # v1.5.0
-        with:
-          version: '1.71.0'
-          setup_only: true
-
-      - name: Validate Protobuf contract
-        if: matrix.suite == 'unit'
-        run: |
-          buf format --diff --exit-code
-          buf lint
-
-      - name: Detect breaking Protobuf changes
-        if: matrix.suite == 'unit' && github.event_name == 'pull_request'
-        run: |
-          if git ls-tree -r --name-only "${{ github.event.pull_request.base.sha }}" -- src/main/protobuf | grep -q '\.proto$'; then
-            git branch --force buf-base "${{ github.event.pull_request.base.sha }}"
-            buf breaking --against '.git#branch=buf-base'
-          fi
-
-      - name: Verify deployment image configuration
-        if: matrix.suite == 'unit'
-        run: python3 -m unittest discover -s deploy/kubernetes/test -p 'test_*.py'
-
-      - name: Verify native image publication
-        if: matrix.suite == 'unit'
-        run: python3 -m unittest discover -s .github/actions/pack-build/test -p 'test_*.py'
 
       - name: Build and test
         run: >-
@@ -299,7 +304,7 @@ jobs:
 
   build:
     name: build
-    needs: [ changes, application, analysis, package_image ]
+    needs: [ changes, contracts, application, analysis, package_image ]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
@@ -315,3 +320,4 @@ jobs:
           '${{ needs.application.result }}'
           '${{ needs.package_image.result }}'
           '${{ needs.analysis.result }}'
+          '${{ needs.contracts.result }}'
