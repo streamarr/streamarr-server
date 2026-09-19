@@ -108,6 +108,9 @@ class CiPipelineWorkflowTest {
   @CsvSource({
     "needs.changes.result, failure, Change detection failed",
     "needs.changes.outputs.packaging, missing, Invalid packaging change result",
+    "needs.contracts.result, failure, Contract and deployment verification failed",
+    "needs.contracts.result, skipped, Contract and deployment verification failed",
+    "needs.contracts.result, cancelled, Contract and deployment verification failed",
     "needs.application.result, failure, Application verification failed",
     "needs.application.result, skipped, Application verification failed",
     "needs.application.result, cancelled, Application verification failed",
@@ -266,8 +269,24 @@ class CiPipelineWorkflowTest {
         .containsEntry(
             "if", "github.ref == 'refs/heads/main' || needs.changes.outputs.packaging == 'true'");
     assertThat(job("build"))
-        .containsEntry("needs", List.of("changes", "application", "analysis", "package_image"))
+        .containsEntry(
+            "needs", List.of("changes", "contracts", "application", "analysis", "package_image"))
         .containsEntry("if", "${{ !cancelled() }}");
+  }
+
+  @Test
+  @DisplayName("Should verify contracts apart from the application build when checks run")
+  void shouldVerifyContractsApartFromApplicationBuildWhenChecksRun() throws Exception {
+    var contractChecks =
+        List.of(
+            "Validate Protobuf contract",
+            "Detect breaking Protobuf changes",
+            "Verify deployment image configuration",
+            "Verify native image publication");
+
+    assertThat(job("contracts")).doesNotContainKey("needs");
+    assertThat(stepNames("contracts")).containsAll(contractChecks);
+    assertThat(stepNames("application")).doesNotContainAnyElementsOf(contractChecks);
   }
 
   private static Map<String, String> successfulChecks() {
@@ -275,6 +294,7 @@ class CiPipelineWorkflowTest {
         Map.of(
             "needs.changes.result", "success",
             "needs.changes.outputs.packaging", "false",
+            "needs.contracts.result", "success",
             "needs.application.result", "success",
             "needs.package_image.result", "success",
             "needs.analysis.result", "success"));
@@ -380,6 +400,10 @@ class CiPipelineWorkflowTest {
       Map<String, Object> workflow = new Yaml().load(input);
       return map(map(workflow.get("jobs")).get(name));
     }
+  }
+
+  private List<Object> stepNames(String job) throws Exception {
+    return steps(job(job).get("steps")).stream().map(step -> step.get("name")).toList();
   }
 
   private Map<String, Object> step(String job, String name) throws Exception {
