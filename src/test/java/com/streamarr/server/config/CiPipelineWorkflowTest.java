@@ -24,6 +24,9 @@ import org.yaml.snakeyaml.Yaml;
 @DisplayName("CI Pipeline Workflow Tests")
 class CiPipelineWorkflowTest {
 
+  private static final String SONAR_ANALYSIS =
+      "Analyze coverage and require the SonarCloud quality gate";
+
   @TempDir private Path temporaryDirectory;
 
   @ParameterizedTest
@@ -63,9 +66,7 @@ class CiPipelineWorkflowTest {
     var matrix = map(map(job("application").get("strategy")).get("matrix"));
     assertThat(matrix).containsEntry("suite", List.of("unit", "integration"));
     assertThat(job("analysis")).containsEntry("needs", "application");
-    var capture = temporaryDirectory.resolve("mvnw");
-    Files.writeString(capture, "#!/bin/sh\nprintf '%s\\n' \"$@\"\n");
-    assertThat(capture.toFile().setExecutable(true)).isTrue();
+    var capture = argumentCapturingMaven();
     var arguments =
         Map.of(
             "matrix.suite",
@@ -281,29 +282,88 @@ class CiPipelineWorkflowTest {
 
   @ParameterizedTest
   @CsvSource({
-    "pull_request, refs/pull/353/merge, true",
-    "pull_request, refs/heads/main, true",
-    "push, refs/heads/main, true",
-    "push, refs/heads/feature, false",
-    "workflow_dispatch, refs/heads/main, true",
-    "workflow_dispatch, refs/heads/feature, false"
+    "pull_request, refs/pull/353/merge, streamarr/streamarr-server, maintainer, true",
+    "pull_request, refs/pull/353/merge, contributor/streamarr-server, contributor, false",
+    "pull_request, refs/pull/353/merge, streamarr/streamarr-server, dependabot[bot], false",
+    "push, refs/heads/main, '', maintainer, true",
+    "push, refs/heads/feature, '', maintainer, false",
+    "workflow_dispatch, refs/heads/main, '', maintainer, true",
+    "workflow_dispatch, refs/heads/feature, '', maintainer, false"
   })
-  @DisplayName("Should scope Sonar analysis to authenticated pull requests and main")
-  void shouldScopeSonarAnalysisToAuthenticatedPullRequestsAndMain(
-      String event, String ref, boolean allowedWithToken) throws Exception {
-    for (var token : List.of("", "test-token")) {
-      var context = Map.of("env.SONAR_TOKEN", token, "github.event_name", event, "github.ref", ref);
-      for (var name : List.of("Cache SonarCloud packages", "SonarCloud analysis")) {
-        var condition = step("analysis", name).get("if").toString();
-        var result = runBash("[[ " + substituteContext(condition, context) + " ]]");
+  @DisplayName("Should scope Sonar analysis to trusted pull requests and main")
+  void shouldScopeSonarAnalysisToTrustedPullRequestsAndMain(
+      String event, String ref, String headRepository, String actor, boolean analyzed)
+      throws Exception {
+    var context =
+        Map.of(
+            "github.event.pull_request.head.repo.full_name", headRepository,
+            "github.repository", "streamarr/streamarr-server",
+            "github.event_name", event,
+            "github.ref", ref,
+            "github.actor", actor);
+    for (var name : List.of("Cache SonarCloud packages", SONAR_ANALYSIS)) {
+      var condition = step("analysis", name).get("if").toString();
+      var result = runBash("[[ " + substituteContext(condition, context) + " ]]");
 
-        assertThat(result.exitCode())
-            .as(
-                "%s: event=%s ref=%s tokenPresent=%s; %s",
-                name, event, ref, !token.isEmpty(), result.output())
-            .isEqualTo(allowedWithToken && !token.isEmpty() ? 0 : 1);
-      }
+      assertThat(result.exitCode())
+          .as("%s: event=%s ref=%s head=%s actor=%s", name, event, ref, headRepository, actor)
+          .isEqualTo(analyzed ? 0 : 1);
     }
+  }
+
+  @Test
+  @DisplayName("Should fail with a setup instruction when the analysis token is missing")
+  void shouldFailWithSetupInstructionWhenAnalysisTokenIsMissing() throws Exception {
+    var result = runBash(sonarAnalysisCommand(), Map.of("SONAR_TOKEN", ""));
+
+    assertThat(result.exitCode()).as(result.output()).isNotZero();
+    assertThat(result.output())
+        .contains("Grant this repository access to ORG_SONAR_TOKEN")
+        .doesNotContain("sonar-maven-plugin");
+  }
+
+  @Test
+  @DisplayName("Should wait for the quality gate when analyzing with a token")
+  void shouldWaitForQualityGateWhenAnalyzingWithToken() throws Exception {
+    var result = runBash(sonarAnalysisCommand(), Map.of("SONAR_TOKEN", "test-token"));
+
+    assertThat(result.exitCode()).as(result.output()).isZero();
+    assertThat(result.output().lines().toList())
+        .containsExactly(
+            "--batch-mode",
+            "org.sonarsource.scanner.maven:sonar-maven-plugin:sonar",
+            "-Dsonar.qualitygate.wait=true");
+  }
+
+  @Test
+  @DisplayName("Should expose the analysis token only to the analysis step")
+  void shouldExposeAnalysisTokenOnlyToAnalysisStep() throws Exception {
+    assertThat(job("analysis")).doesNotContainKey("env");
+    assertThat(steps(job("analysis").get("steps")))
+        .filteredOn(candidate -> candidate.containsKey("env"))
+        .filteredOn(candidate -> map(candidate.get("env")).containsKey("SONAR_TOKEN"))
+        .singleElement()
+        .satisfies(
+            analysis -> {
+              assertThat(analysis).containsEntry("name", SONAR_ANALYSIS);
+              assertThat(map(analysis.get("env")))
+                  .containsEntry("SONAR_TOKEN", "${{ secrets.ORG_SONAR_TOKEN }}");
+            });
+  }
+
+  private String sonarAnalysisCommand() throws Exception {
+    return step("analysis", SONAR_ANALYSIS)
+        .get("run")
+        .toString()
+        .replace("./mvnw", "'" + argumentCapturingMaven() + "'");
+  }
+
+  private Path argumentCapturingMaven() throws Exception {
+    var capture = temporaryDirectory.resolve("mvnw");
+    Files.writeString(capture, "#!/bin/sh\nprintf '%s\\n' \"$@\"\n");
+    assertThat(capture.toFile().setExecutable(true)).isTrue();
+
+    return capture;
   }
 
   private static String substituteContext(String expression, Map<String, String> context) {
@@ -336,12 +396,17 @@ class CiPipelineWorkflowTest {
   }
 
   private CommandResult runBash(String command) throws Exception {
+    return runBash(command, Map.of());
+  }
+
+  private CommandResult runBash(String command, Map<String, String> environment) throws Exception {
     var output = temporaryDirectory.resolve("command.log");
     var builder =
         new ProcessBuilder("bash", "-e", "-c", command)
             .redirectErrorStream(true)
             .redirectOutput(output.toFile());
     builder.environment().put("GITHUB_ENV", temporaryDirectory.resolve("github-env").toString());
+    builder.environment().putAll(environment);
     var process = builder.start();
     assertThat(process.waitFor(10, TimeUnit.SECONDS)).as("CI command completed").isTrue();
     return new CommandResult(process.exitValue(), Files.readString(output));

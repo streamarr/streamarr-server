@@ -113,6 +113,16 @@ Google Java Format is enforced via Spotless:
 ./mvnw spotless:apply
 ----
 
+== SonarCloud Analysis
+
+CI analyzes `main` and pull requests from this repository after the combined coverage report is verified.
+A missing token, failed analysis, or failed quality gate fails the aggregate `build` check.
+Fork and Dependabot pull requests run the build without SonarCloud credentials. Their code is analyzed after it reaches `main`.
+
+The project is `streamarr_streamarr-server` in the `streamarr` organization.
+Grant this repository access to the organization's `ORG_SONAR_TOKEN` Actions secret. CI maps it to the scanner's `SONAR_TOKEN` for the analysis step only.
+Project settings live in `pom.xml`. Never put the token in a command argument, source file, or log.
+
 == TMDB API Token
 
 Get a free API read access token at https://www.themoviedb.org/settings/api and add it to your `.env` file.
