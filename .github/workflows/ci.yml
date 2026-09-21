@@ -102,7 +102,7 @@ jobs:
         run: bash .github/actions/require-worker-image.sh
 
       - name: Set up JDK 25
-        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           java-version: '25'
           distribution: 'zulu'
@@ -163,7 +163,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up JDK 25
-        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           java-version: '25'
           distribution: 'zulu'
@@ -252,7 +252,7 @@ jobs:
 
       - name: Set up JDK 25
         if: matrix.architecture == 'arm64'
-        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           java-version: '25'
           distribution: 'zulu'
