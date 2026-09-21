@@ -29,7 +29,7 @@ runs:
         pack_args=(
           --builder paketobuildpacks/ubuntu-noble-builder:0.0.194
           --buildpack paketo-buildpacks/java
-          --buildpack paketo-buildpacks/procfile@5.14.0
+          --buildpack paketo-buildpacks/procfile@5.15.0
           --env BP_JVM_VERSION=25
           --env BP_INCLUDE_FILES=Procfile
           --env "BP_OCI_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
