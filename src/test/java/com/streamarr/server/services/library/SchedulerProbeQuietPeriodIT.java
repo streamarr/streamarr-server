@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 import static org.awaitility.Awaitility.await;
 
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
@@ -20,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -95,7 +97,9 @@ class SchedulerProbeQuietPeriodIT extends AbstractProbeSchedulerIntegrationTest 
     assertThat(client.getScheduledExecution(instanceOf(changing)))
         .hasValueSatisfying(
             retry -> {
-              assertThat(retry.getExecutionTime()).isEqualTo(clock.instant().plus(quietPeriod));
+              // scheduled_tasks keeps microseconds; the controlled clock can carry nanoseconds.
+              assertThat(retry.getExecutionTime())
+                  .isCloseTo(clock.instant().plus(quietPeriod), within(1, ChronoUnit.MICROS));
               assertThat(retry.isPicked()).isFalse();
             });
     assertThat(changingProbes).hasValue(1);

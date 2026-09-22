@@ -209,11 +209,7 @@ class FileEventProcessorTest {
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
     assertThat(waiting.await(5, TimeUnit.SECONDS)).isTrue();
 
-    await()
-        .during(Duration.ofMillis(200))
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> assertThat(events.getEventsOfType(MediaFileProbeTaskRequested.class)).isEmpty());
+    assertThat(events.getEventsOfType(MediaFileProbeTaskRequested.class)).isEmpty();
 
     stopsChanging.countDown();
 
