@@ -12,6 +12,7 @@ import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fakes.VirtualTimeSleeper;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.probe.ProbeTaskRequests;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.support.ControlledClockConfiguration;
 import com.streamarr.server.support.ControlledQuietPeriodConfiguration;
@@ -45,6 +46,7 @@ class SchedulerProbeQuietPeriodIT extends AbstractProbeSchedulerIntegrationTest 
   @Autowired private FileStabilityChecker fileStabilityChecker;
   @Autowired private LibraryWatcherProperties watcherProperties;
   @Autowired private MutableClock clock;
+  @Autowired private ProbeTaskRequests probeTaskRequests;
 
   @Test
   @DisplayName("Should spend no quiet period when a batch of unchanged files is probed")
@@ -119,6 +121,83 @@ class SchedulerProbeQuietPeriodIT extends AbstractProbeSchedulerIntegrationTest 
   }
 
   @Test
+  @DisplayName(
+      "Should keep the quiet period when a scan records the changed source during its probe")
+  void shouldKeepTheQuietPeriodWhenAScanRecordsTheChangedSourceDuringItsProbe() throws Exception {
+    var quietPeriod = Duration.ofSeconds(watcherProperties.stabilizationPeriodSeconds());
+    var changing = requestUnchangedFiles(1).getFirst();
+    var changingSource = FilepathCodec.decode(changing.filepathUri());
+    var copying = new AtomicBoolean(true);
+    var probing = new CountDownLatch(1);
+    var scanned = new CountDownLatch(1);
+    var changingProbes = new AtomicInteger();
+    var fake = new FakeFfprobeService();
+    FfprobeService producer =
+        request -> {
+          if (changingProbes.incrementAndGet() == 1) {
+            appendWhile(copying, changingSource);
+            probing.countDown();
+            awaitSignal(scanned);
+          }
+
+          return fake.probe(request);
+        };
+    var completed = ConcurrentHashMap.<String>newKeySet();
+    var client =
+        startScheduler(
+            probeExecution.toBuilder().producer(producer).build(),
+            recordingCompletions(completed),
+            clock);
+
+    assertThat(probing.await(15, TimeUnit.SECONDS)).isTrue();
+    probeTaskRequests.request(changing.toBuilder().snapshot(snapshotOf(changingSource)).build());
+    scanned.countDown();
+
+    await().atMost(Duration.ofSeconds(15)).until(() -> !completed.isEmpty());
+    assertThat(client.getScheduledExecution(instanceOf(changing)))
+        .hasValueSatisfying(
+            retry -> {
+              assertThat(retry.isPicked()).isFalse();
+              assertThat(retry.getExecutionTime())
+                  .isCloseTo(clock.instant().plus(quietPeriod), within(1, ChronoUnit.MICROS));
+            });
+    assertThat(changingProbes).hasValue(1);
+  }
+
+  @Test
+  @DisplayName("Should keep a pending quiet period when a scan records a newer snapshot")
+  void shouldKeepAPendingQuietPeriodWhenAScanRecordsANewerSnapshot() throws Exception {
+    var changing = requestUnchangedFiles(1).getFirst();
+    var changingSource = FilepathCodec.decode(changing.filepathUri());
+    var copying = new AtomicBoolean(true);
+    var fake = new FakeFfprobeService();
+    FfprobeService producer =
+        request -> {
+          appendWhile(copying, changingSource);
+          return fake.probe(request);
+        };
+    var completed = ConcurrentHashMap.<String>newKeySet();
+    var client =
+        startScheduler(
+            probeExecution.toBuilder().producer(producer).build(),
+            recordingCompletions(completed),
+            clock);
+    await().atMost(Duration.ofSeconds(15)).until(() -> !completed.isEmpty());
+    var deadline = client.getScheduledExecution(instanceOf(changing)).orElseThrow();
+
+    appendWhile(copying, changingSource);
+    var scan = changing.toBuilder().snapshot(snapshotOf(changingSource)).build();
+    probeTaskRequests.request(scan);
+
+    assertThat(client.getScheduledExecution(instanceOf(changing)))
+        .hasValueSatisfying(
+            retry -> {
+              assertThat(retry.getData()).isEqualTo(scan);
+              assertThat(retry.getExecutionTime()).isEqualTo(deadline.getExecutionTime());
+            });
+  }
+
+  @Test
   @DisplayName("Should spend one quiet period when the watcher waits for an unchanged file")
   void shouldSpendOneQuietPeriodWhenTheWatcherWaitsForAnUnchangedFile() throws Exception {
     var source = FilepathCodec.decode(requestUnchangedFiles(1).getFirst().filepathUri());
@@ -148,6 +227,16 @@ class SchedulerProbeQuietPeriodIT extends AbstractProbeSchedulerIntegrationTest 
       Files.write(source, new byte[] {9}, StandardOpenOption.APPEND);
     } catch (IOException exception) {
       throw new UncheckedIOException(exception);
+    }
+  }
+
+  private static void awaitSignal(CountDownLatch signal) {
+    try {
+      if (!signal.await(15, TimeUnit.SECONDS)) {
+        throw new IllegalStateException("Signal was not given within 15 seconds");
+      }
+    } catch (InterruptedException _) {
+      Thread.currentThread().interrupt();
     }
   }
 

@@ -59,7 +59,8 @@ public class ProbeTaskCompletion {
 
     var inputs = desired.get();
     if (!inputs.equals(new ProbeInputs(request.snapshot(), request.probeVersion()))) {
-      return new ProbeExecutionResult.Rescheduled(
+      return retryWithRequestedInputs(
+          result,
           request.toBuilder()
               .snapshot(inputs.snapshot())
               .probeVersion(inputs.probeVersion())
@@ -72,6 +73,18 @@ public class ProbeTaskCompletion {
                 outcomes.recordProbeRequest(
                     next.mediaFileId(), new ProbeInputs(next.snapshot(), next.probeVersion())));
     return result;
+  }
+
+  private static ProbeExecutionResult retryWithRequestedInputs(
+      ProbeExecutionResult result, ProbeTaskRequest requested) {
+    return switch (result) {
+      case ProbeExecutionResult.SourceChanged _ ->
+          new ProbeExecutionResult.SourceChanged(requested);
+      case ProbeExecutionResult.Completed _,
+          ProbeExecutionResult.Rescheduled _,
+          ProbeExecutionResult.Deferred _ ->
+          new ProbeExecutionResult.Rescheduled(requested);
+    };
   }
 
   private static Optional<ProbeTaskRequest> nextInputs(ProbeExecutionResult result) {
