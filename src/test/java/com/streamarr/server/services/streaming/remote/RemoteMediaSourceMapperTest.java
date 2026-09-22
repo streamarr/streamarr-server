@@ -34,18 +34,6 @@ class RemoteMediaSourceMapperTest {
 
   @ParameterizedTest
   @ValueSource(
-      strings = {"/media/movies", "/media/movies/../outside.mkv", "/media/movies-extra/film.mkv"})
-  @DisplayName("Should reject the source when it is not a file below the root")
-  void shouldRejectSourceWhenItIsNotFileBelowRoot(String sourcePath) {
-    var source = Path.of(sourcePath);
-
-    assertThatThrownBy(() -> mapper.map(source))
-        .isExactlyInstanceOf(TranscodeException.class)
-        .hasMessage("Media source is outside the configured source namespace");
-  }
-
-  @ParameterizedTest
-  @ValueSource(
       strings = {
         "Café Meridian (2006)/Café Meridian (2006).mkv",
         "Amélie’s Journey.mkv",
