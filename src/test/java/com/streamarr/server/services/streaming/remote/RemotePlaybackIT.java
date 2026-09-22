@@ -17,6 +17,7 @@ import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
+import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
@@ -329,6 +330,33 @@ class RemotePlaybackIT {
       assertThat(worker.commandFor(handle.attemptId()).orElseThrow())
           .contains("/media/" + relativeKey);
       executor.stop(streamSessionId);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should fail the probe for retry when the worker reads filenames under an ASCII locale")
+  void shouldFailProbeForRetryWhenWorkerReadsFilenamesUnderAsciiLocale() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    var mediaFile = Files.writeString(mediaRoot.resolve("Café Meridian (2006).mkv"), "test media");
+    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+
+    try (var server = server(segmentStore);
+        var worker = workerBuilder(server, mediaRoot).filenameLocale("POSIX").build()) {
+      server.start();
+      worker.start();
+      var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, mediaRoot);
+      var request =
+          ProbeExecutionRequest.builder()
+              .sourcePath(mediaFile)
+              .attemptId(UUID.randomUUID())
+              .probeVersion(ProbeVersion.CURRENT)
+              .build();
+
+      assertThatThrownBy(() -> service.probe(request))
+          .isInstanceOf(ProbeExecutionException.class)
+          .hasRootCauseMessage(
+              "Worker probe reported a retryable failure: PROBE_FAILURE_SOURCE_UNAVAILABLE");
     }
   }
 
