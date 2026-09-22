@@ -1,6 +1,8 @@
 package com.streamarr.server.services.library;
 
+import com.github.kagkarlsson.scheduler.TaskRepository;
 import com.github.kagkarlsson.scheduler.task.CompletionHandler;
+import com.github.kagkarlsson.scheduler.task.RescheduleUpdate;
 import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
@@ -19,6 +21,7 @@ public class ProbeTaskCompletion {
   private final PlatformTransactionManager transactionManager;
   private final Clock clock;
   private final ProbeSchedulingProperties properties;
+  private final TaskRepository probeTasks;
 
   public CompletionHandler<ProbeTaskRequest> handlerFor(
       ProbeTaskRequest request, ProbeExecutionResult result) {
@@ -31,8 +34,11 @@ public class ProbeTaskCompletion {
                     case ProbeExecutionResult.Rescheduled(var next) ->
                         operations.reschedule(complete, clock.instant(), next);
                     case ProbeExecutionResult.Deferred _ ->
-                        operations.reschedule(
-                            complete, clock.instant().plus(properties.busyWorkerRetryDelay()));
+                        probeTasks.reschedule(
+                            complete.getExecution(),
+                            RescheduleUpdate.toExecutionTime(
+                                    clock.instant().plus(properties.busyWorkerRetryDelay()))
+                                .build());
                   }
                 });
   }

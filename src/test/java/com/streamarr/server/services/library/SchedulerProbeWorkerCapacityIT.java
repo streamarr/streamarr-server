@@ -3,6 +3,7 @@ package com.streamarr.server.services.library;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 import static org.awaitility.Awaitility.await;
 
 import com.github.kagkarlsson.scheduler.Scheduler;
@@ -20,6 +21,8 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
+import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.LoopbackProbeWorker;
@@ -29,6 +32,7 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
+import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
@@ -42,12 +46,14 @@ import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import javax.sql.DataSource;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
@@ -141,6 +147,9 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
                   assertThat(pending.isPicked()).isFalse();
                   assertThat(pending.getConsecutiveFailures()).isZero();
                 });
+        assertThat(reader.find(UUID.fromString(deferred.getExecution().taskInstance.getId())))
+            .as("Releasing the scheduler slot must not record a probe outcome")
+            .isEmpty();
 
         worker.reply(success(held));
         worker.reply(success(worker.nextResponse(WORKER_WAIT).getStartProbe().getRequest()));
@@ -161,7 +170,61 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
     }
   }
 
-  private SchedulerClient startScheduler(RemoteFfprobeService producer) {
+  @Test
+  @DisplayName(
+      "Should keep earlier probe failures when busy workers defer the probe before a real failure")
+  void shouldKeepEarlierProbeFailuresWhenBusyWorkersDeferProbeBeforeRealFailure() throws Exception {
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    libraryId = library.getId();
+    var request = request(createMediaFile("failing.mkv"));
+    scheduling.request(request);
+    var earlierFailure = Instant.parse("2026-09-01T12:00:00Z");
+    dsl.update(DSL.table("scheduled_tasks"))
+        .set(DSL.field("consecutive_failures", Integer.class), 2)
+        .set(DSL.field("last_failure", Instant.class), earlierFailure)
+        .where(DSL.field("task_instance", String.class).eq(request.mediaFileId().toString()))
+        .execute();
+    var attempts = new AtomicInteger();
+    FfprobeService producer =
+        _ -> {
+          if (attempts.incrementAndGet() == 1) {
+            throw new ProbeWorkersBusyException();
+          }
+
+          throw new ProbeExecutionException("Worker lost the probe");
+        };
+    var client = startScheduler(producer);
+
+    var deferred = completions.poll(WORKER_WAIT.toSeconds(), TimeUnit.SECONDS);
+
+    assertThat(deferred).isNotNull();
+    assertThat(deferred.getResult()).isEqualTo(ExecutionComplete.Result.OK);
+    assertThat(client.getScheduledExecution(instanceOf(request)))
+        .as("A busy deferral must neither clear nor add to the failure history")
+        .hasValueSatisfying(
+            pending -> {
+              assertThat(pending.getConsecutiveFailures()).isEqualTo(2);
+              assertThat(pending.getLastFailure()).isEqualTo(earlierFailure);
+              assertThat(pending.getLastSuccess()).isNull();
+            });
+
+    var failed = completions.poll(WORKER_WAIT.toSeconds(), TimeUnit.SECONDS);
+
+    assertThat(failed).isNotNull();
+    assertThat(failed.getResult()).isEqualTo(ExecutionComplete.Result.FAILED);
+    assertThat(client.getScheduledExecution(instanceOf(request)))
+        .as("The third consecutive failure backs off 20 seconds")
+        .hasValueSatisfying(
+            pending -> {
+              assertThat(pending.getConsecutiveFailures()).isEqualTo(3);
+              assertThat(pending.getExecutionTime())
+                  .isCloseTo(
+                      failed.getTimeDone().plus(Duration.ofSeconds(20)),
+                      within(2, ChronoUnit.SECONDS));
+            });
+  }
+
+  private SchedulerClient startScheduler(FfprobeService producer) {
     var execution =
         ProbeExecution.builder()
             .mediaFiles(mediaFiles)

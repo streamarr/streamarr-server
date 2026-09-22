@@ -7,6 +7,7 @@ import com.github.kagkarlsson.scheduler.ScheduledExecution;
 import com.github.kagkarlsson.scheduler.Scheduler;
 import com.github.kagkarlsson.scheduler.SchedulerClient;
 import com.github.kagkarlsson.scheduler.SchedulerName;
+import com.github.kagkarlsson.scheduler.TaskRepository;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.serializer.Serializer;
@@ -78,6 +79,7 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
   @Autowired private ProbeTaskCompletion probeTaskCompletion;
   @Autowired private DbSchedulerCustomizer schedulerCustomizer;
   @Autowired private PlatformTransactionManager transactionManager;
+  @Autowired private TaskRepository probeTasks;
 
   private final FakeFfprobeService producer = new FakeFfprobeService();
   private final CountDownLatch executionFinished = new CountDownLatch(1);
@@ -255,7 +257,8 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
                 outcomes,
                 transactionManager,
                 Clock.offset(Clock.systemUTC(), Duration.ofDays(1)),
-                new ProbeSchedulingProperties(null)));
+                new ProbeSchedulingProperties(null),
+                probeTasks));
     task =
         Tasks.custom(MediaProbeTask.NAME, ProbeTaskRequest.class)
             .execute((instance, context) -> rollbackAfter(originalTask.execute(instance, context)));
