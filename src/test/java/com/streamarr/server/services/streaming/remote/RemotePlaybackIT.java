@@ -335,8 +335,9 @@ class RemotePlaybackIT {
 
   @Test
   @DisplayName(
-      "Should fail the probe for retry when the worker reads filenames under an ASCII locale")
-  void shouldFailProbeForRetryWhenWorkerReadsFilenamesUnderAsciiLocale() throws Exception {
+      "Should diagnose the locale and fail the probe for retry when the worker reads filenames under an ASCII locale")
+  void shouldDiagnoseLocaleAndFailProbeForRetryWhenWorkerReadsFilenamesUnderAsciiLocale()
+      throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = Files.writeString(mediaRoot.resolve("Café Meridian (2006).mkv"), "test media");
     var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
@@ -357,6 +358,9 @@ class RemotePlaybackIT {
           .isInstanceOf(ProbeExecutionException.class)
           .hasRootCauseMessage(
               "Worker probe reported a retryable failure: PROBE_FAILURE_SOURCE_UNAVAILABLE");
+      assertThat(worker.logs())
+          .contains("rather than UTF-8")
+          .contains("the effective locale is LC_ALL=POSIX");
     }
   }
 

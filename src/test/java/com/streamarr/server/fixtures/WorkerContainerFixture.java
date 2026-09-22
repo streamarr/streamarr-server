@@ -259,6 +259,10 @@ public final class WorkerContainerFixture implements AutoCloseable {
         .count();
   }
 
+  public String logs() {
+    return container.getLogs();
+  }
+
   public void pause() {
     container.getDockerClient().pauseContainerCmd(container.getContainerId()).exec();
   }
