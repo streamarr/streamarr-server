@@ -290,6 +290,49 @@ class RemotePlaybackIT {
   }
 
   @Test
+  @DisplayName(
+      "Should probe and stream media whose names contain Unicode and percents when using the standalone worker image")
+  void shouldProbeAndStreamMediaWhoseNamesContainUnicodeAndPercentsWhenUsingStandaloneWorkerImage()
+      throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    var relativeKey = "東京 Café’s 🎬 %2F ..%2F dir/Ame\u0301lie’s 100%23 #1 한국 𝄞 (2001).mkv";
+    var mediaFile = mediaRoot.resolve(relativeKey);
+    Files.createDirectories(mediaFile.getParent());
+    var source = getClass().getResource("/BigBuckBunny_320x180_10s.mp4");
+    assertThat(source).isNotNull();
+    Files.copy(Path.of(source.toURI()), mediaFile);
+    var segmentStore = new PublishingSegmentStore(tempDir.resolve("server-segments"));
+    var streamSessionId = UUID.randomUUID();
+
+    try (var server = server(segmentStore);
+        var worker = workerBuilder(server, mediaRoot).build()) {
+      server.start();
+      worker.start();
+      var probe =
+          new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, mediaRoot)
+              .probe(
+                  ProbeExecutionRequest.builder()
+                      .sourcePath(mediaFile)
+                      .attemptId(UUID.randomUUID())
+                      .probeVersion(ProbeVersion.CURRENT)
+                      .build());
+
+      assertThat(probe)
+          .isInstanceOfSatisfying(
+              ProbeOutcome.Success.class,
+              outcome -> assertThat(outcome.mediaProbe().videoCodec()).isEqualTo("h264"));
+
+      var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
+      var handle = executor.start(transcodeRequest(streamSessionId, mediaFile));
+      segmentStore.publication("segment0.ts").get(30, TimeUnit.SECONDS);
+
+      assertThat(worker.commandFor(handle.attemptId()).orElseThrow())
+          .contains("/media/" + relativeKey);
+      executor.stop(streamSessionId);
+    }
+  }
+
+  @Test
   @DisplayName("Should refuse a remote transcode when no worker is connected")
   void shouldRefuseRemoteTranscodeWhenNoWorkerIsConnected() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));

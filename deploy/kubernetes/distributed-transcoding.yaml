@@ -162,6 +162,8 @@ spec:
               value: cccccccc-cccc-cccc-cccc-cccccccccccc
             - name: STREAMING_REMOTE_SOURCE_ROOT
               value: /media
+            - name: LANG
+              value: C.UTF-8
           volumeMounts:
             - name: media
               mountPath: /media
@@ -249,6 +251,8 @@ spec:
               value: /media
             - name: TRANSCODE_WORKER_SLOTS
               value: "1"
+            - name: LANG
+              value: C.UTF-8
           volumeMounts:
             - name: media
               mountPath: /media

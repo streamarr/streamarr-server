@@ -94,6 +94,37 @@ class WorkerSessionDeploymentTest {
         .noneMatch(name -> name.contains("TLS") || name.contains("PLAINTEXT"));
   }
 
+  @Test
+  @DisplayName("Should run every official process under a UTF-8 locale when deployed")
+  void shouldRunEveryOfficialProcessUnderUtf8LocaleWhenDeployed() throws IOException {
+    var composeServices =
+        new ObjectMapper()
+            .valueToTree(new Yaml().load(Files.readString(Path.of("docker-compose.yml"))))
+            .path("services");
+    var kubernetes = kubernetesDeployments();
+    var environments =
+        Map.of(
+            "Compose streamarr-server",
+            composeEnvironment(composeServices.path("streamarr-server")),
+            "Compose transcode-worker",
+            composeEnvironment(composeServices.path("transcode-worker")),
+            "Kubernetes streamarr-server",
+            environment(kubernetes.get("streamarr-server")),
+            "Kubernetes streamarr-transcode-worker",
+            environment(kubernetes.get("streamarr-transcode-worker")));
+
+    environments.forEach(
+        (process, environment) -> {
+          assertThat(environment).as(process).containsEntry("LANG", "C.UTF-8");
+          assertThat(environment).as(process).doesNotContainKeys("LC_ALL", "LC_CTYPE");
+        });
+  }
+
+  private Map<String, String> composeEnvironment(JsonNode service) {
+    return service.path("environment").properties().stream()
+        .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().asString()));
+  }
+
   private Map<String, JsonNode> kubernetesDeployments() throws IOException {
     var documents =
         new Yaml()
