@@ -27,7 +27,8 @@ class PostgresLockTestSupportTest {
     var followUpStatement = mock(PreparedStatement.class);
     var blockedBackend = mock(ResultSet.class);
     var unblockedBackend = mock(ResultSet.class);
-    when(observer.createStatement()).thenReturn(mock(Statement.class));
+    var snapshotReset = mock(Statement.class);
+    when(observer.createStatement()).thenReturn(snapshotReset);
     when(observer.prepareStatement(anyString())).thenReturn(pollStatement, followUpStatement);
     when(pollStatement.executeQuery()).thenReturn(blockedBackend);
     when(blockedBackend.next()).thenReturn(true);
