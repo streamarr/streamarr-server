@@ -16,6 +16,7 @@ import com.streamarr.transcode.v1.WorkerRegistration;
 import io.grpc.ManagedChannel;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
+import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -72,7 +73,11 @@ public final class LoopbackProbeWorker implements AutoCloseable {
   }
 
   public EstablishWorkerSessionResponse nextResponse() throws InterruptedException {
-    var response = responses.poll(5, TimeUnit.SECONDS);
+    return nextResponse(Duration.ofSeconds(5));
+  }
+
+  public EstablishWorkerSessionResponse nextResponse(Duration timeout) throws InterruptedException {
+    var response = responses.poll(timeout.toNanos(), TimeUnit.NANOSECONDS);
     assertThat(response).isNotNull();
     return response;
   }

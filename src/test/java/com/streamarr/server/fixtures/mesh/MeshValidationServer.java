@@ -1,5 +1,6 @@
 package com.streamarr.server.fixtures.mesh;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
@@ -54,7 +55,7 @@ public final class MeshValidationServer {
                     .setRelativeKey("mesh-fixture.mkv"))
             .build();
     try {
-      var result = server.dispatchProbe(request).orElseThrow().get(10, TimeUnit.SECONDS);
+      var result = dispatched(server.dispatchProbe(request)).get(10, TimeUnit.SECONDS);
       if (!result.getProbeAttemptId().equals(request.getProbeAttemptId())
           || result.getProbeVersion() != request.getProbeVersion()
           || !result.getMedia().getContainer().getFormat().equals("mesh-fixture")) {

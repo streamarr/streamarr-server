@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.WORKER_ID;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -9,6 +10,7 @@ import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
@@ -54,7 +56,8 @@ class WorkerProbeDispatchTest {
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     registry.register(WORKER_ID, registration.build(), new CapturingResponses());
 
-    assertThat(registry.dispatchProbe(probe().clearProbeAttemptId().build())).isEmpty();
+    assertThat(registry.dispatchProbe(probe().clearProbeAttemptId().build()))
+        .isInstanceOf(ProbeDispatch.Refused.class);
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
   }
 
@@ -86,7 +89,7 @@ class WorkerProbeDispatchTest {
     secondSession.onNext(
         EstablishWorkerSessionRequest.newBuilder().setRegistration(secondRegistration).build());
     var request = probe().build();
-    var pending = registry.dispatchProbe(request).orElseThrow();
+    var pending = dispatched(registry.dispatchProbe(request));
     var result =
         ProbeAttemptResult.newBuilder()
             .setProbeAttemptId(request.getProbeAttemptId())
@@ -163,13 +166,15 @@ class WorkerProbeDispatchTest {
     var decodedReply = ProbeAttemptResult.parseFrom(reply.build().toByteArray());
     var dispatched = registry.dispatchProbe(decodedRequest);
     var replyAccepted =
-        dispatched
-            .map(_ -> registry.completeProbe(WORKER_ID, sessionId, decodedReply))
-            .orElse(false);
+        dispatched instanceof ProbeDispatch.Dispatched
+            && registry.completeProbe(WORKER_ID, sessionId, decodedReply);
 
     assertSoftly(
         softly -> {
-          softly.assertThat(dispatched).as("unversioned request must be rejected").isEmpty();
+          softly
+              .assertThat(dispatched)
+              .as("unversioned request must be rejected")
+              .isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.INVALID_REQUEST));
           softly.assertThat(replyAccepted).as("unversioned reply must not be accepted").isFalse();
           softly
               .assertThat(
@@ -189,7 +194,7 @@ class WorkerProbeDispatchTest {
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
     var request = probe().build();
-    var pending = registry.dispatchProbe(request).orElseThrow();
+    var pending = dispatched(registry.dispatchProbe(request));
     var reply =
         ProbeAttemptResult.newBuilder()
             .setProbeAttemptId(request.getProbeAttemptId())
@@ -214,7 +219,8 @@ class WorkerProbeDispatchTest {
     var responses = new CapturingResponses();
     registry.register(WORKER_ID, registration().build(), responses);
 
-    assertThat(registry.dispatchProbe(probe().build())).isEmpty();
+    assertThat(registry.dispatchProbe(probe().build()))
+        .isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.NO_COMPATIBLE_WORKER));
 
     var job =
         VariantJob.newBuilder()
@@ -247,8 +253,11 @@ class WorkerProbeDispatchTest {
 
     var attempt = registry.dispatchProbe(request);
 
-    assertThat(attempt.isPresent()).isEqualTo(eligible);
-    attempt.ifPresent(future -> assertThat(future).isNotDone());
+    assertThat(attempt instanceof ProbeDispatch.Dispatched).isEqualTo(eligible);
+    if (attempt instanceof ProbeDispatch.Dispatched(var future)) {
+      assertThat(future).isNotDone();
+    }
+
     var expected =
         eligible
             ? List.of(
@@ -281,14 +290,60 @@ class WorkerProbeDispatchTest {
             .setSource(source())
             .build();
     var accepted =
-        probeFirst ? registry.dispatchProbe(probe().build()).isPresent() : registry.dispatch(job);
+        probeFirst
+            ? registry.dispatchProbe(probe().build()) instanceof ProbeDispatch.Dispatched
+            : registry.dispatch(job);
     assertThat(accepted).isTrue();
 
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isZero();
-    assertThat(registry.dispatchProbe(probe().build())).isEmpty();
+    assertThat(registry.dispatchProbe(probe().build()))
+        .isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.WORKERS_BUSY));
     assertThat(
             registry.dispatch(job.toBuilder().setJobAttemptId(toProto(UUID.randomUUID())).build()))
         .isFalse();
+  }
+
+  @Test
+  @DisplayName("Should refuse a probe as busy when a compatible worker's only slot is probing")
+  void shouldRefuseProbeAsBusyWhenCompatibleWorkersOnlySlotIsProbing() {
+    var registry = new LiveWorkerConnectionRegistry();
+    var registration = registration();
+    registration.getCapabilitiesBuilder().addProbeVersions(1);
+    registry.register(WORKER_ID, registration.build(), new CapturingResponses());
+    assertThat(registry.dispatchProbe(probe().build()))
+        .isInstanceOf(ProbeDispatch.Dispatched.class);
+
+    var second = registry.dispatchProbe(probe().build());
+
+    assertThat(second).isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.WORKERS_BUSY));
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse a probe as busy when a stream fills the compatible worker and another worker"
+          + " lacks the probe version")
+  void shouldRefuseProbeAsBusyWhenStreamFillsCompatibleWorkerAndAnotherLacksProbeVersion() {
+    var registry = new LiveWorkerConnectionRegistry();
+    var compatible = registration();
+    compatible.getCapabilitiesBuilder().addProbeVersions(1);
+    var compatibleSession =
+        registry.register(WORKER_ID, compatible.build(), new CapturingResponses());
+    var incompatibleWorker = UUID.randomUUID();
+    var incompatible = registration().setAvailableSlots(2);
+    incompatible.getWorkerBuilder().setWorkerId(toProto(incompatibleWorker));
+    incompatible.getCapabilitiesBuilder().addProbeVersions(2);
+    registry.register(incompatibleWorker, incompatible.build(), new CapturingResponses());
+    var stream =
+        VariantJob.newBuilder()
+            .setJobAttemptId(toProto(UUID.randomUUID()))
+            .setSource(source())
+            .build();
+    assertThat(registry.dispatchTo(new ExecutionTargetId(compatibleSession.toString()), stream))
+        .isTrue();
+
+    var attempt = registry.dispatchProbe(probe().build());
+
+    assertThat(attempt).isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.WORKERS_BUSY));
   }
 
   @Test
@@ -301,7 +356,7 @@ class WorkerProbeDispatchTest {
     registration.getCapabilitiesBuilder().addProbeVersions(2);
     var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
     var request = probe().setProbeVersion(2).build();
-    var attempt = registry.dispatchProbe(request).orElseThrow();
+    var attempt = dispatched(registry.dispatchProbe(request));
     var result =
         ProbeAttemptResult.newBuilder()
             .setProbeAttemptId(request.getProbeAttemptId())
@@ -313,7 +368,8 @@ class WorkerProbeDispatchTest {
 
     assertThat(attempt.get(1, TimeUnit.SECONDS)).isEqualTo(result);
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
-    assertThat(registry.dispatchProbe(probe().setProbeVersion(2).build())).isPresent();
+    assertThat(registry.dispatchProbe(probe().setProbeVersion(2).build()))
+        .isInstanceOf(ProbeDispatch.Dispatched.class);
   }
 
   @ParameterizedTest
@@ -333,7 +389,7 @@ class WorkerProbeDispatchTest {
     registration.getCapabilitiesBuilder().addProbeVersions(requestedVersion);
     var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
     var request = probe().setProbeVersion(requestedVersion).build();
-    var attempt = registry.dispatchProbe(request).orElseThrow();
+    var attempt = dispatched(registry.dispatchProbe(request));
     var result =
         ProbeAttemptResult.newBuilder()
             .setProbeAttemptId(request.getProbeAttemptId())
@@ -358,16 +414,17 @@ class WorkerProbeDispatchTest {
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
     var request = probe().build();
-    var attempt = registry.dispatchProbe(request).orElseThrow();
+    var attempt = dispatched(registry.dispatchProbe(request));
 
     registry.disconnect(WORKER_ID, sessionId);
 
     assertThatThrownBy(() -> attempt.get(1, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
         .hasCauseInstanceOf(ProbeExecutionException.class);
-    assertThat(registry.dispatchProbe(probe().build())).isEmpty();
+    assertThat(registry.dispatchProbe(probe().build()))
+        .isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.NO_CONNECTED_WORKER));
     registry.register(WORKER_ID, registration.build(), new CapturingResponses());
-    assertThat(registry.dispatchProbe(request)).isPresent();
+    assertThat(registry.dispatchProbe(request)).isInstanceOf(ProbeDispatch.Dispatched.class);
   }
 
   @Test
@@ -380,7 +437,7 @@ class WorkerProbeDispatchTest {
     var responses = new CapturingResponses();
     var sessionId = registry.register(WORKER_ID, registration.build(), responses);
     var request = probe().build();
-    var attempt = registry.dispatchProbe(request).orElseThrow();
+    var attempt = dispatched(registry.dispatchProbe(request));
 
     assertThat(attempt.cancel(true)).isTrue();
 
@@ -391,7 +448,8 @@ class WorkerProbeDispatchTest {
             .build();
     assertThat(responses.values.getLast().getCancelProbe()).isEqualTo(expected);
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isZero();
-    assertThat(registry.dispatchProbe(probe().build())).isEmpty();
+    assertThat(registry.dispatchProbe(probe().build()))
+        .isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.WORKERS_BUSY));
     var reply =
         ProbeAttemptResult.newBuilder()
             .setProbeAttemptId(request.getProbeAttemptId())
@@ -413,7 +471,7 @@ class WorkerProbeDispatchTest {
     var registration = registration().setAvailableSlots(2);
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
-    var attempt = registry.dispatchProbe(probe().build()).orElseThrow();
+    var attempt = dispatched(registry.dispatchProbe(probe().build()));
     var job =
         VariantJob.newBuilder()
             .setJobAttemptId(toProto(UUID.randomUUID()))
@@ -461,9 +519,9 @@ class WorkerProbeDispatchTest {
     var responses = new CapturingResponses();
     var sessionId = registry.register(WORKER_ID, registration.build(), responses);
     var request = probe().build();
-    var original = registry.dispatchProbe(request).orElseThrow();
+    var original = dispatched(registry.dispatchProbe(request));
 
-    assertThat(registry.dispatchProbe(request)).isEmpty();
+    assertThat(registry.dispatchProbe(request)).isInstanceOf(ProbeDispatch.Refused.class);
 
     var reply =
         ProbeAttemptResult.newBuilder()
@@ -504,7 +562,7 @@ class WorkerProbeDispatchTest {
     }
 
     var request = probe().build();
-    var original = registry.dispatchProbe(request).orElseThrow();
+    var original = dispatched(registry.dispatchProbe(request));
 
     var duplicate = registry.dispatchProbe(request);
 
@@ -516,7 +574,7 @@ class WorkerProbeDispatchTest {
             "one start command across %s eligible worker(s) for attempt %s",
             workerCount, request.getProbeAttemptId())
         .hasSize(1);
-    assertThat(duplicate).isEmpty();
+    assertThat(duplicate).isInstanceOf(ProbeDispatch.Refused.class);
     assertThat(original).isNotDone();
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(workerCount * 2 - 1);
   }
@@ -532,7 +590,7 @@ class WorkerProbeDispatchTest {
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
     var request = probe().build();
-    var pending = registry.dispatchProbe(request).orElseThrow();
+    var pending = dispatched(registry.dispatchProbe(request));
     var reply =
         ProbeAttemptResult.newBuilder()
             .setProbeAttemptId(request.getProbeAttemptId())
@@ -585,11 +643,11 @@ class WorkerProbeDispatchTest {
         release.release();
       }
 
-      assertThat(dispatch.get(5, TimeUnit.SECONDS)).isEmpty();
+      assertThat(dispatch.get(5, TimeUnit.SECONDS)).isInstanceOf(ProbeDispatch.Refused.class);
     }
 
     registry.register(WORKER_ID, registration.build(), new CapturingResponses());
-    assertThat(registry.dispatchProbe(request)).isPresent();
+    assertThat(registry.dispatchProbe(request)).isInstanceOf(ProbeDispatch.Dispatched.class);
   }
 
   @Test
@@ -601,14 +659,14 @@ class WorkerProbeDispatchTest {
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
     var request = probe().build();
-    var attempt = registry.dispatchProbe(request).orElseThrow();
+    var attempt = dispatched(registry.dispatchProbe(request));
     var otherWorker = UUID.randomUUID();
     registration.getWorkerBuilder().setWorkerId(toProto(otherWorker));
     registry.register(otherWorker, registration.build(), new CapturingResponses());
 
     assertThat(attempt.cancel(true)).isTrue();
 
-    assertThat(registry.dispatchProbe(request)).isEmpty();
+    assertThat(registry.dispatchProbe(request)).isInstanceOf(ProbeDispatch.Refused.class);
     var acknowledgement =
         ProbeAttemptResult.newBuilder()
             .setProbeAttemptId(request.getProbeAttemptId())
@@ -616,7 +674,7 @@ class WorkerProbeDispatchTest {
             .setFailure(ProbeFailure.PROBE_FAILURE_CANCELLED)
             .build();
     assertThat(registry.completeProbe(WORKER_ID, sessionId, acknowledgement)).isTrue();
-    assertThat(registry.dispatchProbe(request)).isPresent();
+    assertThat(registry.dispatchProbe(request)).isInstanceOf(ProbeDispatch.Dispatched.class);
   }
 
   @ParameterizedTest
@@ -628,7 +686,7 @@ class WorkerProbeDispatchTest {
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
     var request = probe().build();
-    assertThat(registry.dispatchProbe(request)).isPresent();
+    assertThat(registry.dispatchProbe(request)).isInstanceOf(ProbeDispatch.Dispatched.class);
     var reply =
         ProbeAttemptResult.newBuilder()
             .setProbeAttemptId(request.getProbeAttemptId())
@@ -638,7 +696,7 @@ class WorkerProbeDispatchTest {
 
     assertThat(registry.completeProbe(WORKER_ID, sessionId, reply)).isEqualTo(replyVersion == 1);
 
-    assertThat(registry.dispatchProbe(request)).isPresent();
+    assertThat(registry.dispatchProbe(request)).isInstanceOf(ProbeDispatch.Dispatched.class);
   }
 
   @Test
@@ -658,9 +716,9 @@ class WorkerProbeDispatchTest {
     registry.register(WORKER_ID, registration.build(), responses);
     var request = probe().build();
 
-    assertThat(registry.dispatchProbe(request)).isEmpty();
+    assertThat(registry.dispatchProbe(request)).isInstanceOf(ProbeDispatch.Refused.class);
 
-    assertThat(registry.dispatchProbe(request)).isPresent();
+    assertThat(registry.dispatchProbe(request)).isInstanceOf(ProbeDispatch.Dispatched.class);
   }
 
   private WorkerRegistration.Builder registration() {
@@ -683,7 +741,7 @@ class WorkerProbeDispatchTest {
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var oldSession = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
     var request = probe().build();
-    var abandoned = registry.dispatchProbe(request).orElseThrow();
+    var abandoned = dispatched(registry.dispatchProbe(request));
 
     var replacementSession =
         registry.register(WORKER_ID, registration.build(), new CapturingResponses());
@@ -691,7 +749,7 @@ class WorkerProbeDispatchTest {
     assertThatThrownBy(() -> abandoned.get(1, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
         .hasCauseInstanceOf(ProbeExecutionException.class);
-    var replacement = registry.dispatchProbe(request).orElseThrow();
+    var replacement = dispatched(registry.dispatchProbe(request));
     var reply =
         ProbeAttemptResult.newBuilder()
             .setProbeAttemptId(request.getProbeAttemptId())
@@ -732,7 +790,7 @@ class WorkerProbeDispatchTest {
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     registry.register(WORKER_ID, registration.build(), new CapturingResponses());
     var request = probe().build();
-    var superseded = registry.dispatchProbe(request).orElseThrow();
+    var superseded = dispatched(registry.dispatchProbe(request));
     var acceptanceEntered = new CountDownLatch(1);
     var releaseAcceptance = new Semaphore(0);
     var dispatchStarted = new CountDownLatch(1);
@@ -762,7 +820,7 @@ class WorkerProbeDispatchTest {
       assertThat(dispatchStarted.await(5, TimeUnit.SECONDS)).isTrue();
       releaseAcceptance.release();
       var replacementSession = replacing.get(5, TimeUnit.SECONDS);
-      assertThat(dispatching.get(5, TimeUnit.SECONDS)).isPresent();
+      assertThat(dispatching.get(5, TimeUnit.SECONDS)).isInstanceOf(ProbeDispatch.Dispatched.class);
       assertThatThrownBy(() -> superseded.get(1, TimeUnit.SECONDS))
           .isInstanceOf(ExecutionException.class)
           .hasCauseInstanceOf(ProbeExecutionException.class);
@@ -788,7 +846,8 @@ class WorkerProbeDispatchTest {
             });
     registry.register(WORKER_ID, registration.build(), responses);
 
-    assertThat(registry.dispatchProbe(probe().build())).isEmpty();
+    assertThat(registry.dispatchProbe(probe().build()))
+        .isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.WORKER_UNREACHABLE));
 
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
     assertThat(responses.values)

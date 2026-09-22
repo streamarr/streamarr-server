@@ -13,6 +13,7 @@ import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.LoopbackProbeWorker;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
@@ -106,7 +107,51 @@ class RemoteFfprobeServiceIT {
       var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
       var request = request().build();
 
-      assertThatThrownBy(() -> service.probe(request)).isInstanceOf(ProbeExecutionException.class);
+      assertThatThrownBy(() -> service.probe(request))
+          .isExactlyInstanceOf(ProbeExecutionException.class)
+          .hasMessage("No worker is connected to probe the media source");
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should fail for persisted retry when the connected worker lacks the requested probe version")
+  void shouldFailForPersistedRetryWhenConnectedWorkerLacksRequestedProbeVersion() throws Exception {
+    try (var server = server()) {
+      server.start();
+      try (var _ = worker(server.port(), 7)) {
+        var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
+        var request = request().probeVersion(1).build();
+
+        assertThatThrownBy(() -> service.probe(request))
+            .isExactlyInstanceOf(ProbeExecutionException.class)
+            .hasMessage(
+                "No connected worker can read the source namespace at the requested probe"
+                    + " version");
+      }
+    }
+  }
+
+  @Test
+  @DisplayName("Should report busy workers when the only compatible slot is already probing")
+  void shouldReportBusyWorkersWhenOnlyCompatibleSlotIsAlreadyProbing() throws Exception {
+    try (var server = server();
+        var calls = Executors.newVirtualThreadPerTaskExecutor()) {
+      server.start();
+      try (var worker = worker(server.port(), 1)) {
+        var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
+        var held = calls.submit(() -> service.probe(request().build()));
+        try {
+          assertThat(worker.nextResponse().hasStartProbe()).isTrue();
+          var request = request().build();
+
+          assertThatThrownBy(() -> service.probe(request))
+              .isExactlyInstanceOf(ProbeWorkersBusyException.class)
+              .hasMessage("All compatible workers are busy");
+        } finally {
+          held.cancel(true);
+        }
+      }
     }
   }
 

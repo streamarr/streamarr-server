@@ -158,6 +158,11 @@ db-scheduler:
   delay-startup-until-context-ready: true
   shutdown-max-wait: 30s
 
+# A probe that finds every compatible worker busy stays pending and runs again after this delay,
+# without counting as a failure.
+probe:
+  busy-worker-retry-delay: ${PROBE_BUSY_WORKER_RETRY_DELAY:5s}
+
 library:
   watcher:
     stabilization-period-seconds: ${LIBRARY_WATCHER_STABILIZATION_PERIOD:30}

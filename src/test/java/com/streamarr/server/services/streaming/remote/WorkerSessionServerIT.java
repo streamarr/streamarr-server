@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChannelBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
@@ -96,10 +97,10 @@ class WorkerSessionServerIT {
       try {
         var worker = connectProbeWorker(channel, workerIdentity(UUID.randomUUID()));
         assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
-        assertThat(server.dispatchProbe(decoded)).isEmpty();
+        assertThat(server.dispatchProbe(decoded)).isInstanceOf(ProbeDispatch.Refused.class);
         assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(2);
         var identified = request.setProbeAttemptId(toProto(new UUID(0, 1))).build();
-        assertThat(server.dispatchProbe(identified)).isPresent();
+        assertThat(server.dispatchProbe(identified)).isInstanceOf(ProbeDispatch.Dispatched.class);
         assertThat(worker.nextResponse().getStartProbe().getRequest()).isEqualTo(identified);
       } finally {
         shutdown(channel);
@@ -135,7 +136,7 @@ class WorkerSessionServerIT {
                 .setProbeVersion(1)
                 .setSource(job.getSource())
                 .build();
-        var pending = server.dispatchProbe(request).orElseThrow();
+        var pending = dispatched(server.dispatchProbe(request));
         assertThat(worker.nextResponse().getStartProbe().getRequest()).isEqualTo(request);
         var bytes = ByteString.copyFromUtf8("segment").toByteArray();
         var metadata =
@@ -209,7 +210,7 @@ class WorkerSessionServerIT {
                 .setProbeVersion(1)
                 .setSource(job.getSource())
                 .build();
-        var superseded = server.dispatchProbe(request).orElseThrow();
+        var superseded = dispatched(server.dispatchProbe(request));
         assertThat(worker.nextResponse().hasStartProbe()).isTrue();
         var bytes = ByteString.copyFromUtf8("segment").toByteArray();
         var metadata =
@@ -224,7 +225,7 @@ class WorkerSessionServerIT {
               .hasCauseInstanceOf(ProbeExecutionException.class);
 
           var dispatched = executor.submit(() -> server.dispatchProbe(request));
-          var pending = dispatched.get(5, TimeUnit.SECONDS).orElseThrow();
+          var pending = dispatched(dispatched.get(5, TimeUnit.SECONDS));
 
           assertThat(replacement.nextResponse().getStartProbe().getRequest()).isEqualTo(request);
           assertThat(pending).isNotDone();
@@ -302,7 +303,7 @@ class WorkerSessionServerIT {
                 .setSource(variantJob().getSource())
                 .build();
 
-        var pending = server.dispatchProbe(request).orElseThrow();
+        var pending = dispatched(server.dispatchProbe(request));
 
         var command = responses.poll(5, TimeUnit.SECONDS);
         assertThat(command).isNotNull();

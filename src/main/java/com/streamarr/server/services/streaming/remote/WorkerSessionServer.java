@@ -2,18 +2,15 @@ package com.streamarr.server.services.streaming.remote;
 
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.SegmentStore;
-import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.VariantJob;
 import io.grpc.ServerInterceptors;
 import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -88,15 +85,15 @@ public final class WorkerSessionServer implements AutoCloseable {
   }
 
   /**
-   * Returns empty for an invalid request or when no eligible worker has capacity. Each execution
-   * attempt requires a fresh, non-nil ID, a nonzero contract version, and a source.
+   * Returns a refusal with its reason when no worker accepts the attempt. Each execution attempt
+   * requires a fresh, non-nil ID, a nonzero contract version, and a source.
    *
    * <p>Cancelling the future requests worker termination; its reservation remains until a terminal
    * reply or session end. The configured probe deadline fails the future and requests cancellation.
    * A worker that does not acknowledge cancellation within the grace period is disconnected and
    * fenced before more work can be assigned to that session.
    */
-  public synchronized Optional<Future<ProbeAttemptResult>> dispatchProbe(ProbeRequest request) {
+  public synchronized ProbeDispatch dispatchProbe(ProbeRequest request) {
     requireStarted();
     return workerConnections.dispatchProbe(request);
   }

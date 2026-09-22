@@ -16,6 +16,7 @@ import com.github.kagkarlsson.scheduler.task.Task;
 import com.github.kagkarlsson.scheduler.task.TaskInstanceId;
 import com.github.kagkarlsson.scheduler.task.helper.Tasks;
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
@@ -251,7 +252,10 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
         MediaProbeTask.create(
             probeExecution,
             new ProbeTaskCompletion(
-                outcomes, transactionManager, Clock.offset(Clock.systemUTC(), Duration.ofDays(1))));
+                outcomes,
+                transactionManager,
+                Clock.offset(Clock.systemUTC(), Duration.ofDays(1)),
+                new ProbeSchedulingProperties(null)));
     task =
         Tasks.custom(MediaProbeTask.NAME, ProbeTaskRequest.class)
             .execute((instance, context) -> rollbackAfter(originalTask.execute(instance, context)));

@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import com.github.kagkarlsson.scheduler.task.CompletionHandler;
+import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
@@ -17,6 +18,7 @@ public class ProbeTaskCompletion {
   private final MediaFileContainerInfoRepository outcomes;
   private final PlatformTransactionManager transactionManager;
   private final Clock clock;
+  private final ProbeSchedulingProperties properties;
 
   public CompletionHandler<ProbeTaskRequest> handlerFor(
       ProbeTaskRequest request, ProbeExecutionResult result) {
@@ -28,6 +30,9 @@ public class ProbeTaskCompletion {
                     case ProbeExecutionResult.Completed _ -> operations.remove();
                     case ProbeExecutionResult.Rescheduled(var next) ->
                         operations.reschedule(complete, clock.instant(), next);
+                    case ProbeExecutionResult.Deferred _ ->
+                        operations.reschedule(
+                            complete, clock.instant().plus(properties.busyWorkerRetryDelay()));
                   }
                 });
   }

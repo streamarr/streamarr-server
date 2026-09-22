@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -13,7 +14,6 @@ import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.ProbeRequest;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
@@ -58,22 +58,24 @@ class RemoteWorkerCapacityIT {
                 .build()) {
       server.start();
       worker.start();
-      var pending = server.dispatchProbe(request).orElseThrow();
+      var pending = dispatched(server.dispatchProbe(request));
       await().atMost(5, TimeUnit.SECONDS).until(worker::probeRunning);
       // Freeze the real producer and worker before cancellation can acknowledge its termination.
       worker.pause();
       try {
         assertThat(pending.cancel(true)).isTrue();
-        assertThat(server.dispatchProbe(nextRequest)).isEmpty();
+        assertThat(server.dispatchProbe(nextRequest)).isInstanceOf(ProbeDispatch.Refused.class);
       } finally {
         worker.unpause();
       }
 
       var next =
-          await()
-              .atMost(10, TimeUnit.SECONDS)
-              .until(() -> server.dispatchProbe(nextRequest), Optional::isPresent)
-              .orElseThrow();
+          dispatched(
+              await()
+                  .atMost(10, TimeUnit.SECONDS)
+                  .until(
+                      () -> server.dispatchProbe(nextRequest),
+                      ProbeDispatch.Dispatched.class::isInstance));
       var result = next.get(10, TimeUnit.SECONDS);
 
       assertThat(worker.probeRunning()).isFalse();
