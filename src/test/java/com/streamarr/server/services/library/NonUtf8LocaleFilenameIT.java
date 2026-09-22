@@ -3,6 +3,9 @@ package com.streamarr.server.services.library;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.google.protobuf.Message;
+import com.streamarr.server.services.streaming.remote.NonUtf8LocaleSourceKeyProbe;
+import com.streamarr.transcode.v1.MediaSourceRef;
 import java.net.URISyntaxException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -61,7 +64,9 @@ class NonUtf8LocaleFilenameIT {
   private static GenericContainer<?> container;
   private static Map<String, String> movieReport;
   private static Map<String, String> seriesReport;
-  private static Map<String, String> matrixReport;
+  private static Map<String, String> movieKeyReport;
+  private static Map<String, String> seriesKeyReport;
+  private static Map<String, String> matrixKeyReport;
 
   @BeforeAll
   static void probeFilenamesUnderAnAsciiLocale() throws Exception {
@@ -73,6 +78,11 @@ class NonUtf8LocaleFilenameIT {
             .withCopyFileToContainer(
                 MountableFile.forHostPath(codeSourceOf(NonUtf8LocaleFilenameIT.class)),
                 "/app/test-classes")
+            .withCopyFileToContainer(
+                MountableFile.forHostPath(codeSourceOf(MediaSourceRef.class)),
+                "/app/lib/transcode-contract.jar")
+            .withCopyFileToContainer(
+                MountableFile.forHostPath(codeSourceOf(Message.class)), "/app/lib/protobuf.jar")
             .withEnv("LC_ALL", "POSIX")
             .withEnv("LANG", "POSIX")
             .withCommand("sleep", "infinity");
@@ -82,9 +92,11 @@ class NonUtf8LocaleFilenameIT {
     createFile(SERIES_ROOT + "/" + SERIES_FOLDER + "/" + SEASON_FOLDER + "/" + EPISODE_FILENAME);
     createFile(MATRIX_ROOT + "/" + MATRIX_FOLDER + "/" + MATRIX_FILENAME);
 
-    movieReport = probe(MOVIE_ROOT);
-    seriesReport = probe(SERIES_ROOT);
-    matrixReport = probe(MATRIX_ROOT);
+    movieReport = probe(NonUtf8LocaleFilenameProbe.class, MOVIE_ROOT);
+    seriesReport = probe(NonUtf8LocaleFilenameProbe.class, SERIES_ROOT);
+    movieKeyReport = probe(NonUtf8LocaleSourceKeyProbe.class, MOVIE_ROOT);
+    seriesKeyReport = probe(NonUtf8LocaleSourceKeyProbe.class, SERIES_ROOT);
+    matrixKeyReport = probe(NonUtf8LocaleSourceKeyProbe.class, MATRIX_ROOT);
   }
 
   @AfterAll
@@ -180,25 +192,25 @@ class NonUtf8LocaleFilenameIT {
   @Test
   @DisplayName("Should mangle the relative source key when it is read through Path")
   void shouldMangleRelativeSourceKeyWhenItIsReadThroughPath() {
-    assertThat(movieReport.get("path.relativePath")).contains(REPLACEMENT_CHAR);
+    assertThat(movieKeyReport.get("path.relativeKey")).contains(REPLACEMENT_CHAR);
   }
 
   @Test
-  @DisplayName("Should key the source by its on-disk names when deriving the relative path")
-  void shouldKeySourceByItsOnDiskNamesWhenDerivingRelativePath() {
-    assertThat(movieReport)
-        .containsEntry("codec.relativePath", MOVIE_FOLDER + "/" + MOVIE_FILENAME);
-    assertThat(seriesReport)
+  @DisplayName("Should key the source by its on-disk names when mapping it for a worker")
+  void shouldKeySourceByItsOnDiskNamesWhenMappingItForWorker() {
+    assertThat(movieKeyReport)
+        .containsEntry("mapper.relativeKey", MOVIE_FOLDER + "/" + MOVIE_FILENAME);
+    assertThat(seriesKeyReport)
         .containsEntry(
-            "codec.relativePath", SERIES_FOLDER + "/" + SEASON_FOLDER + "/" + EPISODE_FILENAME);
+            "mapper.relativeKey", SERIES_FOLDER + "/" + SEASON_FOLDER + "/" + EPISODE_FILENAME);
   }
 
   @Test
   @DisplayName(
-      "Should keep literal percent sequences and normalization when deriving the relative path")
-  void shouldKeepLiteralPercentSequencesAndNormalizationWhenDerivingRelativePath() {
-    assertThat(matrixReport)
-        .containsEntry("codec.relativePath", MATRIX_FOLDER + "/" + MATRIX_FILENAME);
+      "Should keep literal percent sequences and normalization when mapping the source for a worker")
+  void shouldKeepLiteralPercentSequencesAndNormalizationWhenMappingSourceForWorker() {
+    assertThat(matrixKeyReport)
+        .containsEntry("mapper.relativeKey", MATRIX_FOLDER + "/" + MATRIX_FILENAME);
   }
 
   /**
@@ -216,14 +228,10 @@ class NonUtf8LocaleFilenameIT {
     assertThat(result.getExitCode()).as(result.getStderr()).isZero();
   }
 
-  private static Map<String, String> probe(String root) throws Exception {
+  private static Map<String, String> probe(Class<?> probe, String root) throws Exception {
     var result =
         container.execInContainer(
-            "java",
-            "-cp",
-            "/app/classes:/app/test-classes",
-            NonUtf8LocaleFilenameProbe.class.getName(),
-            root);
+            "java", "-cp", "/app/classes:/app/test-classes:/app/lib/*", probe.getName(), root);
 
     assertThat(result.getExitCode()).as(result.getStderr()).isZero();
 
