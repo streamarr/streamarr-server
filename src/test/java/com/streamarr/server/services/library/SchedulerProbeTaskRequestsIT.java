@@ -84,7 +84,6 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
             .mediaFiles(mediaFileRepository)
             .reader(reader)
             .producer(producer)
-            .stabilityChecker(_ -> true)
             .fileSystem(FileSystems.getDefault())
             .outcomes(outcomes)
             .build();

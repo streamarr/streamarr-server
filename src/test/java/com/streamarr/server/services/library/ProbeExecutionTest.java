@@ -83,19 +83,6 @@ class ProbeExecutionTest {
   }
 
   @Test
-  @DisplayName("Should probe an unchanged source without waiting for a quiet period")
-  void shouldProbeAnUnchangedSourceWithoutWaitingForAQuietPeriod() {
-    var execution = execution().toBuilder().stabilityChecker(_ -> false).build();
-    var request = request(ProbeVersion.CURRENT);
-
-    var result = execution.execute(request);
-
-    assertThat(result).isEqualTo(new ProbeExecutionResult.Completed());
-    assertThat(producer.probeCount()).isOne();
-    assertThat(outcomes.publications()).singleElement();
-  }
-
-  @Test
   @DisplayName("Should carry the source and requested version with a fresh attempt id when probing")
   void shouldCarryTheSourceAndRequestedVersionWithAFreshAttemptIdWhenProbing() {
     var request = request(ProbeVersion.CURRENT);
@@ -282,7 +269,6 @@ class ProbeExecutionTest {
         .mediaFiles(mediaFiles)
         .reader(new PersistedProbeReader(outcomes))
         .producer(producer)
-        .stabilityChecker(_ -> true)
         .fileSystem(FileSystems.getDefault())
         .outcomes(outcomes)
         .build();

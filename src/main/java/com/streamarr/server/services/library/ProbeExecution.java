@@ -40,7 +40,6 @@ public class ProbeExecution {
   private final MediaFileRepository mediaFiles;
   private final PersistedProbeReader reader;
   private final FfprobeService producer;
-  private final FileStabilityChecker stabilityChecker;
   private final FileSystem fileSystem;
   private final MediaFileContainerInfoRepository outcomes;
 
@@ -58,10 +57,6 @@ public class ProbeExecution {
     }
 
     var path = FilepathCodec.decode(fileSystem, request.filepathUri());
-    if (snapshot(path).isEmpty()) {
-      return new ProbeExecutionResult.Completed();
-    }
-
     var before = snapshot(path);
     if (before.isEmpty()) {
       return new ProbeExecutionResult.Completed();

@@ -138,7 +138,6 @@ class SchedulerProbeCapacityIT extends AbstractIntegrationTest {
             .mediaFiles(mediaFiles)
             .reader(reader)
             .producer(producer)
-            .stabilityChecker(_ -> true)
             .fileSystem(FileSystems.getDefault())
             .outcomes(outcomes)
             .build();
