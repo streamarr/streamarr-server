@@ -7,7 +7,9 @@ import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -19,6 +21,8 @@ import tools.jackson.databind.ObjectMapper;
 @Tag("UnitTest")
 @DisplayName("Worker Session Deployment Tests")
 class WorkerSessionDeploymentTest {
+
+  private static final Pattern UTF_8_LOCALE = Pattern.compile("(?i).+\\.utf-?8(@.+)?");
 
   @Test
   @DisplayName("Should require native image validation when the worker pin changes")
@@ -114,10 +118,17 @@ class WorkerSessionDeploymentTest {
             environment(kubernetes.get("streamarr-transcode-worker")));
 
     environments.forEach(
-        (process, environment) -> {
-          assertThat(environment).as(process).containsEntry("LANG", "C.UTF-8");
-          assertThat(environment).as(process).doesNotContainKeys("LC_ALL", "LC_CTYPE");
-        });
+        (process, environment) ->
+            assertThat(effectiveFilenameLocale(environment)).as(process).matches(UTF_8_LOCALE));
+  }
+
+  // POSIX precedence for the character-type category: LC_ALL, then LC_CTYPE, then LANG.
+  private static String effectiveFilenameLocale(Map<String, String> environment) {
+    return Stream.of("LC_ALL", "LC_CTYPE", "LANG")
+        .map(environment::get)
+        .filter(value -> value != null && !value.isEmpty())
+        .findFirst()
+        .orElse("");
   }
 
   private Map<String, String> composeEnvironment(JsonNode service) {
