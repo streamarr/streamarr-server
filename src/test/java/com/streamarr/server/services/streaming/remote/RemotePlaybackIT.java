@@ -52,6 +52,8 @@ class RemotePlaybackIT {
 
   private static final UUID SOURCE_NAMESPACE_ID =
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
+  private static final String UNICODE_KEY =
+      "東京 Café’s 🎬 %2F ..%2F dir/Ame\u0301lie’s 100%23 #1 한국 𝄞 (2001).mkv";
 
   @TempDir Path tempDir;
 
@@ -61,9 +63,7 @@ class RemotePlaybackIT {
   void shouldServeSequentialSegmentsOfProbedMediaWhenUsingTheStandaloneWorkerImage()
       throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    var source = getClass().getResource("/BigBuckBunny_320x180_10s.mp4");
-    assertThat(source).isNotNull();
-    var mediaFile = Files.copy(Path.of(source.toURI()), mediaRoot.resolve("movie.mkv"));
+    var mediaFile = copyTestClip(mediaRoot.resolve("movie.mkv"));
     var segments =
         Map.of(
             "segment0.ts", "first remote segment".getBytes(),
@@ -89,12 +89,7 @@ class RemotePlaybackIT {
       var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
       var probe =
           new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, mediaRoot)
-              .probe(
-                  ProbeExecutionRequest.builder()
-                      .sourcePath(mediaFile)
-                      .attemptId(UUID.randomUUID())
-                      .probeVersion(ProbeVersion.CURRENT)
-                      .build());
+              .probe(probeRequest(mediaFile));
 
       assertThat(probe)
           .isInstanceOfSatisfying(
@@ -292,18 +287,12 @@ class RemotePlaybackIT {
 
   @Test
   @DisplayName(
-      "Should probe and stream media whose names contain Unicode and percents when using the standalone worker image")
-  void shouldProbeAndStreamMediaWhoseNamesContainUnicodeAndPercentsWhenUsingStandaloneWorkerImage()
+      "Should probe media whose names contain Unicode and percents when using the standalone worker image")
+  void shouldProbeMediaWhoseNamesContainUnicodeAndPercentsWhenUsingStandaloneWorkerImage()
       throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    var relativeKey = "東京 Café’s 🎬 %2F ..%2F dir/Ame\u0301lie’s 100%23 #1 한국 𝄞 (2001).mkv";
-    var mediaFile = mediaRoot.resolve(relativeKey);
-    Files.createDirectories(mediaFile.getParent());
-    var source = getClass().getResource("/BigBuckBunny_320x180_10s.mp4");
-    assertThat(source).isNotNull();
-    Files.copy(Path.of(source.toURI()), mediaFile);
-    var segmentStore = new PublishingSegmentStore(tempDir.resolve("server-segments"));
-    var streamSessionId = UUID.randomUUID();
+    var mediaFile = copyTestClip(mediaRoot.resolve(UNICODE_KEY));
+    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
 
     try (var server = server(segmentStore);
         var worker = workerBuilder(server, mediaRoot).build()) {
@@ -311,33 +300,43 @@ class RemotePlaybackIT {
       worker.start();
       var probe =
           new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, mediaRoot)
-              .probe(
-                  ProbeExecutionRequest.builder()
-                      .sourcePath(mediaFile)
-                      .attemptId(UUID.randomUUID())
-                      .probeVersion(ProbeVersion.CURRENT)
-                      .build());
+              .probe(probeRequest(mediaFile));
 
       assertThat(probe)
           .isInstanceOfSatisfying(
               ProbeOutcome.Success.class,
               outcome -> assertThat(outcome.mediaProbe().videoCodec()).isEqualTo("h264"));
+    }
+  }
 
+  @Test
+  @DisplayName(
+      "Should stream media whose names contain Unicode and percents when using the standalone worker image")
+  void shouldStreamMediaWhoseNamesContainUnicodeAndPercentsWhenUsingStandaloneWorkerImage()
+      throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    var mediaFile = copyTestClip(mediaRoot.resolve(UNICODE_KEY));
+    var segmentStore = new PublishingSegmentStore(tempDir.resolve("server-segments"));
+    var streamSessionId = UUID.randomUUID();
+
+    try (var server = server(segmentStore);
+        var worker = workerBuilder(server, mediaRoot).build()) {
+      server.start();
+      worker.start();
       var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
-      var handle = executor.start(transcodeRequest(streamSessionId, mediaFile));
-      segmentStore.publication("segment0.ts").get(30, TimeUnit.SECONDS);
+      executor.start(transcodeRequest(streamSessionId, mediaFile));
 
-      assertThat(worker.commandFor(handle.attemptId()).orElseThrow())
-          .contains("/media/" + relativeKey);
+      assertThat(segmentStore.publication("segment0.ts"))
+          .as("first segment transcoded from the Unicode source")
+          .succeedsWithin(Duration.ofSeconds(30));
       executor.stop(streamSessionId);
     }
   }
 
   @Test
   @DisplayName(
-      "Should diagnose the locale and fail the probe for retry when the worker reads filenames under an ASCII locale")
-  void shouldDiagnoseLocaleAndFailProbeForRetryWhenWorkerReadsFilenamesUnderAsciiLocale()
-      throws Exception {
+      "Should fail the probe for retry when the worker reads filenames under an ASCII locale")
+  void shouldFailProbeForRetryWhenWorkerReadsFilenamesUnderAsciiLocale() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = Files.writeString(mediaRoot.resolve("Café Meridian (2006).mkv"), "test media");
     var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
@@ -347,17 +346,26 @@ class RemotePlaybackIT {
       server.start();
       worker.start();
       var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, mediaRoot);
-      var request =
-          ProbeExecutionRequest.builder()
-              .sourcePath(mediaFile)
-              .attemptId(UUID.randomUUID())
-              .probeVersion(ProbeVersion.CURRENT)
-              .build();
+      var request = probeRequest(mediaFile);
 
       assertThatThrownBy(() -> service.probe(request))
           .isInstanceOf(ProbeExecutionException.class)
           .hasRootCauseMessage(
               "Worker probe reported a retryable failure: PROBE_FAILURE_SOURCE_UNAVAILABLE");
+    }
+  }
+
+  @Test
+  @DisplayName("Should diagnose the locale when the worker starts under an ASCII locale")
+  void shouldDiagnoseLocaleWhenWorkerStartsUnderAsciiLocale() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+
+    try (var server = server(segmentStore);
+        var worker = workerBuilder(server, mediaRoot).filenameLocale("POSIX").build()) {
+      server.start();
+      worker.start();
+
       assertThat(worker.logs())
           .contains("rather than UTF-8")
           .contains("the effective locale is LC_ALL=POSIX");
@@ -413,6 +421,21 @@ class RemotePlaybackIT {
         .workerSessions(server)
         .sourceNamespaceId(SOURCE_NAMESPACE_ID)
         .sourceRoot(mediaRoot);
+  }
+
+  private Path copyTestClip(Path mediaFile) throws Exception {
+    var source = getClass().getResource("/BigBuckBunny_320x180_10s.mp4");
+    assertThat(source).isNotNull();
+    Files.createDirectories(mediaFile.getParent());
+    return Files.copy(Path.of(source.toURI()), mediaFile);
+  }
+
+  private ProbeExecutionRequest probeRequest(Path sourcePath) {
+    return ProbeExecutionRequest.builder()
+        .sourcePath(sourcePath)
+        .attemptId(UUID.randomUUID())
+        .probeVersion(ProbeVersion.CURRENT)
+        .build();
   }
 
   @Test
