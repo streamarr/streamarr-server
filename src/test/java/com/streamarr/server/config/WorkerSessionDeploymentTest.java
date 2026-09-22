@@ -79,18 +79,7 @@ class WorkerSessionDeploymentTest {
       "Should delegate transport protection when Kubernetes workers connect through the Service")
   void shouldDelegateTransportProtectionWhenKubernetesWorkersConnectThroughService()
       throws IOException {
-    var documents =
-        new Yaml()
-            .loadAll(Files.readString(Path.of("deploy/kubernetes/distributed-transcoding.yaml")));
-    var mapper = new ObjectMapper();
-    var deployments =
-        StreamSupport.stream(documents.spliterator(), false)
-            .<JsonNode>map(mapper::valueToTree)
-            .filter(document -> "Deployment".equals(document.path("kind").asString()))
-            .collect(
-                Collectors.toMap(
-                    document -> document.path("metadata").path("name").asString(),
-                    document -> document));
+    var deployments = kubernetesDeployments();
     var server = environment(deployments.get("streamarr-server"));
     var worker = environment(deployments.get("streamarr-transcode-worker"));
 
@@ -103,6 +92,20 @@ class WorkerSessionDeploymentTest {
         .containsEntry("TRANSCODE_WORKER_CONTROL_PLANE_PORT", "9090");
     assertThat(worker.keySet())
         .noneMatch(name -> name.contains("TLS") || name.contains("PLAINTEXT"));
+  }
+
+  private Map<String, JsonNode> kubernetesDeployments() throws IOException {
+    var documents =
+        new Yaml()
+            .loadAll(Files.readString(Path.of("deploy/kubernetes/distributed-transcoding.yaml")));
+    var mapper = new ObjectMapper();
+    return StreamSupport.stream(documents.spliterator(), false)
+        .<JsonNode>map(mapper::valueToTree)
+        .filter(document -> "Deployment".equals(document.path("kind").asString()))
+        .collect(
+            Collectors.toMap(
+                document -> document.path("metadata").path("name").asString(),
+                document -> document));
   }
 
   private Map<String, String> environment(JsonNode deployment) {
