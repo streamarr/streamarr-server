@@ -176,8 +176,8 @@ class ProbeExecutionTest {
 
   @Test
   @DisplayName(
-      "Should reschedule with the observed snapshot when the source changed before probing")
-  void shouldRescheduleWithTheObservedSnapshotWhenTheSourceChangedBeforeProbing()
+      "Should report a source change with the observed snapshot when it changed before probing")
+  void shouldReportASourceChangeWithTheObservedSnapshotWhenItChangedBeforeProbing()
       throws IOException {
     var request = request(ProbeVersion.CURRENT);
     Files.write(source, new byte[] {4, 5}, StandardOpenOption.APPEND);
@@ -186,7 +186,7 @@ class ProbeExecutionTest {
 
     assertThat(result)
         .isEqualTo(
-            new ProbeExecutionResult.Rescheduled(
+            new ProbeExecutionResult.SourceChanged(
                 request.toBuilder().snapshot(snapshot(source)).build()));
     assertThat(producer.probeCount()).isZero();
   }
@@ -206,8 +206,8 @@ class ProbeExecutionTest {
   }
 
   @Test
-  @DisplayName("Should reschedule without publishing when the source changed during the probe")
-  void shouldRescheduleWithoutPublishingWhenTheSourceChangedDuringTheProbe() {
+  @DisplayName("Should report a source change without publishing when it changed during the probe")
+  void shouldReportASourceChangeWithoutPublishingWhenItChangedDuringTheProbe() {
     var request = request(ProbeVersion.CURRENT);
     producer.runDuringProbe(() -> append(source));
 
@@ -215,7 +215,7 @@ class ProbeExecutionTest {
 
     assertThat(result)
         .isEqualTo(
-            new ProbeExecutionResult.Rescheduled(
+            new ProbeExecutionResult.SourceChanged(
                 request.toBuilder().snapshot(snapshot(source)).build()));
     assertThat(outcomes.publications()).isEmpty();
   }
@@ -231,7 +231,7 @@ class ProbeExecutionTest {
 
     var result = execution.execute(staleRequest);
 
-    assertThat(result).isEqualTo(new ProbeExecutionResult.Rescheduled(currentRequest));
+    assertThat(result).isEqualTo(new ProbeExecutionResult.SourceChanged(currentRequest));
     assertThat(producer.probeCount()).isOne();
     assertThat(outcomes.publications()).singleElement();
     assertThat(outcomes.findByMediaFileId(mediaFile.getId()))

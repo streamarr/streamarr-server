@@ -3,11 +3,14 @@ package com.streamarr.server.services.library;
 import com.github.kagkarlsson.scheduler.TaskRepository;
 import com.github.kagkarlsson.scheduler.task.CompletionHandler;
 import com.github.kagkarlsson.scheduler.task.RescheduleUpdate;
+import com.streamarr.server.config.LibraryWatcherProperties;
 import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import java.time.Clock;
+import java.time.Duration;
+import java.util.Optional;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -24,6 +27,7 @@ public class ProbeTaskCompletion {
   private final Clock clock;
   private final ProbeSchedulingProperties properties;
   private final TaskRepository probeTasks;
+  private final LibraryWatcherProperties watcherProperties;
 
   public CompletionHandler<ProbeTaskRequest> handlerFor(
       ProbeTaskRequest request, ProbeExecutionResult result) {
@@ -41,6 +45,8 @@ public class ProbeTaskCompletion {
                             RescheduleUpdate.toExecutionTime(
                                     clock.instant().plus(properties.busyWorkerRetryDelay()))
                                 .build());
+                    case ProbeExecutionResult.SourceChanged(var next) ->
+                        operations.reschedule(complete, clock.instant().plus(quietPeriod()), next);
                   }
                 });
   }
@@ -60,11 +66,23 @@ public class ProbeTaskCompletion {
               .build());
     }
 
-    if (result instanceof ProbeExecutionResult.Rescheduled(var next)) {
-      outcomes.recordProbeRequest(
-          next.mediaFileId(), new ProbeInputs(next.snapshot(), next.probeVersion()));
-    }
-
+    nextInputs(result)
+        .ifPresent(
+            next ->
+                outcomes.recordProbeRequest(
+                    next.mediaFileId(), new ProbeInputs(next.snapshot(), next.probeVersion())));
     return result;
+  }
+
+  private static Optional<ProbeTaskRequest> nextInputs(ProbeExecutionResult result) {
+    return switch (result) {
+      case ProbeExecutionResult.Completed _, ProbeExecutionResult.Deferred _ -> Optional.empty();
+      case ProbeExecutionResult.Rescheduled(var next) -> Optional.of(next);
+      case ProbeExecutionResult.SourceChanged(var next) -> Optional.of(next);
+    };
+  }
+
+  private Duration quietPeriod() {
+    return Duration.ofSeconds(watcherProperties.stabilizationPeriodSeconds());
   }
 }

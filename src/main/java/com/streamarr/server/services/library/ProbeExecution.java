@@ -63,9 +63,14 @@ public class ProbeExecution {
     }
 
     var observed = before.get();
-    if (!observed.equals(request.snapshot()) || request.probeVersion() < ProbeVersion.CURRENT) {
-      return new ProbeExecutionResult.Rescheduled(
+    if (!observed.equals(request.snapshot())) {
+      return new ProbeExecutionResult.SourceChanged(
           request.toBuilder().snapshot(observed).probeVersion(ProbeVersion.CURRENT).build());
+    }
+
+    if (request.probeVersion() < ProbeVersion.CURRENT) {
+      return new ProbeExecutionResult.Rescheduled(
+          request.toBuilder().probeVersion(ProbeVersion.CURRENT).build());
     }
 
     if (reader
@@ -97,7 +102,7 @@ public class ProbeExecution {
     }
 
     if (!after.get().equals(observed)) {
-      return new ProbeExecutionResult.Rescheduled(
+      return new ProbeExecutionResult.SourceChanged(
           request.toBuilder().snapshot(after.get()).build());
     }
 
