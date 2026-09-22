@@ -27,9 +27,8 @@ class RemoteWorkerCapacityIT {
   @TempDir Path mediaRoot;
 
   @Test
-  @DisplayName(
-      "Should retain the execution slot when a cancelled probe has not stopped in the worker")
-  void shouldRetainTheExecutionSlotWhenACancelledProbeHasNotStoppedInTheWorker() throws Exception {
+  @DisplayName("Should hold the execution slot until a cancelled probe stops in the worker")
+  void shouldHoldTheExecutionSlotUntilACancelledProbeStopsInTheWorker() throws Exception {
     Files.writeString(mediaRoot.resolve("held.mkv"), "held media");
     var source = getClass().getResource("/BigBuckBunny_320x180_10s.mp4");
     assertThat(source).isNotNull();
@@ -64,7 +63,9 @@ class RemoteWorkerCapacityIT {
       worker.pause();
       try {
         assertThat(pending.cancel(true)).isTrue();
-        assertThat(server.dispatchProbe(nextRequest)).isInstanceOf(ProbeDispatch.Refused.class);
+        assertThat(server.dispatchProbe(nextRequest))
+            .as("The cancelled probe still runs in the frozen worker, so it keeps the only slot")
+            .isInstanceOf(ProbeDispatch.Refused.class);
       } finally {
         worker.unpause();
       }
@@ -78,9 +79,11 @@ class RemoteWorkerCapacityIT {
                       ProbeDispatch.Dispatched.class::isInstance));
       var result = next.get(10, TimeUnit.SECONDS);
 
-      assertThat(worker.probeRunning()).isFalse();
+      assertThat(worker.probeRunning())
+          .as("The slot returns only after the cancelled probe stops")
+          .isFalse();
       assertThat(result.getProbeAttemptId()).isEqualTo(nextRequest.getProbeAttemptId());
-      assertThat(result.hasMedia()).isTrue();
+      assertThat(result.hasMedia()).as("The next probe must run in the released slot").isTrue();
       assertThat(result.getMedia().getStreamsList())
           .anySatisfy(stream -> assertThat(stream.getCodec()).isEqualTo("h264"));
     }

@@ -80,6 +80,7 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
   @Autowired private DbSchedulerCustomizer schedulerCustomizer;
   @Autowired private PlatformTransactionManager transactionManager;
   @Autowired private TaskRepository probeTasks;
+  @Autowired private ProbeSchedulingProperties probeScheduling;
 
   private final FakeFfprobeService producer = new FakeFfprobeService();
   private final CountDownLatch executionFinished = new CountDownLatch(1);
@@ -253,12 +254,13 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
     var originalTask =
         MediaProbeTask.create(
             probeExecution,
-            new ProbeTaskCompletion(
-                outcomes,
-                transactionManager,
-                Clock.offset(Clock.systemUTC(), Duration.ofDays(1)),
-                new ProbeSchedulingProperties(null),
-                probeTasks));
+            ProbeTaskCompletion.builder()
+                .outcomes(outcomes)
+                .transactionManager(transactionManager)
+                .clock(Clock.offset(Clock.systemUTC(), Duration.ofDays(1)))
+                .properties(probeScheduling)
+                .probeTasks(probeTasks)
+                .build());
     task =
         Tasks.custom(MediaProbeTask.NAME, ProbeTaskRequest.class)
             .execute((instance, context) -> rollbackAfter(originalTask.execute(instance, context)));

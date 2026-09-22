@@ -64,14 +64,21 @@ class RemoteFfprobeServiceIT {
         try {
           assertThat(worker.nextResponse().hasStartProbe()).isTrue();
           assertThatThrownBy(() -> result.get(5, TimeUnit.SECONDS))
+              .as("The probe deadline must fail the probe")
               .hasCauseInstanceOf(ProbeExecutionException.class)
               .hasRootCauseInstanceOf(TimeoutException.class);
           assertThat(worker.nextResponse().getCancelProbe().getProbeAttemptId())
+              .as("The deadline must ask the worker to cancel the attempt")
               .isEqualTo(toProto(request.attemptId()));
           assertThat(worker.terminated().get(5, TimeUnit.SECONDS).getCode())
+              .as("Ignoring cancellation past its grace period must end the session")
               .isEqualTo(Status.Code.DEADLINE_EXCEEDED);
-          assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isFalse();
-          assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isZero();
+          assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID))
+              .as("The fenced session must not stay connected")
+              .isFalse();
+          assertThat(server.availableSlots(SOURCE_NAMESPACE_ID))
+              .as("The fenced session must not offer slots")
+              .isZero();
         } finally {
           result.cancel(true);
         }

@@ -69,7 +69,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
-import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("IntegrationTest")
 @DisplayName("Worker Session Server Integration Tests")
@@ -79,34 +78,6 @@ class WorkerSessionServerIT {
       UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
   private static final UUID SOURCE_NAMESPACE_ID =
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
-
-  @ParameterizedTest
-  @ValueSource(booleans = {false, true})
-  @DisplayName("Should refuse an unidentified probe when its attempt ID is omitted or nil")
-  void shouldRefuseUnidentifiedProbeWhenItsAttemptIdIsOmittedOrNil(boolean explicitNil)
-      throws Exception {
-    var request = ProbeRequest.newBuilder().setProbeVersion(1).setSource(variantJob().getSource());
-    if (explicitNil) {
-      request.setProbeAttemptId(toProto(new UUID(0, 0)));
-    }
-
-    var decoded = ProbeRequest.parseFrom(request.build().toByteArray());
-    try (var server = server()) {
-      server.start();
-      var channel = workerChannel(server.port());
-      try {
-        var worker = connectProbeWorker(channel, workerIdentity(UUID.randomUUID()));
-        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
-        assertThat(server.dispatchProbe(decoded)).isInstanceOf(ProbeDispatch.Refused.class);
-        assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(2);
-        var identified = request.setProbeAttemptId(toProto(new UUID(0, 1))).build();
-        assertThat(server.dispatchProbe(identified)).isInstanceOf(ProbeDispatch.Dispatched.class);
-        assertThat(worker.nextResponse().getStartProbe().getRequest()).isEqualTo(identified);
-      } finally {
-        shutdown(channel);
-      }
-    }
-  }
 
   @ParameterizedTest
   @EnumSource(SessionEnd.class)
@@ -227,9 +198,13 @@ class WorkerSessionServerIT {
           var dispatched = executor.submit(() -> server.dispatchProbe(request));
           var pending = dispatched(dispatched.get(5, TimeUnit.SECONDS));
 
-          assertThat(replacement.nextResponse().getStartProbe().getRequest()).isEqualTo(request);
-          assertThat(pending).isNotDone();
-          assertThat(upload).isNotDone();
+          assertThat(replacement.nextResponse().getStartProbe().getRequest())
+              .as("The replacement session must receive the same attempt")
+              .isEqualTo(request);
+          assertThat(pending).as("The replacement probe must wait for its worker").isNotDone();
+          assertThat(upload)
+              .as("The superseded segment publication must still be held")
+              .isNotDone();
         } finally {
           segmentStore.release.countDown();
         }

@@ -8,12 +8,14 @@ import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import java.time.Clock;
+import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
+@Builder
 @RequiredArgsConstructor
 public class ProbeTaskCompletion {
 
