@@ -27,7 +27,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.time.Instant;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -93,6 +93,11 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
   }
 
   SchedulerClient startScheduler(ProbeExecution execution, AbstractSchedulerListener listener) {
+    return startScheduler(execution, listener, Clock.systemUTC());
+  }
+
+  SchedulerClient startScheduler(
+      ProbeExecution execution, AbstractSchedulerListener listener, Clock clock) {
     var task = MediaProbeTask.create(execution, probeTaskCompletion);
     var properties =
         Binder.get(environment)
@@ -104,7 +109,7 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
             properties,
             schedulerCustomizer,
             StatsRegistry.NOOP,
-            Instant::now,
+            clock::instant,
             dataSource,
             List.of(task),
             List.of(listener),
