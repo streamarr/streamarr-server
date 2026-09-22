@@ -111,6 +111,7 @@ public final class PostgresLockTestSupport {
   }
 
   public static String activeQuery(Connection observer, int backendPid) throws SQLException {
+    clearActivitySnapshot(observer);
     try (var statement =
         observer.prepareStatement("SELECT query FROM pg_stat_activity WHERE pid = ?")) {
       statement.setInt(1, backendPid);
@@ -147,6 +148,7 @@ public final class PostgresLockTestSupport {
         ORDER BY pid
         LIMIT 1
         """;
+    clearActivitySnapshot(observer);
     try (var statement = observer.prepareStatement(sql)) {
       statement.setInt(1, blockerPid);
       statement.setString(2, expectedWaitEvent);
@@ -154,6 +156,14 @@ public final class PostgresLockTestSupport {
       try (var result = statement.executeQuery()) {
         return result.next() ? OptionalInt.of(result.getInt(1)) : OptionalInt.empty();
       }
+    }
+  }
+
+  // An observer inside a transaction otherwise keeps the backend list from its first
+  // pg_stat_activity read, so backends that connected since would never appear.
+  private static void clearActivitySnapshot(Connection observer) throws SQLException {
+    try (var statement = observer.createStatement()) {
+      statement.execute("SELECT pg_stat_clear_snapshot()");
     }
   }
 
