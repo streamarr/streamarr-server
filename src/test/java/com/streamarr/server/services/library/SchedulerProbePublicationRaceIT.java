@@ -24,6 +24,7 @@ import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
+import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -33,6 +34,7 @@ import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -45,6 +47,7 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.sql.DataSource;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
@@ -251,6 +254,10 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
       Files.write(FilepathCodec.decode(file.getFilepathUri()), new byte[] {4, 5, 6, 7, 8});
     }
 
+    if (operation == NativeCompletion.DEFER) {
+      producer.failWith(new ProbeWorkersBusyException());
+    }
+
     var originalTask =
         MediaProbeTask.create(
             probeExecution,
@@ -279,6 +286,42 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
         new TransactionTemplate(transactionManager)
             .execute(_ -> outcomes.lockProbeInputs(file.getId()));
     assertThat(desired).contains(new ProbeInputs(original.snapshot(), original.probeVersion()));
+  }
+
+  @Test
+  @DisplayName("Should retain changed-source work when the source changes while a busy probe runs")
+  void shouldRetainChangedSourceWorkWhenTheSourceChangesWhileABusyProbeRuns() throws Exception {
+    var file = createMediaFile();
+    scheduling.request(request(file));
+    var changed = new AtomicReference<ProbeTaskRequest>();
+    producer.runDuringProbe(
+        () -> {
+          if (changed.get() == null) {
+            changed.set(changeSource(file));
+          }
+        });
+    producer.failWith(new ProbeWorkersBusyException());
+
+    startScheduler();
+
+    assertThat(executionFinished.await(15, TimeUnit.SECONDS)).isTrue();
+    assertThat(client.getScheduledExecution(instanceOf(file)))
+        .as("The deferred probe must carry the inputs requested while it ran")
+        .hasValueSatisfying(work -> assertThat(work.getData()).isEqualTo(changed.get()));
+  }
+
+  @Test
+  @DisplayName("Should remove the task when its media file is deleted while a busy probe runs")
+  void shouldRemoveTheTaskWhenItsMediaFileIsDeletedWhileABusyProbeRuns() throws Exception {
+    var file = createMediaFile();
+    scheduling.request(request(file));
+    producer.runDuringProbe(() -> mediaFiles.deleteById(file.getId()));
+    producer.failWith(new ProbeWorkersBusyException());
+
+    startScheduler();
+
+    assertThat(executionFinished.await(15, TimeUnit.SECONDS)).isTrue();
+    assertThat(client.getScheduledExecution(instanceOf(file))).isEmpty();
   }
 
   @Test
@@ -313,6 +356,21 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
         .isEmpty();
   }
 
+  private ProbeTaskRequest changeSource(MediaFile file) {
+    try {
+      Files.write(FilepathCodec.decode(file.getFilepathUri()), new byte[] {4, 5, 6, 7, 8});
+      var changed = request(file);
+      scheduling.request(changed);
+      return changed;
+    } catch (IOException exception) {
+      throw new UncheckedIOException(exception);
+    }
+  }
+
+  private static TaskInstanceId instanceOf(MediaFile file) {
+    return TaskInstanceId.of(MediaProbeTask.NAME, file.getId().toString());
+  }
+
   private CompletionHandler<ProbeTaskRequest> rollbackAfter(
       CompletionHandler<ProbeTaskRequest> handler) {
     return (complete, operations) ->
@@ -326,7 +384,8 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
 
   private enum NativeCompletion {
     REMOVE,
-    RESCHEDULE
+    RESCHEDULE,
+    DEFER
   }
 
   private int lockMediaFile(Connection connection, UUID mediaFileId) throws SQLException {

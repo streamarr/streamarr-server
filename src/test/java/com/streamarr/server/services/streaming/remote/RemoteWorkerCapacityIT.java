@@ -65,7 +65,7 @@ class RemoteWorkerCapacityIT {
         assertThat(pending.cancel(true)).isTrue();
         assertThat(server.dispatchProbe(nextRequest))
             .as("The cancelled probe still runs in the frozen worker, so it keeps the only slot")
-            .isInstanceOf(ProbeDispatch.Refused.class);
+            .isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.WORKERS_BUSY));
       } finally {
         worker.unpause();
       }

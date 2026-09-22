@@ -3,7 +3,6 @@ package com.streamarr.server.services.library;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.within;
 
 import com.github.kagkarlsson.scheduler.Scheduler;
 import com.github.kagkarlsson.scheduler.SchedulerClient;
@@ -118,8 +117,10 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep the busy probe pending when one worker slot serves two probes")
-  void shouldKeepBusyProbePendingWhenOneWorkerSlotServesTwoProbes() throws Exception {
+  @DisplayName(
+      "Should keep the busy probe pending for the retry delay when one worker slot serves two"
+          + " probes")
+  void shouldKeepBusyProbePendingForRetryDelayWhenOneWorkerSlotServesTwoProbes() throws Exception {
     whenOneWorkerSlotServesTwoProbes(
         busy -> {
           assertThat(busy.deferred().getResult())
@@ -132,10 +133,39 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
                   pending -> {
                     assertThat(pending.isPicked()).isFalse();
                     assertThat(pending.getConsecutiveFailures()).isZero();
+                    assertThat(pending.getExecutionTime())
+                        .isEqualTo(
+                            busy.deferred()
+                                .getTimeDone()
+                                .plus(probeScheduling.busyWorkerRetryDelay()));
                   });
           assertThat(reader.find(mediaFileIdOf(busy.deferred())))
               .as("Releasing the scheduler slot must not record a probe outcome")
               .isEmpty();
+        });
+  }
+
+  @Test
+  @DisplayName(
+      "Should release the scheduler slot when a busy probe defers while the other probe keeps"
+          + " running")
+  void shouldReleaseSchedulerSlotWhenBusyProbeDefersWhileOtherProbeKeepsRunning() throws Exception {
+    whenOneWorkerSlotServesTwoProbes(
+        busy -> {
+          advanceClock(probeScheduling.busyWorkerRetryDelay());
+
+          var retried = nextCompletion();
+
+          assertThat(
+                  busy.client().getScheduledExecution(busy.deferred().getExecution().taskInstance))
+              .as(
+                  "The running probe holds one of the two scheduler slots, so the deferred probe"
+                      + " can defer again only after running in the slot its deferral released")
+              .hasValueSatisfying(
+                  pending ->
+                      assertThat(pending.getExecutionTime())
+                          .isEqualTo(
+                              retried.getTimeDone().plus(probeScheduling.busyWorkerRetryDelay())));
         });
   }
 
@@ -206,9 +236,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
             pending -> {
               assertThat(pending.getConsecutiveFailures()).isEqualTo(3);
               assertThat(pending.getExecutionTime())
-                  .isCloseTo(
-                      failed.getTimeDone().plus(Duration.ofSeconds(20)),
-                      within(2, ChronoUnit.SECONDS));
+                  .isEqualTo(failed.getTimeDone().plus(Duration.ofSeconds(20)));
             });
   }
 
