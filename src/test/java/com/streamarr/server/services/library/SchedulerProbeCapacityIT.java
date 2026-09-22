@@ -138,27 +138,7 @@ class SchedulerProbeCapacityIT extends AbstractIntegrationTest {
             .fileSystem(FileSystems.getDefault())
             .outcomes(outcomes)
             .build();
-    var task = MediaProbeTask.create(execution, probeTaskCompletion);
-    var properties =
-        Binder.get(environment)
-            .bind("db-scheduler", Bindable.of(DbSchedulerProperties.class))
-            .get();
-    properties.setThreads(2);
-    scheduler =
-        DbSchedulerConfigurationSupport.buildScheduler(
-            properties,
-            schedulerCustomizer,
-            StatsRegistry.NOOP,
-            Instant::now,
-            dataSource,
-            List.of(task),
-            List.of(listener),
-            List.of());
-    var client =
-        SchedulerClient.Builder.create(dataSource, task)
-            .serializer(schedulerCustomizer.serializer().orElseThrow())
-            .build();
-    scheduler.start();
+    var client = startScheduler(execution, listener);
 
     try {
       firstBatchSubmitted.get(15, TimeUnit.SECONDS);
@@ -193,6 +173,32 @@ class SchedulerProbeCapacityIT extends AbstractIntegrationTest {
     assertThat(producer.peakConcurrency())
         .as("Configured capacity of 2 must limit active probe producers")
         .isLessThanOrEqualTo(2);
+  }
+
+  private SchedulerClient startScheduler(
+      ProbeExecution execution, AbstractSchedulerListener listener) {
+    var task = MediaProbeTask.create(execution, probeTaskCompletion);
+    var properties =
+        Binder.get(environment)
+            .bind("db-scheduler", Bindable.of(DbSchedulerProperties.class))
+            .get();
+    properties.setThreads(2);
+    scheduler =
+        DbSchedulerConfigurationSupport.buildScheduler(
+            properties,
+            schedulerCustomizer,
+            StatsRegistry.NOOP,
+            Instant::now,
+            dataSource,
+            List.of(task),
+            List.of(listener),
+            List.of());
+    var client =
+        SchedulerClient.Builder.create(dataSource, task)
+            .serializer(schedulerCustomizer.serializer().orElseThrow())
+            .build();
+    scheduler.start();
+    return client;
   }
 
   private MediaFile createMediaFile() throws IOException {
