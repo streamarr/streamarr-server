@@ -5,9 +5,11 @@ description: "Use when the user needs to run GitNexus CLI commands like analyze/
 
 # GitNexus CLI Commands
 
-Commands below use `node .gitnexus/run.cjs <command>` — the project-local runner `gitnexus analyze` drops next to the index. It auto-selects an available runner at call time (global `gitnexus`, else `pnpm dlx`, else `bunx`, else `npx`), so no package-manager assumption and no global install is required — including on a bun-only machine, which has no npm, npx or pnpm at all.
+These instructions target GitNexus **1.6.12** and require Node `^22.18.0 || >=24.11.0`. Bun can provide the package runner when npm, npx, or pnpm is unavailable, but the documented CLI and `node .gitnexus/run.cjs` commands still require Node.
 
-> **Not analyzed yet, or `node .gitnexus/run.cjs` reports `Cannot find module`** (the gitignored runner is absent — e.g. a fresh clone or `git clean`)? (Re)generate it with `npx gitnexus analyze` from the project root, or `bunx gitnexus@latest analyze` on a bun-only machine. On **npm 11.x**, if `npx` crashes during install (`node.target is null`), install once with `npm i -g gitnexus` (then `gitnexus analyze`), or use `bunx gitnexus@latest analyze`, or `pnpm --allow-build=@ladybugdb/core --allow-build=gitnexus --allow-build=tree-sitter dlx gitnexus@latest analyze`. See [#1939](https://github.com/abhigyanpatwari/GitNexus/issues/1939).
+Commands below use the generated project-local runner, `node .gitnexus/run.cjs <command>`. Before using it, install `npm install --global gitnexus@1.6.12` and verify `gitnexus --version` reports `1.6.12`. The runner selects a global `gitnexus` first; its automatic package-manager fallbacks can fetch `latest`, so use the pinned alternatives below when the matching global installation is unavailable. Change the documented version deliberately when upgrading these instructions.
+
+> **Runner missing, or no matching global installation?** Replace `node .gitnexus/run.cjs` in any command with `npx gitnexus@1.6.12`, `bunx gitnexus@1.6.12`, or (pnpm 10.2+) `pnpm --allow-build=@ladybugdb/core --allow-build=gitnexus --allow-build=tree-sitter dlx gitnexus@1.6.12`. For first-time setup or deliberate guide regeneration, append `analyze`; for routine refreshes, append `analyze --index-only`. On **npm 11.x**, if `npx` crashes during install (`node.target is null`), use the pinned global install, Bun, or pnpm alternative. See [#1939](https://github.com/abhigyanpatwari/GitNexus/issues/1939).
 
 ## Commands
 
@@ -21,6 +23,7 @@ Run from the project root. This parses all source files, builds the knowledge gr
 
 | Flag           | Effect                                                           |
 | -------------- | ---------------------------------------------------------------- |
+| `--index-only` | Refresh the index without rewriting AGENTS.md / CLAUDE.md or skills |
 | `--watch`      | Keep a Git repository index current with serialized refreshes    |
 | `--debounce <ms>` | Watch quiet period before refresh (default: 300 ms)            |
 | `--force`      | Force full re-index even if up to date                           |
@@ -30,7 +33,7 @@ Run from the project root. This parses all source files, builds the knowledge gr
 | `--spring-actuator <path>` | Import opt-in Spring Boot Actuator mappings, beans, conditions, configprops, and env snapshots. Forces a full rebuild; unsupported with `--watch`. |
 | `--asyncapi-spec <path>` | Read opt-in AsyncAPI 3.x documents (directory or single file) and mint `Destination` nodes from their operations. 2.x is refused, not mapped. Unsupported with `--watch`. |
 
-**When to run:** First time in a project, after major code changes, or when `gitnexus://repo/{name}/context` reports the index is stale. In Claude Code, a PostToolUse hook detects staleness after `git commit` and `git merge` and notifies the agent to run `analyze` — the hook does not run analyze itself, to avoid blocking the agent for up to 120s and risking KuzuDB corruption on timeout.
+**When to run:** Use full `analyze` for first-time setup or deliberate regeneration of agent guides and skills. After code changes or a stale-index warning, use `analyze --index-only` to preserve tracked guidance. In Claude Code, the PostToolUse hook reports staleness after `git commit` and `git merge`; it does not run analysis itself.
 
 For Spring runtime enrichment, pass a JSON bundle, one endpoint JSON file, or a directory containing endpoint files. Route evidence is authoritative only when `runtimeConfirmed === true`; `runtimeSource` records provenance and may also accompany `handler-conflict`. Env/configprops values are never persisted.
 
@@ -62,12 +65,12 @@ Shows whether the current repo has a GitNexus index, when it was last updated, a
 node .gitnexus/run.cjs clean
 ```
 
-Deletes the `.gitnexus/` directory and unregisters the repo from the global registry. Use before re-indexing if the index is corrupt or after removing GitNexus from a project.
+Without `--force`, previews removal of the index and its registry entry. With `--force`, deletes the index and unregisters the repo. Use before re-indexing if the index is corrupt or after removing GitNexus from a project. Check the previewed paths against the authorized scope before applying deletion; existing authorization is sufficient, but cleaning unrelated repositories requires authorization for that wider scope.
 
 | Flag      | Effect                                            |
 | --------- | ------------------------------------------------- |
-| `--force` | Skip confirmation prompt                          |
-| `--all`   | Clean all indexed repos, not just the current one |
+| `--force` | Apply the previewed deletion instead of returning without changes |
+| `--all`   | Select all indexed repos; deletion still requires `--force` |
 
 ### wiki — Generate documentation from the graph
 
@@ -101,7 +104,7 @@ Lists all repositories registered in `~/.gitnexus/registry.json`. The MCP `list_
 ## After Indexing
 
 1. **Read `gitnexus://repo/{name}/context`** to verify the index loaded
-2. Use the other GitNexus skills (`exploring`, `debugging`, `impact-analysis`, `refactoring`) for your task
+2. Use `gitnexus-exploring`, `gitnexus-debugging`, `gitnexus-impact-analysis`, or `gitnexus-refactoring` for your task
 
 ## Troubleshooting
 

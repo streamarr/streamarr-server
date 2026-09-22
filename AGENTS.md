@@ -285,10 +285,11 @@ We follow these factors from the Twelve-Factor App methodology:
 
 This project is indexed by GitNexus as **streamarr-server**.
 
-> Index stale? Run `node .gitnexus/run.cjs analyze --index-only` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? Bootstrap with `npx`, `bunx`, or `pnpm dlx` — e.g. `bunx gitnexus@latest analyze` (npm 11 npx crash; #1939).
+> Index stale? Run `node .gitnexus/run.cjs analyze --index-only` from the project root. These instructions use GitNexus 1.6.12 and require Node `^22.18.0 || >=24.11.0`, including when using Bun as the package runner. Before using the generated runner, install `npm install --global gitnexus@1.6.12` and verify `gitnexus --version` reports `1.6.12`; its automatic fallbacks can otherwise fetch `latest`. Without that global install or `.gitnexus/run.cjs`, replace `node .gitnexus/run.cjs` with `npx gitnexus@1.6.12`, `bunx gitnexus@1.6.12`, or (pnpm 10.2+) `pnpm --allow-build=@ladybugdb/core --allow-build=gitnexus --allow-build=tree-sitter dlx gitnexus@1.6.12`. See `.claude/skills/gitnexus-cli/SKILL.md` for setup and npm 11 recovery.
 
 ## Always Do
 
+- **Bind the checkout before MCP checks.** Use `list_repos` to select the intended repository; when more than one is indexed, pass `repo` on subsequent calls. Use `repo: "streamarr-server"` only when that name identifies one checkout; otherwise use the intended registered absolute path. For `detect_changes`, also pass the absolute `worktree` path when the MCP server starts outside the linked worktree being edited. Apply these arguments to the examples below; CLI `--repo .` selects the current checkout.
 - **MUST run impact before editing.** Use `impact({target: "symbolName", direction: "upstream"})` or `node .gitnexus/run.cjs impact "symbolName" --direction upstream --repo .`; report callers, processes, and risk. Never substitute grep for graph analysis.
 - **MUST analyze graph changes before committing.** Use `detect_changes({scope: "all"})` (MCP) or `node .gitnexus/run.cjs detect-changes --scope all --repo .` (CLI fallback). `partial: true` or `truncated: true` is not a clean check — a zero means unseen, not unaffected; re-run it. For regression review: `detect_changes({scope: "compare", base_ref: "main"})` or `node .gitnexus/run.cjs detect-changes --scope compare --base-ref "main" --repo .`.
 - MUST warn on HIGH/CRITICAL `risk` pre-edit; never use `riskSharedAxes` to waive a HIGH/CRITICAL `risk` warning. Compare File/symbol: MCP File omits axes; Graph-RAG expands File.
