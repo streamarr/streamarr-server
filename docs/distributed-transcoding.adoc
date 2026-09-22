@@ -59,6 +59,21 @@ Keep worker availability out of the server's liveness and readiness groups.
 A server with zero workers must remain reachable so workers can connect.
 The Istio policy restricts only the worker port. HTTP and Kubernetes health probes retain their existing mesh policies.
 
+== Filename encoding
+
+The server and every worker must run under a UTF-8 locale.
+Java converts filenames through the process locale, so an ASCII locale such as `POSIX` cannot open media whose names contain non-ASCII characters.
+The official Compose and Kubernetes settings set `LANG=C.UTF-8` on both processes.
+`LC_ALL` and `LC_CTYPE` override `LANG`; if you set either, give it a UTF-8 value such as `C.UTF-8`.
+
+The server logs a warning at startup when it does not read filenames as UTF-8.
+On an affected worker, probes of non-ASCII names fail as `PROBE_FAILURE_SOURCE_UNAVAILABLE` and the worker log shows an `InvalidPathException`.
+To recover, correct the locale and restart the affected process.
+Do not rename media or rewrite library paths: stored filepath URIs preserve each filename's bytes, so the scheduler retries failed probes against the same files and playback can start again.
+
+The server sends each worker a key relative to the source root, decoded from the stored URI.
+The worker treats the key as literal filename text and never percent-decodes it, so a file named `100%23.mkv` keeps `%23` in its key.
+
 == Docker Compose
 
 The default worker uses `network_mode: service:streamarr-server` to reach the server over loopback.
