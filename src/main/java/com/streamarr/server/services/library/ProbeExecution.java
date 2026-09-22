@@ -62,10 +62,6 @@ public class ProbeExecution {
       return new ProbeExecutionResult.Completed();
     }
 
-    if (!stabilityChecker.waitForStability(path)) {
-      throw new ProbeExecutionException("Source did not stabilize");
-    }
-
     var before = snapshot(path);
     if (before.isEmpty()) {
       return new ProbeExecutionResult.Completed();

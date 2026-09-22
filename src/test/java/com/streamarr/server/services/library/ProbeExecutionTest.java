@@ -8,7 +8,7 @@ import com.streamarr.server.domain.media.MediaFileContainerInfo;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
-import com.streamarr.server.domain.streaming.ProbeContainer;
+import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
@@ -32,6 +32,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Probe execution")
@@ -81,6 +83,19 @@ class ProbeExecutionTest {
   }
 
   @Test
+  @DisplayName("Should probe an unchanged source without waiting for a quiet period")
+  void shouldProbeAnUnchangedSourceWithoutWaitingForAQuietPeriod() {
+    var execution = execution().toBuilder().stabilityChecker(_ -> false).build();
+    var request = request(ProbeVersion.CURRENT);
+
+    var result = execution.execute(request);
+
+    assertThat(result).isEqualTo(new ProbeExecutionResult.Completed());
+    assertThat(producer.probeCount()).isOne();
+    assertThat(outcomes.publications()).singleElement();
+  }
+
+  @Test
   @DisplayName("Should carry the source and requested version with a fresh attempt id when probing")
   void shouldCarryTheSourceAndRequestedVersionWithAFreshAttemptIdWhenProbing() {
     var request = request(ProbeVersion.CURRENT);
@@ -120,16 +135,17 @@ class ProbeExecutionTest {
             });
   }
 
-  @Test
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
   @DisplayName("Should complete without probing when a matching outcome is already stored")
-  void shouldCompleteWithoutProbingWhenAMatchingOutcomeIsAlreadyStored() {
+  void shouldCompleteWithoutProbingWhenAMatchingOutcomeIsAlreadyStored(boolean terminalFailure) {
     var request = request(ProbeVersion.CURRENT);
     outcomes.store(
         MediaFileContainerInfo.builder()
             .mediaFileId(mediaFile.getId())
             .snapshot(request.snapshot())
             .probeVersion(ProbeVersion.CURRENT)
-            .container(ProbeContainer.builder().build())
+            .probeError(terminalFailure ? ProbeError.INVALID_MEDIA : null)
             .build());
 
     var result = execution().execute(request);
@@ -168,17 +184,6 @@ class ProbeExecutionTest {
     var result = execution().execute(request(ProbeVersion.CURRENT + 1));
 
     assertThat(result).isEqualTo(new ProbeExecutionResult.Completed());
-    assertThat(producer.probeCount()).isZero();
-  }
-
-  @Test
-  @DisplayName("Should fail transiently when the source does not stabilize")
-  void shouldFailTransientlyWhenTheSourceDoesNotStabilize() {
-    var execution = execution().toBuilder().stabilityChecker(_ -> false).build();
-    var request = request(ProbeVersion.CURRENT);
-
-    assertThatThrownBy(() -> execution.execute(request))
-        .isInstanceOf(ProbeExecutionException.class);
     assertThat(producer.probeCount()).isZero();
   }
 
@@ -226,6 +231,25 @@ class ProbeExecutionTest {
             new ProbeExecutionResult.Rescheduled(
                 request.toBuilder().snapshot(snapshot(source)).build()));
     assertThat(outcomes.publications()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should keep the newer outcome when a stale duplicate request runs")
+  void shouldKeepTheNewerOutcomeWhenAStaleDuplicateRequestRuns() {
+    var staleRequest = request(ProbeVersion.CURRENT);
+    append(source);
+    var currentRequest = request(ProbeVersion.CURRENT);
+    var execution = execution();
+    execution.execute(currentRequest);
+
+    var result = execution.execute(staleRequest);
+
+    assertThat(result).isEqualTo(new ProbeExecutionResult.Rescheduled(currentRequest));
+    assertThat(producer.probeCount()).isOne();
+    assertThat(outcomes.publications()).singleElement();
+    assertThat(outcomes.findByMediaFileId(mediaFile.getId()))
+        .hasValueSatisfying(
+            stored -> assertThat(stored.getSnapshot()).isEqualTo(currentRequest.snapshot()));
   }
 
   @Test

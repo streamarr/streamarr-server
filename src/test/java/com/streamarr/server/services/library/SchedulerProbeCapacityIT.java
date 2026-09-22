@@ -13,6 +13,7 @@ import com.github.kagkarlsson.scheduler.stats.StatsRegistry;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.github.kagkarlsson.scheduler.task.TaskInstanceId;
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.config.LibraryWatcherProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
@@ -35,6 +36,7 @@ import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -74,6 +76,8 @@ class SchedulerProbeCapacityIT extends AbstractIntegrationTest {
   @Autowired private ProbeTaskCompletion probeTaskCompletion;
   @Autowired private DbSchedulerCustomizer schedulerCustomizer;
   @Autowired private Environment environment;
+  @Autowired private ProbeExecution probeExecution;
+  @Autowired private LibraryWatcherProperties watcherProperties;
 
   private final BlockedProducer producer = new BlockedProducer();
   private final List<MediaFile> createdFiles = new ArrayList<>();
@@ -173,6 +177,47 @@ class SchedulerProbeCapacityIT extends AbstractIntegrationTest {
     assertThat(producer.peakConcurrency())
         .as("Configured capacity of 2 must limit active probe producers")
         .isLessThanOrEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("Should probe unchanged files without waiting a quiet period for each file")
+  void shouldProbeUnchangedFilesWithoutWaitingAQuietPeriodForEachFile() throws Exception {
+    var quietPeriod = Duration.ofSeconds(watcherProperties.stabilizationPeriodSeconds());
+    assertThat(quietPeriod).isPositive();
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    libraryId = library.getId();
+    var requests = new ArrayList<ProbeTaskRequest>();
+    for (var index = 0; index < 6; index++) {
+      var request = request(createMediaFile());
+      requests.add(request);
+      scheduling.request(request);
+    }
+
+    var allExecutionsFinished = new CountDownLatch(requests.size());
+    var listener =
+        new AbstractSchedulerListener() {
+          @Override
+          public void onExecutionComplete(ExecutionComplete executionComplete) {
+            allExecutionsFinished.countDown();
+          }
+        };
+    var started = System.nanoTime();
+    startScheduler(probeExecution.toBuilder().producer(new FakeFfprobeService()).build(), listener);
+
+    var finished = allExecutionsFinished.await(quietPeriod.toMillis(), TimeUnit.MILLISECONDS);
+    var elapsed = Duration.ofNanos(System.nanoTime() - started);
+
+    assertThat(finished)
+        .as(
+            "%d unchanged files at capacity 2 finished=%s after %s; a quiet period of %s per"
+                + " file would take at least %s",
+            requests.size(), finished, elapsed, quietPeriod, quietPeriod.multipliedBy(3))
+        .isTrue();
+    for (var request : requests) {
+      assertThat(reader.find(request.mediaFileId()))
+          .hasValueSatisfying(
+              stored -> assertThat(stored.snapshot()).isEqualTo(request.snapshot()));
+    }
   }
 
   private SchedulerClient startScheduler(

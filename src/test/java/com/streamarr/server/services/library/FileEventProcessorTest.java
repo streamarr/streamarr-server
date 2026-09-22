@@ -196,6 +196,72 @@ class FileEventProcessorTest {
             () -> assertThat(events.getEventsOfType(MediaFileProbeTaskRequested.class)).hasSize(1));
   }
 
+  @Test
+  @DisplayName("Should request a probe only after the file stops changing")
+  void shouldRequestAProbeOnlyAfterTheFileStopsChanging() throws Exception {
+    var path = createFile("/media/shows/Show.S01E01.mkv");
+    var events = new CapturingEventPublisher();
+    eventPublisherRef.set(events::publishEvent);
+    var waiting = new CountDownLatch(1);
+    var stopsChanging = new CountDownLatch(1);
+    stabilityCheckerRef.set(_ -> awaitQuiet(waiting, stopsChanging));
+
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    assertThat(waiting.await(5, TimeUnit.SECONDS)).isTrue();
+
+    await()
+        .during(Duration.ofMillis(200))
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> assertThat(events.getEventsOfType(MediaFileProbeTaskRequested.class)).isEmpty());
+
+    stopsChanging.countDown();
+
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> assertThat(events.getEventsOfType(MediaFileProbeTaskRequested.class)).hasSize(1));
+  }
+
+  @Test
+  @DisplayName("Should request probes for other files while one file is still changing")
+  void shouldRequestProbesForOtherFilesWhileOneFileIsStillChanging() throws Exception {
+    var changing = createFile("/media/shows/Show.S01E01.mkv");
+    var unchanged = createFile("/media/shows/Show.S01E02.mkv");
+    var events = new CapturingEventPublisher();
+    eventPublisherRef.set(events::publishEvent);
+    var waiting = new CountDownLatch(1);
+    var stopsChanging = new CountDownLatch(1);
+    stabilityCheckerRef.set(
+        path -> path.equals(changing) ? awaitQuiet(waiting, stopsChanging) : true);
+
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, changing);
+    assertThat(waiting.await(5, TimeUnit.SECONDS)).isTrue();
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, unchanged);
+
+    try {
+      await()
+          .atMost(Duration.ofSeconds(5))
+          .untilAsserted(
+              () ->
+                  assertThat(events.getEventsOfType(MediaFileProbeTaskRequested.class)).hasSize(1));
+      assertThat(mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(changing)))
+          .isEmpty();
+    } finally {
+      stopsChanging.countDown();
+    }
+  }
+
+  private static boolean awaitQuiet(CountDownLatch waiting, CountDownLatch stopsChanging) {
+    waiting.countDown();
+    try {
+      return stopsChanging.await(5, TimeUnit.SECONDS);
+    } catch (InterruptedException _) {
+      Thread.currentThread().interrupt();
+      return false;
+    }
+  }
+
   private enum Cancellation {
     DELETE,
     RESET,
