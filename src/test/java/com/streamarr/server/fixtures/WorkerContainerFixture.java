@@ -84,7 +84,6 @@ public final class WorkerContainerFixture implements AutoCloseable {
             .withEnv("TRANSCODE_WORKER_SLOTS", String.valueOf(availableSlots))
             .withEnv("TRANSCODE_WORKER_SEGMENT_BASE_PATH", "/tmp/segments")
             .withEnv("BPL_JVM_THREAD_COUNT", "100")
-            .withEnv("LANG", "C.UTF-8")
             .withFileSystemBind(
                 sourceRoot.toAbsolutePath().toString(), "/media", BindMode.READ_ONLY)
             .waitingFor(Wait.forHttp("/actuator/health/readiness").forPort(9091))
