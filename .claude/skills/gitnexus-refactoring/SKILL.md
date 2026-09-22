@@ -35,7 +35,7 @@ written, so read them as a confirmation of identity.
 MCP server was not launched from; otherwise `git diff` runs in the wrong
 checkout and reports nothing changed, which reads as a verified refactor.
 
-In the checklists below, `boundRepo` is the selected repository name, or its
+In the examples below, `boundRepo` is the selected repository name, or its
 registered absolute path when names collide. Add `worktree` to each
 `detect_changes` call when required by the checkout context above.
 
@@ -43,9 +43,9 @@ registered absolute path when names collide. Add `worktree` to each
 
 ```
 0. list_repos {}                                  → Bind repo (and worktree)
-1. impact({target: "X", direction: "upstream"})  → Map all dependents
-2. query({search_query: "X"})                            → Find execution flows involving X
-3. context({name: "X"})                           → See all incoming/outgoing refs
+1. impact({target: "X", direction: "upstream", repo: boundRepo}) → Map all dependents
+2. query({search_query: "X", repo: boundRepo}) → Find execution flows involving X
+3. context({name: "X", repo: boundRepo}) → See all incoming/outgoing refs
 4. Plan update order: interfaces → implementations → callers → tests
 ```
 
@@ -61,7 +61,7 @@ registered absolute path when names collide. Add `worktree` to each
 - [ ] rename({symbol_name: "oldName", new_name: "newName", repo: boundRepo, dry_run: true}) — preview all edits
 - [ ] Confirm the previewed file paths are in the bound repository/worktree
 - [ ] Review graph edits (high confidence) and text_search edits (review carefully)
-- [ ] If satisfied: rename({..., dry_run: false}) — apply edits
+- [ ] If satisfied: rename({symbol_name: "oldName", new_name: "newName", repo: boundRepo, dry_run: false}) — apply edits
 - [ ] detect_changes({scope: "all", repo: boundRepo}) — verify staged and unstaged changes
 - [ ] Run tests for affected processes
 ```
@@ -70,8 +70,8 @@ registered absolute path when names collide. Add `worktree` to each
 
 ```
 - [ ] list_repos {} — bind repo; explicit repo when >1 indexed, ask if ambiguous
-- [ ] context({name: target}) — see all incoming/outgoing refs
-- [ ] impact({target, direction: "upstream"}) — find all external callers
+- [ ] context({name: target, repo: boundRepo}) — see all incoming/outgoing refs
+- [ ] impact({target, direction: "upstream", repo: boundRepo}) — find all external callers
 - [ ] Define new module interface
 - [ ] Extract code, update imports
 - [ ] detect_changes({scope: "all", repo: boundRepo}) — verify staged and unstaged changes
@@ -82,9 +82,9 @@ registered absolute path when names collide. Add `worktree` to each
 
 ```
 - [ ] list_repos {} — bind repo; explicit repo when >1 indexed, ask if ambiguous
-- [ ] context({name: target}) — understand all callees
+- [ ] context({name: target, repo: boundRepo}) — understand all callees
 - [ ] Group callees by responsibility
-- [ ] impact({target, direction: "upstream"}) — map callers to update
+- [ ] impact({target, direction: "upstream", repo: boundRepo}) — map callers to update
 - [ ] Create new functions/services
 - [ ] Update callers
 - [ ] detect_changes({scope: "all", repo: boundRepo}) — verify staged and unstaged changes
@@ -113,7 +113,7 @@ impact({target: "validateUser", repo: "my-app", direction: "upstream"})
 **detect_changes** — verify your changes after refactoring:
 
 ```
-detect_changes({scope: "all"})
+detect_changes({scope: "all", repo: boundRepo})
 → Changed: 8 files, 12 symbols
 → Affected processes: LoginFlow, TokenRefresh
 → Risk: MEDIUM
