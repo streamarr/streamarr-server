@@ -28,7 +28,8 @@ public final class NonUtf8LocaleFilenameProbe {
   private NonUtf8LocaleFilenameProbe() {}
 
   public static void main(String[] args) throws IOException {
-    var file = firstRegularFileUnder(Path.of(args[0]));
+    var root = Path.of(args[0]);
+    var file = firstRegularFileUnder(root);
     var uri = FilepathCodec.encode(file);
 
     var pathParentName = file.getParent().getFileName().toString();
@@ -46,6 +47,8 @@ public final class NonUtf8LocaleFilenameProbe {
     report("codec.parentName", codecParentName);
     report("codec.grandparentName", codecGrandparentName);
     report("codec.path", FilepathCodec.pathOf(uri));
+    report("path.relativePath", root.relativize(file).toString());
+    report("codec.relativePath", FilepathCodec.relativePathOf(root, file));
     report("season.fromPathName", parseSeason(pathParentName));
     report("season.fromCodecName", parseSeason(codecParentName));
     report("seriesTitle.fromPathName", SERIES_FOLDER_PARSER.parse(pathGrandparentName).title());

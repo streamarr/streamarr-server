@@ -24,10 +24,17 @@ final class RemoteMediaSourceMapper {
       throw new TranscodeException("Media source is outside the configured source namespace");
     }
 
-    var relativeKey = FilepathCodec.relativePathOf(sourceRoot, normalized);
     return MediaSourceRef.newBuilder()
         .setSourceNamespaceId(toProto(sourceNamespaceId))
-        .setRelativeKey(relativeKey)
+        .setRelativeKey(relativeKey(normalized))
         .build();
+  }
+
+  private String relativeKey(Path normalized) {
+    try {
+      return FilepathCodec.relativePathOf(sourceRoot, normalized);
+    } catch (IllegalArgumentException exception) {
+      throw new TranscodeException("Media source name is not valid UTF-8", exception);
+    }
   }
 }

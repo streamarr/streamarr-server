@@ -45,6 +45,11 @@ class NonUtf8LocaleFilenameIT {
   private static final String SEASON_FOLDER = "Sæson 3";
   private static final String EPISODE_FILENAME = "Lumiere.Harbor.S03E05.mkv";
 
+  private static final String MATRIX_ROOT = "/media/matrix";
+  private static final String MATRIX_FOLDER = "東京 Café’s 🎬 %2F ..%2F dir";
+  // "Ame\u0301lie" keeps its decomposed (NFD) accent; the key must not normalize it.
+  private static final String MATRIX_FILENAME = "Ame\u0301lie’s 100%23 #1 한국 𝄞 (2001).mkv";
+
   // Path.toString() emits one U+FFFD per byte the platform charset cannot map, so an accented
   // character read back from UTF-8 bytes becomes two of them.
   private static final String REPLACEMENT_CHAR = Character.toString(0xFFFD);
@@ -56,6 +61,7 @@ class NonUtf8LocaleFilenameIT {
   private static GenericContainer<?> container;
   private static Map<String, String> movieReport;
   private static Map<String, String> seriesReport;
+  private static Map<String, String> matrixReport;
 
   @BeforeAll
   static void probeFilenamesUnderAnAsciiLocale() throws Exception {
@@ -74,9 +80,11 @@ class NonUtf8LocaleFilenameIT {
 
     createFile(MOVIE_ROOT + "/" + MOVIE_FOLDER + "/" + MOVIE_FILENAME);
     createFile(SERIES_ROOT + "/" + SERIES_FOLDER + "/" + SEASON_FOLDER + "/" + EPISODE_FILENAME);
+    createFile(MATRIX_ROOT + "/" + MATRIX_FOLDER + "/" + MATRIX_FILENAME);
 
     movieReport = probe(MOVIE_ROOT);
     seriesReport = probe(SERIES_ROOT);
+    matrixReport = probe(MATRIX_ROOT);
   }
 
   @AfterAll
@@ -167,6 +175,30 @@ class NonUtf8LocaleFilenameIT {
   @DisplayName("Should hand out the real series title when the folder name came from the URI")
   void shouldHandOutRealSeriesTitleWhenFolderNameCameFromUri() {
     assertThat(seriesReport).containsEntry("seriesTitle.fromCodecName", "Lumière Harbor");
+  }
+
+  @Test
+  @DisplayName("Should mangle the relative source key when it is read through Path")
+  void shouldMangleRelativeSourceKeyWhenItIsReadThroughPath() {
+    assertThat(movieReport.get("path.relativePath")).contains(REPLACEMENT_CHAR);
+  }
+
+  @Test
+  @DisplayName("Should key the source by its on-disk names when deriving the relative path")
+  void shouldKeySourceByItsOnDiskNamesWhenDerivingRelativePath() {
+    assertThat(movieReport)
+        .containsEntry("codec.relativePath", MOVIE_FOLDER + "/" + MOVIE_FILENAME);
+    assertThat(seriesReport)
+        .containsEntry(
+            "codec.relativePath", SERIES_FOLDER + "/" + SEASON_FOLDER + "/" + EPISODE_FILENAME);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep literal percent sequences and normalization when deriving the relative path")
+  void shouldKeepLiteralPercentSequencesAndNormalizationWhenDerivingRelativePath() {
+    assertThat(matrixReport)
+        .containsEntry("codec.relativePath", MATRIX_FOLDER + "/" + MATRIX_FILENAME);
   }
 
   /**
