@@ -1,13 +1,13 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.support.NonUtf8LocaleProbeSupport.firstRegularFileUnder;
+import static com.streamarr.server.support.NonUtf8LocaleProbeSupport.report;
+
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.parsers.show.SeasonPathMetadataParser;
 import com.streamarr.server.services.parsers.show.SeriesFolderNameParser;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Base64;
 
 /**
  * Reports how a JVM reads a filename whose bytes on disk are UTF-8, once through {@link Path} and
@@ -15,10 +15,6 @@ import java.util.Base64;
  *
  * <p>Runs inside the container started by {@code NonUtf8LocaleFilenameIT} with only the compiled
  * classes on the classpath, so it must not reference Spring, JUnit, or any third-party library.
- *
- * <p>Every value is printed as base64 of its UTF-8 bytes. Under an ASCII locale {@code System.out}
- * uses {@code stdout.encoding}, which would turn the U+FFFD characters this probe exists to observe
- * into plain question marks before the test could see them.
  */
 public final class NonUtf8LocaleFilenameProbe {
 
@@ -61,16 +57,5 @@ public final class NonUtf8LocaleFilenameProbe {
     }
 
     return seasonNumber + "/" + result.isSeasonFolder();
-  }
-
-  private static Path firstRegularFileUnder(Path root) throws IOException {
-    try (var entries = Files.walk(root)) {
-      return entries.filter(Files::isRegularFile).findFirst().orElseThrow();
-    }
-  }
-
-  private static void report(String key, String value) {
-    System.out.println(
-        key + "=" + Base64.getEncoder().encodeToString(value.getBytes(StandardCharsets.UTF_8)));
   }
 }

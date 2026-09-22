@@ -1,6 +1,7 @@
 package com.streamarr.server;
 
 import com.streamarr.server.support.AuthTestSupportConfig;
+import com.streamarr.server.support.PausedContextConnectionRelease;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.api.parallel.Isolated;
@@ -11,11 +12,11 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-// AuthTestSupport is imported on the base class itself: per-subclass imports would fork the
+// Test support is imported on the base class itself: per-subclass imports would fork the
 // context cache.
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(AuthTestSupportConfig.class)
+@Import({AuthTestSupportConfig.class, PausedContextConnectionRelease.class})
 @ActiveProfiles("test")
 @Isolated("Integration tests share one reusable PostgreSQL database")
 @Execution(ExecutionMode.SAME_THREAD)

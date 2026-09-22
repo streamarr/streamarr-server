@@ -10,6 +10,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -26,6 +27,8 @@ class PostgresLockTestSupportTest {
     var followUpStatement = mock(PreparedStatement.class);
     var blockedBackend = mock(ResultSet.class);
     var unblockedBackend = mock(ResultSet.class);
+    var snapshotReset = mock(Statement.class);
+    when(observer.createStatement()).thenReturn(snapshotReset);
     when(observer.prepareStatement(anyString())).thenReturn(pollStatement, followUpStatement);
     when(pollStatement.executeQuery()).thenReturn(blockedBackend);
     when(blockedBackend.next()).thenReturn(true);

@@ -41,6 +41,7 @@ services:
       TRANSCODE_WORKER_SOURCE_NAMESPACE_ID: ${STREAMARR_SOURCE_NAMESPACE_ID:-cccccccc-cccc-cccc-cccc-cccccccccccc}
       TRANSCODE_WORKER_SOURCE_ROOT: /media
       TRANSCODE_WORKER_SLOTS: ${STREAMARR_WORKER_SLOTS:-1}
+      LANG: C.UTF-8
     volumes:
       - ${STREAMARR_MEDIA_PATH:-/mpool/media/clean/movies}:/media:ro
 

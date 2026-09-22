@@ -1,13 +1,16 @@
 package com.streamarr.server.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import java.io.IOException;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -19,6 +22,8 @@ import tools.jackson.databind.ObjectMapper;
 @Tag("UnitTest")
 @DisplayName("Worker Session Deployment Tests")
 class WorkerSessionDeploymentTest {
+
+  private static final Pattern UTF_8_LOCALE = Pattern.compile("(?i).+\\.utf-?8(@.+)?");
 
   @Test
   @DisplayName("Should require native image validation when the worker pin changes")
@@ -79,18 +84,7 @@ class WorkerSessionDeploymentTest {
       "Should delegate transport protection when Kubernetes workers connect through the Service")
   void shouldDelegateTransportProtectionWhenKubernetesWorkersConnectThroughService()
       throws IOException {
-    var documents =
-        new Yaml()
-            .loadAll(Files.readString(Path.of("deploy/kubernetes/distributed-transcoding.yaml")));
-    var mapper = new ObjectMapper();
-    var deployments =
-        StreamSupport.stream(documents.spliterator(), false)
-            .<JsonNode>map(mapper::valueToTree)
-            .filter(document -> "Deployment".equals(document.path("kind").asString()))
-            .collect(
-                Collectors.toMap(
-                    document -> document.path("metadata").path("name").asString(),
-                    document -> document));
+    var deployments = kubernetesDeployments();
     var server = environment(deployments.get("streamarr-server"));
     var worker = environment(deployments.get("streamarr-transcode-worker"));
 
@@ -103,6 +97,63 @@ class WorkerSessionDeploymentTest {
         .containsEntry("TRANSCODE_WORKER_CONTROL_PLANE_PORT", "9090");
     assertThat(worker.keySet())
         .noneMatch(name -> name.contains("TLS") || name.contains("PLAINTEXT"));
+  }
+
+  @Test
+  @DisplayName("Should run every official process under a UTF-8 locale when deployed")
+  void shouldRunEveryOfficialProcessUnderUtf8LocaleWhenDeployed() throws IOException {
+    var composeServices =
+        new ObjectMapper()
+            .valueToTree(new Yaml().load(Files.readString(Path.of("docker-compose.yml"))))
+            .path("services");
+    var kubernetes = kubernetesDeployments();
+    var environments =
+        Map.of(
+            "Compose streamarr-server",
+            composeEnvironment(composeServices.path("streamarr-server")),
+            "Compose transcode-worker",
+            composeEnvironment(composeServices.path("transcode-worker")),
+            "Kubernetes streamarr-server",
+            environment(kubernetes.get("streamarr-server")),
+            "Kubernetes streamarr-transcode-worker",
+            environment(kubernetes.get("streamarr-transcode-worker")));
+
+    assertSoftly(
+        softly ->
+            environments.forEach(
+                (process, environment) ->
+                    softly
+                        .assertThat(effectiveFilenameLocale(environment))
+                        .as(process)
+                        .matches(UTF_8_LOCALE)));
+  }
+
+  // POSIX precedence for the character-type category: LC_ALL, then LC_CTYPE, then LANG.
+  private static String effectiveFilenameLocale(Map<String, String> environment) {
+    return Stream.of("LC_ALL", "LC_CTYPE", "LANG")
+        .map(environment::get)
+        .filter(value -> value != null && !value.isEmpty())
+        .findFirst()
+        .orElse("");
+  }
+
+  private Map<String, String> composeEnvironment(JsonNode service) {
+    return service.path("environment").properties().stream()
+        .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().asString()));
+  }
+
+  private Map<String, JsonNode> kubernetesDeployments() throws IOException {
+    var documents =
+        new Yaml()
+            .loadAll(Files.readString(Path.of("deploy/kubernetes/distributed-transcoding.yaml")));
+    var mapper = new ObjectMapper();
+    return StreamSupport.stream(documents.spliterator(), false)
+        .<JsonNode>map(mapper::valueToTree)
+        .filter(document -> "Deployment".equals(document.path("kind").asString()))
+        .collect(
+            Collectors.toMap(
+                document -> document.path("metadata").path("name").asString(),
+                document -> document));
   }
 
   private Map<String, String> environment(JsonNode deployment) {
