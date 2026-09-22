@@ -1,6 +1,7 @@
 package com.streamarr.server.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import java.io.IOException;
 import java.nio.file.FileSystems;
@@ -117,9 +118,14 @@ class WorkerSessionDeploymentTest {
             "Kubernetes streamarr-transcode-worker",
             environment(kubernetes.get("streamarr-transcode-worker")));
 
-    environments.forEach(
-        (process, environment) ->
-            assertThat(effectiveFilenameLocale(environment)).as(process).matches(UTF_8_LOCALE));
+    assertSoftly(
+        softly ->
+            environments.forEach(
+                (process, environment) ->
+                    softly
+                        .assertThat(effectiveFilenameLocale(environment))
+                        .as(process)
+                        .matches(UTF_8_LOCALE)));
   }
 
   // POSIX precedence for the character-type category: LC_ALL, then LC_CTYPE, then LANG.
