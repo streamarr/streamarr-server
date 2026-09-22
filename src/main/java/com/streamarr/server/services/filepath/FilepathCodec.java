@@ -1,5 +1,6 @@
 package com.streamarr.server.services.filepath;
 
+import java.io.File;
 import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
@@ -53,6 +54,11 @@ public final class FilepathCodec {
 
   public static String pathOf(String filepathUri) {
     return decodedPathComponentOf(filepathUri);
+  }
+
+  /** Returns the '/'-separated path of {@code path} below {@code root}, which must contain it. */
+  public static String relativePathOf(Path root, Path path) {
+    return root.relativize(path).toString().replace(File.separatorChar, SEPARATOR);
   }
 
   private static Optional<String> nameAbove(String filepathUri, int directoriesAboveTheFile) {
