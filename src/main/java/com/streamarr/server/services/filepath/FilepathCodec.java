@@ -55,6 +55,32 @@ public final class FilepathCodec {
     return decodedPathComponentOf(filepathUri);
   }
 
+  /**
+   * Returns the '/'-separated path of {@code path} below {@code root}, decoded from each path's URI
+   * so filesystem bytes never pass through the platform charset.
+   *
+   * @throws IllegalArgumentException if {@code path} is not below {@code root} or either path is
+   *     not valid UTF-8
+   */
+  public static String relativePathOf(Path root, Path path) {
+    var rootPrefix = withTrailingSeparator(pathOf(encode(root)));
+    var pathText = pathOf(encode(path));
+
+    if (!pathText.startsWith(rootPrefix) || pathText.length() == rootPrefix.length()) {
+      throw new IllegalArgumentException("Path is not below its root");
+    }
+
+    return pathText.substring(rootPrefix.length());
+  }
+
+  private static String withTrailingSeparator(String path) {
+    if (path.endsWith(String.valueOf(SEPARATOR))) {
+      return path;
+    }
+
+    return path + SEPARATOR;
+  }
+
   private static Optional<String> nameAbove(String filepathUri, int directoriesAboveTheFile) {
     var segments = segmentsOf(filepathUri);
     var index = segments.size() - 1 - directoriesAboveTheFile;

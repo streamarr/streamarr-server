@@ -20,12 +20,14 @@ import org.junit.jupiter.params.provider.ValueSource;
 @DisplayName("Remote Ffprobe Service Tests")
 class RemoteFfprobeServiceTest {
 
-  @TempDir Path sourceRoot;
+  @TempDir Path tempDir;
 
   @ParameterizedTest
-  @ValueSource(strings = {".", "../outside.mkv", "nested/../../outside.mkv"})
+  @ValueSource(
+      strings = {".", "../outside.mkv", "nested/../../outside.mkv", "../movies-extra/film.mkv"})
   @DisplayName("Should reject probing when the source is not a file within its namespace")
   void shouldRejectProbingWhenSourceIsNotFileWithinItsNamespace(String relativePath) {
+    var sourceRoot = tempDir.resolve("movies");
     try (var server =
         new WorkerSessionServer(serverConfigurationBuilder().build(), new FakeSegmentStore())) {
       var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, sourceRoot);

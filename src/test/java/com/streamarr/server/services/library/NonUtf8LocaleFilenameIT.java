@@ -3,6 +3,9 @@ package com.streamarr.server.services.library;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.google.protobuf.Message;
+import com.streamarr.server.services.streaming.remote.NonUtf8LocaleSourceKeyProbe;
+import com.streamarr.transcode.v1.MediaSourceRef;
 import java.net.URISyntaxException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -45,6 +48,11 @@ class NonUtf8LocaleFilenameIT {
   private static final String SEASON_FOLDER = "Sæson 3";
   private static final String EPISODE_FILENAME = "Lumiere.Harbor.S03E05.mkv";
 
+  private static final String MATRIX_ROOT = "/media/matrix";
+  private static final String MATRIX_FOLDER = "東京 Café’s 🎬 %2F ..%2F dir";
+  // "Ame\u0301lie" keeps its decomposed (NFD) accent; the key must not normalize it.
+  private static final String MATRIX_FILENAME = "Ame\u0301lie’s 100%23 #1 한국 𝄞 (2001).mkv";
+
   // Path.toString() emits one U+FFFD per byte the platform charset cannot map, so an accented
   // character read back from UTF-8 bytes becomes two of them.
   private static final String REPLACEMENT_CHAR = Character.toString(0xFFFD);
@@ -56,17 +64,25 @@ class NonUtf8LocaleFilenameIT {
   private static GenericContainer<?> container;
   private static Map<String, String> movieReport;
   private static Map<String, String> seriesReport;
+  private static Map<String, String> movieKeyReport;
+  private static Map<String, String> seriesKeyReport;
+  private static Map<String, String> matrixKeyReport;
 
   @BeforeAll
   static void probeFilenamesUnderAnAsciiLocale() throws Exception {
     container =
         new GenericContainer<>(JDK_IMAGE)
             .withCopyFileToContainer(
-                MountableFile.forHostPath(classesDirectoryOf(LibraryManagementService.class)),
+                MountableFile.forHostPath(codeSourceOf(LibraryManagementService.class)),
                 "/app/classes")
             .withCopyFileToContainer(
-                MountableFile.forHostPath(classesDirectoryOf(NonUtf8LocaleFilenameIT.class)),
+                MountableFile.forHostPath(codeSourceOf(NonUtf8LocaleFilenameIT.class)),
                 "/app/test-classes")
+            .withCopyFileToContainer(
+                MountableFile.forHostPath(codeSourceOf(MediaSourceRef.class)),
+                "/app/lib/transcode-contract.jar")
+            .withCopyFileToContainer(
+                MountableFile.forHostPath(codeSourceOf(Message.class)), "/app/lib/protobuf.jar")
             .withEnv("LC_ALL", "POSIX")
             .withEnv("LANG", "POSIX")
             .withCommand("sleep", "infinity");
@@ -74,9 +90,13 @@ class NonUtf8LocaleFilenameIT {
 
     createFile(MOVIE_ROOT + "/" + MOVIE_FOLDER + "/" + MOVIE_FILENAME);
     createFile(SERIES_ROOT + "/" + SERIES_FOLDER + "/" + SEASON_FOLDER + "/" + EPISODE_FILENAME);
+    createFile(MATRIX_ROOT + "/" + MATRIX_FOLDER + "/" + MATRIX_FILENAME);
 
-    movieReport = probe(MOVIE_ROOT);
-    seriesReport = probe(SERIES_ROOT);
+    movieReport = probe(NonUtf8LocaleFilenameProbe.class, MOVIE_ROOT);
+    seriesReport = probe(NonUtf8LocaleFilenameProbe.class, SERIES_ROOT);
+    movieKeyReport = probe(NonUtf8LocaleSourceKeyProbe.class, MOVIE_ROOT);
+    seriesKeyReport = probe(NonUtf8LocaleSourceKeyProbe.class, SERIES_ROOT);
+    matrixKeyReport = probe(NonUtf8LocaleSourceKeyProbe.class, MATRIX_ROOT);
   }
 
   @AfterAll
@@ -169,6 +189,30 @@ class NonUtf8LocaleFilenameIT {
     assertThat(seriesReport).containsEntry("seriesTitle.fromCodecName", "Lumière Harbor");
   }
 
+  @Test
+  @DisplayName("Should mangle the relative source key when it is read through Path")
+  void shouldMangleRelativeSourceKeyWhenItIsReadThroughPath() {
+    assertThat(movieKeyReport.get("path.relativeKey")).contains(REPLACEMENT_CHAR);
+  }
+
+  @Test
+  @DisplayName("Should key the source by its on-disk names when mapping it for a worker")
+  void shouldKeySourceByItsOnDiskNamesWhenMappingItForWorker() {
+    assertThat(movieKeyReport)
+        .containsEntry("mapper.relativeKey", MOVIE_FOLDER + "/" + MOVIE_FILENAME);
+    assertThat(seriesKeyReport)
+        .containsEntry(
+            "mapper.relativeKey", SERIES_FOLDER + "/" + SEASON_FOLDER + "/" + EPISODE_FILENAME);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep literal percent sequences and normalization when mapping the source for a worker")
+  void shouldKeepLiteralPercentSequencesAndNormalizationWhenMappingSourceForWorker() {
+    assertThat(matrixKeyReport)
+        .containsEntry("mapper.relativeKey", MATRIX_FOLDER + "/" + MATRIX_FILENAME);
+  }
+
   /**
    * The path travels as base64 so the shell writes exactly these UTF-8 bytes, whatever charset the
    * docker exec transport applies to the command itself.
@@ -184,14 +228,10 @@ class NonUtf8LocaleFilenameIT {
     assertThat(result.getExitCode()).as(result.getStderr()).isZero();
   }
 
-  private static Map<String, String> probe(String root) throws Exception {
+  private static Map<String, String> probe(Class<?> probe, String root) throws Exception {
     var result =
         container.execInContainer(
-            "java",
-            "-cp",
-            "/app/classes:/app/test-classes",
-            NonUtf8LocaleFilenameProbe.class.getName(),
-            root);
+            "java", "-cp", "/app/classes:/app/test-classes:/app/lib/*", probe.getName(), root);
 
     assertThat(result.getExitCode()).as(result.getStderr()).isZero();
 
@@ -221,7 +261,7 @@ class NonUtf8LocaleFilenameIT {
     return new String(Base64.getDecoder().decode(value), UTF_8);
   }
 
-  private static Path classesDirectoryOf(Class<?> type) throws URISyntaxException {
+  private static Path codeSourceOf(Class<?> type) throws URISyntaxException {
     return Path.of(type.getProtectionDomain().getCodeSource().getLocation().toURI());
   }
 }

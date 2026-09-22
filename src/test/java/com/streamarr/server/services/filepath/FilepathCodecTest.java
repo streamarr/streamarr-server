@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -318,5 +319,36 @@ class FilepathCodecTest {
 
     assertThat(FilepathCodec.filenameOf(FilepathCodec.encode(Path.of("/media", filename))))
         .isEqualTo(filename);
+  }
+
+  @Test
+  @DisplayName("Should return the path below the root when the root is the filesystem root")
+  void shouldReturnPathBelowRootWhenRootIsFilesystemRoot() {
+    var relativePath =
+        FilepathCodec.relativePathOf(Path.of("/"), Path.of("/media/Café Meridian (2006).mkv"));
+
+    assertThat(relativePath).isEqualTo("media/Café Meridian (2006).mkv");
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"/media/movies", "/media/movies-extra/film.mkv", "/media/film.mkv"})
+  @DisplayName("Should reject deriving a relative path when the path is not below the root")
+  void shouldRejectDerivingRelativePathWhenPathIsNotBelowRoot(String path) {
+    var root = Path.of("/media/movies");
+    var candidate = Path.of(path);
+
+    assertThatThrownBy(() -> FilepathCodec.relativePathOf(root, candidate))
+        .isExactlyInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Path is not below its root");
+  }
+
+  // Path.toUri() ends an existing directory with '/', so the root's text then matches the prefix.
+  @Test
+  @DisplayName(
+      "Should reject deriving a relative path when the path is its existing root directory")
+  void shouldRejectDerivingRelativePathWhenPathIsItsExistingRootDirectory(@TempDir Path root) {
+    assertThatThrownBy(() -> FilepathCodec.relativePathOf(root, root))
+        .isExactlyInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Path is not below its root");
   }
 }
