@@ -16,5 +16,5 @@ public sealed interface ProbeExecutionResult {
 
   record SourceChanged(@NonNull ProbeTaskRequest request) implements ProbeExecutionResult {}
 
-  record Deferred() implements ProbeExecutionResult {}
+  record Deferred(@NonNull ProbeTaskRequest request) implements ProbeExecutionResult {}
 }

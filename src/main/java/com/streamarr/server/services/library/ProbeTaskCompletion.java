@@ -39,11 +39,12 @@ public class ProbeTaskCompletion {
                     case ProbeExecutionResult.Completed _ -> operations.remove();
                     case ProbeExecutionResult.Rescheduled(var next) ->
                         operations.reschedule(complete, clock.instant(), next);
-                    case ProbeExecutionResult.Deferred _ ->
+                    case ProbeExecutionResult.Deferred(var next) ->
                         probeTasks.reschedule(
                             complete.getExecution(),
                             RescheduleUpdate.toExecutionTime(
                                     clock.instant().plus(properties.busyWorkerRetryDelay()))
+                                .data(next)
                                 .build());
                     case ProbeExecutionResult.SourceChanged(var next) ->
                         operations.reschedule(complete, clock.instant().plus(quietPeriod()), next);
@@ -80,9 +81,8 @@ public class ProbeTaskCompletion {
     return switch (result) {
       case ProbeExecutionResult.SourceChanged _ ->
           new ProbeExecutionResult.SourceChanged(requested);
-      case ProbeExecutionResult.Completed _,
-          ProbeExecutionResult.Rescheduled _,
-          ProbeExecutionResult.Deferred _ ->
+      case ProbeExecutionResult.Deferred _ -> new ProbeExecutionResult.Deferred(requested);
+      case ProbeExecutionResult.Completed _, ProbeExecutionResult.Rescheduled _ ->
           new ProbeExecutionResult.Rescheduled(requested);
     };
   }

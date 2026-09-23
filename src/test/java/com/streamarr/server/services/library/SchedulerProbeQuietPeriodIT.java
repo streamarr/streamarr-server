@@ -7,7 +7,9 @@ import static org.awaitility.Awaitility.await;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.streamarr.server.config.LibraryWatcherProperties;
+import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fakes.VirtualTimeSleeper;
@@ -47,6 +49,7 @@ class SchedulerProbeQuietPeriodIT extends AbstractProbeSchedulerIntegrationTest 
   @Autowired private LibraryWatcherProperties watcherProperties;
   @Autowired private MutableClock clock;
   @Autowired private ProbeTaskRequests probeTaskRequests;
+  @Autowired private ProbeSchedulingProperties probeScheduling;
 
   @Test
   @DisplayName("Should spend no quiet period when a batch of unchanged files is probed")
@@ -162,6 +165,50 @@ class SchedulerProbeQuietPeriodIT extends AbstractProbeSchedulerIntegrationTest 
                   .isCloseTo(clock.instant().plus(quietPeriod), within(1, ChronoUnit.MICROS));
             });
     assertThat(changingProbes).hasValue(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the busy-worker delay when a scan records a newer snapshot while workers are"
+          + " busy")
+  void shouldKeepTheBusyWorkerDelayWhenAScanRecordsANewerSnapshotWhileWorkersAreBusy()
+      throws Exception {
+    var changing = requestUnchangedFiles(1).getFirst();
+    var changingSource = FilepathCodec.decode(changing.filepathUri());
+    var probing = new CountDownLatch(1);
+    var scanned = new CountDownLatch(1);
+    FfprobeService busyWorkers =
+        _ -> {
+          probing.countDown();
+          awaitSignal(scanned);
+          throw new ProbeWorkersBusyException();
+        };
+    var deferred = new CountDownLatch(1);
+    var client =
+        startScheduler(
+            probeExecution.toBuilder().producer(busyWorkers).build(),
+            countingCompletions(deferred),
+            clock);
+
+    assertThat(probing.await(15, TimeUnit.SECONDS)).isTrue();
+    Files.write(changingSource, new byte[] {9}, StandardOpenOption.APPEND);
+    var scan = changing.toBuilder().snapshot(snapshotOf(changingSource)).build();
+    probeTaskRequests.request(scan);
+    scanned.countDown();
+
+    assertThat(deferred.await(15, TimeUnit.SECONDS)).isTrue();
+    assertThat(client.getScheduledExecution(instanceOf(changing)))
+        .as("A newer request must not pull a busy-worker deferral earlier")
+        .hasValueSatisfying(
+            retry -> {
+              assertThat(retry.isPicked()).isFalse();
+              assertThat(retry.getData()).isEqualTo(scan);
+              // scheduled_tasks keeps microseconds; the controlled clock can carry nanoseconds.
+              assertThat(retry.getExecutionTime())
+                  .isCloseTo(
+                      clock.instant().plus(probeScheduling.busyWorkerRetryDelay()),
+                      within(1, ChronoUnit.MICROS));
+            });
   }
 
   @Test

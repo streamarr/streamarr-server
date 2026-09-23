@@ -93,7 +93,7 @@ public class ProbeExecution {
       log.debug(
           "Deferring probe for media file {}: all compatible workers are busy",
           request.mediaFileId());
-      return new ProbeExecutionResult.Deferred();
+      return new ProbeExecutionResult.Deferred(request);
     }
 
     var after = snapshot(path);

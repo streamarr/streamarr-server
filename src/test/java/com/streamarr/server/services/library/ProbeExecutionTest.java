@@ -260,7 +260,7 @@ class ProbeExecutionTest {
 
     var result = execution.execute(request);
 
-    assertThat(result).isEqualTo(new ProbeExecutionResult.Deferred());
+    assertThat(result).isEqualTo(new ProbeExecutionResult.Deferred(request));
     assertThat(outcomes.publications()).isEmpty();
   }
 
