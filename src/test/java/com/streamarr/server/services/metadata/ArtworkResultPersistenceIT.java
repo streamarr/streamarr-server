@@ -15,8 +15,12 @@ import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
+import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
+import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.ArtworkFetcher;
 import com.streamarr.server.services.ArtworkResult;
 import com.streamarr.server.services.ArtworkSources;
@@ -44,12 +48,19 @@ class ArtworkResultPersistenceIT extends AbstractWireMockIntegrationTest {
   @Autowired private ImageRepository imageRepository;
   @Autowired private ItemResultRepository itemResults;
   @Autowired private JdbcTemplate jdbcTemplate;
+  @Autowired private LibraryRepository libraryRepository;
+  @Autowired private MovieRepository movieRepository;
 
-  private final UUID entityId = UUID.randomUUID();
+  private UUID entityId;
 
   @BeforeEach
-  void resetStubs() {
+  void setUp() {
     wireMock.resetAll();
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    entityId =
+        movieRepository
+            .saveAndFlush(Movie.builder().title("Artwork").library(library).build())
+            .getId();
   }
 
   @Test

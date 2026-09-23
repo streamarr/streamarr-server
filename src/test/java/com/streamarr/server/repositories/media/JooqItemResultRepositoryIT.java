@@ -10,6 +10,9 @@ import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
+import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.repositories.LibraryRepository;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -34,12 +37,14 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest {
   @Autowired private ItemResultRepository itemResults;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private JdbcTemplate jdbcTemplate;
+  @Autowired private LibraryRepository libraryRepository;
+  @Autowired private MovieRepository movieRepository;
 
   @Test
   @DisplayName("Should store failed artwork with its reason and source when an attempt fails")
   void shouldStoreFailedArtworkWithItsReasonAndSourceWhenAnAttemptFails() {
     var failure =
-        artwork(UUID.randomUUID(), ImageType.POSTER)
+        artwork(savedMovieId(), ImageType.POSTER)
             .outcome(new ItemOutcome.Failed(ItemFailureReason.DOWNLOAD_FAILED, "HTTP 503"))
             .sourceKey("/poster.jpg")
             .attemptedAt(EARLIER)
@@ -54,7 +59,7 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should resolve the failure when a later attempt succeeds")
   void shouldResolveTheFailureWhenALaterAttemptSucceeds() {
-    var itemId = UUID.randomUUID();
+    var itemId = savedMovieId();
     itemResults.trySave(
         metadata(itemId)
             .outcome(new ItemOutcome.Failed(ItemFailureReason.TEMPORARY, "timeout"))
@@ -70,7 +75,7 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should reject a result when a later attempt has already been recorded")
   void shouldRejectAResultWhenALaterAttemptHasAlreadyBeenRecorded() {
-    var itemId = UUID.randomUUID();
+    var itemId = savedMovieId();
     var success =
         artwork(itemId, ImageType.BACKDROP)
             .outcome(new ItemOutcome.Succeeded())
@@ -93,7 +98,7 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should keep one result per step and image type when an item has several")
   void shouldKeepOneResultPerStepAndImageTypeWhenAnItemHasSeveral() {
-    var itemId = UUID.randomUUID();
+    var itemId = savedMovieId();
     var metadata = metadata(itemId).outcome(new ItemOutcome.Succeeded()).build();
     var poster = artwork(itemId, ImageType.POSTER).outcome(new ItemOutcome.Unavailable()).build();
     var backdrop = artwork(itemId, ImageType.BACKDROP).outcome(new ItemOutcome.Succeeded()).build();
@@ -111,7 +116,7 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should reject a stale failure that waits on a newer uncommitted success")
   void shouldRejectAStaleFailureThatWaitsOnANewerUncommittedSuccess() throws Exception {
-    var itemId = UUID.randomUUID();
+    var itemId = savedMovieId();
     var success = metadata(itemId).outcome(new ItemOutcome.Succeeded()).attemptedAt(LATER).build();
     var staleFailure =
         metadata(itemId)
@@ -149,6 +154,13 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest {
     }
 
     assertThat(itemResults.findByItem(itemId, ImageEntityType.MOVIE)).containsExactly(success);
+  }
+
+  private UUID savedMovieId() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    return movieRepository
+        .saveAndFlush(Movie.builder().title("Results").library(library).build())
+        .getId();
   }
 
   private static ItemResult.ItemResultBuilder metadata(UUID itemId) {

@@ -9,8 +9,13 @@ import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.ImageRepository;
+import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.ImageService;
+import com.streamarr.server.services.MovieService;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -36,11 +41,14 @@ class ImageReplacementLockTimeoutIT extends AbstractIntegrationTest {
   @Autowired private ImageRepository imageRepository;
   @Autowired private ImageService imageService;
   @Autowired private DataSource dataSource;
+  @Autowired private MovieService movieService;
+  @Autowired private LibraryRepository libraryRepository;
+  @Autowired private MovieRepository movieRepository;
 
   @Test
   @DisplayName("Should preserve existing artwork when replacement exceeds lock timeout")
   void shouldPreserveExistingArtworkWhenReplacementExceedsLockTimeout() throws Exception {
-    var entityId = UUID.randomUUID();
+    var entityId = savedMovieId();
     var original = processedImage(entityId, 0x0000FF, "/original.jpg");
     var holderReplacement = processedImage(entityId, 0x00FFFF, "/holder.jpg");
     var contenderReplacement = processedImage(entityId, 0xFF00FF, "/contender.jpg");
@@ -86,11 +94,18 @@ class ImageReplacementLockTimeoutIT extends AbstractIntegrationTest {
       assertThat(holderReplacement.writtenFiles()).allSatisfy(path -> assertThat(path).exists());
       assertThat(original.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
     } finally {
-      imageService.deleteImagesForEntity(entityId, ImageEntityType.MOVIE);
+      movieService.deleteMovieById(entityId);
       imageService.deleteFiles(original.writtenFiles());
       imageService.deleteFiles(holderReplacement.writtenFiles());
       imageService.deleteFiles(contenderReplacement.writtenFiles());
     }
+  }
+
+  private UUID savedMovieId() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    return movieRepository
+        .saveAndFlush(Movie.builder().title("Replacement").library(library).build())
+        .getId();
   }
 
   private ImageService.ProcessedImage processedImage(UUID entityId, int color, String key) {

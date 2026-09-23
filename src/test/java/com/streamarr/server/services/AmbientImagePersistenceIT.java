@@ -8,6 +8,10 @@ import com.streamarr.server.domain.media.AmbientColors;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
+import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.ImageService.ProcessedImage;
 import java.time.Instant;
 import java.util.Arrays;
@@ -15,6 +19,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -27,14 +32,26 @@ class AmbientImagePersistenceIT extends AbstractIntegrationTest {
 
   private static final Instant ATTEMPTED_AT = Instant.parse("2026-09-23T10:00:00Z");
 
-  private final UUID entityId = UUID.randomUUID();
-
   @Autowired private ImageService imageService;
+  @Autowired private MovieService movieService;
+  @Autowired private LibraryRepository libraryRepository;
+  @Autowired private MovieRepository movieRepository;
   @Autowired private TransactionTemplate transactions;
 
+  private UUID entityId;
+
+  @BeforeEach
+  void saveMovie() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    entityId =
+        movieRepository
+            .saveAndFlush(Movie.builder().title("Ambient").library(library).build())
+            .getId();
+  }
+
   @AfterEach
-  void removeArtwork() {
-    imageService.deleteImagesForEntity(entityId, ImageEntityType.MOVIE);
+  void removeMovie() {
+    movieService.deleteMovieById(entityId);
   }
 
   @Test
