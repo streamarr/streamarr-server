@@ -171,12 +171,8 @@ public class MediaFileContainerInfoRepositoryCustomImpl
             MEDIA_FILE_PROBE_TASK_REQUEST.PROBE_VERSION)
         .from(MEDIA_FILE_PROBE_TASK_REQUEST)
         .where(MEDIA_FILE_PROBE_TASK_REQUEST.MEDIA_FILE_ID.eq(mediaFileId))
-        .fetchOptional(
-            row ->
-                new ProbeInputs(
-                    new SourceFileSnapshot(
-                        row.value1(), Instant.ofEpochSecond(row.value2(), row.value3())),
-                    row.value4()));
+        .fetchOptional()
+        .flatMap(MediaFileContainerInfoRepositoryCustomImpl::toRequestedInputs);
   }
 
   private void clearFailure(UUID mediaFileId, Condition condition) {
@@ -205,13 +201,13 @@ public class MediaFileContainerInfoRepositoryCustomImpl
   private static ProbeState toProbeState(Record row) {
     return ProbeState.builder()
         .mediaFileId(row.get(MEDIA_FILE.ID))
-        .requested(requestedInputs(row))
-        .stored(storedOutcome(row))
-        .failure(attemptFailure(row))
+        .requested(toRequestedInputs(row))
+        .stored(toStoredOutcome(row))
+        .failure(toAttemptFailure(row))
         .build();
   }
 
-  private static Optional<ProbeInputs> requestedInputs(Record row) {
+  private static Optional<ProbeInputs> toRequestedInputs(Record row) {
     var request = MEDIA_FILE_PROBE_TASK_REQUEST;
     if (row.get(request.PROBE_VERSION) == null) {
       return Optional.empty();
@@ -226,7 +222,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
             row.get(request.PROBE_VERSION)));
   }
 
-  private static Optional<ProbeState.Stored> storedOutcome(Record row) {
+  private static Optional<ProbeState.Stored> toStoredOutcome(Record row) {
     var outcome = MEDIA_FILE_CONTAINER_INFO;
     if (row.get(outcome.PROBE_VERSION) == null) {
       return Optional.empty();
@@ -244,7 +240,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
             inputs, Optional.ofNullable(row.get(outcome.PROBE_ERROR)).map(ProbeError::valueOf)));
   }
 
-  private static Optional<ProbeAttemptFailure> attemptFailure(Record row) {
+  private static Optional<ProbeAttemptFailure> toAttemptFailure(Record row) {
     var request = MEDIA_FILE_PROBE_TASK_REQUEST;
     if (row.get(request.FAILURE_REASON) == null) {
       return Optional.empty();

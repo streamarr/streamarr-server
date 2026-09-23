@@ -5,6 +5,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -34,6 +35,10 @@ public final class ProbeRun {
               firstRequestedAt.compareAndSet(null, clock.instant());
               requested.put(mediaFileId, inputs);
             });
+  }
+
+  Set<UUID> mediaFileIds() {
+    return Set.copyOf(requested.keySet());
   }
 
   Map<UUID, ProbeInputs> requested() {

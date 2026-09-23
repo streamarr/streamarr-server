@@ -6,11 +6,17 @@ import java.util.List;
 public class ArtworkResultNotRecordedException extends RuntimeException {
 
   public ArtworkResultNotRecordedException(String runDescription, List<Throwable> failures) {
-    super(
-        "Could not record the results of %d required artwork %s for %s"
-            .formatted(
-                failures.size(), failures.size() == 1 ? "request" : "requests", runDescription),
-        failures.getFirst());
+    super(message(runDescription, failures.size()), failures.getFirst());
     failures.stream().skip(1).forEach(this::addSuppressed);
+  }
+
+  private static String message(String runDescription, int failureCount) {
+    var requests = "requests";
+    if (failureCount == 1) {
+      requests = "request";
+    }
+
+    return "Could not record the results of %d required artwork %s for %s"
+        .formatted(failureCount, requests, runDescription);
   }
 }

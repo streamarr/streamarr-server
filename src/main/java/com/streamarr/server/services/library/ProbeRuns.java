@@ -9,9 +9,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.EnumMap;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -46,10 +44,18 @@ public class ProbeRuns {
   public ProbeRunSummary awaitResults(ProbeRun run) throws InterruptedException {
     var pending = new HashMap<>(run.requested());
     var counts = new EnumMap<RequestedProbeResult, Integer>(RequestedProbeResult.class);
-    countFinished(pending, counts);
-    while (!pending.isEmpty()) {
+    while (true) {
+      finishedProbes(pending)
+          .forEach(
+              (mediaFileId, result) -> {
+                pending.remove(mediaFileId);
+                counts.merge(result, 1, Integer::sum);
+              });
+      if (pending.isEmpty()) {
+        break;
+      }
+
       sleeper.sleep(properties.resultCheckInterval());
-      countFinished(pending, counts);
     }
 
     var elapsed =
@@ -59,21 +65,27 @@ public class ProbeRuns {
     return ProbeRunSummary.builder().counts(counts).elapsed(elapsed).build();
   }
 
-  private void countFinished(
-      Map<UUID, ProbeInputs> pending, Map<RequestedProbeResult, Integer> counts) {
+  private Map<UUID, RequestedProbeResult> finishedProbes(Map<UUID, ProbeInputs> pending) {
     var states =
         outcomes.findProbeStates(pending.keySet()).stream()
             .collect(Collectors.toMap(ProbeState::mediaFileId, Function.identity()));
-    for (var mediaFileId : List.copyOf(pending.keySet())) {
-      var result = resultOf(Optional.ofNullable(states.get(mediaFileId)), pending.get(mediaFileId));
-      if (result != RequestedProbeResult.PENDING) {
-        counts.merge(result, 1, Integer::sum);
-        pending.remove(mediaFileId);
-      }
-    }
+    var finished = new HashMap<UUID, RequestedProbeResult>();
+    pending.forEach(
+        (mediaFileId, inputs) -> {
+          var result = resultOf(states.get(mediaFileId), inputs);
+          if (result != RequestedProbeResult.PENDING) {
+            finished.put(mediaFileId, result);
+          }
+        });
+    return finished;
   }
 
-  private static RequestedProbeResult resultOf(Optional<ProbeState> state, ProbeInputs inputs) {
-    return state.map(found -> found.resultFor(inputs)).orElse(RequestedProbeResult.REMOVED);
+  // A media file without a state row was deleted.
+  private static RequestedProbeResult resultOf(ProbeState state, ProbeInputs inputs) {
+    if (state == null) {
+      return RequestedProbeResult.REMOVED;
+    }
+
+    return state.resultFor(inputs);
   }
 }

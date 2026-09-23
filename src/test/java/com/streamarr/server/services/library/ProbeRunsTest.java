@@ -24,6 +24,7 @@ import java.nio.file.Files;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.IntConsumer;
 import org.junit.jupiter.api.AfterEach;
@@ -173,7 +174,7 @@ class ProbeRunsTest {
     var summary = probeRuns.awaitResults(run);
 
     assertThat(requests.requests()).isEmpty();
-    assertThat(summary.total()).isZero();
+    assertThat(summary.counts()).isEmpty();
     assertThat(sleeps).isEmpty();
   }
 
@@ -188,7 +189,7 @@ class ProbeRunsTest {
 
     var summary = probeRuns.awaitResults(run);
 
-    assertThat(summary.total()).isOne();
+    assertThat(summary.counts()).isEqualTo(Map.of(RequestedProbeResult.READY, 1));
     assertThat(sleeps).isEmpty();
   }
 

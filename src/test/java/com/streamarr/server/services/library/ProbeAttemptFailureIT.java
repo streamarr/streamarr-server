@@ -8,7 +8,6 @@ import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.task.ProbeAttemptFailure;
-import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeState;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
@@ -87,7 +86,7 @@ class ProbeAttemptFailureIT extends AbstractProbeSchedulerIntegrationTest {
   @DisplayName("Should clear the recorded failure when an outcome is stored for the same inputs")
   void shouldClearTheRecordedFailureWhenAnOutcomeIsStoredForTheSameInputs() throws Exception {
     var request = requestUnchangedFiles(1).getFirst();
-    assertThat(outcomes.recordProbeFailure(request.mediaFileId(), inputsOf(request), failure()))
+    assertThat(outcomes.recordProbeFailure(request.mediaFileId(), request.inputs(), failure()))
         .isTrue();
 
     outcomes.publish(
@@ -109,7 +108,7 @@ class ProbeAttemptFailureIT extends AbstractProbeSchedulerIntegrationTest {
     assertThat(stateOf(request).stored())
         .hasValueSatisfying(
             stored -> {
-              assertThat(stored.inputs()).isEqualTo(inputsOf(request));
+              assertThat(stored.inputs()).isEqualTo(request.inputs());
               assertThat(stored.error()).isEmpty();
             });
   }
@@ -118,7 +117,7 @@ class ProbeAttemptFailureIT extends AbstractProbeSchedulerIntegrationTest {
   @DisplayName("Should keep the recorded failure when the same inputs are requested again")
   void shouldKeepTheRecordedFailureWhenTheSameInputsAreRequestedAgain() throws Exception {
     var request = requestUnchangedFiles(1).getFirst();
-    outcomes.recordProbeFailure(request.mediaFileId(), inputsOf(request), failure());
+    outcomes.recordProbeFailure(request.mediaFileId(), request.inputs(), failure());
 
     probeTaskRequests.request(request);
 
@@ -129,12 +128,12 @@ class ProbeAttemptFailureIT extends AbstractProbeSchedulerIntegrationTest {
   @DisplayName("Should clear the recorded failure when a request carries different inputs")
   void shouldClearTheRecordedFailureWhenARequestCarriesDifferentInputs() throws Exception {
     var request = requestUnchangedFiles(1).getFirst();
-    outcomes.recordProbeFailure(request.mediaFileId(), inputsOf(request), failure());
+    outcomes.recordProbeFailure(request.mediaFileId(), request.inputs(), failure());
     var changed = changedSnapshot(request);
 
     probeTaskRequests.request(changed);
 
-    assertThat(stateOf(request).requested()).contains(inputsOf(changed));
+    assertThat(stateOf(request).requested()).contains(changed.inputs());
     assertThat(stateOf(request).failure()).isEmpty();
   }
 
@@ -144,7 +143,7 @@ class ProbeAttemptFailureIT extends AbstractProbeSchedulerIntegrationTest {
     var request = requestUnchangedFiles(1).getFirst();
     probeTaskRequests.request(changedSnapshot(request));
 
-    var recorded = outcomes.recordProbeFailure(request.mediaFileId(), inputsOf(request), failure());
+    var recorded = outcomes.recordProbeFailure(request.mediaFileId(), request.inputs(), failure());
 
     assertThat(recorded).isFalse();
     assertThat(stateOf(request).failure()).isEmpty();
@@ -175,10 +174,6 @@ class ProbeAttemptFailureIT extends AbstractProbeSchedulerIntegrationTest {
         .detail("Worker could not read the source")
         .failedAt(FAILED_AT)
         .build();
-  }
-
-  private static ProbeInputs inputsOf(ProbeTaskRequest request) {
-    return new ProbeInputs(request.snapshot(), request.probeVersion());
   }
 
   private static ProbeTaskRequest changedSnapshot(ProbeTaskRequest request) {

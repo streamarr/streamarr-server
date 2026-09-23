@@ -44,7 +44,7 @@ public class FileDiscoveryRuns {
       var artwork = discovery.artworkRun().completion().get();
       var probes = probeRuns.awaitResults(discovery.probeRun());
       return ScanResults.builder()
-          .files(mediaFiles.countStatuses(discovery.probeRun().requested().keySet()))
+          .files(mediaFiles.countStatuses(discovery.probeRun().mediaFileIds()))
           .artwork(artwork)
           .probes(probes)
           .secondaryImagesPending(artworkService.pendingSecondaryImages())
