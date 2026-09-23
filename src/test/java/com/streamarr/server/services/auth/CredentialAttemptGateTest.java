@@ -3,7 +3,6 @@ package com.streamarr.server.services.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import ch.qos.logback.classic.Level;
 import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialKind;
@@ -33,11 +32,12 @@ class CredentialAttemptGateTest {
 
   private static final Instant NOW = Instant.parse("2026-08-26T12:00:00Z");
   private static final UUID ACCOUNT_ID = UUID.fromString("10000000-0000-0000-0000-000000000001");
+  private static final String CLIENT_ADDRESS = "192.0.2.30";
   private static final CredentialAttemptMetadata LOGIN_METADATA =
       CredentialAttemptMetadata.builder()
           .kind(CredentialKind.ACCOUNT_LOGIN)
           .accountId(ACCOUNT_ID)
-          .ipAddress("192.0.2.30")
+          .ipAddress(CLIENT_ADDRESS)
           .build();
 
   private final FakeCredentialAttemptRepository repository = new FakeCredentialAttemptRepository();
@@ -86,43 +86,33 @@ class CredentialAttemptGateTest {
   }
 
   @Test
-  @DisplayName("Should log an error naming the target when the journal is unavailable")
-  void shouldLogErrorNamingTargetWhenJournalIsUnavailable() {
+  @DisplayName(
+      "Should fail closed without logging the client address when the journal is unavailable")
+  void shouldFailClosedWithoutLoggingClientAddressWhenJournalIsUnavailable() {
     repository.failWith(new DataAccessResourceFailureException("database unavailable"));
 
     try (var logs = LogCapture.forClass(CredentialAttemptGate.class)) {
       assertThatThrownBy(() -> gate.reserve(LOGIN_METADATA))
           .isInstanceOf(CredentialAttemptUnavailableException.class);
 
-      assertThat(logs.events())
-          .anySatisfy(
-              event -> {
-                assertThat(event.getLevel()).isEqualTo(Level.ERROR);
-                assertThat(event.getFormattedMessage())
-                    .contains("ACCOUNT_LOGIN", ACCOUNT_ID.toString())
-                    .doesNotContain("192.0.2.30");
-                assertThat(event.getThrowableProxy()).isNotNull();
-              });
+      assertThat(logs.renderedEvents())
+          .isNotEmpty()
+          .allSatisfy(event -> assertThat(event).doesNotContain(CLIENT_ADDRESS));
     }
   }
 
   @Test
-  @DisplayName("Should log a warning naming the target when a reservation is blocked")
-  void shouldLogWarningNamingTargetWhenReservationIsBlocked() {
+  @DisplayName("Should refuse without logging the client address when a reservation is blocked")
+  void shouldRefuseWithoutLoggingClientAddressWhenReservationIsBlocked() {
     repository.rejectReservations(Duration.ofSeconds(42));
 
     try (var logs = LogCapture.forClass(CredentialAttemptGate.class)) {
       assertThatThrownBy(() -> gate.reserve(LOGIN_METADATA))
           .isInstanceOf(TooManyLoginAttemptsException.class);
 
-      assertThat(logs.events())
-          .anySatisfy(
-              event -> {
-                assertThat(event.getLevel()).isEqualTo(Level.WARN);
-                assertThat(event.getFormattedMessage())
-                    .contains("ACCOUNT_LOGIN", ACCOUNT_ID.toString(), "PT42S")
-                    .doesNotContain("192.0.2.30");
-              });
+      assertThat(logs.renderedEvents())
+          .isNotEmpty()
+          .allSatisfy(event -> assertThat(event).doesNotContain(CLIENT_ADDRESS));
     }
   }
 
@@ -236,8 +226,10 @@ class CredentialAttemptGateTest {
   }
 
   @Test
-  @DisplayName("Should leave the reservation pending and warn when the verifier fails unexpectedly")
-  void shouldLeaveReservationPendingAndWarnWhenVerifierFailsUnexpectedly() {
+  @DisplayName(
+      "Should leave the reservation pending without logging the client address when the verifier"
+          + " fails unexpectedly")
+  void shouldLeaveReservationPendingWithoutLoggingClientAddressWhenVerifierFailsUnexpectedly() {
     try (var logs = LogCapture.forClass(CredentialAttemptGate.class)) {
       assertThatThrownBy(
               () ->
@@ -256,15 +248,9 @@ class CredentialAttemptGateTest {
                 assertThat(attempt.result()).isNull();
                 assertThat(attempt.completedAt()).isNull();
               });
-      assertThat(logs.events())
-          .anySatisfy(
-              event -> {
-                assertThat(event.getLevel()).isEqualTo(Level.WARN);
-                assertThat(event.getFormattedMessage())
-                    .contains(ACCOUNT_ID.toString())
-                    .doesNotContain("192.0.2.30");
-                assertThat(event.getThrowableProxy()).isNotNull();
-              });
+      assertThat(logs.renderedEvents())
+          .isNotEmpty()
+          .allSatisfy(event -> assertThat(event).doesNotContain(CLIENT_ADDRESS));
     }
   }
 

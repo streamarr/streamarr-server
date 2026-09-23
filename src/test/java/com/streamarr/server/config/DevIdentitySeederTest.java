@@ -2,9 +2,6 @@ package com.streamarr.server.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.config.security.Argon2Properties;
 import com.streamarr.server.config.security.PasswordEncoderConfig;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
@@ -15,11 +12,11 @@ import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.services.auth.SetupService;
+import com.streamarr.server.support.LogCapture;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
 
 @Tag("UnitTest")
 @DisplayName("Dev Identity Seeder Tests")
@@ -73,21 +70,13 @@ class DevIdentitySeederTest {
   @Test
   @DisplayName("Should never log the admin password when seeding")
   void shouldNeverLogTheAdminPasswordWhenSeeding() {
-    var logger = (Logger) LoggerFactory.getLogger(DevIdentitySeeder.class);
-    var appender = new ListAppender<ILoggingEvent>();
-    appender.start();
-    logger.addAppender(appender);
-
-    try {
+    try (var logs = LogCapture.forClass(DevIdentitySeeder.class)) {
       seeder(true).seedIdentity();
-    } finally {
-      logger.detachAppender(appender);
-    }
 
-    assertThat(appender.list)
-        .isNotEmpty()
-        .extracting(ILoggingEvent::getFormattedMessage)
-        .noneMatch(message -> message.contains("a dev passphrase"));
+      assertThat(logs.renderedEvents())
+          .isNotEmpty()
+          .allSatisfy(event -> assertThat(event).doesNotContain("a dev passphrase"));
+    }
   }
 
   private DevIdentitySeeder seeder(boolean enabled) {
