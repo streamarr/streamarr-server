@@ -20,6 +20,7 @@ import com.streamarr.server.jooq.generated.tables.Genre;
 import com.streamarr.server.jooq.generated.tables.Household;
 import com.streamarr.server.jooq.generated.tables.HouseholdGuard;
 import com.streamarr.server.jooq.generated.tables.Image;
+import com.streamarr.server.jooq.generated.tables.ItemResult;
 import com.streamarr.server.jooq.generated.tables.Library;
 import com.streamarr.server.jooq.generated.tables.LibraryMetadata;
 import com.streamarr.server.jooq.generated.tables.MediaFile;
@@ -154,6 +155,11 @@ public class Public extends SchemaImpl {
      * The table <code>public.image</code>.
      */
     public final Image IMAGE = Image.IMAGE;
+
+    /**
+     * The table <code>public.item_result</code>.
+     */
+    public final ItemResult ITEM_RESULT = ItemResult.ITEM_RESULT;
 
     /**
      * The table <code>public.library</code>.
@@ -347,6 +353,7 @@ public class Public extends SchemaImpl {
             Household.HOUSEHOLD,
             HouseholdGuard.HOUSEHOLD_GUARD,
             Image.IMAGE,
+            ItemResult.ITEM_RESULT,
             Library.LIBRARY,
             LibraryMetadata.LIBRARY_METADATA,
             MediaFile.MEDIA_FILE,

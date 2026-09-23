@@ -7,6 +7,7 @@ package com.streamarr.server.jooq.generated.tables;
 import com.streamarr.server.jooq.generated.Indexes;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
+import com.streamarr.server.jooq.generated.enums.ItemResultFailureReason;
 import com.streamarr.server.jooq.generated.enums.MediaFileStatus;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable.BaseCollectablePath;
 import com.streamarr.server.jooq.generated.tables.Library.LibraryPath;
@@ -21,6 +22,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
+import org.jooq.Check;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.ForeignKey;
@@ -120,6 +122,11 @@ public class MediaFile extends TableImpl<MediaFileRecord> {
      * The column <code>public.media_file.status</code>.
      */
     public final TableField<MediaFileRecord, MediaFileStatus> STATUS = createField(DSL.name("status"), SQLDataType.VARCHAR.nullable(false).asEnumDataType(MediaFileStatus.class), this, "");
+
+    /**
+     * The column <code>public.media_file.failure_reason</code>.
+     */
+    public final TableField<MediaFileRecord, ItemResultFailureReason> FAILURE_REASON = createField(DSL.name("failure_reason"), SQLDataType.VARCHAR.asEnumDataType(ItemResultFailureReason.class), this, "");
 
     private MediaFile(Name alias, Table<MediaFileRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
@@ -265,6 +272,13 @@ public class MediaFile extends TableImpl<MediaFileRecord> {
             _mediaFileProbeTaskRequest = new MediaFileProbeTaskRequestPath(this, null, Keys.MEDIA_FILE_PROBE_TASK_REQUEST__MEDIA_FILE_PROBE_TASK_REQUEST_MEDIA_FILE_ID_FKEY.getInverseKey());
 
         return _mediaFileProbeTaskRequest;
+    }
+
+    @Override
+    public List<Check<MediaFileRecord>> getChecks() {
+        return Arrays.asList(
+            Internal.createCheck(this, DSL.name("media_file_failure_reason_matches_status"), "(((failure_reason IS NULL) OR (status = ANY (ARRAY['METADATA_UNAVAILABLE'::media_file_status, 'ENRICHMENT_FAILED'::media_file_status]))))", true)
+        );
     }
 
     @Override
