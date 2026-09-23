@@ -116,14 +116,14 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("Should use MPEGTS container when transcoding to H264")
-  void shouldUseMpegtsContainerWhenTranscodingToH264() {
+  @DisplayName("Should use fMP4 container when transcoding to H264")
+  void shouldUseFmp4ContainerWhenTranscodingToH264() {
     var source = probe("hevc", "aac");
     var clientOptions = options(List.of("h264"));
 
     var decision = service.decide(source, clientOptions);
 
-    assertThat(decision.containerFormat()).isEqualTo(ContainerFormat.MPEGTS);
+    assertThat(decision.containerFormat()).isEqualTo(ContainerFormat.FMP4);
   }
 
   @Test
@@ -164,14 +164,14 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("Should use MPEGTS container when remuxing H264")
-  void shouldUseMpegtsContainerWhenRemuxingH264() {
+  @DisplayName("Should use fMP4 container when remuxing H264")
+  void shouldUseFmp4ContainerWhenRemuxingH264() {
     var source = probe("h264", "aac");
     var clientOptions = options(List.of("h264"));
 
     var decision = service.decide(source, clientOptions);
 
-    assertThat(decision.containerFormat()).isEqualTo(ContainerFormat.MPEGTS);
+    assertThat(decision.containerFormat()).isEqualTo(ContainerFormat.FMP4);
   }
 
   @Test
@@ -291,16 +291,17 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("Should fall back to stereo AAC when FLAC in MPEGTS is unsupported")
-  void shouldFallbackToStereoAacWhenFlacInMpegtsIsUnsupported() {
+  @DisplayName("Should copy FLAC audio when remuxing H264 and the client supports FLAC")
+  void shouldCopyFlacAudioWhenRemuxingH264AndClientSupportsFlac() {
     var source = probe("h264", "flac", 6, 0);
     var clientOptions = options(List.of("h264"), List.of("aac", "flac"), 6);
 
     var decision = service.decide(source, clientOptions);
 
-    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
-    assertThat(decision.audioDecision().codec()).isEqualTo("aac");
-    assertThat(decision.audioDecision().channels()).isEqualTo(2);
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
+    assertThat(decision.audioDecision().codec()).isEqualTo("flac");
+    assertThat(decision.audioDecision().channels()).isEqualTo(6);
   }
 
   @Test
@@ -332,23 +333,10 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("Should block multichannel AAC copy in MPEGTS")
-  void shouldBlockMultichannelAacCopyInMpegts() {
+  @DisplayName("Should copy multichannel AAC when remuxing H264")
+  void shouldCopyMultichannelAacWhenRemuxingH264() {
     var source = probe("h264", "aac", 6, 384_000L);
     var clientOptions = options(List.of("h264"), List.of("aac"), 6);
-
-    var decision = service.decide(source, clientOptions);
-
-    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
-    assertThat(decision.audioDecision().codec()).isEqualTo("aac");
-    assertThat(decision.audioDecision().channels()).isEqualTo(2);
-  }
-
-  @Test
-  @DisplayName("Should allow multichannel AAC copy in fMP4")
-  void shouldAllowMultichannelAacCopyInFmp4() {
-    var source = probe("av1", "aac", 6, 384_000L);
-    var clientOptions = options(List.of("av1"), List.of("aac"), 6);
 
     var decision = service.decide(source, clientOptions);
 
@@ -374,10 +362,10 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("Should transcode to multichannel AAC in fMP4 when only AAC supported")
-  void shouldTranscodeToMultichannelAacInFmp4WhenOnlyAacSupported() {
-    var source = probe("av1", "dts", 6, 1_500_000L);
-    var clientOptions = options(List.of("av1"), List.of("aac"), 6);
+  @DisplayName("Should transcode to multichannel AAC when only AAC is supported")
+  void shouldTranscodeToMultichannelAacWhenOnlyAacIsSupported() {
+    var source = probe("h264", "dts", 6, 1_500_000L);
+    var clientOptions = options(List.of("h264"), List.of("aac"), 6);
 
     var decision = service.decide(source, clientOptions);
 
@@ -385,7 +373,6 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
     assertThat(decision.audioDecision().codec()).isEqualTo("aac");
     assertThat(decision.audioDecision().channels()).isEqualTo(6);
-    assertThat(decision.containerFormat()).isEqualTo(ContainerFormat.FMP4);
   }
 
   @Test

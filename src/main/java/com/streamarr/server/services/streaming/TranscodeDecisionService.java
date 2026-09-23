@@ -26,7 +26,7 @@ public class TranscodeDecisionService {
 
     var videoCodecFamily =
         videoCompatible ? source.videoCodec() : selectPreferredCodec(supportedCodecs);
-    var containerFormat = containerForCodec(videoCodecFamily);
+    var containerFormat = ContainerFormat.FMP4;
     var audioDecision = decideAudio(source, clientOptions, containerFormat);
     var subtitleDecision = SubtitleDecision.exclude();
 
@@ -146,12 +146,5 @@ public class TranscodeDecisionService {
       }
     }
     return StreamingOptions.DEFAULT_SUPPORTED_CODECS.getFirst();
-  }
-
-  private ContainerFormat containerForCodec(String codecFamily) {
-    return switch (codecFamily) {
-      case "av1", "hevc" -> ContainerFormat.FMP4;
-      default -> ContainerFormat.MPEGTS;
-    };
   }
 }

@@ -28,6 +28,7 @@ import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.support.OutcomeTestSupport;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -70,8 +71,10 @@ class HlsStreamingSmokeTest {
             .ffmpegScript(
                 """
                 if [[ -f /media/hold-producer ]]; then
-                  printf '\\107\\000\\000\\000' > segment0.ts.tmp
-                  mv segment0.ts.tmp segment0.ts
+                  printf 'ftyp' > init.mp4.tmp
+                  mv init.mp4.tmp init.mp4
+                  printf 'moof' > segment0.m4s.tmp
+                  mv segment0.m4s.tmp segment0.m4s
                   while IFS= read -r -n 1 input; do
                     if [[ "$input" == q ]]; then exit 0; fi
                   done
@@ -243,7 +246,7 @@ class HlsStreamingSmokeTest {
 
     assertThat(session.getHandle().orElseThrow().processId()).isEmpty();
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
-    assertThat(session.getTranscodeDecision().containerFormat()).isEqualTo(ContainerFormat.MPEGTS);
+    assertThat(session.getTranscodeDecision().containerFormat()).isEqualTo(ContainerFormat.FMP4);
   }
 
   @Test
@@ -263,11 +266,12 @@ class HlsStreamingSmokeTest {
 
     await()
         .atMost(Duration.ofSeconds(30))
-        .until(() -> segmentStore.segmentExists(session.getSessionId(), "segment0.ts"));
+        .until(() -> segmentStore.segmentExists(session.getSessionId(), "segment0.m4s"));
 
-    var segmentData = segmentStore.readSegment(session.getSessionId(), "segment0.ts");
-    assertThat(segmentData).isNotNull().hasSizeGreaterThan(0);
-    assertThat(segmentData[0]).isEqualTo((byte) 0x47);
+    var initialization = segmentStore.readSegment(session.getSessionId(), "init.mp4");
+    var segmentData = segmentStore.readSegment(session.getSessionId(), "segment0.m4s");
+    assertThat(boxType(initialization)).isEqualTo("ftyp");
+    assertThat(boxType(segmentData)).isEqualTo("moof");
   }
 
   @Test
@@ -304,13 +308,13 @@ class HlsStreamingSmokeTest {
 
     assertThat(playlist)
         .startsWith("#EXTM3U\n")
-        .contains("#EXT-X-VERSION:3")
+        .contains("#EXT-X-VERSION:6")
         .contains("#EXT-X-TARGETDURATION:6")
         .contains("#EXT-X-MEDIA-SEQUENCE:0")
         .contains("#EXT-X-PLAYLIST-TYPE:VOD")
+        .contains("#EXT-X-MAP:URI=\"init.mp4?t=smoke-token\"")
         .contains("#EXT-X-ENDLIST")
-        .doesNotContain("#EXT-X-STREAM-INF")
-        .doesNotContain("#EXT-X-MAP");
+        .doesNotContain("#EXT-X-STREAM-INF");
   }
 
   @Test
@@ -333,10 +337,10 @@ class HlsStreamingSmokeTest {
     var segmentLines =
         playlist
             .lines()
-            .filter(l -> l.startsWith("segment") && l.endsWith(".ts?t=smoke-token"))
+            .filter(l -> l.startsWith("segment") && l.endsWith(".m4s?t=smoke-token"))
             .toList();
     assertThat(segmentLines).hasSizeGreaterThan(1);
-    assertThat(segmentLines.getFirst()).isEqualTo("segment0.ts?t=smoke-token");
+    assertThat(segmentLines.getFirst()).isEqualTo("segment0.m4s?t=smoke-token");
   }
 
   @Test
@@ -355,7 +359,7 @@ class HlsStreamingSmokeTest {
 
     await()
         .atMost(Duration.ofSeconds(30))
-        .until(() -> segmentStore.segmentExists(sessionId, "segment0.ts"));
+        .until(() -> segmentStore.segmentExists(sessionId, "segment0.m4s"));
 
     var handle = session.getHandle().orElseThrow();
     assertThat(handle.status()).isEqualTo(TranscodeStatus.ACTIVE);
@@ -384,7 +388,7 @@ class HlsStreamingSmokeTest {
 
     await()
         .atMost(Duration.ofSeconds(30))
-        .until(() -> segmentStore.segmentExists(sessionId, "segment0.ts"));
+        .until(() -> segmentStore.segmentExists(sessionId, "segment0.m4s"));
 
     streamingService.destroySession(sessionId);
 
@@ -404,11 +408,16 @@ class HlsStreamingSmokeTest {
         .atMost(Duration.ofSeconds(30))
         .untilAsserted(
             () -> {
-              assertThat(segmentStore.segmentExists(session.getSessionId(), "segment0.ts"))
+              assertThat(segmentStore.segmentExists(session.getSessionId(), "segment0.m4s"))
                   .isTrue();
-              assertThat(segmentStore.segmentExists(session.getSessionId(), "segment1.ts"))
+              assertThat(segmentStore.segmentExists(session.getSessionId(), "segment1.m4s"))
                   .isTrue();
               assertThat(workerFixture.worker().processRunning(attemptId)).isFalse();
             });
+  }
+
+  private static String boxType(byte[] media) {
+    assertThat(media).hasSizeGreaterThanOrEqualTo(8);
+    return new String(media, 4, 4, StandardCharsets.US_ASCII);
   }
 }
