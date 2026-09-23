@@ -400,6 +400,59 @@ class WorkerProbeDispatchTest {
         .containsExactly(request);
   }
 
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("unreachableAndFullVisitingOrders")
+  @DisplayName(
+      "Should refuse a probe as unreachable when one compatible worker cannot receive it and a"
+          + " stream fills the other")
+  void shouldRefuseProbeAsUnreachableWhenOneCompatibleWorkerCannotReceiveItAndStreamFillsOther(
+      UUID unreachableWorker, UUID fullWorker) {
+    var registry = new LiveWorkerConnectionRegistry();
+    registerProbeWorker(registry, unreachableWorker, rejectingStartProbes());
+    var fullSession = registerProbeWorker(registry, fullWorker, new CapturingResponses());
+    assertThat(registry.dispatchTo(new ExecutionTargetId(fullSession.toString()), stream()))
+        .isTrue();
+
+    var attempt = registry.dispatchProbe(probe().build());
+
+    assertThat(attempt)
+        .as("Busy capacity must not hide a compatible worker that failed to receive the probe")
+        .isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.WORKER_UNREACHABLE));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("unreachableAndFreeVisitingOrders")
+  @DisplayName(
+      "Should dispatch a probe to a free compatible worker when another compatible worker cannot"
+          + " receive it")
+  void shouldDispatchProbeToFreeCompatibleWorkerWhenAnotherCompatibleWorkerCannotReceiveIt(
+      UUID unreachableWorker, UUID freeWorker) {
+    var registry = new LiveWorkerConnectionRegistry();
+    registerProbeWorker(registry, unreachableWorker, rejectingStartProbes());
+    var freeResponses = new CapturingResponses();
+    registerProbeWorker(registry, freeWorker, freeResponses);
+    var request = probe().build();
+
+    var attempt = registry.dispatchProbe(request);
+
+    assertThat(attempt).isInstanceOf(ProbeDispatch.Dispatched.class);
+    assertThat(startCommands(freeResponses))
+        .extracting(StartProbeCommand::getRequest)
+        .containsExactly(request);
+  }
+
+  static Stream<Arguments> unreachableAndFullVisitingOrders() {
+    return Stream.of(
+        arguments(named("unreachable worker visited first", WORKER_ID), LATER_VISITED_WORKER),
+        arguments(named("full worker visited first", LATER_VISITED_WORKER), WORKER_ID));
+  }
+
+  static Stream<Arguments> unreachableAndFreeVisitingOrders() {
+    return Stream.of(
+        arguments(named("unreachable worker visited first", WORKER_ID), LATER_VISITED_WORKER),
+        arguments(named("free worker visited first", LATER_VISITED_WORKER), WORKER_ID));
+  }
+
   static Stream<Arguments> compatibleAndIncompatibleVisitingOrders() {
     return Stream.of(
         arguments(named("compatible worker visited first", WORKER_ID), LATER_VISITED_WORKER),
@@ -884,6 +937,22 @@ class WorkerProbeDispatchTest {
     var registration = registration();
     registration.getWorkerBuilder().setWorkerId(toProto(workerId));
     return registration;
+  }
+
+  private UUID registerProbeWorker(
+      LiveWorkerConnectionRegistry registry, UUID workerId, CapturingResponses responses) {
+    var registration = registration(workerId);
+    registration.getCapabilitiesBuilder().addProbeVersions(1);
+    return registry.register(workerId, registration.build(), responses);
+  }
+
+  private static CapturingResponses rejectingStartProbes() {
+    return new CapturingResponses(
+        response -> {
+          if (response.hasStartProbe()) {
+            throw new IllegalStateException("Simulated command delivery failure");
+          }
+        });
   }
 
   private VariantJob stream() {
