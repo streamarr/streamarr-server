@@ -11,7 +11,6 @@ import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.util.List;
 import java.util.Optional;
-import java.util.OptionalInt;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -67,25 +66,26 @@ public class SeriesMetadataProviderResolver {
     return optionalProvider.get().getSeasonDetails(library.getId(), seriesExternalId, seasonNumber);
   }
 
-  public List<Integer> getAvailableSeasonNumbers(Library library, String seriesExternalId) {
+  public MetadataFetchOutcome<List<Integer>> getAvailableSeasonNumbers(
+      Library library, String seriesExternalId) {
     var optionalProvider = getProviderForLibrary(library);
 
     if (optionalProvider.isEmpty()) {
       log.error(
           "No metadata provider found for {} library while fetching available season numbers",
           library.getName());
-      return List.of();
+      return new MetadataFetchOutcome.Failed<>(missingProvider(library));
     }
 
     return optionalProvider.get().getAvailableSeasonNumbers(library.getId(), seriesExternalId);
   }
 
-  public OptionalInt resolveSeasonNumber(
+  public MetadataFetchOutcome<Integer> resolveSeasonNumber(
       Library library, String seriesExternalId, int parsedSeasonNumber) {
     var optionalProvider = getProviderForLibrary(library);
 
     if (optionalProvider.isEmpty()) {
-      return OptionalInt.of(parsedSeasonNumber);
+      return new MetadataFetchOutcome.Found<>(parsedSeasonNumber);
     }
 
     return optionalProvider

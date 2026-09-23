@@ -163,30 +163,26 @@ public class SeriesFileProcessor {
         dateBasedEpisodeResolver.resolve(
             discovery.library(), searchResult.externalId(), parseResult.getDate());
 
-    if (dateResolution.isEmpty()) {
-      recordFailure(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_NOT_FOUND));
+    if (!(dateResolution instanceof MetadataFetchOutcome.Found(var resolution))) {
       log.error(
           "Failed to resolve date {} to episode for series TMDB id '{}', MediaFile id: {}",
           parseResult.getDate(),
           searchResult.externalId(),
           mediaFile.getId());
+      recordFetchFailure(mediaFile, dateResolution);
       return;
     }
 
     log.info(
         "Resolved date {} to season={}, episode={} for series TMDB id '{}', MediaFile id: {}",
         parseResult.getDate(),
-        dateResolution.get().seasonNumber(),
-        dateResolution.get().episodeNumber(),
+        resolution.seasonNumber(),
+        resolution.episodeNumber(),
         searchResult.externalId(),
         mediaFile.getId());
 
     enrichSeriesMetadata(
-        discovery,
-        mediaFile,
-        searchResult,
-        dateResolution.get().seasonNumber(),
-        dateResolution.get().episodeNumber());
+        discovery, mediaFile, searchResult, resolution.seasonNumber(), resolution.episodeNumber());
   }
 
   private int resolveSeasonNumber(
@@ -260,19 +256,18 @@ public class SeriesFileProcessor {
 
       var seasonOpt = seasonRepository.findBySeriesIdAndSeasonNumber(series.getId(), seasonNumber);
 
-      var effectiveSeasonNumber =
+      var effectiveSeason =
           resolveEffectiveSeasonNumber(
               discovery.library(), searchResult.externalId(), seasonNumber, seasonOpt);
 
-      if (effectiveSeasonNumber.isEmpty()) {
-        recordFailure(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_NOT_FOUND));
+      if (!(effectiveSeason instanceof MetadataFetchOutcome.Found(var effectiveSeasonNumber))) {
+        recordFetchFailure(mediaFile, effectiveSeason);
         return;
       }
 
-      if (effectiveSeasonNumber.getAsInt() != seasonNumber) {
+      if (effectiveSeasonNumber != seasonNumber) {
         seasonOpt =
-            seasonRepository.findBySeriesIdAndSeasonNumber(
-                series.getId(), effectiveSeasonNumber.getAsInt());
+            seasonRepository.findBySeriesIdAndSeasonNumber(series.getId(), effectiveSeasonNumber);
       }
 
       var seasonOutcome =
@@ -281,10 +276,7 @@ public class SeriesFileProcessor {
               .orElseGet(
                   () ->
                       createSeasonWithEpisodes(
-                          discovery,
-                          searchResult.externalId(),
-                          effectiveSeasonNumber.getAsInt(),
-                          series));
+                          discovery, searchResult.externalId(), effectiveSeasonNumber, series));
 
       if (!(seasonOutcome instanceof MetadataFetchOutcome.Found(var season))) {
         recordFetchFailure(mediaFile, seasonOutcome);
@@ -311,17 +303,17 @@ public class SeriesFileProcessor {
     }
   }
 
-  private OptionalInt resolveEffectiveSeasonNumber(
+  private MetadataFetchOutcome<Integer> resolveEffectiveSeasonNumber(
       Library library, String externalId, int seasonNumber, Optional<Season> existingSeason) {
     if (existingSeason.isPresent()
         || seasonNumber < EpisodePathMetadataParser.EARLIEST_TV_BROADCAST_YEAR) {
-      return OptionalInt.of(seasonNumber);
+      return new MetadataFetchOutcome.Found<>(seasonNumber);
     }
 
     var resolved =
         seriesMetadataProviderResolver.resolveSeasonNumber(library, externalId, seasonNumber);
 
-    if (resolved.isEmpty()) {
+    if (resolved instanceof MetadataFetchOutcome.NotFound<Integer>) {
       log.warn(
           "Could not resolve year-based season {} for series TMDB id '{}'",
           seasonNumber,

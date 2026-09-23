@@ -130,10 +130,13 @@ public class LibraryRefreshService {
 
   private ItemOutcome refreshSeasons(
       Series series, String tmdbId, Library library, ArtworkRun artworkRun) {
-    var seasonFailures = new ArrayList<ItemOutcome.Failed>();
+    var seasonList = seriesMetadataProviderResolver.getAvailableSeasonNumbers(library, tmdbId);
+    if (!(seasonList instanceof MetadataFetchOutcome.Found(var seasonNumbers))) {
+      return seasonListFailure(tmdbId, seasonList);
+    }
 
-    for (var seasonNumber :
-        seriesMetadataProviderResolver.getAvailableSeasonNumbers(library, tmdbId)) {
+    var seasonFailures = new ArrayList<ItemOutcome.Failed>();
+    for (var seasonNumber : seasonNumbers) {
       switch (seriesMetadataProviderResolver.getSeasonDetails(library, tmdbId, seasonNumber)) {
         case MetadataFetchOutcome.Found(var seasonDetails) ->
             seriesService.refreshSeasonWithEpisodes(
@@ -155,6 +158,18 @@ public class LibraryRefreshService {
     }
 
     return seasonFailures.getFirst();
+  }
+
+  private static ItemOutcome seasonListFailure(
+      String tmdbId, MetadataFetchOutcome<List<Integer>> seasonList) {
+    if (!(seasonList instanceof MetadataFetchOutcome.Failed<List<Integer>> failed)) {
+      log.warn("TMDB has no season list for series TMDB id '{}'", tmdbId);
+      return new ItemOutcome.Unavailable();
+    }
+
+    log.warn("Failed to fetch the season list for series TMDB id '{}'", tmdbId);
+    var failure = failed.toItemOutcome();
+    return new ItemOutcome.Failed(failure.reason(), "Season list: " + failure.detail());
   }
 
   private static ItemOutcome.Failed seasonFailure(

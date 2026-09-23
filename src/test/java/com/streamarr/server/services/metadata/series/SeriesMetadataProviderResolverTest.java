@@ -80,13 +80,13 @@ class SeriesMetadataProviderResolverTest {
 
     var result = resolver.getAvailableSeasonNumbers(library, "1396");
 
-    assertThat(result).containsExactly(1, 2, 3);
+    assertThat(found(result)).containsExactly(1, 2, 3);
   }
 
   @Test
   @DisplayName(
-      "Should return empty list when no provider matches library strategy for season numbers")
-  void shouldReturnEmptyListWhenNoProviderMatchesForSeasonNumbers() {
+      "Should report failed fetch when no provider matches library strategy for season numbers")
+  void shouldReportFailedFetchWhenNoProviderMatchesForSeasonNumbers() {
     var resolver = new SeriesMetadataProviderResolver(List.of());
 
     var library =
@@ -94,7 +94,7 @@ class SeriesMetadataProviderResolverTest {
 
     var result = resolver.getAvailableSeasonNumbers(library, "1396");
 
-    assertThat(result).isEmpty();
+    assertThat(result).isInstanceOf(MetadataFetchOutcome.Failed.class);
   }
 
   @Test
@@ -211,8 +211,9 @@ class SeriesMetadataProviderResolverTest {
     }
 
     @Override
-    public List<Integer> getAvailableSeasonNumbers(UUID libraryId, String seriesExternalId) {
-      return seasonNumbers;
+    public MetadataFetchOutcome<List<Integer>> getAvailableSeasonNumbers(
+        UUID libraryId, String seriesExternalId) {
+      return new MetadataFetchOutcome.Found<>(seasonNumbers);
     }
 
     @Override

@@ -275,7 +275,7 @@ class LibraryRefreshServiceTest {
     var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
     stubSeriesMetadata("1396", "Breaking Bad", library);
     when(seriesProviderResolver.getAvailableSeasonNumbers(library, "1396"))
-        .thenReturn(List.of(1, 2));
+        .thenReturn(new MetadataFetchOutcome.Found<>(List.of(1, 2)));
     when(seriesProviderResolver.getSeasonDetails(library, "1396", 1))
         .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("connection reset")));
     when(seriesProviderResolver.getSeasonDetails(library, "1396", 2))
@@ -293,12 +293,30 @@ class LibraryRefreshServiceTest {
   }
 
   @Test
+  @DisplayName("Should record the series as failed when its season list cannot be fetched")
+  void shouldRecordTheSeriesAsFailedWhenItsSeasonListCannotBeFetched() {
+    var library = buildSeriesLibrary();
+    var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
+    stubSeriesMetadata("1396", "Breaking Bad", library);
+    when(seriesProviderResolver.getAvailableSeasonNumbers(library, "1396"))
+        .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("connection reset")));
+
+    refreshService.refreshLibrary(library);
+
+    assertThat(metadataOutcome(series.getId()))
+        .isEqualTo(
+            new ItemOutcome.Failed(
+                ItemFailureReason.TEMPORARY, "Season list: IOException: connection reset"));
+  }
+
+  @Test
   @DisplayName("Should record succeeded series metadata when every season refreshes")
   void shouldRecordSucceededSeriesMetadataWhenEverySeasonRefreshes() {
     var library = buildSeriesLibrary();
     var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
     stubSeriesMetadata("1396", "Breaking Bad", library);
-    when(seriesProviderResolver.getAvailableSeasonNumbers(library, "1396")).thenReturn(List.of(1));
+    when(seriesProviderResolver.getAvailableSeasonNumbers(library, "1396"))
+        .thenReturn(new MetadataFetchOutcome.Found<>(List.of(1)));
     when(seriesProviderResolver.getSeasonDetails(library, "1396", 1))
         .thenReturn(new MetadataFetchOutcome.Found<>(seasonDetails(1)));
 
@@ -328,7 +346,8 @@ class LibraryRefreshServiceTest {
 
     stubSeriesMetadata("1396", "Breaking Bad (Updated)", library);
     stubSeriesMetadata("60059", "Better Call Saul (Updated)", library);
-    when(seriesProviderResolver.getAvailableSeasonNumbers(any(), any())).thenReturn(List.of());
+    when(seriesProviderResolver.getAvailableSeasonNumbers(any(), any()))
+        .thenReturn(new MetadataFetchOutcome.Found<>(List.of()));
 
     refreshService.refreshLibrary(library);
 
@@ -361,7 +380,8 @@ class LibraryRefreshServiceTest {
     when(seriesProviderResolver.getMetadata(argThatHasExternalId("99999"), eq(library)))
         .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("simulated fetch failure")));
     stubSeriesMetadata("1396", "Working Series (Updated)", library);
-    when(seriesProviderResolver.getAvailableSeasonNumbers(any(), any())).thenReturn(List.of());
+    when(seriesProviderResolver.getAvailableSeasonNumbers(any(), any()))
+        .thenReturn(new MetadataFetchOutcome.Found<>(List.of()));
 
     refreshService.refreshLibrary(library);
 
@@ -381,7 +401,8 @@ class LibraryRefreshServiceTest {
     when(seriesProviderResolver.getMetadata(argThatHasExternalId("99999"), eq(library)))
         .thenThrow(new RuntimeException("TMDB API timeout"));
     stubSeriesMetadata("1396", "Working Series (Updated)", library);
-    when(seriesProviderResolver.getAvailableSeasonNumbers(any(), any())).thenReturn(List.of());
+    when(seriesProviderResolver.getAvailableSeasonNumbers(any(), any()))
+        .thenReturn(new MetadataFetchOutcome.Found<>(List.of()));
 
     refreshService.refreshLibrary(library);
 
@@ -421,7 +442,8 @@ class LibraryRefreshServiceTest {
     var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
 
     stubSeriesMetadata("1396", "Breaking Bad", library);
-    when(seriesProviderResolver.getAvailableSeasonNumbers(library, "1396")).thenReturn(List.of(1));
+    when(seriesProviderResolver.getAvailableSeasonNumbers(library, "1396"))
+        .thenReturn(new MetadataFetchOutcome.Found<>(List.of(1)));
 
     var seasonDetails =
         SeasonDetails.builder()
@@ -473,7 +495,8 @@ class LibraryRefreshServiceTest {
                     .entity(freshSeries)
                     .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/series.jpg")))
                     .build()));
-    when(seriesProviderResolver.getAvailableSeasonNumbers(library, "1396")).thenReturn(List.of(1));
+    when(seriesProviderResolver.getAvailableSeasonNumbers(library, "1396"))
+        .thenReturn(new MetadataFetchOutcome.Found<>(List.of(1)));
     when(seriesProviderResolver.getSeasonDetails(library, "1396", 1))
         .thenReturn(
             new MetadataFetchOutcome.Found<>(
@@ -621,7 +644,7 @@ class LibraryRefreshServiceTest {
 
     stubSeriesMetadata("1396", "Breaking Bad", library);
     when(seriesProviderResolver.getAvailableSeasonNumbers(library, "1396"))
-        .thenReturn(List.of(1, 2));
+        .thenReturn(new MetadataFetchOutcome.Found<>(List.of(1, 2)));
     when(seriesProviderResolver.getSeasonDetails(library, "1396", 1))
         .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("simulated fetch failure")));
 
@@ -711,7 +734,7 @@ class LibraryRefreshServiceTest {
 
     stubSeriesMetadata("1396", "Breaking Bad", library);
     when(seriesProviderResolver.getAvailableSeasonNumbers(library, "1396"))
-        .thenReturn(List.of(1, 2));
+        .thenReturn(new MetadataFetchOutcome.Found<>(List.of(1, 2)));
     when(seriesProviderResolver.getSeasonDetails(library, "1396", 1))
         .thenThrow(new RuntimeException("API failure"));
     when(seriesProviderResolver.getSeasonDetails(library, "1396", 2))

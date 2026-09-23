@@ -31,6 +31,7 @@ import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyU
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProvider;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
+import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.parsers.show.EpisodePathMetadataParser;
 import com.streamarr.server.services.parsers.show.SeasonPathMetadataParser;
 import com.streamarr.server.services.parsers.show.SeriesFolderNameParser;
@@ -39,7 +40,6 @@ import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
-import java.util.OptionalInt;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -231,7 +231,7 @@ class SeriesFileProcessorTest {
     when(seriesService.findByTmdbId("2224")).thenReturn(Optional.of(series));
 
     when(seriesMetadataProvider.resolveSeasonNumber(isNull(), eq("2224"), eq(2020)))
-        .thenReturn(OptionalInt.empty());
+        .thenReturn(new MetadataFetchOutcome.NotFound<>());
 
     seriesFileProcessor.process(discoveryOf(library), mediaFile);
 
@@ -342,6 +342,57 @@ class SeriesFileProcessorTest {
 
     assertMatchingFailure(
         mediaFile, MediaFileStatus.METADATA_UNAVAILABLE, ItemFailureReason.TEMPORARY);
+  }
+
+  @Test
+  @DisplayName("Should mark an enrichment failure when a date-named episode's season details fail")
+  void shouldMarkAnEnrichmentFailureWhenADateNamedEpisodesSeasonDetailsFail() {
+    var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
+    var mediaFile = saveEpisodeFile(library, "Daily%20News/Daily%20News%20-%202025-11-25.mkv");
+    stubSearchFound("Daily News", "5555");
+    when(seriesMetadataProvider.resolveSeasonNumber(isNull(), eq("5555"), eq(2025)))
+        .thenReturn(new MetadataFetchOutcome.Found<>(10));
+    when(seriesMetadataProvider.getSeasonDetails(isNull(), eq("5555"), eq(10)))
+        .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("Connection reset")));
+
+    seriesFileProcessor.process(discoveryOf(library), mediaFile);
+
+    assertMatchingFailure(
+        mediaFile, MediaFileStatus.ENRICHMENT_FAILED, ItemFailureReason.TEMPORARY);
+  }
+
+  @Test
+  @DisplayName("Should mark a misconfiguration when a date-named episode's season list is rejected")
+  void shouldMarkAMisconfigurationWhenADateNamedEpisodesSeasonListIsRejected() {
+    var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
+    var mediaFile = saveEpisodeFile(library, "Daily%20News/Daily%20News%20-%202025-11-25.mkv");
+    stubSearchFound("Daily News", "5555");
+    when(seriesMetadataProvider.resolveSeasonNumber(isNull(), eq("5555"), eq(2025)))
+        .thenReturn(
+            new MetadataFetchOutcome.Failed<>(new TmdbApiException(401, "Invalid API key")));
+
+    seriesFileProcessor.process(discoveryOf(library), mediaFile);
+
+    assertMatchingFailure(
+        mediaFile, MediaFileStatus.ENRICHMENT_FAILED, ItemFailureReason.MISCONFIGURED);
+  }
+
+  @Test
+  @DisplayName("Should mark a temporary enrichment failure when a year season's list cannot load")
+  void shouldMarkATemporaryEnrichmentFailureWhenAYearSeasonsListCannotLoad() {
+    var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
+    var mediaFile =
+        saveEpisodeFile(library, "The%20Daily%20Show/Season%202020/The.Daily.Show.S01E01.mkv");
+    stubSearchFound("The Daily Show", "2224");
+    when(seriesService.findByTmdbId("2224"))
+        .thenReturn(Optional.of(Series.builder().id(UUID.randomUUID()).build()));
+    when(seriesMetadataProvider.resolveSeasonNumber(isNull(), eq("2224"), eq(2020)))
+        .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("Connection reset")));
+
+    seriesFileProcessor.process(discoveryOf(library), mediaFile);
+
+    assertMatchingFailure(
+        mediaFile, MediaFileStatus.ENRICHMENT_FAILED, ItemFailureReason.TEMPORARY);
   }
 
   private MediaFile saveEpisodeFile(Library library, String relativeUri) {

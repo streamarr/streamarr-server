@@ -4,21 +4,23 @@ import static com.streamarr.server.fixtures.MetadataFixture.found;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.ExternalSourceType;
+import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.services.events.library.RefreshEndedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
 import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
 import com.streamarr.server.services.metadata.TmdbSearchDelegate;
+import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSearchResult;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSearchResults;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeason;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeasonSummary;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeries;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
-import java.util.OptionalInt;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -53,7 +55,42 @@ class TMDBSeriesProviderTest {
 
     var result = provider.resolveSeasonNumber(UUID.randomUUID(), "1396", 2020);
 
-    assertThat(result).isEqualTo(OptionalInt.of(1));
+    assertThat(result).isEqualTo(new MetadataFetchOutcome.Found<>(1));
+  }
+
+  @Test
+  @DisplayName("Should report a failed season lookup and fetch again when the season list fails")
+  void shouldReportAFailedSeasonLookupAndFetchAgainWhenTheSeasonListFails() {
+    var libraryId = UUID.randomUUID();
+    fakeTmdbHttpService.setTvSeriesMetadataFailure(
+        "1396", new TmdbApiException(401, "Invalid API key"));
+
+    var failed = provider.resolveSeasonNumber(libraryId, "1396", 2020);
+    fakeTmdbHttpService.clearTvSeriesMetadataFailure("1396");
+    fakeTmdbHttpService.setTvSeriesMetadata(
+        "1396",
+        TmdbTvSeries.builder()
+            .seasons(
+                List.of(
+                    TmdbTvSeasonSummary.builder().seasonNumber(1).airDate("2020-01-15").build()))
+            .build());
+    var retried = provider.resolveSeasonNumber(libraryId, "1396", 2020);
+
+    assertThat(failed)
+        .isInstanceOfSatisfying(
+            MetadataFetchOutcome.Failed.class,
+            failure -> assertThat(failure.reason()).isEqualTo(ItemFailureReason.MISCONFIGURED));
+    assertThat(retried).isEqualTo(new MetadataFetchOutcome.Found<>(1));
+  }
+
+  @Test
+  @DisplayName("Should report a failed season list when the series cannot be fetched")
+  void shouldReportAFailedSeasonListWhenTheSeriesCannotBeFetched() {
+    fakeTmdbHttpService.setTvSeriesMetadataFailure("1396", new IOException("Connection reset"));
+
+    var result = provider.getAvailableSeasonNumbers(UUID.randomUUID(), "1396");
+
+    assertThat(result).isInstanceOf(MetadataFetchOutcome.Failed.class);
   }
 
   @Test
@@ -82,7 +119,7 @@ class TMDBSeriesProviderTest {
     provider.onScanEnded(new ScanEndedEvent(libraryId));
 
     var result = provider.resolveSeasonNumber(libraryId, "1396", 2020);
-    assertThat(result).isEqualTo(OptionalInt.of(3));
+    assertThat(result).isEqualTo(new MetadataFetchOutcome.Found<>(3));
   }
 
   @Test
@@ -111,7 +148,7 @@ class TMDBSeriesProviderTest {
     provider.onRefreshEnded(new RefreshEndedEvent(libraryId));
 
     var result = provider.resolveSeasonNumber(libraryId, "1396", 2020);
-    assertThat(result).isEqualTo(OptionalInt.of(3));
+    assertThat(result).isEqualTo(new MetadataFetchOutcome.Found<>(3));
   }
 
   @Test
@@ -142,7 +179,7 @@ class TMDBSeriesProviderTest {
     provider.onRefreshEnded(new RefreshEndedEvent(libraryId));
 
     var result = provider.getAvailableSeasonNumbers(libraryId, "1396");
-    assertThat(result).containsExactly(1, 2, 3);
+    assertThat(found(result)).containsExactly(1, 2, 3);
   }
 
   @Test
@@ -172,9 +209,11 @@ class TMDBSeriesProviderTest {
     fakeTmdbHttpService.setTvSeriesMetadata("1396", updatedSeries);
     provider.onRefreshEnded(new RefreshEndedEvent(libraryA));
 
-    assertThat(provider.resolveSeasonNumber(libraryA, "1396", 2020)).isEqualTo(OptionalInt.of(5));
+    assertThat(provider.resolveSeasonNumber(libraryA, "1396", 2020))
+        .isEqualTo(new MetadataFetchOutcome.Found<>(5));
 
-    assertThat(provider.resolveSeasonNumber(libraryB, "1396", 2020)).isEqualTo(OptionalInt.of(1));
+    assertThat(provider.resolveSeasonNumber(libraryB, "1396", 2020))
+        .isEqualTo(new MetadataFetchOutcome.Found<>(1));
   }
 
   @Test

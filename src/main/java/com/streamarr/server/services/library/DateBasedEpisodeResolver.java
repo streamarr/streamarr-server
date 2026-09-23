@@ -2,9 +2,9 @@ package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.services.metadata.MetadataFetchOutcome;
+import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
 import java.time.LocalDate;
-import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -16,36 +16,41 @@ public class DateBasedEpisodeResolver {
 
   public record DateResolution(int seasonNumber, int episodeNumber) {}
 
-  public Optional<DateResolution> resolve(Library library, String externalId, LocalDate date) {
+  /**
+   * Finds the episode that aired on the date in that year's season, or else the previous year's. A
+   * provider failure is returned as is rather than read as a date with no episode.
+   */
+  public MetadataFetchOutcome<DateResolution> resolve(
+      Library library, String externalId, LocalDate date) {
     var result = resolveForYear(library, externalId, date, date.getYear());
 
-    if (result.isPresent()) {
+    if (!(result instanceof MetadataFetchOutcome.NotFound<DateResolution>)) {
       return result;
     }
 
     return resolveForYear(library, externalId, date, date.getYear() - 1);
   }
 
-  private Optional<DateResolution> resolveForYear(
+  private MetadataFetchOutcome<DateResolution> resolveForYear(
       Library library, String externalId, LocalDate date, int year) {
-    var resolvedSeason =
-        seriesMetadataProviderResolver.resolveSeasonNumber(library, externalId, year);
+    return seriesMetadataProviderResolver
+        .resolveSeasonNumber(library, externalId, year)
+        .flatMap(
+            seasonNumber ->
+                seriesMetadataProviderResolver
+                    .getSeasonDetails(library, externalId, seasonNumber)
+                    .flatMap(seasonDetails -> episodeAiredOn(date, seasonNumber, seasonDetails)));
+  }
 
-    if (resolvedSeason.isEmpty()) {
-      return Optional.empty();
-    }
-
-    var seasonNumber = resolvedSeason.getAsInt();
-    var seasonOutcome =
-        seriesMetadataProviderResolver.getSeasonDetails(library, externalId, seasonNumber);
-
-    if (!(seasonOutcome instanceof MetadataFetchOutcome.Found(var seasonDetails))) {
-      return Optional.empty();
-    }
-
+  private static MetadataFetchOutcome<DateResolution> episodeAiredOn(
+      LocalDate date, int seasonNumber, SeasonDetails seasonDetails) {
     return seasonDetails.episodes().stream()
-        .filter(ep -> date.equals(ep.airDate()))
+        .filter(episode -> date.equals(episode.airDate()))
         .findFirst()
-        .map(ep -> new DateResolution(seasonNumber, ep.episodeNumber()));
+        .<MetadataFetchOutcome<DateResolution>>map(
+            episode ->
+                new MetadataFetchOutcome.Found<>(
+                    new DateResolution(seasonNumber, episode.episodeNumber())))
+        .orElseGet(MetadataFetchOutcome.NotFound::new);
   }
 }
