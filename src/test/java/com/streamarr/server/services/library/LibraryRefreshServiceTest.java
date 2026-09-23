@@ -293,6 +293,29 @@ class LibraryRefreshServiceTest {
   }
 
   @Test
+  @DisplayName("Should record the series as failed when a listed season is no longer found")
+  void shouldRecordTheSeriesAsFailedWhenAListedSeasonIsNoLongerFound() {
+    var library = buildSeriesLibrary();
+    var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
+    stubSeriesMetadata("1396", "Breaking Bad", library);
+    when(seriesProviderResolver.getAvailableSeasonNumbers(library, "1396"))
+        .thenReturn(new MetadataFetchOutcome.Found<>(List.of(1, 2)));
+    when(seriesProviderResolver.getSeasonDetails(library, "1396", 1))
+        .thenReturn(new MetadataFetchOutcome.Found<>(seasonDetails(1)));
+    when(seriesProviderResolver.getSeasonDetails(library, "1396", 2))
+        .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("connection reset")));
+    refreshService.refreshLibrary(library);
+
+    clock.advance(Duration.ofMinutes(5));
+    when(seriesProviderResolver.getSeasonDetails(library, "1396", 2))
+        .thenReturn(new MetadataFetchOutcome.NotFound<>());
+    refreshService.refreshLibrary(library);
+
+    assertThat(metadataOutcome(series.getId()))
+        .isEqualTo(new ItemOutcome.Failed(ItemFailureReason.TEMPORARY, "Season 2: not found"));
+  }
+
+  @Test
   @DisplayName("Should record the series as failed when its season list cannot be fetched")
   void shouldRecordTheSeriesAsFailedWhenItsSeasonListCannotBeFetched() {
     var library = buildSeriesLibrary();

@@ -147,7 +147,7 @@ public class LibraryRefreshService {
                     .artworkRun(artworkRun)
                     .build());
         case MetadataFetchOutcome.NotFound<?> _ ->
-            log.warn("TMDB has no season {} for series TMDB id '{}'", seasonNumber, tmdbId);
+            seasonFailures.add(seasonNotFound(tmdbId, seasonNumber));
         case MetadataFetchOutcome.Failed<?> failed ->
             seasonFailures.add(seasonFailure(tmdbId, seasonNumber, failed));
       }
@@ -170,6 +170,12 @@ public class LibraryRefreshService {
     log.warn("Failed to fetch the season list for series TMDB id '{}'", tmdbId);
     var failure = failed.toItemOutcome();
     return new ItemOutcome.Failed(failure.reason(), "Season list: " + failure.detail());
+  }
+
+  private static ItemOutcome.Failed seasonNotFound(String tmdbId, int seasonNumber) {
+    log.warn("TMDB has no season {} for series TMDB id '{}'", seasonNumber, tmdbId);
+    return new ItemOutcome.Failed(
+        ItemFailureReason.TEMPORARY, "Season %d: not found".formatted(seasonNumber));
   }
 
   private static ItemOutcome.Failed seasonFailure(
