@@ -37,6 +37,9 @@ public class FakeTmdbHttpService extends TheMovieDatabaseHttpService
   // --- TV series metadata: seriesId → metadata ---
   private final Map<String, TmdbTvSeries> tvSeriesMetadata = new HashMap<>();
 
+  // --- TV series metadata failures: seriesId → failure ---
+  private final Map<String, IOException> tvSeriesMetadataFailures = new HashMap<>();
+
   // --- TV season details: "seriesId:season" → season ---
   private final Map<String, TmdbTvSeason> tvSeasonDetails = new HashMap<>();
 
@@ -89,6 +92,14 @@ public class FakeTmdbHttpService extends TheMovieDatabaseHttpService
     tvSeriesMetadata.put(seriesId, series);
   }
 
+  public void setTvSeriesMetadataFailure(String seriesId, IOException failure) {
+    tvSeriesMetadataFailures.put(seriesId, failure);
+  }
+
+  public void clearTvSeriesMetadataFailure(String seriesId) {
+    tvSeriesMetadataFailures.remove(seriesId);
+  }
+
   public void setTvSeasonDetails(String seriesId, int seasonNumber, TmdbTvSeason season) {
     tvSeasonDetails.put(seasonDetailKey(seriesId, seasonNumber), season);
   }
@@ -128,7 +139,12 @@ public class FakeTmdbHttpService extends TheMovieDatabaseHttpService
   }
 
   @Override
-  public TmdbTvSeries getTvSeriesMetadata(String seriesId) {
+  public TmdbTvSeries getTvSeriesMetadata(String seriesId) throws IOException {
+    var failure = tvSeriesMetadataFailures.get(seriesId);
+    if (failure != null) {
+      throw failure;
+    }
+
     return tvSeriesMetadata.get(seriesId);
   }
 

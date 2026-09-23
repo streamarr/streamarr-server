@@ -9,6 +9,7 @@ import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.services.ImageService.ProcessedImage;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -23,6 +24,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Tag("IntegrationTest")
 @DisplayName("Ambient Image Persistence Integration Tests")
 class AmbientImagePersistenceIT extends AbstractIntegrationTest {
+
+  private static final Instant ATTEMPTED_AT = Instant.parse("2026-09-23T10:00:00Z");
 
   private final UUID entityId = UUID.randomUUID();
 
@@ -39,7 +42,7 @@ class AmbientImagePersistenceIT extends AbstractIntegrationTest {
   void shouldPreserveEveryNamedAmbientSwatchWhenArtworkIsSaved() {
     var expected = colors().build();
 
-    imageService.saveImages(artwork(expected).images());
+    imageService.saveImages(artwork(expected).images(), ATTEMPTED_AT);
 
     assertThat(readAmbientColors()).contains(expected);
   }
@@ -47,7 +50,7 @@ class AmbientImagePersistenceIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should replace every named ambient swatch when artwork is replaced")
   void shouldReplaceEveryNamedAmbientSwatchWhenArtworkIsReplaced() {
-    imageService.saveImages(artwork(colors().build()).images());
+    imageService.saveImages(artwork(colors().build()).images(), ATTEMPTED_AT);
     var expected =
         colors()
             .primary("#e9b658")
@@ -57,7 +60,7 @@ class AmbientImagePersistenceIT extends AbstractIntegrationTest {
             .lightMuted("#d8c8a8")
             .build();
 
-    imageService.replaceImages(artwork(expected));
+    imageService.replaceImages(artwork(expected), ATTEMPTED_AT);
 
     assertThat(readAmbientColors()).contains(expected);
   }
@@ -68,7 +71,7 @@ class AmbientImagePersistenceIT extends AbstractIntegrationTest {
     var expected =
         colors().darkVibrant(null).darkMuted(null).lightVibrant(null).lightMuted(null).build();
 
-    imageService.saveImages(artwork(expected).images());
+    imageService.saveImages(artwork(expected).images(), ATTEMPTED_AT);
 
     assertThat(readAmbientColors()).contains(expected);
   }
@@ -76,7 +79,7 @@ class AmbientImagePersistenceIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should omit ambient colors when artwork has no palette")
   void shouldOmitAmbientColorsWhenArtworkHasNoPalette() {
-    imageService.saveImages(artwork(null).images());
+    imageService.saveImages(artwork(null).images(), ATTEMPTED_AT);
 
     assertThat(readAmbientColors()).isEmpty();
   }

@@ -40,6 +40,7 @@ import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.CapturingProbeTaskRequests;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
+import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.fakes.FakeLibraryMutationTransaction;
 import com.streamarr.server.fakes.FakeLibraryRepository;
@@ -78,6 +79,7 @@ import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
@@ -110,6 +112,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.spi.FileSystemProvider;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -623,7 +626,7 @@ class LibraryManagementServiceTest {
 
     when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
         .thenReturn(
-            Optional.of(
+            new MetadataFetchOutcome.Found<>(
                 new MetadataResult<>(
                     Movie.builder().title("Inception").build(), List.of(), Map.of(), Map.of())));
 
@@ -840,7 +843,7 @@ class LibraryManagementServiceTest {
 
     when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
         .thenReturn(
-            Optional.of(
+            new MetadataFetchOutcome.Found<>(
                 new MetadataResult<>(
                     Movie.builder().title(movieFolder).build(), List.of(), Map.of(), Map.of())));
 
@@ -881,7 +884,7 @@ class LibraryManagementServiceTest {
 
     when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
         .thenReturn(
-            Optional.of(
+            new MetadataFetchOutcome.Found<>(
                 new MetadataResult<>(Movie.builder().build(), List.of(), Map.of(), Map.of())));
 
     libraryManagementService.scanLibrary(savedLibraryId);
@@ -934,7 +937,7 @@ class LibraryManagementServiceTest {
 
     when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
         .thenReturn(
-            Optional.of(
+            new MetadataFetchOutcome.Found<>(
                 new MetadataResult<>(
                     Movie.builder().title(movieFolder).build(), List.of(), Map.of(), Map.of())));
 
@@ -1692,7 +1695,7 @@ class LibraryManagementServiceTest {
       when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
       when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
           .thenReturn(
-              Optional.of(
+              new MetadataFetchOutcome.Found<>(
                   MetadataFixture.<Movie>metadataResultBuilder()
                       .entity(Movie.builder().title("Refreshed").titleSort("refreshed").build())
                       .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))
@@ -1705,7 +1708,9 @@ class LibraryManagementServiceTest {
               movieService,
               mock(SeriesMetadataProviderResolver.class),
               fakeMovieMetadataProviderResolver,
-              artworkService);
+              artworkService,
+              new FakeItemResultRepository(),
+              Clock.systemUTC());
       var service = libraryManagementServiceWithRefreshService(refreshService);
 
       service.refreshLibrary(savedLibraryId, ImageRefreshMode.FORCE_REFRESH);
@@ -1914,7 +1919,7 @@ class LibraryManagementServiceTest {
     private final AtomicReference<Thread> executingThread = new AtomicReference<>();
 
     private BlockingLibraryRefreshService() {
-      super(null, null, null, null, null, null, null);
+      super(null, null, null, null, null, null, null, null, null);
     }
 
     @Override
@@ -1953,7 +1958,7 @@ class LibraryManagementServiceTest {
     private final AtomicReference<ImageRefreshMode> imageRefreshMode = new AtomicReference<>();
 
     private RecordingLibraryRefreshService() {
-      super(null, null, null, null, null, null, null);
+      super(null, null, null, null, null, null, null, null, null);
     }
 
     @Override

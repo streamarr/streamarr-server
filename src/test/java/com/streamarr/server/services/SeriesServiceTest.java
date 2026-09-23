@@ -28,6 +28,7 @@ import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
+import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
@@ -97,7 +98,8 @@ class SeriesServiceTest {
             imageRepository,
             new ImageVariantService(),
             new ImageProperties("/data/images"),
-            fileSystem);
+            fileSystem,
+            new FakeItemResultRepository());
     seriesService =
         new SeriesService(
             seriesRepository,

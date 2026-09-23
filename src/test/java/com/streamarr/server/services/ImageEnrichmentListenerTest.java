@@ -14,6 +14,7 @@ import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.fakes.FakeImageRepository;
+import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
@@ -664,9 +665,11 @@ class ImageEnrichmentListenerTest {
             imageRepository,
             new ImageVariantService(),
             new ImageProperties("/data/images"),
-            fileSystem);
+            fileSystem,
+            new FakeItemResultRepository());
     return new ArtworkService(
-        new ArtworkFetcher(imageDownloader, imageService, mutexFactoryProvider),
+        new ArtworkFetcher(
+            imageDownloader, imageService, new FakeItemResultRepository(), mutexFactoryProvider),
         new ArtworkProgress(Clock.systemUTC()),
         Clock.systemUTC(),
         4);

@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.exceptions.MissingMetadataProviderException;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.util.List;
@@ -28,9 +30,11 @@ class MovieMetadataProviderResolverTest {
     assertThat(result)
         .isInstanceOfSatisfying(
             TemporarilyUnavailable.class,
-            unavailable ->
-                assertThat(unavailable.cause())
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("TMDB"));
+            unavailable -> {
+              assertThat(unavailable.cause())
+                  .isInstanceOf(MissingMetadataProviderException.class)
+                  .hasMessageContaining("TMDB");
+              assertThat(unavailable.reason()).isEqualTo(ItemFailureReason.MISCONFIGURED);
+            });
   }
 }

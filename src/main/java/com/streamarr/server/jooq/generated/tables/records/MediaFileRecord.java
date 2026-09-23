@@ -4,6 +4,7 @@
 package com.streamarr.server.jooq.generated.tables.records;
 
 
+import com.streamarr.server.jooq.generated.enums.ItemResultFailureReason;
 import com.streamarr.server.jooq.generated.enums.MediaFileStatus;
 import com.streamarr.server.jooq.generated.tables.MediaFile;
 
@@ -176,6 +177,20 @@ public class MediaFileRecord extends UpdatableRecordImpl<MediaFileRecord> {
         return (MediaFileStatus) get(10);
     }
 
+    /**
+     * Setter for <code>public.media_file.failure_reason</code>.
+     */
+    public void setFailureReason(ItemResultFailureReason value) {
+        set(11, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file.failure_reason</code>.
+     */
+    public ItemResultFailureReason getFailureReason() {
+        return (ItemResultFailureReason) get(11);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -199,7 +214,7 @@ public class MediaFileRecord extends UpdatableRecordImpl<MediaFileRecord> {
     /**
      * Create a detached, initialised MediaFileRecord
      */
-    public MediaFileRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String filename, String filepathUri, Long size, UUID mediaId, UUID libraryId, MediaFileStatus status) {
+    public MediaFileRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String filename, String filepathUri, Long size, UUID mediaId, UUID libraryId, MediaFileStatus status, ItemResultFailureReason failureReason) {
         super(MediaFile.MEDIA_FILE);
 
         setId(id);
@@ -213,6 +228,7 @@ public class MediaFileRecord extends UpdatableRecordImpl<MediaFileRecord> {
         setMediaId(mediaId);
         setLibraryId(libraryId);
         setStatus(status);
+        setFailureReason(failureReason);
         resetTouchedOnNotNull();
     }
 }

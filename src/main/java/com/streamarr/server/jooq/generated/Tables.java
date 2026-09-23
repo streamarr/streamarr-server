@@ -20,6 +20,7 @@ import com.streamarr.server.jooq.generated.tables.Genre;
 import com.streamarr.server.jooq.generated.tables.Household;
 import com.streamarr.server.jooq.generated.tables.HouseholdGuard;
 import com.streamarr.server.jooq.generated.tables.Image;
+import com.streamarr.server.jooq.generated.tables.ItemResult;
 import com.streamarr.server.jooq.generated.tables.Library;
 import com.streamarr.server.jooq.generated.tables.LibraryMetadata;
 import com.streamarr.server.jooq.generated.tables.MediaFile;
@@ -139,6 +140,11 @@ public class Tables {
      * The table <code>public.image</code>.
      */
     public static final Image IMAGE = Image.IMAGE;
+
+    /**
+     * The table <code>public.item_result</code>.
+     */
+    public static final ItemResult ITEM_RESULT = ItemResult.ITEM_RESULT;
 
     /**
      * The table <code>public.library</code>.

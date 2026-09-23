@@ -16,14 +16,16 @@ import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
-import com.streamarr.server.exceptions.ImageProcessingException;
+import com.streamarr.server.exceptions.ImageStorageException;
 import com.streamarr.server.fakes.FakeImageRepository;
+import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fixtures.AmbientArtworkFixture;
 import com.streamarr.server.services.metadata.ImageVariantService;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,6 +41,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 @DisplayName("Image Service Tests")
 class ImageServiceTest {
 
+  private static final Instant ATTEMPTED_AT = Instant.parse("2026-09-23T10:00:00Z");
+
   private FakeImageRepository imageRepository;
   private ImageService imageService;
   private FileSystem fileSystem;
@@ -50,7 +54,12 @@ class ImageServiceTest {
     var imageProperties = new ImageProperties("/data/images");
     var imageVariantService = new ImageVariantService();
     imageService =
-        new ImageService(imageRepository, imageVariantService, imageProperties, fileSystem);
+        new ImageService(
+            imageRepository,
+            imageVariantService,
+            imageProperties,
+            fileSystem,
+            new FakeItemResultRepository());
   }
 
   @Test
@@ -61,7 +70,7 @@ class ImageServiceTest {
 
     var result =
         imageService.processImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
-    imageService.saveImages(result.images());
+    imageService.saveImages(result.images(), ATTEMPTED_AT);
 
     var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
     var small =
@@ -142,7 +151,7 @@ class ImageServiceTest {
 
     var result =
         imageService.processImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
-    imageService.saveImages(result.images());
+    imageService.saveImages(result.images(), ATTEMPTED_AT);
 
     var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
     assertThat(images)
@@ -175,7 +184,7 @@ class ImageServiceTest {
 
     var result =
         imageService.processImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
-    imageService.saveImages(result.images());
+    imageService.saveImages(result.images(), ATTEMPTED_AT);
 
     assertThat(result.writtenFiles()).hasSize(4).allSatisfy(path -> assertThat(path).exists());
   }
@@ -188,7 +197,7 @@ class ImageServiceTest {
 
     var result =
         imageService.processImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
-    imageService.saveImages(result.images());
+    imageService.saveImages(result.images(), ATTEMPTED_AT);
 
     var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
     var smallImage =
@@ -241,7 +250,7 @@ class ImageServiceTest {
 
     var result =
         imageService.processImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
-    imageService.saveImages(result.images());
+    imageService.saveImages(result.images(), ATTEMPTED_AT);
 
     assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
         .isNotEmpty();
@@ -271,8 +280,8 @@ class ImageServiceTest {
     var result =
         imageService.processImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
 
-    imageService.saveImages(result.images());
-    imageService.saveImages(result.images());
+    imageService.saveImages(result.images(), ATTEMPTED_AT);
+    imageService.saveImages(result.images(), ATTEMPTED_AT);
 
     var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
     assertThat(images)
@@ -290,7 +299,7 @@ class ImageServiceTest {
     Files.write(stagedFile, new byte[] {1, 2, 3});
     var emptyReplacement = new ImageService.ProcessedImage(List.of(), List.of(stagedFile));
 
-    imageService.replaceImages(emptyReplacement);
+    imageService.replaceImages(emptyReplacement, ATTEMPTED_AT);
 
     assertThat(stagedFile).doesNotExist();
   }
@@ -302,12 +311,12 @@ class ImageServiceTest {
     var firstResult =
         imageService.processImage(
             createTestImage(600, 900), ImageType.POSTER, entityId, ImageEntityType.MOVIE);
-    imageService.saveImages(firstResult.images());
+    imageService.saveImages(firstResult.images(), ATTEMPTED_AT);
 
     var losingResult =
         imageService.processImage(
             createTestImage(600, 600), ImageType.POSTER, entityId, ImageEntityType.MOVIE);
-    imageService.saveImages(losingResult.images());
+    imageService.saveImages(losingResult.images(), ATTEMPTED_AT);
 
     assertThat(losingResult.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
     assertThat(firstResult.writtenFiles()).allSatisfy(path -> assertThat(path).exists());
@@ -328,7 +337,7 @@ class ImageServiceTest {
             ImageEntityType.MOVIE,
             "/new-poster.jpg");
 
-    imageService.replaceImages(replacement);
+    imageService.replaceImages(replacement, ATTEMPTED_AT);
 
     assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
         .hasSize(4)
@@ -354,7 +363,7 @@ class ImageServiceTest {
     TransactionSynchronizationManager.initSynchronization();
 
     try {
-      imageService.replaceImages(replacement);
+      imageService.replaceImages(replacement, ATTEMPTED_AT);
 
       assertThat(existingArtwork.absolutePath()).exists();
 
@@ -383,7 +392,7 @@ class ImageServiceTest {
             "/new-poster.jpg");
     imageRepository.setFailOnReplaceLogicalArtwork(true);
 
-    assertThatThrownBy(() -> imageService.replaceImages(replacement))
+    assertThatThrownBy(() -> imageService.replaceImages(replacement, ATTEMPTED_AT))
         .isInstanceOf(RuntimeException.class)
         .hasMessageContaining("Simulated logical artwork replacement failure");
 
@@ -412,7 +421,7 @@ class ImageServiceTest {
     TransactionSynchronizationManager.initSynchronization();
 
     try {
-      assertThatThrownBy(() -> imageService.replaceImages(replacement))
+      assertThatThrownBy(() -> imageService.replaceImages(replacement, ATTEMPTED_AT))
           .isInstanceOf(RuntimeException.class)
           .hasMessageContaining("Simulated logical artwork replacement failure");
       assertThat(replacement.writtenFiles()).allSatisfy(path -> assertThat(path).exists());
@@ -452,7 +461,7 @@ class ImageServiceTest {
                     .build()),
             List.of(stagedFile));
 
-    assertThatThrownBy(() -> imageService.replaceImages(invalidReplacement))
+    assertThatThrownBy(() -> imageService.replaceImages(invalidReplacement, ATTEMPTED_AT))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Replacement contentSha256 must be 64 lowercase hexadecimal characters");
 
@@ -473,7 +482,7 @@ class ImageServiceTest {
             "/poster.jpg");
     replacement.images().getLast().setContentSha256(null);
 
-    assertThatThrownBy(() -> imageService.replaceImages(replacement))
+    assertThatThrownBy(() -> imageService.replaceImages(replacement, ATTEMPTED_AT))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Replacement contentSha256 must be 64 lowercase hexadecimal characters");
 
@@ -492,7 +501,7 @@ class ImageServiceTest {
             "/poster.jpg");
     replacement.images().getLast().setContentSha256("b".repeat(64));
 
-    assertThatThrownBy(() -> imageService.replaceImages(replacement))
+    assertThatThrownBy(() -> imageService.replaceImages(replacement, ATTEMPTED_AT))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Replacement variants must have the same contentSha256");
 
@@ -511,7 +520,7 @@ class ImageServiceTest {
             "/poster.jpg");
     replacement.images().getLast().setEntityId(UUID.randomUUID());
 
-    assertThatThrownBy(() -> imageService.replaceImages(replacement))
+    assertThatThrownBy(() -> imageService.replaceImages(replacement, ATTEMPTED_AT))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Replacement variants must describe one logical artwork");
 
@@ -530,7 +539,7 @@ class ImageServiceTest {
             "/poster.jpg");
     replacement.images().getLast().setKey("/different-poster.jpg");
 
-    assertThatThrownBy(() -> imageService.replaceImages(replacement))
+    assertThatThrownBy(() -> imageService.replaceImages(replacement, ATTEMPTED_AT))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Replacement variants must describe one logical artwork");
 
@@ -549,7 +558,7 @@ class ImageServiceTest {
             "/poster.jpg");
     replacement.images().getLast().setEntityType(ImageEntityType.SERIES);
 
-    assertThatThrownBy(() -> imageService.replaceImages(replacement))
+    assertThatThrownBy(() -> imageService.replaceImages(replacement, ATTEMPTED_AT))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Replacement variants must describe one logical artwork");
 
@@ -568,7 +577,7 @@ class ImageServiceTest {
             "/poster.jpg");
     replacement.images().getLast().setImageType(ImageType.BACKDROP);
 
-    assertThatThrownBy(() -> imageService.replaceImages(replacement))
+    assertThatThrownBy(() -> imageService.replaceImages(replacement, ATTEMPTED_AT))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Replacement variants must describe one logical artwork");
 
@@ -589,7 +598,7 @@ class ImageServiceTest {
         new ImageService.ProcessedImage(
             processed.images().stream().limit(3).toList(), processed.writtenFiles());
 
-    assertThatThrownBy(() -> imageService.replaceImages(incompleteReplacement))
+    assertThatThrownBy(() -> imageService.replaceImages(incompleteReplacement, ATTEMPTED_AT))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Replacement must contain exactly one of every image variant");
 
@@ -608,7 +617,7 @@ class ImageServiceTest {
             "/poster.jpg");
     replacement.images().getLast().setVariant(replacement.images().getFirst().getVariant());
 
-    assertThatThrownBy(() -> imageService.replaceImages(replacement))
+    assertThatThrownBy(() -> imageService.replaceImages(replacement, ATTEMPTED_AT))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Replacement must contain exactly one of every image variant");
 
@@ -629,8 +638,8 @@ class ImageServiceTest {
   private record ExistingArtwork(UUID imageId, Path absolutePath) {}
 
   @Test
-  @DisplayName("Should throw ImageProcessingException when file write fails")
-  void shouldThrowImageProcessingExceptionWhenFileWriteFails() throws IOException {
+  @DisplayName("Should throw ImageStorageException when file write fails")
+  void shouldThrowImageStorageExceptionWhenFileWriteFails() throws IOException {
     var entityId = UUID.randomUUID();
     var imageData = createTestImage(600, 900);
     fileSystem.close();
@@ -639,6 +648,6 @@ class ImageServiceTest {
             () ->
                 imageService.processImage(
                     imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE))
-        .isInstanceOf(ImageProcessingException.class);
+        .isInstanceOf(ImageStorageException.class);
   }
 }

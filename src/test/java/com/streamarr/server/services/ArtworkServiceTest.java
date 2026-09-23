@@ -12,6 +12,7 @@ import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.fakes.FakeImageRepository;
+import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.GatedImageDownloader;
@@ -30,6 +31,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -41,6 +43,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("UnitTest")
@@ -52,6 +55,7 @@ class ArtworkServiceTest {
       new TmdbImageSource(ImageType.BACKDROP, "/backdrop.jpg");
 
   private final FakeImageRepository imageRepository = new FakeImageRepository();
+  private final FakeItemResultRepository itemResults = new FakeItemResultRepository();
   private final FakeTmdbHttpService imageDownloader = new FakeTmdbHttpService();
   private final MutableClock clock = new MutableClock();
   private final ArtworkProgress progress = new ArtworkProgress(clock);
@@ -570,6 +574,45 @@ class ArtworkServiceTest {
   }
 
   @Nested
+  @DisplayName("Result recording")
+  class ResultRecording {
+
+    private final DataAccessResourceFailureException recordingFailure =
+        new DataAccessResourceFailureException("database unavailable");
+
+    @Test
+    @DisplayName(
+        "Should fail the required request and finish its run when results cannot be recorded")
+    void shouldFailTheRequiredRequestAndFinishItsRunWhenResultsCannotBeRecorded() {
+      itemResults.failWritesWith(recordingFailure);
+      var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+
+      var request = artworkService.fetchRequired(run, movieArtwork(UUID.randomUUID(), POSTER));
+      run.close();
+
+      assertThat(request)
+          .failsWithin(Duration.ofSeconds(5))
+          .withThrowableOfType(ExecutionException.class)
+          .withCause(recordingFailure);
+      assertThat(awaitResult(run.completion()).counts().failed()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("Should fail the secondary request when its results cannot be recorded")
+    void shouldFailTheSecondaryRequestWhenItsResultsCannotBeRecorded() {
+      itemResults.failWritesWith(recordingFailure);
+
+      var request =
+          artworkService.fetchSecondary(personArtwork("/profile.jpg"), ImageRefreshMode.PRESERVE);
+
+      assertThat(request)
+          .failsWithin(Duration.ofSeconds(5))
+          .withThrowableOfType(ExecutionException.class)
+          .withCause(recordingFailure);
+    }
+  }
+
+  @Nested
   @DisplayName("Owning transactions")
   class OwningTransactions {
 
@@ -631,6 +674,7 @@ class ArtworkServiceTest {
         .imageDownloader(downloader)
         .clock(clock)
         .progress(progress)
+        .itemResults(itemResults)
         .build();
   }
 
