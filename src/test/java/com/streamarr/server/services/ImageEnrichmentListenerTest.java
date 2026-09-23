@@ -667,6 +667,7 @@ class ImageEnrichmentListenerTest {
             fileSystem);
     return new ArtworkService(
         new ArtworkFetcher(imageDownloader, imageService, mutexFactoryProvider),
+        new ArtworkProgress(Clock.systemUTC()),
         Clock.systemUTC(),
         4);
   }

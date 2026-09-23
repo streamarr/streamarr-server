@@ -16,7 +16,16 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 @Service
 public class ArtworkService {
 
+  private record RequiredFetch(
+      ArtworkRun run, ArtworkSources artwork, CompletableFuture<List<ArtworkResult>> request) {
+
+    private int sourceImages() {
+      return artwork.requestedImageTypes().size();
+    }
+  }
+
   private final ArtworkFetcher artworkFetcher;
+  private final ArtworkProgress progress;
   private final Clock clock;
   private final ExecutorService requiredArtworkExecutor =
       Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("required-artwork-", 0).factory());
@@ -28,9 +37,11 @@ public class ArtworkService {
 
   public ArtworkService(
       ArtworkFetcher artworkFetcher,
+      ArtworkProgress progress,
       Clock clock,
       @Value("${artwork.secondary-concurrency:4}") int secondaryConcurrency) {
     this.artworkFetcher = artworkFetcher;
+    this.progress = progress;
     this.clock = clock;
     this.secondaryArtworkExecutor =
         Executors.newFixedThreadPool(
@@ -39,7 +50,9 @@ public class ArtworkService {
 
   /** Opens a run that collects the required artwork of one scan, refresh, or file discovery. */
   public ArtworkRun openRun(String description, ImageRefreshMode imageRefreshMode) {
-    return new ArtworkRun(description, imageRefreshMode, clock);
+    var run = new ArtworkRun(description, imageRefreshMode, clock);
+    run.completion().thenAccept(progress::runCompleted);
+    return run;
   }
 
   /**
@@ -54,8 +67,9 @@ public class ArtworkService {
       ArtworkRun run, ArtworkSources artwork) {
     run.register();
     var request = new CompletableFuture<List<ArtworkResult>>();
-    afterOwningTransaction(
-        () -> startRequiredFetch(run, artwork, request), () -> finish(run, request, List.of()));
+    var fetch = new RequiredFetch(run, artwork, request);
+    progress.requested(ArtworkPriority.REQUIRED, fetch.sourceImages());
+    afterOwningTransaction(() -> startRequiredFetch(fetch), () -> finish(fetch, List.of()));
     return request;
   }
 
@@ -66,12 +80,22 @@ public class ArtworkService {
    */
   public CompletableFuture<List<ArtworkResult>> fetchSecondary(
       ArtworkSources artwork, ImageRefreshMode refreshMode) {
+    var sourceImages = artwork.requestedImageTypes().size();
+    progress.requested(ArtworkPriority.SECONDARY, sourceImages);
+    CompletableFuture<List<ArtworkResult>> results;
     try {
-      return CompletableFuture.supplyAsync(
-          () -> artworkFetcher.fetch(artwork, refreshMode), secondaryArtworkExecutor);
+      results =
+          CompletableFuture.supplyAsync(
+              () -> artworkFetcher.fetch(artwork, refreshMode), secondaryArtworkExecutor);
     } catch (RejectedExecutionException e) {
-      return CompletableFuture.completedFuture(artwork.failures(e));
+      results = CompletableFuture.completedFuture(artwork.failures(e));
     }
+
+    return results.thenApply(
+        finished -> {
+          progress.finished(ArtworkPriority.SECONDARY, sourceImages, finished);
+          return finished;
+        });
   }
 
   @PreDestroy
@@ -80,20 +104,20 @@ public class ArtworkService {
     secondaryArtworkExecutor.shutdownNow();
   }
 
-  private void startRequiredFetch(
-      ArtworkRun run, ArtworkSources artwork, CompletableFuture<List<ArtworkResult>> request) {
+  private void startRequiredFetch(RequiredFetch fetch) {
     try {
       requiredArtworkExecutor.execute(
-          () -> finish(run, request, artworkFetcher.fetch(artwork, run.imageRefreshMode())));
+          () ->
+              finish(fetch, artworkFetcher.fetch(fetch.artwork(), fetch.run().imageRefreshMode())));
     } catch (RejectedExecutionException e) {
-      finish(run, request, artwork.failures(e));
+      finish(fetch, fetch.artwork().failures(e));
     }
   }
 
-  private static void finish(
-      ArtworkRun run, CompletableFuture<List<ArtworkResult>> request, List<ArtworkResult> results) {
-    run.finish(results);
-    request.complete(results);
+  private void finish(RequiredFetch fetch, List<ArtworkResult> results) {
+    fetch.run().finish(results);
+    progress.finished(ArtworkPriority.REQUIRED, fetch.sourceImages(), results);
+    fetch.request().complete(results);
   }
 
   private static void afterOwningTransaction(Runnable onCommit, Runnable onRollback) {

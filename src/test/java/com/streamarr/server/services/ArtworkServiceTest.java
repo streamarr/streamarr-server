@@ -4,10 +4,12 @@ import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
@@ -52,6 +54,7 @@ class ArtworkServiceTest {
   private final FakeImageRepository imageRepository = new FakeImageRepository();
   private final FakeTmdbHttpService imageDownloader = new FakeTmdbHttpService();
   private final MutableClock clock = new MutableClock();
+  private final ArtworkProgress progress = new ArtworkProgress(clock);
   private ArtworkService artworkService;
 
   @BeforeEach
@@ -432,6 +435,111 @@ class ArtworkServiceTest {
   }
 
   @Nested
+  @DisplayName("Server-wide progress")
+  class ServerWideProgress {
+
+    @Test
+    @DisplayName("Should report nothing when no artwork was requested")
+    void shouldReportNothingWhenNoArtworkWasRequested() {
+      assertThat(progress.reportProgress()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should report pending source images when required artwork is in flight")
+    void shouldReportPendingSourceImagesWhenRequiredArtworkIsInFlight() {
+      var downloader = new GatedImageDownloader(createTestImage(600, 900));
+      downloader.holdPathsStartingWith("/");
+      var service = artworkServiceWith(downloader);
+      var run = service.openRun("scan", ImageRefreshMode.PRESERVE);
+      service.fetchRequired(run, movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
+      await().atMost(Duration.ofSeconds(5)).until(() -> downloader.heldDownloads() == 2);
+      clock.advance(Duration.ofSeconds(5));
+
+      var reports = progress.reportProgress();
+
+      downloader.releaseHeldDownloads();
+      run.close();
+      assertThat(reports)
+          .containsExactly(
+              ArtworkProgressReport.builder()
+                  .priority(ArtworkPriority.REQUIRED)
+                  .counts(ArtworkCounts.builder().build())
+                  .pending(2)
+                  .elapsed(Duration.ofSeconds(5))
+                  .build());
+    }
+
+    @Test
+    @DisplayName("Should stop the lane timer when work finishes rather than when it is reported")
+    void shouldStopLaneTimerWhenWorkFinishesRatherThanWhenReported() {
+      var downloader = new GatedImageDownloader(createTestImage(600, 900));
+      downloader.holdPathsStartingWith("/");
+      var service = artworkServiceWith(downloader);
+      List<ArtworkResult> results;
+      try (var run = service.openRun("scan", ImageRefreshMode.PRESERVE)) {
+        var request = service.fetchRequired(run, movieArtwork(UUID.randomUUID(), POSTER));
+        await().atMost(Duration.ofSeconds(5)).until(() -> downloader.heldDownloads() == 1);
+        clock.advance(Duration.ofSeconds(4));
+        downloader.releaseHeldDownloads();
+        results = awaitResult(request);
+      }
+      clock.advance(Duration.ofSeconds(30));
+
+      var reports = progress.reportProgress();
+
+      assertThat(results).hasSize(2);
+      assertThat(reports)
+          .singleElement()
+          .satisfies(
+              report -> {
+                assertThat(report.isFinished()).isTrue();
+                assertThat(report.elapsed()).isEqualTo(Duration.ofSeconds(4));
+                assertThat(report.counts())
+                    .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+              });
+      assertThat(progress.reportProgress()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should keep one busy period when work resumes before the next report")
+    void shouldKeepOneBusyPeriodWhenWorkResumesBeforeNextReport() {
+      fetchRequired(movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
+      clock.advance(Duration.ofSeconds(2));
+      fetchRequired(movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
+
+      var reports = progress.reportProgress();
+
+      assertThat(reports)
+          .singleElement()
+          .satisfies(
+              report -> {
+                assertThat(report.isFinished()).isTrue();
+                assertThat(report.counts()).isEqualTo(ArtworkCounts.builder().saved(4).build());
+                assertThat(report.elapsed()).isEqualTo(Duration.ofSeconds(2));
+              });
+    }
+
+    @Test
+    @DisplayName("Should count source images and report secondary work separately")
+    void shouldCountSourceImagesAndReportSecondaryWorkSeparately() {
+      var movieId = UUID.randomUUID();
+      fetchRequired(movieArtwork(movieId, POSTER, BACKDROP));
+      awaitResult(
+          artworkService.fetchSecondary(personArtwork("/profile.jpg"), ImageRefreshMode.PRESERVE));
+
+      var reports = progress.reportProgress();
+
+      assertThat(imageRepository.findByEntityIdAndEntityType(movieId, ImageEntityType.MOVIE))
+          .hasSize(2 * ImageSize.values().length);
+      assertThat(reports)
+          .extracting(ArtworkProgressReport::priority, ArtworkProgressReport::counts)
+          .containsExactlyInAnyOrder(
+              tuple(ArtworkPriority.REQUIRED, ArtworkCounts.builder().saved(2).build()),
+              tuple(ArtworkPriority.SECONDARY, ArtworkCounts.builder().saved(1).build()));
+    }
+  }
+
+  @Nested
   @DisplayName("Owning transactions")
   class OwningTransactions {
 
@@ -492,6 +600,7 @@ class ArtworkServiceTest {
         .imageRepository(imageRepository)
         .imageDownloader(downloader)
         .clock(clock)
+        .progress(progress)
         .build();
   }
 

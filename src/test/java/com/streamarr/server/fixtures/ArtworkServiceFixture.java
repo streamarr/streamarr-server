@@ -7,6 +7,7 @@ import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.services.ArtworkFetcher;
+import com.streamarr.server.services.ArtworkProgress;
 import com.streamarr.server.services.ArtworkService;
 import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
@@ -27,7 +28,8 @@ public final class ArtworkServiceFixture {
       TmdbImageDownloader imageDownloader,
       Clock clock,
       FileSystem fileSystem,
-      Integer secondaryConcurrency) {
+      Integer secondaryConcurrency,
+      ArtworkProgress progress) {
     var repository = imageRepository;
     if (repository == null) {
       repository = new FakeImageRepository();
@@ -53,6 +55,11 @@ public final class ArtworkServiceFixture {
       concurrency = 4;
     }
 
+    var artworkProgress = progress;
+    if (artworkProgress == null) {
+      artworkProgress = new ArtworkProgress(artworkClock);
+    }
+
     var imageService =
         new ImageService(
             repository,
@@ -61,6 +68,7 @@ public final class ArtworkServiceFixture {
             imageFileSystem);
     return new ArtworkService(
         new ArtworkFetcher(downloader, imageService, new MutexFactoryProvider()),
+        artworkProgress,
         artworkClock,
         concurrency);
   }

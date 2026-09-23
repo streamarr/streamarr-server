@@ -22,6 +22,11 @@ public record ArtworkCounts(int saved, int skipped, int unavailable, int failed)
     return counts;
   }
 
+  String describe() {
+    return "%d saved, %d skipped, %d unavailable, %d failed"
+        .formatted(saved, skipped, unavailable, failed);
+  }
+
   private ArtworkCounts plus(ArtworkResult result) {
     return switch (result) {
       case Saved _ -> toBuilder().saved(saved + 1).build();
