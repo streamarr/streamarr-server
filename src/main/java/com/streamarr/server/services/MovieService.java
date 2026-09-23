@@ -68,7 +68,7 @@ public class MovieService {
 
   @Transactional
   public void deleteMovieById(UUID movieId) {
-    imageService.deleteImagesForEntity(movieId, ImageEntityType.MOVIE);
+    imageService.deleteMovieArtworkAfterCommit(List.of(movieId));
     movieRepository.deleteById(movieId);
   }
 
@@ -79,10 +79,7 @@ public class MovieService {
       return;
     }
 
-    for (var movie : movies) {
-      imageService.deleteImagesForEntity(movie.getId(), ImageEntityType.MOVIE);
-    }
-
+    imageService.deleteMovieArtworkAfterCommit(movies.stream().map(Movie::getId).toList());
     movieRepository.deleteAll(movies);
   }
 

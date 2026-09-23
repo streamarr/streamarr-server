@@ -97,21 +97,19 @@ public class FakeImageRepository extends FakeJpaRepository<Image> implements Ima
   }
 
   @Override
-  public List<Image> findByEntityId(UUID entityId) {
-    return database.values().stream()
-        .filter(image -> entityId.equals(image.getEntityId()))
-        .toList();
+  public List<String> lockMoviesForDeletion(Collection<UUID> movieIds) {
+    return artworkPaths(ImageEntityType.MOVIE, movieIds);
   }
 
+  // The fake knows no seasons or episodes, so it returns only the series' own artwork.
   @Override
-  public void deleteByEntityIdAndEntityType(UUID entityId, ImageEntityType entityType) {
-    var toRemove =
-        database.values().stream()
-            .filter(image -> entityId.equals(image.getEntityId()))
-            .filter(image -> entityType.equals(image.getEntityType()))
-            .map(Image::getId)
-            .toList();
+  public List<String> lockSeriesForDeletion(Collection<UUID> seriesIds) {
+    return artworkPaths(ImageEntityType.SERIES, seriesIds);
+  }
 
-    toRemove.forEach(database::remove);
+  private List<String> artworkPaths(ImageEntityType entityType, Collection<UUID> entityIds) {
+    return findByEntityTypeAndEntityIdIn(entityType, entityIds).stream()
+        .map(Image::getPath)
+        .toList();
   }
 }

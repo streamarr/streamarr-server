@@ -8,8 +8,10 @@ import static com.streamarr.server.jooq.generated.tables.Season.SEASON;
 import static com.streamarr.server.jooq.generated.tables.Series.SERIES;
 
 import com.streamarr.server.domain.media.ImageEntityType;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.TableField;
 import org.springframework.stereotype.Component;
@@ -37,6 +39,14 @@ class ItemLocks {
         .forKeyShare()
         .fetchOptional()
         .isPresent();
+  }
+
+  /**
+   * Locks the item rows a delete is about to remove, in id order, and returns their ids. A writer
+   * holding one of them commits first, so rows read afterwards include what it wrote.
+   */
+  List<UUID> lockForDeletion(TableField<?, UUID> id, Condition items) {
+    return dsl.select(id).from(id.getTable()).where(items).orderBy(id).forUpdate().fetch(id);
   }
 
   private static TableField<?, UUID> idOf(ImageEntityType itemType) {

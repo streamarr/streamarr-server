@@ -877,33 +877,6 @@ class MovieServiceTest {
     }
 
     @Test
-    @DisplayName("Should delete images for entity when deleting movie by ID")
-    void shouldDeleteImagesForEntityWhenDeletingMovieById() {
-      var movie = movieRepository.save(Movie.builder().title("Inception").build());
-      seedImage(movie.getId());
-
-      movieService.deleteMovieById(movie.getId());
-
-      assertThat(imageRepository.findByEntityId(movie.getId())).isEmpty();
-    }
-
-    @Test
-    @DisplayName("Should delete images for each movie when deleting by library ID")
-    void shouldDeleteImagesForEachMovieWhenDeletingByLibraryId() {
-      var libraryId = UUID.randomUUID();
-      var library = Library.builder().id(libraryId).name("Movies").build();
-      var movie1 = movieRepository.save(Movie.builder().title("Movie 1").library(library).build());
-      var movie2 = movieRepository.save(Movie.builder().title("Movie 2").library(library).build());
-      seedImage(movie1.getId());
-      seedImage(movie2.getId());
-
-      movieService.deleteByLibraryId(libraryId);
-
-      assertThat(imageRepository.findByEntityId(movie1.getId())).isEmpty();
-      assertThat(imageRepository.findByEntityId(movie2.getId())).isEmpty();
-    }
-
-    @Test
     @DisplayName("Should overwrite scalar fields when refreshing movie metadata")
     void shouldOverwriteScalarFieldsWhenRefreshingMovieMetadata() {
       var existing =

@@ -20,6 +20,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.EnumSet;
 import java.util.HexFormat;
 import java.util.List;
@@ -260,15 +261,27 @@ public class ImageService {
     return Files.readAllBytes(absolutePath);
   }
 
-  @Transactional
-  public void deleteImagesForEntity(UUID entityId, ImageEntityType entityType) {
-    var images = imageRepository.findByEntityIdAndEntityType(entityId, entityType);
+  /**
+   * Deletes the movies' artwork files after the current transaction commits. Call it in the
+   * transaction that deletes the movies, before deleting them; deleting a movie deletes its image
+   * rows.
+   */
+  @Transactional(propagation = Propagation.MANDATORY)
+  public void deleteMovieArtworkAfterCommit(Collection<UUID> movieIds) {
+    deleteFilesAfterCommit(resolveAbsolutePaths(imageRepository.lockMoviesForDeletion(movieIds)));
+  }
 
-    for (var image : images) {
-      deleteFile(resolveAbsolutePath(image.getPath()));
-    }
+  /**
+   * Deletes the artwork files of the series and of their seasons and episodes after the current
+   * transaction commits, like {@link #deleteMovieArtworkAfterCommit}.
+   */
+  @Transactional(propagation = Propagation.MANDATORY)
+  public void deleteSeriesArtworkAfterCommit(Collection<UUID> seriesIds) {
+    deleteFilesAfterCommit(resolveAbsolutePaths(imageRepository.lockSeriesForDeletion(seriesIds)));
+  }
 
-    imageRepository.deleteByEntityIdAndEntityType(entityId, entityType);
+  private List<Path> resolveAbsolutePaths(List<String> relativePaths) {
+    return relativePaths.stream().map(this::resolveAbsolutePath).toList();
   }
 
   private String buildRelativePath(

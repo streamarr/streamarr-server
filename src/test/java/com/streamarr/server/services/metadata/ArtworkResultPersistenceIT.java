@@ -4,10 +4,14 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitWaitersBehind;
+import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 import com.streamarr.server.AbstractWireMockIntegrationTest;
+import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
@@ -24,17 +28,28 @@ import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.ArtworkFetcher;
 import com.streamarr.server.services.ArtworkResult;
 import com.streamarr.server.services.ArtworkSources;
+import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
+import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Artwork Result Persistence Integration Tests")
@@ -50,6 +65,10 @@ class ArtworkResultPersistenceIT extends AbstractWireMockIntegrationTest {
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MovieRepository movieRepository;
+  @Autowired private MovieService movieService;
+  @Autowired private TransactionTemplate transactionTemplate;
+  @Autowired private DataSource dataSource;
+  @Autowired private ImageProperties imageProperties;
 
   private UUID entityId;
 
@@ -121,6 +140,91 @@ class ArtworkResultPersistenceIT extends AbstractWireMockIntegrationTest {
     assertThat(posterResult().attemptedAt()).isEqualTo(FIRST_ATTEMPT);
   }
 
+  @Test
+  @DisplayName("Should discard saved artwork when a delete of its movie commits first")
+  void shouldDiscardSavedArtworkWhenADeleteOfItsMovieCommitsFirst() throws Exception {
+    stubImage("/poster.jpg");
+    var deletePid = new CompletableFuture<Integer>();
+    var commitDelete = new CountDownLatch(1);
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var delete =
+          executor.submit(
+              () ->
+                  transactionTemplate.executeWithoutResult(
+                      _ -> {
+                        movieService.deleteMovieById(entityId);
+                        deletePid.complete(
+                            jdbcTemplate.queryForObject("SELECT pg_backend_pid()", Integer.class));
+                        awaitLatch(commitDelete);
+                      }));
+      var blockerPid = deletePid.get(10, TimeUnit.SECONDS);
+
+      var fetch =
+          executor.submit(
+              () ->
+                  artworkFetcher.fetch(
+                      posterArtwork("/poster.jpg"), ImageRefreshMode.PRESERVE, FIRST_ATTEMPT));
+      awaitWaitersBehind(jdbcTemplate, blockerPid, 1);
+      commitDelete.countDown();
+      delete.get(10, TimeUnit.SECONDS);
+
+      assertThat(fetch.get(10, TimeUnit.SECONDS))
+          .filteredOn(result -> result.imageType() == ImageType.POSTER)
+          .singleElement()
+          .isInstanceOf(ArtworkResult.Failed.class);
+    }
+
+    assertThat(storedPosterKeys()).isEmpty();
+    assertThat(itemResults.findByItem(entityId, ImageEntityType.MOVIE)).isEmpty();
+    assertThat(storedArtworkFiles()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should delete artwork that commits while a delete of its movie waits")
+  void shouldDeleteArtworkThatCommitsWhileADeleteOfItsMovieWaits() throws Exception {
+    stubImage("/poster.jpg");
+    itemResults.trySave(
+        ItemResult.builder()
+            .itemId(entityId)
+            .itemType(ImageEntityType.MOVIE)
+            .step(ItemStep.ARTWORK)
+            .imageType(ImageType.POSTER)
+            .outcome(new ItemOutcome.Unavailable())
+            .attemptedAt(FIRST_ATTEMPT)
+            .build());
+    var posterResult =
+        RowLockTarget.builder()
+            .dataSource(dataSource)
+            .table("item_result")
+            .keyColumn("item_id")
+            .rowId(entityId)
+            .build();
+
+    try (var resultLock = lockRow(posterResult);
+        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var fetch =
+          executor.submit(
+              () ->
+                  artworkFetcher.fetch(
+                      posterArtwork("/poster.jpg"), ImageRefreshMode.PRESERVE, SECOND_ATTEMPT));
+      awaitWaitersBehind(jdbcTemplate, resultLock.backendPid(), 1);
+      var delete = executor.submit(() -> movieService.deleteMovieById(entityId));
+      awaitWaitersBehind(jdbcTemplate, resultLock.backendPid(), 2);
+      resultLock.release();
+
+      assertThat(fetch.get(10, TimeUnit.SECONDS))
+          .filteredOn(result -> result.imageType() == ImageType.POSTER)
+          .singleElement()
+          .isInstanceOf(ArtworkResult.Saved.class);
+      delete.get(10, TimeUnit.SECONDS);
+    }
+
+    assertThat(storedPosterKeys()).isEmpty();
+    assertThat(itemResults.findByItem(entityId, ImageEntityType.MOVIE)).isEmpty();
+    assertThat(storedArtworkFiles()).isEmpty();
+  }
+
   private ArtworkSources posterArtwork(String key) {
     return ArtworkSources.builder()
         .entityId(entityId)
@@ -149,6 +253,17 @@ class ArtworkResultPersistenceIT extends AbstractWireMockIntegrationTest {
         .filter(result -> result.imageType() == ImageType.POSTER)
         .findFirst()
         .orElseThrow();
+  }
+
+  private List<Path> storedArtworkFiles() throws IOException {
+    var directory = Path.of(imageProperties.storagePath(), "movie", entityId.toString());
+    if (Files.notExists(directory)) {
+      return List.of();
+    }
+
+    try (var files = Files.walk(directory)) {
+      return files.filter(Files::isRegularFile).toList();
+    }
   }
 
   private void rejectSucceededResultsWhile(Runnable action) {

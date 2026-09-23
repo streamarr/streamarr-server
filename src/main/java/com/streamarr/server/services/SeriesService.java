@@ -264,16 +264,13 @@ public class SeriesService {
       return;
     }
 
-    for (var series : seriesList) {
-      imageService.deleteImagesForEntity(series.getId(), ImageEntityType.SERIES);
-    }
-
+    imageService.deleteSeriesArtworkAfterCommit(seriesList.stream().map(Series::getId).toList());
     seriesRepository.deleteAll(seriesList);
   }
 
   @Transactional
   public void deleteSeriesById(UUID seriesId) {
-    imageService.deleteImagesForEntity(seriesId, ImageEntityType.SERIES);
+    imageService.deleteSeriesArtworkAfterCommit(List.of(seriesId));
     seriesRepository.deleteById(seriesId);
   }
 

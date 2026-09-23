@@ -18,8 +18,4 @@ public interface ImageRepository extends JpaRepository<Image, UUID>, ImageReposi
       UUID entityId, ImageEntityType entityType, ImageType imageType);
 
   List<Image> findByEntityTypeAndEntityIdIn(ImageEntityType entityType, Collection<UUID> entityIds);
-
-  List<Image> findByEntityId(UUID entityId);
-
-  void deleteByEntityIdAndEntityType(UUID entityId, ImageEntityType entityType);
 }
