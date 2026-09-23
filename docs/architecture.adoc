@@ -117,6 +117,7 @@ Every delete path therefore removes an item's results and image rows, and the da
 A delete locks its items, including a series' seasons and episodes, before it reads their artwork paths, and it deletes those files only after it commits; a rolled-back delete keeps every file.
 
 Writers of results and images lock the item row with `FOR KEY SHARE` before any result or image row, so the full order for a replacement is advisory lock, item row, image rows.
+Result writes and replacements take that lock explicitly; saving new artwork locks no existing row and takes it through the foreign-key check of its first image insert.
 A delete then waits for a writer holding the item and removes what it wrote, or finishes first and leaves the writer nothing to write for.
 A guarded result for a deleted item records nothing, as a stale attempt does; saving or replacing artwork for a deleted item fails, and the artwork fetcher deletes the files it wrote.
 
