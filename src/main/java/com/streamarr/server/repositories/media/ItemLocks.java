@@ -17,9 +17,8 @@ import org.jooq.TableField;
 import org.springframework.stereotype.Component;
 
 /**
- * Locks the item that image and result rows belong to. A writer of those rows locks the item before
- * any image or result row, so a concurrent delete of the item either waits for the writer to commit
- * or finishes first and leaves the writer nothing to write for.
+ * Locks the item that image and result rows belong to. Writers of those rows lock the item before
+ * any image or result row, and deletes lock it before reading them.
  */
 @Component
 @RequiredArgsConstructor

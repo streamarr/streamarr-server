@@ -68,18 +68,20 @@ public class MovieService {
 
   @Transactional
   public void deleteMovieById(UUID movieId) {
-    imageService.deleteMovieArtworkAfterCommit(List.of(movieId));
-    movieRepository.deleteById(movieId);
+    movieRepository.findById(movieId).ifPresent(movie -> deleteMovies(List.of(movie)));
   }
 
   @Transactional
   public void deleteByLibraryId(UUID libraryId) {
-    var movies = movieRepository.findByLibrary_Id(libraryId);
+    deleteMovies(movieRepository.findByLibrary_Id(libraryId));
+  }
+
+  private void deleteMovies(List<Movie> movies) {
     if (movies.isEmpty()) {
       return;
     }
 
-    imageService.deleteMovieArtworkAfterCommit(movies.stream().map(Movie::getId).toList());
+    imageService.prepareMovieDeletion(movies.stream().map(Movie::getId).toList());
     movieRepository.deleteAll(movies);
   }
 

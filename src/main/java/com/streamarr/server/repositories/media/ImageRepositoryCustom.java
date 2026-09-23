@@ -16,11 +16,11 @@ public interface ImageRepositoryCustom {
    * Locks the movies so no artwork or result can be added to them and returns the paths of their
    * artwork. Call it in the transaction that deletes the movies, before deleting them.
    */
-  List<String> lockMoviesForDeletion(Collection<UUID> movieIds);
+  List<String> lockMoviesAndFindArtworkPaths(Collection<UUID> movieIds);
 
   /**
-   * Locks the series with their seasons and episodes, like {@link #lockMoviesForDeletion}, and
-   * returns the paths of all their artwork.
+   * Locks the series with their seasons and episodes, like {@link #lockMoviesAndFindArtworkPaths},
+   * and returns the paths of all their artwork.
    */
-  List<String> lockSeriesForDeletion(Collection<UUID> seriesIds);
+  List<String> lockSeriesAndFindArtworkPaths(Collection<UUID> seriesIds);
 }

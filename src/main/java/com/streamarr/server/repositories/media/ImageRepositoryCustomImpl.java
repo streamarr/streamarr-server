@@ -90,13 +90,13 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
   }
 
   @Override
-  public List<String> lockMoviesForDeletion(Collection<UUID> movieIds) {
+  public List<String> lockMoviesAndFindArtworkPaths(Collection<UUID> movieIds) {
     var movies = itemLocks.lockForDeletion(MOVIE.ID, MOVIE.ID.in(movieIds));
     return artworkPaths(IMAGE.MOVIE_ID.in(movies));
   }
 
   @Override
-  public List<String> lockSeriesForDeletion(Collection<UUID> seriesIds) {
+  public List<String> lockSeriesAndFindArtworkPaths(Collection<UUID> seriesIds) {
     var series = itemLocks.lockForDeletion(SERIES.ID, SERIES.ID.in(seriesIds));
     var seasons = itemLocks.lockForDeletion(SEASON.ID, SEASON.SERIES_ID.in(series));
     var episodes = itemLocks.lockForDeletion(EPISODE.ID, EPISODE.SEASON_ID.in(seasons));

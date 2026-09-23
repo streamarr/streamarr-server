@@ -261,22 +261,21 @@ public class ImageService {
   }
 
   /**
-   * Deletes the movies' artwork files after the current transaction commits. Call it in the
-   * transaction that deletes the movies, before deleting them; deleting a movie deletes its image
-   * rows.
+   * Locks the movies against new artwork and results, and deletes their artwork files after the
+   * current transaction commits. Call it in the transaction that deletes the movies, before
+   * deleting them; deleting a movie deletes its image rows.
    */
   @Transactional(propagation = Propagation.MANDATORY)
-  public void deleteMovieArtworkAfterCommit(Collection<UUID> movieIds) {
-    deleteFilesAfterCommit(resolveAbsolutePaths(imageRepository.lockMoviesForDeletion(movieIds)));
+  public void prepareMovieDeletion(Collection<UUID> movieIds) {
+    deleteFilesAfterCommit(
+        resolveAbsolutePaths(imageRepository.lockMoviesAndFindArtworkPaths(movieIds)));
   }
 
-  /**
-   * Deletes the artwork files of the series and of their seasons and episodes after the current
-   * transaction commits, like {@link #deleteMovieArtworkAfterCommit}.
-   */
+  /** Prepares the series, with their seasons and episodes, like {@link #prepareMovieDeletion}. */
   @Transactional(propagation = Propagation.MANDATORY)
-  public void deleteSeriesArtworkAfterCommit(Collection<UUID> seriesIds) {
-    deleteFilesAfterCommit(resolveAbsolutePaths(imageRepository.lockSeriesForDeletion(seriesIds)));
+  public void prepareSeriesDeletion(Collection<UUID> seriesIds) {
+    deleteFilesAfterCommit(
+        resolveAbsolutePaths(imageRepository.lockSeriesAndFindArtworkPaths(seriesIds)));
   }
 
   private List<Path> resolveAbsolutePaths(List<String> relativePaths) {

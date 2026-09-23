@@ -258,20 +258,21 @@ public class SeriesService {
 
   @Transactional
   public void deleteByLibraryId(UUID libraryId) {
-    var seriesList = seriesRepository.findByLibrary_Id(libraryId);
-
-    if (seriesList.isEmpty()) {
-      return;
-    }
-
-    imageService.deleteSeriesArtworkAfterCommit(seriesList.stream().map(Series::getId).toList());
-    seriesRepository.deleteAll(seriesList);
+    deleteSeries(seriesRepository.findByLibrary_Id(libraryId));
   }
 
   @Transactional
   public void deleteSeriesById(UUID seriesId) {
-    imageService.deleteSeriesArtworkAfterCommit(List.of(seriesId));
-    seriesRepository.deleteById(seriesId);
+    seriesRepository.findById(seriesId).ifPresent(series -> deleteSeries(List.of(series)));
+  }
+
+  private void deleteSeries(List<Series> seriesList) {
+    if (seriesList.isEmpty()) {
+      return;
+    }
+
+    imageService.prepareSeriesDeletion(seriesList.stream().map(Series::getId).toList());
+    seriesRepository.deleteAll(seriesList);
   }
 
   @Transactional(readOnly = true)

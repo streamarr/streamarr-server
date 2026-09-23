@@ -97,13 +97,13 @@ public class FakeImageRepository extends FakeJpaRepository<Image> implements Ima
   }
 
   @Override
-  public List<String> lockMoviesForDeletion(Collection<UUID> movieIds) {
+  public List<String> lockMoviesAndFindArtworkPaths(Collection<UUID> movieIds) {
     return artworkPaths(ImageEntityType.MOVIE, movieIds);
   }
 
   // The fake knows no seasons or episodes, so it returns only the series' own artwork.
   @Override
-  public List<String> lockSeriesForDeletion(Collection<UUID> seriesIds) {
+  public List<String> lockSeriesAndFindArtworkPaths(Collection<UUID> seriesIds) {
     return artworkPaths(ImageEntityType.SERIES, seriesIds);
   }
 
