@@ -23,6 +23,7 @@ import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
+import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptCompleted;
@@ -235,7 +236,7 @@ class WorkerSessionServerIT {
       var prepared = super.prepareSegment(sessionId, segmentName, bytes);
       return new PreparedSegment() {
         @Override
-        public void publish() {
+        public SegmentPublication publish() {
           entered.countDown();
           try {
             assertThat(release.await(30, TimeUnit.SECONDS)).isTrue();
@@ -244,7 +245,7 @@ class WorkerSessionServerIT {
             throw new AssertionError(exception);
           }
 
-          prepared.publish();
+          return prepared.publish();
         }
 
         @Override

@@ -13,6 +13,7 @@ import static org.junit.jupiter.params.provider.Arguments.arguments;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
+import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
@@ -161,7 +162,7 @@ class WorkerProbeDispatchTest {
 
       assertThat(publishing.get(5, TimeUnit.SECONDS))
           .as("The released segment publication must succeed")
-          .isTrue();
+          .contains(SegmentPublication.PUBLISHED);
     }
   }
 
@@ -651,7 +652,7 @@ class WorkerProbeDispatchTest {
         release.countDown();
       }
 
-      assertThat(publishing.get(5, TimeUnit.SECONDS)).isTrue();
+      assertThat(publishing.get(5, TimeUnit.SECONDS)).contains(SegmentPublication.PUBLISHED);
     }
   }
 
@@ -683,10 +684,12 @@ class WorkerProbeDispatchTest {
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(2);
   }
 
-  private static void holdPublication(CountDownLatch entered, CountDownLatch release) {
+  private static SegmentPublication holdPublication(
+      CountDownLatch entered, CountDownLatch release) {
     entered.countDown();
     try {
       release.await();
+      return SegmentPublication.PUBLISHED;
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new AssertionError(e);

@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.google.protobuf.ByteString;
 import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptCompleted;
@@ -467,8 +468,8 @@ class WorkerSessionGrpcServiceTest {
       var prepared = super.prepareSegment(sessionId, segmentName, data);
       return new PreparedSegment() {
         @Override
-        public void publish() {
-          prepared.publish();
+        public SegmentPublication publish() {
+          return prepared.publish();
         }
 
         @Override

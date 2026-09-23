@@ -5,6 +5,7 @@ import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.
 
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
+import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
@@ -31,6 +32,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 
@@ -241,13 +243,16 @@ final class LiveWorkerConnectionRegistry {
     return connection != null && connection.authorizesUpload(metadata);
   }
 
-  boolean publishIfAuthorized(
-      UUID authenticatedWorkerId, SegmentUploadMetadata metadata, Runnable publication) {
+  /** Empty when the upload no longer belongs to an active job attempt of this connection. */
+  Optional<SegmentPublication> publishIfAuthorized(
+      UUID authenticatedWorkerId,
+      SegmentUploadMetadata metadata,
+      Supplier<SegmentPublication> publication) {
     // Unsynchronized on purpose: a segment publish is a filesystem move and must not queue
     // behind worker register/disconnect. Stale lookups fail the connection's re-check.
     var connection = connections.get(authenticatedWorkerId);
     if (connection == null) {
-      return false;
+      return Optional.empty();
     }
     return connection.publishIfStillAuthorized(metadata, publication);
   }
@@ -532,13 +537,12 @@ final class LiveWorkerConnectionRegistry {
           && job.getVariant().getVariantLabel().equals(metadata.getVariantLabel());
     }
 
-    private synchronized boolean publishIfStillAuthorized(
-        SegmentUploadMetadata metadata, Runnable publication) {
+    private synchronized Optional<SegmentPublication> publishIfStillAuthorized(
+        SegmentUploadMetadata metadata, Supplier<SegmentPublication> publication) {
       if (!authorizesUpload(metadata)) {
-        return false;
+        return Optional.empty();
       }
-      publication.run();
-      return true;
+      return Optional.of(publication.get());
     }
 
     /**

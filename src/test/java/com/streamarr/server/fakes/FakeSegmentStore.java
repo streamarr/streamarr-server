@@ -1,6 +1,7 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
 import java.util.Map;
 import java.util.UUID;
@@ -32,8 +33,9 @@ public class FakeSegmentStore implements SegmentStore {
   public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
     return new PreparedSegment() {
       @Override
-      public void publish() {
+      public SegmentPublication publish() {
         addSegment(sessionId, segmentName, data);
+        return SegmentPublication.PUBLISHED;
       }
 
       @Override

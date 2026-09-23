@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.local;
 
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -67,12 +68,13 @@ public class LocalSegmentStore implements SegmentStore {
     }
 
     @Override
-    public void publish() {
+    public SegmentPublication publish() {
       getOutputDirectory(sessionId);
       var segmentPath = resolveSegmentPath(sessionId, segmentName);
       try {
         Files.createDirectories(segmentPath.getParent());
         temporary.publishTo(segmentPath);
+        return SegmentPublication.PUBLISHED;
       } catch (IOException e) {
         throw new UncheckedIOException("Failed to store segment: " + segmentName, e);
       }

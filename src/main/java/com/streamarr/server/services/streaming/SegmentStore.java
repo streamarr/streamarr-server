@@ -10,9 +10,9 @@ public interface SegmentStore {
 
   PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data);
 
-  default void storeSegment(UUID sessionId, String segmentName, byte[] data) {
+  default SegmentPublication storeSegment(UUID sessionId, String segmentName, byte[] data) {
     try (var prepared = prepareSegment(sessionId, segmentName, data)) {
-      prepared.publish();
+      return prepared.publish();
     }
   }
 
@@ -20,7 +20,7 @@ public interface SegmentStore {
 
   interface PreparedSegment extends AutoCloseable {
 
-    void publish();
+    SegmentPublication publish();
 
     @Override
     void close();

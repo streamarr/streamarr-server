@@ -29,6 +29,7 @@ import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
+import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -690,9 +691,10 @@ class RemotePlaybackIT {
       var prepared = super.prepareSegment(sessionId, segmentName, data);
       return new PreparedSegment() {
         @Override
-        public void publish() {
-          prepared.publish();
+        public SegmentPublication publish() {
+          var outcome = prepared.publish();
           publication(segmentName).complete(null);
+          return outcome;
         }
 
         @Override
@@ -725,7 +727,7 @@ class RemotePlaybackIT {
       var prepared = super.prepareSegment(sessionId, segmentName, data);
       return new PreparedSegment() {
         @Override
-        public void publish() {
+        public SegmentPublication publish() {
           try {
             assertThat(requestedWhileMissing.await(5, TimeUnit.SECONDS))
                 .as(
@@ -737,7 +739,7 @@ class RemotePlaybackIT {
                 "Interrupted while awaiting the first segment request", exception);
           }
 
-          prepared.publish();
+          return prepared.publish();
         }
 
         @Override

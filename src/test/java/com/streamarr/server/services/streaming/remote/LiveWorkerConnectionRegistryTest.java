@@ -5,6 +5,7 @@ import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
@@ -21,6 +22,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -247,7 +249,7 @@ class LiveWorkerConnectionRegistryTest {
 
     var inPublish = new CountDownLatch(1);
     var releasePublish = new CountDownLatch(1);
-    Runnable blockingPublish =
+    Supplier<SegmentPublication> blockingPublish =
         () -> {
           inPublish.countDown();
           try {
@@ -257,6 +259,8 @@ class LiveWorkerConnectionRegistryTest {
           } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
           }
+
+          return SegmentPublication.PUBLISHED;
         };
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
