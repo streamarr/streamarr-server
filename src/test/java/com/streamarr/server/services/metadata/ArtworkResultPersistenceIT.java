@@ -11,15 +11,18 @@ import com.streamarr.server.AbstractWireMockIntegrationTest;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.services.ArtworkFetcher;
+import com.streamarr.server.services.ArtworkResult;
 import com.streamarr.server.services.ArtworkSources;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -81,6 +84,30 @@ class ArtworkResultPersistenceIT extends AbstractWireMockIntegrationTest {
     assertThat(storedPosterKeys()).containsOnly("/poster.jpg");
     assertThat(posterResult().outcome()).isEqualTo(new ItemOutcome.Succeeded());
     assertThat(posterResult().attemptedAt()).isEqualTo(THIRD_ATTEMPT);
+  }
+
+  @Test
+  @DisplayName("Should record a failed save when the saved image's result cannot be recorded")
+  void shouldRecordAFailedSaveWhenTheSavedImagesResultCannotBeRecorded() {
+    stubImage("/poster.jpg");
+    var results = new ArrayList<ArtworkResult>();
+
+    rejectSucceededResultsWhile(
+        () ->
+            results.addAll(
+                artworkFetcher.fetch(
+                    posterArtwork("/poster.jpg"), ImageRefreshMode.PRESERVE, FIRST_ATTEMPT)));
+
+    assertThat(results)
+        .filteredOn(result -> result.imageType() == ImageType.POSTER)
+        .singleElement()
+        .isInstanceOf(ArtworkResult.Failed.class);
+    assertThat(storedPosterKeys()).isEmpty();
+    assertThat(posterResult().outcome())
+        .isInstanceOfSatisfying(
+            ItemOutcome.Failed.class,
+            failed -> assertThat(failed.reason()).isEqualTo(ItemFailureReason.TEMPORARY));
+    assertThat(posterResult().attemptedAt()).isEqualTo(FIRST_ATTEMPT);
   }
 
   private ArtworkSources posterArtwork(String key) {

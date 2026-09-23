@@ -105,6 +105,7 @@ A saved image's result is written in the same transaction as the image, so it al
 Matching failures are written only while the file is not `MATCHED`.
 A failed image replacement keeps the existing image.
 When a result cannot be written, the database error reaches the caller: matching fails the scan, a refresh fails, and a required artwork request fails its future after its run counts the image as failed.
+The exception is a saved image's result: because it is written in the image's transaction, a failed write rolls back the image, and the attempt is recorded as `FAILED` instead.
 
 A terminal probe error is reused while the source snapshot and probe version are unchanged; scans and refreshes do not force a new probe for it.
 Recorded results survive a restart, but artwork work that stopped before recording a result is not resumed yet; https://github.com/streamarr/streamarr-server/issues/412[#412] adds that.

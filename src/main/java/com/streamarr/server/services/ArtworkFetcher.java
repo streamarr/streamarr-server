@@ -62,7 +62,9 @@ public class ArtworkFetcher {
    * transaction that stores it, and an unavailable or failed image afterwards.
    *
    * @param attemptedAt when this attempt started; a stored result from a later attempt is kept
-   * @throws org.springframework.dao.DataAccessException if a result cannot be stored
+   * @throws org.springframework.dao.DataAccessException if an unavailable or failed result cannot
+   *     be stored; a saved image whose result cannot be stored is rolled back and reported as
+   *     failed
    */
   public List<ArtworkResult> fetch(
       ArtworkSources artwork, ImageRefreshMode refreshMode, Instant attemptedAt) {

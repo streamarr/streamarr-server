@@ -63,8 +63,8 @@ public class ArtworkService {
    * this method returns. Inside a transaction the fetch starts after commit, and a rollback
    * withdraws the request and completes the future with no results. Otherwise the future completes
    * once every requested source image is saved, skipped, unavailable, or failed, and its result is
-   * stored. If a result cannot be stored, the run counts the request as failed and the future
-   * completes exceptionally with the database error.
+   * stored. If an unavailable or failed result cannot be stored, the run counts the request as
+   * failed and the future completes exceptionally with the database error.
    *
    * @throws IllegalStateException if the run is closed to new requests
    */
