@@ -38,6 +38,9 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -135,6 +138,71 @@ class FileDiscoveryRunsTest {
     assertThatThrownBy(() -> runs.awaitResults(discovery))
         .isInstanceOf(LibraryScanFailedException.class)
         .hasCause(readFailure);
+  }
+
+  @Test
+  @DisplayName("Should fail the scan when reading probe results throws unexpectedly")
+  void shouldFailTheScanWhenReadingProbeResultsThrowsUnexpectedly() throws IOException {
+    var unexpected = new IllegalStateException("unexpected probe state");
+    outcomes =
+        new FakeMediaFileContainerInfoRepository() {
+          @Override
+          public List<ProbeState> findProbeStates(Collection<UUID> mediaFileIds) {
+            throw unexpected;
+          }
+        };
+    probeTaskRequests = new FakeProbeTaskRequests(outcomes);
+    var runs = fileDiscoveryRuns();
+    var discovery = runs.open("scan of", library);
+    try (discovery) {
+      discovery.probeRun().request(mediaFile().getId());
+    }
+
+    assertThatThrownBy(() -> runs.awaitResults(discovery))
+        .isInstanceOf(LibraryScanFailedException.class)
+        .hasCause(unexpected);
+  }
+
+  @Test
+  @DisplayName("Should fail the scan when artwork cannot be recorded while a probe is pending")
+  void shouldFailTheScanWhenArtworkCannotBeRecordedWhileAProbeIsPending() throws Exception {
+    probeTaskRequests.dispatchWith(_ -> {});
+    itemResults.failWritesWith(new DataAccessResourceFailureException("database unavailable"));
+    var runs = fileDiscoveryRuns();
+    var discovery = runs.open("scan of", library);
+    try (discovery) {
+      discovery.probeRun().request(mediaFile().getId());
+      artworkService.fetchRequired(discovery.artworkRun(), movieArtwork());
+    }
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      assertThat(executor.submit(() -> runs.awaitResults(discovery)))
+          .failsWithin(Duration.ofSeconds(5))
+          .withThrowableOfType(ExecutionException.class)
+          .withCauseInstanceOf(LibraryScanFailedException.class);
+    }
+  }
+
+  @Test
+  @DisplayName("Should time the probes without the wait for required artwork")
+  void shouldTimeTheProbesWithoutTheWaitForRequiredArtwork() throws Exception {
+    imageDownloader.holdPathsStartingWith("/poster");
+    var runs = fileDiscoveryRuns();
+    var discovery = runs.open("scan of", library);
+    try (discovery) {
+      discovery.probeRun().request(mediaFile().getId());
+      artworkService.fetchRequired(discovery.artworkRun(), movieArtwork());
+    }
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var results = executor.submit(() -> runs.awaitResults(discovery));
+      await().atMost(Duration.ofSeconds(5)).until(() -> imageDownloader.heldDownloads() == 1);
+      await().pollDelay(Duration.ofMillis(300)).until(() -> true);
+      imageDownloader.releaseHeldDownloads();
+
+      var finished = results.get(5, TimeUnit.SECONDS);
+      assertThat(finished.probes().elapsed()).isLessThan(finished.artwork().elapsed());
+    }
   }
 
   @Test

@@ -6,9 +6,9 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.ArtworkService;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 /**
@@ -36,26 +36,38 @@ public class FileDiscoveryRuns {
    * retries of failed probes continue in the background.
    *
    * @throws LibraryScanFailedException if a required result was not recorded, the stored results
-   *     cannot be read, or the wait is interrupted
+   *     cannot be read, the wait fails unexpectedly, or the wait is interrupted
    */
   public ScanResults awaitResults(FileDiscovery discovery) {
     var libraryName = discovery.library().getName();
     try {
-      var artwork = discovery.artworkRun().completion().get();
-      var probes = probeRuns.awaitResults(discovery.probeRun());
-      return ScanResults.builder()
-          .files(mediaFiles.countStatuses(discovery.probeRun().mediaFileIds()))
-          .artwork(artwork)
-          .probes(probes)
-          .secondaryImagesPending(artworkService.pendingSecondaryImages())
-          .build();
+      return awaitRequiredResults(discovery);
     } catch (InterruptedException exception) {
       Thread.currentThread().interrupt();
       throw new LibraryScanFailedException(libraryName, exception);
     } catch (ExecutionException exception) {
       throw new LibraryScanFailedException(libraryName, exception.getCause());
-    } catch (DataAccessException exception) {
+    } catch (RuntimeException exception) {
       throw new LibraryScanFailedException(libraryName, exception);
+    }
+  }
+
+  // Probes are checked while the artwork finishes, so each phase's timer stops with its own work.
+  private ScanResults awaitRequiredResults(FileDiscovery discovery)
+      throws InterruptedException, ExecutionException {
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var probes = executor.submit(() -> probeRuns.awaitResults(discovery.probeRun()));
+      try {
+        var artwork = discovery.artworkRun().completion().get();
+        return ScanResults.builder()
+            .files(mediaFiles.countStatuses(discovery.probeRun().mediaFileIds()))
+            .artwork(artwork)
+            .probes(probes.get())
+            .secondaryImagesPending(artworkService.pendingSecondaryImages())
+            .build();
+      } finally {
+        probes.cancel(true);
+      }
     }
   }
 }
