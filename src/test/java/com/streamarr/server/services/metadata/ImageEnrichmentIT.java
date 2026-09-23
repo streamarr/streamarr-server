@@ -27,6 +27,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.SQLException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
@@ -47,6 +48,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 @DisplayName("Image Enrichment Integration Tests")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
+
+  private static final Instant ATTEMPTED_AT = Instant.parse("2026-09-23T10:00:00Z");
 
   @Autowired private ApplicationEventPublisher eventPublisher;
   @Autowired private TransactionTemplate transactionTemplate;
@@ -122,7 +125,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
             imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE, sourceKey);
 
     try {
-      imageService.saveImages(processed.images());
+      imageService.saveImages(processed.images(), ATTEMPTED_AT);
 
       var expectedContentSha256 =
           HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(imageData));
@@ -160,7 +163,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
             newImageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE, newKey);
 
     try {
-      imageService.saveImages(original.images());
+      imageService.saveImages(original.images(), ATTEMPTED_AT);
       var originalImages =
           imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
       var originalIds = originalImages.stream().map(Image::getId).toList();
@@ -170,7 +173,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
               .findFirst()
               .orElseThrow();
 
-      imageService.replaceImages(replacement);
+      imageService.replaceImages(replacement, ATTEMPTED_AT);
 
       var expectedContentSha256 =
           HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(newImageData));
@@ -211,7 +214,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
     var original =
         imageService.processImage(
             createTestImage(600, 900), ImageType.POSTER, entityId, ImageEntityType.MOVIE, oldKey);
-    imageService.saveImages(original.images());
+    imageService.saveImages(original.images(), ATTEMPTED_AT);
     var originalImages =
         imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
     var originalIds = originalImages.stream().map(Image::getId).toList();
@@ -225,7 +228,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
     replacement.images().getLast().setPath(null);
 
     try {
-      assertThatThrownBy(() -> imageService.replaceImages(replacement))
+      assertThatThrownBy(() -> imageService.replaceImages(replacement, ATTEMPTED_AT))
           .isInstanceOf(RuntimeException.class);
 
       var preserved = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
@@ -307,7 +310,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
             entityId,
             ImageEntityType.MOVIE,
             "/magenta.jpg");
-    imageService.saveImages(original.images());
+    imageService.saveImages(original.images(), ATTEMPTED_AT);
 
     try {
       try (var rowLockConnection = dataSource.getConnection()) {
@@ -320,7 +323,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
             var cyan =
                 executor.submit(
                     () -> {
-                      imageService.replaceImages(cyanReplacement);
+                      imageService.replaceImages(cyanReplacement, ATTEMPTED_AT);
                       return null;
                     });
             var cyanPid = awaitBlockedBackendPid(rowLockConnection, rowLockerPid, null);
@@ -329,7 +332,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
             var magenta =
                 executor.submit(
                     () -> {
-                      imageService.replaceImages(magentaReplacement);
+                      imageService.replaceImages(magentaReplacement, ATTEMPTED_AT);
                       return null;
                     });
             var magentaPid = awaitBlockedBackendPid(rowLockConnection, cyanPid, "advisory");

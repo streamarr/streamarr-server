@@ -67,6 +67,49 @@ Library Scan
 
 The metadata provider abstraction (`MetadataProvider<T>`) allows swapping TMDB for another source without changing the scan pipeline.
 
+=== Item Failures
+
+A scan or refresh finishes even when individual items fail, and the database keeps why each one failed.
+Item failures never change the library's status.
+
+[cols="1,2,2"]
+|===
+|Step |Where the result lives |Retried by
+
+|Matching a media file
+|`media_file.status`; `METADATA_UNAVAILABLE` and `ENRICHMENT_FAILED` also store `failure_reason`
+|The next scan, which rematches every file that is not `MATCHED`
+
+|Movie and series metadata refresh
+|`item_result` with step `METADATA`
+|The next refresh
+
+|Artwork
+|`item_result` with step `ARTWORK`, one row per image type, with the attempted source key
+|The next refresh; preserve mode fetches any image type the item lacks
+
+|Probe
+|Terminal errors in `media_file_container_info.probe_error` with the source snapshot and probe version; transient failures in the db-scheduler `media-file-probe` task
+|db-scheduler, with backoff capped at five minutes, for transient failures
+|===
+
+An `item_result` row holds the latest attempt's outcome: `SUCCEEDED`, `UNAVAILABLE` when the provider has nothing, or `FAILED` with a reason.
+The reasons are `DOWNLOAD_FAILED`, `INVALID_MEDIA`, `TEMPORARY`, and `MISCONFIGURED` (a missing provider or rejected provider credentials).
+`SOURCE_INACCESSIBLE` is reserved for a local source the server cannot read; metadata and artwork come from the provider, so no step records it yet.
+Artwork results follow `ArtworkResult`: a saved image is `SUCCEEDED`, an image type the provider does not offer is `UNAVAILABLE`, and a failed image is `FAILED`.
+An image that preserve mode keeps is skipped and records nothing, so `UNAVAILABLE` is never mistaken for work that never ran.
+
+Each row stores when its attempt started.
+A failure or unavailable result never replaces a result from a later attempt, so a stale failure cannot overwrite a successful retry.
+A saved image's result is written in the same transaction as the image, so it always describes the stored artwork; concurrent replacements still follow the last-committer-wins rule in https://github.com/streamarr/streamarr-adr/blob/main/adr/0031-transaction-scoped-artwork-replacement-locking.adoc[ADR 0031].
+Matching failures are written only while the file is not `MATCHED`.
+A failed image replacement keeps the existing image.
+When a result cannot be written, the database error reaches the caller: matching fails the scan, a refresh fails, and a required artwork request fails its future after its run counts the image as failed.
+The exception is a saved image's result: because it is written in the image's transaction, a failed write rolls back the image, and the attempt is recorded as `FAILED` instead.
+
+A terminal probe error is reused while the source snapshot and probe version are unchanged; scans and refreshes do not force a new probe for it.
+Recorded results survive a restart, but artwork work that stopped before recording a result is not resumed yet; https://github.com/streamarr/streamarr-server/issues/412[#412] adds that.
+
 == Service Communication
 
 Services coordinate library lifecycle events using Spring Application Events rather than direct method calls. `LibraryManagementService` publishes events; interested services listen and react independently.

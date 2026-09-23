@@ -27,6 +27,10 @@ public class MediaFile extends BaseAuditableEntity<MediaFile> {
   @JdbcTypeCode(SqlTypes.NAMED_ENUM)
   private MediaFileStatus status;
 
+  @Enumerated(EnumType.STRING)
+  @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+  private ItemFailureReason failureReason;
+
   private UUID libraryId;
 
   private String filename;

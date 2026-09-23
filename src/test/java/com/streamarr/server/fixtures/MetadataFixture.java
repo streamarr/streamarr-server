@@ -2,6 +2,7 @@ package com.streamarr.server.fixtures;
 
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
@@ -19,6 +20,14 @@ public final class MetadataFixture {
 
   public static <T> MetadataResultBuilder<T> metadataResultBuilder() {
     return new MetadataResultBuilder<>();
+  }
+
+  public static <T> T found(MetadataFetchOutcome<T> outcome) {
+    if (outcome instanceof MetadataFetchOutcome.Found<T>(var result)) {
+      return result;
+    }
+
+    throw new AssertionError("Expected metadata to be found, but the fetch ended as " + outcome);
   }
 
   public static final class MetadataEnrichedEventBuilder {

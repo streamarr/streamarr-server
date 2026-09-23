@@ -5,6 +5,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
+import static com.streamarr.server.fixtures.MetadataFixture.found;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
@@ -14,6 +15,7 @@ import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
+import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
@@ -426,15 +428,13 @@ class TMDBSeriesProviderIT {
     stubMinimalSeriesResponse("1396");
 
     var result = provider.getMetadata(buildSearchResult("1396"), savedLibrary);
-
-    assertThat(result).isPresent();
-    assertThat(result.get().entity().getCast()).isEmpty();
-    assertThat(result.get().entity().getDirectors()).isEmpty();
+    assertThat(found(result).entity().getCast()).isEmpty();
+    assertThat(found(result).entity().getDirectors()).isEmpty();
   }
 
   @Test
-  @DisplayName("Should return empty when TMDB TV metadata API returns error")
-  void shouldReturnEmptyWhenTmdbTvMetadataApiReturnsError() {
+  @DisplayName("Should report failed fetch when TMDB TV metadata API returns error")
+  void shouldReportFailedFetchWhenTmdbTvMetadataApiReturnsError() {
     wireMock.stubFor(
         get(urlPathEqualTo("/tv/1396"))
             .willReturn(
@@ -452,7 +452,7 @@ class TMDBSeriesProviderIT {
 
     var result = provider.getMetadata(buildSearchResult("1396"), savedLibrary);
 
-    assertThat(result).isEmpty();
+    assertThat(result).isInstanceOf(MetadataFetchOutcome.Failed.class);
   }
 
   @Test
@@ -494,9 +494,7 @@ class TMDBSeriesProviderIT {
         """);
 
     var result = provider.getMetadata(buildSearchResult("1396"), savedLibrary);
-
-    assertThat(result).isPresent();
-    assertThat(result.get().entity().getContentRating()).isNull();
+    assertThat(found(result).entity().getContentRating()).isNull();
   }
 
   @Test
@@ -505,9 +503,7 @@ class TMDBSeriesProviderIT {
     stubMinimalSeriesResponse("1396");
 
     var result = provider.getMetadata(buildSearchResult("1396"), savedLibrary);
-
-    assertThat(result).isPresent();
-    assertThat(result.get().entity().getRuntime()).isNull();
+    assertThat(found(result).entity().getRuntime()).isNull();
   }
 
   @Test
@@ -516,11 +512,9 @@ class TMDBSeriesProviderIT {
     stubMinimalSeriesResponse("1396");
 
     var result = provider.getMetadata(buildSearchResult("1396"), savedLibrary);
-
-    assertThat(result).isPresent();
-    assertThat(result.get().entity().getExternalIds()).hasSize(1);
+    assertThat(found(result).entity().getExternalIds()).hasSize(1);
     assertThat(
-            result.get().entity().getExternalIds().stream()
+            found(result).entity().getExternalIds().stream()
                 .anyMatch(id -> id.getExternalSourceType() == ExternalSourceType.TMDB))
         .isTrue();
   }
@@ -573,9 +567,7 @@ class TMDBSeriesProviderIT {
                         """)));
 
     var result = provider.getSeasonDetails(savedLibrary.getId(), "1396", 1);
-
-    assertThat(result).isPresent();
-    var season = result.get();
+    var season = found(result);
     assertThat(season.name()).isEqualTo("Season 1");
     assertThat(season.seasonNumber()).isEqualTo(1);
     assertThat(season.overview()).isEqualTo("The first season of Breaking Bad.");
@@ -602,8 +594,8 @@ class TMDBSeriesProviderIT {
   }
 
   @Test
-  @DisplayName("Should return empty when TMDB season details API returns error")
-  void shouldReturnEmptyWhenTmdbSeasonDetailsApiReturnsError() {
+  @DisplayName("Should report failed fetch when TMDB season details API returns error")
+  void shouldReportFailedFetchWhenTmdbSeasonDetailsApiReturnsError() {
     stubMinimalSeriesResponse("1396");
 
     wireMock.stubFor(
@@ -623,7 +615,7 @@ class TMDBSeriesProviderIT {
 
     var result = provider.getSeasonDetails(savedLibrary.getId(), "1396", 1);
 
-    assertThat(result).isEmpty();
+    assertThat(result).isInstanceOf(MetadataFetchOutcome.Failed.class);
   }
 
   @Test
@@ -649,10 +641,8 @@ class TMDBSeriesProviderIT {
                         """)));
 
     var result = provider.getSeasonDetails(savedLibrary.getId(), "1396", 1);
-
-    assertThat(result).isPresent();
-    assertThat(result.get().imageSources()).hasSize(1);
-    assertThat(result.get().imageSources().getFirst())
+    assertThat(found(result).imageSources()).hasSize(1);
+    assertThat(found(result).imageSources().getFirst())
         .isEqualTo(new TmdbImageSource(ImageType.POSTER, "/1BP4xYv9ZG4ZVHkL7ocOziBbSYH.jpg"));
   }
 
@@ -686,9 +676,7 @@ class TMDBSeriesProviderIT {
                         """)));
 
     var result = provider.getSeasonDetails(savedLibrary.getId(), "1396", 1);
-
-    assertThat(result).isPresent();
-    var ep1 = result.get().episodes().getFirst();
+    var ep1 = found(result).episodes().getFirst();
     assertThat(ep1.imageSources()).hasSize(1);
     assertThat(ep1.imageSources().getFirst())
         .isEqualTo(new TmdbImageSource(ImageType.STILL, "/ydlY3iEN5qYVoW0gRgJyBRC9OjI.jpg"));
@@ -716,9 +704,7 @@ class TMDBSeriesProviderIT {
                         """)));
 
     var result = provider.getSeasonDetails(savedLibrary.getId(), "1396", 1);
-
-    assertThat(result).isPresent();
-    assertThat(result.get().imageSources()).isEmpty();
+    assertThat(found(result).imageSources()).isEmpty();
   }
 
   @Test
@@ -750,9 +736,7 @@ class TMDBSeriesProviderIT {
                         """)));
 
     var result = provider.getSeasonDetails(savedLibrary.getId(), "1396", 1);
-
-    assertThat(result).isPresent();
-    var ep1 = result.get().episodes().getFirst();
+    var ep1 = found(result).episodes().getFirst();
     assertThat(ep1.imageSources()).isEmpty();
   }
 
@@ -781,7 +765,7 @@ class TMDBSeriesProviderIT {
 
     var result = provider.getSeasonDetails(savedLibrary.getId(), "1396", 99);
 
-    assertThat(result).isEmpty();
+    assertThat(result).isInstanceOf(MetadataFetchOutcome.NotFound.class);
   }
 
   // --- Helpers ---
@@ -794,8 +778,7 @@ class TMDBSeriesProviderIT {
   private MetadataResult<Series> getFullMetadataResult() {
     stubFullSeriesResponse();
     var result = provider.getMetadata(buildSearchResult("1396"), savedLibrary);
-    assertThat(result).isPresent();
-    return result.get();
+    return found(result);
   }
 
   private Series getMetadataFromFullResponse() {

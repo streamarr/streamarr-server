@@ -1,6 +1,8 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.media.MatchingFailure;
 import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import java.util.Collection;
 import java.util.List;
@@ -12,6 +14,13 @@ import java.util.stream.Collectors;
 
 public class FakeMediaFileRepository extends FakeJpaRepository<MediaFile>
     implements MediaFileRepository {
+
+  private RuntimeException nextMatchingFailureWriteFailure;
+
+  public void failNextMatchingFailureWriteWith(RuntimeException failure) {
+    this.nextMatchingFailureWriteFailure = failure;
+  }
+
   @Override
   public Optional<MediaFile> findFirstByFilepathUri(String filepathUri) {
     return database.values().stream()
@@ -56,5 +65,23 @@ public class FakeMediaFileRepository extends FakeJpaRepository<MediaFile>
         .filter(Objects::nonNull)
         .filter(mediaIds::contains)
         .collect(Collectors.toSet());
+  }
+
+  @Override
+  public boolean tryMarkMatchingFailed(UUID mediaFileId, MatchingFailure failure) {
+    if (nextMatchingFailureWriteFailure != null) {
+      var writeFailure = nextMatchingFailureWriteFailure;
+      nextMatchingFailureWriteFailure = null;
+      throw writeFailure;
+    }
+
+    var mediaFile = database.get(mediaFileId);
+    if (mediaFile == null || mediaFile.getStatus() == MediaFileStatus.MATCHED) {
+      return false;
+    }
+
+    mediaFile.setStatus(failure.status());
+    mediaFile.setFailureReason(failure.reason());
+    return true;
   }
 }

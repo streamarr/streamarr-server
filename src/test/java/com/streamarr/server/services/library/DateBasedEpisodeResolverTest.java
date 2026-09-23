@@ -1,10 +1,12 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.fixtures.MetadataFixture.found;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
@@ -13,12 +15,12 @@ import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProvider;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import java.io.IOException;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.OptionalInt;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -64,10 +66,8 @@ class DateBasedEpisodeResolverTest {
             .build());
 
     var result = dateResolver.resolve(LIBRARY, "12345", LocalDate.of(2025, 11, 25));
-
-    assertThat(result).isPresent();
-    assertThat(result.get().seasonNumber()).isEqualTo(10);
-    assertThat(result.get().episodeNumber()).isEqualTo(42);
+    assertThat(found(result).seasonNumber()).isEqualTo(10);
+    assertThat(found(result).episodeNumber()).isEqualTo(42);
   }
 
   @Test
@@ -92,15 +92,13 @@ class DateBasedEpisodeResolverTest {
             .build());
 
     var result = dateResolver.resolve(LIBRARY, "12345", LocalDate.of(2025, 1, 15));
-
-    assertThat(result).isPresent();
-    assertThat(result.get().seasonNumber()).isEqualTo(5);
-    assertThat(result.get().episodeNumber()).isEqualTo(80);
+    assertThat(found(result).seasonNumber()).isEqualTo(5);
+    assertThat(found(result).episodeNumber()).isEqualTo(80);
   }
 
   @Test
-  @DisplayName("Should return empty when no episode matches date")
-  void shouldReturnEmptyWhenNoEpisodeMatchesDate() {
+  @DisplayName("Should report not found when no episode matches date")
+  void shouldReportNotFoundWhenNoEpisodeMatchesDate() {
     fakeProvider.addSeasonMapping("12345", 2025, 10);
     fakeProvider.addSeasonDetails(
         "12345",
@@ -121,15 +119,27 @@ class DateBasedEpisodeResolverTest {
 
     var result = dateResolver.resolve(LIBRARY, "12345", LocalDate.of(2025, 12, 25));
 
-    assertThat(result).isEmpty();
+    assertThat(result).isInstanceOf(MetadataFetchOutcome.NotFound.class);
   }
 
   @Test
-  @DisplayName("Should return empty when season resolution fails")
-  void shouldReturnEmptyWhenSeasonResolutionFails() {
+  @DisplayName("Should report not found when no season matches the year")
+  void shouldReportNotFoundWhenNoSeasonMatchesTheYear() {
     var result = dateResolver.resolve(LIBRARY, "unknown", LocalDate.of(2025, 1, 1));
 
-    assertThat(result).isEmpty();
+    assertThat(result).isInstanceOf(MetadataFetchOutcome.NotFound.class);
+  }
+
+  @Test
+  @DisplayName("Should report the provider failure when season details cannot be fetched")
+  void shouldReportTheProviderFailureWhenSeasonDetailsCannotBeFetched() {
+    var failure = new IOException("Connection reset");
+    fakeProvider.addSeasonMapping("12345", 2025, 10);
+    fakeProvider.failSeasonDetails("12345", 10, failure);
+
+    var result = dateResolver.resolve(LIBRARY, "12345", LocalDate.of(2025, 6, 15));
+
+    assertThat(result).isEqualTo(new MetadataFetchOutcome.Failed<>(failure));
   }
 
   @Test
@@ -160,15 +170,14 @@ class DateBasedEpisodeResolverTest {
             .build());
 
     var result = dateResolver.resolve(LIBRARY, "12345", LocalDate.of(2025, 6, 15));
-
-    assertThat(result).isPresent();
-    assertThat(result.get().episodeNumber()).isEqualTo(2);
+    assertThat(found(result).episodeNumber()).isEqualTo(2);
   }
 
   private static class FakeSeriesMetadataProvider implements SeriesMetadataProvider {
 
     private final Map<String, Map<Integer, Integer>> seasonMappings = new HashMap<>();
     private final Map<String, Map<Integer, SeasonDetails>> seasonDetailsMap = new HashMap<>();
+    private final Map<String, Map<Integer, IOException>> seasonDetailsFailures = new HashMap<>();
 
     void addSeasonMapping(String externalId, int year, int seasonNumber) {
       seasonMappings.computeIfAbsent(externalId, k -> new HashMap<>()).put(year, seasonNumber);
@@ -178,18 +187,36 @@ class DateBasedEpisodeResolverTest {
       seasonDetailsMap.computeIfAbsent(externalId, k -> new HashMap<>()).put(seasonNumber, details);
     }
 
-    @Override
-    public Optional<SeasonDetails> getSeasonDetails(
-        UUID libraryId, String seriesExternalId, int seasonNumber) {
-      return Optional.ofNullable(
-          seasonDetailsMap.getOrDefault(seriesExternalId, Map.of()).get(seasonNumber));
+    void failSeasonDetails(String externalId, int seasonNumber, IOException failure) {
+      seasonDetailsFailures
+          .computeIfAbsent(externalId, k -> new HashMap<>())
+          .put(seasonNumber, failure);
     }
 
     @Override
-    public OptionalInt resolveSeasonNumber(
+    public MetadataFetchOutcome<SeasonDetails> getSeasonDetails(
+        UUID libraryId, String seriesExternalId, int seasonNumber) {
+      var failure =
+          seasonDetailsFailures.getOrDefault(seriesExternalId, Map.of()).get(seasonNumber);
+      if (failure != null) {
+        return new MetadataFetchOutcome.Failed<>(failure);
+      }
+
+      return Optional.ofNullable(
+              seasonDetailsMap.getOrDefault(seriesExternalId, Map.of()).get(seasonNumber))
+          .<MetadataFetchOutcome<SeasonDetails>>map(MetadataFetchOutcome.Found::new)
+          .orElseGet(MetadataFetchOutcome.NotFound::new);
+    }
+
+    @Override
+    public MetadataFetchOutcome<Integer> resolveSeasonNumber(
         UUID libraryId, String seriesExternalId, int parsedSeasonNumber) {
       var mapping = seasonMappings.getOrDefault(seriesExternalId, Map.of()).get(parsedSeasonNumber);
-      return mapping != null ? OptionalInt.of(mapping) : OptionalInt.empty();
+      if (mapping == null) {
+        return new MetadataFetchOutcome.NotFound<>();
+      }
+
+      return new MetadataFetchOutcome.Found<>(mapping);
     }
 
     @Override
@@ -198,9 +225,9 @@ class DateBasedEpisodeResolverTest {
     }
 
     @Override
-    public Optional<MetadataResult<Series>> getMetadata(
+    public MetadataFetchOutcome<MetadataResult<Series>> getMetadata(
         RemoteSearchResult remoteSearchResult, Library library) {
-      return Optional.empty();
+      return new MetadataFetchOutcome.NotFound<>();
     }
 
     @Override

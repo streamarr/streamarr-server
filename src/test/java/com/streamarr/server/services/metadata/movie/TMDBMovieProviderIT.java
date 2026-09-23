@@ -5,6 +5,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
+import static com.streamarr.server.fixtures.MetadataFixture.found;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
@@ -13,6 +14,7 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
@@ -577,11 +579,9 @@ class TMDBMovieProviderIT {
         """);
 
     var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
-
-    assertThat(result).isPresent();
-    assertThat(result.get().entity().getExternalIds()).hasSize(1);
+    assertThat(found(result).entity().getExternalIds()).hasSize(1);
     assertThat(
-            result.get().entity().getExternalIds().stream()
+            found(result).entity().getExternalIds().stream()
                 .anyMatch(id -> id.getExternalSourceType() == ExternalSourceType.TMDB))
         .isTrue();
   }
@@ -596,9 +596,7 @@ class TMDBMovieProviderIT {
         """);
 
     var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
-
-    assertThat(result).isPresent();
-    assertThat(result.get().entity().getContentRating()).isNull();
+    assertThat(found(result).entity().getContentRating()).isNull();
   }
 
   @Test
@@ -607,9 +605,7 @@ class TMDBMovieProviderIT {
     stubMinimalMovieResponse("27205");
 
     var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
-
-    assertThat(result).isPresent();
-    assertThat(result.get().entity().getCast()).isEmpty();
+    assertThat(found(result).entity().getCast()).isEmpty();
   }
 
   @Test
@@ -618,9 +614,7 @@ class TMDBMovieProviderIT {
     stubMinimalMovieResponse("27205");
 
     var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
-
-    assertThat(result).isPresent();
-    assertThat(result.get().entity().getContentRating()).isNull();
+    assertThat(found(result).entity().getContentRating()).isNull();
   }
 
   @Test
@@ -629,9 +623,7 @@ class TMDBMovieProviderIT {
     stubMinimalMovieResponse("27205");
 
     var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
-
-    assertThat(result).isPresent();
-    assertThat(result.get().entity().getStudios()).isEmpty();
+    assertThat(found(result).entity().getStudios()).isEmpty();
   }
 
   @Test
@@ -644,14 +636,12 @@ class TMDBMovieProviderIT {
         """);
 
     var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
-
-    assertThat(result).isPresent();
-    assertThat(result.get().entity().getReleaseDate()).isNull();
+    assertThat(found(result).entity().getReleaseDate()).isNull();
   }
 
   @Test
-  @DisplayName("Should return empty when TMDB metadata API returns error")
-  void shouldReturnEmptyWhenTmdbMetadataApiReturnsError() {
+  @DisplayName("Should report failed fetch when TMDB metadata API returns error")
+  void shouldReportFailedFetchWhenTmdbMetadataApiReturnsError() {
     wireMock.stubFor(
         get(urlPathEqualTo("/movie/27205"))
             .willReturn(
@@ -669,12 +659,12 @@ class TMDBMovieProviderIT {
 
     var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
 
-    assertThat(result).isEmpty();
+    assertThat(result).isInstanceOf(MetadataFetchOutcome.Failed.class);
   }
 
   @Test
-  @DisplayName("Should return empty when TMDB metadata API returns a non-JSON error")
-  void shouldReturnEmptyWhenTmdbMetadataApiReturnsNonJsonError() {
+  @DisplayName("Should report failed fetch when TMDB metadata API returns a non-JSON error")
+  void shouldReportFailedFetchWhenTmdbMetadataApiReturnsNonJsonError() {
     wireMock.stubFor(
         get(urlPathEqualTo("/movie/27205"))
             .willReturn(
@@ -685,7 +675,7 @@ class TMDBMovieProviderIT {
 
     var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
 
-    assertThat(result).isEmpty();
+    assertThat(result).isInstanceOf(MetadataFetchOutcome.Failed.class);
   }
 
   @Test
@@ -781,8 +771,7 @@ class TMDBMovieProviderIT {
   private MetadataResult<Movie> getFullMetadataResult() {
     stubFullMovieResponse();
     var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
-    assertThat(result).isPresent();
-    return result.get();
+    return found(result);
   }
 
   private Movie getMetadataFromFullResponse() {

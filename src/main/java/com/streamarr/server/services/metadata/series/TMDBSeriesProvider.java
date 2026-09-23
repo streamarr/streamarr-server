@@ -9,6 +9,7 @@ import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.services.events.library.RefreshEndedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
+import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
@@ -33,7 +34,6 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -54,8 +54,8 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
 
   private final ConcurrentHashMap<UUID, ConcurrentHashMap<String, List<TmdbTvSeasonSummary>>>
       seasonSummariesByLibrary = new ConcurrentHashMap<>();
-  private final ConcurrentHashMap<UUID, Set<String>> failedSeasonDetailsByLibrary =
-      new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<UUID, ConcurrentHashMap<String, IOException>>
+      failedSeasonDetailsByLibrary = new ConcurrentHashMap<>();
 
   @Getter private final ExternalAgentStrategy agentStrategy = ExternalAgentStrategy.TMDB;
 
@@ -106,7 +106,7 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
                 .build());
   }
 
-  public Optional<MetadataResult<Series>> getMetadata(
+  public MetadataFetchOutcome<MetadataResult<Series>> getMetadata(
       RemoteSearchResult remoteSearchResult, Library library) {
     try {
       var tmdbSeries =
@@ -167,7 +167,7 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
       var personImageSources = TmdbMetadataMapper.buildPersonImageSources(castList, crewList);
       var companyImageSources = TmdbMetadataMapper.buildCompanyImageSources(productionCompanies);
 
-      return Optional.of(
+      return new MetadataFetchOutcome.Found<>(
           new MetadataResult<>(
               seriesBuilder.build(), imageSources, personImageSources, companyImageSources));
 
@@ -176,35 +176,37 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
           "Failure enriching series metadata using TMDB id '{}'",
           remoteSearchResult.externalId(),
           ex);
+      return TmdbMetadataMapper.fetchFailure(ex);
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
       log.error(
           "Series metadata enrichment interrupted for TMDB id '{}'",
           remoteSearchResult.externalId(),
           ex);
+      return new MetadataFetchOutcome.Failed<>(ex);
     }
-
-    return Optional.empty();
   }
 
-  public Optional<SeasonDetails> getSeasonDetails(
+  public MetadataFetchOutcome<SeasonDetails> getSeasonDetails(
       UUID libraryId, String seriesExternalId, int seasonNumber) {
     var cacheKey = seriesExternalId + ":" + seasonNumber;
     var failedCache =
-        failedSeasonDetailsByLibrary.computeIfAbsent(libraryId, _ -> ConcurrentHashMap.newKeySet());
+        failedSeasonDetailsByLibrary.computeIfAbsent(libraryId, _ -> new ConcurrentHashMap<>());
 
-    if (failedCache.contains(cacheKey)) {
-      return Optional.empty();
+    var earlierFailure = failedCache.get(cacheKey);
+    if (earlierFailure != null) {
+      return TmdbMetadataMapper.fetchFailure(earlierFailure);
     }
 
-    var summaries = getOrFetchSeasonSummaries(libraryId, seriesExternalId);
-    if (!summaries.isEmpty()
+    if (getOrFetchSeasonSummaries(libraryId, seriesExternalId)
+            instanceof MetadataFetchOutcome.Found(var summaries)
+        && !summaries.isEmpty()
         && summaries.stream().noneMatch(s -> s.getSeasonNumber() == seasonNumber)) {
       log.debug(
           "Season {} not found in summaries for series TMDB id '{}', skipping API call",
           seasonNumber,
           seriesExternalId);
-      return Optional.empty();
+      return new MetadataFetchOutcome.NotFound<>();
     }
 
     try {
@@ -230,15 +232,16 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
         seasonBuilder.airDate(LocalDate.parse(tmdbSeason.getAirDate()));
       }
 
-      return Optional.of(seasonBuilder.build());
+      return new MetadataFetchOutcome.Found<>(seasonBuilder.build());
 
     } catch (IOException ex) {
-      failedCache.add(cacheKey);
+      failedCache.put(cacheKey, ex);
       log.error(
           "Failure fetching season {} details for series TMDB id '{}'",
           seasonNumber,
           seriesExternalId,
           ex);
+      return TmdbMetadataMapper.fetchFailure(ex);
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
       log.error(
@@ -246,18 +249,21 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
           seriesExternalId,
           seasonNumber,
           ex);
+      return new MetadataFetchOutcome.Failed<>(ex);
     }
-
-    return Optional.empty();
   }
 
   @Override
-  public OptionalInt resolveSeasonNumber(
+  public MetadataFetchOutcome<Integer> resolveSeasonNumber(
       UUID libraryId, String seriesExternalId, int parsedSeasonNumber) {
-    var summaries = getOrFetchSeasonSummaries(libraryId, seriesExternalId);
+    return getOrFetchSeasonSummaries(libraryId, seriesExternalId)
+        .flatMap(summaries -> seasonNumberIn(summaries, parsedSeasonNumber));
+  }
 
+  private static MetadataFetchOutcome<Integer> seasonNumberIn(
+      List<TmdbTvSeasonSummary> summaries, int parsedSeasonNumber) {
     if (summaries.stream().anyMatch(s -> s.getSeasonNumber() == parsedSeasonNumber)) {
-      return OptionalInt.of(parsedSeasonNumber);
+      return new MetadataFetchOutcome.Found<>(parsedSeasonNumber);
     }
 
     return summaries.stream()
@@ -270,15 +276,17 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
                 return false;
               }
             })
-        .mapToInt(TmdbTvSeasonSummary::getSeasonNumber)
-        .findFirst();
+        .map(TmdbTvSeasonSummary::getSeasonNumber)
+        .<MetadataFetchOutcome<Integer>>map(MetadataFetchOutcome.Found::new)
+        .findFirst()
+        .orElseGet(MetadataFetchOutcome.NotFound::new);
   }
 
   @Override
-  public List<Integer> getAvailableSeasonNumbers(UUID libraryId, String seriesExternalId) {
-    return getOrFetchSeasonSummaries(libraryId, seriesExternalId).stream()
-        .map(TmdbTvSeasonSummary::getSeasonNumber)
-        .toList();
+  public MetadataFetchOutcome<List<Integer>> getAvailableSeasonNumbers(
+      UUID libraryId, String seriesExternalId) {
+    return getOrFetchSeasonSummaries(libraryId, seriesExternalId)
+        .map(summaries -> summaries.stream().map(TmdbTvSeasonSummary::getSeasonNumber).toList());
   }
 
   @EventListener
@@ -295,31 +303,41 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
     failedSeasonDetailsByLibrary.remove(event.libraryId());
   }
 
-  private List<TmdbTvSeasonSummary> getOrFetchSeasonSummaries(
+  // Only fetched summaries are cached, so a failed fetch is retried on the next lookup.
+  private MetadataFetchOutcome<List<TmdbTvSeasonSummary>> getOrFetchSeasonSummaries(
       UUID libraryId, String seriesExternalId) {
     var libraryCache =
         seasonSummariesByLibrary.computeIfAbsent(libraryId, _ -> new ConcurrentHashMap<>());
     var cached = libraryCache.get(seriesExternalId);
     if (cached != null) {
-      return cached;
+      return new MetadataFetchOutcome.Found<>(cached);
     }
 
-    var fetched = fetchSeasonSummaries(seriesExternalId);
-    var existing = libraryCache.putIfAbsent(seriesExternalId, fetched);
-    return existing != null ? existing : fetched;
+    return fetchSeasonSummaries(seriesExternalId)
+        .map(
+            fetched -> {
+              var existing = libraryCache.putIfAbsent(seriesExternalId, fetched);
+              if (existing != null) {
+                return existing;
+              }
+
+              return fetched;
+            });
   }
 
-  private List<TmdbTvSeasonSummary> fetchSeasonSummaries(String seriesExternalId) {
+  private MetadataFetchOutcome<List<TmdbTvSeasonSummary>> fetchSeasonSummaries(
+      String seriesExternalId) {
     try {
       var series = theMovieDatabaseHttpService.getTvSeriesMetadata(seriesExternalId);
-      return Optional.ofNullable(series.getSeasons()).orElse(Collections.emptyList());
+      return new MetadataFetchOutcome.Found<>(
+          Optional.ofNullable(series.getSeasons()).orElse(Collections.emptyList()));
     } catch (IOException ex) {
       log.warn("Failed to fetch season summaries for TMDB id '{}'", seriesExternalId, ex);
-      return Collections.emptyList();
+      return TmdbMetadataMapper.fetchFailure(ex);
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
       log.warn("Season summaries fetch interrupted for TMDB id '{}'", seriesExternalId, ex);
-      return Collections.emptyList();
+      return new MetadataFetchOutcome.Failed<>(ex);
     }
   }
 

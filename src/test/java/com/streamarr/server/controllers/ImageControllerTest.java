@@ -14,11 +14,13 @@ import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.fakes.FakeImageRepository;
+import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.metadata.ImageVariantService;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
+import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -30,6 +32,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 @Tag("UnitTest")
 @DisplayName("Image Controller Tests")
 class ImageControllerTest {
+
+  private static final Instant ATTEMPTED_AT = Instant.parse("2026-09-23T10:00:00Z");
 
   private MockMvc mockMvc;
   private FakeImageRepository imageRepository;
@@ -43,7 +47,12 @@ class ImageControllerTest {
     var imageProperties = new ImageProperties("/data/images");
     var imageVariantService = new ImageVariantService();
     imageService =
-        new ImageService(imageRepository, imageVariantService, imageProperties, fileSystem);
+        new ImageService(
+            imageRepository,
+            imageVariantService,
+            imageProperties,
+            fileSystem,
+            new FakeItemResultRepository());
     var controller = new ImageController(imageService);
     mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
   }
@@ -160,14 +169,15 @@ class ImageControllerTest {
             imageRepository,
             new ImageVariantService(),
             new ImageProperties("/data/images"),
-            fileSystem);
+            fileSystem,
+            new FakeItemResultRepository());
 
     assertThat(secondImageService.findByEntity(entityId, ImageEntityType.MOVIE)).isEmpty();
 
     var firstResult =
         imageService.processImage(
             firstImageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
-    imageService.saveImages(firstResult.images());
+    imageService.saveImages(firstResult.images(), ATTEMPTED_AT);
 
     var image =
         imageRepository
@@ -187,7 +197,7 @@ class ImageControllerTest {
     var secondResult =
         secondImageService.processImage(
             secondImageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
-    secondImageService.saveImages(secondResult.images());
+    secondImageService.saveImages(secondResult.images(), ATTEMPTED_AT);
 
     assertThat(secondImageService.readImageFile(image))
         .isEqualTo(firstResponse.getResponse().getContentAsByteArray());

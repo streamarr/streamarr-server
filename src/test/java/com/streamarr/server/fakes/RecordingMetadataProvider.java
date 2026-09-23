@@ -2,6 +2,7 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome;
@@ -39,9 +40,9 @@ public class RecordingMetadataProvider<T> implements MetadataProvider<T> {
   }
 
   @Override
-  public Optional<MetadataResult<T>> getMetadata(
+  public MetadataFetchOutcome<MetadataResult<T>> getMetadata(
       RemoteSearchResult remoteSearchResult, Library library) {
-    return Optional.empty();
+    return new MetadataFetchOutcome.NotFound<>();
   }
 
   @Override

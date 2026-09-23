@@ -2,6 +2,12 @@ package com.streamarr.server.services;
 
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.domain.media.ItemOutcome;
+import com.streamarr.server.domain.media.ItemResult;
+import com.streamarr.server.domain.media.ItemStep;
+import com.streamarr.server.exceptions.ImageProcessingException;
+import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.services.ArtworkResult.Failed;
 import com.streamarr.server.services.ArtworkResult.Saved;
 import com.streamarr.server.services.ArtworkResult.Skipped;
@@ -14,9 +20,11 @@ import com.streamarr.server.services.metadata.TmdbImageDownloader;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import java.io.IOException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
@@ -34,19 +42,32 @@ public class ArtworkFetcher {
 
   private final TmdbImageDownloader tmdbImageDownloader;
   private final ImageService imageService;
+  private final ItemResultRepository itemResults;
   private final MutexFactory<String> mutexFactory;
 
   public ArtworkFetcher(
       TmdbImageDownloader tmdbImageDownloader,
       ImageService imageService,
+      ItemResultRepository itemResults,
       MutexFactoryProvider mutexFactoryProvider) {
     this.tmdbImageDownloader = tmdbImageDownloader;
     this.imageService = imageService;
+    this.itemResults = itemResults;
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
 
-  /** Returns one result per requested source image; failures are results, never exceptions. */
-  public List<ArtworkResult> fetch(ArtworkSources artwork, ImageRefreshMode refreshMode) {
+  /**
+   * Returns one result per requested source image; an image that cannot be fetched is a result, not
+   * an exception. Each result is stored as the entity's artwork result: a saved image in the
+   * transaction that stores it, and an unavailable or failed image afterwards.
+   *
+   * @param attemptedAt when this attempt started; a stored result from a later attempt is kept
+   * @throws org.springframework.dao.DataAccessException if an unavailable or failed result cannot
+   *     be stored; a saved image whose result cannot be stored is rolled back and reported as
+   *     failed
+   */
+  public List<ArtworkResult> fetch(
+      ArtworkSources artwork, ImageRefreshMode refreshMode, Instant attemptedAt) {
     var mutex = mutexFactory.getMutex(artwork.entityId().toString());
 
     try {
@@ -58,18 +79,27 @@ public class ArtworkFetcher {
     }
 
     try {
-      return fetchWhileLocked(artwork, refreshMode);
-    } catch (RuntimeException e) {
-      log.error(
-          "Failed to fetch images for entity {} ({})", artwork.entityId(), artwork.entityType(), e);
-      return artwork.failures(e);
+      var results = fetchOrReportFailures(artwork, refreshMode, attemptedAt);
+      saveUnsavedImageResults(artwork, results, attemptedAt);
+      return results;
     } finally {
       mutex.unlock();
     }
   }
 
+  private List<ArtworkResult> fetchOrReportFailures(
+      ArtworkSources artwork, ImageRefreshMode refreshMode, Instant attemptedAt) {
+    try {
+      return fetchWhileLocked(artwork, refreshMode, attemptedAt);
+    } catch (RuntimeException e) {
+      log.error(
+          "Failed to fetch images for entity {} ({})", artwork.entityId(), artwork.entityType(), e);
+      return artwork.failures(e);
+    }
+  }
+
   private List<ArtworkResult> fetchWhileLocked(
-      ArtworkSources artwork, ImageRefreshMode refreshMode) {
+      ArtworkSources artwork, ImageRefreshMode refreshMode, Instant attemptedAt) {
     var existingImagesByType =
         imageService.findByEntity(artwork.entityId(), artwork.entityType()).stream()
             .collect(Collectors.groupingBy(Image::getImageType));
@@ -98,7 +128,7 @@ public class ArtworkFetcher {
       return results;
     }
 
-    results.addAll(downloadAllImages(artwork, pendingSources));
+    results.addAll(downloadAllImages(artwork, pendingSources, attemptedAt));
     return results;
   }
 
@@ -126,7 +156,7 @@ public class ArtworkFetcher {
   }
 
   private List<ArtworkResult> downloadAllImages(
-      ArtworkSources artwork, List<PendingImageSource> pendingSources) {
+      ArtworkSources artwork, List<PendingImageSource> pendingSources, Instant attemptedAt) {
     var downloads = new ArrayList<ImageDownload>();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -138,7 +168,9 @@ public class ArtworkFetcher {
       }
     }
 
-    return downloads.stream().map(download -> saveDownloadedImage(artwork, download)).toList();
+    return downloads.stream()
+        .map(download -> saveDownloadedImage(artwork, download, attemptedAt))
+        .toList();
   }
 
   private ProcessedImage downloadAndProcessImage(
@@ -154,7 +186,8 @@ public class ArtworkFetcher {
         imageData, source.imageType(), artwork.entityId(), artwork.entityType(), source.key());
   }
 
-  private ArtworkResult saveDownloadedImage(ArtworkSources artwork, ImageDownload download) {
+  private ArtworkResult saveDownloadedImage(
+      ArtworkSources artwork, ImageDownload download, Instant attemptedAt) {
     var imageType = download.pendingSource().source().imageType();
     if (download.processedImage().state() == Future.State.FAILED) {
       return failedDownload(artwork, imageType, download.processedImage().exceptionNow());
@@ -162,7 +195,7 @@ public class ArtworkFetcher {
 
     var processedImage = download.processedImage().resultNow();
     try {
-      storeProcessedImage(processedImage, download.pendingSource().replacement());
+      storeProcessedImage(processedImage, download.pendingSource().replacement(), attemptedAt);
       return new Saved(imageType);
     } catch (RuntimeException e) {
       imageService.deleteFiles(processedImage.writtenFiles());
@@ -172,13 +205,58 @@ public class ArtworkFetcher {
     }
   }
 
-  private void storeProcessedImage(ProcessedImage processedImage, boolean replacement) {
+  private void storeProcessedImage(
+      ProcessedImage processedImage, boolean replacement, Instant attemptedAt) {
     if (replacement) {
-      imageService.replaceImages(processedImage);
+      imageService.replaceImages(processedImage, attemptedAt);
       return;
     }
 
-    imageService.saveImages(processedImage.images());
+    imageService.saveImages(processedImage.images(), attemptedAt);
+  }
+
+  private void saveUnsavedImageResults(
+      ArtworkSources artwork, List<ArtworkResult> results, Instant attemptedAt) {
+    for (var result : results) {
+      unsavedOutcome(result)
+          .ifPresent(
+              outcome ->
+                  itemResults.trySave(
+                      ItemResult.builder()
+                          .itemId(artwork.entityId())
+                          .itemType(artwork.entityType())
+                          .step(ItemStep.ARTWORK)
+                          .imageType(result.imageType())
+                          .outcome(outcome)
+                          .sourceKey(sourceKeyOf(artwork, result.imageType()))
+                          .attemptedAt(attemptedAt)
+                          .build()));
+    }
+  }
+
+  // ImageService records a saved image's result in the transaction that stores the image.
+  private static Optional<ItemOutcome> unsavedOutcome(ArtworkResult result) {
+    return switch (result) {
+      case Saved _, Skipped _ -> Optional.empty();
+      case Unavailable _ -> Optional.of(new ItemOutcome.Unavailable());
+      case Failed(var _, var cause) -> Optional.of(ItemOutcome.Failed.of(reasonFor(cause), cause));
+    };
+  }
+
+  private static ItemFailureReason reasonFor(Throwable cause) {
+    return switch (cause) {
+      case IOException _ -> ItemFailureReason.DOWNLOAD_FAILED;
+      case ImageProcessingException _ -> ItemFailureReason.INVALID_MEDIA;
+      default -> ItemFailureReason.TEMPORARY;
+    };
+  }
+
+  private static String sourceKeyOf(ArtworkSources artwork, ImageType imageType) {
+    return artwork.sources().stream()
+        .filter(source -> source.imageType() == imageType)
+        .map(ImageSource::key)
+        .findFirst()
+        .orElse(null);
   }
 
   private static ArtworkResult failedDownload(

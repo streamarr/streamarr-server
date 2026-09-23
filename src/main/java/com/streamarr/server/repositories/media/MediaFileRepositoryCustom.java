@@ -1,5 +1,6 @@
 package com.streamarr.server.repositories.media;
 
+import com.streamarr.server.domain.media.MatchingFailure;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -13,4 +14,11 @@ public interface MediaFileRepositoryCustom {
   Optional<UUID> findMediaIdByMediaFileId(UUID mediaFileId);
 
   Set<UUID> findDistinctMediaIdsByMediaIdIn(Collection<UUID> mediaIds);
+
+  /**
+   * Stores the failure status and reason unless the file has been matched since; a matched file is
+   * never reprocessed, so any failure that arrives after its match is stale. Returns {@code false}
+   * without writing when the file is matched or missing.
+   */
+  boolean tryMarkMatchingFailed(UUID mediaFileId, MatchingFailure failure);
 }

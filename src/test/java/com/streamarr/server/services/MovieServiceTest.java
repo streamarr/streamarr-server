@@ -28,6 +28,7 @@ import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fakes.FakeImageRepository;
+import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.fixtures.ArtworkServiceFixture;
@@ -91,7 +92,8 @@ class MovieServiceTest {
             imageRepository,
             new ImageVariantService(),
             new ImageProperties("/data/images"),
-            fileSystem);
+            fileSystem,
+            new FakeItemResultRepository());
     movieService =
         new MovieService(
             movieRepository,
