@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
@@ -179,10 +180,12 @@ class DateBasedEpisodeResolverTest {
     }
 
     @Override
-    public Optional<SeasonDetails> getSeasonDetails(
+    public MetadataFetchOutcome<SeasonDetails> getSeasonDetails(
         UUID libraryId, String seriesExternalId, int seasonNumber) {
       return Optional.ofNullable(
-          seasonDetailsMap.getOrDefault(seriesExternalId, Map.of()).get(seasonNumber));
+              seasonDetailsMap.getOrDefault(seriesExternalId, Map.of()).get(seasonNumber))
+          .<MetadataFetchOutcome<SeasonDetails>>map(MetadataFetchOutcome.Found::new)
+          .orElseGet(MetadataFetchOutcome.NotFound::new);
     }
 
     @Override
@@ -198,9 +201,9 @@ class DateBasedEpisodeResolverTest {
     }
 
     @Override
-    public Optional<MetadataResult<Series>> getMetadata(
+    public MetadataFetchOutcome<MetadataResult<Series>> getMetadata(
         RemoteSearchResult remoteSearchResult, Library library) {
-      return Optional.empty();
+      return new MetadataFetchOutcome.NotFound<>();
     }
 
     @Override

@@ -2,6 +2,7 @@ package com.streamarr.server.services.metadata.series;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
@@ -30,16 +31,13 @@ public class SeriesMetadataProviderResolver {
           "No metadata provider found for {} library while searching for {}",
           library.getName(),
           videoFileParserResult.title());
-      return new TemporarilyUnavailable(
-          new IllegalStateException(
-              "No metadata provider configured for strategy "
-                  + library.getExternalAgentStrategy()));
+      return new TemporarilyUnavailable(missingProvider(library));
     }
 
     return optionalProvider.get().search(videoFileParserResult);
   }
 
-  public Optional<MetadataResult<Series>> getMetadata(
+  public MetadataFetchOutcome<MetadataResult<Series>> getMetadata(
       RemoteSearchResult remoteSearchResult, Library library) {
     var optionalProvider = getProviderForLibrary(library);
 
@@ -48,13 +46,13 @@ public class SeriesMetadataProviderResolver {
           "No metadata provider found for {} library while enriching {}",
           library.getName(),
           remoteSearchResult.title());
-      return Optional.empty();
+      return new MetadataFetchOutcome.Failed<>(missingProvider(library));
     }
 
     return optionalProvider.get().getMetadata(remoteSearchResult, library);
   }
 
-  public Optional<SeasonDetails> getSeasonDetails(
+  public MetadataFetchOutcome<SeasonDetails> getSeasonDetails(
       Library library, String seriesExternalId, int seasonNumber) {
     var optionalProvider = getProviderForLibrary(library);
 
@@ -62,7 +60,7 @@ public class SeriesMetadataProviderResolver {
       log.error(
           "No metadata provider found for {} library while fetching season details",
           library.getName());
-      return Optional.empty();
+      return new MetadataFetchOutcome.Failed<>(missingProvider(library));
     }
 
     return optionalProvider.get().getSeasonDetails(library.getId(), seriesExternalId, seasonNumber);
@@ -92,6 +90,11 @@ public class SeriesMetadataProviderResolver {
     return optionalProvider
         .get()
         .resolveSeasonNumber(library.getId(), seriesExternalId, parsedSeasonNumber);
+  }
+
+  private static IllegalStateException missingProvider(Library library) {
+    return new IllegalStateException(
+        "No metadata provider configured for strategy " + library.getExternalAgentStrategy());
   }
 
   private Optional<SeriesMetadataProvider> getProviderForLibrary(Library library) {

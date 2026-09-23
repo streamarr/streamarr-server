@@ -78,6 +78,7 @@ import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
@@ -623,7 +624,7 @@ class LibraryManagementServiceTest {
 
     when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
         .thenReturn(
-            Optional.of(
+            new MetadataFetchOutcome.Found<>(
                 new MetadataResult<>(
                     Movie.builder().title("Inception").build(), List.of(), Map.of(), Map.of())));
 
@@ -840,7 +841,7 @@ class LibraryManagementServiceTest {
 
     when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
         .thenReturn(
-            Optional.of(
+            new MetadataFetchOutcome.Found<>(
                 new MetadataResult<>(
                     Movie.builder().title(movieFolder).build(), List.of(), Map.of(), Map.of())));
 
@@ -881,7 +882,7 @@ class LibraryManagementServiceTest {
 
     when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
         .thenReturn(
-            Optional.of(
+            new MetadataFetchOutcome.Found<>(
                 new MetadataResult<>(Movie.builder().build(), List.of(), Map.of(), Map.of())));
 
     libraryManagementService.scanLibrary(savedLibraryId);
@@ -934,7 +935,7 @@ class LibraryManagementServiceTest {
 
     when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
         .thenReturn(
-            Optional.of(
+            new MetadataFetchOutcome.Found<>(
                 new MetadataResult<>(
                     Movie.builder().title(movieFolder).build(), List.of(), Map.of(), Map.of())));
 
@@ -1692,7 +1693,7 @@ class LibraryManagementServiceTest {
       when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
       when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
           .thenReturn(
-              Optional.of(
+              new MetadataFetchOutcome.Found<>(
                   MetadataFixture.<Movie>metadataResultBuilder()
                       .entity(Movie.builder().title("Refreshed").titleSort("refreshed").build())
                       .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))

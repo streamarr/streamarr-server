@@ -1,11 +1,13 @@
 package com.streamarr.server.services.metadata.series;
 
+import static com.streamarr.server.fixtures.MetadataFixture.found;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.services.events.library.RefreshEndedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
+import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
 import com.streamarr.server.services.metadata.TmdbSearchDelegate;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSearchResult;
@@ -192,17 +194,17 @@ class TMDBSeriesProviderTest {
     var libraryId = UUID.randomUUID();
 
     var firstResult = provider.getSeasonDetails(libraryId, "1396", 5);
-    assertThat(firstResult).isEmpty();
+    assertThat(firstResult).isInstanceOf(MetadataFetchOutcome.NotFound.class);
 
     var secondResult = provider.getSeasonDetails(libraryId, "1396", 5);
     assertThat(secondResult)
-        .as("Second call should return empty from negative cache despite TMDB now having data")
-        .isEmpty();
+        .as("Second call should repeat the cached failure despite TMDB now having data")
+        .isInstanceOf(MetadataFetchOutcome.NotFound.class);
   }
 
   @Test
-  @DisplayName("Should return empty when season not in summaries")
-  void shouldReturnEmptyWhenSeasonNotInSummaries() {
+  @DisplayName("Should report season not found when season not in summaries")
+  void shouldReportSeasonNotFoundWhenSeasonNotInSummaries() {
     var series =
         TmdbTvSeries.builder()
             .seasons(
@@ -216,7 +218,7 @@ class TMDBSeriesProviderTest {
 
     var result = provider.getSeasonDetails(UUID.randomUUID(), "1396", 99);
 
-    assertThat(result).isEmpty();
+    assertThat(result).isInstanceOf(MetadataFetchOutcome.NotFound.class);
   }
 
   @Test
@@ -236,9 +238,7 @@ class TMDBSeriesProviderTest {
     fakeTmdbHttpService.setTvSeasonDetails("1396", 5, validSeason);
 
     var result = provider.getSeasonDetails(UUID.randomUUID(), "1396", 5);
-
-    assertThat(result).isPresent();
-    assertThat(result.get().name()).isEqualTo("Season 5");
+    assertThat(found(result).name()).isEqualTo("Season 5");
   }
 
   @Test
@@ -288,13 +288,13 @@ class TMDBSeriesProviderTest {
     fakeTmdbHttpService.setTvSeasonDetails("1396", 5, validSeason);
 
     var firstResult = provider.getSeasonDetails(libraryId, "1396", 5);
-    assertThat(firstResult).isEmpty();
+    assertThat(firstResult).isInstanceOf(MetadataFetchOutcome.NotFound.class);
 
     provider.onScanEnded(new ScanEndedEvent(libraryId));
 
     var afterClearResult = provider.getSeasonDetails(libraryId, "1396", 5);
     assertThat(afterClearResult)
         .as("After cache clear, should fetch fresh data from TMDB")
-        .isPresent();
+        .isInstanceOf(MetadataFetchOutcome.Found.class);
   }
 }

@@ -23,6 +23,7 @@ import com.streamarr.server.services.ArtworkService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
@@ -145,7 +146,7 @@ class SeriesFileProcessorTest {
     when(seriesService.findByTmdbId(anyString())).thenReturn(Optional.empty());
 
     when(seriesMetadataProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
-        .thenReturn(Optional.empty());
+        .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("simulated fetch failure")));
 
     seriesFileProcessor.process(discoveryOf(library), mediaFile);
 
@@ -223,7 +224,7 @@ class SeriesFileProcessorTest {
     when(seriesService.findByTmdbId("93544")).thenReturn(Optional.of(series));
 
     when(seriesMetadataProvider.getSeasonDetails(isNull(), eq("93544"), eq(4)))
-        .thenReturn(Optional.empty());
+        .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("simulated fetch failure")));
 
     seriesFileProcessor.process(discoveryOf(library), mediaFile);
 

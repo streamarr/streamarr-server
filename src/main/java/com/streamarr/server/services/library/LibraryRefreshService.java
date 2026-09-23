@@ -15,6 +15,7 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeasonWithEpisodesRequest;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
@@ -78,23 +79,22 @@ public class LibraryRefreshService {
               .title(series.getTitle())
               .build();
 
-      var metadataOpt = seriesMetadataProviderResolver.getMetadata(searchResult, library);
-      if (metadataOpt.isEmpty()) {
+      var metadataOutcome = seriesMetadataProviderResolver.getMetadata(searchResult, library);
+      if (!(metadataOutcome instanceof MetadataFetchOutcome.Found(var metadataResult))) {
         log.error(
             "Failed to fetch metadata for series '{}' TMDB id '{}'", series.getTitle(), tmdbId);
         return;
       }
 
-      var refreshedSeries =
-          seriesService.refreshSeriesMetadata(series, metadataOpt.get(), artworkRun);
+      var refreshedSeries = seriesService.refreshSeriesMetadata(series, metadataResult, artworkRun);
 
       var seasonNumbers = seriesMetadataProviderResolver.getAvailableSeasonNumbers(library, tmdbId);
 
       for (var seasonNumber : seasonNumbers) {
-        var seasonDetailsOpt =
+        var seasonOutcome =
             seriesMetadataProviderResolver.getSeasonDetails(library, tmdbId, seasonNumber);
 
-        if (seasonDetailsOpt.isEmpty()) {
+        if (!(seasonOutcome instanceof MetadataFetchOutcome.Found(var seasonDetails))) {
           log.warn("Failed to fetch season {} for series TMDB id '{}'", seasonNumber, tmdbId);
           continue;
         }
@@ -102,7 +102,7 @@ public class LibraryRefreshService {
         seriesService.refreshSeasonWithEpisodes(
             SeasonWithEpisodesRequest.builder()
                 .series(refreshedSeries)
-                .details(seasonDetailsOpt.get())
+                .details(seasonDetails)
                 .library(library)
                 .artworkRun(artworkRun)
                 .build());
@@ -137,13 +137,13 @@ public class LibraryRefreshService {
               .title(movie.getTitle())
               .build();
 
-      var metadataOpt = movieMetadataProviderResolver.getMetadata(searchResult, library);
-      if (metadataOpt.isEmpty()) {
+      var metadataOutcome = movieMetadataProviderResolver.getMetadata(searchResult, library);
+      if (!(metadataOutcome instanceof MetadataFetchOutcome.Found(var metadataResult))) {
         log.error("Failed to fetch metadata for movie '{}' TMDB id '{}'", movie.getTitle(), tmdbId);
         return;
       }
 
-      movieService.refreshMovieMetadata(movie, metadataOpt.get(), artworkRun);
+      movieService.refreshMovieMetadata(movie, metadataResult, artworkRun);
     } catch (Exception ex) {
       log.error("Failed to refresh movie '{}' TMDB id '{}'", movie.getTitle(), tmdbId, ex);
     }

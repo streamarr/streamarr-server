@@ -6,9 +6,11 @@ import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
+import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.metadata.tmdb.TmdbCredit;
 import com.streamarr.server.services.metadata.tmdb.TmdbGenre;
 import com.streamarr.server.services.metadata.tmdb.TmdbProductionCompany;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -20,6 +22,14 @@ import org.apache.commons.lang3.StringUtils;
 public final class TmdbMetadataMapper {
 
   private TmdbMetadataMapper() {}
+
+  public static <T> MetadataFetchOutcome<T> fetchFailure(IOException exception) {
+    if (exception instanceof TmdbApiException apiException && apiException.getStatusCode() == 404) {
+      return new MetadataFetchOutcome.NotFound<>();
+    }
+
+    return new MetadataFetchOutcome.Failed<>(exception);
+  }
 
   public static List<ImageSource> buildPosterAndBackdropSources(
       String posterPath, String backdropPath) {

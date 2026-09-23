@@ -1,11 +1,13 @@
 package com.streamarr.server.services.metadata.series;
 
+import static com.streamarr.server.fixtures.MetadataFixture.found;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
@@ -58,9 +60,7 @@ class SeriesMetadataProviderResolverTest {
             .build();
 
     var result = resolver.getMetadata(searchResult, library);
-
-    assertThat(result).isPresent();
-    assertThat(result.get().entity().getTitle()).isEqualTo("Breaking Bad");
+    assertThat(found(result).entity().getTitle()).isEqualTo("Breaking Bad");
   }
 
   @Test
@@ -97,8 +97,8 @@ class SeriesMetadataProviderResolverTest {
   }
 
   @Test
-  @DisplayName("Should return empty when no provider matches library strategy for metadata")
-  void shouldReturnEmptyWhenNoProviderMatchesLibraryStrategyForMetadata() {
+  @DisplayName("Should report failed fetch when no provider matches library strategy for metadata")
+  void shouldReportFailedFetchWhenNoProviderMatchesLibraryStrategyForMetadata() {
     var resolver = new SeriesMetadataProviderResolver(List.of());
 
     var library =
@@ -112,7 +112,7 @@ class SeriesMetadataProviderResolverTest {
 
     var result = resolver.getMetadata(searchResult, library);
 
-    assertThat(result).isEmpty();
+    assertThat(result).isInstanceOf(MetadataFetchOutcome.Failed.class);
   }
 
   @Test
@@ -129,7 +129,10 @@ class SeriesMetadataProviderResolverTest {
 
     var resolver =
         new SeriesMetadataProviderResolver(
-            List.of(fakeProviderBuilder().seasonDetails(Optional.of(expectedDetails)).build()));
+            List.of(
+                fakeProviderBuilder()
+                    .seasonDetails(new MetadataFetchOutcome.Found<>(expectedDetails))
+                    .build()));
 
     var library =
         Library.builder()
@@ -139,15 +142,14 @@ class SeriesMetadataProviderResolverTest {
             .build();
 
     var result = resolver.getSeasonDetails(library, "1396", 1);
-
-    assertThat(result).isPresent();
-    assertThat(result.get().name()).isEqualTo("Season 1");
-    assertThat(result.get().seasonNumber()).isEqualTo(1);
+    assertThat(found(result).name()).isEqualTo("Season 1");
+    assertThat(found(result).seasonNumber()).isEqualTo(1);
   }
 
   @Test
-  @DisplayName("Should return empty when no provider matches library strategy for season details")
-  void shouldReturnEmptyWhenNoProviderMatchesForSeasonDetails() {
+  @DisplayName(
+      "Should report failed fetch when no provider matches library strategy for season details")
+  void shouldReportFailedFetchWhenNoProviderMatchesForSeasonDetails() {
     var resolver = new SeriesMetadataProviderResolver(List.of());
 
     var library =
@@ -155,7 +157,7 @@ class SeriesMetadataProviderResolverTest {
 
     var result = resolver.getSeasonDetails(library, "1396", 1);
 
-    assertThat(result).isEmpty();
+    assertThat(result).isInstanceOf(MetadataFetchOutcome.Failed.class);
   }
 
   private static class FakeSeriesMetadataProvider implements SeriesMetadataProvider {
@@ -163,14 +165,14 @@ class SeriesMetadataProviderResolverTest {
     private final RemoteSearchResult searchResult;
     private final Series series;
     private final List<Integer> seasonNumbers;
-    private final Optional<SeasonDetails> seasonDetails;
+    private final MetadataFetchOutcome<SeasonDetails> seasonDetails;
 
     @Builder
     private FakeSeriesMetadataProvider(
         RemoteSearchResult searchResult,
         Series series,
         List<Integer> seasonNumbers,
-        Optional<SeasonDetails> seasonDetails) {
+        MetadataFetchOutcome<SeasonDetails> seasonDetails) {
       this.searchResult = searchResult;
       this.series = series;
       this.seasonNumbers = seasonNumbers;
@@ -188,16 +190,18 @@ class SeriesMetadataProviderResolverTest {
     }
 
     @Override
-    public Optional<MetadataResult<Series>> getMetadata(
+    public MetadataFetchOutcome<MetadataResult<Series>> getMetadata(
         RemoteSearchResult remoteSearchResult, Library library) {
       if (series == null) {
-        return Optional.empty();
+        return new MetadataFetchOutcome.Failed<>(
+            new IllegalStateException("No fake series configured"));
       }
-      return Optional.of(new MetadataResult<>(series, List.of(), Map.of(), Map.of()));
+      return new MetadataFetchOutcome.Found<>(
+          new MetadataResult<>(series, List.of(), Map.of(), Map.of()));
     }
 
     @Override
-    public Optional<SeasonDetails> getSeasonDetails(
+    public MetadataFetchOutcome<SeasonDetails> getSeasonDetails(
         UUID libraryId, String seriesExternalId, int seasonNumber) {
       return seasonDetails;
     }
@@ -217,6 +221,6 @@ class SeriesMetadataProviderResolverTest {
       fakeProviderBuilder() {
     return FakeSeriesMetadataProvider.builder()
         .seasonNumbers(List.of())
-        .seasonDetails(Optional.empty());
+        .seasonDetails(new MetadataFetchOutcome.NotFound<>());
   }
 }

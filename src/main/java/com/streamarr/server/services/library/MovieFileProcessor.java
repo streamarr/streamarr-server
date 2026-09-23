@@ -7,6 +7,7 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
@@ -165,15 +166,14 @@ public class MovieFileProcessor {
       return;
     }
 
-    var metadataResult =
+    var metadataOutcome =
         movieMetadataProviderResolver.getMetadata(remoteSearchResult, discovery.library());
 
-    if (metadataResult.isEmpty()) {
+    if (!(metadataOutcome instanceof MetadataFetchOutcome.Found(var metadataResult))) {
       return;
     }
 
-    movieService.createMovieWithAssociations(
-        metadataResult.get(), mediaFile, discovery.artworkRun());
+    movieService.createMovieWithAssociations(metadataResult, mediaFile, discovery.artworkRun());
     markMediaFileAsMatched(mediaFile);
   }
 

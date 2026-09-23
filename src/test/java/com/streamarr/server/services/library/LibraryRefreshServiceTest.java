@@ -48,6 +48,7 @@ import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.ImageVariantService;
+import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
@@ -56,11 +57,11 @@ import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolve
 import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
 import com.streamarr.server.services.pagination.PaginationService;
+import java.io.IOException;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -194,7 +195,7 @@ class LibraryRefreshServiceTest {
     var series2 = saveSeriesWithTmdbId("Working Series", "1396", library);
 
     when(seriesProviderResolver.getMetadata(argThatHasExternalId("99999"), eq(library)))
-        .thenReturn(Optional.empty());
+        .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("simulated fetch failure")));
     stubSeriesMetadata("1396", "Working Series (Updated)", library);
     when(seriesProviderResolver.getAvailableSeasonNumbers(any(), any())).thenReturn(List.of());
 
@@ -275,7 +276,7 @@ class LibraryRefreshServiceTest {
                         .build()))
             .build();
     when(seriesProviderResolver.getSeasonDetails(library, "1396", 1))
-        .thenReturn(Optional.of(seasonDetails));
+        .thenReturn(new MetadataFetchOutcome.Found<>(seasonDetails));
 
     refreshService.refreshLibrary(library);
 
@@ -303,7 +304,7 @@ class LibraryRefreshServiceTest {
     var freshSeries = Series.builder().title("Breaking Bad").titleSort("breaking bad").build();
     when(seriesProviderResolver.getMetadata(argThatHasExternalId("1396"), eq(library)))
         .thenReturn(
-            Optional.of(
+            new MetadataFetchOutcome.Found<>(
                 MetadataFixture.<Series>metadataResultBuilder()
                     .entity(freshSeries)
                     .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/series.jpg")))
@@ -311,7 +312,7 @@ class LibraryRefreshServiceTest {
     when(seriesProviderResolver.getAvailableSeasonNumbers(library, "1396")).thenReturn(List.of(1));
     when(seriesProviderResolver.getSeasonDetails(library, "1396", 1))
         .thenReturn(
-            Optional.of(
+            new MetadataFetchOutcome.Found<>(
                 SeasonDetails.builder()
                     .name("Season 1")
                     .seasonNumber(1)
@@ -357,7 +358,9 @@ class LibraryRefreshServiceTest {
     var freshMovie =
         Movie.builder().title("Inception (Updated)").titleSort("inception (updated)").build();
     when(movieProviderResolver.getMetadata(argThatHasExternalId("27205"), eq(library)))
-        .thenReturn(Optional.of(new MetadataResult<>(freshMovie, List.of(), Map.of(), Map.of())));
+        .thenReturn(
+            new MetadataFetchOutcome.Found<>(
+                new MetadataResult<>(freshMovie, List.of(), Map.of(), Map.of())));
 
     refreshService.refreshLibrary(library);
 
@@ -385,7 +388,7 @@ class LibraryRefreshServiceTest {
             .build();
     when(movieProviderResolver.getMetadata(argThatHasExternalId("27205"), eq(library)))
         .thenReturn(
-            Optional.of(
+            new MetadataFetchOutcome.Found<>(
                 MetadataFixture.<Movie>metadataResultBuilder()
                     .entity(freshMovie)
                     .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))
@@ -455,7 +458,8 @@ class LibraryRefreshServiceTest {
     stubSeriesMetadata("1396", "Breaking Bad", library);
     when(seriesProviderResolver.getAvailableSeasonNumbers(library, "1396"))
         .thenReturn(List.of(1, 2));
-    when(seriesProviderResolver.getSeasonDetails(library, "1396", 1)).thenReturn(Optional.empty());
+    when(seriesProviderResolver.getSeasonDetails(library, "1396", 1))
+        .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("simulated fetch failure")));
 
     var seasonDetails =
         SeasonDetails.builder()
@@ -466,7 +470,7 @@ class LibraryRefreshServiceTest {
             .episodes(List.of())
             .build();
     when(seriesProviderResolver.getSeasonDetails(library, "1396", 2))
-        .thenReturn(Optional.of(seasonDetails));
+        .thenReturn(new MetadataFetchOutcome.Found<>(seasonDetails));
 
     refreshService.refreshLibrary(library);
 
@@ -482,7 +486,7 @@ class LibraryRefreshServiceTest {
     var movie = saveMovieWithTmdbId("Inception", "27205", library);
 
     when(movieProviderResolver.getMetadata(argThatHasExternalId("27205"), eq(library)))
-        .thenReturn(Optional.empty());
+        .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("simulated fetch failure")));
 
     refreshService.refreshLibrary(library);
 
@@ -502,7 +506,9 @@ class LibraryRefreshServiceTest {
 
     var freshMovie = Movie.builder().title("Working Movie (Updated)").build();
     when(movieProviderResolver.getMetadata(argThatHasExternalId("27205"), eq(library)))
-        .thenReturn(Optional.of(new MetadataResult<>(freshMovie, List.of(), Map.of(), Map.of())));
+        .thenReturn(
+            new MetadataFetchOutcome.Found<>(
+                new MetadataResult<>(freshMovie, List.of(), Map.of(), Map.of())));
 
     refreshService.refreshLibrary(library);
 
@@ -546,7 +552,7 @@ class LibraryRefreshServiceTest {
         .thenThrow(new RuntimeException("API failure"));
     when(seriesProviderResolver.getSeasonDetails(library, "1396", 2))
         .thenReturn(
-            Optional.of(
+            new MetadataFetchOutcome.Found<>(
                 SeasonDetails.builder()
                     .name("Season 2")
                     .seasonNumber(2)
@@ -613,7 +619,9 @@ class LibraryRefreshServiceTest {
     var freshSeries =
         Series.builder().title(freshTitle).titleSort(freshTitle.toLowerCase()).build();
     when(seriesProviderResolver.getMetadata(argThatHasExternalId(tmdbId), eq(library)))
-        .thenReturn(Optional.of(new MetadataResult<>(freshSeries, List.of(), Map.of(), Map.of())));
+        .thenReturn(
+            new MetadataFetchOutcome.Found<>(
+                new MetadataResult<>(freshSeries, List.of(), Map.of(), Map.of())));
   }
 
   private static <T> T argThatHasExternalId(String externalId) {

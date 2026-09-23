@@ -6,6 +6,7 @@ import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ContentRating;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome;
@@ -88,7 +89,7 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
                 .build());
   }
 
-  public Optional<MetadataResult<Movie>> getMetadata(
+  public MetadataFetchOutcome<MetadataResult<Movie>> getMetadata(
       RemoteSearchResult remoteSearchResult, Library library) {
     try {
       var tmdbMovie = theMovieDatabaseHttpService.getMovieMetadata(remoteSearchResult.externalId());
@@ -138,7 +139,7 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
       var personImageSources = TmdbMetadataMapper.buildPersonImageSources(castList, crewList);
       var companyImageSources = TmdbMetadataMapper.buildCompanyImageSources(productionCompanies);
 
-      return Optional.of(
+      return new MetadataFetchOutcome.Found<>(
           new MetadataResult<>(
               movieBuilder.build(), imageSources, personImageSources, companyImageSources));
 
@@ -147,13 +148,13 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
           "Failure enriching movie metadata using TMDB id '{}'",
           remoteSearchResult.externalId(),
           ex);
+      return TmdbMetadataMapper.fetchFailure(ex);
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
       log.error(
           "Metadata enrichment interrupted for TMDB id '{}'", remoteSearchResult.externalId(), ex);
+      return new MetadataFetchOutcome.Failed<>(ex);
     }
-
-    return Optional.empty();
   }
 
   private Set<ExternalIdentifier> mapExternalIds(TmdbMovie tmdbMovie) {

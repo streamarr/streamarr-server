@@ -14,6 +14,7 @@ import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
@@ -337,25 +338,25 @@ public class SeriesFileProcessor {
   }
 
   private Optional<Series> createSeries(FileDiscovery discovery, RemoteSearchResult searchResult) {
-    var metadataResult =
+    var metadataOutcome =
         seriesMetadataProviderResolver.getMetadata(searchResult, discovery.library());
 
-    if (metadataResult.isEmpty()) {
+    if (!(metadataOutcome instanceof MetadataFetchOutcome.Found(var metadataResult))) {
       log.error("Failed to fetch series metadata for TMDB id '{}'", searchResult.externalId());
       return Optional.empty();
     }
 
     return Optional.of(
-        seriesService.createSeriesWithAssociations(metadataResult.get(), discovery.artworkRun()));
+        seriesService.createSeriesWithAssociations(metadataResult, discovery.artworkRun()));
   }
 
   private Optional<Season> createSeasonWithEpisodes(
       FileDiscovery discovery, String seriesExternalId, int seasonNumber, Series series) {
-    var seasonDetailsOpt =
+    var seasonOutcome =
         seriesMetadataProviderResolver.getSeasonDetails(
             discovery.library(), seriesExternalId, seasonNumber);
 
-    if (seasonDetailsOpt.isEmpty()) {
+    if (!(seasonOutcome instanceof MetadataFetchOutcome.Found(var seasonDetails))) {
       log.error(
           "Failed to fetch season {} details for series TMDB id '{}'",
           seasonNumber,
@@ -367,7 +368,7 @@ public class SeriesFileProcessor {
         seriesService.createSeasonWithEpisodes(
             SeasonWithEpisodesRequest.builder()
                 .series(series)
-                .details(seasonDetailsOpt.get())
+                .details(seasonDetails)
                 .library(discovery.library())
                 .artworkRun(discovery.artworkRun())
                 .build()));

@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
 import java.time.LocalDate;
 import java.util.Optional;
@@ -35,14 +36,14 @@ public class DateBasedEpisodeResolver {
     }
 
     var seasonNumber = resolvedSeason.getAsInt();
-    var seasonDetails =
+    var seasonOutcome =
         seriesMetadataProviderResolver.getSeasonDetails(library, externalId, seasonNumber);
 
-    if (seasonDetails.isEmpty()) {
+    if (!(seasonOutcome instanceof MetadataFetchOutcome.Found(var seasonDetails))) {
       return Optional.empty();
     }
 
-    return seasonDetails.get().episodes().stream()
+    return seasonDetails.episodes().stream()
         .filter(ep -> date.equals(ep.airDate()))
         .findFirst()
         .map(ep -> new DateResolution(seasonNumber, ep.episodeNumber()));

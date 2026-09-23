@@ -2,6 +2,7 @@ package com.streamarr.server.services.metadata.movie;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome;
@@ -30,10 +31,7 @@ public class MovieMetadataProviderResolver {
           "No metadata provider found for {} library while searching for {}",
           library.getName(),
           videoFileParserResult.title());
-      return new TemporarilyUnavailable(
-          new IllegalStateException(
-              "No metadata provider configured for strategy "
-                  + library.getExternalAgentStrategy()));
+      return new TemporarilyUnavailable(missingProvider(library));
     }
 
     var provider = optionalProvider.get();
@@ -41,7 +39,7 @@ public class MovieMetadataProviderResolver {
     return provider.search(videoFileParserResult);
   }
 
-  public Optional<MetadataResult<Movie>> getMetadata(
+  public MetadataFetchOutcome<MetadataResult<Movie>> getMetadata(
       RemoteSearchResult remoteSearchResult, Library library) {
     var optionalProvider = getProviderForLibrary(library);
 
@@ -50,12 +48,17 @@ public class MovieMetadataProviderResolver {
           "No metadata provider found for {} library while enriching {}",
           library.getName(),
           remoteSearchResult.title());
-      return Optional.empty();
+      return new MetadataFetchOutcome.Failed<>(missingProvider(library));
     }
 
     var provider = optionalProvider.get();
 
     return provider.getMetadata(remoteSearchResult, library);
+  }
+
+  private static IllegalStateException missingProvider(Library library) {
+    return new IllegalStateException(
+        "No metadata provider configured for strategy " + library.getExternalAgentStrategy());
   }
 
   private Optional<MetadataProvider<Movie>> getProviderForLibrary(Library library) {
