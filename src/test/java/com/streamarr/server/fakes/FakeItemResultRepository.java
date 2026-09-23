@@ -46,6 +46,17 @@ public class FakeItemResultRepository implements ItemResultRepository {
   }
 
   @Override
+  public void record(ItemResult result) {
+    var failure = recordFailure.get();
+    if (failure != null) {
+      throw failure;
+    }
+
+    results.put(
+        new Key(result.itemId(), result.itemType(), result.step(), result.imageType()), result);
+  }
+
+  @Override
   public List<ItemResult> findByItem(UUID itemId, ImageEntityType itemType) {
     return results.values().stream()
         .filter(result -> result.itemId().equals(itemId) && result.itemType() == itemType)

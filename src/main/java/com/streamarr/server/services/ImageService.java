@@ -5,8 +5,12 @@ import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
-import com.streamarr.server.exceptions.ImageProcessingException;
+import com.streamarr.server.domain.media.ItemOutcome;
+import com.streamarr.server.domain.media.ItemResult;
+import com.streamarr.server.domain.media.ItemStep;
+import com.streamarr.server.exceptions.ImageStorageException;
 import com.streamarr.server.repositories.media.ImageRepository;
+import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.services.metadata.ImageVariantService;
 import java.io.IOException;
 import java.nio.file.FileSystem;
@@ -14,6 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HexFormat;
@@ -43,6 +48,7 @@ public class ImageService {
   private final ImageVariantService imageVariantService;
   private final ImageProperties imageProperties;
   private final FileSystem fileSystem;
+  private final ItemResultRepository itemResults;
 
   public record ProcessedImage(List<Image> images, List<Path> writtenFiles) {}
 
@@ -94,7 +100,7 @@ public class ImageService {
       return new ProcessedImage(images, writtenFiles);
     } catch (Exception e) {
       deleteFiles(writtenFiles);
-      throw new ImageProcessingException("Failed to process image", e);
+      throw new ImageStorageException(e);
     }
   }
 
@@ -106,9 +112,16 @@ public class ImageService {
     }
   }
 
+  /**
+   * Inserts artwork that does not exist yet and, when any of it was stored, records its success in
+   * the same transaction, so the stored image and its result commit or roll back together.
+   */
   @Transactional(propagation = Propagation.REQUIRES_NEW)
-  public void saveImages(List<Image> images) {
+  public void saveImages(List<Image> images, Instant attemptedAt) {
     var insertedImageIds = imageRepository.insertAllIfAbsent(images);
+    if (!insertedImageIds.isEmpty()) {
+      itemResults.record(savedArtwork(images.getFirst(), attemptedAt));
+    }
 
     for (var image : images) {
       if (insertedImageIds.contains(image.getId()) || imageRepository.existsById(image.getId())) {
@@ -119,8 +132,12 @@ public class ImageService {
     }
   }
 
+  /**
+   * Replaces one logical artwork and records its success in the same transaction. The last
+   * replacement to commit wins (ADR 0031), and its result is the one stored.
+   */
   @Transactional(propagation = Propagation.REQUIRES_NEW)
-  public void replaceImages(ProcessedImage replacement) {
+  public void replaceImages(ProcessedImage replacement, Instant attemptedAt) {
     if (replacement.images().isEmpty()) {
       deleteFiles(replacement.writtenFiles());
       return;
@@ -133,6 +150,7 @@ public class ImageService {
       validateArtworkIdentity(replacement.images());
       validateVariantSet(replacement.images());
       var replacedPaths = imageRepository.replaceLogicalArtwork(replacement.images());
+      itemResults.record(savedArtwork(replacement.images().getFirst(), attemptedAt));
       var existingFiles = replacedPaths.stream().map(this::resolveAbsolutePath).toList();
       scheduleSupersededFileCleanup(existingFiles);
     } catch (RuntimeException e) {
@@ -141,6 +159,18 @@ public class ImageService {
       }
       throw e;
     }
+  }
+
+  private static ItemResult savedArtwork(Image image, Instant attemptedAt) {
+    return ItemResult.builder()
+        .itemId(image.getEntityId())
+        .itemType(image.getEntityType())
+        .step(ItemStep.ARTWORK)
+        .imageType(image.getImageType())
+        .outcome(new ItemOutcome.Succeeded())
+        .sourceKey(image.getKey())
+        .attemptedAt(attemptedAt)
+        .build();
   }
 
   private void validateContentSha256(List<Image> images) {

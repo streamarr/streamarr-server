@@ -14,6 +14,7 @@ import com.streamarr.server.services.ImageService;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
@@ -30,6 +31,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 @SpringBootTest(properties = "image.replacement-lock-timeout=200ms")
 class ImageReplacementLockTimeoutIT extends AbstractIntegrationTest {
 
+  private static final Instant ATTEMPTED_AT = Instant.parse("2026-09-23T10:00:00Z");
+
   @Autowired private ImageRepository imageRepository;
   @Autowired private ImageService imageService;
   @Autowired private DataSource dataSource;
@@ -41,7 +44,7 @@ class ImageReplacementLockTimeoutIT extends AbstractIntegrationTest {
     var original = processedImage(entityId, 0x0000FF, "/original.jpg");
     var holderReplacement = processedImage(entityId, 0x00FFFF, "/holder.jpg");
     var contenderReplacement = processedImage(entityId, 0xFF00FF, "/contender.jpg");
-    imageService.saveImages(original.images());
+    imageService.saveImages(original.images(), ATTEMPTED_AT);
 
     try {
       try (var lockConnection = dataSource.getConnection();
@@ -52,7 +55,7 @@ class ImageReplacementLockTimeoutIT extends AbstractIntegrationTest {
         var contender =
             executor.submit(
                 () -> {
-                  imageService.replaceImages(contenderReplacement);
+                  imageService.replaceImages(contenderReplacement, ATTEMPTED_AT);
                   return null;
                 });
 
@@ -74,7 +77,7 @@ class ImageReplacementLockTimeoutIT extends AbstractIntegrationTest {
         }
       }
 
-      imageService.replaceImages(holderReplacement);
+      imageService.replaceImages(holderReplacement, ATTEMPTED_AT);
 
       assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
           .hasSize(ImageSize.values().length)

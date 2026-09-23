@@ -13,5 +13,11 @@ public interface ItemResultRepository {
    */
   boolean tryRecord(ItemResult result);
 
+  /**
+   * Stores the result whichever attempt it came from. Call it only in the transaction that writes
+   * the state the result describes, such as saved artwork, so the stored result matches that state.
+   */
+  void record(ItemResult result);
+
   List<ItemResult> findByItem(UUID itemId, ImageEntityType itemType);
 }

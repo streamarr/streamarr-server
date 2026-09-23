@@ -121,7 +121,8 @@ class LibraryRefreshServiceTest {
             imageRepository,
             new ImageVariantService(),
             new ImageProperties("/data/images"),
-            fileSystem);
+            fileSystem,
+            new FakeItemResultRepository());
 
     var seriesService =
         new SeriesService(

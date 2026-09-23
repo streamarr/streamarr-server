@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
+import org.jooq.InsertOnDuplicateSetMoreStep;
 import org.jooq.impl.DSL;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,21 +32,29 @@ public class JooqItemResultRepository implements ItemResultRepository {
   @Override
   @Transactional
   public boolean tryRecord(ItemResult result) {
-    var row = toRecord(result);
-
-    return dsl.insertInto(ITEM_RESULT)
-            .set(row)
-            .onConflictOnConstraint(Keys.ITEM_RESULT_IDENTITY)
-            .doUpdate()
-            .set(ITEM_RESULT.OUTCOME, DSL.excluded(ITEM_RESULT.OUTCOME))
-            .set(ITEM_RESULT.FAILURE_REASON, DSL.excluded(ITEM_RESULT.FAILURE_REASON))
-            .set(ITEM_RESULT.DETAIL, DSL.excluded(ITEM_RESULT.DETAIL))
-            .set(ITEM_RESULT.SOURCE_KEY, DSL.excluded(ITEM_RESULT.SOURCE_KEY))
-            .set(ITEM_RESULT.ATTEMPTED_AT, DSL.excluded(ITEM_RESULT.ATTEMPTED_AT))
-            .set(ITEM_RESULT.RECORDED_AT, DSL.currentOffsetDateTime())
+    return upsert(result)
             .where(ITEM_RESULT.ATTEMPTED_AT.le(DSL.excluded(ITEM_RESULT.ATTEMPTED_AT)))
             .execute()
         > 0;
+  }
+
+  @Override
+  @Transactional
+  public void record(ItemResult result) {
+    upsert(result).execute();
+  }
+
+  private InsertOnDuplicateSetMoreStep<ItemResultRecord> upsert(ItemResult result) {
+    return dsl.insertInto(ITEM_RESULT)
+        .set(toRecord(result))
+        .onConflictOnConstraint(Keys.ITEM_RESULT_IDENTITY)
+        .doUpdate()
+        .set(ITEM_RESULT.OUTCOME, DSL.excluded(ITEM_RESULT.OUTCOME))
+        .set(ITEM_RESULT.FAILURE_REASON, DSL.excluded(ITEM_RESULT.FAILURE_REASON))
+        .set(ITEM_RESULT.DETAIL, DSL.excluded(ITEM_RESULT.DETAIL))
+        .set(ITEM_RESULT.SOURCE_KEY, DSL.excluded(ITEM_RESULT.SOURCE_KEY))
+        .set(ITEM_RESULT.ATTEMPTED_AT, DSL.excluded(ITEM_RESULT.ATTEMPTED_AT))
+        .set(ITEM_RESULT.RECORDED_AT, DSL.currentOffsetDateTime());
   }
 
   @Override

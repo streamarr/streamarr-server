@@ -96,15 +96,15 @@ Item failures never change the library's status.
 An `item_result` row holds the latest attempt's outcome: `SUCCEEDED`, `UNAVAILABLE` when the provider has nothing, or `FAILED` with a reason.
 The reasons are `DOWNLOAD_FAILED`, `INVALID_MEDIA`, `TEMPORARY`, and `MISCONFIGURED` (a missing provider or rejected provider credentials).
 `SOURCE_INACCESSIBLE` is reserved for a local source the server cannot read; metadata and artwork come from the provider, so no step records it yet.
-Movie and series posters and backdrops, season posters, and episode stills are required artwork.
-A required image the provider does not offer is recorded as `UNAVAILABLE` unless the item already has one, so it is not mistaken for work that never ran.
-Person photos and company logos are secondary and record nothing when missing.
+Artwork results follow `ArtworkResult`: a saved image is `SUCCEEDED`, an image type the provider does not offer is `UNAVAILABLE`, and a failed image is `FAILED`.
+An image that preserve mode keeps is skipped and records nothing, so `UNAVAILABLE` is never mistaken for work that never ran.
 
-Each row stores when its attempt started, and an attempt that started earlier never replaces a stored result.
-A successful retry therefore resolves the failure, and a stale failure cannot overwrite it.
+Each row stores when its attempt started.
+A failure or unavailable result never replaces a result from a later attempt, so a stale failure cannot overwrite a successful retry.
+A saved image's result is written in the same transaction as the image, so it always describes the stored artwork; concurrent replacements still follow the last-committer-wins rule in https://github.com/streamarr/streamarr-adr/blob/main/adr/0031-transaction-scoped-artwork-replacement-locking.adoc[ADR 0031].
 Matching failures are written only while the file is not `MATCHED`.
 A failed image replacement keeps the existing image.
-When a result cannot be written, the recording service throws the database error to its caller: matching fails the scan, a refresh fails, and the artwork listener logs it.
+When a result cannot be written, the database error reaches the caller: matching fails the scan, a refresh fails, and a required artwork request fails its future after its run counts the image as failed.
 
 A terminal probe error is reused while the source snapshot and probe version are unchanged; scans and refreshes do not force a new probe for it.
 Recorded results survive a restart, but artwork work that stopped before recording a result is not resumed yet; https://github.com/streamarr/streamarr-server/issues/412[#412] adds that.
