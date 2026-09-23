@@ -708,7 +708,8 @@ class WorkerSessionServerIT {
                 assertUploadRejected(
                     upload(channel, unowned, new byte[] {1}), Status.Code.PERMISSION_DENIED));
         assertThat(
-                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
+                segmentStore.segmentExists(
+                    fromProto(job.getStreamSessionId()), "720p/segment0.m4s"))
             .isFalse();
       } finally {
         shutdown(channel);
@@ -745,7 +746,8 @@ class WorkerSessionServerIT {
 
         assertUploadRejected(upload(channel, metadata, segmentData), Status.Code.PERMISSION_DENIED);
         assertThat(
-                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
+                segmentStore.segmentExists(
+                    fromProto(job.getStreamSessionId()), "720p/segment0.m4s"))
             .isFalse();
         replacement.close();
       } finally {
@@ -857,7 +859,8 @@ class WorkerSessionServerIT {
 
         assertUploadRejected(upload(channel, metadata, segmentData), Status.Code.INVALID_ARGUMENT);
         assertThat(
-                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
+                segmentStore.segmentExists(
+                    fromProto(job.getStreamSessionId()), "720p/segment0.m4s"))
             .isFalse();
         worker.close();
       } finally {
@@ -933,7 +936,8 @@ class WorkerSessionServerIT {
                         .build())),
             Status.Code.INVALID_ARGUMENT);
         assertThat(
-                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
+                segmentStore.segmentExists(
+                    fromProto(job.getStreamSessionId()), "720p/segment0.m4s"))
             .isFalse();
       } finally {
         shutdown(channel);
@@ -966,7 +970,8 @@ class WorkerSessionServerIT {
         assertUploadRejected(
             upload(channel, metadata, segmentData), Status.Code.RESOURCE_EXHAUSTED);
         assertThat(
-                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
+                segmentStore.segmentExists(
+                    fromProto(job.getStreamSessionId()), "720p/segment0.m4s"))
             .isFalse();
 
         var validSegment = "complete segment".getBytes();
@@ -1007,9 +1012,9 @@ class WorkerSessionServerIT {
                 metadata.toBuilder().setContentLengthBytes(-1).build(),
                 metadata.toBuilder().setContentLengthBytes(16L * 1024 * 1024 + 1).build(),
                 metadata.toBuilder().setSegmentName(" ").build(),
-                metadata.toBuilder().setSegmentName("../segment0.ts").build(),
-                metadata.toBuilder().setSegmentName("nested/segment0.ts").build(),
-                metadata.toBuilder().setSegmentName("nested\\segment0.ts").build(),
+                metadata.toBuilder().setSegmentName("../segment0.m4s").build(),
+                metadata.toBuilder().setSegmentName("nested/segment0.m4s").build(),
+                metadata.toBuilder().setSegmentName("nested\\segment0.m4s").build(),
                 metadata.toBuilder()
                     .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_UNSPECIFIED)
                     .build(),
@@ -1043,7 +1048,8 @@ class WorkerSessionServerIT {
           assertThat(worker.nextResponse().hasStopVariant()).isTrue();
         }
         assertThat(
-                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
+                segmentStore.segmentExists(
+                    fromProto(job.getStreamSessionId()), "720p/segment0.m4s"))
             .isFalse();
       } finally {
         shutdown(channel);
@@ -1115,7 +1121,8 @@ class WorkerSessionServerIT {
 
         assertUploadRejected(upload.response(), Status.Code.PERMISSION_DENIED);
         assertThat(
-                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
+                segmentStore.segmentExists(
+                    fromProto(job.getStreamSessionId()), "720p/segment0.m4s"))
             .isFalse();
         replacement.close();
       } finally {
@@ -1157,7 +1164,8 @@ class WorkerSessionServerIT {
 
         assertUploadRejected(upload, Status.Code.PERMISSION_DENIED);
         assertThat(
-                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
+                segmentStore.segmentExists(
+                    fromProto(job.getStreamSessionId()), "720p/segment0.m4s"))
             .isFalse();
       } finally {
         segmentStore.continuePreparation();
@@ -1256,7 +1264,7 @@ class WorkerSessionServerIT {
                 .setContentLengthBytes(stale.length)
                 .build();
         assertUploadRejected(upload(channel, metadata, stale), Status.Code.PERMISSION_DENIED);
-        assertThat(segmentStore.segmentExists(streamSessionId, "720p/segment0.ts")).isFalse();
+        assertThat(segmentStore.segmentExists(streamSessionId, "720p/segment0.m4s")).isFalse();
       } finally {
         shutdown(channel);
       }
@@ -1446,8 +1454,8 @@ class WorkerSessionServerIT {
         .setJobId(job.getJobId())
         .setJobAttemptId(job.getJobAttemptId())
         .setVariantLabel(job.getVariant().getVariantLabel())
-        .setSegmentName("segment0.ts")
-        .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP2T);
+        .setSegmentName("segment0.m4s")
+        .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP4);
   }
 
   private static SegmentUploadMetadata fmp4Metadata(

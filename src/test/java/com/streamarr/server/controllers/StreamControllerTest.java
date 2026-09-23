@@ -168,7 +168,7 @@ class StreamControllerTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"multivariant.m3u8", "stream.m3u8", "segment0.ts", "init.mp4"})
+  @ValueSource(strings = {"multivariant.m3u8", "stream.m3u8", "segment0.m4s", "init.mp4"})
   @DisplayName("Should reject stream request when token is bound to another stream session")
   void shouldRejectStreamRequestWhenTokenIsBoundToAnotherStreamSession(String path) {
     streamingService.setSession(buildMpegtsSession());
@@ -186,11 +186,11 @@ class StreamControllerTest {
       strings = {
         "multivariant.m3u8",
         "stream.m3u8",
-        "segment0.ts",
+        "segment0.m4s",
         "init.mp4",
         "720p/stream.m3u8",
         "720p/init.mp4",
-        "720p/segment0.ts"
+        "720p/segment0.m4s"
       })
   @DisplayName("Should return 404 when session not found")
   void shouldReturn404WhenSessionNotFound(String path) throws Exception {
@@ -259,7 +259,7 @@ class StreamControllerTest {
     streamingService.setSession(buildMpegtsSession());
 
     mockMvc
-        .perform(get("/api/stream/{sessionId}/segment0.ts", SESSION_ID))
+        .perform(get("/api/stream/{sessionId}/segment0.m4s", SESSION_ID))
         .andExpect(status().isNotFound());
   }
 
@@ -282,7 +282,7 @@ class StreamControllerTest {
     runtimeRegistry.save(session);
 
     mockMvc
-        .perform(get("/api/stream/{sessionId}/foo.ts", SESSION_ID))
+        .perform(get("/api/stream/{sessionId}/foo.m4s", SESSION_ID))
         .andExpect(status().isNotFound());
 
     assertThat(transcodeExecutor.getStoppedVariants()).isEmpty();
@@ -303,7 +303,7 @@ class StreamControllerTest {
             () -> {
               // A pre-set interrupt makes the first delivery wait observe the shutdown signal.
               Thread.currentThread().interrupt();
-              response.set(controller.getSegment(SESSION_ID, "segment1.ts"));
+              response.set(controller.getSegment(SESSION_ID, "segment1.m4s"));
             });
     worker.start();
     worker.join(Duration.ofSeconds(2).toMillis());
@@ -321,7 +321,7 @@ class StreamControllerTest {
     runtimeRegistry.save(session);
 
     mockMvc
-        .perform(get("/api/stream/{sessionId}/segment99999999999999999999.ts", SESSION_ID))
+        .perform(get("/api/stream/{sessionId}/segment99999999999999999999.m4s", SESSION_ID))
         .andExpect(status().isNotFound());
   }
 
@@ -336,7 +336,7 @@ class StreamControllerTest {
             throw new TranscodeException("Segment not found: " + segmentName);
           }
         };
-    throwingStore.addSegment(SESSION_ID, "segment0.ts", new byte[] {0x47});
+    throwingStore.addSegment(SESSION_ID, "segment0.m4s", new byte[] {0x47});
     var raceController =
         new StreamController(
             streamingService,
@@ -346,7 +346,7 @@ class StreamControllerTest {
     var raceMockMvc = MockMvcBuilders.standaloneSetup(raceController).build();
 
     raceMockMvc
-        .perform(get("/api/stream/{sessionId}/segment0.ts", SESSION_ID))
+        .perform(get("/api/stream/{sessionId}/segment0.m4s", SESSION_ID))
         .andExpect(status().isNotFound());
   }
 
@@ -361,7 +361,7 @@ class StreamControllerTest {
 
     var result =
         mockMvc
-            .perform(get("/api/stream/{sessionId}/segment0.ts", SESSION_ID))
+            .perform(get("/api/stream/{sessionId}/segment0.m4s", SESSION_ID))
             .andExpect(status().isServiceUnavailable())
             .andReturn();
 
@@ -489,15 +489,15 @@ class StreamControllerTest {
   void shouldServeVariantSegmentWhenVariantAndSegmentExist() throws Exception {
     streamingService.setSession(buildAbrSession());
     var segmentData = new byte[] {0x47, 0x00, 0x11, 0x10};
-    segmentStore.addSegment(SESSION_ID, "720p/segment0.ts", segmentData);
+    segmentStore.addSegment(SESSION_ID, "720p/segment0.m4s", segmentData);
 
     var result =
         mockMvc
-            .perform(get("/api/stream/{sessionId}/{variantLabel}/segment0.ts", SESSION_ID, "720p"))
+            .perform(get("/api/stream/{sessionId}/{variantLabel}/segment0.m4s", SESSION_ID, "720p"))
             .andExpect(status().isOk())
             .andReturn();
 
-    assertThat(result.getResponse().getContentType()).isEqualTo("video/mp2t");
+    assertThat(result.getResponse().getContentType()).isEqualTo("video/mp4");
     assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(segmentData);
   }
 
@@ -507,7 +507,7 @@ class StreamControllerTest {
     streamingService.setSession(buildAbrSession());
 
     mockMvc
-        .perform(get("/api/stream/{sessionId}/{variantLabel}/segment0.ts", SESSION_ID, "360p"))
+        .perform(get("/api/stream/{sessionId}/{variantLabel}/segment0.m4s", SESSION_ID, "360p"))
         .andExpect(status().isNotFound());
   }
 
@@ -516,11 +516,11 @@ class StreamControllerTest {
   void shouldServeDefaultVariantSegmentWhenUsingOriginalUrl() throws Exception {
     streamingService.setSession(buildMpegtsSession());
     var segmentData = new byte[] {0x47};
-    segmentStore.addSegment(SESSION_ID, "segment0.ts", segmentData);
+    segmentStore.addSegment(SESSION_ID, "segment0.m4s", segmentData);
 
     var result =
         mockMvc
-            .perform(get("/api/stream/{sessionId}/segment0.ts", SESSION_ID))
+            .perform(get("/api/stream/{sessionId}/segment0.m4s", SESSION_ID))
             .andExpect(status().isOk())
             .andReturn();
 
@@ -533,7 +533,7 @@ class StreamControllerTest {
     streamingService.setSession(buildMpegtsSession());
 
     mockMvc
-        .perform(get("/api/stream/{sessionId}/{segmentName}", SESSION_ID, "..segment0.ts"))
+        .perform(get("/api/stream/{sessionId}/{segmentName}", SESSION_ID, "..segment0.m4s"))
         .andExpect(status().isBadRequest());
   }
 
@@ -572,7 +572,7 @@ class StreamControllerTest {
     streamingService.setSession(buildAbrSession());
 
     mockMvc
-        .perform(get("/api/stream/{sessionId}/{variantLabel}/segment0.ts", SESSION_ID, "..720p"))
+        .perform(get("/api/stream/{sessionId}/{variantLabel}/segment0.m4s", SESSION_ID, "..720p"))
         .andExpect(status().isBadRequest());
   }
 

@@ -89,7 +89,9 @@ class RemoteRecoveryIT {
 
       try (var healthyWorker =
           workerBuilder(server, mediaRoot)
-              .ffmpegScript(WorkerContainerFixture.emitSegments(Map.of("segment0.ts", segmentData)))
+              .ffmpegScript(
+                  WorkerContainerFixture.emitSegments(
+                      Map.of("init.mp4", STORED_INITIALIZATION, "segment0.m4s", segmentData)))
               .build()) {
         healthyWorker.start();
         await()
@@ -98,7 +100,7 @@ class RemoteRecoveryIT {
 
         var delivery =
             rig.coordinator()
-                .deliver(streamSessionId, StreamSession.defaultVariant(), "segment0.ts");
+                .deliver(streamSessionId, StreamSession.defaultVariant(), "segment0.m4s");
 
         assertThat(delivery).isInstanceOf(SegmentDelivery.Ready.class);
         assertThat(((SegmentDelivery.Ready) delivery).data()).isEqualTo(segmentData);
@@ -137,7 +139,8 @@ class RemoteRecoveryIT {
           .until(() -> !server.isRunning(streamSessionId, StreamSession.defaultVariant()));
 
       var delivery =
-          rig.coordinator().deliver(streamSessionId, StreamSession.defaultVariant(), "segment0.ts");
+          rig.coordinator()
+              .deliver(streamSessionId, StreamSession.defaultVariant(), "segment0.m4s");
 
       assertThat(delivery).isInstanceOf(SegmentDelivery.Unrecoverable.class);
       assertThat(rig.session().getHandle().orElseThrow().status())
@@ -400,7 +403,7 @@ class RemoteRecoveryIT {
         .videoCodecFamily("h264")
         .audioDecision(AudioDecision.copy("aac", 2, 128_000))
         .subtitleDecision(SubtitleDecision.exclude())
-        .containerFormat(ContainerFormat.MPEGTS)
+        .containerFormat(ContainerFormat.FMP4)
         .needsKeyframeAlignment(true)
         .build();
   }

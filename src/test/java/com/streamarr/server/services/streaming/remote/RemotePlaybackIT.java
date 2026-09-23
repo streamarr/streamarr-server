@@ -71,8 +71,9 @@ class RemotePlaybackIT {
     var mediaFile = copyTestClip(mediaRoot.resolve("movie.mkv"));
     var segments =
         Map.of(
-            "segment0.ts", "first remote segment".getBytes(),
-            "segment1.ts", "second remote segment".getBytes());
+            "init.mp4", "remote initialization".getBytes(),
+            "segment0.m4s", "first remote segment".getBytes(),
+            "segment1.m4s", "second remote segment".getBytes());
     var segmentStore = new PublishingSegmentStore(tempDir.resolve("server-segments"));
     var streamSessionId = UUID.randomUUID();
 
@@ -82,12 +83,7 @@ class RemotePlaybackIT {
                 .workerSessions(server)
                 .sourceNamespaceId(SOURCE_NAMESPACE_ID)
                 .sourceRoot(mediaRoot)
-                .ffmpegScript(
-                    """
-                    printf 'first remote segment' > segment0.ts
-                    printf 'second remote segment' > segment1.ts
-                    exit 0
-                    """)
+                .ffmpegScript(WorkerContainerFixture.emitSegments(segments))
                 .build()) {
       server.start();
       worker.start();
@@ -106,7 +102,7 @@ class RemotePlaybackIT {
               });
 
       executor.start(transcodeRequest(streamSessionId, mediaFile));
-      segmentStore.publication("segment1.ts").get(5, TimeUnit.SECONDS);
+      segmentStore.publication("segment1.m4s").get(5, TimeUnit.SECONDS);
       var streamController =
           rig(PlaybackRigConfiguration.builder()
                   .streamSessionId(streamSessionId)
@@ -114,21 +110,21 @@ class RemotePlaybackIT {
                   .executor(executor)
                   .build())
               .controller();
-      var first = streamController.getSegment(streamSessionId, "segment0.ts");
-      var second = streamController.getSegment(streamSessionId, "segment1.ts");
+      var first = streamController.getSegment(streamSessionId, "segment0.m4s");
+      var second = streamController.getSegment(streamSessionId, "segment1.m4s");
 
       assertThat(first.getStatusCode().is2xxSuccessful()).as("first segment status").isTrue();
       assertThat(first.getHeaders().getContentType())
           .as("first segment content type")
-          .hasToString("video/mp2t");
-      assertThat(first.getBody()).as("first segment bytes").isEqualTo(segments.get("segment0.ts"));
+          .hasToString("video/mp4");
+      assertThat(first.getBody()).as("first segment bytes").isEqualTo(segments.get("segment0.m4s"));
       assertThat(second.getStatusCode().is2xxSuccessful()).as("second segment status").isTrue();
       assertThat(second.getHeaders().getContentType())
           .as("second segment content type")
-          .hasToString("video/mp2t");
+          .hasToString("video/mp4");
       assertThat(second.getBody())
           .as("second segment bytes")
-          .isEqualTo(segments.get("segment1.ts"));
+          .isEqualTo(segments.get("segment1.m4s"));
     }
   }
 
@@ -214,7 +210,10 @@ class RemotePlaybackIT {
       throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
-    var segments = Map.of("segment0.ts", "first remote segment".getBytes());
+    var segments =
+        Map.of(
+            "init.mp4", "remote initialization".getBytes(),
+            "segment0.m4s", "first remote segment".getBytes());
     var segmentStore = new FirstRequestSegmentStore(tempDir.resolve("server-segments"));
     var streamSessionId = UUID.randomUUID();
 
@@ -236,10 +235,10 @@ class RemotePlaybackIT {
 
       var handle = executor.start(transcodeRequest(streamSessionId, mediaFile));
       playback.session().setHandle(handle);
-      var response = playback.controller().getSegment(streamSessionId, "segment0.ts");
+      var response = playback.controller().getSegment(streamSessionId, "segment0.m4s");
 
       assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
-      assertThat(response.getBody()).isEqualTo(segments.get("segment0.ts"));
+      assertThat(response.getBody()).isEqualTo(segments.get("segment0.m4s"));
     }
   }
 
@@ -372,7 +371,7 @@ class RemotePlaybackIT {
       var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
       executor.start(transcodeRequest(streamSessionId, mediaFile));
 
-      assertThat(segmentStore.publication("segment0.ts"))
+      assertThat(segmentStore.publication("segment0.m4s"))
           .as("first segment transcoded from the Unicode source")
           .succeedsWithin(Duration.ofSeconds(30));
       executor.stop(streamSessionId);
@@ -518,7 +517,7 @@ class RemotePlaybackIT {
       ContainerFormat containerFormat) {
 
     private PlaybackRigConfiguration {
-      containerFormat = containerFormat != null ? containerFormat : ContainerFormat.MPEGTS;
+      containerFormat = containerFormat != null ? containerFormat : ContainerFormat.FMP4;
     }
   }
 
@@ -559,7 +558,7 @@ class RemotePlaybackIT {
   }
 
   private TranscodeRequest transcodeRequest(UUID streamSessionId, Path mediaFile) {
-    return transcodeRequest(streamSessionId, mediaFile, ContainerFormat.MPEGTS);
+    return transcodeRequest(streamSessionId, mediaFile, ContainerFormat.FMP4);
   }
 
   private TranscodeRequest transcodeRequest(

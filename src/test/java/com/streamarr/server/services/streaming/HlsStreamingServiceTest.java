@@ -522,7 +522,7 @@ class HlsStreamingServiceTest {
   void shouldDeleteStoredSegmentsWhenDestroyFailsToStopTranscode() {
     var file = seedMediaFile();
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
-    segmentStore.addSegment(session.getSessionId(), "segment0.ts", "data".getBytes());
+    segmentStore.addSegment(session.getSessionId(), "segment0.m4s", "data".getBytes());
     transcodeExecutor.failOnStop(session.getSessionId());
     var sessionId = session.getSessionId();
 
@@ -530,7 +530,7 @@ class HlsStreamingServiceTest {
         .isInstanceOf(TranscodeException.class);
 
     assertThat(accessSession(session)).isEmpty();
-    assertThat(segmentStore.segmentExists(session.getSessionId(), "segment0.ts")).isFalse();
+    assertThat(segmentStore.segmentExists(session.getSessionId(), "segment0.m4s")).isFalse();
   }
 
   @Test
@@ -737,7 +737,7 @@ class HlsStreamingServiceTest {
     var sessionId = executor.getAttemptedRequests().getFirst().sessionId();
     assertThat(runtimeRegistry.findById(sessionId)).isEmpty();
     assertThat(executor.getRunningCount()).isZero();
-    assertThat(segmentStore.segmentExists(sessionId, "startup.ts")).isFalse();
+    assertThat(segmentStore.segmentExists(sessionId, "startup.m4s")).isFalse();
   }
 
   @Test
@@ -1008,7 +1008,7 @@ class HlsStreamingServiceTest {
     @Override
     public TranscodeHandle start(TranscodeRequest request) {
       attemptedRequests.add(request);
-      segmentStore.addSegment(request.sessionId(), "startup.ts", new byte[] {1});
+      segmentStore.addSegment(request.sessionId(), "startup.m4s", new byte[] {1});
       if (attemptedRequests.size() > successfulStarts) {
         throw new TranscodeException("Simulated transcode startup failure");
       }

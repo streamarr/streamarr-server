@@ -116,8 +116,8 @@ class SegmentUploadReclaimTest {
         .setJobId(job.getJobId())
         .setJobAttemptId(job.getJobAttemptId())
         .setVariantLabel(job.getVariant().getVariantLabel())
-        .setSegmentName("segment0.ts")
-        .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP2T);
+        .setSegmentName("segment0.m4s")
+        .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP4);
   }
 
   private static StreamObserver<UploadSegmentResponse> errorCapturingResponseObserver(

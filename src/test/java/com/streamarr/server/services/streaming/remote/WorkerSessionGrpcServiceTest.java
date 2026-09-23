@@ -337,7 +337,7 @@ class WorkerSessionGrpcServiceTest {
     assertThat(
             segmentStore.readSegment(
                 fromProto(job.getStreamSessionId()),
-                job.getVariant().getVariantLabel() + "/segment0.ts"))
+                job.getVariant().getVariantLabel() + "/segment0.m4s"))
         .isEqualTo(segmentData.toByteArray());
   }
 
@@ -405,7 +405,7 @@ class WorkerSessionGrpcServiceTest {
     return new OwnershipLossResult(
         response,
         fromProto(job.getStreamSessionId()),
-        job.getVariant().getVariantLabel() + "/segment0.ts");
+        job.getVariant().getVariantLabel() + "/segment0.m4s");
   }
 
   private record OwnershipLossResult(
@@ -459,8 +459,8 @@ class WorkerSessionGrpcServiceTest {
         .setJobId(job.getJobId())
         .setJobAttemptId(job.getJobAttemptId())
         .setVariantLabel(job.getVariant().getVariantLabel())
-        .setSegmentName("segment0.ts")
-        .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP2T);
+        .setSegmentName("segment0.m4s")
+        .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP4);
   }
 
   private static final class CloseFailingBlockingSegmentStore extends BlockingSegmentStore {

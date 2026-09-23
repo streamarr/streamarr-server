@@ -144,7 +144,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
 
     mockMvc
         .perform(
-            get("/api/stream/{id}/segment99.ts", session.getSessionId())
+            get("/api/stream/{id}/segment99.m4s", session.getSessionId())
                 .param("t", playbackToken(session.getSessionId())))
         .andExpect(status().isNotFound());
   }
@@ -157,18 +157,18 @@ class StreamControllerIT extends AbstractIntegrationTest {
     var session = StreamSessionFixture.buildMpegtsSession();
     var segmentData = new byte[] {0x47, 0x00, 0x11, 0x10};
     STUB_SERVICE.addSession(session);
-    FAKE_SEGMENT_STORE.addSegment(session.getSessionId(), "segment0.ts", segmentData);
+    FAKE_SEGMENT_STORE.addSegment(session.getSessionId(), "segment0.m4s", segmentData);
     var token = playbackToken(session.getSessionId());
 
     mockMvc
-        .perform(get("/api/stream/{id}/segment0.ts", session.getSessionId()).param("t", token))
+        .perform(get("/api/stream/{id}/segment0.m4s", session.getSessionId()).param("t", token))
         .andExpect(status().isOk());
 
     streamingSessionCleanupListener.onLibraryRemoved(
         new LibraryRemovedEvent("/media", Set.of(session.getMediaFileId())));
 
     mockMvc
-        .perform(get("/api/stream/{id}/segment0.ts", session.getSessionId()).param("t", token))
+        .perform(get("/api/stream/{id}/segment0.m4s", session.getSessionId()).param("t", token))
         .andExpect(status().isNotFound());
   }
 
@@ -217,13 +217,13 @@ class StreamControllerIT extends AbstractIntegrationTest {
     var session = StreamSessionFixture.buildMpegtsSession();
     var segmentData = new byte[] {0x47, 0x00, 0x11, 0x10};
     STUB_SERVICE.addSession(session);
-    FAKE_SEGMENT_STORE.addSegment(session.getSessionId(), "segment0.ts", segmentData);
+    FAKE_SEGMENT_STORE.addSegment(session.getSessionId(), "segment0.m4s", segmentData);
 
     // Browsers attach the stale Path=/ access cookie to every segment fetch; stream paths must
     // ignore headers and cookies entirely or playback dies mid-movie.
     mockMvc
         .perform(
-            get("/api/stream/{id}/segment0.ts", session.getSessionId())
+            get("/api/stream/{id}/segment0.m4s", session.getSessionId())
                 .param("t", playbackToken(session.getSessionId()))
                 .cookie(
                     new Cookie("streamarr_access", authTestSupport.expiredProfileBearer(identity))))
@@ -237,7 +237,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
     var sessionId = UUID.randomUUID();
     mockMvc
         .perform(
-            get("/api/stream/{id}/{segment}", sessionId, "..secret.ts")
+            get("/api/stream/{id}/{segment}", sessionId, "..secret.m4s")
                 .param("t", playbackToken(sessionId)))
         .andExpect(status().isBadRequest());
   }
@@ -246,7 +246,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
   @DisplayName("Should return 400 when segment name contains backslash")
   void shouldReturn400WhenSegmentNameContainsBackslash() throws Exception {
     mockMvc
-        .perform(get("/api/stream/{id}/{segment}", UUID.randomUUID(), "evil\\name.ts"))
+        .perform(get("/api/stream/{id}/{segment}", UUID.randomUUID(), "evil\\name.m4s"))
         .andExpect(status().isBadRequest());
   }
 

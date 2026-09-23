@@ -90,14 +90,14 @@ class ProducerLifecycleServiceTest {
   @DisplayName("Should keep previously transcoded segments when relocating")
   void shouldKeepPreviouslyTranscodedSegmentsWhenRelocating() {
     var session = startedSession();
-    segmentStore.addSegment(session.getSessionId(), "segment0.ts", new byte[] {1});
+    segmentStore.addSegment(session.getSessionId(), "segment0.m4s", new byte[] {1});
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment100.ts");
+    lifecycle.ensurePositioned(session.getSessionId(), "segment100.m4s");
 
     // Segments are addressed on the absolute timeline, so earlier segments stay valid.
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(startsBefore + 1);
-    assertThat(segmentStore.readSegment(session.getSessionId(), "segment0.ts")).containsExactly(1);
+    assertThat(segmentStore.readSegment(session.getSessionId(), "segment0.m4s")).containsExactly(1);
   }
 
   @Test
@@ -106,7 +106,7 @@ class ProducerLifecycleServiceTest {
     var session = startedSession();
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment0.ts");
+    lifecycle.ensurePositioned(session.getSessionId(), "segment0.m4s");
 
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
   }
@@ -116,9 +116,9 @@ class ProducerLifecycleServiceTest {
   void shouldNotRestartFfmpegWhenSegmentAlreadyExistsOnDisk() {
     var session = startedSession();
     suspendHandle(session);
-    segmentStore.addSegment(session.getSessionId(), "segment5.ts", new byte[] {0x47});
+    segmentStore.addSegment(session.getSessionId(), "segment5.m4s", new byte[] {0x47});
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment5.ts");
+    lifecycle.ensurePositioned(session.getSessionId(), "segment5.m4s");
 
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.SUSPENDED);
   }
@@ -127,7 +127,7 @@ class ProducerLifecycleServiceTest {
   @DisplayName("Should not throw when positioning nonexistent session")
   void shouldNotThrowWhenPositioningNonexistentSession() {
     assertThatNoException()
-        .isThrownBy(() -> lifecycle.ensurePositioned(UUID.randomUUID(), "segment0.ts"));
+        .isThrownBy(() -> lifecycle.ensurePositioned(UUID.randomUUID(), "segment0.m4s"));
   }
 
   @Test
@@ -138,7 +138,7 @@ class ProducerLifecycleServiceTest {
     session.setLastAccessedAt(Instant.now().minusSeconds(200));
     var oldAccessTime = session.getLastAccessedAt();
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment5.ts");
+    lifecycle.ensurePositioned(session.getSessionId(), "segment5.m4s");
 
     assertThat(session.getLastAccessedAt()).isAfter(oldAccessTime);
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
@@ -147,10 +147,10 @@ class ProducerLifecycleServiceTest {
   @ParameterizedTest(name = "{0} → startNumber={1}, seek={2}")
   @DisplayName("Should resume with correct start number when segment name encodes an index")
   @CsvSource({
-    "segment0.ts, 0, 0",
-    "segment5.ts, 5, 30",
+    "segment0.m4s, 0, 0",
+    "segment5.m4s, 5, 30",
     "segment12.m4s, 12, 72",
-    "720p/segment3.ts, 3, 18"
+    "720p/segment3.m4s, 3, 18"
   })
   void shouldResumeWithCorrectStartNumberWhenSegmentNameEncodesIndex(
       String segmentName, int startNumber, int seekPosition) {
@@ -225,7 +225,7 @@ class ProducerLifecycleServiceTest {
     }
 
     var requestsBefore = transcodeExecutor.getStartedRequests().size();
-    lifecycle.ensurePositioned(session.getSessionId(), "segment5.ts");
+    lifecycle.ensurePositioned(session.getSessionId(), "segment5.m4s");
     var resumeRequests =
         transcodeExecutor
             .getStartedRequests()
@@ -252,9 +252,9 @@ class ProducerLifecycleServiceTest {
   void shouldRelocateTheTranscodeWhenTheRequestedSegmentIsBehindTheEncoderStart() {
     var session = startedSession();
     // Move the encoder forward first: segment50 is far ahead of fresh output.
-    lifecycle.ensurePositioned(session.getSessionId(), "segment50.ts");
+    lifecycle.ensurePositioned(session.getSessionId(), "segment50.m4s");
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment10.ts");
+    lifecycle.ensurePositioned(session.getSessionId(), "segment10.m4s");
 
     // The encoder started at segment50 and will never produce segment10.
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(3);
@@ -268,7 +268,7 @@ class ProducerLifecycleServiceTest {
   void shouldRelocateTheTranscodeWhenTheRequestedSegmentIsFarAheadOfProgress() {
     var session = startedSession();
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment100.ts");
+    lifecycle.ensurePositioned(session.getSessionId(), "segment100.m4s");
 
     // Nothing near segment100 has been produced; waiting would stall the player.
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(2);
@@ -284,7 +284,7 @@ class ProducerLifecycleServiceTest {
     var attemptBefore = session.getHandle().orElseThrow().attemptId();
     var requestsBefore = transcodeExecutor.getStartedRequests().size();
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment2.ts");
+    lifecycle.ensurePositioned(session.getSessionId(), "segment2.m4s");
 
     // The encoder started at segment0 and will reach segment2 shortly.
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(requestsBefore);
@@ -295,11 +295,11 @@ class ProducerLifecycleServiceTest {
   @DisplayName("Should wait when the encoder is within the forward gap of the request")
   void shouldWaitWhenTheEncoderIsWithinTheForwardGapOfTheRequest() {
     var session = startedSession();
-    segmentStore.addSegment(session.getSessionId(), "segment96.ts", new byte[] {1});
+    segmentStore.addSegment(session.getSessionId(), "segment96.m4s", new byte[] {1});
     var attemptBefore = session.getHandle().orElseThrow().attemptId();
     var requestsBefore = transcodeExecutor.getStartedRequests().size();
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment100.ts");
+    lifecycle.ensurePositioned(session.getSessionId(), "segment100.m4s");
 
     // segment96 exists, so the encoder is close behind the request.
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(requestsBefore);
@@ -310,10 +310,10 @@ class ProducerLifecycleServiceTest {
   @DisplayName("Should not relocate when the requested segment already exists")
   void shouldNotRelocateWhenTheRequestedSegmentAlreadyExists() {
     var session = startedSession();
-    segmentStore.addSegment(session.getSessionId(), "segment10.ts", new byte[] {1});
+    segmentStore.addSegment(session.getSessionId(), "segment10.m4s", new byte[] {1});
     var requestsBefore = transcodeExecutor.getStartedRequests().size();
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment10.ts");
+    lifecycle.ensurePositioned(session.getSessionId(), "segment10.m4s");
 
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(requestsBefore);
   }
@@ -355,7 +355,8 @@ class ProducerLifecycleServiceTest {
   }
 
   private ProducerLifecycleService.RecoveryResult recover(StreamSession session) {
-    return lifecycle.recover(session.getSessionId(), StreamSession.defaultVariant(), "segment2.ts");
+    return lifecycle.recover(
+        session.getSessionId(), StreamSession.defaultVariant(), "segment2.m4s");
   }
 
   @Test
@@ -489,7 +490,7 @@ class ProducerLifecycleServiceTest {
     var session = startedAbrSession();
     transcodeExecutor.markDead(session.getSessionId(), "720p");
 
-    var result = lifecycle.recover(session.getSessionId(), "720p", "720p/segment2.ts");
+    var result = lifecycle.recover(session.getSessionId(), "720p", "720p/segment2.m4s");
 
     assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
     var request = transcodeExecutor.getStartedRequests().getLast();
@@ -515,7 +516,7 @@ class ProducerLifecycleServiceTest {
   void shouldLeaveProducerAloneWhenRequestedSegmentAlreadyExists() {
     var session = startedSession();
     var attempt = session.getHandle().orElseThrow().attemptId();
-    segmentStore.addSegment(session.getSessionId(), "segment2.ts", new byte[] {1});
+    segmentStore.addSegment(session.getSessionId(), "segment2.m4s", new byte[] {1});
 
     assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
 
@@ -550,7 +551,7 @@ class ProducerLifecycleServiceTest {
     session.setVariantHandle("1080p", suspended);
     transcodeExecutor.markDead(session.getSessionId(), "1080p");
 
-    var result = lifecycle.recover(session.getSessionId(), "1080p", "1080p/segment2.ts");
+    var result = lifecycle.recover(session.getSessionId(), "1080p", "1080p/segment2.m4s");
 
     assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
     assertThat(session.getVariantHandle("1080p").orElseThrow().status())
