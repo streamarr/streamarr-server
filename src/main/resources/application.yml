@@ -69,6 +69,10 @@ image:
   storage-path: ${IMAGE_STORAGE_PATH:}
   replacement-lock-timeout: ${IMAGE_REPLACEMENT_LOCK_TIMEOUT:5s}
 
+artwork:
+  secondary-concurrency: ${ARTWORK_SECONDARY_CONCURRENCY:4}
+  progress-log-interval: ${ARTWORK_PROGRESS_LOG_INTERVAL:30s}
+
 streaming:
   max-concurrent-transcodes: ${STREAMING_MAX_CONCURRENT_TRANSCODES:8}
   target-segment-duration: ${STREAMING_TARGET_SEGMENT_DURATION:6s}

@@ -1,7 +1,10 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.fakes.TestImages.createTestImage;
+import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -17,6 +20,7 @@ import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.MediaType;
@@ -33,6 +37,8 @@ import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakePersonRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
+import com.streamarr.server.fakes.FakeTmdbHttpService;
+import com.streamarr.server.fixtures.ArtworkServiceFixture;
 import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.services.CompanyService;
 import com.streamarr.server.services.GenreService;
@@ -50,6 +56,7 @@ import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolve
 import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
 import com.streamarr.server.services.pagination.PaginationService;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -73,6 +80,7 @@ class LibraryRefreshServiceTest {
   private MovieMetadataProviderResolver movieProviderResolver;
   private LibraryRefreshService refreshService;
   private CapturingEventPublisher eventPublisher;
+  private FakeImageRepository imageRepository;
 
   @BeforeEach
   void setUp() {
@@ -81,6 +89,14 @@ class LibraryRefreshServiceTest {
     seasonRepository = new FakeSeasonRepository();
     episodeRepository = new FakeEpisodeRepository();
     eventPublisher = new CapturingEventPublisher();
+    imageRepository = new FakeImageRepository();
+    var imageDownloader = new FakeTmdbHttpService();
+    imageDownloader.setImageData(createTestImage(600, 900));
+    var artworkService =
+        ArtworkServiceFixture.artworkServiceBuilder()
+            .imageRepository(imageRepository)
+            .imageDownloader(imageDownloader)
+            .build();
     seriesProviderResolver = mock(SeriesMetadataProviderResolver.class);
     movieProviderResolver = mock(MovieMetadataProviderResolver.class);
 
@@ -90,7 +106,7 @@ class LibraryRefreshServiceTest {
     var fileSystem = Jimfs.newFileSystem(Configuration.unix());
     var imageService =
         new ImageService(
-            new FakeImageRepository(),
+            imageRepository,
             new ImageVariantService(),
             new ImageProperties("/data/images"),
             fileSystem);
@@ -102,7 +118,7 @@ class LibraryRefreshServiceTest {
             genreService,
             companyService,
             new PaginationService(),
-            eventPublisher,
+            artworkService,
             imageService,
             seasonRepository,
             episodeRepository,
@@ -118,7 +134,7 @@ class LibraryRefreshServiceTest {
             genreService,
             companyService,
             new PaginationService(),
-            eventPublisher,
+            artworkService,
             imageService,
             null,
             null,
@@ -134,7 +150,8 @@ class LibraryRefreshServiceTest {
             seriesService,
             movieService,
             seriesProviderResolver,
-            movieProviderResolver);
+            movieProviderResolver,
+            artworkService);
   }
 
   @Test
@@ -276,7 +293,13 @@ class LibraryRefreshServiceTest {
       "Should propagate image refresh mode when refreshing series season and episode artwork")
   void shouldPropagateImageRefreshModeWhenRefreshingSeriesSeasonAndEpisodeArtwork() {
     var library = buildSeriesLibrary();
-    saveSeriesWithTmdbId("Breaking Bad", "1396", library);
+    var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
+    imageRepository.save(
+        imageBuilder(series.getId())
+            .entityType(ImageEntityType.SERIES)
+            .key("/old-series.jpg")
+            .path("series/old")
+            .build());
     var freshSeries = Series.builder().title("Breaking Bad").titleSort("breaking bad").build();
     when(seriesProviderResolver.getMetadata(argThatHasExternalId("1396"), eq(library)))
         .thenReturn(
@@ -305,14 +328,24 @@ class LibraryRefreshServiceTest {
 
     refreshService.refreshLibrary(library, ImageRefreshMode.REFRESH_IF_CHANGED);
 
-    assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class))
-        .hasSize(3)
-        .allSatisfy(
-            event ->
-                assertThat(event.imageRefreshMode()).isEqualTo(ImageRefreshMode.REFRESH_IF_CHANGED))
-        .extracting(MetadataEnrichedEvent::entityType)
-        .containsExactlyInAnyOrder(
-            ImageEntityType.SERIES, ImageEntityType.SEASON, ImageEntityType.EPISODE);
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              assertThat(imagesOf(series.getId(), ImageEntityType.SERIES))
+                  .extracting(Image::getKey)
+                  .containsOnly("/series.jpg");
+              var season =
+                  seasonRepository.findBySeriesIdAndSeasonNumber(series.getId(), 1).orElseThrow();
+              assertThat(imagesOf(season.getId(), ImageEntityType.SEASON))
+                  .extracting(Image::getKey)
+                  .containsOnly("/season.jpg");
+              var episode =
+                  episodeRepository.findBySeasonIdAndEpisodeNumber(season.getId(), 1).orElseThrow();
+              assertThat(imagesOf(episode.getId(), ImageEntityType.EPISODE))
+                  .extracting(Image::getKey)
+                  .containsOnly("/episode.jpg");
+            });
   }
 
   @Test
@@ -334,10 +367,13 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName(
-      "Should propagate image refresh mode when refreshing movie person and company artwork")
+      "Should propagate image refresh mode when refreshing movie, person, and company artwork")
   void shouldPropagateImageRefreshModeWhenRefreshingMoviePersonAndCompanyArtwork() {
     var library = buildMovieLibrary();
-    saveMovieWithTmdbId("Inception", "27205", library);
+    var movie = saveMovieWithTmdbId("Inception", "27205", library);
+    var stored =
+        imageRepository.save(
+            imageBuilder(movie.getId()).key("/poster.jpg").path("movie/poster").build());
     var person = Person.builder().name("Leonardo DiCaprio").sourceId("actor-1").build();
     var company = Company.builder().name("Warner Bros.").sourceId("studio-1").build();
     var freshMovie =
@@ -366,12 +402,19 @@ class LibraryRefreshServiceTest {
     refreshService.refreshLibrary(library, ImageRefreshMode.FORCE_REFRESH);
 
     assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class))
-        .hasSize(3)
+        .hasSize(2)
         .allSatisfy(
             event -> assertThat(event.imageRefreshMode()).isEqualTo(ImageRefreshMode.FORCE_REFRESH))
         .extracting(MetadataEnrichedEvent::entityType)
-        .containsExactlyInAnyOrder(
-            ImageEntityType.MOVIE, ImageEntityType.PERSON, ImageEntityType.COMPANY);
+        .containsExactlyInAnyOrder(ImageEntityType.PERSON, ImageEntityType.COMPANY);
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () ->
+                assertThat(imagesOf(movie.getId(), ImageEntityType.MOVIE))
+                    .extracting(Image::getId)
+                    .isNotEmpty()
+                    .doesNotContain(stored.getId()));
   }
 
   @Test
@@ -514,6 +557,10 @@ class LibraryRefreshServiceTest {
     refreshService.refreshLibrary(library);
 
     assertThat(seasonRepository.findBySeriesIdOrderBySeasonNumber(series.getId())).isEmpty();
+  }
+
+  private List<Image> imagesOf(UUID entityId, ImageEntityType entityType) {
+    return imageRepository.findByEntityIdAndEntityType(entityId, entityType);
   }
 
   private Library buildSeriesLibrary() {

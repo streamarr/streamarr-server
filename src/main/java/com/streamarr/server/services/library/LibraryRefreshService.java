@@ -9,7 +9,10 @@ import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.ArtworkRun;
+import com.streamarr.server.services.ArtworkService;
 import com.streamarr.server.services.MovieService;
+import com.streamarr.server.services.SeasonWithEpisodesRequest;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
@@ -32,20 +35,25 @@ public class LibraryRefreshService {
   private final MovieService movieService;
   private final SeriesMetadataProviderResolver seriesMetadataProviderResolver;
   private final MovieMetadataProviderResolver movieMetadataProviderResolver;
+  private final ArtworkService artworkService;
 
   public void refreshLibrary(Library library) {
     refreshLibrary(library, ImageRefreshMode.PRESERVE);
   }
 
   public void refreshLibrary(Library library, ImageRefreshMode imageRefreshMode) {
-    switch (library.getType()) {
-      case SERIES -> refreshSeriesLibrary(library, imageRefreshMode);
-      case MOVIE -> refreshMovieLibrary(library, imageRefreshMode);
-      case OTHER -> throw new UnsupportedMediaTypeException(library.getType().name());
+    try (var artworkRun =
+        artworkService.openRun(
+            "refresh of library '" + library.getName() + "'", imageRefreshMode)) {
+      switch (library.getType()) {
+        case SERIES -> refreshSeriesLibrary(library, artworkRun);
+        case MOVIE -> refreshMovieLibrary(library, artworkRun);
+        case OTHER -> throw new UnsupportedMediaTypeException(library.getType().name());
+      }
     }
   }
 
-  private void refreshSeriesLibrary(Library library, ImageRefreshMode imageRefreshMode) {
+  private void refreshSeriesLibrary(Library library, ArtworkRun artworkRun) {
     var seriesList = seriesRepository.findWithExternalIdsByLibrary_Id(library.getId());
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -56,13 +64,12 @@ public class LibraryRefreshService {
           continue;
         }
         var id = tmdbId.get();
-        executor.submit(() -> refreshSeries(series, id, library, imageRefreshMode));
+        executor.submit(() -> refreshSeries(series, id, library, artworkRun));
       }
     }
   }
 
-  private void refreshSeries(
-      Series series, String tmdbId, Library library, ImageRefreshMode imageRefreshMode) {
+  private void refreshSeries(Series series, String tmdbId, Library library, ArtworkRun artworkRun) {
     try {
       var searchResult =
           RemoteSearchResult.builder()
@@ -79,7 +86,7 @@ public class LibraryRefreshService {
       }
 
       var refreshedSeries =
-          seriesService.refreshSeriesMetadata(series, metadataOpt.get(), imageRefreshMode);
+          seriesService.refreshSeriesMetadata(series, metadataOpt.get(), artworkRun);
 
       var seasonNumbers = seriesMetadataProviderResolver.getAvailableSeasonNumbers(library, tmdbId);
 
@@ -93,14 +100,19 @@ public class LibraryRefreshService {
         }
 
         seriesService.refreshSeasonWithEpisodes(
-            refreshedSeries, seasonDetailsOpt.get(), library, imageRefreshMode);
+            SeasonWithEpisodesRequest.builder()
+                .series(refreshedSeries)
+                .details(seasonDetailsOpt.get())
+                .library(library)
+                .artworkRun(artworkRun)
+                .build());
       }
     } catch (Exception ex) {
       log.error("Failed to refresh series '{}' TMDB id '{}'", series.getTitle(), tmdbId, ex);
     }
   }
 
-  private void refreshMovieLibrary(Library library, ImageRefreshMode imageRefreshMode) {
+  private void refreshMovieLibrary(Library library, ArtworkRun artworkRun) {
     var movies = movieRepository.findWithExternalIdsByLibrary_Id(library.getId());
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -111,13 +123,12 @@ public class LibraryRefreshService {
           continue;
         }
         var id = tmdbId.get();
-        executor.submit(() -> refreshMovie(movie, id, library, imageRefreshMode));
+        executor.submit(() -> refreshMovie(movie, id, library, artworkRun));
       }
     }
   }
 
-  private void refreshMovie(
-      Movie movie, String tmdbId, Library library, ImageRefreshMode imageRefreshMode) {
+  private void refreshMovie(Movie movie, String tmdbId, Library library, ArtworkRun artworkRun) {
     try {
       var searchResult =
           RemoteSearchResult.builder()
@@ -132,7 +143,7 @@ public class LibraryRefreshService {
         return;
       }
 
-      movieService.refreshMovieMetadata(movie, metadataOpt.get(), imageRefreshMode);
+      movieService.refreshMovieMetadata(movie, metadataOpt.get(), artworkRun);
     } catch (Exception ex) {
       log.error("Failed to refresh movie '{}' TMDB id '{}'", movie.getTitle(), tmdbId, ex);
     }

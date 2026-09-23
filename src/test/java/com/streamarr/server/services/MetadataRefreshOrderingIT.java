@@ -11,6 +11,7 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
 import jakarta.persistence.EntityManager;
 import java.util.List;
@@ -25,6 +26,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 @DisplayName("Metadata Refresh Ordering Integration Tests")
 class MetadataRefreshOrderingIT extends AbstractIntegrationTest {
 
+  @Autowired private ArtworkService artworkService;
   @Autowired private MovieService movieService;
   @Autowired private MovieRepository movieRepository;
   @Autowired private SeriesService seriesService;
@@ -78,8 +80,11 @@ class MetadataRefreshOrderingIT extends AbstractIntegrationTest {
             .directors(List.of(snapshot(firstDirector), snapshot(secondDirector)))
             .build();
 
-    movieService.refreshMovieMetadata(
-        movie, new MetadataResult<>(fresh, List.of(), Map.of(), Map.of()));
+    try (var artworkRun = artworkService.openRun("refresh", ImageRefreshMode.PRESERVE)) {
+      movieService.refreshMovieMetadata(
+          movie, new MetadataResult<>(fresh, List.of(), Map.of(), Map.of()), artworkRun);
+    }
+
     entityManager.clear();
 
     assertThat(movieService.findCast(movie.getId()))
@@ -135,8 +140,11 @@ class MetadataRefreshOrderingIT extends AbstractIntegrationTest {
             .directors(List.of(snapshot(firstDirector), snapshot(secondDirector)))
             .build();
 
-    seriesService.refreshSeriesMetadata(
-        series, new MetadataResult<>(fresh, List.of(), Map.of(), Map.of()));
+    try (var artworkRun = artworkService.openRun("refresh", ImageRefreshMode.PRESERVE)) {
+      seriesService.refreshSeriesMetadata(
+          series, new MetadataResult<>(fresh, List.of(), Map.of(), Map.of()), artworkRun);
+    }
+
     entityManager.clear();
 
     assertThat(seriesService.findCast(series.getId()))
@@ -175,8 +183,11 @@ class MetadataRefreshOrderingIT extends AbstractIntegrationTest {
     var fresh =
         Movie.builder().title(movie.getTitle()).cast(List.of()).directors(List.of()).build();
 
-    movieService.refreshMovieMetadata(
-        movie, new MetadataResult<>(fresh, List.of(), Map.of(), Map.of()));
+    try (var artworkRun = artworkService.openRun("refresh", ImageRefreshMode.PRESERVE)) {
+      movieService.refreshMovieMetadata(
+          movie, new MetadataResult<>(fresh, List.of(), Map.of(), Map.of()), artworkRun);
+    }
+
     entityManager.clear();
 
     assertThat(movieService.findCast(movie.getId())).isEmpty();
@@ -211,8 +222,11 @@ class MetadataRefreshOrderingIT extends AbstractIntegrationTest {
     var fresh =
         Series.builder().title(series.getTitle()).cast(List.of()).directors(List.of()).build();
 
-    seriesService.refreshSeriesMetadata(
-        series, new MetadataResult<>(fresh, List.of(), Map.of(), Map.of()));
+    try (var artworkRun = artworkService.openRun("refresh", ImageRefreshMode.PRESERVE)) {
+      seriesService.refreshSeriesMetadata(
+          series, new MetadataResult<>(fresh, List.of(), Map.of(), Map.of()), artworkRun);
+    }
+
     entityManager.clear();
 
     assertThat(seriesService.findCast(series.getId())).isEmpty();
