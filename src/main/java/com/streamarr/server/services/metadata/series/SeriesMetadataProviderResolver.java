@@ -2,6 +2,7 @@ package com.streamarr.server.services.metadata.series;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.exceptions.MissingMetadataProviderException;
 import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome;
@@ -92,9 +93,8 @@ public class SeriesMetadataProviderResolver {
         .resolveSeasonNumber(library.getId(), seriesExternalId, parsedSeasonNumber);
   }
 
-  private static IllegalStateException missingProvider(Library library) {
-    return new IllegalStateException(
-        "No metadata provider configured for strategy " + library.getExternalAgentStrategy());
+  private static MissingMetadataProviderException missingProvider(Library library) {
+    return new MissingMetadataProviderException(library.getExternalAgentStrategy());
   }
 
   private Optional<SeriesMetadataProvider> getProviderForLibrary(Library library) {

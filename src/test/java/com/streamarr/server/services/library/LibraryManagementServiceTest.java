@@ -40,6 +40,7 @@ import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.CapturingProbeTaskRequests;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
+import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.fakes.FakeLibraryMutationTransaction;
 import com.streamarr.server.fakes.FakeLibraryRepository;
@@ -111,6 +112,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.spi.FileSystemProvider;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -1706,7 +1708,9 @@ class LibraryManagementServiceTest {
               movieService,
               mock(SeriesMetadataProviderResolver.class),
               fakeMovieMetadataProviderResolver,
-              artworkService);
+              artworkService,
+              new FakeItemResultRepository(),
+              Clock.systemUTC());
       var service = libraryManagementServiceWithRefreshService(refreshService);
 
       service.refreshLibrary(savedLibraryId, ImageRefreshMode.FORCE_REFRESH);
@@ -1915,7 +1919,7 @@ class LibraryManagementServiceTest {
     private final AtomicReference<Thread> executingThread = new AtomicReference<>();
 
     private BlockingLibraryRefreshService() {
-      super(null, null, null, null, null, null, null);
+      super(null, null, null, null, null, null, null, null, null);
     }
 
     @Override
@@ -1954,7 +1958,7 @@ class LibraryManagementServiceTest {
     private final AtomicReference<ImageRefreshMode> imageRefreshMode = new AtomicReference<>();
 
     private RecordingLibraryRefreshService() {
-      super(null, null, null, null, null, null, null);
+      super(null, null, null, null, null, null, null, null, null);
     }
 
     @Override

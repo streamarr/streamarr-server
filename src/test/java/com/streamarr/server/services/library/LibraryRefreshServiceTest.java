@@ -23,8 +23,13 @@ import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.domain.media.ItemOutcome;
+import com.streamarr.server.domain.media.ItemResult;
+import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Person;
@@ -33,11 +38,13 @@ import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeCompanyRepository;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
+import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakePersonRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
+import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.ArtworkServiceFixture;
 import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.services.CompanyService;
@@ -56,6 +63,7 @@ import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
+import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.pagination.PaginationService;
 import java.io.IOException;
 import java.time.Duration;
@@ -68,6 +76,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataAccessResourceFailureException;
 
 @Tag("UnitTest")
 @DisplayName("Library Refresh Service Tests")
@@ -82,6 +91,8 @@ class LibraryRefreshServiceTest {
   private LibraryRefreshService refreshService;
   private CapturingEventPublisher eventPublisher;
   private FakeImageRepository imageRepository;
+  private FakeItemResultRepository itemResults;
+  private MutableClock clock;
 
   @BeforeEach
   void setUp() {
@@ -144,6 +155,8 @@ class LibraryRefreshServiceTest {
             null,
             null);
 
+    itemResults = new FakeItemResultRepository();
+    clock = new MutableClock();
     refreshService =
         new LibraryRefreshService(
             seriesRepository,
@@ -152,7 +165,157 @@ class LibraryRefreshServiceTest {
             movieService,
             seriesProviderResolver,
             movieProviderResolver,
-            artworkService);
+            artworkService,
+            itemResults,
+            clock);
+  }
+
+  @Test
+  @DisplayName("Should record succeeded metadata when a movie refreshes")
+  void shouldRecordSucceededMetadataWhenAMovieRefreshes() {
+    var library = buildMovieLibrary();
+    var movie = saveMovieWithTmdbId("Inception", "27205", library);
+    stubMovieMetadata("27205", library);
+
+    refreshService.refreshLibrary(library);
+
+    assertThat(itemResults.find(movie.getId(), ItemStep.METADATA, null))
+        .contains(
+            ItemResult.builder()
+                .itemId(movie.getId())
+                .itemType(ImageEntityType.MOVIE)
+                .step(ItemStep.METADATA)
+                .outcome(new ItemOutcome.Succeeded())
+                .attemptedAt(clock.instant())
+                .build());
+  }
+
+  @Test
+  @DisplayName("Should record a temporary failure with its detail when the movie fetch fails")
+  void shouldRecordATemporaryFailureWithItsDetailWhenTheMovieFetchFails() {
+    var library = buildMovieLibrary();
+    var movie = saveMovieWithTmdbId("Inception", "27205", library);
+    when(movieProviderResolver.getMetadata(argThatHasExternalId("27205"), eq(library)))
+        .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("connection reset")));
+
+    refreshService.refreshLibrary(library);
+
+    assertThat(metadataOutcome(movie.getId()))
+        .isEqualTo(
+            new ItemOutcome.Failed(ItemFailureReason.TEMPORARY, "IOException: connection reset"));
+  }
+
+  @Test
+  @DisplayName("Should record a misconfiguration when the provider rejects the credentials")
+  void shouldRecordAMisconfigurationWhenTheProviderRejectsTheCredentials() {
+    var library = buildMovieLibrary();
+    var movie = saveMovieWithTmdbId("Inception", "27205", library);
+    when(movieProviderResolver.getMetadata(argThatHasExternalId("27205"), eq(library)))
+        .thenReturn(
+            new MetadataFetchOutcome.Failed<>(new TmdbApiException(401, "Invalid API key")));
+
+    refreshService.refreshLibrary(library);
+
+    assertThat(metadataOutcome(movie.getId()))
+        .isInstanceOfSatisfying(
+            ItemOutcome.Failed.class,
+            failed -> assertThat(failed.reason()).isEqualTo(ItemFailureReason.MISCONFIGURED));
+  }
+
+  @Test
+  @DisplayName("Should record unavailable metadata when the provider no longer has the movie")
+  void shouldRecordUnavailableMetadataWhenTheProviderNoLongerHasTheMovie() {
+    var library = buildMovieLibrary();
+    var movie = saveMovieWithTmdbId("Inception", "27205", library);
+    when(movieProviderResolver.getMetadata(argThatHasExternalId("27205"), eq(library)))
+        .thenReturn(new MetadataFetchOutcome.NotFound<>());
+
+    refreshService.refreshLibrary(library);
+
+    assertThat(metadataOutcome(movie.getId())).isEqualTo(new ItemOutcome.Unavailable());
+  }
+
+  @Test
+  @DisplayName("Should record a temporary failure when refreshing a movie throws")
+  void shouldRecordATemporaryFailureWhenRefreshingAMovieThrows() {
+    var library = buildMovieLibrary();
+    var movie = saveMovieWithTmdbId("Inception", "27205", library);
+    when(movieProviderResolver.getMetadata(argThatHasExternalId("27205"), eq(library)))
+        .thenThrow(new IllegalStateException("database hiccup"));
+
+    refreshService.refreshLibrary(library);
+
+    assertThat(metadataOutcome(movie.getId()))
+        .isEqualTo(
+            new ItemOutcome.Failed(
+                ItemFailureReason.TEMPORARY, "IllegalStateException: database hiccup"));
+  }
+
+  @Test
+  @DisplayName("Should resolve the metadata failure when a later refresh succeeds")
+  void shouldResolveTheMetadataFailureWhenALaterRefreshSucceeds() {
+    var library = buildMovieLibrary();
+    var movie = saveMovieWithTmdbId("Inception", "27205", library);
+    when(movieProviderResolver.getMetadata(argThatHasExternalId("27205"), eq(library)))
+        .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("connection reset")));
+    refreshService.refreshLibrary(library);
+
+    clock.advance(Duration.ofMinutes(5));
+    stubMovieMetadata("27205", library);
+    refreshService.refreshLibrary(library);
+
+    assertThat(metadataOutcome(movie.getId())).isEqualTo(new ItemOutcome.Succeeded());
+  }
+
+  @Test
+  @DisplayName("Should record the series as failed when a season fetch fails")
+  void shouldRecordTheSeriesAsFailedWhenASeasonFetchFails() {
+    var library = buildSeriesLibrary();
+    var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
+    stubSeriesMetadata("1396", "Breaking Bad", library);
+    when(seriesProviderResolver.getAvailableSeasonNumbers(library, "1396"))
+        .thenReturn(List.of(1, 2));
+    when(seriesProviderResolver.getSeasonDetails(library, "1396", 1))
+        .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("connection reset")));
+    when(seriesProviderResolver.getSeasonDetails(library, "1396", 2))
+        .thenReturn(new MetadataFetchOutcome.Found<>(seasonDetails(2)));
+
+    refreshService.refreshLibrary(library);
+
+    assertThat(metadataOutcome(series.getId()))
+        .isEqualTo(
+            new ItemOutcome.Failed(
+                ItemFailureReason.TEMPORARY, "Season 1: IOException: connection reset"));
+    assertThat(seasonRepository.findBySeriesIdOrderBySeasonNumber(series.getId()))
+        .extracting(Season::getSeasonNumber)
+        .containsExactly(2);
+  }
+
+  @Test
+  @DisplayName("Should record succeeded series metadata when every season refreshes")
+  void shouldRecordSucceededSeriesMetadataWhenEverySeasonRefreshes() {
+    var library = buildSeriesLibrary();
+    var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
+    stubSeriesMetadata("1396", "Breaking Bad", library);
+    when(seriesProviderResolver.getAvailableSeasonNumbers(library, "1396")).thenReturn(List.of(1));
+    when(seriesProviderResolver.getSeasonDetails(library, "1396", 1))
+        .thenReturn(new MetadataFetchOutcome.Found<>(seasonDetails(1)));
+
+    refreshService.refreshLibrary(library);
+
+    assertThat(metadataOutcome(series.getId())).isEqualTo(new ItemOutcome.Succeeded());
+  }
+
+  @Test
+  @DisplayName("Should report the database error when a refresh result cannot be recorded")
+  void shouldReportTheDatabaseErrorWhenARefreshResultCannotBeRecorded() {
+    var library = buildMovieLibrary();
+    saveMovieWithTmdbId("Inception", "27205", library);
+    stubMovieMetadata("27205", library);
+    var failure = new DataAccessResourceFailureException("database unavailable");
+    itemResults.failRecordsWith(failure);
+
+    assertThatThrownBy(() -> refreshService.refreshLibrary(library)).hasRootCause(failure);
   }
 
   @Test
@@ -613,6 +776,27 @@ class LibraryRefreshServiceTest {
                         .externalId(tmdbId)
                         .build()))
             .build());
+  }
+
+  private ItemOutcome metadataOutcome(UUID itemId) {
+    return itemResults.find(itemId, ItemStep.METADATA, null).orElseThrow().outcome();
+  }
+
+  private void stubMovieMetadata(String tmdbId, Library library) {
+    var freshMovie = Movie.builder().title("Refreshed").titleSort("refreshed").build();
+    when(movieProviderResolver.getMetadata(argThatHasExternalId(tmdbId), eq(library)))
+        .thenReturn(
+            new MetadataFetchOutcome.Found<>(
+                new MetadataResult<>(freshMovie, List.of(), Map.of(), Map.of())));
+  }
+
+  private static SeasonDetails seasonDetails(int seasonNumber) {
+    return SeasonDetails.builder()
+        .name("Season " + seasonNumber)
+        .seasonNumber(seasonNumber)
+        .imageSources(List.of())
+        .episodes(List.of())
+        .build();
   }
 
   private void stubSeriesMetadata(String tmdbId, String freshTitle, Library library) {

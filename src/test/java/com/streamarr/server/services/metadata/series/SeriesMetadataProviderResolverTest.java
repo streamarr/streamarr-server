@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataResult;
@@ -112,7 +113,10 @@ class SeriesMetadataProviderResolverTest {
 
     var result = resolver.getMetadata(searchResult, library);
 
-    assertThat(result).isInstanceOf(MetadataFetchOutcome.Failed.class);
+    assertThat(result)
+        .isInstanceOfSatisfying(
+            MetadataFetchOutcome.Failed.class,
+            failed -> assertThat(failed.reason()).isEqualTo(ItemFailureReason.MISCONFIGURED));
   }
 
   @Test

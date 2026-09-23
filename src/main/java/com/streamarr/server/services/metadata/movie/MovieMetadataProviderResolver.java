@@ -2,6 +2,7 @@ package com.streamarr.server.services.metadata.movie;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.exceptions.MissingMetadataProviderException;
 import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.MetadataResult;
@@ -56,9 +57,8 @@ public class MovieMetadataProviderResolver {
     return provider.getMetadata(remoteSearchResult, library);
   }
 
-  private static IllegalStateException missingProvider(Library library) {
-    return new IllegalStateException(
-        "No metadata provider configured for strategy " + library.getExternalAgentStrategy());
+  private static MissingMetadataProviderException missingProvider(Library library) {
+    return new MissingMetadataProviderException(library.getExternalAgentStrategy());
   }
 
   private Optional<MetadataProvider<Movie>> getProviderForLibrary(Library library) {
