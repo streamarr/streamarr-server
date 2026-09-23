@@ -68,7 +68,7 @@ public class FakeMediaFileRepository extends FakeJpaRepository<MediaFile>
   }
 
   @Override
-  public boolean tryRecordMatchingFailure(UUID mediaFileId, MatchingFailure failure) {
+  public boolean tryMarkMatchingFailed(UUID mediaFileId, MatchingFailure failure) {
     if (nextMatchingFailureWriteFailure != null) {
       var writeFailure = nextMatchingFailureWriteFailure;
       nextMatchingFailureWriteFailure = null;

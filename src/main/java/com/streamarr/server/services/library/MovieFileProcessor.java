@@ -53,7 +53,7 @@ public class MovieFileProcessor {
     var mediaInformationResult = parseMediaFileForMovieInfo(mediaFile);
 
     if (mediaInformationResult.isEmpty()) {
-      recordFailure(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_PARSING_FAILED));
+      markMatchingFailed(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_PARSING_FAILED));
 
       log.error(
           "Failed to parse MediaFile id: {} at path: '{}'",
@@ -74,7 +74,7 @@ public class MovieFileProcessor {
 
     switch (searchOutcome) {
       case NotFound _ -> {
-        recordFailure(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_NOT_FOUND));
+        markMatchingFailed(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_NOT_FOUND));
 
         log.error(
             "Failed to find matching search result for MediaFile id: {} at path: '{}'",
@@ -82,7 +82,7 @@ public class MovieFileProcessor {
             mediaFile.getFilepathUri());
       }
       case TemporarilyUnavailable unavailable -> {
-        recordFailure(
+        markMatchingFailed(
             mediaFile,
             new MatchingFailure(MediaFileStatus.METADATA_UNAVAILABLE, unavailable.reason()));
 
@@ -100,7 +100,7 @@ public class MovieFileProcessor {
             movieSearchResult.externalId());
 
         enrichMovieMetadata(discovery, mediaFile, movieSearchResult)
-            .ifPresent(failure -> recordFailure(mediaFile, failure));
+            .ifPresent(failure -> markMatchingFailed(mediaFile, failure));
       }
     }
   }
@@ -191,7 +191,7 @@ public class MovieFileProcessor {
     mediaFileRepository.save(mediaFile);
   }
 
-  private void recordFailure(MediaFile mediaFile, MatchingFailure failure) {
-    mediaFileRepository.tryRecordMatchingFailure(mediaFile.getId(), failure);
+  private void markMatchingFailed(MediaFile mediaFile, MatchingFailure failure) {
+    mediaFileRepository.tryMarkMatchingFailed(mediaFile.getId(), failure);
   }
 }

@@ -31,7 +31,7 @@ public class JooqItemResultRepository implements ItemResultRepository {
 
   @Override
   @Transactional
-  public boolean tryRecord(ItemResult result) {
+  public boolean trySave(ItemResult result) {
     return upsert(result)
             .where(ITEM_RESULT.ATTEMPTED_AT.le(DSL.excluded(ITEM_RESULT.ATTEMPTED_AT)))
             .execute()
@@ -40,7 +40,7 @@ public class JooqItemResultRepository implements ItemResultRepository {
 
   @Override
   @Transactional
-  public void record(ItemResult result) {
+  public void overwrite(ItemResult result) {
     upsert(result).execute();
   }
 

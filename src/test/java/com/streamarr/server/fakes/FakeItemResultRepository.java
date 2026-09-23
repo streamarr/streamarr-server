@@ -18,15 +18,15 @@ public class FakeItemResultRepository implements ItemResultRepository {
   private record Key(UUID itemId, ImageEntityType itemType, ItemStep step, ImageType imageType) {}
 
   private final Map<Key, ItemResult> results = new ConcurrentHashMap<>();
-  private final AtomicReference<RuntimeException> recordFailure = new AtomicReference<>();
+  private final AtomicReference<RuntimeException> writeFailure = new AtomicReference<>();
 
-  public void failRecordsWith(RuntimeException failure) {
-    recordFailure.set(failure);
+  public void failWritesWith(RuntimeException failure) {
+    writeFailure.set(failure);
   }
 
   @Override
-  public boolean tryRecord(ItemResult result) {
-    var failure = recordFailure.get();
+  public boolean trySave(ItemResult result) {
+    var failure = writeFailure.get();
     if (failure != null) {
       throw failure;
     }
@@ -46,8 +46,8 @@ public class FakeItemResultRepository implements ItemResultRepository {
   }
 
   @Override
-  public void record(ItemResult result) {
-    var failure = recordFailure.get();
+  public void overwrite(ItemResult result) {
+    var failure = writeFailure.get();
     if (failure != null) {
       throw failure;
     }

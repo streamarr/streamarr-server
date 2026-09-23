@@ -120,7 +120,7 @@ public class ImageService {
   public void saveImages(List<Image> images, Instant attemptedAt) {
     var insertedImageIds = imageRepository.insertAllIfAbsent(images);
     if (!insertedImageIds.isEmpty()) {
-      itemResults.record(savedArtwork(images.getFirst(), attemptedAt));
+      itemResults.overwrite(savedArtwork(images.getFirst(), attemptedAt));
     }
 
     for (var image : images) {
@@ -150,7 +150,7 @@ public class ImageService {
       validateArtworkIdentity(replacement.images());
       validateVariantSet(replacement.images());
       var replacedPaths = imageRepository.replaceLogicalArtwork(replacement.images());
-      itemResults.record(savedArtwork(replacement.images().getFirst(), attemptedAt));
+      itemResults.overwrite(savedArtwork(replacement.images().getFirst(), attemptedAt));
       var existingFiles = replacedPaths.stream().map(this::resolveAbsolutePath).toList();
       scheduleSupersededFileCleanup(existingFiles);
     } catch (RuntimeException e) {

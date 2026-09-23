@@ -20,5 +20,5 @@ public interface MediaFileRepositoryCustom {
    * never reprocessed, so any failure that arrives after its match is stale. Returns {@code false}
    * without writing when the file is matched or missing.
    */
-  boolean tryRecordMatchingFailure(UUID mediaFileId, MatchingFailure failure);
+  boolean tryMarkMatchingFailed(UUID mediaFileId, MatchingFailure failure);
 }

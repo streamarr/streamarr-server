@@ -45,7 +45,7 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest {
             .attemptedAt(EARLIER)
             .build();
 
-    assertThat(itemResults.tryRecord(failure)).isTrue();
+    assertThat(itemResults.trySave(failure)).isTrue();
 
     assertThat(itemResults.findByItem(failure.itemId(), ImageEntityType.MOVIE))
         .containsExactly(failure);
@@ -55,14 +55,14 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest {
   @DisplayName("Should resolve the failure when a later attempt succeeds")
   void shouldResolveTheFailureWhenALaterAttemptSucceeds() {
     var itemId = UUID.randomUUID();
-    itemResults.tryRecord(
+    itemResults.trySave(
         metadata(itemId)
             .outcome(new ItemOutcome.Failed(ItemFailureReason.TEMPORARY, "timeout"))
             .attemptedAt(EARLIER)
             .build());
     var success = metadata(itemId).outcome(new ItemOutcome.Succeeded()).attemptedAt(LATER).build();
 
-    assertThat(itemResults.tryRecord(success)).isTrue();
+    assertThat(itemResults.trySave(success)).isTrue();
 
     assertThat(itemResults.findByItem(itemId, ImageEntityType.MOVIE)).containsExactly(success);
   }
@@ -77,7 +77,7 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest {
             .sourceKey("/new.jpg")
             .attemptedAt(LATER)
             .build();
-    itemResults.tryRecord(success);
+    itemResults.trySave(success);
 
     var staleFailure =
         artwork(itemId, ImageType.BACKDROP)
@@ -86,7 +86,7 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest {
             .attemptedAt(EARLIER)
             .build();
 
-    assertThat(itemResults.tryRecord(staleFailure)).isFalse();
+    assertThat(itemResults.trySave(staleFailure)).isFalse();
     assertThat(itemResults.findByItem(itemId, ImageEntityType.MOVIE)).containsExactly(success);
   }
 
@@ -98,10 +98,10 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest {
     var poster = artwork(itemId, ImageType.POSTER).outcome(new ItemOutcome.Unavailable()).build();
     var backdrop = artwork(itemId, ImageType.BACKDROP).outcome(new ItemOutcome.Succeeded()).build();
 
-    itemResults.tryRecord(metadata);
-    itemResults.tryRecord(poster);
-    itemResults.tryRecord(backdrop);
-    itemResults.tryRecord(metadata.toBuilder().attemptedAt(LATER).build());
+    itemResults.trySave(metadata);
+    itemResults.trySave(poster);
+    itemResults.trySave(backdrop);
+    itemResults.trySave(metadata.toBuilder().attemptedAt(LATER).build());
 
     assertThat(itemResults.findByItem(itemId, ImageEntityType.MOVIE))
         .containsExactlyInAnyOrder(
@@ -127,14 +127,14 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest {
               () ->
                   transactionTemplate.execute(
                       _ -> {
-                        var recorded = itemResults.tryRecord(success);
+                        var recorded = itemResults.trySave(success);
                         successWritten.countDown();
                         awaitLatch(commitSuccess);
                         return recorded;
                       }));
       assertThat(successWritten.await(10, TimeUnit.SECONDS)).isTrue();
 
-      var older = executor.submit(() -> itemResults.tryRecord(staleFailure));
+      var older = executor.submit(() -> itemResults.trySave(staleFailure));
       await()
           .atMost(Duration.ofSeconds(10))
           .untilAsserted(

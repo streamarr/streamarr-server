@@ -355,7 +355,7 @@ class LibraryRefreshServiceTest {
     saveMovieWithTmdbId("Inception", "27205", library);
     stubMovieMetadata("27205", library);
     var failure = new DataAccessResourceFailureException("database unavailable");
-    itemResults.failRecordsWith(failure);
+    itemResults.failWritesWith(failure);
 
     assertThatThrownBy(() -> refreshService.refreshLibrary(library)).hasRootCause(failure);
   }

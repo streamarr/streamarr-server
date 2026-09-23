@@ -95,7 +95,7 @@ public class LibraryRefreshService {
     var attemptedAt = clock.instant();
     var outcome = refreshSeriesMetadata(series, tmdbId, library, artworkRun);
 
-    itemResults.tryRecord(
+    itemResults.trySave(
         metadataResult(series.getId(), ImageEntityType.SERIES)
             .outcome(outcome)
             .attemptedAt(attemptedAt)
@@ -209,7 +209,7 @@ public class LibraryRefreshService {
     var attemptedAt = clock.instant();
     var outcome = refreshMovieMetadata(movie, tmdbId, library, artworkRun);
 
-    itemResults.tryRecord(
+    itemResults.trySave(
         metadataResult(movie.getId(), ImageEntityType.MOVIE)
             .outcome(outcome)
             .attemptedAt(attemptedAt)

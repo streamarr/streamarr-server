@@ -584,7 +584,7 @@ class ArtworkServiceTest {
     @DisplayName(
         "Should fail the required request and finish its run when results cannot be recorded")
     void shouldFailTheRequiredRequestAndFinishItsRunWhenResultsCannotBeRecorded() {
-      itemResults.failRecordsWith(recordingFailure);
+      itemResults.failWritesWith(recordingFailure);
       var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
 
       var request = artworkService.fetchRequired(run, movieArtwork(UUID.randomUUID(), POSTER));
@@ -600,7 +600,7 @@ class ArtworkServiceTest {
     @Test
     @DisplayName("Should fail the secondary request when its results cannot be recorded")
     void shouldFailTheSecondaryRequestWhenItsResultsCannotBeRecorded() {
-      itemResults.failRecordsWith(recordingFailure);
+      itemResults.failWritesWith(recordingFailure);
 
       var request =
           artworkService.fetchSecondary(personArtwork("/profile.jpg"), ImageRefreshMode.PRESERVE);

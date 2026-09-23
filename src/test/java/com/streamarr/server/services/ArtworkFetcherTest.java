@@ -242,7 +242,7 @@ class ArtworkFetcherTest {
   @DisplayName("Should report the database error when a result cannot be recorded")
   void shouldReportTheDatabaseErrorWhenAResultCannotBeRecorded() {
     var failure = new DataAccessResourceFailureException("database unavailable");
-    itemResults.failRecordsWith(failure);
+    itemResults.failWritesWith(failure);
     var artwork = movieArtwork(poster("/poster.jpg"));
 
     assertThatThrownBy(

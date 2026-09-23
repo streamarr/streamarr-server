@@ -75,7 +75,7 @@ public class SeriesFileProcessor {
     var parseResult = episodePathMetadataParser.parse(filepath);
 
     if (parseResult.isEmpty()) {
-      recordFailure(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_PARSING_FAILED));
+      markMatchingFailed(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_PARSING_FAILED));
       log.error(
           "Failed to parse episode info from MediaFile id: {} at path: '{}'",
           mediaFile.getId(),
@@ -87,7 +87,7 @@ public class SeriesFileProcessor {
     var isDateOnly = isDateOnlyEpisode(parsed);
 
     if (parsed.getEpisodeNumber().isEmpty() && !isDateOnly) {
-      recordFailure(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_PARSING_FAILED));
+      markMatchingFailed(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_PARSING_FAILED));
       log.error(
           "Failed to parse episode info from MediaFile id: {} at path: '{}'",
           mediaFile.getId(),
@@ -103,7 +103,7 @@ public class SeriesFileProcessor {
             seriesFolderNameOf(mediaFile.getFilepathUri(), seasonParseResult), parsed);
 
     if (parserResult.title() == null || parserResult.title().isBlank()) {
-      recordFailure(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_PARSING_FAILED));
+      markMatchingFailed(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_PARSING_FAILED));
       log.error(
           "Could not determine series name from MediaFile id: {} at path: '{}'",
           mediaFile.getId(),
@@ -115,7 +115,7 @@ public class SeriesFileProcessor {
 
     switch (searchOutcome) {
       case NotFound _ -> {
-        recordFailure(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_NOT_FOUND));
+        markMatchingFailed(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_NOT_FOUND));
         log.error(
             "Failed to find TMDB match for series '{}' from MediaFile id: {} at path: '{}'",
             parserResult.title(),
@@ -123,7 +123,7 @@ public class SeriesFileProcessor {
             mediaFile.getFilepathUri());
       }
       case TemporarilyUnavailable unavailable -> {
-        recordFailure(
+        markMatchingFailed(
             mediaFile,
             new MatchingFailure(MediaFileStatus.METADATA_UNAVAILABLE, unavailable.reason()));
         log.error(
@@ -150,7 +150,7 @@ public class SeriesFileProcessor {
             mediaFile.getId());
 
         enrichSeriesMetadata(discovery, mediaFile, searchResult, seasonNumber, episodeNumber)
-            .ifPresent(failure -> recordFailure(mediaFile, failure));
+            .ifPresent(failure -> markMatchingFailed(mediaFile, failure));
       }
     }
   }
@@ -170,7 +170,7 @@ public class SeriesFileProcessor {
           parseResult.getDate(),
           searchResult.externalId(),
           mediaFile.getId());
-      recordFailure(mediaFile, matchingFailureOf(mediaFile, dateResolution));
+      markMatchingFailed(mediaFile, matchingFailureOf(mediaFile, dateResolution));
       return;
     }
 
@@ -188,7 +188,7 @@ public class SeriesFileProcessor {
             searchResult,
             resolution.seasonNumber(),
             resolution.episodeNumber())
-        .ifPresent(failure -> recordFailure(mediaFile, failure));
+        .ifPresent(failure -> markMatchingFailed(mediaFile, failure));
   }
 
   private int resolveSeasonNumber(
@@ -389,7 +389,7 @@ public class SeriesFileProcessor {
     mediaFileRepository.save(mediaFile);
   }
 
-  private void recordFailure(MediaFile mediaFile, MatchingFailure failure) {
-    mediaFileRepository.tryRecordMatchingFailure(mediaFile.getId(), failure);
+  private void markMatchingFailed(MediaFile mediaFile, MatchingFailure failure) {
+    mediaFileRepository.tryMarkMatchingFailed(mediaFile.getId(), failure);
   }
 }

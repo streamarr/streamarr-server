@@ -80,7 +80,7 @@ public class ArtworkFetcher {
 
     try {
       var results = fetchOrReportFailures(artwork, refreshMode, attemptedAt);
-      recordUnsavedResults(artwork, results, attemptedAt);
+      saveUnsavedImageResults(artwork, results, attemptedAt);
       return results;
     } finally {
       mutex.unlock();
@@ -215,13 +215,13 @@ public class ArtworkFetcher {
     imageService.saveImages(processedImage.images(), attemptedAt);
   }
 
-  private void recordUnsavedResults(
+  private void saveUnsavedImageResults(
       ArtworkSources artwork, List<ArtworkResult> results, Instant attemptedAt) {
     for (var result : results) {
       unsavedOutcome(result)
           .ifPresent(
               outcome ->
-                  itemResults.tryRecord(
+                  itemResults.trySave(
                       ItemResult.builder()
                           .itemId(artwork.entityId())
                           .itemType(artwork.entityType())

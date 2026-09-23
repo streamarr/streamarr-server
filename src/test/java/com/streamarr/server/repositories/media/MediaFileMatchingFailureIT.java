@@ -30,7 +30,7 @@ class MediaFileMatchingFailureIT extends AbstractIntegrationTest {
     var mediaFile = saveMediaFile(MediaFileStatus.UNMATCHED);
 
     var recorded =
-        mediaFileRepository.tryRecordMatchingFailure(
+        mediaFileRepository.tryMarkMatchingFailed(
             mediaFile.getId(),
             new MatchingFailure(
                 MediaFileStatus.METADATA_UNAVAILABLE, ItemFailureReason.MISCONFIGURED));
@@ -45,11 +45,11 @@ class MediaFileMatchingFailureIT extends AbstractIntegrationTest {
   @DisplayName("Should clear the earlier reason when a later failure has none")
   void shouldClearTheEarlierReasonWhenALaterFailureHasNone() {
     var mediaFile = saveMediaFile(MediaFileStatus.UNMATCHED);
-    mediaFileRepository.tryRecordMatchingFailure(
+    mediaFileRepository.tryMarkMatchingFailed(
         mediaFile.getId(),
         new MatchingFailure(MediaFileStatus.ENRICHMENT_FAILED, ItemFailureReason.TEMPORARY));
 
-    mediaFileRepository.tryRecordMatchingFailure(
+    mediaFileRepository.tryMarkMatchingFailed(
         mediaFile.getId(), MatchingFailure.of(MediaFileStatus.METADATA_NOT_FOUND));
 
     var stored = mediaFileRepository.findById(mediaFile.getId()).orElseThrow();
@@ -63,7 +63,7 @@ class MediaFileMatchingFailureIT extends AbstractIntegrationTest {
     var mediaFile = saveMediaFile(MediaFileStatus.MATCHED);
 
     var recorded =
-        mediaFileRepository.tryRecordMatchingFailure(
+        mediaFileRepository.tryMarkMatchingFailed(
             mediaFile.getId(),
             new MatchingFailure(MediaFileStatus.ENRICHMENT_FAILED, ItemFailureReason.TEMPORARY));
 
@@ -77,7 +77,7 @@ class MediaFileMatchingFailureIT extends AbstractIntegrationTest {
   @DisplayName("Should report nothing recorded when the media file no longer exists")
   void shouldReportNothingRecordedWhenTheMediaFileNoLongerExists() {
     assertThat(
-            mediaFileRepository.tryRecordMatchingFailure(
+            mediaFileRepository.tryMarkMatchingFailed(
                 UUID.randomUUID(), MatchingFailure.of(MediaFileStatus.METADATA_NOT_FOUND)))
         .isFalse();
   }
@@ -89,7 +89,7 @@ class MediaFileMatchingFailureIT extends AbstractIntegrationTest {
     var failure =
         new MatchingFailure(MediaFileStatus.METADATA_NOT_FOUND, ItemFailureReason.TEMPORARY);
 
-    assertThatThrownBy(() -> mediaFileRepository.tryRecordMatchingFailure(mediaFileId, failure))
+    assertThatThrownBy(() -> mediaFileRepository.tryMarkMatchingFailed(mediaFileId, failure))
         .isInstanceOf(DataIntegrityViolationException.class);
   }
 
@@ -97,7 +97,7 @@ class MediaFileMatchingFailureIT extends AbstractIntegrationTest {
   @DisplayName("Should clear the failure reason when the file is later matched")
   void shouldClearTheFailureReasonWhenTheFileIsLaterMatched() {
     var mediaFile = saveMediaFile(MediaFileStatus.UNMATCHED);
-    mediaFileRepository.tryRecordMatchingFailure(
+    mediaFileRepository.tryMarkMatchingFailed(
         mediaFile.getId(),
         new MatchingFailure(MediaFileStatus.ENRICHMENT_FAILED, ItemFailureReason.TEMPORARY));
 

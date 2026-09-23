@@ -54,7 +54,7 @@ public class MediaFileRepositoryCustomImpl implements MediaFileRepositoryCustom 
 
   @Override
   @Transactional
-  public boolean tryRecordMatchingFailure(UUID mediaFileId, MatchingFailure failure) {
+  public boolean tryMarkMatchingFailed(UUID mediaFileId, MatchingFailure failure) {
     ItemResultFailureReason reason = null;
     if (failure.reason() != null) {
       reason = ItemResultFailureReason.lookupLiteral(failure.reason().name());
