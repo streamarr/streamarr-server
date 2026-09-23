@@ -25,6 +25,7 @@ import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.AuditorAware;
 
 @RequiredArgsConstructor
@@ -65,6 +66,12 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
             .getMostSignificantBits();
     transactionLocks.limitLockWait(imageProperties.replacementLockTimeout());
     transactionLocks.lock(lockKey);
+    if (!itemLocks.tryLockAgainstDeletion(first.getEntityId(), first.getEntityType())) {
+      throw new DataIntegrityViolationException(
+          "Cannot replace artwork of deleted %s %s"
+              .formatted(first.getEntityType(), first.getEntityId()));
+    }
+
     var condition =
         IMAGE
             .ENTITY_ID
