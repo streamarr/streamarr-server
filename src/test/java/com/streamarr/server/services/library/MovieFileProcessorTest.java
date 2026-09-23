@@ -291,8 +291,9 @@ class MovieFileProcessorTest {
     var failure = new DataAccessResourceFailureException("database unavailable");
     fakeMediaFileRepository.failMatchingFailureWritesWith(failure);
 
-    assertThatThrownBy(() -> movieFileProcessor.process(discoveryOf(library), mediaFile))
-        .isSameAs(failure);
+    var discovery = discoveryOf(library);
+
+    assertThatThrownBy(() -> movieFileProcessor.process(discovery, mediaFile)).isSameAs(failure);
   }
 
   private MediaFile saveMovieFile(Library library) {

@@ -85,12 +85,11 @@ class MediaFileMatchingFailureIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should reject a reason on a status that explains itself")
   void shouldRejectAReasonOnAStatusThatExplainsItself() {
-    var mediaFile = saveMediaFile(MediaFileStatus.UNMATCHED);
+    var mediaFileId = saveMediaFile(MediaFileStatus.UNMATCHED).getId();
     var failure =
         new MatchingFailure(MediaFileStatus.METADATA_NOT_FOUND, ItemFailureReason.TEMPORARY);
 
-    assertThatThrownBy(
-            () -> mediaFileRepository.tryRecordMatchingFailure(mediaFile.getId(), failure))
+    assertThatThrownBy(() -> mediaFileRepository.tryRecordMatchingFailure(mediaFileId, failure))
         .isInstanceOf(DataIntegrityViolationException.class);
   }
 
