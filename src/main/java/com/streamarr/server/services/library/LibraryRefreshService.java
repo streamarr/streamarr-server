@@ -31,6 +31,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import lombok.RequiredArgsConstructor;
@@ -60,15 +61,34 @@ public class LibraryRefreshService {
     refreshLibrary(library, ImageRefreshMode.PRESERVE);
   }
 
+  /**
+   * Returns once every item's metadata result is recorded and the required artwork of the refresh
+   * has saved results. Person and company artwork continues in the background.
+   *
+   * @throws LibraryRefreshFailedException if a result was not recorded or the wait is interrupted
+   */
   public void refreshLibrary(Library library, ImageRefreshMode imageRefreshMode) {
-    try (var artworkRun =
-        artworkService.openRun(
-            "refresh of library '" + library.getName() + "'", imageRefreshMode)) {
+    var artworkRun =
+        artworkService.openRun("refresh of library '" + library.getName() + "'", imageRefreshMode);
+    try (artworkRun) {
       switch (library.getType()) {
         case SERIES -> refreshSeriesLibrary(library, artworkRun);
         case MOVIE -> refreshMovieLibrary(library, artworkRun);
         case OTHER -> throw new UnsupportedMediaTypeException(library.getType().name());
       }
+    }
+
+    awaitRequiredArtwork(library, artworkRun);
+  }
+
+  private static void awaitRequiredArtwork(Library library, ArtworkRun artworkRun) {
+    try {
+      artworkRun.completion().get();
+    } catch (InterruptedException exception) {
+      Thread.currentThread().interrupt();
+      throw new LibraryRefreshFailedException(library.getName(), exception);
+    } catch (ExecutionException exception) {
+      throw new LibraryRefreshFailedException(library.getName(), exception.getCause());
     }
   }
 

@@ -33,6 +33,8 @@ import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Person;
+import com.streamarr.server.exceptions.ArtworkResultNotRecordedException;
+import com.streamarr.server.exceptions.LibraryRefreshFailedException;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeCompanyRepository;
@@ -43,7 +45,7 @@ import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakePersonRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
-import com.streamarr.server.fakes.FakeTmdbHttpService;
+import com.streamarr.server.fakes.GatedImageDownloader;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.ArtworkServiceFixture;
 import com.streamarr.server.fixtures.MetadataFixture;
@@ -72,6 +74,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -93,6 +97,8 @@ class LibraryRefreshServiceTest {
   private FakeImageRepository imageRepository;
   private FakeItemResultRepository itemResults;
   private MutableClock clock;
+  private GatedImageDownloader imageDownloader;
+  private FakeItemResultRepository artworkResults;
 
   @BeforeEach
   void setUp() {
@@ -102,12 +108,13 @@ class LibraryRefreshServiceTest {
     episodeRepository = new FakeEpisodeRepository();
     eventPublisher = new CapturingEventPublisher();
     imageRepository = new FakeImageRepository();
-    var imageDownloader = new FakeTmdbHttpService();
-    imageDownloader.setImageData(createTestImage(600, 900));
+    imageDownloader = new GatedImageDownloader(createTestImage(600, 900));
+    artworkResults = new FakeItemResultRepository();
     var artworkService =
         ArtworkServiceFixture.artworkServiceBuilder()
             .imageRepository(imageRepository)
             .imageDownloader(imageDownloader)
+            .itemResults(artworkResults)
             .build();
     seriesProviderResolver = mock(SeriesMetadataProviderResolver.class);
     movieProviderResolver = mock(MovieMetadataProviderResolver.class);
@@ -560,6 +567,44 @@ class LibraryRefreshServiceTest {
   }
 
   @Test
+  @DisplayName("Should return only after the required artwork of the refresh is saved")
+  void shouldReturnOnlyAfterTheRequiredArtworkOfTheRefreshIsSaved() throws Exception {
+    var library = buildMovieLibrary();
+    var movie = saveMovieWithTmdbId("Inception", "27205", library);
+    stubMovieMetadataWithPoster("27205", library);
+    imageDownloader.holdPathsStartingWith("/poster");
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var refresh = executor.submit(() -> refreshService.refreshLibrary(library));
+      await().atMost(Duration.ofSeconds(5)).until(() -> imageDownloader.heldDownloads() == 1);
+      await()
+          .during(Duration.ofMillis(200))
+          .atMost(Duration.ofSeconds(2))
+          .until(() -> !refresh.isDone());
+
+      imageDownloader.releaseHeldDownloads();
+      refresh.get(5, TimeUnit.SECONDS);
+    } finally {
+      imageDownloader.releaseHeldDownloads();
+    }
+
+    assertThat(imagesOf(movie.getId(), ImageEntityType.MOVIE)).isNotEmpty();
+  }
+
+  @Test
+  @DisplayName("Should fail the refresh when a required artwork result cannot be saved")
+  void shouldFailTheRefreshWhenARequiredArtworkResultCannotBeSaved() {
+    var library = buildMovieLibrary();
+    saveMovieWithTmdbId("Inception", "27205", library);
+    stubMovieMetadataWithPoster("27205", library);
+    artworkResults.failWritesWith(new DataAccessResourceFailureException("database unavailable"));
+
+    assertThatThrownBy(() -> refreshService.refreshLibrary(library))
+        .isInstanceOf(LibraryRefreshFailedException.class)
+        .hasCauseInstanceOf(ArtworkResultNotRecordedException.class);
+  }
+
+  @Test
   @DisplayName("Should refresh all movies with fresh TMDB metadata when refreshing library")
   void shouldRefreshAllMoviesWithFreshTmdbMetadataWhenRefreshingLibrary() {
     var library = buildMovieLibrary();
@@ -827,6 +872,16 @@ class LibraryRefreshServiceTest {
 
   private ItemOutcome metadataOutcome(UUID itemId) {
     return itemResults.find(itemId, ItemStep.METADATA, null).orElseThrow().outcome();
+  }
+
+  private void stubMovieMetadataWithPoster(String tmdbId, Library library) {
+    when(movieProviderResolver.getMetadata(argThatHasExternalId(tmdbId), eq(library)))
+        .thenReturn(
+            new MetadataFetchOutcome.Found<>(
+                MetadataFixture.<Movie>metadataResultBuilder()
+                    .entity(Movie.builder().title("Inception").titleSort("inception").build())
+                    .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))
+                    .build()));
   }
 
   private void stubMovieMetadata(String tmdbId, Library library) {
