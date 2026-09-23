@@ -5,16 +5,15 @@ import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import com.google.protobuf.ByteString;
 import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
+import com.streamarr.transcode.v1.JobAttemptCompleted;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
+import com.streamarr.transcode.v1.JobAttemptStopped;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeFailure;
@@ -40,7 +39,6 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
 
 @Tag("UnitTest")
 @DisplayName("Worker Session gRPC Service Tests")
@@ -100,8 +98,40 @@ class WorkerSessionGrpcServiceTest {
   }
 
   @Test
-  @DisplayName("Should log the reported failure reason when a worker fails a job attempt")
-  void shouldLogReportedFailureReasonWhenWorkerFailsJobAttempt() throws Exception {
+  @DisplayName("Should stop running the variant when a worker fails its job attempt")
+  void shouldStopRunningVariantWhenWorkerFailsJobAttempt() throws Exception {
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var registry = new LiveWorkerConnectionRegistry();
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var session = workerSession(service, workerId, new IgnoringResponseObserver());
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setRegistration(registration(worker(workerId), sourceNamespaceId))
+            .build());
+    var job = variantJob(sourceNamespaceId);
+    assertThat(registry.dispatch(job)).isTrue();
+    var streamSessionId = fromProto(job.getStreamSessionId());
+    var variantLabel = job.getVariant().getVariantLabel();
+    assertThat(registry.isRunning(streamSessionId, variantLabel)).isTrue();
+
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptFailed(
+                JobAttemptFailed.newBuilder()
+                    .setJobAttemptId(job.getJobAttemptId())
+                    .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED))
+            .build());
+
+    assertThat(registry.isRunning(streamSessionId, variantLabel)).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the worker session and its running job when a worker reports results for"
+          + " unknown job attempts")
+  void shouldKeepWorkerSessionAndRunningJobWhenWorkerReportsResultsForUnknownJobAttempts()
+      throws Exception {
     var workerId = UUID.randomUUID();
     var sourceNamespaceId = UUID.randomUUID();
     var registry = new LiveWorkerConnectionRegistry();
@@ -115,34 +145,27 @@ class WorkerSessionGrpcServiceTest {
     assertThat(registry.dispatch(job)).isTrue();
     var streamSessionId = fromProto(job.getStreamSessionId());
 
-    var warnings = captureWarnings(WorkerSessionGrpcService.class);
-    try {
-      session.onNext(
-          EstablishWorkerSessionRequest.newBuilder()
-              .setJobAttemptFailed(
-                  JobAttemptFailed.newBuilder()
-                      .setJobAttemptId(job.getJobAttemptId())
-                      .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED))
-              .build());
-    } finally {
-      detach(warnings);
-    }
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptCompleted(
+                JobAttemptCompleted.newBuilder().setJobAttemptId(toProto(UUID.randomUUID())))
+            .build());
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptStopped(
+                JobAttemptStopped.newBuilder().setJobAttemptId(toProto(UUID.randomUUID())))
+            .build());
 
-    assertThat(registry.isRunning(streamSessionId, job.getVariant().getVariantLabel())).isFalse();
-    assertThat(warnings.list)
-        .extracting(ILoggingEvent::getFormattedMessage)
-        .anyMatch(
-            message ->
-                message.contains(streamSessionId.toString())
-                    && message.contains("720p")
-                    && message.contains("TRANSCODE_FAILED"));
+    assertThat(registry.hasConnectedWorker(sourceNamespaceId)).isTrue();
+    assertThat(registry.isRunning(streamSessionId, job.getVariant().getVariantLabel())).isTrue();
+    assertThat(registry.availableSlots(sourceNamespaceId)).isZero();
   }
 
   @Test
   @DisplayName(
-      "Should warn instead of silently dropping an unexpected worker session event when handling a session event")
-  void shouldWarnInsteadOfSilentlyDroppingUnexpectedWorkerSessionEventWhenHandlingSessionEvent()
-      throws Exception {
+      "Should keep the established session and its running job when a worker repeats"
+          + " registration")
+  void shouldKeepEstablishedSessionAndRunningJobWhenWorkerRepeatsRegistration() throws Exception {
     var workerId = UUID.randomUUID();
     var sourceNamespaceId = UUID.randomUUID();
     var registry = new LiveWorkerConnectionRegistry();
@@ -153,17 +176,16 @@ class WorkerSessionGrpcServiceTest {
             .setRegistration(registration(worker(workerId), sourceNamespaceId))
             .build();
     session.onNext(registration);
+    var job = variantJob(sourceNamespaceId);
+    assertThat(registry.dispatch(job)).isTrue();
+    var streamSessionId = fromProto(job.getStreamSessionId());
+    var establishedWorkers = registry.eligibleWorkers(sourceNamespaceId);
 
-    var warnings = captureWarnings(WorkerSessionGrpcService.class);
-    try {
-      session.onNext(registration);
-    } finally {
-      detach(warnings);
-    }
+    session.onNext(registration);
 
-    assertThat(warnings.list)
-        .extracting(ILoggingEvent::getFormattedMessage)
-        .anyMatch(message -> message.contains("REGISTRATION"));
+    // A re-registration would mint a new worker session and abandon the job it was running.
+    assertThat(registry.eligibleWorkers(sourceNamespaceId)).isEqualTo(establishedWorkers);
+    assertThat(registry.isRunning(streamSessionId, job.getVariant().getVariantLabel())).isTrue();
   }
 
   private static StreamObserver<EstablishWorkerSessionRequest> workerSession(
@@ -174,21 +196,6 @@ class WorkerSessionGrpcServiceTest {
     return Context.current()
         .withValue(WorkerIdentityServerInterceptor.AUTHENTICATED_WORKER_ID, workerId)
         .call(() -> service.establishWorkerSession(responseObserver));
-  }
-
-  private static ListAppender<ILoggingEvent> captureWarnings(Class<?> loggerClass) {
-    var appender = new ListAppender<ILoggingEvent>();
-    appender.start();
-    logbackLogger(loggerClass).addAppender(appender);
-    return appender;
-  }
-
-  private static void detach(ListAppender<ILoggingEvent> appender) {
-    logbackLogger(WorkerSessionGrpcService.class).detachAppender(appender);
-  }
-
-  private static Logger logbackLogger(Class<?> loggerClass) {
-    return (Logger) LoggerFactory.getLogger(loggerClass);
   }
 
   @Test
