@@ -87,8 +87,8 @@ class OrphanedMediaFileCleanupServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should remove the results and artwork of a movie deleted for having no files")
-  void shouldRemoveTheResultsAndArtworkOfAMovieDeletedForHavingNoFiles() {
+  @DisplayName("Should remove the results and artwork of a movie when its files are gone")
+  void shouldRemoveTheResultsAndArtworkOfAMovieWhenItsFilesAreGone() {
     var library =
         libraryRepository.saveAndFlush(
             LibraryFixtureCreator.buildFakeLibrary().toBuilder()

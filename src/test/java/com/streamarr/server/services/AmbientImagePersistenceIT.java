@@ -8,8 +8,7 @@ import com.streamarr.server.domain.media.AmbientColors;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
-import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.ImageService.ProcessedImage;
@@ -42,11 +41,7 @@ class AmbientImagePersistenceIT extends AbstractIntegrationTest {
 
   @BeforeEach
   void saveMovie() {
-    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
-    entityId =
-        movieRepository
-            .saveAndFlush(Movie.builder().title("Ambient").library(library).build())
-            .getId();
+    entityId = SavedMediaFixture.saveMovie(libraryRepository, movieRepository).getId();
   }
 
   @AfterEach

@@ -10,8 +10,7 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
-import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
@@ -54,11 +53,7 @@ class ItemArtworkDeletionIT extends AbstractIntegrationTest {
 
   @BeforeEach
   void saveMovieWithPoster() {
-    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
-    movieId =
-        movieRepository
-            .saveAndFlush(Movie.builder().title("Deleted").library(library).build())
-            .getId();
+    movieId = SavedMediaFixture.saveMovie(libraryRepository, movieRepository).getId();
     poster = processedPoster("/poster.jpg");
     imageService.saveImages(poster.images(), ATTEMPTED_AT);
   }
@@ -115,8 +110,8 @@ class ItemArtworkDeletionIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject a replacement for a deleted movie and delete its files")
-  void shouldRejectAReplacementForADeletedMovieAndDeleteItsFiles() {
+  @DisplayName("Should reject a replacement and delete its files when the movie was deleted")
+  void shouldRejectAReplacementAndDeleteItsFilesWhenTheMovieWasDeleted() {
     var replacement = processedPoster("/replacement.jpg");
     movieService.deleteMovieById(movieId);
 

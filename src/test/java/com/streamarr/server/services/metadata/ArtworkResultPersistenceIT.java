@@ -19,8 +19,7 @@ import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
-import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
@@ -75,11 +74,7 @@ class ArtworkResultPersistenceIT extends AbstractWireMockIntegrationTest {
   @BeforeEach
   void setUp() {
     wireMock.resetAll();
-    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
-    entityId =
-        movieRepository
-            .saveAndFlush(Movie.builder().title("Artwork").library(library).build())
-            .getId();
+    entityId = SavedMediaFixture.saveMovie(libraryRepository, movieRepository).getId();
   }
 
   @Test
@@ -181,8 +176,8 @@ class ArtworkResultPersistenceIT extends AbstractWireMockIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should delete artwork that commits while a delete of its movie waits")
-  void shouldDeleteArtworkThatCommitsWhileADeleteOfItsMovieWaits() throws Exception {
+  @DisplayName("Should delete saved artwork when it commits while a delete of its movie waits")
+  void shouldDeleteSavedArtworkWhenItCommitsWhileADeleteOfItsMovieWaits() throws Exception {
     stubImage("/poster.jpg");
     itemResults.trySave(
         ItemResult.builder()

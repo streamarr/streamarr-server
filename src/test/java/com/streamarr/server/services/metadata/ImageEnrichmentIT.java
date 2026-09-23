@@ -18,8 +18,7 @@ import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
-import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
@@ -376,10 +375,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
   }
 
   private UUID savedMovieId() {
-    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
-    return movieRepository
-        .saveAndFlush(Movie.builder().title("Enrichment").library(library).build())
-        .getId();
+    return SavedMediaFixture.saveMovie(libraryRepository, movieRepository).getId();
   }
 
   private void stubImageDownload(String path) {

@@ -1,5 +1,6 @@
 package com.streamarr.server.repositories.media;
 
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
 import static com.streamarr.server.support.PostgresLockTestSupport.awaitWaitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -12,8 +13,7 @@ import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
-import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import java.time.Duration;
 import java.time.Instant;
@@ -215,10 +215,7 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest {
   }
 
   private UUID savedMovieId() {
-    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
-    return movieRepository
-        .saveAndFlush(Movie.builder().title("Results").library(library).build())
-        .getId();
+    return SavedMediaFixture.saveMovie(libraryRepository, movieRepository).getId();
   }
 
   private static ItemResult.ItemResultBuilder metadata(UUID itemId) {
@@ -252,16 +249,5 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest {
             )
             """,
             Boolean.class));
-  }
-
-  private static void awaitLatch(CountDownLatch latch) {
-    try {
-      if (!latch.await(10, TimeUnit.SECONDS)) {
-        throw new AssertionError("the racing transaction was never released");
-      }
-    } catch (InterruptedException exception) {
-      Thread.currentThread().interrupt();
-      throw new AssertionError("interrupted while holding the racing transaction", exception);
-    }
   }
 }
