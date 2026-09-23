@@ -20,6 +20,7 @@ import com.streamarr.server.fakes.FakeLibraryMutationTransaction;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
+import com.streamarr.server.fixtures.ArtworkServiceFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
@@ -152,7 +153,8 @@ class FileEventProcessorTest {
             mock(LibraryRefreshService.class),
             fileSystem,
             new FakeLibraryMutationTransaction(),
-            mutationTransactions);
+            mutationTransactions,
+            ArtworkServiceFixture.artworkServiceBuilder().build());
 
     eventProcessor =
         new FileEventProcessor(

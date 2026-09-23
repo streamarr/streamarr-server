@@ -192,6 +192,35 @@ class ArtworkServiceTest {
     }
 
     @Test
+    @DisplayName(
+        "Should report failure for every requested image when stored artwork is unreadable")
+    void shouldReportFailureForEveryRequestedImageWhenStoredArtworkIsUnreadable() {
+      var unreadableRepository =
+          new FakeImageRepository() {
+            @Override
+            public List<Image> findByEntityIdAndEntityType(
+                UUID entityId, ImageEntityType entityType) {
+              throw new IllegalStateException("Simulated artwork lookup failure");
+            }
+          };
+      var service =
+          ArtworkServiceFixture.artworkServiceBuilder()
+              .imageRepository(unreadableRepository)
+              .imageDownloader(imageDownloader)
+              .build();
+      List<ArtworkResult> results;
+      try (var run = service.openRun("scan", ImageRefreshMode.PRESERVE)) {
+        results = awaitResult(service.fetchRequired(run, movieArtwork(UUID.randomUUID(), POSTER)));
+      }
+
+      assertThat(results)
+          .allMatch(Failed.class::isInstance)
+          .extracting(ArtworkResult::imageType)
+          .containsExactlyInAnyOrder(ImageType.POSTER, ImageType.BACKDROP);
+      assertThat(imageDownloader.getDownloadCount()).isZero();
+    }
+
+    @Test
     @DisplayName("Should report failure when the service stops during a download")
     void shouldReportFailureWhenServiceStopsDuringDownload() {
       var downloader = new GatedImageDownloader(createTestImage(600, 900));
@@ -483,6 +512,7 @@ class ArtworkServiceTest {
         downloader.releaseHeldDownloads();
         results = awaitResult(request);
       }
+
       clock.advance(Duration.ofSeconds(30));
 
       var reports = progress.reportProgress();

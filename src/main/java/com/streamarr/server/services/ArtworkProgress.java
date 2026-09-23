@@ -36,8 +36,8 @@ public class ArtworkProgress {
    * returned reports.
    */
   @Scheduled(
-      initialDelayString = "${artwork.progress-log-interval:PT30S}",
-      fixedDelayString = "${artwork.progress-log-interval:PT30S}")
+      initialDelayString = "${artwork.progress-log-interval:30s}",
+      fixedDelayString = "${artwork.progress-log-interval:30s}")
   public List<ArtworkProgressReport> reportProgress() {
     var now = clock.instant();
     var reports =
