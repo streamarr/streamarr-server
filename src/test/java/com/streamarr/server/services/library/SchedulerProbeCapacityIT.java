@@ -48,6 +48,25 @@ class SchedulerProbeCapacityIT extends AbstractProbeSchedulerIntegrationTest {
       "Should limit concurrent probes when more requests are due than the configured capacity")
   void shouldLimitConcurrentProbesWhenMoreRequestsAreDueThanTheConfiguredCapacity()
       throws Exception {
+    assertThat(peakConcurrencyProbingSixDueRequests())
+        .as("Configured capacity of 2 must limit active probe producers")
+        .isLessThanOrEqualTo(2);
+  }
+
+  @Test
+  @DisplayName(
+      "Should limit concurrent probes to the configured capacity when statistics favor rescanning"
+          + " the claim")
+  void shouldLimitConcurrentProbesToConfiguredCapacityWhenStatisticsFavorRescanningTheClaim()
+      throws Exception {
+    analyzeScheduledTasksWithOneRow();
+
+    assertThat(peakConcurrencyProbingSixDueRequests())
+        .as("Configured capacity of 2 must limit active probe producers")
+        .isLessThanOrEqualTo(2);
+  }
+
+  private int peakConcurrencyProbingSixDueRequests() throws Exception {
     var requests = requestUnchangedFiles(6);
 
     var firstBatchSubmitted = new CompletableFuture<Void>();
@@ -101,9 +120,7 @@ class SchedulerProbeCapacityIT extends AbstractProbeSchedulerIntegrationTest {
       assertThat(client.getScheduledExecution(instanceOf(request))).isEmpty();
     }
 
-    assertThat(producer.peakConcurrency())
-        .as("Configured capacity of 2 must limit active probe producers")
-        .isLessThanOrEqualTo(2);
+    return producer.peakConcurrency();
   }
 
   @Test
