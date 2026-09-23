@@ -6,6 +6,11 @@ request; `NEW_PROFILE_PIN` is only needed for the manual `GraphQL/Set Profile PI
 Configure both through Bruno's local secret store. Replace the non-secret resource IDs and local
 library path as needed.
 
+The `local` environment targets `http://localhost:8080` by default. To point Bruno at another
+server, copy `.env.sample` to `.env` in this folder (git ignores it) and set `STREAMARR_BASE_URL`.
+Both the desktop app and the CLI read that file, so the committed environment never carries a
+machine-specific address. `--env-var BASE_URL=...` still overrides it for a single CLI run.
+
 For a configured server, run `Auth/Public/Login` before protected requests. On a fresh
 server, run `Auth/Public/Setup (one time)` instead. Both requests keep the returned access and refresh
 tokens in Bruno runtime variables; issued tokens are never persisted in the collection.
