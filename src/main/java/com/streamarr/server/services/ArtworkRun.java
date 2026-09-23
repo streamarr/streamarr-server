@@ -31,10 +31,6 @@ public final class ArtworkRun implements AutoCloseable {
     this.clock = clock;
   }
 
-  public String description() {
-    return description;
-  }
-
   public ImageRefreshMode imageRefreshMode() {
     return imageRefreshMode;
   }
