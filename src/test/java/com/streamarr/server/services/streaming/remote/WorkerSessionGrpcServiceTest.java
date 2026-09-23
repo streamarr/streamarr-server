@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -63,7 +64,7 @@ class WorkerSessionGrpcServiceTest {
             .setProbeVersion(1)
             .setSource(variantJob(sourceNamespaceId).getSource())
             .build();
-    var attempt = registry.dispatchProbe(request).orElseThrow();
+    var attempt = dispatched(registry.dispatchProbe(request));
     var result =
         ProbeAttemptResult.newBuilder()
             .setProbeAttemptId(request.getProbeAttemptId())

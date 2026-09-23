@@ -13,6 +13,7 @@ import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
@@ -236,6 +237,19 @@ class ProbeExecutionTest {
 
     assertThatThrownBy(() -> execution.execute(request))
         .isInstanceOf(ProbeExecutionException.class);
+    assertThat(outcomes.publications()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should defer without publishing when every compatible worker is busy")
+  void shouldDeferWithoutPublishingWhenEveryCompatibleWorkerIsBusy() {
+    producer.failWith(new ProbeWorkersBusyException());
+    var execution = execution();
+    var request = request(ProbeVersion.CURRENT);
+
+    var result = execution.execute(request);
+
+    assertThat(result).isEqualTo(new ProbeExecutionResult.Deferred());
     assertThat(outcomes.publications()).isEmpty();
   }
 

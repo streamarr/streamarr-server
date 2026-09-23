@@ -1,7 +1,14 @@
 package com.streamarr.server.config;
 
 import com.github.kagkarlsson.scheduler.SchedulerClient;
+import com.github.kagkarlsson.scheduler.SchedulerName;
+import com.github.kagkarlsson.scheduler.SystemClock;
+import com.github.kagkarlsson.scheduler.TaskRepository;
+import com.github.kagkarlsson.scheduler.TaskResolver;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
+import com.github.kagkarlsson.scheduler.event.SchedulerListeners;
+import com.github.kagkarlsson.scheduler.jdbc.AutodetectJdbcCustomization;
+import com.github.kagkarlsson.scheduler.jdbc.JdbcTaskRepository;
 import com.github.kagkarlsson.scheduler.serializer.Serializer;
 import com.github.kagkarlsson.scheduler.task.Task;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
@@ -9,6 +16,7 @@ import com.streamarr.server.services.library.MediaProbeTask;
 import com.streamarr.server.services.library.ProbeExecution;
 import com.streamarr.server.services.library.ProbeTaskCompletion;
 import java.time.Clock;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -51,6 +59,25 @@ public class ProbeSchedulingConfiguration {
             new TransactionAwareDataSourceProxy(dataSource), mediaProbeTask)
         .serializer(probeTaskSerializer)
         .build();
+  }
+
+  /**
+   * Completes probe executions through the scheduler's own table and transaction. Unlike {@code
+   * ExecutionOperations}, its selective reschedule can leave the failure history untouched.
+   */
+  @Bean
+  public TaskRepository probeTaskRepository(DataSource dataSource, Serializer probeTaskSerializer) {
+    var clock = new SystemClock();
+    return new JdbcTaskRepository(
+        new SchedulerTransactionDataSource(dataSource),
+        false,
+        new AutodetectJdbcCustomization(dataSource),
+        JdbcTaskRepository.DEFAULT_TABLE_NAME,
+        new TaskResolver(SchedulerListeners.NOOP, clock, List.of()),
+        new SchedulerName.Fixed("probe-task-completion"),
+        probeTaskSerializer,
+        false,
+        clock);
   }
 
   @RequiredArgsConstructor

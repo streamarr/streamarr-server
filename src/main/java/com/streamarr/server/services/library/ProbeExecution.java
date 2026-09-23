@@ -3,9 +3,11 @@ package com.streamarr.server.services.library;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
+import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
@@ -26,7 +28,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * One probe execution, independent of the scheduler that runs it. Transient failures escape as
- * {@link ProbeExecutionException} so the scheduler retries them with backoff.
+ * {@link ProbeExecutionException} so the scheduler retries them with backoff; busy workers defer
+ * the probe without a failure.
  */
 @Service
 @Builder(toBuilder = true)
@@ -81,13 +84,22 @@ public class ProbeExecution {
       return new ProbeExecutionResult.Completed();
     }
 
-    var outcome =
-        producer.probe(
-            ProbeExecutionRequest.builder()
-                .sourcePath(path)
-                .attemptId(UUID.randomUUID())
-                .probeVersion(request.probeVersion())
-                .build());
+    ProbeOutcome outcome;
+    try {
+      outcome =
+          producer.probe(
+              ProbeExecutionRequest.builder()
+                  .sourcePath(path)
+                  .attemptId(UUID.randomUUID())
+                  .probeVersion(request.probeVersion())
+                  .build());
+    } catch (ProbeWorkersBusyException _) {
+      log.debug(
+          "Deferring probe for media file {}: all compatible workers are busy",
+          request.mediaFileId());
+      return new ProbeExecutionResult.Deferred();
+    }
+
     var after = snapshot(path);
     if (after.isEmpty()) {
       return new ProbeExecutionResult.Completed();

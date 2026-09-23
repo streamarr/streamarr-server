@@ -29,7 +29,6 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
@@ -120,27 +119,29 @@ final class LiveWorkerConnectionRegistry {
     return false;
   }
 
-  Optional<Future<ProbeAttemptResult>> dispatchProbe(ProbeRequest request) {
+  ProbeDispatch dispatchProbe(ProbeRequest request) {
     var attemptId = request.getProbeAttemptId();
     if (request.getProbeVersion() == 0
+        || !request.hasSource()
         || (attemptId.getMostSignificantBits() == 0 && attemptId.getLeastSignificantBits() == 0)) {
-      return Optional.empty();
+      return new ProbeDispatch.Refused(ProbeRefusal.INVALID_REQUEST);
     }
 
+    var refusal = ProbeRefusal.NO_CONNECTED_WORKER;
     for (var connection : connections.values()) {
-      var dispatched = connection.tryDispatchProbe(request);
-      if (dispatched.isEmpty()) {
-        continue;
+      switch (connection.tryDispatchProbe(request)) {
+        case ProbeDispatch.Dispatched dispatched when connections.containsValue(connection) -> {
+          return dispatched;
+        }
+        case ProbeDispatch.Dispatched _ -> {
+          connection.abandonProbe(fromProto(attemptId));
+          refusal = refusal.mostSpecific(ProbeRefusal.WORKER_UNREACHABLE);
+        }
+        case ProbeDispatch.Refused(var reason) -> refusal = refusal.mostSpecific(reason);
       }
-
-      if (connections.containsValue(connection)) {
-        return dispatched;
-      }
-
-      connection.abandonProbe(fromProto(request.getProbeAttemptId()));
     }
 
-    return Optional.empty();
+    return new ProbeDispatch.Refused(refusal);
   }
 
   boolean completeProbe(UUID workerId, UUID workerSessionId, ProbeAttemptResult result) {
@@ -299,19 +300,20 @@ final class LiveWorkerConnectionRegistry {
       return true;
     }
 
-    private synchronized Optional<Future<ProbeAttemptResult>> tryDispatchProbe(
-        ProbeRequest request) {
+    private synchronized ProbeDispatch tryDispatchProbe(ProbeRequest request) {
       if (!probeVersions.contains(request.getProbeVersion())
-          || !request.hasSource()
-          || !canAccessSourceNamespace(request.getSource().getSourceNamespaceId())
-          || availableSlots() == 0) {
-        return Optional.empty();
+          || !canAccessSourceNamespace(request.getSource().getSourceNamespaceId())) {
+        return new ProbeDispatch.Refused(ProbeRefusal.NO_COMPATIBLE_WORKER);
+      }
+
+      if (availableSlots() == 0) {
+        return new ProbeDispatch.Refused(ProbeRefusal.WORKERS_BUSY);
       }
 
       var attemptId = fromProto(request.getProbeAttemptId());
       var pending = new PendingProbe(request, new CompletableFuture<>(), new CompletableFuture<>());
       if (pendingProbes.putIfAbsent(attemptId, pending.result()) != null) {
-        return Optional.empty();
+        return new ProbeDispatch.Refused(ProbeRefusal.ATTEMPT_IN_PROGRESS);
       }
 
       activeProbes.put(attemptId, pending);
@@ -333,10 +335,11 @@ final class LiveWorkerConnectionRegistry {
       if (!trySend(EstablishWorkerSessionResponse.newBuilder().setStartProbe(command).build())) {
         activeProbes.remove(attemptId, pending);
         pendingProbes.remove(attemptId, pending.result());
-        return Optional.empty();
+        return new ProbeDispatch.Refused(ProbeRefusal.WORKER_UNREACHABLE);
       }
 
-      return Optional.of(pending.result().orTimeout(probeTimeoutNanos, TimeUnit.NANOSECONDS));
+      return new ProbeDispatch.Dispatched(
+          pending.result().orTimeout(probeTimeoutNanos, TimeUnit.NANOSECONDS));
     }
 
     private void cancelProbeIfRequested(PendingProbe pending) {

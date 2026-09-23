@@ -1,5 +1,6 @@
 package com.streamarr.server.fixtures.mesh;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
@@ -61,7 +62,7 @@ final class MeshMediaHandler implements HttpHandler {
                     .setSourceNamespaceId(toProto(MeshValidationServer.SOURCE_ID))
                     .setRelativeKey("mesh-fixture.mkv"))
             .build();
-    var result = server.dispatchProbe(request).orElseThrow().get(10, TimeUnit.SECONDS);
+    var result = dispatched(server.dispatchProbe(request)).get(10, TimeUnit.SECONDS);
     var media = result.getMedia();
     if (!Arrays.asList(media.getContainer().getFormat().split(",")).contains("mp4")
         || media.getStreamsList().stream().noneMatch(this::isFixtureVideo)) {

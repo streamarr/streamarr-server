@@ -2,8 +2,6 @@ package com.streamarr.server.services.streaming.remote;
 
 import static com.google.protobuf.Duration.newBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
-import static com.streamarr.server.fixtures.RemoteWorkerFixtures.WORKER_ID;
-import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChannelBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -15,30 +13,21 @@ import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.FakeSegmentStore;
-import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
-import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
+import com.streamarr.server.fixtures.LoopbackProbeWorker;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeContainerInfo;
 import com.streamarr.transcode.v1.ProbeFailure;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
-import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
-import com.streamarr.transcode.v1.WorkerCapabilities;
-import com.streamarr.transcode.v1.WorkerIdentity;
-import com.streamarr.transcode.v1.WorkerRegistration;
-import io.grpc.ManagedChannel;
 import io.grpc.Status;
-import io.grpc.stub.StreamObserver;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.OptionalInt;
 import java.util.UUID;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -68,21 +57,28 @@ class RemoteFfprobeServiceIT {
     try (var server = new WorkerSessionServer(configuration, new FakeSegmentStore());
         var calls = Executors.newVirtualThreadPerTaskExecutor()) {
       server.start();
-      try (var worker = new ProbeWorker(server.port(), 1)) {
+      try (var worker = worker(server.port(), 1)) {
         var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
         var request = request().build();
         var result = calls.submit(() -> service.probe(request));
         try {
           assertThat(worker.nextResponse().hasStartProbe()).isTrue();
           assertThatThrownBy(() -> result.get(5, TimeUnit.SECONDS))
+              .as("The probe deadline must fail the probe")
               .hasCauseInstanceOf(ProbeExecutionException.class)
               .hasRootCauseInstanceOf(TimeoutException.class);
           assertThat(worker.nextResponse().getCancelProbe().getProbeAttemptId())
+              .as("The deadline must ask the worker to cancel the attempt")
               .isEqualTo(toProto(request.attemptId()));
-          assertThat(worker.terminated.get(5, TimeUnit.SECONDS).getCode())
+          assertThat(worker.terminated().get(5, TimeUnit.SECONDS).getCode())
+              .as("Ignoring cancellation past its grace period must end the session")
               .isEqualTo(Status.Code.DEADLINE_EXCEEDED);
-          assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isFalse();
-          assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isZero();
+          assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID))
+              .as("The fenced session must not stay connected")
+              .isFalse();
+          assertThat(server.availableSlots(SOURCE_NAMESPACE_ID))
+              .as("The fenced session must not offer slots")
+              .isZero();
         } finally {
           result.cancel(true);
         }
@@ -96,7 +92,7 @@ class RemoteFfprobeServiceIT {
     try (var server = server();
         var calls = Executors.newVirtualThreadPerTaskExecutor()) {
       server.start();
-      try (var worker = new ProbeWorker(server.port(), 1)) {
+      try (var worker = worker(server.port(), 1)) {
         var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
         var request = request().build();
         var result = calls.submit(() -> service.probe(request));
@@ -118,7 +114,51 @@ class RemoteFfprobeServiceIT {
       var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
       var request = request().build();
 
-      assertThatThrownBy(() -> service.probe(request)).isInstanceOf(ProbeExecutionException.class);
+      assertThatThrownBy(() -> service.probe(request))
+          .isExactlyInstanceOf(ProbeExecutionException.class)
+          .hasMessage("No worker is connected to probe the media source");
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should fail for persisted retry when the connected worker lacks the requested probe version")
+  void shouldFailForPersistedRetryWhenConnectedWorkerLacksRequestedProbeVersion() throws Exception {
+    try (var server = server()) {
+      server.start();
+      try (var _ = worker(server.port(), 7)) {
+        var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
+        var request = request().probeVersion(1).build();
+
+        assertThatThrownBy(() -> service.probe(request))
+            .isExactlyInstanceOf(ProbeExecutionException.class)
+            .hasMessage(
+                "No connected worker can read the source namespace at the requested probe"
+                    + " version");
+      }
+    }
+  }
+
+  @Test
+  @DisplayName("Should report busy workers when the only compatible slot is already probing")
+  void shouldReportBusyWorkersWhenOnlyCompatibleSlotIsAlreadyProbing() throws Exception {
+    try (var server = server();
+        var calls = Executors.newVirtualThreadPerTaskExecutor()) {
+      server.start();
+      try (var worker = worker(server.port(), 1)) {
+        var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
+        var held = calls.submit(() -> service.probe(request().build()));
+        try {
+          assertThat(worker.nextResponse().hasStartProbe()).isTrue();
+          var request = request().build();
+
+          assertThatThrownBy(() -> service.probe(request))
+              .isExactlyInstanceOf(ProbeWorkersBusyException.class)
+              .hasMessage("All compatible workers are busy");
+        } finally {
+          held.cancel(true);
+        }
+      }
     }
   }
 
@@ -128,7 +168,7 @@ class RemoteFfprobeServiceIT {
     try (var server = server();
         var calls = Executors.newVirtualThreadPerTaskExecutor()) {
       server.start();
-      try (var worker = new ProbeWorker(server.port(), 1)) {
+      try (var worker = worker(server.port(), 1)) {
         var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
         var request = request().build();
         var execution = new AtomicReference<Thread>();
@@ -164,7 +204,7 @@ class RemoteFfprobeServiceIT {
     try (var server = server();
         var calls = Executors.newVirtualThreadPerTaskExecutor()) {
       server.start();
-      try (var worker = new ProbeWorker(server.port(), 7)) {
+      try (var worker = worker(server.port(), 7)) {
         var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
         var request = request().probeVersion(7).build();
 
@@ -327,7 +367,7 @@ class RemoteFfprobeServiceIT {
     try (var server = server();
         var calls = Executors.newVirtualThreadPerTaskExecutor()) {
       server.start();
-      try (var worker = new ProbeWorker(server.port(), 1)) {
+      try (var worker = worker(server.port(), 1)) {
         var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
         var request = request().build();
         var result = calls.submit(() -> service.probe(request));
@@ -342,6 +382,14 @@ class RemoteFfprobeServiceIT {
     }
   }
 
+  private static LoopbackProbeWorker worker(int port, int probeVersion) throws Exception {
+    return LoopbackProbeWorker.builder()
+        .port(port)
+        .probeVersion(probeVersion)
+        .availableSlots(1)
+        .build();
+  }
+
   private WorkerSessionServer server() {
     return new WorkerSessionServer(serverConfigurationBuilder().build(), new FakeSegmentStore());
   }
@@ -351,73 +399,5 @@ class RemoteFfprobeServiceIT {
         .sourcePath(directory.resolve("movie.mkv"))
         .attemptId(UUID.randomUUID())
         .probeVersion(1);
-  }
-
-  private static class ProbeWorker implements AutoCloseable {
-
-    private final ManagedChannel channel;
-    private final StreamObserver<EstablishWorkerSessionRequest> requests;
-    private final BlockingQueue<EstablishWorkerSessionResponse> responses =
-        new LinkedBlockingQueue<>();
-    private final CompletableFuture<Status> terminated = new CompletableFuture<>();
-
-    ProbeWorker(int port, int version) throws Exception {
-      channel = plaintextChannelBuilder(port, WORKER_ID).build();
-      requests =
-          TranscodeWorkerServiceGrpc.newStub(channel)
-              .establishWorkerSession(
-                  new StreamObserver<>() {
-                    @Override
-                    public void onNext(EstablishWorkerSessionResponse value) {
-                      responses.add(value);
-                    }
-
-                    @Override
-                    public void onError(Throwable throwable) {
-                      terminated.complete(Status.fromThrowable(throwable));
-                    }
-
-                    @Override
-                    public void onCompleted() {
-                      terminated.complete(Status.OK);
-                    }
-                  });
-      requests.onNext(
-          EstablishWorkerSessionRequest.newBuilder()
-              .setRegistration(
-                  WorkerRegistration.newBuilder()
-                      .setAvailableSlots(1)
-                      .setWorker(
-                          WorkerIdentity.newBuilder()
-                              .setWorkerId(toProto(WORKER_ID))
-                              .setBootId(toProto(UUID.randomUUID())))
-                      .setCapabilities(
-                          WorkerCapabilities.newBuilder()
-                              .addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID))
-                              .addProbeVersions(version)))
-              .build());
-      assertThat(nextResponse().hasSessionAccepted()).isTrue();
-    }
-
-    EstablishWorkerSessionResponse nextResponse() throws InterruptedException {
-      var response = responses.poll(5, TimeUnit.SECONDS);
-      assertThat(response).isNotNull();
-      return response;
-    }
-
-    void reply(ProbeAttemptResult result) {
-      requests.onNext(EstablishWorkerSessionRequest.newBuilder().setProbeResult(result).build());
-    }
-
-    void disconnect() {
-      channel.shutdownNow();
-    }
-
-    @Override
-    public void close() throws InterruptedException {
-      requests.onCompleted();
-      channel.shutdownNow();
-      assertThat(channel.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
-    }
   }
 }

@@ -1,22 +1,29 @@
 package com.streamarr.server.services.library;
 
+import com.github.kagkarlsson.scheduler.TaskRepository;
 import com.github.kagkarlsson.scheduler.task.CompletionHandler;
+import com.github.kagkarlsson.scheduler.task.RescheduleUpdate;
+import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import java.time.Clock;
+import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
+@Builder
 @RequiredArgsConstructor
 public class ProbeTaskCompletion {
 
   private final MediaFileContainerInfoRepository outcomes;
   private final PlatformTransactionManager transactionManager;
   private final Clock clock;
+  private final ProbeSchedulingProperties properties;
+  private final TaskRepository probeTasks;
 
   public CompletionHandler<ProbeTaskRequest> handlerFor(
       ProbeTaskRequest request, ProbeExecutionResult result) {
@@ -28,6 +35,12 @@ public class ProbeTaskCompletion {
                     case ProbeExecutionResult.Completed _ -> operations.remove();
                     case ProbeExecutionResult.Rescheduled(var next) ->
                         operations.reschedule(complete, clock.instant(), next);
+                    case ProbeExecutionResult.Deferred _ ->
+                        probeTasks.reschedule(
+                            complete.getExecution(),
+                            RescheduleUpdate.toExecutionTime(
+                                    clock.instant().plus(properties.busyWorkerRetryDelay()))
+                                .build());
                   }
                 });
   }

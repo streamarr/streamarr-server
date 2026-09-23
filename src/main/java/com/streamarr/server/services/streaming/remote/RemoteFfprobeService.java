@@ -5,6 +5,7 @@ import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.transcode.v1.ProbeRequest;
 import java.nio.file.Path;
@@ -24,15 +25,18 @@ public final class RemoteFfprobeService implements FfprobeService {
 
   @Override
   public ProbeOutcome probe(ProbeExecutionRequest request) {
+    var dispatch =
+        server.dispatchProbe(
+            ProbeRequest.newBuilder()
+                .setProbeAttemptId(toProto(request.attemptId()))
+                .setProbeVersion(request.probeVersion())
+                .setSource(sourceMapper.map(request.sourcePath()))
+                .build());
     var pending =
-        server
-            .dispatchProbe(
-                ProbeRequest.newBuilder()
-                    .setProbeAttemptId(toProto(request.attemptId()))
-                    .setProbeVersion(request.probeVersion())
-                    .setSource(sourceMapper.map(request.sourcePath()))
-                    .build())
-            .orElseThrow(ProbeExecutionException::new);
+        switch (dispatch) {
+          case ProbeDispatch.Dispatched(var result) -> result;
+          case ProbeDispatch.Refused(var reason) -> throw refusal(reason);
+        };
     try {
       return resultMapper.map(pending.get());
     } catch (InterruptedException exception) {
@@ -42,5 +46,13 @@ public final class RemoteFfprobeService implements FfprobeService {
     } catch (ExecutionException exception) {
       throw new ProbeExecutionException(exception);
     }
+  }
+
+  private static RuntimeException refusal(ProbeRefusal reason) {
+    if (reason == ProbeRefusal.WORKERS_BUSY) {
+      return new ProbeWorkersBusyException();
+    }
+
+    return new ProbeExecutionException(reason.description());
   }
 }
