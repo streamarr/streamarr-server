@@ -99,7 +99,8 @@ public class MovieFileProcessor {
             movieSearchResult.externalSourceType(),
             movieSearchResult.externalId());
 
-        enrichMovieMetadata(discovery, mediaFile, movieSearchResult);
+        enrichMovieMetadata(discovery, mediaFile, movieSearchResult)
+            .ifPresent(failure -> recordFailure(mediaFile, failure));
       }
     }
   }
@@ -136,7 +137,7 @@ public class MovieFileProcessor {
         .flatMap(defaultVideoFileMetadataParser::parse);
   }
 
-  private void enrichMovieMetadata(
+  private Optional<MatchingFailure> enrichMovieMetadata(
       FileDiscovery discovery, MediaFile mediaFile, RemoteSearchResult remoteSearchResult) {
 
     var externalIdMutex = mutexFactory.getMutex(remoteSearchResult.externalId());
@@ -144,14 +145,14 @@ public class MovieFileProcessor {
     try {
       externalIdMutex.lockInterruptibly();
 
-      updateOrSaveEnrichedMovie(discovery, mediaFile, remoteSearchResult);
+      return updateOrSaveEnrichedMovie(discovery, mediaFile, remoteSearchResult);
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
       log.error("Enrichment interrupted for MediaFile id: {}", mediaFile.getId(), ex);
+      return Optional.empty();
     } catch (Exception ex) {
       log.error("Failure enriching movie metadata:", ex);
-      recordFailure(
-          mediaFile,
+      return Optional.of(
           new MatchingFailure(MediaFileStatus.ENRICHMENT_FAILED, ItemFailureReason.TEMPORARY));
     } finally {
       if (externalIdMutex.isHeldByCurrentThread()) {
@@ -160,27 +161,28 @@ public class MovieFileProcessor {
     }
   }
 
-  private void updateOrSaveEnrichedMovie(
+  private Optional<MatchingFailure> updateOrSaveEnrichedMovie(
       FileDiscovery discovery, MediaFile mediaFile, RemoteSearchResult remoteSearchResult) {
     var optionalMovie =
         movieService.addMediaFileToMovieByTmdbId(remoteSearchResult.externalId(), mediaFile);
 
     if (optionalMovie.isPresent()) {
       markMediaFileAsMatched(mediaFile);
-      return;
+      return Optional.empty();
     }
 
-    switch (movieMetadataProviderResolver.getMetadata(remoteSearchResult, discovery.library())) {
+    return switch (movieMetadataProviderResolver.getMetadata(
+        remoteSearchResult, discovery.library())) {
       case MetadataFetchOutcome.Found(var metadataResult) -> {
         movieService.createMovieWithAssociations(metadataResult, mediaFile, discovery.artworkRun());
         markMediaFileAsMatched(mediaFile);
+        yield Optional.empty();
       }
       case MetadataFetchOutcome.NotFound<?> _ ->
-          recordFailure(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_NOT_FOUND));
+          Optional.of(MatchingFailure.of(MediaFileStatus.METADATA_NOT_FOUND));
       case MetadataFetchOutcome.Failed<?> failed ->
-          recordFailure(
-              mediaFile, new MatchingFailure(MediaFileStatus.ENRICHMENT_FAILED, failed.reason()));
-    }
+          Optional.of(new MatchingFailure(MediaFileStatus.ENRICHMENT_FAILED, failed.reason()));
+    };
   }
 
   private void markMediaFileAsMatched(MediaFile mediaFile) {

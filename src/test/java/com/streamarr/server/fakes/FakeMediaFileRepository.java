@@ -15,10 +15,10 @@ import java.util.stream.Collectors;
 public class FakeMediaFileRepository extends FakeJpaRepository<MediaFile>
     implements MediaFileRepository {
 
-  private RuntimeException matchingFailureWriteFailure;
+  private RuntimeException nextMatchingFailureWriteFailure;
 
-  public void failMatchingFailureWritesWith(RuntimeException failure) {
-    this.matchingFailureWriteFailure = failure;
+  public void failNextMatchingFailureWriteWith(RuntimeException failure) {
+    this.nextMatchingFailureWriteFailure = failure;
   }
 
   @Override
@@ -69,8 +69,10 @@ public class FakeMediaFileRepository extends FakeJpaRepository<MediaFile>
 
   @Override
   public boolean tryRecordMatchingFailure(UUID mediaFileId, MatchingFailure failure) {
-    if (matchingFailureWriteFailure != null) {
-      throw matchingFailureWriteFailure;
+    if (nextMatchingFailureWriteFailure != null) {
+      var writeFailure = nextMatchingFailureWriteFailure;
+      nextMatchingFailureWriteFailure = null;
+      throw writeFailure;
     }
 
     var mediaFile = database.get(mediaFileId);

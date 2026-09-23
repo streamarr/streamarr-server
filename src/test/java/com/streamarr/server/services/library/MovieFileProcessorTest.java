@@ -1,7 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -287,13 +287,16 @@ class MovieFileProcessorTest {
     var mediaFile = saveMovieFile(library);
     stubSearchFound();
     when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
-        .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("Connection reset")));
+        .thenReturn(
+            new MetadataFetchOutcome.Failed<>(new TmdbApiException(401, "Invalid API key")));
     var failure = new DataAccessResourceFailureException("database unavailable");
-    fakeMediaFileRepository.failMatchingFailureWritesWith(failure);
-
+    fakeMediaFileRepository.failNextMatchingFailureWriteWith(failure);
     var discovery = discoveryOf(library);
 
-    assertThatThrownBy(() -> movieFileProcessor.process(discovery, mediaFile)).isSameAs(failure);
+    var thrown = catchThrowable(() -> movieFileProcessor.process(discovery, mediaFile));
+
+    assertMatchingFailure(mediaFile, MediaFileStatus.UNMATCHED, null);
+    assertThat(thrown).isSameAs(failure);
   }
 
   private MediaFile saveMovieFile(Library library) {

@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -46,6 +47,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataAccessResourceFailureException;
 
 @Tag("UnitTest")
 @ExtendWith(MockitoExtension.class)
@@ -393,6 +395,26 @@ class SeriesFileProcessorTest {
 
     assertMatchingFailure(
         mediaFile, MediaFileStatus.ENRICHMENT_FAILED, ItemFailureReason.TEMPORARY);
+  }
+
+  @Test
+  @DisplayName("Should report the database error when a matching failure cannot be recorded")
+  void shouldReportTheDatabaseErrorWhenAMatchingFailureCannotBeRecorded() {
+    var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
+    var mediaFile = saveEpisodeFile(library, "Breaking%20Bad/Season%2001/Breaking.Bad.S01E01.mkv");
+    stubSearchFound("Breaking Bad", "1396");
+    when(seriesService.findByTmdbId("1396")).thenReturn(Optional.empty());
+    when(seriesMetadataProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
+        .thenReturn(
+            new MetadataFetchOutcome.Failed<>(new TmdbApiException(401, "Invalid API key")));
+    var failure = new DataAccessResourceFailureException("database unavailable");
+    fakeMediaFileRepository.failNextMatchingFailureWriteWith(failure);
+    var discovery = discoveryOf(library);
+
+    var thrown = catchThrowable(() -> seriesFileProcessor.process(discovery, mediaFile));
+
+    assertMatchingFailure(mediaFile, MediaFileStatus.UNMATCHED, null);
+    assertThat(thrown).isSameAs(failure);
   }
 
   private MediaFile saveEpisodeFile(Library library, String relativeUri) {
