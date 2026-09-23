@@ -54,6 +54,10 @@ public class ProbeTaskCompletion {
                                 .build());
                     case ProbeExecutionResult.SourceChanged(var next) ->
                         operations.reschedule(complete, clock.instant().plus(quietPeriod()), next);
+                    case ProbeExecutionResult.SourceRemoved _ -> {
+                      outcomes.withdrawProbeRequest(request.mediaFileId());
+                      operations.remove();
+                    }
                   }
                 });
   }
@@ -139,14 +143,19 @@ public class ProbeTaskCompletion {
       case ProbeExecutionResult.SourceChanged _ ->
           new ProbeExecutionResult.SourceChanged(requested);
       case ProbeExecutionResult.Deferred _ -> new ProbeExecutionResult.Deferred(requested);
-      case ProbeExecutionResult.Completed _, ProbeExecutionResult.Rescheduled _ ->
+      case ProbeExecutionResult.Completed _,
+          ProbeExecutionResult.Rescheduled _,
+          ProbeExecutionResult.SourceRemoved _ ->
           new ProbeExecutionResult.Rescheduled(requested);
     };
   }
 
   private static Optional<ProbeTaskRequest> nextInputs(ProbeExecutionResult result) {
     return switch (result) {
-      case ProbeExecutionResult.Completed _, ProbeExecutionResult.Deferred _ -> Optional.empty();
+      case ProbeExecutionResult.Completed _,
+          ProbeExecutionResult.Deferred _,
+          ProbeExecutionResult.SourceRemoved _ ->
+          Optional.empty();
       case ProbeExecutionResult.Rescheduled(var next) -> Optional.of(next);
       case ProbeExecutionResult.SourceChanged(var next) -> Optional.of(next);
     };

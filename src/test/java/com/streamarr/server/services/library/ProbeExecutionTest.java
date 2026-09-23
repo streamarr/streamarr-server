@@ -155,15 +155,28 @@ class ProbeExecutionTest {
   }
 
   @Test
-  @DisplayName("Should complete without probing when the source file has vanished")
-  void shouldCompleteWithoutProbingWhenTheSourceFileHasVanished() throws IOException {
+  @DisplayName("Should report the source removed without probing when the source file has vanished")
+  void shouldReportTheSourceRemovedWithoutProbingWhenTheSourceFileHasVanished() throws IOException {
     var request = request(ProbeVersion.CURRENT);
     Files.delete(source);
 
     var result = execution().execute(request);
 
-    assertThat(result).isEqualTo(new ProbeExecutionResult.Completed());
+    assertThat(result).isEqualTo(new ProbeExecutionResult.SourceRemoved());
     assertThat(producer.probeCount()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should report the source removed without publishing when it vanished during the probe")
+  void shouldReportTheSourceRemovedWithoutPublishingWhenItVanishedDuringTheProbe() {
+    var request = request(ProbeVersion.CURRENT);
+    producer.runDuringProbe(() -> delete(source));
+
+    var result = execution().execute(request);
+
+    assertThat(result).isEqualTo(new ProbeExecutionResult.SourceRemoved());
+    assertThat(outcomes.publications()).isEmpty();
   }
 
   @Test
@@ -298,6 +311,14 @@ class ProbeExecutionTest {
     try {
       var attributes = Files.readAttributes(path, BasicFileAttributes.class);
       return new SourceFileSnapshot(attributes.size(), attributes.lastModifiedTime().toInstant());
+    } catch (IOException exception) {
+      throw new UncheckedIOException(exception);
+    }
+  }
+
+  private static void delete(Path path) {
+    try {
+      Files.delete(path);
     } catch (IOException exception) {
       throw new UncheckedIOException(exception);
     }

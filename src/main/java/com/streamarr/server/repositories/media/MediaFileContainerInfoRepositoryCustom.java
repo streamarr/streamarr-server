@@ -35,6 +35,12 @@ public interface MediaFileContainerInfoRepositoryCustom {
   /** Returns the probe state of each listed media file that still exists. */
   List<ProbeState> findProbeStates(Collection<UUID> mediaFileIds);
 
+  /**
+   * Deletes the requested inputs and their failure once the source no longer exists, so no probe is
+   * requested for the file. Requires the caller's transaction.
+   */
+  void withdrawProbeRequest(UUID mediaFileId);
+
   /** Reads desired inputs under the media file lock. Requires the caller's transaction. */
   Optional<ProbeInputs> lockProbeInputs(UUID mediaFileId);
 }
