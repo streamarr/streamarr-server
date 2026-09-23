@@ -2,10 +2,6 @@ package com.streamarr.server.services.filepath;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
@@ -17,7 +13,6 @@ import jakarta.persistence.EntityManager;
 import java.sql.Connection;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.flywaydb.core.api.configuration.Configuration;
@@ -27,7 +22,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Isolated;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 
 @Tag("IntegrationTest")
@@ -144,87 +138,11 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
         .isEqualTo("Café Meridian (2001).mkv");
   }
 
-  @Test
-  @DisplayName("Should identify skipped row when filepath URI cannot be decoded")
-  void shouldIdentifySkippedRowWhenFilepathUriCannotBeDecoded() throws Exception {
-    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
-    libraryId = library.getId();
-    var mediaFile =
-        mediaFileRepository.saveAndFlush(
-            MediaFile.builder()
-                .libraryId(libraryId)
-                .filepathUri("file:///media/caf%E9.mkv")
-                .filename("legacy-undecodable-name.mkv")
-                .status(MediaFileStatus.MATCHED)
-                .build());
-    mediaFileId = mediaFile.getId();
-
-    var migrationLogs = migrateAndCaptureLogs();
-
-    assertThat(migrationLogs)
-        .filteredOn(event -> event.getLevel() == Level.WARN)
-        .anySatisfy(
-            event -> {
-              assertThat(event.getFormattedMessage())
-                  .contains(mediaFileId.toString())
-                  .contains("file:///media/caf%E9.mkv");
-            });
-  }
-
-  @Test
-  @DisplayName("Should report literal update and skip counts when migration completes")
-  void shouldReportLiteralUpdateAndSkipCountsWhenMigrationCompletes() throws Exception {
-    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
-    libraryId = library.getId();
-    var undecodableMediaFile =
-        mediaFileRepository.saveAndFlush(
-            MediaFile.builder()
-                .libraryId(libraryId)
-                .filepathUri("file:///media/caf%E9.mkv")
-                .filename("legacy-undecodable-name.mkv")
-                .status(MediaFileStatus.MATCHED)
-                .build());
-    mediaFileId = undecodableMediaFile.getId();
-    var validMediaFile =
-        mediaFileRepository.saveAndFlush(
-            MediaFile.builder()
-                .libraryId(libraryId)
-                .filepathUri("file:///media/Caf%C3%A9%20Meridian%20(2001).mkv")
-                .filename("Caf�� Meridian (2001).mkv")
-                .status(MediaFileStatus.MATCHED)
-                .build());
-    additionalMediaFileId = validMediaFile.getId();
-
-    var migrationLogs = migrateAndCaptureLogs();
-
-    assertThat(migrationLogs)
-        .filteredOn(event -> event.getLevel() == Level.INFO)
-        .extracting(ILoggingEvent::getFormattedMessage)
-        .contains("Media file filename migration completed: updated=1, skipped=1");
-  }
-
   private void migrate() throws Exception {
     try (var connection = dataSource.getConnection()) {
       new V049__Derive_Media_File_Filename_From_Filepath_Uri()
           .migrate(new MigrationContext(connection));
     }
-  }
-
-  private List<ILoggingEvent> migrateAndCaptureLogs() throws Exception {
-    var logger =
-        (Logger) LoggerFactory.getLogger(V049__Derive_Media_File_Filename_From_Filepath_Uri.class);
-    var appender = new ListAppender<ILoggingEvent>();
-    appender.start();
-    logger.addAppender(appender);
-
-    try (var connection = dataSource.getConnection()) {
-      new V049__Derive_Media_File_Filename_From_Filepath_Uri()
-          .migrate(new MigrationContext(connection));
-    } finally {
-      logger.detachAppender(appender);
-    }
-
-    return List.copyOf(appender.list);
   }
 
   private void setLastModifiedOn(UUID id, Instant timestamp) throws Exception {

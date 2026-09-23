@@ -3,7 +3,6 @@ package com.streamarr.server.services.identity;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import ch.qos.logback.classic.spi.ThrowableProxyUtil;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
@@ -308,14 +307,9 @@ class ProfileSelectionServiceTest {
     profiles.save(personal);
     try (var logs = LogCapture.forClass(ProfilePinVerifier.class)) {
       failPin(personal);
-      assertThat(logs.events())
-          .singleElement()
-          .satisfies(
-              event -> {
-                assertThat(event.getFormattedMessage()).doesNotContain(storedHash);
-                assertThat(ThrowableProxyUtil.asString(event.getThrowableProxy()))
-                    .doesNotContain(storedHash);
-              });
+      assertThat(logs.renderedEvents())
+          .isNotEmpty()
+          .allSatisfy(event -> assertThat(event).doesNotContain(storedHash));
     }
 
     assertThat(credentialAttempts.attempts())

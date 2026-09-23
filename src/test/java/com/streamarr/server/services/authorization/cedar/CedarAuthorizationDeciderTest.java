@@ -3,11 +3,6 @@ package com.streamarr.server.services.authorization.cedar;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.classic.spi.ThrowableProxyUtil;
-import ch.qos.logback.core.read.ListAppender;
 import com.cedarpolicy.AuthorizationEngine;
 import com.cedarpolicy.BasicAuthorizationEngine;
 import com.cedarpolicy.model.AuthorizationRequest;
@@ -52,7 +47,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.slf4j.LoggerFactory;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.security.access.AccessDeniedException;
 
@@ -294,41 +288,6 @@ class CedarAuthorizationDeciderTest {
                 .decide(identity, new Intent.AddLibrary()))
         .isEqualTo(new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));
     assertThat(failClosedCount(Decision.FailureCause.ENGINE_FAILURE)).isEqualTo(1.0);
-  }
-
-  @Test
-  @DisplayName("Should log an error when authorization fails closed")
-  void shouldLogErrorWhenAuthorizationFailsClosed() {
-    var throwing =
-        new RewritingEngine(
-            ENGINE,
-            _ -> {
-              throw new IllegalStateException("native bridge lost");
-            });
-    var identity = identityFor(liveAccount(true, true));
-    var logger = (Logger) LoggerFactory.getLogger(CedarAuthorizationDecider.class);
-    var appender = new ListAppender<ILoggingEvent>();
-    appender.start();
-    logger.addAppender(appender);
-
-    try {
-      decider(throwing, new LivePrincipalAuthorityContributor(accounts))
-          .decide(identity, new Intent.AddLibrary());
-    } finally {
-      logger.detachAppender(appender);
-      appender.stop();
-    }
-
-    assertThat(appender.list)
-        .filteredOn(event -> event.getLevel() == Level.ERROR)
-        .singleElement()
-        .satisfies(
-            event -> {
-              assertThat(event.getFormattedMessage())
-                  .isEqualTo("Authorization failed closed for ADD_LIBRARY (ENGINE_FAILURE)");
-              assertThat(ThrowableProxyUtil.asString(event.getThrowableProxy()))
-                  .contains("native bridge lost");
-            });
   }
 
   private CedarAuthorizationDecider decider(

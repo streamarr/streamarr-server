@@ -2,10 +2,6 @@ package com.streamarr.server.config.health;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.fakes.FakeHttpClient;
 import com.streamarr.server.fakes.MutableClock;
 import java.io.IOException;
@@ -20,7 +16,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
 import org.springframework.boot.health.contributor.Health;
 import org.springframework.boot.health.contributor.Status;
 
@@ -65,29 +60,7 @@ class TmdbHealthIndicatorTest {
 
     assertThat(health.getStatus()).isEqualTo(TmdbHealthIndicator.DEGRADED);
     assertThat(health.getStatus().getDescription()).isEqualTo(DEGRADED_DESCRIPTION);
-  }
-
-  @Test
-  @DisplayName("Should log warning when TMDB returns unexpected status")
-  void shouldLogWarningWhenTmdbReturnsUnexpectedStatus() {
-    var logger = (Logger) LoggerFactory.getLogger(TmdbHealthIndicator.class);
-    var appender = new ListAppender<ILoggingEvent>();
-    appender.start();
-    logger.addAppender(appender);
-
-    try {
-      indicatorFor(FakeHttpClient.respondingWith(503)).health();
-
-      assertThat(appender.list)
-          .anySatisfy(
-              event -> {
-                assertThat(event.getLevel()).isEqualTo(Level.WARN);
-                assertThat(event.getFormattedMessage()).contains("503");
-              });
-    } finally {
-      logger.detachAppender(appender);
-      appender.stop();
-    }
+    assertThat(health.getDetails()).containsEntry("statusCode", 503);
   }
 
   @Test

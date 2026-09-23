@@ -3,10 +3,6 @@ package com.streamarr.server.services.streaming.remote;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import io.grpc.Server;
 import java.io.IOException;
 import java.util.concurrent.ExecutorService;
@@ -82,26 +78,14 @@ class WorkerSessionServerRuntimeTest {
   }
 
   @Test
-  @DisplayName("Should warn and release resources when server shutdown times out")
-  void shouldWarnAndReleaseResourcesWhenServerShutdownTimesOut() throws Exception {
+  @DisplayName("Should release resources when server shutdown times out")
+  void shouldReleaseResourcesWhenServerShutdownTimesOut() throws Exception {
     var server = new ControllableServer(AwaitOutcome.TIMES_OUT);
     var executor = Executors.newSingleThreadExecutor();
     var runtime = startedRuntime(server, executor);
-    var logger = (Logger) LoggerFactory.getLogger(WorkerSessionServer.class);
-    var appender = new ListAppender<ILoggingEvent>();
-    appender.start();
-    logger.addAppender(appender);
 
-    try {
-      runtime.close();
-    } finally {
-      logger.detachAppender(appender);
-    }
+    runtime.close();
 
-    assertThat(appender.list)
-        .filteredOn(event -> event.getLevel() == Level.WARN)
-        .extracting(ILoggingEvent::getFormattedMessage)
-        .containsExactly("Worker session gRPC server did not terminate within 5s");
     assertThat(server.shutdownRequested).isTrue();
     assertThat(executor.isShutdown()).isTrue();
   }

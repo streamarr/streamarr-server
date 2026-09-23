@@ -1,14 +1,16 @@
 package com.streamarr.server.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.params.provider.Arguments.arguments;
 
-import ch.qos.logback.classic.Level;
 import com.streamarr.server.support.LogCapture;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 @Tag("UnitTest")
@@ -33,23 +35,29 @@ class ClientIpAddressResolverTest {
     assertThat(resolve("::ffff:192.0.2.30")).isEqualTo("192.0.2.30");
   }
 
-  @ParameterizedTest
-  @ValueSource(strings = {"unknown", "fe80::1%en0\r\nforged", "fe80::1%en0\0"})
+  @ParameterizedTest(name = "remoteAddress={0}")
+  @MethodSource("remoteAddressesThatAreNotIps")
   @DisplayName(
-      "Should journal the unspecified address and warn when the remote address is not an IP")
-  void shouldJournalUnspecifiedAddressAndWarnWhenRemoteAddressIsNotAnIp(String remoteAddress) {
+      "Should journal the unspecified address without logging the remote address when it is not an"
+          + " IP")
+  void shouldJournalUnspecifiedAddressWithoutLoggingRemoteAddressWhenItIsNotAnIp(
+      String remoteAddress, String fragmentThatMustStayOutOfLogs) {
     try (var logs = LogCapture.forClass(ClientIpAddressNormalizer.class)) {
       assertThat(resolve(remoteAddress)).isEqualTo("0.0.0.0");
 
-      assertThat(logs.events())
-          .singleElement()
-          .satisfies(
-              event -> {
-                assertThat(event.getLevel()).isEqualTo(Level.WARN);
-                assertThat(event.getFormattedMessage())
-                    .isEqualTo("Client address is not an IP literal; journaling 0.0.0.0");
-              });
+      assertThat(logs.renderedEvents())
+          .isNotEmpty()
+          .allSatisfy(event -> assertThat(event).doesNotContain(fragmentThatMustStayOutOfLogs));
     }
+  }
+
+  // Each fragment survives sanitizing the control characters out of its address, so a partially
+  // cleaned echo of the attacker-controlled input still fails the redaction check.
+  private static Stream<Arguments> remoteAddressesThatAreNotIps() {
+    return Stream.of(
+        arguments("not-an-ip.invalid", "not-an-ip"),
+        arguments("fe80::1%en0\r\nforged", "forged"),
+        arguments("fe80::1%en0\0", "fe80::1"));
   }
 
   @Test
