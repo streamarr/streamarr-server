@@ -15,6 +15,7 @@ import com.github.kagkarlsson.scheduler.stats.StatsRegistry;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.github.kagkarlsson.scheduler.task.TaskInstanceId;
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.config.LibraryWatcherProperties;
 import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
@@ -90,6 +91,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
   @Autowired private PlatformTransactionManager transactionManager;
   @Autowired private TaskRepository probeTasks;
   @Autowired private ProbeSchedulingProperties probeScheduling;
+  @Autowired private LibraryWatcherProperties watcherProperties;
   @Autowired private DbSchedulerCustomizer schedulerCustomizer;
   @Autowired private Environment environment;
 
@@ -281,7 +283,6 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
             .mediaFiles(mediaFiles)
             .reader(reader)
             .producer(producer)
-            .stabilityChecker(_ -> true)
             .fileSystem(FileSystems.getDefault())
             .outcomes(outcomes)
             .build();
@@ -292,6 +293,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
             .clock(clock)
             .properties(probeScheduling)
             .probeTasks(probeTasks)
+            .watcherProperties(watcherProperties)
             .build();
     var task = MediaProbeTask.create(execution, completion, clock);
     var properties =

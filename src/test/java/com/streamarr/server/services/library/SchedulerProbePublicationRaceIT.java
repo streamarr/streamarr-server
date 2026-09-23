@@ -17,6 +17,7 @@ import com.github.kagkarlsson.scheduler.task.Task;
 import com.github.kagkarlsson.scheduler.task.TaskInstanceId;
 import com.github.kagkarlsson.scheduler.task.helper.Tasks;
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.config.LibraryWatcherProperties;
 import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
@@ -84,6 +85,7 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
   @Autowired private PlatformTransactionManager transactionManager;
   @Autowired private TaskRepository probeTasks;
   @Autowired private ProbeSchedulingProperties probeScheduling;
+  @Autowired private LibraryWatcherProperties watcherProperties;
 
   private final FakeFfprobeService producer = new FakeFfprobeService();
   private final CountDownLatch executionFinished = new CountDownLatch(1);
@@ -102,7 +104,6 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
             .mediaFiles(mediaFiles)
             .reader(reader)
             .producer(producer)
-            .stabilityChecker(_ -> true)
             .fileSystem(FileSystems.getDefault())
             .outcomes(outcomes)
             .build();
@@ -267,6 +268,7 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
                 .clock(Clock.offset(Clock.systemUTC(), Duration.ofDays(1)))
                 .properties(probeScheduling)
                 .probeTasks(probeTasks)
+                .watcherProperties(watcherProperties)
                 .build());
     task =
         Tasks.custom(MediaProbeTask.NAME, ProbeTaskRequest.class)

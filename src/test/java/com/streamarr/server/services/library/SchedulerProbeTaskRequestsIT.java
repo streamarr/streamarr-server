@@ -13,6 +13,7 @@ import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.github.kagkarlsson.scheduler.task.Task;
 import com.github.kagkarlsson.scheduler.task.TaskInstanceId;
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.config.LibraryWatcherProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
@@ -69,10 +70,11 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   @Autowired private DSLContext dsl;
   @Autowired private ProbeTaskCompletion completion;
   @Autowired private DbSchedulerCustomizer schedulerCustomizer;
+  @Autowired private LibraryWatcherProperties watcherProperties;
 
   private final FakeFfprobeService producer = new FakeFfprobeService();
   private final List<MediaFile> createdFiles = new ArrayList<>();
-  private final CountDownLatch twoExecutionsFinished = new CountDownLatch(2);
+  private final CountDownLatch firstExecutionFinished = new CountDownLatch(1);
   private Task<ProbeTaskRequest> task;
   private SchedulerClient client;
   private Scheduler scheduler;
@@ -84,7 +86,6 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
             .mediaFiles(mediaFileRepository)
             .reader(reader)
             .producer(producer)
-            .stabilityChecker(_ -> true)
             .fileSystem(FileSystems.getDefault())
             .outcomes(outcomes)
             .build();
@@ -215,20 +216,32 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should publish the observed snapshot when the source changed before execution")
-  void shouldPublishTheObservedSnapshotWhenTheSourceChangedBeforeExecution() throws Exception {
+  @DisplayName(
+      "Should wait a quiet period with the observed snapshot when the source changed before"
+          + " execution")
+  void shouldWaitAQuietPeriodWithTheObservedSnapshotWhenTheSourceChangedBeforeExecution()
+      throws Exception {
     var file = createMediaFile();
     var original = request(file);
     scheduling.request(original);
     Files.write(FilepathCodec.decode(file.getFilepathUri()), new byte[] {4, 5, 6, 7, 8});
     var changed = request(file);
+    var observedAt = Instant.now();
 
     startScheduler();
 
-    assertThat(twoExecutionsFinished.await(15, TimeUnit.SECONDS)).isTrue();
-    assertThat(reader.find(file.getId()))
-        .hasValueSatisfying(stored -> assertThat(stored.snapshot()).isEqualTo(changed.snapshot()));
-    assertThat(client.getScheduledExecution(instanceOf(original))).isEmpty();
+    assertThat(firstExecutionFinished.await(15, TimeUnit.SECONDS)).isTrue();
+    assertThat(client.getScheduledExecution(instanceOf(original)))
+        .hasValueSatisfying(
+            retry -> {
+              assertThat(retry.getData()).isEqualTo(changed);
+              assertThat(retry.isPicked()).isFalse();
+              assertThat(retry.getExecutionTime())
+                  .isAfterOrEqualTo(
+                      observedAt.plusSeconds(watcherProperties.stabilizationPeriodSeconds()));
+            });
+    assertThat(producer.probeCount()).isZero();
+    assertThat(reader.find(file.getId())).isEmpty();
   }
 
   private void startScheduler() {
@@ -243,7 +256,7 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
                 new AbstractSchedulerListener() {
                   @Override
                   public void onExecutionComplete(ExecutionComplete executionComplete) {
-                    twoExecutionsFinished.countDown();
+                    firstExecutionFinished.countDown();
                   }
                 })
             .schedulerName(new SchedulerName.Fixed("media-probe-it"))

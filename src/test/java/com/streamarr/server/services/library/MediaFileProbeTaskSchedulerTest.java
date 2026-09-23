@@ -106,6 +106,33 @@ class MediaFileProbeTaskSchedulerTest {
     assertThat(requests.requests()).isEmpty();
   }
 
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  @DisplayName("Should enqueue a fresh probe when the source changed after a partial-copy outcome")
+  void shouldEnqueueAFreshProbeWhenTheSourceChangedAfterAPartialCopyOutcome(
+      boolean terminalFailure) {
+    var partialCopy = new SourceFileSnapshot(2, MODIFIED_AT.minusSeconds(1));
+    var stored = new FakeMediaFileContainerInfoRepository();
+    stored.store(
+        MediaFileContainerInfo.builder()
+            .mediaFileId(mediaFile.getId())
+            .snapshot(partialCopy)
+            .probeVersion(ProbeVersion.CURRENT)
+            .probeError(terminalFailure ? ProbeError.INVALID_MEDIA : null)
+            .build());
+    var scheduler = schedulerBuilder().reader(new PersistedProbeReader(stored)).build();
+
+    scheduler.onProbeTaskRequested(new MediaFileProbeTaskRequested(mediaFile.getId()));
+
+    assertThat(requests.requests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.snapshot()).isEqualTo(new SourceFileSnapshot(5, MODIFIED_AT));
+              assertThat(request.probeVersion()).isEqualTo(ProbeVersion.CURRENT);
+            });
+  }
+
   @Test
   @DisplayName("Should reject scheduling without enqueue when the media row no longer exists")
   void shouldRejectSchedulingWithoutEnqueueWhenMediaRowNoLongerExists() {

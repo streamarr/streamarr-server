@@ -40,7 +40,6 @@ public class ProbeExecution {
   private final MediaFileRepository mediaFiles;
   private final PersistedProbeReader reader;
   private final FfprobeService producer;
-  private final FileStabilityChecker stabilityChecker;
   private final FileSystem fileSystem;
   private final MediaFileContainerInfoRepository outcomes;
 
@@ -58,23 +57,20 @@ public class ProbeExecution {
     }
 
     var path = FilepathCodec.decode(fileSystem, request.filepathUri());
-    if (snapshot(path).isEmpty()) {
-      return new ProbeExecutionResult.Completed();
-    }
-
-    if (!stabilityChecker.waitForStability(path)) {
-      throw new ProbeExecutionException("Source did not stabilize");
-    }
-
     var before = snapshot(path);
     if (before.isEmpty()) {
       return new ProbeExecutionResult.Completed();
     }
 
     var observed = before.get();
-    if (!observed.equals(request.snapshot()) || request.probeVersion() < ProbeVersion.CURRENT) {
-      return new ProbeExecutionResult.Rescheduled(
+    if (!observed.equals(request.snapshot())) {
+      return new ProbeExecutionResult.SourceChanged(
           request.toBuilder().snapshot(observed).probeVersion(ProbeVersion.CURRENT).build());
+    }
+
+    if (request.probeVersion() < ProbeVersion.CURRENT) {
+      return new ProbeExecutionResult.Rescheduled(
+          request.toBuilder().probeVersion(ProbeVersion.CURRENT).build());
     }
 
     if (reader
@@ -97,7 +93,7 @@ public class ProbeExecution {
       log.debug(
           "Deferring probe for media file {}: all compatible workers are busy",
           request.mediaFileId());
-      return new ProbeExecutionResult.Deferred();
+      return new ProbeExecutionResult.Deferred(request);
     }
 
     var after = snapshot(path);
@@ -106,7 +102,7 @@ public class ProbeExecution {
     }
 
     if (!after.get().equals(observed)) {
-      return new ProbeExecutionResult.Rescheduled(
+      return new ProbeExecutionResult.SourceChanged(
           request.toBuilder().snapshot(after.get()).build());
     }
 
