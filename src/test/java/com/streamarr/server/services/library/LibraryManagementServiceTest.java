@@ -116,6 +116,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.spi.FileSystemProvider;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -838,7 +839,7 @@ class LibraryManagementServiceTest {
         var request = awaitOnlyProbeRequest();
         assertStillScanning(scan);
 
-        probeTaskRequests.fail(request, ItemFailureReason.SOURCE_INACCESSIBLE);
+        probeTaskRequests.fail(request, ItemFailureReason.SOURCE_INACCESSIBLE, Instant.now());
         scan.get(5, TimeUnit.SECONDS);
       }
 

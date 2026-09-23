@@ -38,6 +38,11 @@ public class FakeProbeTaskRequests implements ProbeTaskRequests {
     requests.add(request);
   }
 
+  @Override
+  public void requestRetryingFailure(ProbeTaskRequest request) {
+    request(request);
+  }
+
   public void dispatchWith(Consumer<ProbeTaskRequest> dispatcher) {
     this.dispatcher = dispatcher;
   }
@@ -68,14 +73,14 @@ public class FakeProbeTaskRequests implements ProbeTaskRequests {
             .build());
   }
 
-  public void fail(ProbeTaskRequest request, ItemFailureReason reason) {
+  public void fail(ProbeTaskRequest request, ItemFailureReason reason, Instant failedAt) {
     outcomes.recordProbeFailure(
         request.mediaFileId(),
         request.inputs(),
         ProbeAttemptFailure.builder()
             .reason(reason)
             .detail("Probe attempt failed")
-            .failedAt(Instant.EPOCH)
+            .failedAt(failedAt)
             .build());
   }
 }

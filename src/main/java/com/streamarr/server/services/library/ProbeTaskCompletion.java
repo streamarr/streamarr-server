@@ -89,7 +89,7 @@ public class ProbeTaskCompletion {
         ProbeAttemptFailure.builder()
             .reason(failure.reason())
             .detail(failure.detail())
-            .failedAt(complete.getTimeDone())
+            .failedAt(clock.instant())
             .build());
   }
 

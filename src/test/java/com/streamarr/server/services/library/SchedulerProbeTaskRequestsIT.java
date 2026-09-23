@@ -38,6 +38,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -191,6 +192,53 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should run a failed probe's retry at once when discovery requests it again")
+  void shouldRunAFailedProbesRetryAtOnceWhenDiscoveryRequestsItAgain() throws IOException {
+    var request = request(createMediaFile());
+    scheduling.request(request);
+    delay(request, 2);
+    var requestedAt = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+
+    scheduling.requestRetryingFailure(request);
+
+    assertThat(client.getScheduledExecution(instanceOf(request)))
+        .hasValueSatisfying(
+            pending -> {
+              assertThat(pending.getExecutionTime())
+                  .isAfterOrEqualTo(requestedAt)
+                  .isBeforeOrEqualTo(Instant.now());
+              assertThat(pending.getData()).isEqualTo(request);
+            });
+  }
+
+  @Test
+  @DisplayName("Should keep a failed probe's backoff when playback requests it again")
+  void shouldKeepAFailedProbesBackoffWhenPlaybackRequestsItAgain() throws IOException {
+    var request = request(createMediaFile());
+    scheduling.request(request);
+    var retryAt = delay(request, 2);
+
+    scheduling.request(request);
+
+    assertThat(client.getScheduledExecution(instanceOf(request)))
+        .hasValueSatisfying(pending -> assertThat(pending.getExecutionTime()).isEqualTo(retryAt));
+  }
+
+  @Test
+  @DisplayName("Should keep a quiet period when discovery requests the same inputs again")
+  void shouldKeepAQuietPeriodWhenDiscoveryRequestsTheSameInputsAgain() throws IOException {
+    var request = request(createMediaFile());
+    scheduling.request(request);
+    var quietUntil = delay(request, 0);
+
+    scheduling.requestRetryingFailure(request);
+
+    assertThat(client.getScheduledExecution(instanceOf(request)))
+        .hasValueSatisfying(
+            pending -> assertThat(pending.getExecutionTime()).isEqualTo(quietUntil));
+  }
+
+  @Test
   @DisplayName("Should reschedule with backoff when the producer fails transiently")
   void shouldRescheduleWithBackoffWhenTheProducerFailsTransiently() throws IOException {
     var file = createMediaFile();
@@ -281,6 +329,17 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
                 .build());
     createdFiles.add(file);
     return file;
+  }
+
+  // Moves the pending execution five minutes out with the given failure history.
+  private Instant delay(ProbeTaskRequest request, int consecutiveFailures) {
+    var executionTime = Instant.now().plusSeconds(300).truncatedTo(ChronoUnit.SECONDS);
+    dsl.update(DSL.table("scheduled_tasks"))
+        .set(DSL.field("consecutive_failures", Integer.class), consecutiveFailures)
+        .set(DSL.field("execution_time", Instant.class), executionTime)
+        .where(DSL.field("task_instance", String.class).eq(request.mediaFileId().toString()))
+        .execute();
+    return executionTime;
   }
 
   private static ProbeTaskRequest request(MediaFile file) throws IOException {

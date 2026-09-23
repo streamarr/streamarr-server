@@ -59,6 +59,20 @@ public class SchedulerProbeTaskRequests implements ProbeTaskRequests {
         pending.map(ScheduledExecution::getExecutionTime).filter(now::isBefore).orElse(now));
   }
 
+  @Override
+  @Transactional
+  public void requestRetryingFailure(ProbeTaskRequest request) {
+    request(request);
+    var instance = task.instance(request.mediaFileId().toString(), request);
+    var now = clock.instant();
+    client
+        .getScheduledExecution(instance)
+        .filter(pending -> !pending.isPicked())
+        .filter(pending -> pending.getConsecutiveFailures() > 0)
+        .filter(pending -> now.isBefore(pending.getExecutionTime()))
+        .ifPresent(_ -> replacePendingInputs(instance, request, now));
+  }
+
   private void replacePendingInputs(
       TaskInstance<ProbeTaskRequest> instance, ProbeTaskRequest request, Instant executionTime) {
     try {

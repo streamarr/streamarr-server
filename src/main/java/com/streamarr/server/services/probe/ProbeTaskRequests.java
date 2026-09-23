@@ -6,4 +6,10 @@ import com.streamarr.server.domain.task.ProbeTaskRequest;
 public interface ProbeTaskRequests {
 
   void request(ProbeTaskRequest request);
+
+  /**
+   * Requests the probe like {@link #request}, and runs a retry that waits out the backoff of a
+   * failed attempt at once. A pending probe that waits for any other reason keeps its time.
+   */
+  void requestRetryingFailure(ProbeTaskRequest request);
 }

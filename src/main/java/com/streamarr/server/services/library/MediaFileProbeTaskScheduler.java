@@ -19,6 +19,7 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Consumer;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
@@ -36,14 +37,19 @@ public class MediaFileProbeTaskScheduler {
 
   @EventListener
   public void onProbeTaskRequested(MediaFileProbeTaskRequested event) {
-    schedule(event.mediaFileId());
+    schedule(event.mediaFileId(), probeTaskRequests::request);
   }
 
   /**
-   * Requests a probe of the media file unless its stored outcome already matches the source.
-   * Returns the inputs whose outcome the file needs, or nothing when its source no longer exists.
+   * Requests a probe of the media file unless its stored outcome already matches the source, and
+   * retries a failed attempt at once. Returns the inputs whose outcome the file needs, or nothing
+   * when its source no longer exists.
    */
   public Optional<ProbeInputs> schedule(UUID mediaFileId) {
+    return schedule(mediaFileId, probeTaskRequests::requestRetryingFailure);
+  }
+
+  private Optional<ProbeInputs> schedule(UUID mediaFileId, Consumer<ProbeTaskRequest> requests) {
     var mediaFile =
         mediaFileRepository
             .findById(mediaFileId)
@@ -61,7 +67,7 @@ public class MediaFileProbeTaskScheduler {
       return Optional.of(inputs);
     }
 
-    probeTaskRequests.request(
+    requests.accept(
         ProbeTaskRequest.builder()
             .mediaFileId(mediaFile.getId())
             .libraryId(mediaFile.getLibraryId())

@@ -1,6 +1,6 @@
 package com.streamarr.server.services.library;
 
-import com.streamarr.server.domain.task.ProbeInputs;
+import com.streamarr.server.domain.task.RequestedProbe;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
@@ -18,7 +18,7 @@ public final class ProbeRun {
 
   private final MediaFileProbeTaskScheduler scheduler;
   private final Clock clock;
-  private final Map<UUID, ProbeInputs> requested = new ConcurrentHashMap<>();
+  private final Map<UUID, RequestedProbe> requested = new ConcurrentHashMap<>();
   private final AtomicReference<Instant> firstRequestedAt = new AtomicReference<>();
 
   ProbeRun(MediaFileProbeTaskScheduler scheduler, Clock clock) {
@@ -26,14 +26,18 @@ public final class ProbeRun {
     this.clock = clock;
   }
 
-  /** Requests the media file's probe unless its stored outcome already matches the source. */
+  /**
+   * Requests the media file's probe unless its stored outcome already matches the source. A probe
+   * whose latest attempt failed is retried at once, and the run waits for that retry.
+   */
   public void request(UUID mediaFileId) {
+    var requestedAt = clock.instant();
     scheduler
         .schedule(mediaFileId)
         .ifPresent(
             inputs -> {
-              firstRequestedAt.compareAndSet(null, clock.instant());
-              requested.put(mediaFileId, inputs);
+              firstRequestedAt.compareAndSet(null, requestedAt);
+              requested.put(mediaFileId, new RequestedProbe(inputs, requestedAt));
             });
   }
 
@@ -41,7 +45,7 @@ public final class ProbeRun {
     return Set.copyOf(requested.keySet());
   }
 
-  Map<UUID, ProbeInputs> requested() {
+  Map<UUID, RequestedProbe> requested() {
     return Map.copyOf(requested);
   }
 

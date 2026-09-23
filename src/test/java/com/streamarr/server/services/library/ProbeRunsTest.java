@@ -118,11 +118,29 @@ class ProbeRunsTest {
   void shouldStopWaitingOnceTheFailureOfAnAttemptIsRecorded() throws Exception {
     var run = probeRuns.open();
     run.request(mediaFile("movie.mkv").getId());
-    onCheck = _ -> requests.fail(onlyRequest(), ItemFailureReason.SOURCE_INACCESSIBLE);
+    onCheck =
+        _ -> requests.fail(onlyRequest(), ItemFailureReason.SOURCE_INACCESSIBLE, clock.instant());
 
     var summary = probeRuns.awaitResults(run);
 
     assertThat(summary.count(RequestedProbeResult.FAILED)).isOne();
+    assertThat(sleeps).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("Should wait for a fresh attempt when the failure was recorded before the request")
+  void shouldWaitForAFreshAttemptWhenTheFailureWasRecordedBeforeTheRequest() throws Exception {
+    var mediaFileId = mediaFile("movie.mkv").getId();
+    probeRuns.open().request(mediaFileId);
+    requests.fail(onlyRequest(), ItemFailureReason.SOURCE_INACCESSIBLE, clock.instant());
+    clock.advance(Duration.ofSeconds(1));
+    var run = probeRuns.open();
+    run.request(mediaFileId);
+    onCheck = _ -> requests.succeed(requests.requests().getLast());
+
+    var summary = probeRuns.awaitResults(run);
+
+    assertThat(summary.count(RequestedProbeResult.READY)).isOne();
     assertThat(sleeps).hasSize(1);
   }
 
