@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 @Isolated
 @Tag("IntegrationTest")
@@ -36,6 +37,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MovieRepository movieRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   @TempDir Path tempDir;
 
@@ -95,7 +97,44 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     assertThat(movieRepository.findAll().getFirst().getTitle()).isEqualTo("Inception");
   }
 
+  @Test
+  @DisplayName("Should become unhealthy when the database cannot save an item error during a scan")
+  void shouldBecomeUnhealthyWhenTheDatabaseCannotSaveAnItemErrorDuringAScan() throws IOException {
+    var library = createMovieLibrary();
+    createMovieFile("Inception (2010)", "Inception (2010).mkv");
+    stubTmdbMovieSearch("Inception", "27205", "Inception", "2010-07-16");
+    stubTmdbMovieMetadata("27205", "Inception");
+
+    rejectItemErrorsWhile(() -> libraryManagementService.scanLibrary(library.getId()));
+
+    assertThat(libraryRepository.findById(library.getId()).orElseThrow().getStatus())
+        .isEqualTo(LibraryStatus.UNHEALTHY);
+  }
+
   // --- Helpers ---
+
+  // The movie has no poster or backdrop, so the scan must record them as unavailable.
+  private void rejectItemErrorsWhile(Runnable action) {
+    jdbcTemplate.execute(
+        """
+        CREATE FUNCTION reject_item_error() RETURNS trigger AS $$
+        BEGIN
+          RAISE EXCEPTION 'simulated item error write failure';
+        END
+        $$ LANGUAGE plpgsql
+        """);
+    jdbcTemplate.execute(
+        """
+        CREATE TRIGGER reject_item_error BEFORE INSERT OR UPDATE ON item_result
+        FOR EACH ROW WHEN (NEW.outcome <> 'SUCCEEDED') EXECUTE FUNCTION reject_item_error()
+        """);
+    try {
+      action.run();
+    } finally {
+      jdbcTemplate.execute("DROP TRIGGER reject_item_error ON item_result");
+      jdbcTemplate.execute("DROP FUNCTION reject_item_error()");
+    }
+  }
 
   private Library createMovieLibrary() {
     return libraryRepository.saveAndFlush(

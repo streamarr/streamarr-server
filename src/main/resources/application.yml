@@ -166,6 +166,8 @@ db-scheduler:
 # without counting as a failure.
 probe:
   busy-worker-retry-delay: ${PROBE_BUSY_WORKER_RETRY_DELAY:5s}
+  # How often a scan that waits for its probes checks their stored results.
+  result-check-interval: ${PROBE_RESULT_CHECK_INTERVAL:2s}
 
 library:
   watcher:

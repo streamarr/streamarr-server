@@ -30,7 +30,7 @@ class ProbeSchedulingPropertiesTest {
   @Test
   @DisplayName("Should retry busy workers after five seconds when no delay is configured")
   void shouldRetryBusyWorkersAfterFiveSecondsWhenNoDelayIsConfigured() {
-    var properties = new ProbeSchedulingProperties(null);
+    var properties = new ProbeSchedulingProperties(null, null);
 
     assertThat(properties.busyWorkerRetryDelay()).isEqualTo(Duration.ofSeconds(5));
   }
@@ -64,8 +64,27 @@ class ProbeSchedulingPropertiesTest {
   void shouldRejectBusyWorkerRetryDelayWhenItIsNotPositive(long seconds) {
     var delay = Duration.ofSeconds(seconds);
 
-    assertThatThrownBy(() -> new ProbeSchedulingProperties(delay))
+    assertThatThrownBy(() -> new ProbeSchedulingProperties(delay, null))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Busy worker retry delay must be positive");
+  }
+
+  @Test
+  @DisplayName("Should check probe results every two seconds when no interval is configured")
+  void shouldCheckProbeResultsEveryTwoSecondsWhenNoIntervalIsConfigured() {
+    var properties = new ProbeSchedulingProperties(null, null);
+
+    assertThat(properties.resultCheckInterval()).isEqualTo(Duration.ofSeconds(2));
+  }
+
+  @ParameterizedTest
+  @ValueSource(longs = {0, -1})
+  @DisplayName("Should reject the probe result check interval when it is not positive")
+  void shouldRejectProbeResultCheckIntervalWhenItIsNotPositive(long seconds) {
+    var interval = Duration.ofSeconds(seconds);
+
+    assertThatThrownBy(() -> new ProbeSchedulingProperties(null, interval))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Probe result check interval must be positive");
   }
 }

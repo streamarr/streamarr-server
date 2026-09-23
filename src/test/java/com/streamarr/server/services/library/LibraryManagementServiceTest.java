@@ -29,15 +29,16 @@ import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
-import com.streamarr.server.fakes.CapturingProbeTaskRequests;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
@@ -47,15 +48,18 @@ import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
+import com.streamarr.server.fakes.FakeProbeTaskRequests;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.fakes.FakeTransactionManager;
+import com.streamarr.server.fakes.GatedImageDownloader;
 import com.streamarr.server.fakes.RecordingMetadataProvider;
 import com.streamarr.server.fakes.RecordingSeriesMetadataProvider;
 import com.streamarr.server.fakes.SecurityExceptionFileSystem;
 import com.streamarr.server.fakes.ThrowingFileSystemWrapper;
 import com.streamarr.server.fixtures.ArtworkServiceFixture;
+import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -73,7 +77,6 @@ import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.events.library.ItemProcessedEvent;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
-import com.streamarr.server.services.events.library.MediaFileProbeTaskRequested;
 import com.streamarr.server.services.events.library.RefreshEndedEvent;
 import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
@@ -101,7 +104,6 @@ import com.streamarr.server.services.parsers.show.regex.EpisodeRegexFixtures;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
-import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
@@ -122,10 +124,10 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -155,7 +157,15 @@ class LibraryManagementServiceTest {
   private final MovieMetadataProviderResolver fakeMovieMetadataProviderResolver =
       new MovieMetadataProviderResolver(List.of(tmdbMovieProvider));
   private final LibraryRepository fakeLibraryRepository = new FakeLibraryRepository();
-  private final MediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
+  private Runnable beforeProbeSchedulingReadsMediaFile = () -> {};
+  private final MediaFileRepository fakeMediaFileRepository =
+      new FakeMediaFileRepository() {
+        @Override
+        public Optional<MediaFile> findById(UUID id) {
+          beforeProbeSchedulingReadsMediaFile.run();
+          return super.findById(id);
+        }
+      };
   private final MovieRepository fakeMovieRepository = new FakeMovieRepository();
   private final SignalingEventPublisher capturingEventPublisher = new SignalingEventPublisher();
   private final FakeTransactionManager transactionManager = new FakeTransactionManager();
@@ -194,6 +204,11 @@ class LibraryManagementServiceTest {
 
   private final LibraryRefreshService libraryRefreshService = mock(LibraryRefreshService.class);
 
+  private final FakeMediaFileContainerInfoRepository probeOutcomes =
+      new FakeMediaFileContainerInfoRepository();
+  private final FakeProbeTaskRequests probeTaskRequests = succeedingProbeRequests(probeOutcomes);
+  private final FileDiscoveryRuns fileDiscoveryRuns = fileDiscoveryRunsWith(artworkService);
+
   private final LibraryManagementService libraryManagementService =
       new LibraryManagementService(
           new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
@@ -211,7 +226,7 @@ class LibraryManagementServiceTest {
           fileSystem,
           libraryMutationTransaction,
           mutationTransactions,
-          artworkService);
+          fileDiscoveryRuns);
 
   private UUID savedLibraryId;
 
@@ -247,8 +262,7 @@ class LibraryManagementServiceTest {
     assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath)))
         .as("Media file should have been created before scanLibrary returned")
         .isPresent();
-    assertThat(capturingEventPublisher.getEventsOfType(MediaFileProbeTaskRequested.class))
-        .hasSize(1);
+    assertThat(probeTaskRequests.requests()).hasSize(1);
   }
 
   @Test
@@ -681,8 +695,9 @@ class LibraryManagementServiceTest {
 
     libraryManagementService.scanLibrary(savedLibraryId);
 
-    assertThat(capturingEventPublisher.getEventsOfType(MediaFileProbeTaskRequested.class))
-        .containsExactly(new MediaFileProbeTaskRequested(mediaFile.getId()));
+    assertThat(probeTaskRequests.requests())
+        .singleElement()
+        .satisfies(request -> assertThat(request.mediaFileId()).isEqualTo(mediaFile.getId()));
   }
 
   @Test
@@ -693,11 +708,12 @@ class LibraryManagementServiceTest {
     saveMatchedMediaFile(path);
     var enqueueStarted = new CountDownLatch(1);
     var enqueueReleased = new CountDownLatch(1);
-    capturingEventPublisher.probeTaskRequested =
-        _ -> {
+    probeTaskRequests.dispatchWith(
+        request -> {
           enqueueStarted.countDown();
           awaitEnqueueRelease(enqueueReleased);
-        };
+          probeTaskRequests.succeed(request);
+        });
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var scan = executor.submit(() -> libraryManagementService.scanLibrary(savedLibraryId));
@@ -723,10 +739,10 @@ class LibraryManagementServiceTest {
     var rootPath = createRootLibraryDirectory();
     var path = createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
     saveMatchedMediaFile(path);
-    capturingEventPublisher.probeTaskRequested =
+    probeTaskRequests.dispatchWith(
         _ -> {
           throw new DataAccessResourceFailureException("Queue unavailable");
-        };
+        });
 
     libraryManagementService.scanLibrary(savedLibraryId);
 
@@ -743,16 +759,13 @@ class LibraryManagementServiceTest {
     var rootPath = createRootLibraryDirectory();
     var path = createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
     saveMatchedMediaFile(path);
-    var scheduler = probeTaskScheduler(fileSystem);
-    capturingEventPublisher.probeTaskRequested =
-        event -> {
+    beforeProbeSchedulingReadsMediaFile =
+        () -> {
           try {
-            Files.delete(path);
+            Files.deleteIfExists(path);
           } catch (IOException exception) {
             throw new UncheckedIOException(exception);
           }
-
-          scheduler.onProbeTaskRequested(event);
         };
 
     libraryManagementService.scanLibrary(savedLibraryId);
@@ -771,17 +784,16 @@ class LibraryManagementServiceTest {
     var rootPath = createRootLibraryDirectory();
     var path = createMovieFile(rootPath, "Unavailable mount", "movie.mkv");
     saveMatchedMediaFile(path);
-    var scheduler = probeTaskScheduler(fileSystem);
-    capturingEventPublisher.probeTaskRequested =
-        event -> {
+    beforeProbeSchedulingReadsMediaFile =
+        () -> {
           try {
-            Files.delete(path);
-            Files.createSymbolicLink(path, path.getFileName());
+            if (!Files.isSymbolicLink(path)) {
+              Files.delete(path);
+              Files.createSymbolicLink(path, path.getFileName());
+            }
           } catch (IOException exception) {
             throw new UncheckedIOException(exception);
           }
-
-          scheduler.onProbeTaskRequested(event);
         };
 
     libraryManagementService.scanLibrary(savedLibraryId);
@@ -792,13 +804,171 @@ class LibraryManagementServiceTest {
     assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
   }
 
-  private MediaFileProbeTaskScheduler probeTaskScheduler(FileSystem observedFileSystem) {
-    return MediaFileProbeTaskScheduler.builder()
-        .mediaFileRepository(fakeMediaFileRepository)
-        .reader(new PersistedProbeReader(new FakeMediaFileContainerInfoRepository()))
-        .probeTaskRequests(new CapturingProbeTaskRequests())
-        .fileSystem(observedFileSystem)
-        .build();
+  @Nested
+  @DisplayName("Scan completion")
+  class ScanCompletionTests {
+
+    @Test
+    @DisplayName("Should stay scanning until the requested probe stores an outcome")
+    void shouldStayScanningUntilTheRequestedProbeStoresAnOutcome() throws Exception {
+      saveMatchedMediaFile(createMovieFile(createRootLibraryDirectory(), "Held", "Held.mkv"));
+      probeTaskRequests.dispatchWith(_ -> {});
+
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var scan = executor.submit(() -> libraryManagementService.scanLibrary(savedLibraryId));
+        var request = awaitOnlyProbeRequest();
+        assertStillScanning(scan);
+
+        probeTaskRequests.succeed(request);
+        scan.get(5, TimeUnit.SECONDS);
+      }
+
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+      assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("Should finish the scan once the failure of a probe attempt is recorded")
+    void shouldFinishTheScanOnceTheFailureOfAProbeAttemptIsRecorded() throws Exception {
+      saveMatchedMediaFile(createMovieFile(createRootLibraryDirectory(), "Share", "Share.mkv"));
+      probeTaskRequests.dispatchWith(_ -> {});
+
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var scan = executor.submit(() -> libraryManagementService.scanLibrary(savedLibraryId));
+        var request = awaitOnlyProbeRequest();
+        assertStillScanning(scan);
+
+        probeTaskRequests.fail(request, ItemFailureReason.SOURCE_INACCESSIBLE);
+        scan.get(5, TimeUnit.SECONDS);
+      }
+
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+    }
+
+    @Test
+    @DisplayName("Should stay scanning until required artwork is saved")
+    void shouldStayScanningUntilRequiredArtworkIsSaved() throws Exception {
+      createMovieFile(createRootLibraryDirectory(), "About Time", "About Time (2013).mkv");
+      var downloader = new GatedImageDownloader(createTestImage(600, 900));
+      downloader.holdPathsStartingWith("/poster");
+      var imageRepository = new FakeImageRepository();
+      var service =
+          libraryManagementServiceWithArtwork(
+              ArtworkServiceFixture.artworkServiceBuilder()
+                  .imageRepository(imageRepository)
+                  .imageDownloader(downloader)
+                  .build());
+      matchMovieWithPoster("About Time");
+
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var scan = executor.submit(() -> service.scanLibrary(savedLibraryId));
+        await().atMost(Duration.ofSeconds(5)).until(() -> downloader.heldDownloads() == 1);
+        assertStillScanning(scan);
+
+        downloader.releaseHeldDownloads();
+        scan.get(5, TimeUnit.SECONDS);
+      } finally {
+        downloader.releaseHeldDownloads();
+      }
+
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+      assertThat(imageRepository.findAll()).isNotEmpty();
+    }
+
+    @Test
+    @DisplayName("Should become unhealthy when a required artwork result cannot be saved")
+    void shouldBecomeUnhealthyWhenARequiredArtworkResultCannotBeSaved() throws Exception {
+      createMovieFile(createRootLibraryDirectory(), "About Time", "About Time (2013).mkv");
+      var itemResults = new FakeItemResultRepository();
+      itemResults.failWritesWith(new DataAccessResourceFailureException("database unavailable"));
+      var service =
+          libraryManagementServiceWithArtwork(
+              ArtworkServiceFixture.artworkServiceBuilder().itemResults(itemResults).build());
+      matchMovieWithPoster("About Time");
+
+      service.scanLibrary(savedLibraryId);
+
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+      assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
+    }
+
+    private ProbeTaskRequest awaitOnlyProbeRequest() {
+      await().atMost(Duration.ofSeconds(5)).until(() -> probeTaskRequests.requests().size() == 1);
+      return probeTaskRequests.requests().getFirst();
+    }
+
+    private void assertStillScanning(Future<?> scan) {
+      await()
+          .during(Duration.ofMillis(200))
+          .atMost(Duration.ofSeconds(2))
+          .until(() -> !scan.isDone());
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.SCANNING);
+      assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
+    }
+
+    private void matchMovieWithPoster(String title) {
+      when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+      when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
+          .thenReturn(
+              new Found(
+                  RemoteSearchResult.builder()
+                      .title(title)
+                      .externalId("123")
+                      .externalSourceType(ExternalSourceType.TMDB)
+                      .build()));
+      when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
+          .thenReturn(
+              new MetadataFetchOutcome.Found<>(
+                  MetadataFixture.<Movie>metadataResultBuilder()
+                      .entity(Movie.builder().title(title).titleSort(title).build())
+                      .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))
+                      .build()));
+    }
+  }
+
+  private LibraryStatus libraryStatus() {
+    return fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus();
+  }
+
+  private LibraryManagementService libraryManagementServiceWithArtwork(ArtworkService artwork) {
+    var artworkMovieService =
+        new MovieService(
+            fakeMovieRepository,
+            personService,
+            genreService,
+            companyService,
+            null,
+            artwork,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null);
+    return new LibraryManagementService(
+        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+        new VideoExtensionValidator(),
+        new MovieFileProcessor(
+            new DefaultVideoFileMetadataParser(),
+            new ExternalIdVideoFileMetadataParser(),
+            fakeMovieMetadataProviderResolver,
+            artworkMovieService,
+            fakeMediaFileRepository,
+            new MutexFactoryProvider()),
+        seriesFileProcessor,
+        fakeLibraryRepository,
+        new FakeLibraryMetadataRepository(),
+        fakeMediaFileRepository,
+        artworkMovieService,
+        seriesService,
+        capturingEventPublisher,
+        new MutexFactoryProvider(),
+        libraryRefreshService,
+        fileSystem,
+        libraryMutationTransaction,
+        mutationTransactions,
+        fileDiscoveryRunsWith(artwork));
   }
 
   private void saveMatchedMediaFile(Path path) {
@@ -1893,15 +2063,10 @@ class LibraryManagementServiceTest {
   private static final class SignalingEventPublisher extends CapturingEventPublisher {
 
     private final CountDownLatch refreshEnded = new CountDownLatch(1);
-    private Consumer<MediaFileProbeTaskRequested> probeTaskRequested = _ -> {};
 
     @Override
     public void publishEvent(Object event) {
       super.publishEvent(event);
-      if (event instanceof MediaFileProbeTaskRequested requested) {
-        probeTaskRequested.accept(requested);
-      }
-
       if (event instanceof RefreshEndedEvent) {
         refreshEnded.countDown();
       }
@@ -1980,6 +2145,23 @@ class LibraryManagementServiceTest {
     return path;
   }
 
+  private static FakeProbeTaskRequests succeedingProbeRequests(
+      FakeMediaFileContainerInfoRepository outcomes) {
+    var requests = new FakeProbeTaskRequests(outcomes);
+    requests.succeedEachRequest();
+    return requests;
+  }
+
+  private FileDiscoveryRuns fileDiscoveryRunsWith(ArtworkService artwork) {
+    return FileDiscoveryRunsFixture.fileDiscoveryRunsBuilder()
+        .artworkService(artwork)
+        .mediaFiles(fakeMediaFileRepository)
+        .outcomes(probeOutcomes)
+        .probeTaskRequests(probeTaskRequests)
+        .fileSystem(fileSystem)
+        .build();
+  }
+
   private static ArtworkService artworkServiceWith(FakeImageRepository imageRepository) {
     var imageDownloader = new FakeTmdbHttpService();
     imageDownloader.setImageData(createTestImage(600, 900));
@@ -2031,7 +2213,7 @@ class LibraryManagementServiceTest {
         alternateFileSystem,
         libraryMutationTransaction,
         mutationTransactions,
-        artworkService);
+        fileDiscoveryRuns);
   }
 
   private LibraryManagementService libraryManagementServiceWith(
@@ -2052,7 +2234,7 @@ class LibraryManagementServiceTest {
         fileSystem,
         libraryMutationTransaction,
         mutationTransactions,
-        artworkService);
+        fileDiscoveryRuns);
   }
 
   private LibraryManagementService libraryManagementServiceWithRefreshService(
@@ -2073,7 +2255,7 @@ class LibraryManagementServiceTest {
         fileSystem,
         libraryMutationTransaction,
         mutationTransactions,
-        artworkService);
+        fileDiscoveryRuns);
   }
 
   private Path pathWithDisplayName(String filepathUri, String displayName) throws IOException {

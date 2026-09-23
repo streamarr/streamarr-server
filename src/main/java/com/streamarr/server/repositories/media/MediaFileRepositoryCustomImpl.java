@@ -8,8 +8,10 @@ import com.streamarr.server.jooq.generated.enums.ItemResultFailureReason;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import jakarta.persistence.EntityManager;
 import java.util.Collection;
+import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -69,6 +71,20 @@ public class MediaFileRepositoryCustomImpl implements MediaFileRepositoryCustom 
             .and(MEDIA_FILE.STATUS.ne(toJooq(MediaFileStatus.MATCHED)))
             .execute()
         > 0;
+  }
+
+  @Override
+  public Map<MediaFileStatus, Long> countStatuses(Collection<UUID> mediaFileIds) {
+    var counts = new EnumMap<MediaFileStatus, Long>(MediaFileStatus.class);
+    dsl.select(MEDIA_FILE.STATUS, DSL.count())
+        .from(MEDIA_FILE)
+        .where(MEDIA_FILE.ID.eq(DSL.any(mediaFileIds.toArray(UUID[]::new))))
+        .groupBy(MEDIA_FILE.STATUS)
+        .forEach(
+            row ->
+                counts.put(
+                    MediaFileStatus.valueOf(row.value1().getLiteral()), (long) row.value2()));
+    return counts;
   }
 
   // The generated enum shares its name with the domain enum it mirrors.

@@ -59,6 +59,10 @@ public class ArtworkProgress {
     progressByPriority.get(priority).finish(sourceImages, results, clock.instant());
   }
 
+  int pending(ArtworkPriority priority) {
+    return progressByPriority.get(priority).pending();
+  }
+
   void runCompleted(ArtworkRunSummary summary) {
     if (summary.counts().equals(ArtworkCounts.NONE)) {
       return;
@@ -107,6 +111,10 @@ public class ArtworkProgress {
 
     private PriorityProgress(ArtworkPriority priority) {
       this.priority = priority;
+    }
+
+    private synchronized int pending() {
+      return pending;
     }
 
     /** Returns whether this request started a new busy period. */
