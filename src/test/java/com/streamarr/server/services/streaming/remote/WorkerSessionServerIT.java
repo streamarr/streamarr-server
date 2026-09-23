@@ -51,6 +51,7 @@ import io.grpc.ManagedChannel;
 import io.grpc.Status;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.StreamObserver;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -755,14 +756,15 @@ class WorkerSessionServerIT {
 
   @Test
   @DisplayName(
-      "Should keep the stored segments and reject the upload when a replacement attempt's initialization segment differs")
-  void shouldKeepStoredSegmentsAndRejectUploadWhenReplacementAttemptsInitializationSegmentDiffers(
+      "Should end the replacement attempt and keep the stored segments when its initialization segment differs")
+  void shouldEndReplacementAttemptAndKeepStoredSegmentsWhenItsInitializationSegmentDiffers(
       @TempDir Path segments) throws Exception {
     var segmentStore = new LocalSegmentStore(segments);
+    var meterRegistry = new SimpleMeterRegistry();
     var storedInitialization = "ftyp moov from encoder A".getBytes();
     var firstMediaSegment = "moof mdat of segment 0".getBytes();
     var differingInitialization = "ftyp moov from encoder B".getBytes();
-    try (var server = server(segmentStore)) {
+    try (var server = server(segmentStore, meterRegistry)) {
       server.start();
       var channel = workerChannel(server.port());
 
@@ -806,10 +808,31 @@ class WorkerSessionServerIT {
                 differingInitialization);
 
         assertUploadRejected(refused, Status.Code.FAILED_PRECONDITION);
+        assertThat(worker.nextResponse().getStopVariant().getJobAttemptId())
+            .isEqualTo(replacement.getJobAttemptId());
+        assertThat(server.isRunning(streamSessionId, "720p")).isFalse();
+        assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
+        assertThat(
+                meterRegistry
+                    .get("streamarr.streaming.initialization_segment_mismatches")
+                    .counter()
+                    .count())
+            .isEqualTo(1);
+        var laterMediaSegment = "moof mdat of segment 1".getBytes();
+        assertUploadRejected(
+            upload(
+                channel,
+                fmp4Metadata(
+                    segmentMetadata(workerSession, identity, replacement),
+                    "segment1.m4s",
+                    laterMediaSegment),
+                laterMediaSegment),
+            Status.Code.PERMISSION_DENIED);
         assertThat(segmentStore.readSegment(streamSessionId, "720p/init.mp4"))
             .isEqualTo(storedInitialization);
         assertThat(segmentStore.readSegment(streamSessionId, "720p/segment0.m4s"))
             .isEqualTo(firstMediaSegment);
+        assertThat(segmentStore.segmentExists(streamSessionId, "720p/segment1.m4s")).isFalse();
       } finally {
         shutdown(channel);
       }
@@ -1324,8 +1347,12 @@ class WorkerSessionServerIT {
   }
 
   private WorkerSessionServer server(SegmentStore segmentStore) {
+    return server(segmentStore, new SimpleMeterRegistry());
+  }
+
+  private WorkerSessionServer server(SegmentStore segmentStore, MeterRegistry meterRegistry) {
     return new WorkerSessionServer(
-        serverConfigurationBuilder().build(), segmentStore, new SimpleMeterRegistry());
+        serverConfigurationBuilder().build(), segmentStore, meterRegistry);
   }
 
   private ManagedChannel workerChannel(int port) {

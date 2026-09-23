@@ -21,10 +21,13 @@ import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.services.streaming.SegmentDelivery;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.UUID;
@@ -46,6 +49,9 @@ class RemoteRecoveryIT {
 
   private static final UUID SOURCE_NAMESPACE_ID =
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
+  private static final byte[] STORED_INITIALIZATION = "ftyp moov from encoder A".getBytes();
+  private static final byte[] FIRST_MEDIA_SEGMENT = "moof mdat of segment 0".getBytes();
+  private static final byte[] SECOND_MEDIA_SEGMENT = "moof mdat of segment 1".getBytes();
 
   @TempDir Path tempDir;
 
@@ -139,14 +145,181 @@ class RemoteRecoveryIT {
     }
   }
 
-  private record RecoveryRig(SegmentDeliveryCoordinator coordinator, StreamSession session) {}
+  @Test
+  @DisplayName(
+      "Should publish a replacement attempt's media segments when its initialization segment matches the stored one")
+  void shouldPublishReplacementAttemptsMediaSegmentsWhenItsInitializationSegmentMatchesStoredOne()
+      throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var meterRegistry = new SimpleMeterRegistry();
+    var streamSessionId = UUID.randomUUID();
+
+    try (var server = server(segmentStore, meterRegistry);
+        var worker =
+            workerBuilder(server, mediaRoot)
+                .ffmpegScript(killableThenReplacedScript(STORED_INITIALIZATION))
+                .build()) {
+      server.start();
+      worker.start();
+      var rig =
+          recoveryRig(
+              RecoveryRigConfiguration.builder()
+                  .streamSessionId(streamSessionId)
+                  .mediaFile(mediaFile)
+                  .segmentStore(segmentStore)
+                  .executor(new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot))
+                  .transcodeDecision(fragmentedTranscodeDecision())
+                  .build());
+      startThenKillInitialAttempt(rig, List.of(worker));
+
+      var delivery =
+          rig.coordinator()
+              .deliver(streamSessionId, StreamSession.defaultVariant(), "segment1.m4s");
+
+      assertThat(delivery).isEqualTo(new SegmentDelivery.Ready(SECOND_MEDIA_SEGMENT));
+      assertThat(segmentStore.readSegment(streamSessionId, "init.mp4"))
+          .isEqualTo(STORED_INITIALIZATION);
+      assertThat(segmentStore.readSegment(streamSessionId, "segment0.m4s"))
+          .isEqualTo(FIRST_MEDIA_SEGMENT);
+      assertThat(initializationSegmentMismatches(meterRegistry)).isZero();
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the stored segments and try every worker when each replacement attempt's initialization segment differs")
+  void shouldKeepStoredSegmentsAndTryEveryWorkerWhenEachReplacementAttemptsInitializationDiffers()
+      throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var meterRegistry = new SimpleMeterRegistry();
+    var streamSessionId = UUID.randomUUID();
+    var script = killableThenReplacedScript("ftyp moov from encoder B".getBytes());
+
+    try (var server = server(segmentStore, meterRegistry);
+        var firstWorker = workerBuilder(server, mediaRoot).ffmpegScript(script).build();
+        var secondWorker = workerBuilder(server, mediaRoot).ffmpegScript(script).build()) {
+      server.start();
+      firstWorker.start();
+      secondWorker.start();
+      var rig =
+          recoveryRig(
+              RecoveryRigConfiguration.builder()
+                  .streamSessionId(streamSessionId)
+                  .mediaFile(mediaFile)
+                  .segmentStore(segmentStore)
+                  .executor(new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot))
+                  .transcodeDecision(fragmentedTranscodeDecision())
+                  .build());
+      startThenKillInitialAttempt(rig, List.of(firstWorker, secondWorker));
+
+      var delivery =
+          rig.coordinator()
+              .deliver(streamSessionId, StreamSession.defaultVariant(), "segment1.m4s");
+
+      assertThat(delivery).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+      assertThat(initializationSegmentMismatches(meterRegistry))
+          .as("each eligible worker ran one replacement attempt and was refused")
+          .isEqualTo(2);
+      assertThat(segmentStore.readSegment(streamSessionId, "init.mp4"))
+          .isEqualTo(STORED_INITIALIZATION);
+      assertThat(segmentStore.readSegment(streamSessionId, "segment0.m4s"))
+          .isEqualTo(FIRST_MEDIA_SEGMENT);
+      assertThat(segmentStore.segmentExists(streamSessionId, "segment1.m4s")).isFalse();
+      assertThat(rig.session().getHandle().orElseThrow().status())
+          .isEqualTo(TranscodeStatus.FAILED);
+    }
+  }
+
+  private static String killableThenReplacedScript(byte[] replacementInitialization) {
+    var initial = new LinkedHashMap<String, byte[]>();
+    initial.put("init.mp4", STORED_INITIALIZATION);
+    initial.put("segment0.m4s", FIRST_MEDIA_SEGMENT);
+    var replacement = new LinkedHashMap<String, byte[]>();
+    replacement.put("init.mp4", replacementInitialization);
+    replacement.put("segment1.m4s", SECOND_MEDIA_SEGMENT);
+    // The initial attempt (start number 0) writes its segments in a subshell, which confines the
+    // emitted script's exit, then stays alive until the test kills it. The replacement attempt
+    // starts at segment 1.
+    return """
+        start=0
+        previous=
+        for option in "$@"; do
+          if [[ $previous == -start_number ]]; then
+            start=$option
+          fi
+          previous=$option
+        done
+        if [[ $start == 0 ]]; then
+          (
+        %s
+          )
+          exec sleep 300
+        fi
+        %s
+        """
+        .formatted(
+            WorkerContainerFixture.emitSegments(initial),
+            WorkerContainerFixture.emitSegments(replacement));
+  }
+
+  private void startThenKillInitialAttempt(RecoveryRig rig, List<WorkerContainerFixture> workers)
+      throws Exception {
+    var configuration = rig.configuration();
+    var streamSessionId = configuration.streamSessionId();
+    var handle =
+        configuration
+            .executor()
+            .start(
+                transcodeRequest(
+                    streamSessionId, configuration.mediaFile(), configuration.transcodeDecision()));
+    rig.session().setHandle(handle);
+    await()
+        .atMost(30, TimeUnit.SECONDS)
+        .until(() -> configuration.segmentStore().segmentExists(streamSessionId, "segment0.m4s"));
+    for (var worker : workers) {
+      if (worker.commandFor(handle.attemptId()).isPresent()) {
+        worker.killProducer(handle.attemptId());
+      }
+    }
+
+    await()
+        .atMost(10, TimeUnit.SECONDS)
+        .until(
+            () ->
+                !configuration
+                    .executor()
+                    .isRunning(streamSessionId, StreamSession.defaultVariant()));
+  }
+
+  private static double initializationSegmentMismatches(SimpleMeterRegistry meterRegistry) {
+    return meterRegistry
+        .get("streamarr.streaming.initialization_segment_mismatches")
+        .counter()
+        .count();
+  }
+
+  private record RecoveryRig(
+      SegmentDeliveryCoordinator coordinator,
+      StreamSession session,
+      RecoveryRigConfiguration configuration) {}
 
   @Builder
   private record RecoveryRigConfiguration(
       UUID streamSessionId,
       Path mediaFile,
       LocalSegmentStore segmentStore,
-      RemoteTranscodeExecutor executor) {}
+      RemoteTranscodeExecutor executor,
+      TranscodeDecision transcodeDecision) {
+
+    private RecoveryRigConfiguration {
+      transcodeDecision =
+          transcodeDecision != null ? transcodeDecision : RemoteRecoveryIT.transcodeDecision();
+    }
+  }
 
   private RecoveryRig recoveryRig(RecoveryRigConfiguration configuration) {
     var session =
@@ -156,7 +329,7 @@ class RemoteRecoveryIT {
             .authority(playbackAuthorityFor(UUID.randomUUID()))
             .sourcePath(configuration.mediaFile())
             .mediaProbe(defaultProbeBuilder().build())
-            .transcodeDecision(transcodeDecision())
+            .transcodeDecision(configuration.transcodeDecision())
             .build();
     var registry = new FakeRuntimeStreamSessionRegistry();
     registry.save(session);
@@ -173,14 +346,16 @@ class RemoteRecoveryIT {
             .runtimeRegistry(registry)
             .pollInterval(Duration.ofMillis(50))
             .build();
-    return new RecoveryRig(rig.coordinator(), session);
+    return new RecoveryRig(rig.coordinator(), session, configuration);
   }
 
   private WorkerSessionServer server(LocalSegmentStore segmentStore) {
+    return server(segmentStore, new SimpleMeterRegistry());
+  }
+
+  private WorkerSessionServer server(LocalSegmentStore segmentStore, MeterRegistry meterRegistry) {
     return new WorkerSessionServer(
-        serverConfigurationBuilder().address("127.0.0.1").build(),
-        segmentStore,
-        new SimpleMeterRegistry());
+        serverConfigurationBuilder().address("127.0.0.1").build(), segmentStore, meterRegistry);
   }
 
   private WorkerContainerFixture.WorkerContainerFixtureBuilder workerBuilder(
@@ -192,12 +367,17 @@ class RemoteRecoveryIT {
   }
 
   private TranscodeRequest transcodeRequest(UUID streamSessionId, Path mediaFile) {
+    return transcodeRequest(streamSessionId, mediaFile, transcodeDecision());
+  }
+
+  private static TranscodeRequest transcodeRequest(
+      UUID streamSessionId, Path mediaFile, TranscodeDecision transcodeDecision) {
     return TranscodeRequest.builder()
         .sessionId(streamSessionId)
         .sourcePath(mediaFile)
         .targetSegmentDuration(6)
         .framerate(OptionalDouble.of(23.976))
-        .transcodeDecision(transcodeDecision())
+        .transcodeDecision(transcodeDecision)
         .width(1920)
         .height(1080)
         .bitrate(5_000_000)
@@ -205,7 +385,18 @@ class RemoteRecoveryIT {
         .build();
   }
 
-  private TranscodeDecision transcodeDecision() {
+  private static TranscodeDecision fragmentedTranscodeDecision() {
+    return TranscodeDecision.builder()
+        .transcodeMode(TranscodeMode.REMUX)
+        .videoCodecFamily("hevc")
+        .audioDecision(AudioDecision.copy("aac", 2, 128_000))
+        .subtitleDecision(SubtitleDecision.exclude())
+        .containerFormat(ContainerFormat.FMP4)
+        .needsKeyframeAlignment(true)
+        .build();
+  }
+
+  private static TranscodeDecision transcodeDecision() {
     return TranscodeDecision.builder()
         .transcodeMode(TranscodeMode.REMUX)
         .videoCodecFamily("h264")

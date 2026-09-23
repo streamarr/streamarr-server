@@ -21,6 +21,7 @@ import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerSessionAccepted;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.LinkedHashSet;
@@ -41,11 +42,13 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 final class LiveWorkerConnectionRegistry {
 
+  private static final String INITIALIZATION_SEGMENT_MISMATCH_METRIC =
+      "streamarr.streaming.initialization_segment_mismatches";
   private static final Executor PROBE_DEADLINE_CALLBACKS =
       command -> Thread.ofVirtual().name("worker-probe-deadline").start(command);
   private final long probeTimeoutNanos;
   private final long probeCancellationTimeoutNanos;
-  private final MeterRegistry meterRegistry;
+  private final Counter initializationSegmentMismatches;
 
   LiveWorkerConnectionRegistry() {
     this(WorkerSessionServerConfiguration.builder().build(), new SimpleMeterRegistry());
@@ -55,7 +58,12 @@ final class LiveWorkerConnectionRegistry {
       WorkerSessionServerConfiguration configuration, MeterRegistry meterRegistry) {
     probeTimeoutNanos = configuration.probeTimeout().toNanos();
     probeCancellationTimeoutNanos = configuration.probeCancellationTimeout().toNanos();
-    this.meterRegistry = meterRegistry;
+    initializationSegmentMismatches =
+        Counter.builder(INITIALIZATION_SEGMENT_MISMATCH_METRIC)
+            .description(
+                "Job attempts ended because their initialization segment differed from the one"
+                    + " stored for the variant")
+            .register(meterRegistry);
   }
 
   private final ConcurrentHashMap<UUID, WorkerConnection> connections = new ConcurrentHashMap<>();
@@ -547,7 +555,26 @@ final class LiveWorkerConnectionRegistry {
       if (!authorizesUpload(metadata)) {
         return Optional.empty();
       }
-      return Optional.of(publication.get());
+
+      var outcome = publication.get();
+      if (outcome == SegmentPublication.INITIALIZATION_SEGMENT_DIFFERS) {
+        endAttemptWithDifferingInitialization(metadata);
+      }
+
+      return Optional.of(outcome);
+    }
+
+    private void endAttemptWithDifferingInitialization(SegmentUploadMetadata metadata) {
+      // Stopping under the monitor that authorized this upload fences the attempt's later uploads;
+      // recovery then finds no running producer and moves on to its next execution target.
+      tryStop(fromProto(metadata.getJobAttemptId()));
+      initializationSegmentMismatches.increment();
+      log.warn(
+          "Ended job attempt {} for stream session {} variant {}: its initialization segment"
+              + " differs from the one stored for the variant",
+          fromProto(metadata.getJobAttemptId()),
+          fromProto(metadata.getStreamSessionId()),
+          metadata.getVariantLabel());
     }
 
     /**
