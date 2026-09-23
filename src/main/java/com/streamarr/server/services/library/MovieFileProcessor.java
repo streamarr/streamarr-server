@@ -1,5 +1,7 @@
 package com.streamarr.server.services.library;
 
+import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.domain.media.MatchingFailure;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -51,8 +53,7 @@ public class MovieFileProcessor {
     var mediaInformationResult = parseMediaFileForMovieInfo(mediaFile);
 
     if (mediaInformationResult.isEmpty()) {
-      mediaFile.setStatus(MediaFileStatus.METADATA_PARSING_FAILED);
-      mediaFileRepository.save(mediaFile);
+      recordFailure(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_PARSING_FAILED));
 
       log.error(
           "Failed to parse MediaFile id: {} at path: '{}'",
@@ -73,23 +74,23 @@ public class MovieFileProcessor {
 
     switch (searchOutcome) {
       case NotFound _ -> {
-        mediaFile.setStatus(MediaFileStatus.METADATA_NOT_FOUND);
-        mediaFileRepository.save(mediaFile);
+        recordFailure(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_NOT_FOUND));
 
         log.error(
             "Failed to find matching search result for MediaFile id: {} at path: '{}'",
             mediaFile.getId(),
             mediaFile.getFilepathUri());
       }
-      case TemporarilyUnavailable(var cause) -> {
-        mediaFile.setStatus(MediaFileStatus.METADATA_UNAVAILABLE);
-        mediaFileRepository.save(mediaFile);
+      case TemporarilyUnavailable unavailable -> {
+        recordFailure(
+            mediaFile,
+            new MatchingFailure(MediaFileStatus.METADATA_UNAVAILABLE, unavailable.reason()));
 
         log.error(
             "Metadata provider unavailable for MediaFile id: {} at path: '{}'",
             mediaFile.getId(),
             mediaFile.getFilepathUri(),
-            cause);
+            unavailable.cause());
       }
       case Found(var movieSearchResult) -> {
         log.info(
@@ -149,6 +150,9 @@ public class MovieFileProcessor {
       log.error("Enrichment interrupted for MediaFile id: {}", mediaFile.getId(), ex);
     } catch (Exception ex) {
       log.error("Failure enriching movie metadata:", ex);
+      recordFailure(
+          mediaFile,
+          new MatchingFailure(MediaFileStatus.ENRICHMENT_FAILED, ItemFailureReason.TEMPORARY));
     } finally {
       if (externalIdMutex.isHeldByCurrentThread()) {
         externalIdMutex.unlock();
@@ -166,19 +170,26 @@ public class MovieFileProcessor {
       return;
     }
 
-    var metadataOutcome =
-        movieMetadataProviderResolver.getMetadata(remoteSearchResult, discovery.library());
-
-    if (!(metadataOutcome instanceof MetadataFetchOutcome.Found(var metadataResult))) {
-      return;
+    switch (movieMetadataProviderResolver.getMetadata(remoteSearchResult, discovery.library())) {
+      case MetadataFetchOutcome.Found(var metadataResult) -> {
+        movieService.createMovieWithAssociations(metadataResult, mediaFile, discovery.artworkRun());
+        markMediaFileAsMatched(mediaFile);
+      }
+      case MetadataFetchOutcome.NotFound<?> _ ->
+          recordFailure(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_NOT_FOUND));
+      case MetadataFetchOutcome.Failed<?> failed ->
+          recordFailure(
+              mediaFile, new MatchingFailure(MediaFileStatus.ENRICHMENT_FAILED, failed.reason()));
     }
-
-    movieService.createMovieWithAssociations(metadataResult, mediaFile, discovery.artworkRun());
-    markMediaFileAsMatched(mediaFile);
   }
 
   private void markMediaFileAsMatched(MediaFile mediaFile) {
     mediaFile.setStatus(MediaFileStatus.MATCHED);
+    mediaFile.setFailureReason(null);
     mediaFileRepository.save(mediaFile);
+  }
+
+  private void recordFailure(MediaFile mediaFile, MatchingFailure failure) {
+    mediaFileRepository.tryRecordMatchingFailure(mediaFile.getId(), failure);
   }
 }

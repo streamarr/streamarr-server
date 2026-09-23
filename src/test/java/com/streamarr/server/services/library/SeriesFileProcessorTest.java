@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Series;
@@ -150,13 +151,58 @@ class SeriesFileProcessorTest {
 
     seriesFileProcessor.process(discoveryOf(library), mediaFile);
 
-    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
-        .isEqualTo(MediaFileStatus.ENRICHMENT_FAILED);
+    assertMatchingFailure(
+        mediaFile, MediaFileStatus.ENRICHMENT_FAILED, ItemFailureReason.TEMPORARY);
   }
 
   @Test
-  @DisplayName("Should mark ENRICHMENT_FAILED when year-based season resolution fails")
-  void shouldMarkEnrichmentFailedWhenYearBasedSeasonResolutionFails() {
+  @DisplayName("Should mark metadata not found when the provider no longer has the series")
+  void shouldMarkMetadataNotFoundWhenTheProviderNoLongerHasTheSeries() {
+    var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
+    var mediaFile = saveEpisodeFile(library, "Breaking%20Bad/Season%2001/Breaking.Bad.S01E01.mkv");
+    stubSearchFound("Breaking Bad", "1396");
+    when(seriesService.findByTmdbId("1396")).thenReturn(Optional.empty());
+    when(seriesMetadataProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
+        .thenReturn(new MetadataFetchOutcome.NotFound<>());
+
+    seriesFileProcessor.process(discoveryOf(library), mediaFile);
+
+    assertMatchingFailure(mediaFile, MediaFileStatus.METADATA_NOT_FOUND, null);
+  }
+
+  @Test
+  @DisplayName("Should mark a temporary enrichment failure when creating the series throws")
+  void shouldMarkATemporaryEnrichmentFailureWhenCreatingTheSeriesThrows() {
+    var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
+    var mediaFile = saveEpisodeFile(library, "Breaking%20Bad/Season%2001/Breaking.Bad.S01E01.mkv");
+    stubSearchFound("Breaking Bad", "1396");
+    when(seriesService.findByTmdbId("1396")).thenThrow(new IllegalStateException("db hiccup"));
+
+    seriesFileProcessor.process(discoveryOf(library), mediaFile);
+
+    assertMatchingFailure(
+        mediaFile, MediaFileStatus.ENRICHMENT_FAILED, ItemFailureReason.TEMPORARY);
+  }
+
+  @Test
+  @DisplayName("Should mark metadata not found when the provider has no such season")
+  void shouldMarkMetadataNotFoundWhenTheProviderHasNoSuchSeason() {
+    var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
+    var mediaFile = saveEpisodeFile(library, "Breaking%20Bad/Season%2009/Breaking.Bad.S09E01.mkv");
+    stubSearchFound("Breaking Bad", "1396");
+    when(seriesService.findByTmdbId("1396"))
+        .thenReturn(Optional.of(Series.builder().id(UUID.randomUUID()).build()));
+    when(seriesMetadataProvider.getSeasonDetails(isNull(), eq("1396"), eq(9)))
+        .thenReturn(new MetadataFetchOutcome.NotFound<>());
+
+    seriesFileProcessor.process(discoveryOf(library), mediaFile);
+
+    assertMatchingFailure(mediaFile, MediaFileStatus.METADATA_NOT_FOUND, null);
+  }
+
+  @Test
+  @DisplayName("Should mark metadata not found when year-based season resolution fails")
+  void shouldMarkMetadataNotFoundWhenYearBasedSeasonResolutionFails() {
     var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
 
     var mediaFile =
@@ -189,8 +235,7 @@ class SeriesFileProcessorTest {
 
     seriesFileProcessor.process(discoveryOf(library), mediaFile);
 
-    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
-        .isEqualTo(MediaFileStatus.ENRICHMENT_FAILED);
+    assertMatchingFailure(mediaFile, MediaFileStatus.METADATA_NOT_FOUND, null);
   }
 
   @Test
@@ -228,8 +273,8 @@ class SeriesFileProcessorTest {
 
     seriesFileProcessor.process(discoveryOf(library), mediaFile);
 
-    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
-        .isEqualTo(MediaFileStatus.ENRICHMENT_FAILED);
+    assertMatchingFailure(
+        mediaFile, MediaFileStatus.ENRICHMENT_FAILED, ItemFailureReason.TEMPORARY);
   }
 
   @Test
@@ -295,8 +340,37 @@ class SeriesFileProcessorTest {
 
     seriesFileProcessor.process(discoveryOf(library), mediaFile);
 
-    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
-        .isEqualTo(MediaFileStatus.METADATA_UNAVAILABLE);
+    assertMatchingFailure(
+        mediaFile, MediaFileStatus.METADATA_UNAVAILABLE, ItemFailureReason.TEMPORARY);
+  }
+
+  private MediaFile saveEpisodeFile(Library library, String relativeUri) {
+    return fakeMediaFileRepository.save(
+        MediaFile.builder()
+            .libraryId(library.getId())
+            .filepathUri("file:///library/" + relativeUri)
+            .filename(relativeUri.substring(relativeUri.lastIndexOf('/') + 1))
+            .status(MediaFileStatus.UNMATCHED)
+            .build());
+  }
+
+  private void stubSearchFound(String title, String externalId) {
+    when(seriesMetadataProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+    when(seriesMetadataProvider.search(any(VideoFileParserResult.class)))
+        .thenReturn(
+            new Found(
+                RemoteSearchResult.builder()
+                    .title(title)
+                    .externalId(externalId)
+                    .externalSourceType(ExternalSourceType.TMDB)
+                    .build()));
+  }
+
+  private void assertMatchingFailure(
+      MediaFile mediaFile, MediaFileStatus status, ItemFailureReason reason) {
+    var stored = fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow();
+    assertThat(stored.getStatus()).isEqualTo(status);
+    assertThat(stored.getFailureReason()).isEqualTo(reason);
   }
 
   private FileDiscovery discoveryOf(Library library) {
