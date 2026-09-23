@@ -28,10 +28,15 @@ import org.springframework.transaction.annotation.Transactional;
 public class JooqItemResultRepository implements ItemResultRepository {
 
   private final DSLContext dsl;
+  private final ItemLocks itemLocks;
 
   @Override
   @Transactional
   public boolean trySave(ItemResult result) {
+    if (!itemLocks.tryLockAgainstDeletion(result.itemId(), result.itemType())) {
+      return false;
+    }
+
     return upsert(result)
             .where(ITEM_RESULT.ATTEMPTED_AT.le(DSL.excluded(ITEM_RESULT.ATTEMPTED_AT)))
             .execute()

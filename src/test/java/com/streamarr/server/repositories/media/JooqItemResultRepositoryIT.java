@@ -1,6 +1,8 @@
 package com.streamarr.server.repositories.media;
 
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitWaitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -17,6 +19,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -24,6 +27,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -156,6 +160,60 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest {
     assertThat(itemResults.findByItem(itemId, ImageEntityType.MOVIE)).containsExactly(success);
   }
 
+  @Test
+  @DisplayName("Should record nothing when the item does not exist")
+  void shouldRecordNothingWhenTheItemDoesNotExist() {
+    var missingItemId = UUID.randomUUID();
+    var unavailable =
+        artwork(missingItemId, ImageType.POSTER).outcome(new ItemOutcome.Unavailable()).build();
+
+    assertThat(itemResults.trySave(unavailable)).isFalse();
+    assertThat(itemResults.findByItem(missingItemId, ImageEntityType.MOVIE)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should record nothing when a delete of the item commits while the result waits")
+  void shouldRecordNothingWhenADeleteOfTheItemCommitsWhileTheResultWaits() throws Exception {
+    var itemId = savedMovieId();
+    var success = metadata(itemId).outcome(new ItemOutcome.Succeeded()).build();
+    var deletePid = new CompletableFuture<Integer>();
+    var commitDelete = new CountDownLatch(1);
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var delete =
+          executor.submit(
+              () ->
+                  transactionTemplate.executeWithoutResult(
+                      _ -> {
+                        jdbcTemplate.update("DELETE FROM movie WHERE id = ?", itemId);
+                        deletePid.complete(
+                            jdbcTemplate.queryForObject("SELECT pg_backend_pid()", Integer.class));
+                        awaitLatch(commitDelete);
+                      }));
+      var blockerPid = deletePid.get(10, TimeUnit.SECONDS);
+
+      var write = executor.submit(() -> itemResults.trySave(success));
+      awaitWaitersBehind(jdbcTemplate, blockerPid, 1);
+      commitDelete.countDown();
+
+      delete.get(10, TimeUnit.SECONDS);
+      assertThat(write.get(10, TimeUnit.SECONDS)).isFalse();
+    }
+
+    assertThat(itemResults.findByItem(itemId, ImageEntityType.MOVIE)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should reject an overwritten result when its item does not exist")
+  void shouldRejectAnOverwrittenResultWhenItsItemDoesNotExist() {
+    var missingItemId = UUID.randomUUID();
+    var success = metadata(missingItemId).outcome(new ItemOutcome.Succeeded()).build();
+
+    assertThatThrownBy(() -> itemResults.overwrite(success))
+        .isInstanceOf(DataIntegrityViolationException.class);
+    assertThat(itemResults.findByItem(missingItemId, ImageEntityType.MOVIE)).isEmpty();
+  }
+
   private UUID savedMovieId() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     return movieRepository
@@ -199,11 +257,11 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest {
   private static void awaitLatch(CountDownLatch latch) {
     try {
       if (!latch.await(10, TimeUnit.SECONDS)) {
-        throw new AssertionError("the racing writer never released the newer success");
+        throw new AssertionError("the racing transaction was never released");
       }
     } catch (InterruptedException exception) {
       Thread.currentThread().interrupt();
-      throw new AssertionError("interrupted while holding the newer success", exception);
+      throw new AssertionError("interrupted while holding the racing transaction", exception);
     }
   }
 }

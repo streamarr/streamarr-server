@@ -9,7 +9,8 @@ public interface ItemResultRepository {
 
   /**
    * Stores the result as the latest one for its item, step, and image type. Returns {@code false}
-   * without writing when a result from a later attempt is already stored.
+   * without writing when a result from a later attempt is already stored or the item no longer
+   * exists.
    */
   boolean trySave(ItemResult result);
 

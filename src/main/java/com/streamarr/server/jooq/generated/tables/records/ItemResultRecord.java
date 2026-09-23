@@ -165,6 +165,90 @@ public class ItemResultRecord extends TableRecordImpl<ItemResultRecord> {
         return (OffsetDateTime) get(9);
     }
 
+    /**
+     * Setter for <code>public.item_result.movie_id</code>.
+     */
+    public void setMovieId(UUID value) {
+        set(10, value);
+    }
+
+    /**
+     * Getter for <code>public.item_result.movie_id</code>.
+     */
+    public UUID getMovieId() {
+        return (UUID) get(10);
+    }
+
+    /**
+     * Setter for <code>public.item_result.series_id</code>.
+     */
+    public void setSeriesId(UUID value) {
+        set(11, value);
+    }
+
+    /**
+     * Getter for <code>public.item_result.series_id</code>.
+     */
+    public UUID getSeriesId() {
+        return (UUID) get(11);
+    }
+
+    /**
+     * Setter for <code>public.item_result.season_id</code>.
+     */
+    public void setSeasonId(UUID value) {
+        set(12, value);
+    }
+
+    /**
+     * Getter for <code>public.item_result.season_id</code>.
+     */
+    public UUID getSeasonId() {
+        return (UUID) get(12);
+    }
+
+    /**
+     * Setter for <code>public.item_result.episode_id</code>.
+     */
+    public void setEpisodeId(UUID value) {
+        set(13, value);
+    }
+
+    /**
+     * Getter for <code>public.item_result.episode_id</code>.
+     */
+    public UUID getEpisodeId() {
+        return (UUID) get(13);
+    }
+
+    /**
+     * Setter for <code>public.item_result.person_id</code>.
+     */
+    public void setPersonId(UUID value) {
+        set(14, value);
+    }
+
+    /**
+     * Getter for <code>public.item_result.person_id</code>.
+     */
+    public UUID getPersonId() {
+        return (UUID) get(14);
+    }
+
+    /**
+     * Setter for <code>public.item_result.company_id</code>.
+     */
+    public void setCompanyId(UUID value) {
+        set(15, value);
+    }
+
+    /**
+     * Getter for <code>public.item_result.company_id</code>.
+     */
+    public UUID getCompanyId() {
+        return (UUID) get(15);
+    }
+
     // -------------------------------------------------------------------------
     // Constructors
     // -------------------------------------------------------------------------
@@ -179,7 +263,7 @@ public class ItemResultRecord extends TableRecordImpl<ItemResultRecord> {
     /**
      * Create a detached, initialised ItemResultRecord
      */
-    public ItemResultRecord(UUID itemId, ImageEntityType itemType, ItemResultStep step, ImageType imageType, ItemResultOutcome outcome, ItemResultFailureReason failureReason, String detail, String sourceKey, OffsetDateTime attemptedAt, OffsetDateTime recordedAt) {
+    public ItemResultRecord(UUID itemId, ImageEntityType itemType, ItemResultStep step, ImageType imageType, ItemResultOutcome outcome, ItemResultFailureReason failureReason, String detail, String sourceKey, OffsetDateTime attemptedAt, OffsetDateTime recordedAt, UUID movieId, UUID seriesId, UUID seasonId, UUID episodeId, UUID personId, UUID companyId) {
         super(ItemResult.ITEM_RESULT);
 
         setItemId(itemId);
@@ -192,6 +276,12 @@ public class ItemResultRecord extends TableRecordImpl<ItemResultRecord> {
         setSourceKey(sourceKey);
         setAttemptedAt(attemptedAt);
         setRecordedAt(recordedAt);
+        setMovieId(movieId);
+        setSeriesId(seriesId);
+        setSeasonId(seasonId);
+        setEpisodeId(episodeId);
+        setPersonId(personId);
+        setCompanyId(companyId);
         resetTouchedOnNotNull();
     }
 }

@@ -4,6 +4,7 @@
 package com.streamarr.server.jooq.generated.tables;
 
 
+import com.streamarr.server.jooq.generated.Indexes;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.enums.ImageEntityType;
@@ -11,6 +12,12 @@ import com.streamarr.server.jooq.generated.enums.ImageType;
 import com.streamarr.server.jooq.generated.enums.ItemResultFailureReason;
 import com.streamarr.server.jooq.generated.enums.ItemResultOutcome;
 import com.streamarr.server.jooq.generated.enums.ItemResultStep;
+import com.streamarr.server.jooq.generated.tables.Company.CompanyPath;
+import com.streamarr.server.jooq.generated.tables.Episode.EpisodePath;
+import com.streamarr.server.jooq.generated.tables.Movie.MoviePath;
+import com.streamarr.server.jooq.generated.tables.Person.PersonPath;
+import com.streamarr.server.jooq.generated.tables.Season.SeasonPath;
+import com.streamarr.server.jooq.generated.tables.Series.SeriesPath;
 import com.streamarr.server.jooq.generated.tables.records.ItemResultRecord;
 
 import java.time.OffsetDateTime;
@@ -22,9 +29,14 @@ import java.util.UUID;
 import org.jooq.Check;
 import org.jooq.Condition;
 import org.jooq.Field;
+import org.jooq.ForeignKey;
+import org.jooq.Index;
+import org.jooq.InverseForeignKey;
 import org.jooq.Name;
+import org.jooq.Path;
 import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
+import org.jooq.Record;
 import org.jooq.SQL;
 import org.jooq.Schema;
 import org.jooq.Stringly;
@@ -110,6 +122,36 @@ public class ItemResult extends TableImpl<ItemResultRecord> {
      */
     public final TableField<ItemResultRecord, OffsetDateTime> RECORDED_AT = createField(DSL.name("recorded_at"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false).defaultValue(DSL.field(DSL.raw("now()"), SQLDataType.TIMESTAMPWITHTIMEZONE)), this, "");
 
+    /**
+     * The column <code>public.item_result.movie_id</code>.
+     */
+    public final TableField<ItemResultRecord, UUID> MOVIE_ID = createField(DSL.name("movie_id"), SQLDataType.UUID, this, "");
+
+    /**
+     * The column <code>public.item_result.series_id</code>.
+     */
+    public final TableField<ItemResultRecord, UUID> SERIES_ID = createField(DSL.name("series_id"), SQLDataType.UUID, this, "");
+
+    /**
+     * The column <code>public.item_result.season_id</code>.
+     */
+    public final TableField<ItemResultRecord, UUID> SEASON_ID = createField(DSL.name("season_id"), SQLDataType.UUID, this, "");
+
+    /**
+     * The column <code>public.item_result.episode_id</code>.
+     */
+    public final TableField<ItemResultRecord, UUID> EPISODE_ID = createField(DSL.name("episode_id"), SQLDataType.UUID, this, "");
+
+    /**
+     * The column <code>public.item_result.person_id</code>.
+     */
+    public final TableField<ItemResultRecord, UUID> PERSON_ID = createField(DSL.name("person_id"), SQLDataType.UUID, this, "");
+
+    /**
+     * The column <code>public.item_result.company_id</code>.
+     */
+    public final TableField<ItemResultRecord, UUID> COMPANY_ID = createField(DSL.name("company_id"), SQLDataType.UUID, this, "");
+
     private ItemResult(Name alias, Table<ItemResultRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -139,14 +181,129 @@ public class ItemResult extends TableImpl<ItemResultRecord> {
         this(DSL.name("item_result"), null);
     }
 
+    public <O extends Record> ItemResult(Table<O> path, ForeignKey<O, ItemResultRecord> childPath, InverseForeignKey<O, ItemResultRecord> parentPath) {
+        super(path, childPath, parentPath, ITEM_RESULT);
+    }
+
+    /**
+     * A subtype implementing {@link Path} for simplified path-based joins.
+     */
+    public static class ItemResultPath extends ItemResult implements Path<ItemResultRecord> {
+
+        private static final long serialVersionUID = 1L;
+        public <O extends Record> ItemResultPath(Table<O> path, ForeignKey<O, ItemResultRecord> childPath, InverseForeignKey<O, ItemResultRecord> parentPath) {
+            super(path, childPath, parentPath);
+        }
+        private ItemResultPath(Name alias, Table<ItemResultRecord> aliased) {
+            super(alias, aliased);
+        }
+
+        @Override
+        public ItemResultPath as(String alias) {
+            return new ItemResultPath(DSL.name(alias), this);
+        }
+
+        @Override
+        public ItemResultPath as(Name alias) {
+            return new ItemResultPath(alias, this);
+        }
+
+        @Override
+        public ItemResultPath as(Table<?> alias) {
+            return new ItemResultPath(alias.getQualifiedName(), this);
+        }
+    }
+
     @Override
     public Schema getSchema() {
         return aliased() ? null : Public.PUBLIC;
     }
 
     @Override
+    public List<Index> getIndexes() {
+        return Arrays.asList(Indexes.ITEM_RESULT_COMPANY_ID_IDX, Indexes.ITEM_RESULT_EPISODE_ID_IDX, Indexes.ITEM_RESULT_MOVIE_ID_IDX, Indexes.ITEM_RESULT_PERSON_ID_IDX, Indexes.ITEM_RESULT_SEASON_ID_IDX, Indexes.ITEM_RESULT_SERIES_ID_IDX);
+    }
+
+    @Override
     public List<UniqueKey<ItemResultRecord>> getUniqueKeys() {
         return Arrays.asList(Keys.ITEM_RESULT_IDENTITY);
+    }
+
+    @Override
+    public List<ForeignKey<ItemResultRecord, ?>> getReferences() {
+        return Arrays.asList(Keys.ITEM_RESULT__ITEM_RESULT_COMPANY_ID_FKEY, Keys.ITEM_RESULT__ITEM_RESULT_EPISODE_ID_FKEY, Keys.ITEM_RESULT__ITEM_RESULT_MOVIE_ID_FKEY, Keys.ITEM_RESULT__ITEM_RESULT_PERSON_ID_FKEY, Keys.ITEM_RESULT__ITEM_RESULT_SEASON_ID_FKEY, Keys.ITEM_RESULT__ITEM_RESULT_SERIES_ID_FKEY);
+    }
+
+    private transient CompanyPath _company;
+
+    /**
+     * Get the implicit join path to the <code>public.company</code> table.
+     */
+    public CompanyPath company() {
+        if (_company == null)
+            _company = new CompanyPath(this, Keys.ITEM_RESULT__ITEM_RESULT_COMPANY_ID_FKEY, null);
+
+        return _company;
+    }
+
+    private transient EpisodePath _episode;
+
+    /**
+     * Get the implicit join path to the <code>public.episode</code> table.
+     */
+    public EpisodePath episode() {
+        if (_episode == null)
+            _episode = new EpisodePath(this, Keys.ITEM_RESULT__ITEM_RESULT_EPISODE_ID_FKEY, null);
+
+        return _episode;
+    }
+
+    private transient MoviePath _movie;
+
+    /**
+     * Get the implicit join path to the <code>public.movie</code> table.
+     */
+    public MoviePath movie() {
+        if (_movie == null)
+            _movie = new MoviePath(this, Keys.ITEM_RESULT__ITEM_RESULT_MOVIE_ID_FKEY, null);
+
+        return _movie;
+    }
+
+    private transient PersonPath _person;
+
+    /**
+     * Get the implicit join path to the <code>public.person</code> table.
+     */
+    public PersonPath person() {
+        if (_person == null)
+            _person = new PersonPath(this, Keys.ITEM_RESULT__ITEM_RESULT_PERSON_ID_FKEY, null);
+
+        return _person;
+    }
+
+    private transient SeasonPath _season;
+
+    /**
+     * Get the implicit join path to the <code>public.season</code> table.
+     */
+    public SeasonPath season() {
+        if (_season == null)
+            _season = new SeasonPath(this, Keys.ITEM_RESULT__ITEM_RESULT_SEASON_ID_FKEY, null);
+
+        return _season;
+    }
+
+    private transient SeriesPath _series;
+
+    /**
+     * Get the implicit join path to the <code>public.series</code> table.
+     */
+    public SeriesPath series() {
+        if (_series == null)
+            _series = new SeriesPath(this, Keys.ITEM_RESULT__ITEM_RESULT_SERIES_ID_FKEY, null);
+
+        return _series;
     }
 
     @Override
