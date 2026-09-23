@@ -17,9 +17,12 @@ import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
+import com.streamarr.server.fixtures.ArtworkServiceFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.services.ArtworkService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
@@ -51,6 +54,8 @@ class SeriesFileProcessorTest {
   private final SeriesMetadataProviderResolver seriesMetadataProviderResolver =
       new SeriesMetadataProviderResolver(List.of(seriesMetadataProvider));
   private final SeriesService seriesService = mock(SeriesService.class);
+  private final ArtworkService artworkService =
+      ArtworkServiceFixture.artworkServiceBuilder().build();
   private final FakeMediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
   private final FakeSeasonRepository fakeSeasonRepository = new FakeSeasonRepository();
   private final FakeEpisodeRepository fakeEpisodeRepository = new FakeEpisodeRepository();
@@ -101,7 +106,7 @@ class SeriesFileProcessorTest {
             });
 
     try {
-      seriesFileProcessor.process(library, mediaFile);
+      seriesFileProcessor.process(discoveryOf(library), mediaFile);
 
       assertThat(Thread.currentThread().isInterrupted())
           .as("Interrupt flag should be restored after InterruptedException is caught")
@@ -142,7 +147,7 @@ class SeriesFileProcessorTest {
     when(seriesMetadataProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
         .thenReturn(Optional.empty());
 
-    seriesFileProcessor.process(library, mediaFile);
+    seriesFileProcessor.process(discoveryOf(library), mediaFile);
 
     assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
         .isEqualTo(MediaFileStatus.ENRICHMENT_FAILED);
@@ -181,7 +186,7 @@ class SeriesFileProcessorTest {
     when(seriesMetadataProvider.resolveSeasonNumber(isNull(), eq("2224"), eq(2020)))
         .thenReturn(OptionalInt.empty());
 
-    seriesFileProcessor.process(library, mediaFile);
+    seriesFileProcessor.process(discoveryOf(library), mediaFile);
 
     assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
         .isEqualTo(MediaFileStatus.ENRICHMENT_FAILED);
@@ -220,7 +225,7 @@ class SeriesFileProcessorTest {
     when(seriesMetadataProvider.getSeasonDetails(isNull(), eq("93544"), eq(4)))
         .thenReturn(Optional.empty());
 
-    seriesFileProcessor.process(library, mediaFile);
+    seriesFileProcessor.process(discoveryOf(library), mediaFile);
 
     assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
         .isEqualTo(MediaFileStatus.ENRICHMENT_FAILED);
@@ -240,7 +245,7 @@ class SeriesFileProcessorTest {
                 .status(MediaFileStatus.UNMATCHED)
                 .build());
 
-    seriesFileProcessor.process(library, mediaFile);
+    seriesFileProcessor.process(discoveryOf(library), mediaFile);
 
     assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
         .isEqualTo(MediaFileStatus.METADATA_PARSING_FAILED);
@@ -264,7 +269,7 @@ class SeriesFileProcessorTest {
     when(seriesMetadataProvider.search(any(VideoFileParserResult.class)))
         .thenReturn(new NotFound());
 
-    seriesFileProcessor.process(library, mediaFile);
+    seriesFileProcessor.process(discoveryOf(library), mediaFile);
 
     assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
         .isEqualTo(MediaFileStatus.METADATA_NOT_FOUND);
@@ -287,9 +292,13 @@ class SeriesFileProcessorTest {
     when(seriesMetadataProvider.search(any(VideoFileParserResult.class)))
         .thenReturn(new TemporarilyUnavailable(new IOException("Connection timed out")));
 
-    seriesFileProcessor.process(library, mediaFile);
+    seriesFileProcessor.process(discoveryOf(library), mediaFile);
 
     assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
         .isEqualTo(MediaFileStatus.METADATA_UNAVAILABLE);
+  }
+
+  private FileDiscovery discoveryOf(Library library) {
+    return new FileDiscovery(library, artworkService.openRun("scan", ImageRefreshMode.PRESERVE));
   }
 }

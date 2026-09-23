@@ -1,6 +1,5 @@
 package com.streamarr.server.services;
 
-import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.MediaFile;
@@ -16,11 +15,7 @@ import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
-import com.streamarr.server.services.metadata.events.ImageSource;
-import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
-import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.pagination.LetterJumpResolver;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPage;
@@ -34,7 +29,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,7 +41,7 @@ public class SeriesService {
   private final GenreService genreService;
   private final CompanyService companyService;
   private final PaginationService paginationService;
-  private final ApplicationEventPublisher eventPublisher;
+  private final ArtworkService artworkService;
   private final ImageService imageService;
   private final SeasonRepository seasonRepository;
   private final EpisodeRepository episodeRepository;
@@ -76,7 +70,8 @@ public class SeriesService {
   }
 
   @Transactional
-  public Series createSeriesWithAssociations(MetadataResult<Series> metadataResult) {
+  public Series createSeriesWithAssociations(
+      MetadataResult<Series> metadataResult, ArtworkRun artworkRun) {
     var series = metadataResult.entity();
 
     series.setCast(
@@ -91,13 +86,22 @@ public class SeriesService {
 
     var savedSeries = seriesRepository.saveAndFlush(series);
 
-    publishImageEvent(savedSeries.getId(), ImageEntityType.SERIES, metadataResult.imageSources());
+    artworkService.fetchRequired(
+        artworkRun,
+        ArtworkSources.builder()
+            .entityId(savedSeries.getId())
+            .entityType(ImageEntityType.SERIES)
+            .sources(metadataResult.imageSources())
+            .build());
 
     return savedSeries;
   }
 
   @Transactional
-  public Season createSeasonWithEpisodes(Series series, SeasonDetails details, Library library) {
+  public Season createSeasonWithEpisodes(SeasonWithEpisodesRequest request) {
+    var series = request.series();
+    var details = request.details();
+    var library = request.library();
     var season =
         seasonRepository.saveAndFlush(
             Season.builder()
@@ -109,7 +113,13 @@ public class SeriesService {
                 .library(library)
                 .build());
 
-    publishImageEvent(season.getId(), ImageEntityType.SEASON, details.imageSources());
+    artworkService.fetchRequired(
+        request.artworkRun(),
+        ArtworkSources.builder()
+            .entityId(season.getId())
+            .entityType(ImageEntityType.SEASON)
+            .sources(details.imageSources())
+            .build());
 
     var episodes =
         details.episodes().stream()
@@ -127,48 +137,16 @@ public class SeriesService {
             .toList();
 
     var savedEpisodes = episodeRepository.saveAll(episodes);
-
-    for (var episode : savedEpisodes) {
-      details.episodes().stream()
-          .filter(ed -> ed.episodeNumber() == episode.getEpisodeNumber())
-          .findFirst()
-          .ifPresent(
-              ed -> publishImageEvent(episode.getId(), ImageEntityType.EPISODE, ed.imageSources()));
-    }
+    fetchEpisodeArtwork(savedEpisodes, request);
 
     return season;
   }
 
-  private void publishImageEvent(
-      UUID entityId, ImageEntityType entityType, List<ImageSource> sources) {
-    publishImageEvent(entityId, entityType, sources, ImageRefreshMode.PRESERVE);
-  }
-
-  private void publishImageEvent(
-      UUID entityId,
-      ImageEntityType entityType,
-      List<ImageSource> sources,
-      ImageRefreshMode imageRefreshMode) {
-    if (!sources.isEmpty()) {
-      eventPublisher.publishEvent(
-          new MetadataEnrichedEvent(entityId, entityType, sources, imageRefreshMode));
-    }
-  }
-
-  @Transactional
-  public Series refreshSeriesMetadata(Series existing, MetadataResult<Series> metadataResult) {
-    return refreshSeriesMetadataInternal(existing, metadataResult, ImageRefreshMode.PRESERVE);
-  }
-
   @Transactional
   public Series refreshSeriesMetadata(
-      Series existing, MetadataResult<Series> metadataResult, ImageRefreshMode imageRefreshMode) {
-    return refreshSeriesMetadataInternal(existing, metadataResult, imageRefreshMode);
-  }
-
-  private Series refreshSeriesMetadataInternal(
-      Series existing, MetadataResult<Series> metadataResult, ImageRefreshMode imageRefreshMode) {
+      Series existing, MetadataResult<Series> metadataResult, ArtworkRun artworkRun) {
     var fresh = metadataResult.entity();
+    var imageRefreshMode = artworkRun.imageRefreshMode();
 
     existing.setTitle(fresh.getTitle());
     existing.setOriginalTitle(fresh.getOriginalTitle());
@@ -191,24 +169,21 @@ public class SeriesService {
             fresh.getStudios(), metadataResult.companyImageSources(), imageRefreshMode));
 
     var saved = seriesRepository.saveAndFlush(existing);
-    publishImageEvent(
-        saved.getId(), ImageEntityType.SERIES, metadataResult.imageSources(), imageRefreshMode);
+    artworkService.fetchRequired(
+        artworkRun,
+        ArtworkSources.builder()
+            .entityId(saved.getId())
+            .entityType(ImageEntityType.SERIES)
+            .sources(metadataResult.imageSources())
+            .build());
     return saved;
   }
 
   @Transactional
-  public Season refreshSeasonWithEpisodes(Series series, SeasonDetails details, Library library) {
-    return refreshSeasonWithEpisodesInternal(series, details, library, ImageRefreshMode.PRESERVE);
-  }
-
-  @Transactional
-  public Season refreshSeasonWithEpisodes(
-      Series series, SeasonDetails details, Library library, ImageRefreshMode imageRefreshMode) {
-    return refreshSeasonWithEpisodesInternal(series, details, library, imageRefreshMode);
-  }
-
-  private Season refreshSeasonWithEpisodesInternal(
-      Series series, SeasonDetails details, Library library, ImageRefreshMode imageRefreshMode) {
+  public Season refreshSeasonWithEpisodes(SeasonWithEpisodesRequest request) {
+    var series = request.series();
+    var details = request.details();
+    var library = request.library();
     var season =
         seasonRepository
             .findBySeriesIdAndSeasonNumber(series.getId(), details.seasonNumber())
@@ -220,8 +195,13 @@ public class SeriesService {
     season.setAirDate(details.airDate());
 
     var savedSeason = seasonRepository.saveAndFlush(season);
-    publishImageEvent(
-        savedSeason.getId(), ImageEntityType.SEASON, details.imageSources(), imageRefreshMode);
+    artworkService.fetchRequired(
+        request.artworkRun(),
+        ArtworkSources.builder()
+            .entityId(savedSeason.getId())
+            .entityType(ImageEntityType.SEASON)
+            .sources(details.imageSources())
+            .build());
 
     var episodes =
         details.episodes().stream()
@@ -245,21 +225,27 @@ public class SeriesService {
             .toList();
 
     var savedEpisodes = episodeRepository.saveAllAndFlush(episodes);
-
-    for (var episode : savedEpisodes) {
-      details.episodes().stream()
-          .filter(ed -> ed.episodeNumber() == episode.getEpisodeNumber())
-          .findFirst()
-          .ifPresent(
-              ed ->
-                  publishImageEvent(
-                      episode.getId(),
-                      ImageEntityType.EPISODE,
-                      ed.imageSources(),
-                      imageRefreshMode));
-    }
+    fetchEpisodeArtwork(savedEpisodes, request);
 
     return savedSeason;
+  }
+
+  private void fetchEpisodeArtwork(
+      List<? extends Episode> episodes, SeasonWithEpisodesRequest request) {
+    for (var episode : episodes) {
+      request.details().episodes().stream()
+          .filter(details -> details.episodeNumber() == episode.getEpisodeNumber())
+          .findFirst()
+          .ifPresent(
+              details ->
+                  artworkService.fetchRequired(
+                      request.artworkRun(),
+                      ArtworkSources.builder()
+                          .entityId(episode.getId())
+                          .entityType(ImageEntityType.EPISODE)
+                          .sources(details.imageSources())
+                          .build()));
+    }
   }
 
   @Transactional

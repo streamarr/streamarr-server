@@ -1,8 +1,10 @@
 package com.streamarr.server.services;
 
+import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fixtures.PaginationFixture.buildCursorOptions;
 import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -24,18 +26,18 @@ import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
-import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
+import com.streamarr.server.fakes.FakeTmdbHttpService;
+import com.streamarr.server.fixtures.ArtworkServiceFixture;
 import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.ImageVariantService;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
-import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
@@ -46,7 +48,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import org.jooq.SortOrder;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -61,7 +65,9 @@ class SeriesServiceTest {
   private FakeSeasonRepository seasonRepository;
   private FakeEpisodeRepository episodeRepository;
   private FakeImageRepository imageRepository;
-  private CapturingEventPublisher eventPublisher;
+  private FakeTmdbHttpService imageDownloader;
+  private ArtworkService artworkService;
+  private ArtworkRun artworkRun;
   private PersonService personService;
   private GenreService genreService;
   private CompanyService companyService;
@@ -73,7 +79,14 @@ class SeriesServiceTest {
     seasonRepository = new FakeSeasonRepository();
     episodeRepository = new FakeEpisodeRepository();
     imageRepository = new FakeImageRepository();
-    eventPublisher = new CapturingEventPublisher();
+    imageDownloader = new FakeTmdbHttpService();
+    imageDownloader.setImageData(createTestImage(600, 900));
+    artworkService =
+        ArtworkServiceFixture.artworkServiceBuilder()
+            .imageRepository(imageRepository)
+            .imageDownloader(imageDownloader)
+            .build();
+    artworkRun = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
     personService = mock(PersonService.class);
     genreService = mock(GenreService.class);
     companyService = mock(CompanyService.class);
@@ -92,7 +105,7 @@ class SeriesServiceTest {
             genreService,
             companyService,
             paginationService,
-            eventPublisher,
+            artworkService,
             imageService,
             seasonRepository,
             episodeRepository,
@@ -100,6 +113,12 @@ class SeriesServiceTest {
             null,
             null,
             null);
+  }
+
+  @AfterEach
+  void tearDown() {
+    artworkRun.close();
+    artworkService.shutdown();
   }
 
   @Nested
@@ -252,29 +271,30 @@ class SeriesServiceTest {
   class MetadataLifecycle {
 
     @Test
-    @DisplayName("Should publish MetadataEnrichedEvent when creating series")
-    void shouldPublishMetadataEnrichedEventWhenCreatingSeries() {
+    @DisplayName("Should fetch required artwork for saved series when creating series")
+    void shouldFetchRequiredArtworkForSavedSeriesWhenCreatingSeries() {
       var series = Series.builder().title("Breaking Bad").build();
       var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
       var metadataResult = new MetadataResult<>(series, imageSources, Map.of(), Map.of());
 
-      seriesService.createSeriesWithAssociations(metadataResult);
+      var saved = seriesService.createSeriesWithAssociations(metadataResult, artworkRun);
 
-      var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-      assertThat(events).hasSize(1);
-      assertThat(events.getFirst().entityId()).isNotNull();
+      assertThat(awaitArtwork().counts())
+          .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+      assertThat(imageTypesOf(saved.getId(), ImageEntityType.SERIES))
+          .containsOnly(ImageType.POSTER);
     }
 
     @Test
-    @DisplayName("Should not publish event when image sources list is empty")
-    void shouldNotPublishEventWhenImageSourcesListIsEmpty() {
+    @DisplayName("Should report unavailable artwork when creating series without image sources")
+    void shouldReportUnavailableArtworkWhenCreatingSeriesWithoutImageSources() {
       var series = Series.builder().title("Breaking Bad").build();
       var metadataResult = new MetadataResult<>(series, List.of(), Map.of(), Map.of());
 
-      seriesService.createSeriesWithAssociations(metadataResult);
+      seriesService.createSeriesWithAssociations(metadataResult, artworkRun);
 
-      var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-      assertThat(events).isEmpty();
+      assertThat(awaitArtwork().counts()).isEqualTo(ArtworkCounts.builder().unavailable(2).build());
+      assertThat(imageDownloader.getDownloadCount()).isZero();
     }
 
     @Test
@@ -307,9 +327,8 @@ class SeriesServiceTest {
     }
 
     @Test
-    @DisplayName(
-        "Should publish season image event targeting saved season when season has image sources")
-    void shouldPublishSeasonImageEventTargetingSavedSeasonWhenSeasonHasImageSources() {
+    @DisplayName("Should fetch season artwork for saved season when season has image sources")
+    void shouldFetchSeasonArtworkForSavedSeasonWhenSeasonHasImageSources() {
       var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
       var details =
@@ -326,26 +345,17 @@ class SeriesServiceTest {
                           .build()))
               .build();
 
-      var season = seriesService.createSeasonWithEpisodes(series, details, library);
+      var season = seriesService.createSeasonWithEpisodes(seasonRequest(series, details, library));
 
-      var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-      assertThat(events)
-          .filteredOn(e -> e.entityType() == ImageEntityType.SEASON)
-          .singleElement()
-          .satisfies(
-              e -> {
-                assertThat(e.entityId()).isEqualTo(season.getId());
-                assertThat(e.imageSources()).singleElement().isInstanceOf(TmdbImageSource.class);
-                var source = (TmdbImageSource) e.imageSources().getFirst();
-                assertThat(source.imageType()).isEqualTo(ImageType.POSTER);
-                assertThat(source.pathFragment()).isEqualTo("/season1.jpg");
-              });
+      assertThat(awaitArtwork().counts())
+          .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+      assertThat(imageTypesOf(season.getId(), ImageEntityType.SEASON))
+          .containsOnly(ImageType.POSTER);
     }
 
     @Test
-    @DisplayName(
-        "Should publish episode image event per saved episode when episodes have image sources")
-    void shouldPublishEpisodeImageEventPerSavedEpisodeWhenEpisodesHaveImageSources() {
+    @DisplayName("Should fetch episode artwork for each saved episode when episodes have stills")
+    void shouldFetchEpisodeArtworkForEachSavedEpisodeWhenEpisodesHaveStills() {
       var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
       var details =
@@ -369,29 +379,21 @@ class SeriesServiceTest {
                           .build()))
               .build();
 
-      var season = seriesService.createSeasonWithEpisodes(series, details, library);
+      var season = seriesService.createSeasonWithEpisodes(seasonRequest(series, details, library));
 
+      awaitArtwork();
       var savedEpisodes = episodeRepository.findBySeasonIdOrderByEpisodeNumber(season.getId());
-      var episodeEvents =
-          eventPublisher.getEventsOfType(MetadataEnrichedEvent.class).stream()
-              .filter(e -> e.entityType() == ImageEntityType.EPISODE)
-              .toList();
-
-      assertThat(episodeEvents).hasSize(2);
-      assertThat(episodeEvents)
-          .extracting(MetadataEnrichedEvent::entityId)
-          .containsExactlyInAnyOrderElementsOf(savedEpisodes.stream().map(Episode::getId).toList());
-
-      for (var event : episodeEvents) {
-        assertThat(event.imageSources()).singleElement().isInstanceOf(TmdbImageSource.class);
-        var source = (TmdbImageSource) event.imageSources().getFirst();
-        assertThat(source.imageType()).isEqualTo(ImageType.STILL);
-      }
+      assertThat(savedEpisodes)
+          .hasSize(2)
+          .allSatisfy(
+              episode ->
+                  assertThat(imageTypesOf(episode.getId(), ImageEntityType.EPISODE))
+                      .containsOnly(ImageType.STILL));
     }
 
     @Test
-    @DisplayName("Should not publish any image events when all image sources are empty")
-    void shouldNotPublishAnyImageEventsWhenAllImageSourcesAreEmpty() {
+    @DisplayName("Should report unavailable season and episode artwork when sources are empty")
+    void shouldReportUnavailableSeasonAndEpisodeArtworkWhenSourcesAreEmpty() {
       var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
       var details =
@@ -408,9 +410,10 @@ class SeriesServiceTest {
                           .build()))
               .build();
 
-      seriesService.createSeasonWithEpisodes(series, details, library);
+      seriesService.createSeasonWithEpisodes(seasonRequest(series, details, library));
 
-      assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class)).isEmpty();
+      assertThat(awaitArtwork().counts()).isEqualTo(ArtworkCounts.builder().unavailable(2).build());
+      assertThat(imageDownloader.getDownloadCount()).isZero();
     }
 
     @Test
@@ -446,7 +449,7 @@ class SeriesServiceTest {
                           .build()))
               .build();
 
-      var season = seriesService.createSeasonWithEpisodes(series, details, library);
+      var season = seriesService.createSeasonWithEpisodes(seasonRequest(series, details, library));
 
       assertThat(seasonRepository.findBySeriesIdAndSeasonNumber(series.getId(), 1)).isPresent();
       assertThat(season.getTitle()).isEqualTo("Season 1");
@@ -481,25 +484,20 @@ class SeriesServiceTest {
               .episodes(List.of())
               .build();
 
-      var season = seriesService.createSeasonWithEpisodes(series, details, library);
+      var season = seriesService.createSeasonWithEpisodes(seasonRequest(series, details, library));
 
       assertThat(season.getTitle()).isEqualTo("Specials");
       assertThat(season.getSeasonNumber()).isZero();
       assertThat(episodeRepository.findBySeasonIdOrderByEpisodeNumber(season.getId())).isEmpty();
 
-      var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-      assertThat(events)
-          .singleElement()
-          .satisfies(
-              e -> {
-                assertThat(e.entityType()).isEqualTo(ImageEntityType.SEASON);
-                assertThat(e.entityId()).isEqualTo(season.getId());
-              });
+      assertThat(awaitArtwork().counts()).isEqualTo(ArtworkCounts.builder().saved(1).build());
+      assertThat(imageTypesOf(season.getId(), ImageEntityType.SEASON))
+          .containsOnly(ImageType.POSTER);
     }
 
     @Test
-    @DisplayName("Should only publish episode events when episodes have image sources")
-    void shouldOnlyPublishEpisodeEventsWhenEpisodesHaveImageSources() {
+    @DisplayName("Should report unavailable stills only for episodes without image sources")
+    void shouldReportUnavailableStillsOnlyForEpisodesWithoutImageSources() {
       var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
       var details =
@@ -528,25 +526,16 @@ class SeriesServiceTest {
                           .build()))
               .build();
 
-      var season = seriesService.createSeasonWithEpisodes(series, details, library);
+      var season = seriesService.createSeasonWithEpisodes(seasonRequest(series, details, library));
 
+      assertThat(awaitArtwork().counts())
+          .isEqualTo(ArtworkCounts.builder().saved(2).unavailable(2).build());
       var savedEpisodes = episodeRepository.findBySeasonIdOrderByEpisodeNumber(season.getId());
-      assertThat(savedEpisodes).hasSize(3);
-
-      var episodeEvents =
-          eventPublisher.getEventsOfType(MetadataEnrichedEvent.class).stream()
-              .filter(e -> e.entityType() == ImageEntityType.EPISODE)
-              .toList();
-
-      assertThat(episodeEvents).hasSize(2);
-
-      var ep1 =
-          savedEpisodes.stream().filter(e -> e.getEpisodeNumber() == 1).findFirst().orElseThrow();
-      var ep3 =
-          savedEpisodes.stream().filter(e -> e.getEpisodeNumber() == 3).findFirst().orElseThrow();
-      assertThat(episodeEvents)
-          .extracting(MetadataEnrichedEvent::entityId)
-          .containsExactlyInAnyOrder(ep1.getId(), ep3.getId());
+      assertThat(savedEpisodes)
+          .extracting(
+              Episode::getEpisodeNumber,
+              episode -> imageTypesOf(episode.getId(), ImageEntityType.EPISODE).isEmpty())
+          .containsExactlyInAnyOrder(tuple(1, false), tuple(2, true), tuple(3, false));
     }
 
     @Test
@@ -578,7 +567,7 @@ class SeriesServiceTest {
               .build();
       var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
 
-      var result = seriesService.refreshSeriesMetadata(existing, metadataResult);
+      var result = seriesService.refreshSeriesMetadata(existing, metadataResult, artworkRun);
 
       assertThat(result.getTitle()).isEqualTo("New Title");
       assertThat(result.getOriginalTitle()).isEqualTo("New Original");
@@ -609,7 +598,7 @@ class SeriesServiceTest {
       var fresh = Series.builder().title("Breaking Bad").titleSort("breaking bad").build();
       var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
 
-      var result = seriesService.refreshSeriesMetadata(existing, metadataResult);
+      var result = seriesService.refreshSeriesMetadata(existing, metadataResult, artworkRun);
 
       assertThat(result.getTagline()).isNull();
       assertThat(result.getSummary()).isNull();
@@ -650,7 +639,7 @@ class SeriesServiceTest {
           Series.builder().title("Breaking Bad").cast(castInput).directors(directorInput).build();
       var metadataResult = MetadataFixture.<Series>metadataResultBuilder().entity(fresh).build();
 
-      var result = seriesService.refreshSeriesMetadata(existing, metadataResult);
+      var result = seriesService.refreshSeriesMetadata(existing, metadataResult, artworkRun);
 
       assertThat(result.getCast()).extracting(Person::getName).containsExactly("Bryan Cranston");
       assertThat(result.getDirectors())
@@ -661,32 +650,31 @@ class SeriesServiceTest {
     }
 
     @Test
-    @DisplayName("Should publish image event when refreshing series metadata with image sources")
-    void shouldPublishImageEventWhenRefreshingSeriesMetadataWithImageSources() {
+    @DisplayName("Should fetch required artwork for existing series when refreshing metadata")
+    void shouldFetchRequiredArtworkForExistingSeriesWhenRefreshingMetadata() {
       var existing = seriesRepository.save(Series.builder().title("Breaking Bad").build());
       var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
       var fresh = Series.builder().title("Breaking Bad").build();
       var metadataResult = new MetadataResult<>(fresh, imageSources, Map.of(), Map.of());
 
-      seriesService.refreshSeriesMetadata(existing, metadataResult);
+      seriesService.refreshSeriesMetadata(existing, metadataResult, artworkRun);
 
-      var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-      assertThat(events).hasSize(1);
-      assertThat(events.getFirst().entityId()).isEqualTo(existing.getId());
-      assertThat(events.getFirst().entityType()).isEqualTo(ImageEntityType.SERIES);
+      assertThat(awaitArtwork().counts())
+          .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+      assertThat(imageTypesOf(existing.getId(), ImageEntityType.SERIES))
+          .containsOnly(ImageType.POSTER);
     }
 
     @Test
-    @DisplayName(
-        "Should not publish image event when refreshing series metadata with empty sources")
-    void shouldNotPublishImageEventWhenRefreshingSeriesMetadataWithEmptySources() {
+    @DisplayName("Should report unavailable artwork when refreshing series with empty sources")
+    void shouldReportUnavailableArtworkWhenRefreshingSeriesWithEmptySources() {
       var existing = seriesRepository.save(Series.builder().title("Breaking Bad").build());
       var fresh = Series.builder().title("Breaking Bad").build();
       var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
 
-      seriesService.refreshSeriesMetadata(existing, metadataResult);
+      seriesService.refreshSeriesMetadata(existing, metadataResult, artworkRun);
 
-      assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class)).isEmpty();
+      assertThat(awaitArtwork().counts()).isEqualTo(ArtworkCounts.builder().unavailable(2).build());
     }
 
     @Test
@@ -715,7 +703,7 @@ class SeriesServiceTest {
               .episodes(List.of())
               .build();
 
-      var result = seriesService.refreshSeasonWithEpisodes(series, details, library);
+      var result = seriesService.refreshSeasonWithEpisodes(seasonRequest(series, details, library));
 
       assertThat(result.getId()).isEqualTo(existingSeason.getId());
       assertThat(result.getTitle()).isEqualTo("Season 1");
@@ -739,7 +727,7 @@ class SeriesServiceTest {
               .episodes(List.of())
               .build();
 
-      var result = seriesService.refreshSeasonWithEpisodes(series, details, library);
+      var result = seriesService.refreshSeasonWithEpisodes(seasonRequest(series, details, library));
 
       assertThat(result.getTitle()).isEqualTo("Season 2");
       assertThat(result.getSeasonNumber()).isEqualTo(2);
@@ -786,7 +774,7 @@ class SeriesServiceTest {
                           .build()))
               .build();
 
-      seriesService.refreshSeasonWithEpisodes(series, details, library);
+      seriesService.refreshSeasonWithEpisodes(seasonRequest(series, details, library));
 
       var episodes = episodeRepository.findBySeasonIdOrderByEpisodeNumber(season.getId());
       assertThat(episodes).hasSize(1);
@@ -836,7 +824,7 @@ class SeriesServiceTest {
                           .build()))
               .build();
 
-      seriesService.refreshSeasonWithEpisodes(series, details, library);
+      seriesService.refreshSeasonWithEpisodes(seasonRequest(series, details, library));
 
       var episodes = episodeRepository.findBySeasonIdOrderByEpisodeNumber(season.getId());
       assertThat(episodes).hasSize(2);
@@ -846,8 +834,8 @@ class SeriesServiceTest {
     }
 
     @Test
-    @DisplayName("Should publish image events for season and episodes when refreshing")
-    void shouldPublishImageEventsForSeasonAndEpisodesWhenRefreshing() {
+    @DisplayName("Should fetch season and episode artwork when refreshing season")
+    void shouldFetchSeasonAndEpisodeArtworkWhenRefreshingSeason() {
       var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
 
@@ -866,13 +854,40 @@ class SeriesServiceTest {
                           .build()))
               .build();
 
-      seriesService.refreshSeasonWithEpisodes(series, details, library);
+      var season = seriesService.refreshSeasonWithEpisodes(seasonRequest(series, details, library));
 
-      var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-      assertThat(events).hasSize(2);
-      assertThat(events).filteredOn(e -> e.entityType() == ImageEntityType.SEASON).hasSize(1);
-      assertThat(events).filteredOn(e -> e.entityType() == ImageEntityType.EPISODE).hasSize(1);
+      assertThat(awaitArtwork().counts()).isEqualTo(ArtworkCounts.builder().saved(2).build());
+      assertThat(imageTypesOf(season.getId(), ImageEntityType.SEASON))
+          .containsOnly(ImageType.POSTER);
+      assertThat(episodeRepository.findBySeasonIdOrderByEpisodeNumber(season.getId()))
+          .singleElement()
+          .satisfies(
+              episode ->
+                  assertThat(imageTypesOf(episode.getId(), ImageEntityType.EPISODE))
+                      .containsOnly(ImageType.STILL));
     }
+  }
+
+  private SeasonWithEpisodesRequest seasonRequest(
+      Series series, SeasonDetails details, Library library) {
+    return SeasonWithEpisodesRequest.builder()
+        .series(series)
+        .details(details)
+        .library(library)
+        .artworkRun(artworkRun)
+        .build();
+  }
+
+  private ArtworkRunSummary awaitArtwork() {
+    artworkRun.close();
+    return artworkRun.completion().orTimeout(5, TimeUnit.SECONDS).join();
+  }
+
+  private List<ImageType> imageTypesOf(UUID entityId, ImageEntityType entityType) {
+    return imageRepository.findByEntityIdAndEntityType(entityId, entityType).stream()
+        .map(Image::getImageType)
+        .distinct()
+        .toList();
   }
 
   private static Series.SeriesBuilder<?, ?> seriesBuilder(String title) {

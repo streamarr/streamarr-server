@@ -1,6 +1,5 @@
 package com.streamarr.server.services.library;
 
-import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -47,7 +46,7 @@ public class MovieFileProcessor {
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
 
-  public void process(Library library, MediaFile mediaFile) {
+  public void process(FileDiscovery discovery, MediaFile mediaFile) {
     var mediaInformationResult = parseMediaFileForMovieInfo(mediaFile);
 
     if (mediaInformationResult.isEmpty()) {
@@ -68,7 +67,8 @@ public class MovieFileProcessor {
         mediaInformationResult.get().title(),
         mediaInformationResult.get().year());
 
-    var searchOutcome = movieMetadataProviderResolver.search(library, mediaInformationResult.get());
+    var searchOutcome =
+        movieMetadataProviderResolver.search(discovery.library(), mediaInformationResult.get());
 
     switch (searchOutcome) {
       case NotFound _ -> {
@@ -97,7 +97,7 @@ public class MovieFileProcessor {
             movieSearchResult.externalSourceType(),
             movieSearchResult.externalId());
 
-        enrichMovieMetadata(library, mediaFile, movieSearchResult);
+        enrichMovieMetadata(discovery, mediaFile, movieSearchResult);
       }
     }
   }
@@ -135,14 +135,14 @@ public class MovieFileProcessor {
   }
 
   private void enrichMovieMetadata(
-      Library library, MediaFile mediaFile, RemoteSearchResult remoteSearchResult) {
+      FileDiscovery discovery, MediaFile mediaFile, RemoteSearchResult remoteSearchResult) {
 
     var externalIdMutex = mutexFactory.getMutex(remoteSearchResult.externalId());
 
     try {
       externalIdMutex.lockInterruptibly();
 
-      updateOrSaveEnrichedMovie(library, mediaFile, remoteSearchResult);
+      updateOrSaveEnrichedMovie(discovery, mediaFile, remoteSearchResult);
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
       log.error("Enrichment interrupted for MediaFile id: {}", mediaFile.getId(), ex);
@@ -156,7 +156,7 @@ public class MovieFileProcessor {
   }
 
   private void updateOrSaveEnrichedMovie(
-      Library library, MediaFile mediaFile, RemoteSearchResult remoteSearchResult) {
+      FileDiscovery discovery, MediaFile mediaFile, RemoteSearchResult remoteSearchResult) {
     var optionalMovie =
         movieService.addMediaFileToMovieByTmdbId(remoteSearchResult.externalId(), mediaFile);
 
@@ -165,13 +165,15 @@ public class MovieFileProcessor {
       return;
     }
 
-    var metadataResult = movieMetadataProviderResolver.getMetadata(remoteSearchResult, library);
+    var metadataResult =
+        movieMetadataProviderResolver.getMetadata(remoteSearchResult, discovery.library());
 
     if (metadataResult.isEmpty()) {
       return;
     }
 
-    movieService.createMovieWithAssociations(metadataResult.get(), mediaFile);
+    movieService.createMovieWithAssociations(
+        metadataResult.get(), mediaFile, discovery.artworkRun());
     markMediaFileAsMatched(mediaFile);
   }
 

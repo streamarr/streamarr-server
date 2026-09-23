@@ -1,6 +1,8 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.defaultIdentityBuilder;
+import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -24,6 +26,7 @@ import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.MediaFile;
@@ -36,6 +39,7 @@ import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.CapturingProbeTaskRequests;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
+import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.fakes.FakeLibraryMutationTransaction;
 import com.streamarr.server.fakes.FakeLibraryRepository;
@@ -44,16 +48,19 @@ import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
+import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.RecordingMetadataProvider;
 import com.streamarr.server.fakes.RecordingSeriesMetadataProvider;
 import com.streamarr.server.fakes.SecurityExceptionFileSystem;
 import com.streamarr.server.fakes.ThrowingFileSystemWrapper;
+import com.streamarr.server.fixtures.ArtworkServiceFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.ArtworkService;
 import com.streamarr.server.services.CompanyService;
 import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.MovieService;
@@ -78,7 +85,6 @@ import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
-import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProvider;
@@ -152,6 +158,8 @@ class LibraryManagementServiceTest {
   private final FakeTransactionManager transactionManager = new FakeTransactionManager();
   private final MutationTransactions mutationTransactions =
       new MutationTransactions(transactionManager, new ConstraintViolationTranslator());
+  private final FakeImageRepository fakeImageRepository = new FakeImageRepository();
+  private final ArtworkService artworkService = artworkServiceWith(fakeImageRepository);
   private final MovieService movieService =
       new MovieService(
           fakeMovieRepository,
@@ -159,7 +167,7 @@ class LibraryManagementServiceTest {
           genreService,
           companyService,
           null,
-          capturingEventPublisher,
+          artworkService,
           null,
           null,
           null,
@@ -199,7 +207,8 @@ class LibraryManagementServiceTest {
           libraryRefreshService,
           fileSystem,
           libraryMutationTransaction,
-          mutationTransactions);
+          mutationTransactions,
+          artworkService);
 
   private UUID savedLibraryId;
 
@@ -1670,6 +1679,9 @@ class LibraryManagementServiceTest {
       var movie =
           fakeMovieRepository.save(
               Movie.builder().title("Original").titleSort("original").library(library).build());
+      var stored =
+          fakeImageRepository.save(
+              imageBuilder(movie.getId()).key("/poster.jpg").path("movie/poster").build());
       movie
           .getExternalIds()
           .add(
@@ -1692,7 +1704,8 @@ class LibraryManagementServiceTest {
               seriesService,
               movieService,
               mock(SeriesMetadataProviderResolver.class),
-              fakeMovieMetadataProviderResolver);
+              fakeMovieMetadataProviderResolver,
+              artworkService);
       var service = libraryManagementServiceWithRefreshService(refreshService);
 
       service.refreshLibrary(savedLibraryId, ImageRefreshMode.FORCE_REFRESH);
@@ -1701,14 +1714,16 @@ class LibraryManagementServiceTest {
           .isEqualTo("Refreshed");
       assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
           .isEqualTo(LibraryStatus.HEALTHY);
-      assertThat(capturingEventPublisher.getEventsOfType(MetadataEnrichedEvent.class))
-          .singleElement()
-          .satisfies(
-              event -> {
-                assertThat(event.entityId()).isEqualTo(movie.getId());
-                assertThat(event.entityType()).isEqualTo(ImageEntityType.MOVIE);
-                assertThat(event.imageRefreshMode()).isEqualTo(ImageRefreshMode.FORCE_REFRESH);
-              });
+      await()
+          .atMost(Duration.ofSeconds(5))
+          .untilAsserted(
+              () ->
+                  assertThat(
+                          fakeImageRepository.findByEntityIdAndEntityType(
+                              movie.getId(), ImageEntityType.MOVIE))
+                      .extracting(Image::getId)
+                      .isNotEmpty()
+                      .doesNotContain(stored.getId()));
     }
 
     @Test
@@ -1899,7 +1914,7 @@ class LibraryManagementServiceTest {
     private final AtomicReference<Thread> executingThread = new AtomicReference<>();
 
     private BlockingLibraryRefreshService() {
-      super(null, null, null, null, null, null);
+      super(null, null, null, null, null, null, null);
     }
 
     @Override
@@ -1938,7 +1953,7 @@ class LibraryManagementServiceTest {
     private final AtomicReference<ImageRefreshMode> imageRefreshMode = new AtomicReference<>();
 
     private RecordingLibraryRefreshService() {
-      super(null, null, null, null, null, null);
+      super(null, null, null, null, null, null, null);
     }
 
     @Override
@@ -1958,6 +1973,15 @@ class LibraryManagementServiceTest {
     Files.createDirectories(path);
 
     return path;
+  }
+
+  private static ArtworkService artworkServiceWith(FakeImageRepository imageRepository) {
+    var imageDownloader = new FakeTmdbHttpService();
+    imageDownloader.setImageData(createTestImage(600, 900));
+    return ArtworkServiceFixture.artworkServiceBuilder()
+        .imageRepository(imageRepository)
+        .imageDownloader(imageDownloader)
+        .build();
   }
 
   private MovieFileProcessor movieFileProcessorWith(MetadataProvider<Movie> metadataProvider) {
@@ -2001,7 +2025,8 @@ class LibraryManagementServiceTest {
         libraryRefreshService,
         alternateFileSystem,
         libraryMutationTransaction,
-        mutationTransactions);
+        mutationTransactions,
+        artworkService);
   }
 
   private LibraryManagementService libraryManagementServiceWith(
@@ -2021,7 +2046,8 @@ class LibraryManagementServiceTest {
         libraryRefreshService,
         fileSystem,
         libraryMutationTransaction,
-        mutationTransactions);
+        mutationTransactions,
+        artworkService);
   }
 
   private LibraryManagementService libraryManagementServiceWithRefreshService(
@@ -2041,7 +2067,8 @@ class LibraryManagementServiceTest {
         refreshService,
         fileSystem,
         libraryMutationTransaction,
-        mutationTransactions);
+        mutationTransactions,
+        artworkService);
   }
 
   private Path pathWithDisplayName(String filepathUri, String displayName) throws IOException {
