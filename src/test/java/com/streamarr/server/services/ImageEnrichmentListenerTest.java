@@ -649,7 +649,8 @@ class ImageEnrichmentListenerTest {
             new ImageVariantService(),
             new ImageProperties("/data/images"),
             fileSystem);
-    return new ImageEnrichmentListener(imageDownloader, imageService, mutexFactoryProvider);
+    return new ImageEnrichmentListener(
+        new ArtworkFetcher(imageDownloader, imageService, mutexFactoryProvider));
   }
 
   private ExistingArtwork persistExistingArtwork(UUID entityId) throws IOException {
