@@ -13,12 +13,15 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
+import com.streamarr.server.fixtures.ArtworkServiceFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.services.ArtworkService;
 import com.streamarr.server.services.CompanyService;
 import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
@@ -50,6 +53,8 @@ class MovieFileProcessorTest {
   private final CompanyService companyService = mock(CompanyService.class);
   private final FakeMediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
   private final FakeMovieRepository fakeMovieRepository = new FakeMovieRepository();
+  private final ArtworkService artworkService =
+      ArtworkServiceFixture.artworkServiceBuilder().build();
   private final MovieService movieService =
       new MovieService(
           fakeMovieRepository,
@@ -57,7 +62,7 @@ class MovieFileProcessorTest {
           genreService,
           companyService,
           null,
-          null,
+          artworkService,
           null,
           null,
           null,
@@ -107,7 +112,7 @@ class MovieFileProcessorTest {
             });
 
     try {
-      movieFileProcessor.process(library, mediaFile);
+      movieFileProcessor.process(discoveryOf(library), mediaFile);
 
       assertThat(Thread.currentThread().isInterrupted())
           .as("Interrupt flag should be restored after InterruptedException is caught")
@@ -135,7 +140,7 @@ class MovieFileProcessorTest {
     when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
     when(tmdbMovieProvider.search(any(VideoFileParserResult.class))).thenReturn(new NotFound());
 
-    movieFileProcessor.process(library, mediaFile);
+    movieFileProcessor.process(discoveryOf(library), mediaFile);
 
     assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
         .isEqualTo(MediaFileStatus.METADATA_NOT_FOUND);
@@ -159,9 +164,13 @@ class MovieFileProcessorTest {
     when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
         .thenReturn(new TemporarilyUnavailable(timeout));
 
-    movieFileProcessor.process(library, mediaFile);
+    movieFileProcessor.process(discoveryOf(library), mediaFile);
 
     assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
         .isEqualTo(MediaFileStatus.METADATA_UNAVAILABLE);
+  }
+
+  private FileDiscovery discoveryOf(Library library) {
+    return new FileDiscovery(library, artworkService.openRun("scan", ImageRefreshMode.PRESERVE));
   }
 }

@@ -23,6 +23,7 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
@@ -47,6 +48,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class SeriesServiceIT extends AbstractIntegrationTest {
 
+  @Autowired private ArtworkService artworkService;
   @Autowired private SeriesService seriesService;
   @Autowired private SeriesRepository seriesRepository;
   @Autowired private SeasonRepository seasonRepository;
@@ -1225,7 +1227,10 @@ class SeriesServiceIT extends AbstractIntegrationTest {
 
       var metadataResult = new MetadataResult<>(freshSeries, List.of(), Map.of(), Map.of());
 
-      var refreshed = seriesService.refreshSeriesMetadata(series, metadataResult);
+      Series refreshed;
+      try (var artworkRun = artworkService.openRun("refresh", ImageRefreshMode.PRESERVE)) {
+        refreshed = seriesService.refreshSeriesMetadata(series, metadataResult, artworkRun);
+      }
 
       assertThat(refreshed.getCast())
           .extracting(Person::getName)

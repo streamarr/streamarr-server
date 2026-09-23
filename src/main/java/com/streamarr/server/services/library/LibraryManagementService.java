@@ -12,6 +12,8 @@ import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.repositories.LibraryMetadataRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.services.ArtworkRun;
+import com.streamarr.server.services.ArtworkService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -79,6 +81,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
   private final LibraryMutationTransaction libraryMutationTransaction;
   private final MutexFactory<String> mutexFactory;
   private final MutationTransactions mutationTransactions;
+  private final ArtworkService artworkService;
   private final Set<UUID> activeScans = ConcurrentHashMap.newKeySet();
   private final Set<UUID> activeRefreshes = ConcurrentHashMap.newKeySet();
 
@@ -97,7 +100,8 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
       LibraryRefreshService libraryRefreshService,
       FileSystem fileSystem,
       LibraryMutationTransaction libraryMutationTransaction,
-      MutationTransactions mutationTransactions) {
+      MutationTransactions mutationTransactions,
+      ArtworkService artworkService) {
     this.ignoredFileValidator = ignoredFileValidator;
     this.videoExtensionValidator = videoExtensionValidator;
     this.movieFileProcessor = movieFileProcessor;
@@ -112,6 +116,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     this.fileSystem = fileSystem;
     this.libraryMutationTransaction = libraryMutationTransaction;
     this.mutationTransactions = mutationTransactions;
+    this.artworkService = artworkService;
 
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
@@ -362,8 +367,10 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
             .findById(libraryId)
             .orElseThrow(() -> new LibraryNotFoundException(libraryId));
 
-    if (processFile(library, path)) {
-      eventPublisher.publishEvent(new ItemProcessedEvent(libraryId));
+    try (var artworkRun = openArtworkRun("file discovery in", library)) {
+      if (processFile(new FileDiscovery(library, artworkRun), path)) {
+        eventPublisher.publishEvent(new ItemProcessedEvent(libraryId));
+      }
     }
   }
 
@@ -389,14 +396,16 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
   }
 
   private void walkAndProcessFiles(Library library) {
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try (var artworkRun = openArtworkRun("scan of", library);
+        var executor = Executors.newVirtualThreadPerTaskExecutor();
         var stream = Files.walk(FilepathCodec.decode(fileSystem, library.getFilepathUri()))) {
 
+      var discovery = new FileDiscovery(library, artworkRun);
       var tasks =
           stream
               .filter(Files::isRegularFile)
               .filter(file -> !ignoredFileValidator.shouldIgnore(file))
-              .map(file -> executor.submit(() -> processFile(library, file)))
+              .map(file -> executor.submit(() -> processFile(discovery, file)))
               .toList();
       awaitFileProcessing(library, tasks);
 
@@ -479,7 +488,13 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     }
   }
 
-  private boolean processFile(Library library, Path path) {
+  private ArtworkRun openArtworkRun(String operation, Library library) {
+    return artworkService.openRun(
+        operation + " library '" + library.getName() + "'", ImageRefreshMode.PRESERVE);
+  }
+
+  private boolean processFile(FileDiscovery discovery, Path path) {
+    var library = discovery.library();
 
     if (!hasSupportedExtension(path)) {
       log.warn(
@@ -497,8 +512,8 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     }
 
     switch (library.getType()) {
-      case MOVIE -> movieFileProcessor.process(library, mediaFile);
-      case SERIES -> seriesFileProcessor.process(library, mediaFile);
+      case MOVIE -> movieFileProcessor.process(discovery, mediaFile);
+      case SERIES -> seriesFileProcessor.process(discovery, mediaFile);
       default -> throw new IllegalStateException("Unsupported media type: " + library.getType());
     }
 
