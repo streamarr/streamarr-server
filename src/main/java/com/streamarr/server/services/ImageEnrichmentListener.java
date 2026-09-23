@@ -10,7 +10,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @RequiredArgsConstructor
 public class ImageEnrichmentListener {
 
-  private final ArtworkFetcher artworkFetcher;
+  private final ArtworkService artworkService;
 
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
   public void onMetadataEnriched(MetadataEnrichedEvent event) {
@@ -20,6 +20,6 @@ public class ImageEnrichmentListener {
             .entityType(event.entityType())
             .sources(event.imageSources())
             .build();
-    Thread.startVirtualThread(() -> artworkFetcher.fetch(artwork, event.imageRefreshMode()));
+    artworkService.fetchSecondary(artwork, event.imageRefreshMode());
   }
 }

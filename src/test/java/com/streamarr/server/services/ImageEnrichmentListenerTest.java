@@ -26,6 +26,7 @@ import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
@@ -605,35 +606,50 @@ class ImageEnrichmentListenerTest {
 
   @Test
   @DisplayName("Should stop enrichment when interrupted while waiting for entity lock")
-  void shouldStopEnrichmentWhenInterruptedWhileWaitingForEntityLock() throws InterruptedException {
+  void shouldStopEnrichmentWhenInterruptedWhileWaitingForEntityLock() throws Exception {
     var entityId = UUID.randomUUID();
     tmdbHttpService.setImageData(createTestImage(600, 900));
     var mutex = SignalingMutex.builder().expectedLockAttempts(1).build();
-    var testListener = createListener(tmdbHttpService, new FixedMutexFactory(mutex));
-    var event =
-        new MetadataEnrichedEvent(
-            entityId,
-            ImageEntityType.MOVIE,
-            List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")));
+    var artworkService = createArtworkService(tmdbHttpService, new FixedMutexFactory(mutex));
+    var artwork =
+        ArtworkSources.builder()
+            .entityId(entityId)
+            .entityType(ImageEntityType.MOVIE)
+            .sources(List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))
+            .build();
 
+    List<ArtworkResult> results;
     mutex.lock();
     try {
-      testListener.onMetadataEnriched(event);
-
+      var request = artworkService.fetchSecondary(artwork, ImageRefreshMode.PRESERVE);
       assertThat(mutex.awaitLockAttempts()).isTrue();
-      var waitingThread = mutex.interruptibleThread();
-      waitingThread.interrupt();
-      assertThat(waitingThread.join(Duration.ofSeconds(5))).isTrue();
-      assertThat(waitingThread.isInterrupted()).isTrue();
+
+      mutex.interruptibleThread().interrupt();
+
+      results = request.get(5, TimeUnit.SECONDS);
     } finally {
       mutex.unlock();
     }
 
+    assertThat(results)
+        .isNotEmpty()
+        .allSatisfy(
+            result ->
+                assertThat(result)
+                    .isInstanceOfSatisfying(
+                        ArtworkResult.Failed.class,
+                        failed ->
+                            assertThat(failed.cause()).isInstanceOf(InterruptedException.class)));
     assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
         .isEmpty();
   }
 
   private ImageEnrichmentListener createListener(
+      TmdbImageDownloader imageDownloader, MutexFactory<String> mutexFactory) {
+    return new ImageEnrichmentListener(createArtworkService(imageDownloader, mutexFactory));
+  }
+
+  private ArtworkService createArtworkService(
       TmdbImageDownloader imageDownloader, MutexFactory<String> mutexFactory) {
     var mutexFactoryProvider =
         new MutexFactoryProvider() {
@@ -649,8 +665,10 @@ class ImageEnrichmentListenerTest {
             new ImageVariantService(),
             new ImageProperties("/data/images"),
             fileSystem);
-    return new ImageEnrichmentListener(
-        new ArtworkFetcher(imageDownloader, imageService, mutexFactoryProvider));
+    return new ArtworkService(
+        new ArtworkFetcher(imageDownloader, imageService, mutexFactoryProvider),
+        Clock.systemUTC(),
+        4);
   }
 
   private ExistingArtwork persistExistingArtwork(UUID entityId) throws IOException {

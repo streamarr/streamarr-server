@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -325,6 +326,112 @@ class ArtworkServiceTest {
   }
 
   @Nested
+  @DisplayName("Secondary artwork")
+  class SecondaryArtwork {
+
+    static Stream<Arguments> secondaryImageTypes() {
+      return Stream.of(
+          Arguments.of(ImageEntityType.PERSON, ImageType.PROFILE),
+          Arguments.of(ImageEntityType.COMPANY, ImageType.LOGO));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("secondaryImageTypes")
+    @DisplayName("Should save secondary artwork when provider supplies an image")
+    void shouldSaveSecondaryArtworkWhenProviderSuppliesImage(
+        ImageEntityType entityType, ImageType imageType) {
+      var entityId = UUID.randomUUID();
+      var artwork =
+          ArtworkSources.builder()
+              .entityId(entityId)
+              .entityType(entityType)
+              .sources(List.of(new TmdbImageSource(imageType, "/secondary.jpg")))
+              .build();
+
+      var results = awaitResult(artworkService.fetchSecondary(artwork, ImageRefreshMode.PRESERVE));
+
+      assertThat(results).containsExactly(new Saved(imageType));
+      assertThat(imageRepository.findByEntityIdAndEntityType(entityId, entityType))
+          .extracting(Image::getImageType)
+          .containsOnly(imageType);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("secondaryImageTypes")
+    @DisplayName("Should report unavailable when provider has no secondary image")
+    void shouldReportUnavailableWhenProviderHasNoSecondaryImage(
+        ImageEntityType entityType, ImageType imageType) {
+      var artwork =
+          ArtworkSources.builder()
+              .entityId(UUID.randomUUID())
+              .entityType(entityType)
+              .sources(List.of())
+              .build();
+
+      var results = awaitResult(artworkService.fetchSecondary(artwork, ImageRefreshMode.PRESERVE));
+
+      assertThat(results).containsExactly(new Unavailable(imageType));
+    }
+
+    @Test
+    @DisplayName("Should finish required artwork while secondary downloads are held open")
+    void shouldFinishRequiredArtworkWhileSecondaryDownloadsAreHeldOpen() {
+      var downloader = new GatedImageDownloader(createTestImage(600, 900));
+      downloader.holdPathsStartingWith("/profile");
+      var service =
+          ArtworkServiceFixture.artworkServiceBuilder()
+              .imageRepository(imageRepository)
+              .imageDownloader(downloader)
+              .secondaryConcurrency(2)
+              .build();
+      var secondaryRequests =
+          IntStream.range(0, 20)
+              .mapToObj(
+                  index ->
+                      service.fetchSecondary(
+                          personArtwork("/profile-" + index + ".jpg"), ImageRefreshMode.PRESERVE))
+              .toList();
+      await().atMost(Duration.ofSeconds(5)).until(() -> downloader.heldDownloads() == 2);
+
+      List<ArtworkResult> requiredResults;
+      try (var run = service.openRun("scan", ImageRefreshMode.PRESERVE)) {
+        requiredResults =
+            awaitResult(
+                service.fetchRequired(run, movieArtwork(UUID.randomUUID(), POSTER, BACKDROP)));
+      }
+
+      assertThat(requiredResults)
+          .containsExactlyInAnyOrder(new Saved(ImageType.POSTER), new Saved(ImageType.BACKDROP));
+      assertThat(downloader.heldDownloads()).isEqualTo(2);
+      assertThat(secondaryRequests).noneMatch(CompletableFuture::isDone);
+
+      downloader.releaseHeldDownloads();
+
+      assertThat(secondaryRequests)
+          .allSatisfy(
+              request ->
+                  assertThat(awaitResult(request)).containsExactly(new Saved(ImageType.PROFILE)));
+    }
+
+    @Test
+    @DisplayName(
+        "Should report failure when secondary artwork is requested after the service stops")
+    void shouldReportFailureWhenSecondaryArtworkIsRequestedAfterServiceStops() {
+      artworkService.shutdown();
+
+      var results =
+          awaitResult(
+              artworkService.fetchSecondary(
+                  personArtwork("/profile.jpg"), ImageRefreshMode.PRESERVE));
+
+      assertThat(results)
+          .singleElement()
+          .isInstanceOfSatisfying(
+              Failed.class, failed -> assertThat(failed.imageType()).isEqualTo(ImageType.PROFILE));
+    }
+  }
+
+  @Nested
   @DisplayName("Owning transactions")
   class OwningTransactions {
 
@@ -393,6 +500,14 @@ class ArtworkServiceTest {
         .entityId(movieId)
         .entityType(ImageEntityType.MOVIE)
         .sources(List.of(sources))
+        .build();
+  }
+
+  private static ArtworkSources personArtwork(String profilePath) {
+    return ArtworkSources.builder()
+        .entityId(UUID.randomUUID())
+        .entityType(ImageEntityType.PERSON)
+        .sources(List.of(new TmdbImageSource(ImageType.PROFILE, profilePath)))
         .build();
   }
 

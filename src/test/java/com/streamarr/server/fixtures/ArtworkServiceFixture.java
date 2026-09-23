@@ -26,7 +26,8 @@ public final class ArtworkServiceFixture {
       ImageRepository imageRepository,
       TmdbImageDownloader imageDownloader,
       Clock clock,
-      FileSystem fileSystem) {
+      FileSystem fileSystem,
+      Integer secondaryConcurrency) {
     var repository = imageRepository;
     if (repository == null) {
       repository = new FakeImageRepository();
@@ -47,6 +48,11 @@ public final class ArtworkServiceFixture {
       imageFileSystem = Jimfs.newFileSystem(Configuration.unix());
     }
 
+    var concurrency = secondaryConcurrency;
+    if (concurrency == null) {
+      concurrency = 4;
+    }
+
     var imageService =
         new ImageService(
             repository,
@@ -54,6 +60,8 @@ public final class ArtworkServiceFixture {
             new ImageProperties("/data/images"),
             imageFileSystem);
     return new ArtworkService(
-        new ArtworkFetcher(downloader, imageService, new MutexFactoryProvider()), artworkClock);
+        new ArtworkFetcher(downloader, imageService, new MutexFactoryProvider()),
+        artworkClock,
+        concurrency);
   }
 }

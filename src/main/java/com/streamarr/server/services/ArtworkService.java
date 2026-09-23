@@ -8,6 +8,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -18,11 +19,22 @@ public class ArtworkService {
   private final ArtworkFetcher artworkFetcher;
   private final Clock clock;
   private final ExecutorService requiredArtworkExecutor =
-      Executors.newVirtualThreadPerTaskExecutor();
+      Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("required-artwork-", 0).factory());
 
-  public ArtworkService(ArtworkFetcher artworkFetcher, Clock clock) {
+  // The image client's rate limiter grants permits in arrival order, so an unbounded backlog of
+  // person and company images would take permits ahead of required artwork. Bounding concurrent
+  // secondary fetches keeps that backlog in this executor's queue instead.
+  private final ExecutorService secondaryArtworkExecutor;
+
+  public ArtworkService(
+      ArtworkFetcher artworkFetcher,
+      Clock clock,
+      @Value("${artwork.secondary-concurrency:4}") int secondaryConcurrency) {
     this.artworkFetcher = artworkFetcher;
     this.clock = clock;
+    this.secondaryArtworkExecutor =
+        Executors.newFixedThreadPool(
+            secondaryConcurrency, Thread.ofVirtual().name("secondary-artwork-", 0).factory());
   }
 
   /** Opens a run that collects the required artwork of one scan, refresh, or file discovery. */
@@ -47,9 +59,25 @@ public class ArtworkService {
     return request;
   }
 
+  /**
+   * Fetches person and company artwork in the background. At most {@code
+   * artwork.secondary-concurrency} secondary fetches run at once, and the rest wait in a queue so
+   * they cannot delay required artwork.
+   */
+  public CompletableFuture<List<ArtworkResult>> fetchSecondary(
+      ArtworkSources artwork, ImageRefreshMode refreshMode) {
+    try {
+      return CompletableFuture.supplyAsync(
+          () -> artworkFetcher.fetch(artwork, refreshMode), secondaryArtworkExecutor);
+    } catch (RejectedExecutionException e) {
+      return CompletableFuture.completedFuture(artwork.failures(e));
+    }
+  }
+
   @PreDestroy
   public void shutdown() {
     requiredArtworkExecutor.shutdownNow();
+    secondaryArtworkExecutor.shutdownNow();
   }
 
   private void startRequiredFetch(
