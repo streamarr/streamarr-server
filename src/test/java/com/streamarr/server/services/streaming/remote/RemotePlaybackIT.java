@@ -8,6 +8,7 @@ import static org.awaitility.Awaitility.await;
 import com.google.common.primitives.Bytes;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.controllers.StreamController;
+import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.EncoderPreset;
@@ -437,8 +438,11 @@ class RemotePlaybackIT {
       var request = probeRequest(mediaFile);
 
       assertThatThrownBy(() -> service.probe(request))
-          .isInstanceOf(ProbeExecutionException.class)
-          .hasRootCauseMessage(
+          .isInstanceOfSatisfying(
+              ProbeExecutionException.class,
+              exception ->
+                  assertThat(exception.reason()).isEqualTo(ItemFailureReason.SOURCE_INACCESSIBLE))
+          .hasMessage(
               "Worker probe reported a retryable failure: PROBE_FAILURE_SOURCE_UNAVAILABLE");
     }
   }

@@ -3,10 +3,12 @@ package com.streamarr.server.services.streaming.remote;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeContainerInfo;
@@ -169,33 +171,35 @@ class RemoteProbeResultMapperTest {
   }
 
   @ParameterizedTest
-  @MethodSource("transientFailures")
-  @DisplayName("Should leave execution failures retryable when the worker cannot complete a probe")
-  void shouldLeaveExecutionFailuresRetryableWhenWorkerCannotCompleteProbe(ProbeFailure failure) {
-    var mapper = new RemoteProbeResultMapper();
-    var result = ProbeAttemptResult.newBuilder().setFailure(failure).build();
-
-    assertThatThrownBy(() -> mapper.map(result)).isInstanceOf(ProbeExecutionException.class);
-  }
-
-  private static Stream<ProbeFailure> transientFailures() {
-    return Stream.of(
-        ProbeFailure.PROBE_FAILURE_SOURCE_UNAVAILABLE,
-        ProbeFailure.PROBE_FAILURE_EXECUTION_FAILED,
-        ProbeFailure.PROBE_FAILURE_UNSUPPORTED_VERSION,
-        ProbeFailure.PROBE_FAILURE_CANCELLED);
-  }
-
-  @ParameterizedTest
-  @MethodSource("transientFailures")
-  @DisplayName("Should retain the reported failure reason when a worker probe remains retryable")
-  void shouldRetainReportedFailureReasonWhenWorkerProbeRemainsRetryable(ProbeFailure failure) {
+  @CsvSource({
+    "PROBE_FAILURE_SOURCE_UNAVAILABLE, SOURCE_INACCESSIBLE",
+    "PROBE_FAILURE_EXECUTION_FAILED, TEMPORARY",
+    "PROBE_FAILURE_UNSUPPORTED_VERSION, MISCONFIGURED"
+  })
+  @DisplayName("Should report why the attempt failed when a worker probe remains retryable")
+  void shouldReportWhyTheAttemptFailedWhenWorkerProbeRemainsRetryable(
+      ProbeFailure failure, ItemFailureReason reason) {
     var mapper = new RemoteProbeResultMapper();
     var result = ProbeAttemptResult.newBuilder().setFailure(failure).build();
 
     assertThatThrownBy(() -> mapper.map(result))
-        .isInstanceOf(ProbeExecutionException.class)
-        .hasStackTraceContaining(failure.name());
+        .isInstanceOfSatisfying(
+            ProbeExecutionException.class,
+            exception -> assertThat(exception.reason()).isEqualTo(reason))
+        .hasMessageContaining(failure.name());
+  }
+
+  @Test
+  @DisplayName("Should report no failure reason when the worker cancels the probe")
+  void shouldReportNoFailureReasonWhenWorkerCancelsProbe() {
+    var mapper = new RemoteProbeResultMapper();
+    var result =
+        ProbeAttemptResult.newBuilder().setFailure(ProbeFailure.PROBE_FAILURE_CANCELLED).build();
+
+    assertThatThrownBy(() -> mapper.map(result))
+        .isInstanceOf(ProbeCancelledException.class)
+        .isNotInstanceOf(ProbeExecutionException.class)
+        .hasMessageContaining(ProbeFailure.PROBE_FAILURE_CANCELLED.name());
   }
 
   @ParameterizedTest
@@ -204,7 +208,10 @@ class RemoteProbeResultMapperTest {
   void shouldLeaveUnknownOrMissingWorkerOutcomeRetryable(ProbeAttemptResult result) {
     var mapper = new RemoteProbeResultMapper();
 
-    assertThatThrownBy(() -> mapper.map(result)).isInstanceOf(ProbeExecutionException.class);
+    assertThatThrownBy(() -> mapper.map(result))
+        .isInstanceOfSatisfying(
+            ProbeExecutionException.class,
+            exception -> assertThat(exception.reason()).isEqualTo(ItemFailureReason.TEMPORARY));
   }
 
   private static Stream<ProbeAttemptResult> unknownOutcomes() {

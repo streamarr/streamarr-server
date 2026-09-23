@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
@@ -27,9 +28,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
- * One probe execution, independent of the scheduler that runs it. Transient failures escape as
- * {@link ProbeExecutionException} so the scheduler retries them with backoff; busy workers defer
- * the probe without a failure.
+ * One probe execution, independent of the scheduler that runs it. Failed attempts escape as {@link
+ * ProbeExecutionException} so the scheduler records their reason and retries them with backoff;
+ * cancelled attempts retry without a recorded failure, and busy workers defer the probe without a
+ * failure.
  */
 @Service
 @Builder(toBuilder = true)
@@ -124,7 +126,10 @@ public class ProbeExecution {
     } catch (NoSuchFileException _) {
       return Optional.empty();
     } catch (IOException exception) {
-      throw new ProbeExecutionException(exception);
+      throw new ProbeExecutionException(
+          ItemFailureReason.SOURCE_INACCESSIBLE,
+          "The server could not read the media source",
+          exception);
     }
   }
 }
