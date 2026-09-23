@@ -31,7 +31,7 @@ public record ScanResults(
         describeFiles(),
         "required artwork in %s seconds (%s)"
             .formatted(seconds(artwork.elapsed()), artwork.counts().describe()),
-        "probes in %s seconds (%s)".formatted(seconds(probes.elapsed()), describeProbes()),
+        "probes in %s seconds (%s)".formatted(seconds(probes.elapsed()), probes.describe()),
         "in the background: %d secondary images pending, %d failed probes retrying, %d changed files to probe"
             .formatted(
                 secondaryImagesPending,
@@ -47,16 +47,6 @@ public record ScanResults(
             .map(entry -> entry.getValue() + " " + words(entry.getKey().name()))
             .collect(Collectors.joining(", "));
     return "%d files (%s)".formatted(total, statuses);
-  }
-
-  private String describeProbes() {
-    return "%d ready, %d media errors, %d failed, %d superseded, %d removed"
-        .formatted(
-            probes.count(RequestedProbeResult.READY),
-            probes.count(RequestedProbeResult.MEDIA_ERROR),
-            probes.count(RequestedProbeResult.FAILED),
-            probes.count(RequestedProbeResult.SUPERSEDED),
-            probes.count(RequestedProbeResult.REMOVED));
   }
 
   private static String words(String constant) {

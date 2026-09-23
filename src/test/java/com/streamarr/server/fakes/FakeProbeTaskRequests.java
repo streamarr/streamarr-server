@@ -3,7 +3,6 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.task.ProbeAttemptFailure;
-import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.fixtures.ProbeFixture;
@@ -31,7 +30,7 @@ public class FakeProbeTaskRequests implements ProbeTaskRequests {
 
   @Override
   public void request(ProbeTaskRequest request) {
-    if (!outcomes.recordProbeRequest(request.mediaFileId(), inputsOf(request))) {
+    if (!outcomes.recordProbeRequest(request.mediaFileId(), request.inputs())) {
       return;
     }
 
@@ -72,15 +71,11 @@ public class FakeProbeTaskRequests implements ProbeTaskRequests {
   public void fail(ProbeTaskRequest request, ItemFailureReason reason) {
     outcomes.recordProbeFailure(
         request.mediaFileId(),
-        inputsOf(request),
+        request.inputs(),
         ProbeAttemptFailure.builder()
             .reason(reason)
             .detail("Probe attempt failed")
             .failedAt(Instant.EPOCH)
             .build());
-  }
-
-  private static ProbeInputs inputsOf(ProbeTaskRequest request) {
-    return new ProbeInputs(request.snapshot(), request.probeVersion());
   }
 }

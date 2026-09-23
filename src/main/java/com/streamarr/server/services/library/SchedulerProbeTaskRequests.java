@@ -6,7 +6,6 @@ import com.github.kagkarlsson.scheduler.exceptions.TaskInstanceCurrentlyExecutin
 import com.github.kagkarlsson.scheduler.exceptions.TaskInstanceNotFoundException;
 import com.github.kagkarlsson.scheduler.task.Task;
 import com.github.kagkarlsson.scheduler.task.TaskInstance;
-import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
@@ -37,8 +36,7 @@ public class SchedulerProbeTaskRequests implements ProbeTaskRequests {
   @Override
   @Transactional
   public void request(ProbeTaskRequest request) {
-    if (!outcomes.recordProbeRequest(
-        request.mediaFileId(), new ProbeInputs(request.snapshot(), request.probeVersion()))) {
+    if (!outcomes.recordProbeRequest(request.mediaFileId(), request.inputs())) {
       return;
     }
 

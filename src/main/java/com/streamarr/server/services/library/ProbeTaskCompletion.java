@@ -8,8 +8,8 @@ import com.github.kagkarlsson.scheduler.task.RescheduleUpdate;
 import com.streamarr.server.config.LibraryWatcherProperties;
 import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.task.ProbeAttemptFailure;
-import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
@@ -73,44 +73,41 @@ public class ProbeTaskCompletion {
         new TransactionTemplate(transactionManager)
             .executeWithoutResult(
                 _ -> {
-                  attemptFailure(complete).ifPresent(failure -> recordFailure(complete, failure));
+                  complete
+                      .getCause()
+                      .flatMap(ProbeTaskCompletion::failureOf)
+                      .ifPresent(failure -> recordFailure(complete, failure));
                   retry.onFailure(complete, operations);
                 });
   }
 
-  private void recordFailure(ExecutionComplete complete, ProbeAttemptFailure failure) {
-    var request = (ProbeTaskRequest) complete.getExecution().taskInstance.getData();
+  private void recordFailure(ExecutionComplete complete, ItemOutcome.Failed failure) {
+    var request = requestOf(complete);
     outcomes.recordProbeFailure(
         request.mediaFileId(),
-        new ProbeInputs(request.snapshot(), request.probeVersion()),
-        failure);
+        request.inputs(),
+        ProbeAttemptFailure.builder()
+            .reason(failure.reason())
+            .detail(failure.detail())
+            .failedAt(complete.getTimeDone())
+            .build());
   }
 
-  private static Optional<ProbeAttemptFailure> attemptFailure(ExecutionComplete complete) {
-    return complete
-        .getCause()
-        .flatMap(
-            cause ->
-                switch (cause) {
-                  case ProbeCancelledException _ -> Optional.empty();
-                  case ProbeExecutionException failure ->
-                      Optional.of(attemptFailure(failure.reason(), failure.getMessage(), complete));
-                  default ->
-                      Optional.of(
-                          attemptFailure(
-                              ItemFailureReason.TEMPORARY,
-                              "Unexpected " + cause.getClass().getSimpleName(),
-                              complete));
-                });
+  private static Optional<ItemOutcome.Failed> failureOf(Throwable cause) {
+    return switch (cause) {
+      case ProbeCancelledException _ -> Optional.empty();
+      case ProbeExecutionException failure ->
+          Optional.of(new ItemOutcome.Failed(failure.reason(), failure.getMessage()));
+      default ->
+          Optional.of(
+              new ItemOutcome.Failed(
+                  ItemFailureReason.TEMPORARY, "Unexpected " + cause.getClass().getSimpleName()));
+    };
   }
 
-  private static ProbeAttemptFailure attemptFailure(
-      ItemFailureReason reason, String detail, ExecutionComplete complete) {
-    return ProbeAttemptFailure.builder()
-        .reason(reason)
-        .detail(detail)
-        .failedAt(complete.getTimeDone())
-        .build();
+  // MediaProbeTask gives every execution this handler receives a ProbeTaskRequest as its data.
+  private static ProbeTaskRequest requestOf(ExecutionComplete complete) {
+    return (ProbeTaskRequest) complete.getExecution().taskInstance.getData();
   }
 
   private ProbeExecutionResult latestResult(ProbeTaskRequest request, ProbeExecutionResult result) {
@@ -120,7 +117,7 @@ public class ProbeTaskCompletion {
     }
 
     var inputs = desired.get();
-    if (!inputs.equals(new ProbeInputs(request.snapshot(), request.probeVersion()))) {
+    if (!inputs.equals(request.inputs())) {
       return retryWithRequestedInputs(
           result,
           request.toBuilder()
@@ -130,10 +127,7 @@ public class ProbeTaskCompletion {
     }
 
     nextInputs(result)
-        .ifPresent(
-            next ->
-                outcomes.recordProbeRequest(
-                    next.mediaFileId(), new ProbeInputs(next.snapshot(), next.probeVersion())));
+        .ifPresent(next -> outcomes.recordProbeRequest(next.mediaFileId(), next.inputs()));
     return result;
   }
 

@@ -22,7 +22,13 @@ public record ProbeRunSummary(
     return counts.getOrDefault(result, 0);
   }
 
-  public int total() {
-    return counts.values().stream().mapToInt(Integer::intValue).sum();
+  public String describe() {
+    return "%d ready, %d media errors, %d failed, %d superseded, %d removed"
+        .formatted(
+            count(RequestedProbeResult.READY),
+            count(RequestedProbeResult.MEDIA_ERROR),
+            count(RequestedProbeResult.FAILED),
+            count(RequestedProbeResult.SUPERSEDED),
+            count(RequestedProbeResult.REMOVED));
   }
 }
