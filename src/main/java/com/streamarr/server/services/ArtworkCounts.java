@@ -22,7 +22,7 @@ public record ArtworkCounts(int saved, int skipped, int unavailable, int failed)
     return counts;
   }
 
-  String describe() {
+  public String describe() {
     return "%d saved, %d skipped, %d unavailable, %d failed"
         .formatted(saved, skipped, unavailable, failed);
   }

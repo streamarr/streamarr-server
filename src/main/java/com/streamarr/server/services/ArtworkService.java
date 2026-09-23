@@ -111,6 +111,11 @@ public class ArtworkService {
         });
   }
 
+  /** Returns how many secondary source images are requested but not finished, server-wide. */
+  public int pendingSecondaryImages() {
+    return progress.pending(ArtworkPriority.SECONDARY);
+  }
+
   @PreDestroy
   public void shutdown() {
     requiredArtworkExecutor.shutdownNow();

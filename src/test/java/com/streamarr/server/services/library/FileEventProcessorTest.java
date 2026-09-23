@@ -14,18 +14,19 @@ import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.exceptions.ProbeTaskSchedulingException;
-import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.fakes.FakeLibraryMutationTransaction;
 import com.streamarr.server.fakes.FakeLibraryRepository;
+import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeProbeTaskRequests;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fixtures.ArtworkServiceFixture;
+import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
-import com.streamarr.server.services.events.library.MediaFileProbeTaskRequested;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
@@ -65,6 +66,7 @@ class FileEventProcessorTest {
   private FileSystem fileSystem;
   private LibraryRepository libraryRepository;
   private FakeMediaFileRepository mediaFileRepository;
+  private FakeProbeTaskRequests probeTaskRequests;
   private AtomicReference<FileStabilityChecker> stabilityCheckerRef;
   private AtomicReference<ApplicationEventPublisher> eventPublisherRef;
   private FileEventProcessor eventProcessor;
@@ -75,6 +77,8 @@ class FileEventProcessorTest {
     fileSystem = Jimfs.newFileSystem(Configuration.unix());
     libraryRepository = new FakeLibraryRepository();
     mediaFileRepository = new FakeMediaFileRepository();
+    var probeOutcomes = new FakeMediaFileContainerInfoRepository();
+    probeTaskRequests = new FakeProbeTaskRequests(probeOutcomes);
     var ignoredFileValidator =
         new IgnoredFileValidator(new LibraryScanProperties(null, null, null));
     var videoExtensionValidator = new VideoExtensionValidator();
@@ -154,7 +158,13 @@ class FileEventProcessorTest {
             fileSystem,
             new FakeLibraryMutationTransaction(),
             mutationTransactions,
-            ArtworkServiceFixture.artworkServiceBuilder().build());
+            FileDiscoveryRunsFixture.fileDiscoveryRunsBuilder()
+                .artworkService(ArtworkServiceFixture.artworkServiceBuilder().build())
+                .mediaFiles(mediaFileRepository)
+                .outcomes(probeOutcomes)
+                .probeTaskRequests(probeTaskRequests)
+                .fileSystem(fileSystem)
+                .build());
 
     eventProcessor =
         new FileEventProcessor(
@@ -177,33 +187,26 @@ class FileEventProcessorTest {
   void shouldRecoverAProbeRequestWhenSnapshotReadingFailsWithoutAnotherFileEvent()
       throws Exception {
     var path = createFile("/media/shows/Show.S01E01.mkv");
-    var events = new CapturingEventPublisher();
     var unavailable = new AtomicBoolean(true);
-    eventPublisherRef.set(
-        event -> {
-          if (event instanceof MediaFileProbeTaskRequested request
-              && unavailable.getAndSet(false)) {
+    probeTaskRequests.dispatchWith(
+        request -> {
+          if (unavailable.getAndSet(false)) {
             throw new ProbeTaskSchedulingException(
                 request.mediaFileId(), new IOException("offline"));
           }
-
-          events.publishEvent(event);
         });
 
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
     await()
         .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> assertThat(events.getEventsOfType(MediaFileProbeTaskRequested.class)).hasSize(1));
+        .untilAsserted(() -> assertThat(probeTaskRequests.requests()).hasSize(1));
   }
 
   @Test
   @DisplayName("Should request a probe only after the file stops changing")
   void shouldRequestAProbeOnlyAfterTheFileStopsChanging() throws Exception {
     var path = createFile("/media/shows/Show.S01E01.mkv");
-    var events = new CapturingEventPublisher();
-    eventPublisherRef.set(events::publishEvent);
     var waiting = new CountDownLatch(1);
     var stopsChanging = new CountDownLatch(1);
     stabilityCheckerRef.set(_ -> awaitQuiet(waiting, stopsChanging));
@@ -211,14 +214,13 @@ class FileEventProcessorTest {
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
     assertThat(waiting.await(5, TimeUnit.SECONDS)).isTrue();
 
-    assertThat(events.getEventsOfType(MediaFileProbeTaskRequested.class)).isEmpty();
+    assertThat(probeTaskRequests.requests()).isEmpty();
 
     stopsChanging.countDown();
 
     await()
         .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> assertThat(events.getEventsOfType(MediaFileProbeTaskRequested.class)).hasSize(1));
+        .untilAsserted(() -> assertThat(probeTaskRequests.requests()).hasSize(1));
   }
 
   @Test
@@ -226,8 +228,6 @@ class FileEventProcessorTest {
   void shouldRequestProbesForOtherFilesWhileOneFileIsStillChanging() throws Exception {
     var changing = createFile("/media/shows/Show.S01E01.mkv");
     var unchanged = createFile("/media/shows/Show.S01E02.mkv");
-    var events = new CapturingEventPublisher();
-    eventPublisherRef.set(events::publishEvent);
     var waiting = new CountDownLatch(1);
     var stopsChanging = new CountDownLatch(1);
     stabilityCheckerRef.set(
@@ -240,9 +240,7 @@ class FileEventProcessorTest {
     try {
       await()
           .atMost(Duration.ofSeconds(5))
-          .untilAsserted(
-              () ->
-                  assertThat(events.getEventsOfType(MediaFileProbeTaskRequested.class)).hasSize(1));
+          .untilAsserted(() -> assertThat(probeTaskRequests.requests()).hasSize(1));
       assertThat(mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(changing)))
           .isEmpty();
     } finally {
@@ -275,15 +273,12 @@ class FileEventProcessorTest {
     var attempted = new CountDownLatch(1);
     var worker = new AtomicReference<Thread>();
     var attempts = new AtomicInteger();
-    eventPublisherRef.set(
-        event -> {
-          if (event instanceof MediaFileProbeTaskRequested request) {
-            worker.set(Thread.currentThread());
-            attempts.incrementAndGet();
-            attempted.countDown();
-            throw new ProbeTaskSchedulingException(
-                request.mediaFileId(), new IOException("offline"));
-          }
+    probeTaskRequests.dispatchWith(
+        request -> {
+          worker.set(Thread.currentThread());
+          attempts.incrementAndGet();
+          attempted.countDown();
+          throw new ProbeTaskSchedulingException(request.mediaFileId(), new IOException("offline"));
         });
 
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
@@ -309,7 +304,7 @@ class FileEventProcessorTest {
     var attempted = new CountDownLatch(1);
     var worker = new AtomicReference<Thread>();
     var attempts = new AtomicInteger();
-    eventPublisherRef.set(
+    probeTaskRequests.dispatchWith(
         _ -> {
           worker.set(Thread.currentThread());
           attempts.incrementAndGet();
@@ -322,14 +317,12 @@ class FileEventProcessorTest {
     assertThat(worker.get().join(Duration.ofSeconds(5))).isTrue();
     assertThat(attempts).hasValue(1);
 
-    var events = new CapturingEventPublisher();
-    eventPublisherRef.set(events);
+    probeTaskRequests.dispatchWith(_ -> {});
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.MODIFY, path);
 
     await()
         .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> assertThat(events.getEventsOfType(MediaFileProbeTaskRequested.class)).hasSize(1));
+        .untilAsserted(() -> assertThat(probeTaskRequests.requests()).hasSize(1));
   }
 
   @Test

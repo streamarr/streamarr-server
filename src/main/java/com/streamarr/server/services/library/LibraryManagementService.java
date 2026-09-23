@@ -12,8 +12,6 @@ import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.repositories.LibraryMetadataRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
-import com.streamarr.server.services.ArtworkRun;
-import com.streamarr.server.services.ArtworkService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -23,7 +21,6 @@ import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.events.library.ItemProcessedEvent;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
-import com.streamarr.server.services.events.library.MediaFileProbeTaskRequested;
 import com.streamarr.server.services.events.library.RefreshEndedEvent;
 import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
@@ -81,7 +78,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
   private final LibraryMutationTransaction libraryMutationTransaction;
   private final MutexFactory<String> mutexFactory;
   private final MutationTransactions mutationTransactions;
-  private final ArtworkService artworkService;
+  private final FileDiscoveryRuns fileDiscoveryRuns;
   private final Set<UUID> activeScans = ConcurrentHashMap.newKeySet();
   private final Set<UUID> activeRefreshes = ConcurrentHashMap.newKeySet();
 
@@ -101,7 +98,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
       FileSystem fileSystem,
       LibraryMutationTransaction libraryMutationTransaction,
       MutationTransactions mutationTransactions,
-      ArtworkService artworkService) {
+      FileDiscoveryRuns fileDiscoveryRuns) {
     this.ignoredFileValidator = ignoredFileValidator;
     this.videoExtensionValidator = videoExtensionValidator;
     this.movieFileProcessor = movieFileProcessor;
@@ -116,7 +113,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     this.fileSystem = fileSystem;
     this.libraryMutationTransaction = libraryMutationTransaction;
     this.mutationTransactions = mutationTransactions;
-    this.artworkService = artworkService;
+    this.fileDiscoveryRuns = fileDiscoveryRuns;
 
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
@@ -367,8 +364,8 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
             .findById(libraryId)
             .orElseThrow(() -> new LibraryNotFoundException(libraryId));
 
-    try (var artworkRun = openArtworkRun("file discovery in", library)) {
-      if (processFile(new FileDiscovery(library, artworkRun), path)) {
+    try (var discovery = fileDiscoveryRuns.open("file discovery in", library)) {
+      if (processFile(discovery, path)) {
         eventPublisher.publishEvent(new ItemProcessedEvent(libraryId));
       }
     }
@@ -384,8 +381,8 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
       var startTime = library.getScanStartedOn();
 
       try {
-        walkAndProcessFiles(library);
-        completeScanSuccessfully(library, startTime);
+        var results = fileDiscoveryRuns.awaitResults(discoverFiles(library));
+        completeScanSuccessfully(library, startTime, results);
       } catch (LibraryScanFailedException e) {
         completeScanWithFailure(library, e);
       }
@@ -395,12 +392,12 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     }
   }
 
-  private void walkAndProcessFiles(Library library) {
-    try (var artworkRun = openArtworkRun("scan of", library);
+  private FileDiscovery discoverFiles(Library library) {
+    var discovery = fileDiscoveryRuns.open("scan of", library);
+    try (discovery;
         var executor = Executors.newVirtualThreadPerTaskExecutor();
         var stream = Files.walk(FilepathCodec.decode(fileSystem, library.getFilepathUri()))) {
 
-      var discovery = new FileDiscovery(library, artworkRun);
       var tasks =
           stream
               .filter(Files::isRegularFile)
@@ -412,6 +409,8 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     } catch (IOException | UncheckedIOException | SecurityException | InvalidPathException e) {
       throw new LibraryScanFailedException(library.getName(), e);
     }
+
+    return discovery;
   }
 
   private static void awaitFileProcessing(Library library, List<? extends Future<?>> tasks) {
@@ -438,7 +437,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     throw scanFailure;
   }
 
-  private void completeScanSuccessfully(Library library, Instant startTime) {
+  private void completeScanSuccessfully(Library library, Instant startTime, ScanResults results) {
     eventPublisher.publishEvent(new ScanCompletedEvent(library.getId()));
 
     var endTime = Instant.now();
@@ -448,7 +447,11 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     library.setScanCompletedOn(endTime);
     libraryRepository.save(library);
 
-    log.info("Finished {} library scan in {} seconds.", library.getName(), elapsedSeconds);
+    log.info(
+        "Finished {} library scan in {} seconds: {}.",
+        library.getName(),
+        elapsedSeconds,
+        results.describe());
   }
 
   private void completeScanWithFailure(Library library, Throwable cause) {
@@ -488,11 +491,6 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     }
   }
 
-  private ArtworkRun openArtworkRun(String operation, Library library) {
-    return artworkService.openRun(
-        operation + " library '" + library.getName() + "'", ImageRefreshMode.PRESERVE);
-  }
-
   private boolean processFile(FileDiscovery discovery, Path path) {
     var library = discovery.library();
 
@@ -505,7 +503,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     }
 
     var mediaFile = findOrCreateMediaFile(library, path);
-    eventPublisher.publishEvent(new MediaFileProbeTaskRequested(mediaFile.getId()));
+    discovery.probeRun().request(mediaFile.getId());
 
     if (isAlreadyMatched(mediaFile)) {
       return false;
