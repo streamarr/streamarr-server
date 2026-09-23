@@ -53,6 +53,19 @@ class SchedulerProbeCapacityIT extends AbstractProbeSchedulerIntegrationTest {
         .isLessThanOrEqualTo(2);
   }
 
+  @Test
+  @DisplayName(
+      "Should limit concurrent probes to the configured capacity when statistics favor rescanning"
+          + " the claim")
+  void shouldLimitConcurrentProbesToConfiguredCapacityWhenStatisticsFavorRescanningTheClaim()
+      throws Exception {
+    analyzeScheduledTasksWithOneRow();
+
+    assertThat(peakConcurrencyProbingSixDueRequests())
+        .as("Configured capacity of 2 must limit active probe producers")
+        .isLessThanOrEqualTo(2);
+  }
+
   private int peakConcurrencyProbingSixDueRequests() throws Exception {
     var requests = requestUnchangedFiles(6);
 
