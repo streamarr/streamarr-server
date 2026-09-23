@@ -15,10 +15,8 @@ import com.streamarr.server.repositories.RatingRepository;
 import com.streamarr.server.repositories.ReviewRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
-import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import com.streamarr.server.services.pagination.LetterJumpResolver;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPage;
@@ -33,7 +31,6 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,7 +44,7 @@ public class MovieService {
   private final GenreService genreService;
   private final CompanyService companyService;
   private final PaginationService paginationService;
-  private final ApplicationEventPublisher eventPublisher;
+  private final ArtworkService artworkService;
   private final ImageService imageService;
   private final MediaFileRepository mediaFileRepository;
   private final PersonRepository personRepository;
@@ -100,7 +97,7 @@ public class MovieService {
 
   @Transactional
   public Movie createMovieWithAssociations(
-      MetadataResult<Movie> metadataResult, MediaFile mediaFile) {
+      MetadataResult<Movie> metadataResult, MediaFile mediaFile, ArtworkRun artworkRun) {
     var movie = metadataResult.entity();
 
     movie.setCast(
@@ -115,25 +112,16 @@ public class MovieService {
 
     var savedMovie = saveMovieWithMediaFile(movie, mediaFile);
 
-    publishImageEvent(savedMovie.getId(), ImageEntityType.MOVIE, metadataResult.imageSources());
+    fetchRequiredArtwork(savedMovie.getId(), metadataResult.imageSources(), artworkRun);
 
     return savedMovie;
   }
 
   @Transactional
-  public Movie refreshMovieMetadata(Movie existing, MetadataResult<Movie> metadataResult) {
-    return refreshMovieMetadataInternal(existing, metadataResult, ImageRefreshMode.PRESERVE);
-  }
-
-  @Transactional
   public Movie refreshMovieMetadata(
-      Movie existing, MetadataResult<Movie> metadataResult, ImageRefreshMode imageRefreshMode) {
-    return refreshMovieMetadataInternal(existing, metadataResult, imageRefreshMode);
-  }
-
-  private Movie refreshMovieMetadataInternal(
-      Movie existing, MetadataResult<Movie> metadataResult, ImageRefreshMode imageRefreshMode) {
+      Movie existing, MetadataResult<Movie> metadataResult, ArtworkRun artworkRun) {
     var fresh = metadataResult.entity();
+    var imageRefreshMode = artworkRun.imageRefreshMode();
 
     existing.setTitle(fresh.getTitle());
     existing.setOriginalTitle(fresh.getOriginalTitle());
@@ -156,25 +144,19 @@ public class MovieService {
             fresh.getStudios(), metadataResult.companyImageSources(), imageRefreshMode));
 
     var saved = movieRepository.saveAndFlush(existing);
-    publishImageEvent(
-        saved.getId(), ImageEntityType.MOVIE, metadataResult.imageSources(), imageRefreshMode);
+    fetchRequiredArtwork(saved.getId(), metadataResult.imageSources(), artworkRun);
     return saved;
   }
 
-  private void publishImageEvent(
-      UUID entityId, ImageEntityType entityType, List<ImageSource> sources) {
-    publishImageEvent(entityId, entityType, sources, ImageRefreshMode.PRESERVE);
-  }
-
-  private void publishImageEvent(
-      UUID entityId,
-      ImageEntityType entityType,
-      List<ImageSource> sources,
-      ImageRefreshMode imageRefreshMode) {
-    if (!sources.isEmpty()) {
-      eventPublisher.publishEvent(
-          new MetadataEnrichedEvent(entityId, entityType, sources, imageRefreshMode));
-    }
+  private void fetchRequiredArtwork(
+      UUID movieId, List<ImageSource> sources, ArtworkRun artworkRun) {
+    artworkService.fetchRequired(
+        artworkRun,
+        ArtworkSources.builder()
+            .entityId(movieId)
+            .entityType(ImageEntityType.MOVIE)
+            .sources(sources)
+            .build());
   }
 
   @Transactional(readOnly = true)

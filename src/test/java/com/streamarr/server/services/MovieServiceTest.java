@@ -1,5 +1,6 @@
 package com.streamarr.server.services;
 
+import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fixtures.PaginationFixture.buildCursorOptions;
 import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -26,16 +27,16 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
-import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
+import com.streamarr.server.fakes.FakeTmdbHttpService;
+import com.streamarr.server.fixtures.ArtworkServiceFixture;
 import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.ImageVariantService;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
-import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PaginationDirection;
@@ -45,7 +46,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import org.jooq.SortOrder;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -58,7 +61,9 @@ class MovieServiceTest {
 
   private FakeMovieRepository movieRepository;
   private FakeImageRepository imageRepository;
-  private CapturingEventPublisher eventPublisher;
+  private FakeTmdbHttpService imageDownloader;
+  private ArtworkService artworkService;
+  private ArtworkRun artworkRun;
   private PersonService personService;
   private GenreService genreService;
   private CompanyService companyService;
@@ -68,7 +73,14 @@ class MovieServiceTest {
   void setUp() {
     movieRepository = new FakeMovieRepository();
     imageRepository = new FakeImageRepository();
-    eventPublisher = new CapturingEventPublisher();
+    imageDownloader = new FakeTmdbHttpService();
+    imageDownloader.setImageData(createTestImage(600, 900));
+    artworkService =
+        ArtworkServiceFixture.artworkServiceBuilder()
+            .imageRepository(imageRepository)
+            .imageDownloader(imageDownloader)
+            .build();
+    artworkRun = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
     personService = mock(PersonService.class);
     genreService = mock(GenreService.class);
     companyService = mock(CompanyService.class);
@@ -87,7 +99,7 @@ class MovieServiceTest {
             genreService,
             companyService,
             paginationService,
-            eventPublisher,
+            artworkService,
             imageService,
             null,
             null,
@@ -95,6 +107,12 @@ class MovieServiceTest {
             null,
             null,
             null);
+  }
+
+  @AfterEach
+  void tearDown() {
+    artworkRun.close();
+    artworkService.shutdown();
   }
 
   @Nested
@@ -829,41 +847,31 @@ class MovieServiceTest {
   class MetadataLifecycle {
 
     @Test
-    @DisplayName("Should publish MetadataEnrichedEvent when creating movie")
-    void shouldPublishMetadataEnrichedEventWhenCreatingMovie() {
+    @DisplayName("Should fetch required artwork for saved movie when creating movie")
+    void shouldFetchRequiredArtworkForSavedMovieWhenCreatingMovie() {
       var movie = Movie.builder().title("Inception").build();
       var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
       var metadataResult = new MetadataResult<>(movie, imageSources, Map.of(), Map.of());
-      var mediaFile =
-          MediaFile.builder()
-              .filename("inception.mkv")
-              .filepathUri("/movies/inception.mkv")
-              .size(1000L)
-              .build();
 
-      movieService.createMovieWithAssociations(metadataResult, mediaFile);
+      var saved = movieService.createMovieWithAssociations(metadataResult, mediaFile(), artworkRun);
 
-      var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-      assertThat(events).hasSize(1);
-      assertThat(events.getFirst().entityId()).isNotNull();
+      assertThat(awaitArtwork().counts())
+          .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+      assertThat(imageRepository.findByEntityIdAndEntityType(saved.getId(), ImageEntityType.MOVIE))
+          .extracting(Image::getImageType)
+          .containsOnly(ImageType.POSTER);
     }
 
     @Test
-    @DisplayName("Should not publish event when image sources list is empty")
-    void shouldNotPublishEventWhenImageSourcesListIsEmpty() {
+    @DisplayName("Should report unavailable artwork when creating movie without image sources")
+    void shouldReportUnavailableArtworkWhenCreatingMovieWithoutImageSources() {
       var movie = Movie.builder().title("Inception").build();
       var metadataResult = new MetadataResult<>(movie, List.of(), Map.of(), Map.of());
-      var mediaFile =
-          MediaFile.builder()
-              .filename("inception.mkv")
-              .filepathUri("/movies/inception.mkv")
-              .size(1000L)
-              .build();
 
-      movieService.createMovieWithAssociations(metadataResult, mediaFile);
+      movieService.createMovieWithAssociations(metadataResult, mediaFile(), artworkRun);
 
-      var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-      assertThat(events).isEmpty();
+      assertThat(awaitArtwork().counts()).isEqualTo(ArtworkCounts.builder().unavailable(2).build());
+      assertThat(imageDownloader.getDownloadCount()).isZero();
     }
 
     @Test
@@ -922,7 +930,7 @@ class MovieServiceTest {
               .build();
       var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
 
-      var result = movieService.refreshMovieMetadata(existing, metadataResult);
+      var result = movieService.refreshMovieMetadata(existing, metadataResult, artworkRun);
 
       assertThat(result.getTitle()).isEqualTo("New Title");
       assertThat(result.getOriginalTitle()).isEqualTo("New Original");
@@ -953,7 +961,7 @@ class MovieServiceTest {
       var fresh = Movie.builder().title("Inception").titleSort("inception").build();
       var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
 
-      var result = movieService.refreshMovieMetadata(existing, metadataResult);
+      var result = movieService.refreshMovieMetadata(existing, metadataResult, artworkRun);
 
       assertThat(result.getTagline()).isNull();
       assertThat(result.getSummary()).isNull();
@@ -996,7 +1004,7 @@ class MovieServiceTest {
           Movie.builder().title("Inception").cast(castInput).directors(directorInput).build();
       var metadataResult = MetadataFixture.<Movie>metadataResultBuilder().entity(fresh).build();
 
-      var result = movieService.refreshMovieMetadata(existing, metadataResult);
+      var result = movieService.refreshMovieMetadata(existing, metadataResult, artworkRun);
 
       assertThat(result.getCast()).extracting(Person::getName).containsExactly("Leonardo DiCaprio");
       assertThat(result.getDirectors())
@@ -1007,40 +1015,82 @@ class MovieServiceTest {
     }
 
     @Test
-    @DisplayName("Should publish image event when refreshing movie metadata with image sources")
-    void shouldPublishImageEventWhenRefreshingMovieMetadataWithImageSources() {
+    @DisplayName("Should fetch required artwork for existing movie when refreshing metadata")
+    void shouldFetchRequiredArtworkForExistingMovieWhenRefreshingMetadata() {
       var existing = movieRepository.save(Movie.builder().title("Inception").build());
       var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
       var fresh = Movie.builder().title("Inception").build();
       var metadataResult = new MetadataResult<>(fresh, imageSources, Map.of(), Map.of());
 
-      movieService.refreshMovieMetadata(existing, metadataResult);
+      movieService.refreshMovieMetadata(existing, metadataResult, artworkRun);
 
-      var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-      assertThat(events).hasSize(1);
-      assertThat(events.getFirst().entityId()).isEqualTo(existing.getId());
-      assertThat(events.getFirst().entityType()).isEqualTo(ImageEntityType.MOVIE);
+      assertThat(awaitArtwork().counts())
+          .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+      assertThat(
+              imageRepository.findByEntityIdAndEntityType(existing.getId(), ImageEntityType.MOVIE))
+          .extracting(Image::getImageType)
+          .containsOnly(ImageType.POSTER);
     }
 
     @Test
-    @DisplayName("Should not publish image event when refreshing movie metadata with empty sources")
-    void shouldNotPublishImageEventWhenRefreshingMovieMetadataWithEmptySources() {
+    @DisplayName("Should replace stored artwork when refresh run forces refresh")
+    void shouldReplaceStoredArtworkWhenRefreshRunForcesRefresh() {
+      var existing = movieRepository.save(Movie.builder().title("Inception").build());
+      var stored = seedImage(existing.getId());
+      var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
+      var metadataResult =
+          new MetadataResult<>(
+              Movie.builder().title("Inception").build(), imageSources, Map.of(), Map.of());
+
+      var forcedRun = artworkService.openRun("refresh", ImageRefreshMode.FORCE_REFRESH);
+
+      movieService.refreshMovieMetadata(existing, metadataResult, forcedRun);
+
+      assertThat(closeAndAwait(forcedRun).counts().saved()).isOne();
+      assertThat(
+              imageRepository.findByEntityIdAndEntityType(existing.getId(), ImageEntityType.MOVIE))
+          .extracting(Image::getId)
+          .isNotEmpty()
+          .doesNotContain(stored.getId());
+    }
+
+    @Test
+    @DisplayName(
+        "Should report unavailable artwork when refreshing movie metadata with empty sources")
+    void shouldReportUnavailableArtworkWhenRefreshingMovieMetadataWithEmptySources() {
       var existing = movieRepository.save(Movie.builder().title("Inception").build());
       var fresh = Movie.builder().title("Inception").build();
       var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
 
-      movieService.refreshMovieMetadata(existing, metadataResult);
+      movieService.refreshMovieMetadata(existing, metadataResult, artworkRun);
 
-      assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class)).isEmpty();
+      assertThat(awaitArtwork().counts()).isEqualTo(ArtworkCounts.builder().unavailable(2).build());
     }
+  }
+
+  private ArtworkRunSummary awaitArtwork() {
+    return closeAndAwait(artworkRun);
+  }
+
+  private static ArtworkRunSummary closeAndAwait(ArtworkRun run) {
+    run.close();
+    return run.completion().orTimeout(5, TimeUnit.SECONDS).join();
+  }
+
+  private static MediaFile mediaFile() {
+    return MediaFile.builder()
+        .filename("inception.mkv")
+        .filepathUri("/movies/inception.mkv")
+        .size(1000L)
+        .build();
   }
 
   private static Movie.MovieBuilder<?, ?> movieBuilder(String title) {
     return Movie.builder().title(title).titleSort(title);
   }
 
-  private void seedImage(UUID entityId) {
-    imageRepository.save(
+  private Image seedImage(UUID entityId) {
+    return imageRepository.save(
         Image.builder()
             .entityId(entityId)
             .entityType(ImageEntityType.MOVIE)

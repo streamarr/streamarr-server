@@ -52,7 +52,7 @@ class OrphanedMediaFileCleanupServiceTest {
           null,
           null,
           null,
-          event -> {},
+          null,
           mock(ImageService.class),
           null,
           null,

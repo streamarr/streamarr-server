@@ -9,6 +9,7 @@ import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
+import com.streamarr.server.services.SeasonWithEpisodesRequest;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
@@ -66,7 +67,7 @@ public class SeriesFileProcessor {
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
 
-  public void process(Library library, MediaFile mediaFile) {
+  public void process(FileDiscovery discovery, MediaFile mediaFile) {
     var filepath = FilepathCodec.pathOf(mediaFile.getFilepathUri());
     var parseResult = episodePathMetadataParser.parse(filepath);
 
@@ -107,7 +108,7 @@ public class SeriesFileProcessor {
       return;
     }
 
-    var searchOutcome = seriesMetadataProviderResolver.search(library, parserResult);
+    var searchOutcome = seriesMetadataProviderResolver.search(discovery.library(), parserResult);
 
     switch (searchOutcome) {
       case NotFound _ -> {
@@ -129,7 +130,7 @@ public class SeriesFileProcessor {
       }
       case Found(var searchResult) -> {
         if (isDateOnly) {
-          processDateOnlyEpisode(library, mediaFile, searchResult, parsed);
+          processDateOnlyEpisode(discovery, mediaFile, searchResult, parsed);
           return;
         }
 
@@ -143,18 +144,19 @@ public class SeriesFileProcessor {
             episodeNumber,
             mediaFile.getId());
 
-        enrichSeriesMetadata(library, mediaFile, searchResult, seasonNumber, episodeNumber);
+        enrichSeriesMetadata(discovery, mediaFile, searchResult, seasonNumber, episodeNumber);
       }
     }
   }
 
   private void processDateOnlyEpisode(
-      Library library,
+      FileDiscovery discovery,
       MediaFile mediaFile,
       RemoteSearchResult searchResult,
       EpisodePathResult parseResult) {
     var dateResolution =
-        dateBasedEpisodeResolver.resolve(library, searchResult.externalId(), parseResult.getDate());
+        dateBasedEpisodeResolver.resolve(
+            discovery.library(), searchResult.externalId(), parseResult.getDate());
 
     if (dateResolution.isEmpty()) {
       markAs(mediaFile, MediaFileStatus.METADATA_NOT_FOUND);
@@ -175,7 +177,7 @@ public class SeriesFileProcessor {
         mediaFile.getId());
 
     enrichSeriesMetadata(
-        library,
+        discovery,
         mediaFile,
         searchResult,
         dateResolution.get().seasonNumber(),
@@ -233,7 +235,7 @@ public class SeriesFileProcessor {
   }
 
   private void enrichSeriesMetadata(
-      Library library,
+      FileDiscovery discovery,
       MediaFile mediaFile,
       RemoteSearchResult searchResult,
       int seasonNumber,
@@ -247,7 +249,7 @@ public class SeriesFileProcessor {
       var seriesOpt =
           seriesService
               .findByTmdbId(searchResult.externalId())
-              .or(() -> createSeries(library, searchResult));
+              .or(() -> createSeries(discovery, searchResult));
 
       if (seriesOpt.isEmpty()) {
         markAs(mediaFile, MediaFileStatus.ENRICHMENT_FAILED);
@@ -258,7 +260,8 @@ public class SeriesFileProcessor {
       var seasonOpt = seasonRepository.findBySeriesIdAndSeasonNumber(series.getId(), seasonNumber);
 
       var effectiveSeasonNumber =
-          resolveEffectiveSeasonNumber(library, searchResult.externalId(), seasonNumber, seasonOpt);
+          resolveEffectiveSeasonNumber(
+              discovery.library(), searchResult.externalId(), seasonNumber, seasonOpt);
 
       if (effectiveSeasonNumber.isEmpty()) {
         markAs(mediaFile, MediaFileStatus.ENRICHMENT_FAILED);
@@ -274,7 +277,7 @@ public class SeriesFileProcessor {
       if (seasonOpt.isEmpty()) {
         seasonOpt =
             createSeasonWithEpisodes(
-                library, searchResult.externalId(), effectiveSeasonNumber.getAsInt(), series);
+                discovery, searchResult.externalId(), effectiveSeasonNumber.getAsInt(), series);
       }
 
       if (seasonOpt.isEmpty()) {
@@ -282,7 +285,7 @@ public class SeriesFileProcessor {
         return;
       }
 
-      var episode = findOrCreateEpisode(seasonOpt.get(), library, episodeNumber);
+      var episode = findOrCreateEpisode(seasonOpt.get(), discovery.library(), episodeNumber);
 
       mediaFile.setMediaId(episode.getId());
       markAs(mediaFile, MediaFileStatus.MATCHED);
@@ -333,21 +336,24 @@ public class SeriesFileProcessor {
                         .build()));
   }
 
-  private Optional<Series> createSeries(Library library, RemoteSearchResult searchResult) {
-    var metadataResult = seriesMetadataProviderResolver.getMetadata(searchResult, library);
+  private Optional<Series> createSeries(FileDiscovery discovery, RemoteSearchResult searchResult) {
+    var metadataResult =
+        seriesMetadataProviderResolver.getMetadata(searchResult, discovery.library());
 
     if (metadataResult.isEmpty()) {
       log.error("Failed to fetch series metadata for TMDB id '{}'", searchResult.externalId());
       return Optional.empty();
     }
 
-    return Optional.of(seriesService.createSeriesWithAssociations(metadataResult.get()));
+    return Optional.of(
+        seriesService.createSeriesWithAssociations(metadataResult.get(), discovery.artworkRun()));
   }
 
   private Optional<Season> createSeasonWithEpisodes(
-      Library library, String seriesExternalId, int seasonNumber, Series series) {
+      FileDiscovery discovery, String seriesExternalId, int seasonNumber, Series series) {
     var seasonDetailsOpt =
-        seriesMetadataProviderResolver.getSeasonDetails(library, seriesExternalId, seasonNumber);
+        seriesMetadataProviderResolver.getSeasonDetails(
+            discovery.library(), seriesExternalId, seasonNumber);
 
     if (seasonDetailsOpt.isEmpty()) {
       log.error(
@@ -358,7 +364,13 @@ public class SeriesFileProcessor {
     }
 
     return Optional.of(
-        seriesService.createSeasonWithEpisodes(series, seasonDetailsOpt.get(), library));
+        seriesService.createSeasonWithEpisodes(
+            SeasonWithEpisodesRequest.builder()
+                .series(series)
+                .details(seasonDetailsOpt.get())
+                .library(discovery.library())
+                .artworkRun(discovery.artworkRun())
+                .build()));
   }
 
   private boolean isDateOnlyEpisode(EpisodePathResult result) {
