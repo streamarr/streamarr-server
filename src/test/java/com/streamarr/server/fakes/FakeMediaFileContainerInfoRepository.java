@@ -129,6 +129,12 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   }
 
   @Override
+  public synchronized void withdrawProbeRequest(UUID mediaFileId) {
+    desiredInputs.remove(mediaFileId);
+    failures.remove(mediaFileId);
+  }
+
+  @Override
   public Optional<ProbeInputs> lockProbeInputs(UUID mediaFileId) {
     return Optional.ofNullable(desiredInputs.get(mediaFileId));
   }

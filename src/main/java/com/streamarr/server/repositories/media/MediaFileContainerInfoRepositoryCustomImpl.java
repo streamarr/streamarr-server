@@ -147,6 +147,14 @@ public class MediaFileContainerInfoRepositoryCustomImpl
 
   @Override
   @Transactional(propagation = Propagation.MANDATORY)
+  public void withdrawProbeRequest(UUID mediaFileId) {
+    dsl.deleteFrom(MEDIA_FILE_PROBE_TASK_REQUEST)
+        .where(MEDIA_FILE_PROBE_TASK_REQUEST.MEDIA_FILE_ID.eq(mediaFileId))
+        .execute();
+  }
+
+  @Override
+  @Transactional(propagation = Propagation.MANDATORY)
   public Optional<ProbeInputs> lockProbeInputs(UUID mediaFileId) {
     if (!lockMediaFile(mediaFileId)) {
       return Optional.empty();

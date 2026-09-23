@@ -61,7 +61,7 @@ public class ProbeExecution {
     var path = FilepathCodec.decode(fileSystem, request.filepathUri());
     var before = snapshot(path);
     if (before.isEmpty()) {
-      return new ProbeExecutionResult.Completed();
+      return new ProbeExecutionResult.SourceRemoved();
     }
 
     var observed = before.get();
@@ -100,7 +100,7 @@ public class ProbeExecution {
 
     var after = snapshot(path);
     if (after.isEmpty()) {
-      return new ProbeExecutionResult.Completed();
+      return new ProbeExecutionResult.SourceRemoved();
     }
 
     if (!after.get().equals(observed)) {
