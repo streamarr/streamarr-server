@@ -9,7 +9,6 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.controllers.StreamController;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.AudioDecision;
-import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -151,14 +150,13 @@ class RemotePlaybackIT {
       worker.start();
       var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
 
-      executor.start(transcodeRequest(streamSessionId, mediaFile, ContainerFormat.FMP4));
+      executor.start(transcodeRequest(streamSessionId, mediaFile));
       segmentStore.publication("segment0.m4s").get(5, TimeUnit.SECONDS);
       var streamController =
           rig(PlaybackRigConfiguration.builder()
                   .streamSessionId(streamSessionId)
                   .segmentStore(segmentStore)
                   .executor(executor)
-                  .containerFormat(ContainerFormat.FMP4)
                   .build())
               .controller();
       var initialization = streamController.getInitSegment(streamSessionId);
@@ -192,7 +190,7 @@ class RemotePlaybackIT {
       worker.start();
       var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
 
-      executor.start(transcodeRequest(streamSessionId, mediaFile, ContainerFormat.FMP4));
+      executor.start(transcodeRequest(streamSessionId, mediaFile));
       await()
           .atMost(5, TimeUnit.SECONDS)
           .until(() -> !executor.isRunning(streamSessionId, StreamSession.defaultVariant()));
@@ -511,15 +509,7 @@ class RemotePlaybackIT {
 
   @Builder
   private record PlaybackRigConfiguration(
-      UUID streamSessionId,
-      LocalSegmentStore segmentStore,
-      RemoteTranscodeExecutor executor,
-      ContainerFormat containerFormat) {
-
-    private PlaybackRigConfiguration {
-      containerFormat = containerFormat != null ? containerFormat : ContainerFormat.FMP4;
-    }
-  }
+      UUID streamSessionId, LocalSegmentStore segmentStore, RemoteTranscodeExecutor executor) {}
 
   private PlaybackRig rig(PlaybackRigConfiguration configuration) {
     var session =
@@ -528,7 +518,7 @@ class RemotePlaybackIT {
             .mediaFileId(UUID.randomUUID())
             .authority(StreamSessionFixture.playbackAuthorityFor(UUID.randomUUID()))
             .mediaProbe(StreamSessionFixture.defaultProbeBuilder().build())
-            .transcodeDecision(transcodeDecision(configuration.containerFormat()))
+            .transcodeDecision(transcodeDecision())
             .build();
     var registry = new FakeRuntimeStreamSessionRegistry();
     registry.save(session);
@@ -558,17 +548,12 @@ class RemotePlaybackIT {
   }
 
   private TranscodeRequest transcodeRequest(UUID streamSessionId, Path mediaFile) {
-    return transcodeRequest(streamSessionId, mediaFile, ContainerFormat.FMP4);
-  }
-
-  private TranscodeRequest transcodeRequest(
-      UUID streamSessionId, Path mediaFile, ContainerFormat containerFormat) {
     return TranscodeRequest.builder()
         .sessionId(streamSessionId)
         .sourcePath(mediaFile)
         .targetSegmentDuration(6)
         .framerate(OptionalDouble.of(23.976))
-        .transcodeDecision(transcodeDecision(containerFormat))
+        .transcodeDecision(transcodeDecision())
         .width(1920)
         .height(1080)
         .bitrate(5_000_000)
@@ -576,13 +561,12 @@ class RemotePlaybackIT {
         .build();
   }
 
-  private TranscodeDecision transcodeDecision(ContainerFormat containerFormat) {
+  private TranscodeDecision transcodeDecision() {
     return TranscodeDecision.builder()
         .transcodeMode(TranscodeMode.FULL_TRANSCODE)
         .videoCodecFamily("h264")
         .audioDecision(AudioDecision.stereoAac())
         .subtitleDecision(SubtitleDecision.exclude())
-        .containerFormat(containerFormat)
         .needsKeyframeAlignment(true)
         .build();
   }
@@ -592,27 +576,22 @@ class RemotePlaybackIT {
         decisionBuilder()
             .transcodeMode(TranscodeMode.REMUX)
             .audioDecision(AudioDecision.copy("aac", 2, 128_000))
-            .containerFormat(ContainerFormat.MPEGTS)
             .build(),
         decisionBuilder()
             .transcodeMode(TranscodeMode.AUDIO_TRANSCODE)
             .audioDecision(AudioDecision.stereoAac())
-            .containerFormat(ContainerFormat.FMP4)
             .build(),
         decisionBuilder()
             .transcodeMode(TranscodeMode.VIDEO_TRANSCODE)
             .audioDecision(AudioDecision.none())
-            .containerFormat(ContainerFormat.MPEGTS)
             .build(),
         decisionBuilder()
             .transcodeMode(TranscodeMode.FULL_TRANSCODE)
             .audioDecision(AudioDecision.copy("aac", 2, 128_000))
-            .containerFormat(ContainerFormat.FMP4)
             .build(),
         decisionBuilder()
             .transcodeMode(TranscodeMode.FULL_TRANSCODE)
             .audioDecision(AudioDecision.stereoAac())
-            .containerFormat(ContainerFormat.MPEGTS)
             .build());
   }
 
@@ -661,9 +640,7 @@ class RemotePlaybackIT {
       case NONE -> assertThat(command).doesNotContain("-c:a", "0:a:0");
     }
 
-    var expectedSegmentType =
-        decision.containerFormat() == ContainerFormat.FMP4 ? "fmp4" : "mpegts";
-    assertThat(command).containsSubsequence("-hls_segment_type", expectedSegmentType);
+    assertThat(command).containsSubsequence("-hls_segment_type", "fmp4");
   }
 
   private String argument(List<String> command, String flag) {

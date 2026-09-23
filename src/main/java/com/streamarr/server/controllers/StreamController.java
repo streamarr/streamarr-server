@@ -1,6 +1,5 @@
 package com.streamarr.server.controllers;
 
-import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
 import com.streamarr.server.services.authorization.AuthorizationService;
@@ -82,7 +81,7 @@ public class StreamController {
       return ResponseEntity.notFound().build();
     }
 
-    return serveInitSegment(session.get(), sessionId, StreamSession.defaultVariant(), "init.mp4");
+    return serveInitSegment(sessionId, StreamSession.defaultVariant(), "init.mp4");
   }
 
   @GetMapping("/{sessionId}/{segmentName:.+\\.(?:ts|m4s)}")
@@ -149,7 +148,7 @@ public class StreamController {
       return ResponseEntity.notFound().build();
     }
 
-    return serveInitSegment(s, sessionId, variantLabel, variantLabel + "/init.mp4");
+    return serveInitSegment(sessionId, variantLabel, variantLabel + "/init.mp4");
   }
 
   @GetMapping("/{sessionId}/{variantLabel}/{segmentName:.+\\.(?:ts|m4s)}")
@@ -184,11 +183,7 @@ public class StreamController {
   }
 
   private ResponseEntity<byte[]> serveInitSegment(
-      StreamSession session, UUID sessionId, String variantLabel, String segmentName) {
-    if (session.getTranscodeDecision().containerFormat() != ContainerFormat.FMP4) {
-      return ResponseEntity.notFound().build();
-    }
-
+      UUID sessionId, String variantLabel, String segmentName) {
     return respond(
         deliveryCoordinator.deliver(sessionId, variantLabel, segmentName), MP4_MEDIA_TYPE);
   }

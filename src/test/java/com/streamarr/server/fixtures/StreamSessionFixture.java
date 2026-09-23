@@ -1,7 +1,6 @@
 package com.streamarr.server.fixtures;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
-import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.domain.streaming.QualityVariant;
@@ -33,7 +32,7 @@ public final class StreamSessionFixture {
         .authority(defaultPlaybackAuthorityBuilder().build())
         .sourcePath(Path.of("/media/movie.mkv"))
         .mediaProbe(defaultProbeBuilder().build())
-        .transcodeDecision(remuxMpegtsDecision())
+        .transcodeDecision(remuxDecision())
         .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
         .createdAt(Instant.now());
   }
@@ -106,25 +105,22 @@ public final class StreamSessionFixture {
         .build();
   }
 
-  public static TranscodeDecision remuxMpegtsDecision() {
+  public static TranscodeDecision remuxDecision() {
     return TranscodeDecision.builder()
         .transcodeMode(TranscodeMode.REMUX)
         .videoCodecFamily("h264")
         .audioDecision(AudioDecision.copy("aac", 2, 0))
         .subtitleDecision(SubtitleDecision.exclude())
-        .containerFormat(ContainerFormat.MPEGTS)
         .needsKeyframeAlignment(true)
         .build();
   }
 
-  public static TranscodeDecision fullTranscodeDecision(
-      String videoCodecFamily, ContainerFormat containerFormat) {
+  public static TranscodeDecision fullTranscodeDecision(String videoCodecFamily) {
     return TranscodeDecision.builder()
         .transcodeMode(TranscodeMode.FULL_TRANSCODE)
         .videoCodecFamily(videoCodecFamily)
         .audioDecision(AudioDecision.stereoAac())
         .subtitleDecision(SubtitleDecision.exclude())
-        .containerFormat(containerFormat)
         .needsKeyframeAlignment(false)
         .build();
   }
@@ -144,11 +140,11 @@ public final class StreamSessionFixture {
     return session;
   }
 
-  public static StreamSession buildMpegtsSession() {
-    return buildMpegtsSessionOwnedBy(UUID.randomUUID());
+  public static StreamSession buildActiveSession() {
+    return buildActiveSessionOwnedBy(UUID.randomUUID());
   }
 
-  public static StreamSession buildMpegtsSessionOwnedBy(UUID profileId) {
+  public static StreamSession buildActiveSessionOwnedBy(UUID profileId) {
     var session = defaultSessionBuilder().authority(playbackAuthorityFor(profileId)).build();
     session.setHandle(mintHandle(1L, TranscodeStatus.ACTIVE));
     return session;

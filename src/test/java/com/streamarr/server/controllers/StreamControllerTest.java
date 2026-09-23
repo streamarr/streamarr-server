@@ -13,9 +13,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.config.StreamingProperties;
-import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.exceptions.TranscodeException;
@@ -101,7 +99,7 @@ class StreamControllerTest {
   @Test
   @DisplayName("Should return multivariant playlist with correct content type when session exists")
   void shouldReturnMultivariantPlaylistWithCorrectContentTypeWhenSessionExists() throws Exception {
-    streamingService.setSession(buildMpegtsSession());
+    streamingService.setSession(buildSession());
 
     var result =
         mockMvc
@@ -121,7 +119,7 @@ class StreamControllerTest {
       "Should return 404 for the retired master playlist alias when handling a playback request")
   void shouldReturn404ForTheRetiredMasterPlaylistAliasWhenHandlingPlaybackRequest()
       throws Exception {
-    streamingService.setSession(buildMpegtsSession());
+    streamingService.setSession(buildSession());
 
     mockMvc
         .perform(get("/api/stream/{sessionId}/master.m3u8", SESSION_ID).param("t", "unit-token"))
@@ -134,7 +132,7 @@ class StreamControllerTest {
       "Should embed the validated token in playlists when the request parameter is spoofed")
   void shouldEmbedValidatedTokenInPlaylistsWhenRequestParameterIsSpoofed(String path)
       throws Exception {
-    streamingService.setSession(buildMpegtsSession());
+    streamingService.setSession(buildSession());
 
     var result =
         mockMvc
@@ -171,7 +169,7 @@ class StreamControllerTest {
   @ValueSource(strings = {"multivariant.m3u8", "stream.m3u8", "segment0.m4s", "init.mp4"})
   @DisplayName("Should reject stream request when token is bound to another stream session")
   void shouldRejectStreamRequestWhenTokenIsBoundToAnotherStreamSession(String path) {
-    streamingService.setSession(buildMpegtsSession());
+    streamingService.setSession(buildSession());
     boundStreamSession.set(UUID.randomUUID());
 
     assertThatThrownBy(
@@ -204,7 +202,7 @@ class StreamControllerTest {
   @Test
   @DisplayName("Should return media playlist with correct content type when session exists")
   void shouldReturnMediaPlaylistWithCorrectContentTypeWhenSessionExists() throws Exception {
-    streamingService.setSession(buildMpegtsSession());
+    streamingService.setSession(buildSession());
 
     var result =
         mockMvc
@@ -222,7 +220,7 @@ class StreamControllerTest {
   @Test
   @DisplayName("Should serve TS segment with correct content type when segment is available")
   void shouldServeTsSegmentWithCorrectContentTypeWhenSegmentIsAvailable() throws Exception {
-    streamingService.setSession(buildMpegtsSession());
+    streamingService.setSession(buildSession());
     var segmentData = new byte[] {0x47, 0x00, 0x11, 0x10};
     segmentStore.addSegment(SESSION_ID, "segment0.ts", segmentData);
 
@@ -239,7 +237,7 @@ class StreamControllerTest {
   @Test
   @DisplayName("Should serve m4s segment with correct content type when segment is available")
   void shouldServeM4sSegmentWithCorrectContentTypeWhenSegmentIsAvailable() throws Exception {
-    streamingService.setSession(buildFmp4Session());
+    streamingService.setSession(buildSession());
     var segmentData = new byte[] {0x00, 0x00, 0x00, 0x1C};
     segmentStore.addSegment(SESSION_ID, "segment0.m4s", segmentData);
 
@@ -256,7 +254,7 @@ class StreamControllerTest {
   @Test
   @DisplayName("Should return 404 when the runtime session has ended and the segment is missing")
   void shouldReturn404WhenTheRuntimeSessionHasEndedAndTheSegmentIsMissing() throws Exception {
-    streamingService.setSession(buildMpegtsSession());
+    streamingService.setSession(buildSession());
 
     mockMvc
         .perform(get("/api/stream/{sessionId}/segment0.m4s", SESSION_ID))
@@ -269,7 +267,7 @@ class StreamControllerTest {
           + " scheme")
   void shouldReturn404WithoutDisturbingTheProducerWhenTheSegmentNameMatchesNoNamingScheme()
       throws Exception {
-    var session = buildMpegtsSession();
+    var session = buildSession();
     streamingService.setSession(session);
     var handle =
         transcodeExecutor.start(
@@ -292,7 +290,7 @@ class StreamControllerTest {
   @Test
   @DisplayName("Should return 503 when delivery is cancelled by server shutdown")
   void shouldReturn503WhenDeliveryIsCancelledByServerShutdown() throws Exception {
-    var session = buildMpegtsSession();
+    var session = buildSession();
     streamingService.setSession(session);
     session.setHandle(mintHandle(1L, TranscodeStatus.ACTIVE));
     runtimeRegistry.save(session);
@@ -315,7 +313,7 @@ class StreamControllerTest {
   @Test
   @DisplayName("Should return 404 when the segment index does not fit the naming scheme")
   void shouldReturn404WhenTheSegmentIndexDoesNotFitTheNamingScheme() throws Exception {
-    var session = buildMpegtsSession();
+    var session = buildSession();
     streamingService.setSession(session);
     session.setHandle(mintHandle(1L, TranscodeStatus.ACTIVE));
     runtimeRegistry.save(session);
@@ -328,7 +326,7 @@ class StreamControllerTest {
   @Test
   @DisplayName("Should return 404 when segment vanishes between the existence check and the read")
   void shouldReturn404WhenSegmentVanishesBetweenTheExistenceCheckAndTheRead() throws Exception {
-    streamingService.setSession(buildMpegtsSession());
+    streamingService.setSession(buildSession());
     var throwingStore =
         new FakeSegmentStore() {
           @Override
@@ -353,7 +351,7 @@ class StreamControllerTest {
   @Test
   @DisplayName("Should return 503 with no body when recovery is exhausted")
   void shouldReturn503WithNoBodyWhenRecoveryExhausted() throws Exception {
-    var session = buildMpegtsSession();
+    var session = buildSession();
     streamingService.setSession(session);
     session.setHandle(mintHandle(1L, TranscodeStatus.FAILED));
     runtimeRegistry.save(session);
@@ -370,9 +368,9 @@ class StreamControllerTest {
   }
 
   @Test
-  @DisplayName("Should serve init segment when session uses fMP4")
-  void shouldServeInitSegmentWhenSessionUsesFmp4() throws Exception {
-    streamingService.setSession(buildFmp4Session());
+  @DisplayName("Should serve init segment when session exists")
+  void shouldServeInitSegmentWhenSessionExists() throws Exception {
+    streamingService.setSession(buildSession());
     var initData = new byte[] {0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70};
     segmentStore.addSegment(SESSION_ID, "init.mp4", initData);
 
@@ -386,56 +384,18 @@ class StreamControllerTest {
     assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(initData);
   }
 
-  @Test
-  @DisplayName("Should return 404 for init segment when session is MPEGTS")
-  void shouldReturn404ForInitSegmentWhenSessionIsMpegts() throws Exception {
-    streamingService.setSession(buildMpegtsSession());
-
-    mockMvc
-        .perform(get("/api/stream/{sessionId}/init.mp4", SESSION_ID))
-        .andExpect(status().isNotFound());
-  }
-
-  private StreamSession buildMpegtsSession() {
+  private StreamSession buildSession() {
     return defaultSessionBuilder().sessionId(SESSION_ID).build();
   }
 
-  private StreamSession buildFmp4Session() {
-    return defaultSessionBuilder()
-        .sessionId(SESSION_ID)
-        .mediaProbe(defaultProbeBuilder().videoCodec("hevc").build())
-        .transcodeDecision(fullTranscodeDecision("av1", ContainerFormat.FMP4))
-        .options(StreamingOptions.builder().supportedCodecs(List.of("av1")).build())
-        .build();
-  }
-
   // --- Variant routing tests ---
-
-  private StreamSession buildAbrFmp4Session() {
-    var session =
-        defaultSessionBuilder()
-            .sessionId(SESSION_ID)
-            .mediaProbe(defaultProbeBuilder().videoCodec("hevc").bitrate(8_000_000).build())
-            .transcodeDecision(fullTranscodeDecision("av1", ContainerFormat.FMP4))
-            .options(StreamingOptions.builder().supportedCodecs(List.of("av1")).build())
-            .variants(
-                List.of(
-                    defaultVariantBuilder()
-                        .width(1920)
-                        .height(1080)
-                        .videoBitrate(5_000_000L)
-                        .label("1080p")
-                        .build()))
-            .build();
-    return withActiveVariantHandles(session);
-  }
 
   private StreamSession buildAbrSession() {
     var session =
         defaultSessionBuilder()
             .sessionId(SESSION_ID)
             .mediaProbe(defaultProbeBuilder().videoCodec("hevc").bitrate(8_000_000).build())
-            .transcodeDecision(fullTranscodeDecision("h264", ContainerFormat.MPEGTS))
+            .transcodeDecision(fullTranscodeDecision("h264"))
             .variants(
                 List.of(
                     defaultVariantBuilder()
@@ -514,7 +474,7 @@ class StreamControllerTest {
   @Test
   @DisplayName("Should serve default variant segment when using original URL")
   void shouldServeDefaultVariantSegmentWhenUsingOriginalUrl() throws Exception {
-    streamingService.setSession(buildMpegtsSession());
+    streamingService.setSession(buildSession());
     var segmentData = new byte[] {0x47};
     segmentStore.addSegment(SESSION_ID, "segment0.m4s", segmentData);
 
@@ -530,7 +490,7 @@ class StreamControllerTest {
   @Test
   @DisplayName("Should return 400 when segment name contains path traversal")
   void shouldReturn400WhenSegmentNameContainsPathTraversal() throws Exception {
-    streamingService.setSession(buildMpegtsSession());
+    streamingService.setSession(buildSession());
 
     mockMvc
         .perform(get("/api/stream/{sessionId}/{segmentName}", SESSION_ID, "..segment0.m4s"))
@@ -538,9 +498,9 @@ class StreamControllerTest {
   }
 
   @Test
-  @DisplayName("Should serve variant init segment when variant uses fMP4")
-  void shouldServeVariantInitSegmentWhenVariantUsesFmp4() throws Exception {
-    var session = buildAbrFmp4Session();
+  @DisplayName("Should serve variant init segment when variant exists")
+  void shouldServeVariantInitSegmentWhenVariantExists() throws Exception {
+    var session = buildAbrSession();
     streamingService.setSession(session);
     var initData = new byte[] {0x00, 0x00, 0x00, 0x20};
     segmentStore.addSegment(SESSION_ID, "1080p/init.mp4", initData);
@@ -559,7 +519,7 @@ class StreamControllerTest {
   @Test
   @DisplayName("Should return 404 for variant init segment when variant not found")
   void shouldReturn404ForVariantInitSegmentWhenVariantNotFound() throws Exception {
-    streamingService.setSession(buildAbrFmp4Session());
+    streamingService.setSession(buildAbrSession());
 
     mockMvc
         .perform(get("/api/stream/{sessionId}/{variantLabel}/init.mp4", SESSION_ID, "360p"))

@@ -1,6 +1,6 @@
 package com.streamarr.server.domain.streaming;
 
-import static com.streamarr.server.fixtures.StreamSessionFixture.buildMpegtsSession;
+import static com.streamarr.server.fixtures.StreamSessionFixture.buildActiveSession;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -55,7 +55,7 @@ class StreamSessionTest {
   @DisplayName(
       "Should reject direct mutation of the exposed variant handle map when enforcing session invariants")
   void shouldRejectDirectMutationOfExposedVariantHandleMapWhenEnforcingSessionInvariants() {
-    var session = buildMpegtsSession();
+    var session = buildActiveSession();
     var handles = session.getVariantHandles();
 
     assertThatThrownBy(handles::clear).isInstanceOf(UnsupportedOperationException.class);
@@ -65,7 +65,7 @@ class StreamSessionTest {
   @DisplayName(
       "Should reflect handle updates through the exposed variant handle map when enforcing session invariants")
   void shouldReflectHandleUpdatesThroughExposedVariantHandleMapWhenEnforcingSessionInvariants() {
-    var session = buildMpegtsSession();
+    var session = buildActiveSession();
 
     session.setVariantHandle("720p", mintHandle(7L, TranscodeStatus.ACTIVE));
 

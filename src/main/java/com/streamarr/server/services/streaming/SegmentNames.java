@@ -15,11 +15,19 @@ public final class SegmentNames {
   private static final Pattern MEDIA_SEGMENT_PATTERN =
       Pattern.compile("segment(\\d{1,9})\\.(ts|m4s)");
 
+  /** The basename of a variant's initialization segment. */
+  public static final String INITIALIZATION_SEGMENT = "init.mp4";
+
   private SegmentNames() {}
+
+  /** The name of the media segment at {@code index} on the variant's zero-based timeline. */
+  public static String mediaSegment(int index) {
+    return "segment" + index + ".m4s";
+  }
 
   /** Whether the name is an initialization segment: a basename of exactly {@code init.mp4}. */
   public static boolean isInitSegment(String segmentName) {
-    return "init.mp4".equals(basename(segmentName));
+    return INITIALIZATION_SEGMENT.equals(basename(segmentName));
   }
 
   public static OptionalInt indexOf(String segmentName) {

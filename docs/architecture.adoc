@@ -155,7 +155,7 @@ StreamingOptions (client)  +  MediaProbe (persisted probe rows)
             └── SubtitleDecision: EXCLUDE / BURN_IN / SIDECAR / HLS / EMBED
                     |
             TranscodeDecision (composite)
-            → TranscodeMode, ContainerFormat, needsKeyframeAlignment
+            → TranscodeMode, needsKeyframeAlignment
                     |
             RemoteTranscodeExecutor → WorkerSession
                     |
@@ -166,9 +166,13 @@ StreamingOptions (client)  +  MediaProbe (persisted probe rows)
             → HlsPlaylistService → master + media playlists
 ----
 
+The decision carries no container.
+Every variant is multiplexed fragmented MP4: an `init.mp4` initialization segment and `segment<N>.m4s` media segments in an HLS version 6 playlist with `EXT-X-MAP`.
+
 See https://github.com/streamarr/streamarr-adr/blob/main/adr/0007-transcode-first-with-smart-remux.adoc[ADR 0007],
 https://github.com/streamarr/streamarr-adr/blob/main/adr/0009-h264-plus-av1-codec-strategy.adoc[ADR 0009],
-https://github.com/streamarr/streamarr-adr/blob/main/adr/0013-stream-decision-architecture.adoc[ADR 0013].
+https://github.com/streamarr/streamarr-adr/blob/main/adr/0013-stream-decision-architecture.adoc[ADR 0013],
+https://github.com/streamarr/streamarr-adr/blob/main/adr/0037-worker-delivers-fmp4-segments-from-ffmpeg-stdout.adoc[ADR 0037].
 
 === Persisted Probes and Worker Execution
 

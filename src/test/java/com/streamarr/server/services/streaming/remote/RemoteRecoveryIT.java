@@ -8,7 +8,6 @@ import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
-import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
@@ -173,7 +172,6 @@ class RemoteRecoveryIT {
                   .mediaFile(mediaFile)
                   .segmentStore(segmentStore)
                   .executor(new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot))
-                  .transcodeDecision(fragmentedTranscodeDecision())
                   .build());
       startThenKillInitialAttempt(rig, List.of(worker));
 
@@ -216,7 +214,6 @@ class RemoteRecoveryIT {
                   .mediaFile(mediaFile)
                   .segmentStore(segmentStore)
                   .executor(new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot))
-                  .transcodeDecision(fragmentedTranscodeDecision())
                   .build());
       startThenKillInitialAttempt(rig, List.of(firstWorker, secondWorker));
 
@@ -277,9 +274,7 @@ class RemoteRecoveryIT {
     var handle =
         configuration
             .executor()
-            .start(
-                transcodeRequest(
-                    streamSessionId, configuration.mediaFile(), configuration.transcodeDecision()));
+            .start(transcodeRequest(streamSessionId, configuration.mediaFile()));
     rig.session().setHandle(handle);
     await()
         .atMost(30, TimeUnit.SECONDS)
@@ -313,14 +308,7 @@ class RemoteRecoveryIT {
       UUID streamSessionId,
       Path mediaFile,
       LocalSegmentStore segmentStore,
-      RemoteTranscodeExecutor executor,
-      TranscodeDecision transcodeDecision) {
-
-    private RecoveryRigConfiguration {
-      transcodeDecision =
-          transcodeDecision != null ? transcodeDecision : RemoteRecoveryIT.transcodeDecision();
-    }
-  }
+      RemoteTranscodeExecutor executor) {}
 
   private RecoveryRig recoveryRig(RecoveryRigConfiguration configuration) {
     var session =
@@ -330,7 +318,7 @@ class RemoteRecoveryIT {
             .authority(playbackAuthorityFor(UUID.randomUUID()))
             .sourcePath(configuration.mediaFile())
             .mediaProbe(defaultProbeBuilder().build())
-            .transcodeDecision(configuration.transcodeDecision())
+            .transcodeDecision(transcodeDecision())
             .build();
     var registry = new FakeRuntimeStreamSessionRegistry();
     registry.save(session);
@@ -367,33 +355,17 @@ class RemoteRecoveryIT {
         .sourceRoot(mediaRoot);
   }
 
-  private TranscodeRequest transcodeRequest(UUID streamSessionId, Path mediaFile) {
-    return transcodeRequest(streamSessionId, mediaFile, transcodeDecision());
-  }
-
-  private static TranscodeRequest transcodeRequest(
-      UUID streamSessionId, Path mediaFile, TranscodeDecision transcodeDecision) {
+  private static TranscodeRequest transcodeRequest(UUID streamSessionId, Path mediaFile) {
     return TranscodeRequest.builder()
         .sessionId(streamSessionId)
         .sourcePath(mediaFile)
         .targetSegmentDuration(6)
         .framerate(OptionalDouble.of(23.976))
-        .transcodeDecision(transcodeDecision)
+        .transcodeDecision(transcodeDecision())
         .width(1920)
         .height(1080)
         .bitrate(5_000_000)
         .variantLabel(StreamSession.defaultVariant())
-        .build();
-  }
-
-  private static TranscodeDecision fragmentedTranscodeDecision() {
-    return TranscodeDecision.builder()
-        .transcodeMode(TranscodeMode.REMUX)
-        .videoCodecFamily("hevc")
-        .audioDecision(AudioDecision.copy("aac", 2, 128_000))
-        .subtitleDecision(SubtitleDecision.exclude())
-        .containerFormat(ContainerFormat.FMP4)
-        .needsKeyframeAlignment(true)
         .build();
   }
 
@@ -403,7 +375,6 @@ class RemoteRecoveryIT {
         .videoCodecFamily("h264")
         .audioDecision(AudioDecision.copy("aac", 2, 128_000))
         .subtitleDecision(SubtitleDecision.exclude())
-        .containerFormat(ContainerFormat.FMP4)
         .needsKeyframeAlignment(true)
         .build();
   }

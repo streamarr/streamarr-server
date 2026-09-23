@@ -11,7 +11,6 @@ import static org.awaitility.Awaitility.await;
 
 import com.google.protobuf.ByteString;
 import com.streamarr.server.domain.streaming.AudioDecision;
-import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.SubtitleMode;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
@@ -530,7 +529,6 @@ class WorkerSessionServerIT {
         .transcodeMode(TranscodeMode.FULL_TRANSCODE)
         .videoCodecFamily("h264")
         .audioDecision(AudioDecision.stereoAac())
-        .containerFormat(ContainerFormat.FMP4)
         .subtitleDecision(SubtitleDecision.exclude());
   }
 
@@ -1215,7 +1213,7 @@ class WorkerSessionServerIT {
             .sourcePath(Path.of("/media/movie.mkv"))
             .targetSegmentDuration(6)
             .framerate(OptionalDouble.of(23.976))
-            .transcodeDecision(StreamSessionFixture.remuxMpegtsDecision())
+            .transcodeDecision(StreamSessionFixture.remuxDecision())
             .width(1920)
             .height(1080)
             .bitrate(5_000_000)

@@ -2,7 +2,6 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioMode;
-import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.StreamSession;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -13,6 +12,9 @@ import org.springframework.stereotype.Service;
 public class HlsPlaylistService {
 
   private static final String AUDIO_GROUP_ID = "audio";
+
+  // RFC 8216 section 7: EXT-X-MAP in a playlist that is not I-frame-only needs version 6.
+  private static final int PLAYLIST_VERSION = 6;
 
   private static final Map<String, String> CODEC_STRINGS =
       Map.of(
@@ -96,28 +98,26 @@ public class HlsPlaylistService {
    * position and duration match real media time.
    */
   public String generateMediaPlaylist(StreamSession session, String token) {
-    var decision = session.getTranscodeDecision();
-    var container = decision.containerFormat();
     var timeline = MediaSegmentTimelines.of(session.getMediaProbe(), properties);
     var targetSegmentDuration = timeline.targetSegmentDurationSeconds();
     var segmentCount = timeline.mediaSegmentCount();
-    var extension = container.segmentExtension();
 
     var sb = new StringBuilder();
     sb.append("#EXTM3U\n");
-    sb.append("#EXT-X-VERSION:").append(container.hlsVersion()).append("\n");
+    sb.append("#EXT-X-VERSION:").append(PLAYLIST_VERSION).append("\n");
     sb.append("#EXT-X-TARGETDURATION:").append(targetSegmentDuration).append("\n");
     sb.append("#EXT-X-MEDIA-SEQUENCE:0\n");
     sb.append("#EXT-X-PLAYLIST-TYPE:VOD\n");
-
-    if (container == ContainerFormat.FMP4) {
-      sb.append("#EXT-X-MAP:URI=\"init.mp4?t=").append(token).append("\"\n");
-    }
+    sb.append("#EXT-X-MAP:URI=\"")
+        .append(SegmentNames.INITIALIZATION_SEGMENT)
+        .append("?t=")
+        .append(token)
+        .append("\"\n");
 
     for (int i = 0; i < segmentCount; i++) {
       var durationMs = timeline.mediaSegmentDuration(i).toMillis();
       sb.append("#EXTINF:").append(String.format("%.6f", durationMs / 1000.0)).append(",\n");
-      sb.append("segment").append(i).append(extension).append("?t=").append(token).append("\n");
+      sb.append(SegmentNames.mediaSegment(i)).append("?t=").append(token).append("\n");
     }
 
     sb.append("#EXT-X-ENDLIST\n");

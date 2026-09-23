@@ -182,9 +182,9 @@ public final class WorkerContainerFixture implements AutoCloseable {
     assertThat(result.getExitCode()).as(result.getStderr()).isZero();
   }
 
-  public List<Double> packetTimestamps(Path segment) throws Exception {
-    var input = "/tmp/inspect-" + UUID.randomUUID() + ".ts";
-    container.copyFileToContainer(Transferable.of(Files.readAllBytes(segment), 0644), input);
+  public List<Double> packetTimestamps(Path media) throws Exception {
+    var input = "/tmp/inspect-" + UUID.randomUUID() + ".mp4";
+    container.copyFileToContainer(Transferable.of(Files.readAllBytes(media), 0644), input);
     // A native output file excludes launcher diagnostics and avoids truncated Docker exec stdout.
     var probe =
         container.execInContainer(

@@ -31,7 +31,7 @@ class InMemoryStreamSessionRegistryTest {
   @Test
   @DisplayName("Should remove and return session when removed by id")
   void shouldRemoveAndReturnSessionWhenRemovedById() {
-    var session = StreamSessionFixture.buildMpegtsSession();
+    var session = StreamSessionFixture.buildActiveSession();
     registry.save(session);
 
     var removed = registry.removeById(session.getSessionId());
@@ -43,8 +43,8 @@ class InMemoryStreamSessionRegistryTest {
   @Test
   @DisplayName("Should track count when sessions are saved and removed")
   void shouldTrackCountWhenSessionsAreSavedAndRemoved() {
-    var session1 = StreamSessionFixture.buildMpegtsSession();
-    var session2 = StreamSessionFixture.buildMpegtsSession();
+    var session1 = StreamSessionFixture.buildActiveSession();
+    var session2 = StreamSessionFixture.buildActiveSession();
 
     assertThat(registry.count()).isZero();
 

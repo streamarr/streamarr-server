@@ -3,7 +3,6 @@ package com.streamarr.server.services.streaming;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.streaming.AudioMode;
-import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -116,28 +115,6 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("Should use fMP4 container when transcoding to H264")
-  void shouldUseFmp4ContainerWhenTranscodingToH264() {
-    var source = probe("hevc", "aac");
-    var clientOptions = options(List.of("h264"));
-
-    var decision = service.decide(source, clientOptions);
-
-    assertThat(decision.containerFormat()).isEqualTo(ContainerFormat.FMP4);
-  }
-
-  @Test
-  @DisplayName("Should use fMP4 container when transcoding to AV1")
-  void shouldUseFmp4ContainerWhenTranscodingToAv1() {
-    var source = probe("hevc", "aac");
-    var clientOptions = options(List.of("av1"));
-
-    var decision = service.decide(source, clientOptions);
-
-    assertThat(decision.containerFormat()).isEqualTo(ContainerFormat.FMP4);
-  }
-
-  @Test
   @DisplayName("Should remux AV1 source when client supports AV1 and audio is AAC")
   void shouldRemuxAv1SourceWhenClientSupportsAv1AndAudioIsAac() {
     var source = probe("av1", "aac");
@@ -147,7 +124,6 @@ class TranscodeDecisionServiceTest {
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(decision.videoCodecFamily()).isEqualTo("av1");
-    assertThat(decision.containerFormat()).isEqualTo(ContainerFormat.FMP4);
   }
 
   @Test
@@ -161,17 +137,6 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
     assertThat(decision.videoCodecFamily()).isEqualTo("av1");
     assertThat(decision.audioDecision().codec()).isEqualTo("aac");
-  }
-
-  @Test
-  @DisplayName("Should use fMP4 container when remuxing H264")
-  void shouldUseFmp4ContainerWhenRemuxingH264() {
-    var source = probe("h264", "aac");
-    var clientOptions = options(List.of("h264"));
-
-    var decision = service.decide(source, clientOptions);
-
-    assertThat(decision.containerFormat()).isEqualTo(ContainerFormat.FMP4);
   }
 
   @Test

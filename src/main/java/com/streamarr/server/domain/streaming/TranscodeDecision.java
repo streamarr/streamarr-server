@@ -8,5 +8,4 @@ public record TranscodeDecision(
     String videoCodecFamily,
     AudioDecision audioDecision,
     SubtitleDecision subtitleDecision,
-    ContainerFormat containerFormat,
     boolean needsKeyframeAlignment) {}
