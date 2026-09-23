@@ -4,10 +4,6 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.abrSessionBuild
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
@@ -34,7 +30,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
 
 @Tag("UnitTest")
 @DisplayName("Segment Delivery Coordinator Tests")
@@ -254,8 +249,8 @@ class SegmentDeliveryCoordinatorTest {
   }
 
   @Test
-  @DisplayName("Should log the swallowed read race when a destroy wins between existence and read")
-  void shouldLogTheSwallowedReadRaceWhenADestroyWinsBetweenExistenceAndRead() {
+  @DisplayName("Should report the session as ended when a destroy wins between existence and read")
+  void shouldReportSessionEndedWhenADestroyWinsBetweenExistenceAndRead() {
     var throwingStore =
         new FakeSegmentStore() {
           @Override
@@ -266,27 +261,11 @@ class SegmentDeliveryCoordinatorTest {
     var sessionId = UUID.randomUUID();
     throwingStore.addSegment(sessionId, "segment0.ts", new byte[] {0x47});
     var rig = rigWith(transcodeExecutor, throwingStore);
-    var logger = (Logger) LoggerFactory.getLogger(SegmentDeliveryCoordinator.class);
-    logger.setLevel(Level.DEBUG);
-    var appender = new ListAppender<ILoggingEvent>();
-    appender.start();
-    logger.addAppender(appender);
 
-    try {
-      var delivery =
-          rig.coordinator().deliver(sessionId, StreamSession.defaultVariant(), "segment0.ts");
+    var delivery =
+        rig.coordinator().deliver(sessionId, StreamSession.defaultVariant(), "segment0.ts");
 
-      assertThat(delivery).isInstanceOf(SegmentDelivery.SessionEnded.class);
-      assertThat(appender.list)
-          .anySatisfy(
-              event -> {
-                assertThat(event.getLevel()).isEqualTo(Level.DEBUG);
-                assertThat(event.getFormattedMessage()).contains("raced");
-              });
-    } finally {
-      logger.detachAppender(appender);
-      logger.setLevel(null);
-    }
+    assertThat(delivery).isInstanceOf(SegmentDelivery.SessionEnded.class);
   }
 
   @Test

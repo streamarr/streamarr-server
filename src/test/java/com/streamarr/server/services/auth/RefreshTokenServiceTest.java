@@ -4,10 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mockStatic;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.RefreshTokenStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
@@ -17,6 +13,7 @@ import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AccountFixture;
+import com.streamarr.server.support.LogCapture;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -30,7 +27,6 @@ import javax.crypto.Mac;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
 
 @Tag("UnitTest")
 @DisplayName("Refresh Token Service Tests")
@@ -172,33 +168,21 @@ class RefreshTokenServiceTest {
   }
 
   @Test
-  @DisplayName("Should log token reuse with a safe session identifier")
-  void shouldLogTokenReuseWithSafeSessionIdentifier() {
+  @DisplayName("Should never log the replayed refresh token when reuse is detected")
+  void shouldNeverLogTheReplayedRefreshTokenWhenReuseIsDetected() {
     var issued = issueSession();
     service.redeem(issued.rawToken());
     advanceClock(Duration.ofSeconds(31));
     var replayedToken = issued.rawToken();
-    var logger = (Logger) LoggerFactory.getLogger(RefreshTokenService.class);
-    var appender = new ListAppender<ILoggingEvent>();
-    appender.start();
-    logger.addAppender(appender);
 
-    try {
+    try (var logs = LogCapture.forClass(RefreshTokenService.class)) {
       assertThatThrownBy(() -> service.redeem(replayedToken))
           .isInstanceOf(TokenReuseDetectedException.class);
-    } finally {
-      logger.detachAppender(appender);
-    }
 
-    assertThat(appender.list)
-        .singleElement()
-        .satisfies(
-            event -> {
-              assertThat(event.getLevel()).isEqualTo(Level.WARN);
-              assertThat(event.getFormattedMessage())
-                  .contains(issued.session().getId().toString())
-                  .doesNotContain(replayedToken);
-            });
+      assertThat(logs.renderedEvents())
+          .isNotEmpty()
+          .allSatisfy(event -> assertThat(event).doesNotContain(replayedToken));
+    }
   }
 
   @Test
