@@ -152,8 +152,7 @@ public class ImageService {
       validateVariantSet(replacement.images());
       var replacedPaths = imageRepository.replaceLogicalArtwork(replacement.images());
       itemResults.overwrite(savedArtwork(replacement.images().getFirst(), attemptedAt));
-      var existingFiles = replacedPaths.stream().map(this::resolveAbsolutePath).toList();
-      deleteFilesAfterCommit(existingFiles);
+      deleteFilesAfterCommit(resolveAbsolutePaths(replacedPaths));
     } catch (RuntimeException e) {
       if (!cleanupDeferred) {
         deleteFiles(replacement.writtenFiles());
