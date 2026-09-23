@@ -72,6 +72,15 @@ class ProbeStateTest {
   }
 
   @Test
+  @DisplayName("Should be superseded when a newer probe version stored an outcome for the source")
+  void shouldBeSupersededWhenANewerProbeVersionStoredAnOutcomeForTheSource() {
+    var newerVersion = new ProbeInputs(REQUESTED.snapshot(), REQUESTED.probeVersion() + 1);
+    var state = state().stored(Optional.of(stored(newerVersion, Optional.empty()))).build();
+
+    assertThat(state.resultFor(REQUESTED)).isEqualTo(RequestedProbeResult.SUPERSEDED);
+  }
+
+  @Test
   @DisplayName("Should be removed when no probe is requested and no outcome matches")
   void shouldBeRemovedWhenNoProbeIsRequestedAndNoOutcomeMatches() {
     var state = state().requested(Optional.empty()).build();

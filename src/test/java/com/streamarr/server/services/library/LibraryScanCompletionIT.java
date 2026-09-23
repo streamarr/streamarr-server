@@ -168,6 +168,26 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
     assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
   }
 
+  @Test
+  @DisplayName("Should finish the scan when a newer probe version already stored the outcome")
+  void shouldFinishTheScanWhenANewerProbeVersionAlreadyStoredTheOutcome() throws Exception {
+    outcomes.publish(
+        ProbePublication.builder()
+            .mediaFileId(mediaFile.getId())
+            .snapshot(snapshotOf(mediaFile))
+            .probeVersion(ProbeVersion.CURRENT + 1)
+            .outcome(new ProbeOutcome.Failure(ProbeError.INVALID_MEDIA))
+            .build());
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      executor
+          .submit(() -> libraryManagementService.scanLibrary(library.getId()))
+          .get(20, TimeUnit.SECONDS);
+    }
+
+    assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
+  }
+
   private void assertStillScanning(Future<?> scan) {
     await()
         .during(Duration.ofMillis(300))

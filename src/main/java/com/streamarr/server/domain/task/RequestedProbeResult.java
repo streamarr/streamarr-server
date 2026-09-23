@@ -8,7 +8,10 @@ public enum RequestedProbeResult {
   MEDIA_ERROR,
   /** The latest attempt at the requested inputs failed; the probe retries in the background. */
   FAILED,
-  /** The file changed and later inputs replaced the requested ones. */
+  /**
+   * The file changed and later inputs replaced the requested ones, or a newer probe version already
+   * stored an outcome for the same source.
+   */
   SUPERSEDED,
   /** The media file or its source no longer exists. */
   REMOVED,

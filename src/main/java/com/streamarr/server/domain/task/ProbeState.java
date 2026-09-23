@@ -24,6 +24,11 @@ public record ProbeState(
       return outcomeResult(outcome.get());
     }
 
+    // The requested probe cannot publish over a newer version's outcome for the same source.
+    if (stored.filter(newer -> isNewerProbeOfSameSource(newer.inputs(), inputs)).isPresent()) {
+      return RequestedProbeResult.SUPERSEDED;
+    }
+
     if (requested.isEmpty()) {
       return RequestedProbeResult.REMOVED;
     }
@@ -37,6 +42,11 @@ public record ProbeState(
     }
 
     return RequestedProbeResult.PENDING;
+  }
+
+  private static boolean isNewerProbeOfSameSource(ProbeInputs stored, ProbeInputs requested) {
+    return stored.snapshot().equals(requested.snapshot())
+        && stored.probeVersion() > requested.probeVersion();
   }
 
   private static RequestedProbeResult outcomeResult(Stored outcome) {
