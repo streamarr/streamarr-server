@@ -32,7 +32,7 @@ public record ScanResults(
         "required artwork in %s seconds (%s)"
             .formatted(seconds(artwork.elapsed()), artwork.counts().describe()),
         "probes in %s seconds (%s)".formatted(seconds(probes.elapsed()), probes.describe()),
-        "in the background: %d secondary images pending, %d failed probes retrying, %d changed files to probe"
+        "in the background: %d secondary images pending across all libraries, %d failed probes retrying, %d changed files to probe"
             .formatted(
                 secondaryImagesPending,
                 probes.count(RequestedProbeResult.FAILED),
