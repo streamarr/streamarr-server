@@ -64,6 +64,11 @@ class ProbeRunsTest {
             .outcomes(outcomes)
             .sleeper(
                 duration -> {
+                  // Honor the default test timeout's interrupt, since this sleeper never blocks.
+                  if (Thread.interrupted()) {
+                    throw new InterruptedException();
+                  }
+
                   sleeps.add(duration);
                   clock.advance(duration);
                   onCheck.accept(sleeps.size());
