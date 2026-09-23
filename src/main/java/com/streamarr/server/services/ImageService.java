@@ -152,7 +152,7 @@ public class ImageService {
       var replacedPaths = imageRepository.replaceLogicalArtwork(replacement.images());
       itemResults.overwrite(savedArtwork(replacement.images().getFirst(), attemptedAt));
       var existingFiles = replacedPaths.stream().map(this::resolveAbsolutePath).toList();
-      scheduleSupersededFileCleanup(existingFiles);
+      deleteFilesAfterCommit(existingFiles);
     } catch (RuntimeException e) {
       if (!cleanupDeferred) {
         deleteFiles(replacement.writtenFiles());
@@ -232,9 +232,9 @@ public class ImageService {
     return true;
   }
 
-  private void scheduleSupersededFileCleanup(List<Path> existingFiles) {
+  private void deleteFilesAfterCommit(List<Path> files) {
     if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-      deleteFiles(existingFiles);
+      deleteFiles(files);
       return;
     }
 
@@ -242,7 +242,7 @@ public class ImageService {
         new TransactionSynchronization() {
           @Override
           public void afterCommit() {
-            deleteFiles(existingFiles);
+            deleteFiles(files);
           }
         });
   }
