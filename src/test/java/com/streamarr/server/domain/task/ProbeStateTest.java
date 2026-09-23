@@ -21,19 +21,15 @@ class ProbeStateTest {
       new ProbeInputs(new SourceFileSnapshot(10, Instant.EPOCH), ProbeVersion.CURRENT);
   private static final ProbeInputs CHANGED =
       new ProbeInputs(new SourceFileSnapshot(11, Instant.EPOCH), ProbeVersion.CURRENT);
-  private static final ProbeAttemptFailure FAILURE =
-      ProbeAttemptFailure.builder()
-          .reason(ItemFailureReason.SOURCE_INACCESSIBLE)
-          .detail("Worker could not read the source")
-          .failedAt(Instant.EPOCH)
-          .build();
+  private static final Instant REQUESTED_AT = Instant.parse("2026-09-23T12:00:00Z");
+  private static final RequestedProbe REQUESTED_PROBE = new RequestedProbe(REQUESTED, REQUESTED_AT);
 
   @Test
   @DisplayName("Should be ready when a successful outcome matches the requested inputs")
   void shouldBeReadyWhenASuccessfulOutcomeMatchesTheRequestedInputs() {
     var state = state().stored(Optional.of(stored(REQUESTED, Optional.empty()))).build();
 
-    assertThat(state.resultFor(REQUESTED)).isEqualTo(RequestedProbeResult.READY);
+    assertThat(state.resultFor(REQUESTED_PROBE)).isEqualTo(RequestedProbeResult.READY);
   }
 
   @Test
@@ -44,15 +40,23 @@ class ProbeStateTest {
             .stored(Optional.of(stored(REQUESTED, Optional.of(ProbeError.INVALID_MEDIA))))
             .build();
 
-    assertThat(state.resultFor(REQUESTED)).isEqualTo(RequestedProbeResult.MEDIA_ERROR);
+    assertThat(state.resultFor(REQUESTED_PROBE)).isEqualTo(RequestedProbeResult.MEDIA_ERROR);
   }
 
   @Test
   @DisplayName("Should report a failure when an attempt at the requested inputs failed")
   void shouldReportAFailureWhenAnAttemptAtTheRequestedInputsFailed() {
-    var state = state().failure(Optional.of(FAILURE)).build();
+    var state = state().failure(Optional.of(failedAt(REQUESTED_AT.plusSeconds(1)))).build();
 
-    assertThat(state.resultFor(REQUESTED)).isEqualTo(RequestedProbeResult.FAILED);
+    assertThat(state.resultFor(REQUESTED_PROBE)).isEqualTo(RequestedProbeResult.FAILED);
+  }
+
+  @Test
+  @DisplayName("Should stay pending when the recorded failure predates the request")
+  void shouldStayPendingWhenTheRecordedFailurePredatesTheRequest() {
+    var state = state().failure(Optional.of(failedAt(REQUESTED_AT.minusSeconds(1)))).build();
+
+    assertThat(state.resultFor(REQUESTED_PROBE)).isEqualTo(RequestedProbeResult.PENDING);
   }
 
   @Test
@@ -60,7 +64,7 @@ class ProbeStateTest {
   void shouldBePendingWhenNoAttemptAtTheRequestedInputsHasFinished() {
     var state = state().stored(Optional.of(stored(CHANGED, Optional.empty()))).build();
 
-    assertThat(state.resultFor(REQUESTED)).isEqualTo(RequestedProbeResult.PENDING);
+    assertThat(state.resultFor(REQUESTED_PROBE)).isEqualTo(RequestedProbeResult.PENDING);
   }
 
   @Test
@@ -68,7 +72,7 @@ class ProbeStateTest {
   void shouldBeSupersededWhenLaterInputsReplacedTheRequestedInputs() {
     var state = state().requested(Optional.of(CHANGED)).build();
 
-    assertThat(state.resultFor(REQUESTED)).isEqualTo(RequestedProbeResult.SUPERSEDED);
+    assertThat(state.resultFor(REQUESTED_PROBE)).isEqualTo(RequestedProbeResult.SUPERSEDED);
   }
 
   @Test
@@ -77,7 +81,7 @@ class ProbeStateTest {
     var newerVersion = new ProbeInputs(REQUESTED.snapshot(), REQUESTED.probeVersion() + 1);
     var state = state().stored(Optional.of(stored(newerVersion, Optional.empty()))).build();
 
-    assertThat(state.resultFor(REQUESTED)).isEqualTo(RequestedProbeResult.SUPERSEDED);
+    assertThat(state.resultFor(REQUESTED_PROBE)).isEqualTo(RequestedProbeResult.SUPERSEDED);
   }
 
   @Test
@@ -85,7 +89,15 @@ class ProbeStateTest {
   void shouldBeRemovedWhenNoProbeIsRequestedAndNoOutcomeMatches() {
     var state = state().requested(Optional.empty()).build();
 
-    assertThat(state.resultFor(REQUESTED)).isEqualTo(RequestedProbeResult.REMOVED);
+    assertThat(state.resultFor(REQUESTED_PROBE)).isEqualTo(RequestedProbeResult.REMOVED);
+  }
+
+  private static ProbeAttemptFailure failedAt(Instant failedAt) {
+    return ProbeAttemptFailure.builder()
+        .reason(ItemFailureReason.SOURCE_INACCESSIBLE)
+        .detail("Worker could not read the source")
+        .failedAt(failedAt)
+        .build();
   }
 
   private static ProbeState.ProbeStateBuilder state() {

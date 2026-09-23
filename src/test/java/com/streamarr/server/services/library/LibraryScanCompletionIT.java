@@ -136,6 +136,34 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should probe a failed file again and wait for it when the library is rescanned")
+  void shouldProbeAFailedFileAgainAndWaitForItWhenTheLibraryIsRescanned() throws Exception {
+    var readable = new AtomicBoolean(false);
+    var producer = new FakeFfprobeService();
+    startScheduler(
+        probeExecution.toBuilder()
+            .producer(
+                request -> {
+                  if (!readable.get()) {
+                    throw new ProbeExecutionException(
+                        ItemFailureReason.SOURCE_INACCESSIBLE, "Worker could not read the source");
+                  }
+
+                  return producer.probe(request);
+                })
+            .build(),
+        new AbstractSchedulerListener() {});
+    scan(library);
+    assertThat(reader.find(mediaFile.getId())).isEmpty();
+
+    readable.set(true);
+    scan(library);
+
+    assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
+    assertThat(reader.find(mediaFile.getId())).isPresent();
+  }
+
+  @Test
   @DisplayName("Should finish the scan when a requested source is removed before it is probed")
   void shouldFinishTheScanWhenARequestedSourceIsRemovedBeforeItIsProbed() throws Exception {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -186,6 +214,14 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
     }
 
     assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
+  }
+
+  private void scan(Library scanned) throws Exception {
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      executor
+          .submit(() -> libraryManagementService.scanLibrary(scanned.getId()))
+          .get(20, TimeUnit.SECONDS);
+    }
   }
 
   private void assertStillScanning(Future<?> scan) {

@@ -1,8 +1,8 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.config.ProbeSchedulingProperties;
-import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbeState;
+import com.streamarr.server.domain.task.RequestedProbe;
 import com.streamarr.server.domain.task.RequestedProbeResult;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import java.time.Clock;
@@ -65,14 +65,14 @@ public class ProbeRuns {
     return ProbeRunSummary.builder().counts(counts).elapsed(elapsed).build();
   }
 
-  private Map<UUID, RequestedProbeResult> finishedProbes(Map<UUID, ProbeInputs> pending) {
+  private Map<UUID, RequestedProbeResult> finishedProbes(Map<UUID, RequestedProbe> pending) {
     var states =
         outcomes.findProbeStates(pending.keySet()).stream()
             .collect(Collectors.toMap(ProbeState::mediaFileId, Function.identity()));
     var finished = new HashMap<UUID, RequestedProbeResult>();
     pending.forEach(
-        (mediaFileId, inputs) -> {
-          var result = resultOf(states.get(mediaFileId), inputs);
+        (mediaFileId, probe) -> {
+          var result = resultOf(states.get(mediaFileId), probe);
           if (result != RequestedProbeResult.PENDING) {
             finished.put(mediaFileId, result);
           }
@@ -81,11 +81,11 @@ public class ProbeRuns {
   }
 
   // A media file without a state row was deleted.
-  private static RequestedProbeResult resultOf(ProbeState state, ProbeInputs inputs) {
+  private static RequestedProbeResult resultOf(ProbeState state, RequestedProbe probe) {
     if (state == null) {
       return RequestedProbeResult.REMOVED;
     }
 
-    return state.resultFor(inputs);
+    return state.resultFor(probe);
   }
 }

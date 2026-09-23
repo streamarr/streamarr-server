@@ -17,8 +17,12 @@ public record ProbeState(
     @NonNull Optional<Stored> stored,
     @NonNull Optional<ProbeAttemptFailure> failure) {
 
-  /** Classifies the probe requested with these inputs against what the database holds. */
-  public RequestedProbeResult resultFor(ProbeInputs inputs) {
+  /**
+   * Classifies a requested probe against what the database holds. A failure recorded before the
+   * request belongs to an earlier attempt, so the probe stays pending until the retry finishes.
+   */
+  public RequestedProbeResult resultFor(RequestedProbe probe) {
+    var inputs = probe.inputs();
     var outcome = stored.filter(candidate -> candidate.inputs().equals(inputs));
     if (outcome.isPresent()) {
       return outcomeResult(outcome.get());
@@ -37,7 +41,7 @@ public record ProbeState(
       return RequestedProbeResult.SUPERSEDED;
     }
 
-    if (failure.isPresent()) {
+    if (failure.filter(failed -> !failed.failedAt().isBefore(probe.requestedAt())).isPresent()) {
       return RequestedProbeResult.FAILED;
     }
 
