@@ -8,6 +8,8 @@ import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -29,7 +31,8 @@ class RemoteTranscodeConfigurationTest {
       new ApplicationContextRunner()
           .withConfiguration(AutoConfigurations.of(ValidationAutoConfiguration.class))
           .withUserConfiguration(
-              RemoteTranscodeConfiguration.class, SegmentStoreConfiguration.class);
+              RemoteTranscodeConfiguration.class, SegmentStoreConfiguration.class)
+          .withBean(MeterRegistry.class, SimpleMeterRegistry::new);
 
   @Test
   @DisplayName("Should reject missing source mapping when a worker listener is enabled")

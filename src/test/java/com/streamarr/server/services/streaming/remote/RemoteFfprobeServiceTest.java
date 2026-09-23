@@ -8,6 +8,7 @@ import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -29,7 +30,10 @@ class RemoteFfprobeServiceTest {
   void shouldRejectProbingWhenSourceIsNotFileWithinItsNamespace(String relativePath) {
     var sourceRoot = tempDir.resolve("movies");
     try (var server =
-        new WorkerSessionServer(serverConfigurationBuilder().build(), new FakeSegmentStore())) {
+        new WorkerSessionServer(
+            serverConfigurationBuilder().build(),
+            new FakeSegmentStore(),
+            new SimpleMeterRegistry())) {
       var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, sourceRoot);
       var request =
           ProbeExecutionRequest.builder()

@@ -51,6 +51,7 @@ import io.grpc.ManagedChannel;
 import io.grpc.Status;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.StreamObserver;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -97,7 +98,8 @@ class WorkerSessionServerIT {
                 ending == SessionEnd.TIMED_OUT ? Duration.ofSeconds(2) : Duration.ofMinutes(1))
             .probeCancellationTimeout(Duration.ofMillis(100))
             .build();
-    try (var server = new WorkerSessionServer(configuration, segmentStore)) {
+    try (var server =
+        new WorkerSessionServer(configuration, segmentStore, new SimpleMeterRegistry())) {
       server.start();
       var channel = workerChannel(server.port());
       var identity = workerIdentity(UUID.randomUUID());
@@ -1322,7 +1324,8 @@ class WorkerSessionServerIT {
   }
 
   private WorkerSessionServer server(SegmentStore segmentStore) {
-    return new WorkerSessionServer(serverConfigurationBuilder().build(), segmentStore);
+    return new WorkerSessionServer(
+        serverConfigurationBuilder().build(), segmentStore, new SimpleMeterRegistry());
   }
 
   private ManagedChannel workerChannel(int port) {

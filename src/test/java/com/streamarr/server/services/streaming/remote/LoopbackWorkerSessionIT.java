@@ -23,6 +23,7 @@ import io.grpc.StatusRuntimeException;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.MetadataUtils;
 import io.grpc.stub.StreamObserver;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.Inet4Address;
@@ -54,7 +55,8 @@ class LoopbackWorkerSessionIT {
   void shouldReleaseStartupResourcesWhenWorkerListenerFailsToBind() throws Exception {
     try (var occupied = new ServerSocket(0, 0, InetAddress.getByName("127.0.0.1"))) {
       var listeners = serverConfigurationBuilder().port(occupied.getLocalPort()).build();
-      try (var server = new WorkerSessionServer(listeners, new FakeSegmentStore())) {
+      try (var server =
+          new WorkerSessionServer(listeners, new FakeSegmentStore(), new SimpleMeterRegistry())) {
         assertThatThrownBy(server::start).isInstanceOf(IOException.class);
         assertThatThrownBy(server::port).isInstanceOf(IllegalStateException.class);
         occupied.close();
@@ -70,7 +72,8 @@ class LoopbackWorkerSessionIT {
   @DisplayName("Should accept a plaintext worker when connecting through loopback")
   void shouldAcceptPlaintextWorkerWhenConnectingThroughLoopback() throws Exception {
     var listeners = serverConfigurationBuilder().build();
-    try (var server = new WorkerSessionServer(listeners, new FakeSegmentStore())) {
+    try (var server =
+        new WorkerSessionServer(listeners, new FakeSegmentStore(), new SimpleMeterRegistry())) {
       server.start();
       var channel = plaintextChannel(server.port());
       try {
@@ -89,7 +92,8 @@ class LoopbackWorkerSessionIT {
   @DisplayName("Should replace the old session and abandon its jobs when a worker id reconnects")
   void shouldReplaceOldSessionAndAbandonItsJobsWhenWorkerIdReconnects() throws Exception {
     var listeners = serverConfigurationBuilder().build();
-    try (var server = new WorkerSessionServer(listeners, new FakeSegmentStore())) {
+    try (var server =
+        new WorkerSessionServer(listeners, new FakeSegmentStore(), new SimpleMeterRegistry())) {
       server.start();
       var plaintext = plaintextChannel(server.port());
       var replacementChannel = plaintextChannel(server.port());
@@ -140,7 +144,8 @@ class LoopbackWorkerSessionIT {
             .toList();
     assertThat(addresses).as("This network test needs a non-loopback interface").isNotEmpty();
     var listeners = serverConfigurationBuilder().build();
-    try (var server = new WorkerSessionServer(listeners, new FakeSegmentStore())) {
+    try (var server =
+        new WorkerSessionServer(listeners, new FakeSegmentStore(), new SimpleMeterRegistry())) {
       server.start();
       for (var address : addresses) {
         try (var socket = new Socket()) {
@@ -164,7 +169,8 @@ class LoopbackWorkerSessionIT {
     assertThat(addresses).as("This network test needs a non-loopback interface").isNotEmpty();
     var address = addresses.getFirst();
     var configuration = serverConfigurationBuilder().address(address.getHostAddress()).build();
-    try (var server = new WorkerSessionServer(configuration, new FakeSegmentStore())) {
+    try (var server =
+        new WorkerSessionServer(configuration, new FakeSegmentStore(), new SimpleMeterRegistry())) {
       server.start();
       var headers = new Metadata();
       headers.put(WorkerIdentityMetadata.WORKER_ID, WORKER_ID.toString());
@@ -191,7 +197,8 @@ class LoopbackWorkerSessionIT {
   void shouldRejectMissingOrMalformedIdentityWhenConnectingThroughLoopback(String claimedIdentity)
       throws Exception {
     var listeners = serverConfigurationBuilder().build();
-    try (var server = new WorkerSessionServer(listeners, new FakeSegmentStore())) {
+    try (var server =
+        new WorkerSessionServer(listeners, new FakeSegmentStore(), new SimpleMeterRegistry())) {
       server.start();
       var channel = plaintextChannel(server.port(), Optional.ofNullable(claimedIdentity));
       try {

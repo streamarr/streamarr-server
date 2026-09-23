@@ -41,6 +41,7 @@ import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
@@ -248,7 +249,10 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
     requests.forEach(scheduling::request);
 
     try (var server =
-        new WorkerSessionServer(serverConfigurationBuilder().build(), new FakeSegmentStore())) {
+        new WorkerSessionServer(
+            serverConfigurationBuilder().build(),
+            new FakeSegmentStore(),
+            new SimpleMeterRegistry())) {
       server.start();
       try (var worker =
           LoopbackProbeWorker.builder()

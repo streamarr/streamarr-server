@@ -21,6 +21,8 @@ import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerSessionAccepted;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -43,14 +45,17 @@ final class LiveWorkerConnectionRegistry {
       command -> Thread.ofVirtual().name("worker-probe-deadline").start(command);
   private final long probeTimeoutNanos;
   private final long probeCancellationTimeoutNanos;
+  private final MeterRegistry meterRegistry;
 
   LiveWorkerConnectionRegistry() {
-    this(WorkerSessionServerConfiguration.builder().build());
+    this(WorkerSessionServerConfiguration.builder().build(), new SimpleMeterRegistry());
   }
 
-  LiveWorkerConnectionRegistry(WorkerSessionServerConfiguration configuration) {
+  LiveWorkerConnectionRegistry(
+      WorkerSessionServerConfiguration configuration, MeterRegistry meterRegistry) {
     probeTimeoutNanos = configuration.probeTimeout().toNanos();
     probeCancellationTimeoutNanos = configuration.probeCancellationTimeout().toNanos();
+    this.meterRegistry = meterRegistry;
   }
 
   private final ConcurrentHashMap<UUID, WorkerConnection> connections = new ConcurrentHashMap<>();

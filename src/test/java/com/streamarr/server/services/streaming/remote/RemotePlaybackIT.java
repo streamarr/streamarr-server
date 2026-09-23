@@ -31,6 +31,7 @@ import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -457,7 +458,9 @@ class RemotePlaybackIT {
 
   private WorkerSessionServer server(LocalSegmentStore segmentStore) {
     return new WorkerSessionServer(
-        serverConfigurationBuilder().address("127.0.0.1").build(), segmentStore);
+        serverConfigurationBuilder().address("127.0.0.1").build(),
+        segmentStore,
+        new SimpleMeterRegistry());
   }
 
   private WorkerContainerFixture.WorkerContainerFixtureBuilder workerBuilder(

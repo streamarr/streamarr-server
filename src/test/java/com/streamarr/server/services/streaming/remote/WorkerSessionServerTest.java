@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.transcode.v1.ProbeRequest;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.UUID;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.DisplayName;
@@ -44,7 +45,8 @@ class WorkerSessionServerTest {
 
   private WorkerSessionServer unstartedServer() {
     var configuration = WorkerSessionServerConfiguration.builder().port(0).build();
-    return new WorkerSessionServer(configuration, new FakeSegmentStore());
+    return new WorkerSessionServer(
+        configuration, new FakeSegmentStore(), new SimpleMeterRegistry());
   }
 
   @Test

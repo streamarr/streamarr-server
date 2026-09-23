@@ -7,6 +7,7 @@ import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
@@ -23,7 +24,10 @@ class RemoteWorkerKeepaliveIT {
   @DisplayName("Should release the session and capacity when the worker is frozen")
   void shouldReleaseSessionAndCapacityWhenWorkerIsFrozen() throws Exception {
     try (var server =
-            new WorkerSessionServer(serverConfigurationBuilder().build(), new FakeSegmentStore());
+            new WorkerSessionServer(
+                serverConfigurationBuilder().build(),
+                new FakeSegmentStore(),
+                new SimpleMeterRegistry());
         var worker =
             WorkerContainerFixture.builder()
                 .workerSessions(server)

@@ -9,6 +9,8 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -24,6 +26,7 @@ class FfprobeConfigurationTest {
       new ApplicationContextRunner()
           .withUserConfiguration(RemoteProbeConfiguration.class, WorkerSessionConfiguration.class)
           .withBean(SegmentStore.class, FakeSegmentStore::new)
+          .withBean(MeterRegistry.class, SimpleMeterRegistry::new)
           .withPropertyValues(
               "streaming.worker-session.port=0",
               "streaming.remote.source-namespace-id=cccccccc-cccc-cccc-cccc-cccccccccccc",

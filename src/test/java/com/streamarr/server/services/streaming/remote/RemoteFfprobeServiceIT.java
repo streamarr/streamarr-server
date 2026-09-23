@@ -22,6 +22,7 @@ import com.streamarr.transcode.v1.ProbeFailure;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
 import io.grpc.Status;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -54,7 +55,9 @@ class RemoteFfprobeServiceIT {
             .probeTimeout(Duration.ofMillis(100))
             .probeCancellationTimeout(Duration.ofMillis(100))
             .build();
-    try (var server = new WorkerSessionServer(configuration, new FakeSegmentStore());
+    try (var server =
+            new WorkerSessionServer(
+                configuration, new FakeSegmentStore(), new SimpleMeterRegistry());
         var calls = Executors.newVirtualThreadPerTaskExecutor()) {
       server.start();
       try (var worker = worker(server.port(), 1)) {
@@ -391,7 +394,8 @@ class RemoteFfprobeServiceIT {
   }
 
   private WorkerSessionServer server() {
-    return new WorkerSessionServer(serverConfigurationBuilder().build(), new FakeSegmentStore());
+    return new WorkerSessionServer(
+        serverConfigurationBuilder().build(), new FakeSegmentStore(), new SimpleMeterRegistry());
   }
 
   private ProbeExecutionRequest.ProbeExecutionRequestBuilder request() {
