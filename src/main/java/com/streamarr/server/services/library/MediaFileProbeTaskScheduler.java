@@ -3,6 +3,7 @@ package com.streamarr.server.services.library;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
 import com.streamarr.server.exceptions.ProbeTaskSchedulingException;
@@ -17,6 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Optional;
+import java.util.UUID;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
@@ -34,22 +36,29 @@ public class MediaFileProbeTaskScheduler {
 
   @EventListener
   public void onProbeTaskRequested(MediaFileProbeTaskRequested event) {
+    schedule(event.mediaFileId());
+  }
+
+  /**
+   * Requests a probe of the media file unless its stored outcome already matches the source.
+   * Returns the inputs whose outcome the file needs, or nothing when its source no longer exists.
+   */
+  public Optional<ProbeInputs> schedule(UUID mediaFileId) {
     var mediaFile =
         mediaFileRepository
-            .findById(event.mediaFileId())
-            .orElseThrow(() -> new MediaFileNotFoundException(event.mediaFileId()));
+            .findById(mediaFileId)
+            .orElseThrow(() -> new MediaFileNotFoundException(mediaFileId));
     var observedSnapshot = snapshot(mediaFile);
     if (observedSnapshot.isEmpty()) {
-      return;
+      return Optional.empty();
     }
 
-    var sourceSnapshot = observedSnapshot.get();
-
+    var inputs = new ProbeInputs(observedSnapshot.get(), ProbeVersion.CURRENT);
     if (reader
         .find(mediaFile.getId())
-        .filter(outcome -> outcome.matches(sourceSnapshot, ProbeVersion.CURRENT))
+        .filter(outcome -> outcome.matches(inputs.snapshot(), inputs.probeVersion()))
         .isPresent()) {
-      return;
+      return Optional.of(inputs);
     }
 
     probeTaskRequests.request(
@@ -57,9 +66,10 @@ public class MediaFileProbeTaskScheduler {
             .mediaFileId(mediaFile.getId())
             .libraryId(mediaFile.getLibraryId())
             .filepathUri(mediaFile.getFilepathUri())
-            .snapshot(sourceSnapshot)
-            .probeVersion(ProbeVersion.CURRENT)
+            .snapshot(inputs.snapshot())
+            .probeVersion(inputs.probeVersion())
             .build());
+    return Optional.of(inputs);
   }
 
   private Optional<SourceFileSnapshot> snapshot(MediaFile mediaFile) {
