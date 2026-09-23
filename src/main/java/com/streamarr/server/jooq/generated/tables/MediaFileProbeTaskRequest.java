@@ -6,9 +6,11 @@ package com.streamarr.server.jooq.generated.tables;
 
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
+import com.streamarr.server.jooq.generated.enums.ItemResultFailureReason;
 import com.streamarr.server.jooq.generated.tables.MediaFile.MediaFilePath;
 import com.streamarr.server.jooq.generated.tables.records.MediaFileProbeTaskRequestRecord;
 
+import java.time.OffsetDateTime;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
@@ -88,6 +90,23 @@ public class MediaFileProbeTaskRequest extends TableImpl<MediaFileProbeTaskReque
      * <code>public.media_file_probe_task_request.probe_version</code>.
      */
     public final TableField<MediaFileProbeTaskRequestRecord, Integer> PROBE_VERSION = createField(DSL.name("probe_version"), SQLDataType.INTEGER.nullable(false), this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_probe_task_request.failure_reason</code>.
+     */
+    public final TableField<MediaFileProbeTaskRequestRecord, ItemResultFailureReason> FAILURE_REASON = createField(DSL.name("failure_reason"), SQLDataType.VARCHAR.asEnumDataType(ItemResultFailureReason.class), this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_probe_task_request.failure_detail</code>.
+     */
+    public final TableField<MediaFileProbeTaskRequestRecord, String> FAILURE_DETAIL = createField(DSL.name("failure_detail"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.media_file_probe_task_request.failed_at</code>.
+     */
+    public final TableField<MediaFileProbeTaskRequestRecord, OffsetDateTime> FAILED_AT = createField(DSL.name("failed_at"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "");
 
     private MediaFileProbeTaskRequest(Name alias, Table<MediaFileProbeTaskRequestRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
@@ -184,6 +203,7 @@ public class MediaFileProbeTaskRequest extends TableImpl<MediaFileProbeTaskReque
     @Override
     public List<Check<MediaFileProbeTaskRequestRecord>> getChecks() {
         return Arrays.asList(
+            Internal.createCheck(this, DSL.name("media_file_probe_task_request_failure_complete"), "((((failure_reason IS NULL) = (failure_detail IS NULL)) AND ((failure_reason IS NULL) = (failed_at IS NULL))))", true),
             Internal.createCheck(this, DSL.name("media_file_probe_task_request_probe_version_check"), "((probe_version > 0))", true),
             Internal.createCheck(this, DSL.name("media_file_probe_task_request_source_modified_nanos_check"), "(((source_modified_nanos >= 0) AND (source_modified_nanos <= 999999999)))", true),
             Internal.createCheck(this, DSL.name("media_file_probe_task_request_source_size_check"), "((source_size >= 0))", true)

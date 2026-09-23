@@ -17,6 +17,7 @@ import com.github.kagkarlsson.scheduler.task.TaskInstanceId;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.config.LibraryWatcherProperties;
 import com.streamarr.server.config.ProbeSchedulingProperties;
+import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
@@ -212,7 +213,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
             throw new ProbeWorkersBusyException();
           }
 
-          throw new ProbeExecutionException("Worker lost the probe");
+          throw new ProbeExecutionException(ItemFailureReason.TEMPORARY, "Worker lost the probe");
         };
     var client = startScheduler(producer);
 

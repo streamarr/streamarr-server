@@ -4,8 +4,10 @@
 package com.streamarr.server.jooq.generated.tables.records;
 
 
+import com.streamarr.server.jooq.generated.enums.ItemResultFailureReason;
 import com.streamarr.server.jooq.generated.tables.MediaFileProbeTaskRequest;
 
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 import org.jooq.Record1;
@@ -98,6 +100,52 @@ public class MediaFileProbeTaskRequestRecord extends UpdatableRecordImpl<MediaFi
         return (Integer) get(4);
     }
 
+    /**
+     * Setter for
+     * <code>public.media_file_probe_task_request.failure_reason</code>.
+     */
+    public void setFailureReason(ItemResultFailureReason value) {
+        set(5, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_probe_task_request.failure_reason</code>.
+     */
+    public ItemResultFailureReason getFailureReason() {
+        return (ItemResultFailureReason) get(5);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_probe_task_request.failure_detail</code>.
+     */
+    public void setFailureDetail(String value) {
+        set(6, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_probe_task_request.failure_detail</code>.
+     */
+    public String getFailureDetail() {
+        return (String) get(6);
+    }
+
+    /**
+     * Setter for <code>public.media_file_probe_task_request.failed_at</code>.
+     */
+    public void setFailedAt(OffsetDateTime value) {
+        set(7, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_probe_task_request.failed_at</code>.
+     */
+    public OffsetDateTime getFailedAt() {
+        return (OffsetDateTime) get(7);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -121,7 +169,7 @@ public class MediaFileProbeTaskRequestRecord extends UpdatableRecordImpl<MediaFi
     /**
      * Create a detached, initialised MediaFileProbeTaskRequestRecord
      */
-    public MediaFileProbeTaskRequestRecord(UUID mediaFileId, Long sourceSize, Long sourceModifiedEpochSecond, Integer sourceModifiedNanos, Integer probeVersion) {
+    public MediaFileProbeTaskRequestRecord(UUID mediaFileId, Long sourceSize, Long sourceModifiedEpochSecond, Integer sourceModifiedNanos, Integer probeVersion, ItemResultFailureReason failureReason, String failureDetail, OffsetDateTime failedAt) {
         super(MediaFileProbeTaskRequest.MEDIA_FILE_PROBE_TASK_REQUEST);
 
         setMediaFileId(mediaFileId);
@@ -129,6 +177,9 @@ public class MediaFileProbeTaskRequestRecord extends UpdatableRecordImpl<MediaFi
         setSourceModifiedEpochSecond(sourceModifiedEpochSecond);
         setSourceModifiedNanos(sourceModifiedNanos);
         setProbeVersion(probeVersion);
+        setFailureReason(failureReason);
+        setFailureDetail(failureDetail);
+        setFailedAt(failedAt);
         resetTouchedOnNotNull();
     }
 }

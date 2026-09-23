@@ -2,11 +2,17 @@ package com.streamarr.server.services.library;
 
 import com.github.kagkarlsson.scheduler.TaskRepository;
 import com.github.kagkarlsson.scheduler.task.CompletionHandler;
+import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
+import com.github.kagkarlsson.scheduler.task.FailureHandler;
 import com.github.kagkarlsson.scheduler.task.RescheduleUpdate;
 import com.streamarr.server.config.LibraryWatcherProperties;
 import com.streamarr.server.config.ProbeSchedulingProperties;
+import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.domain.task.ProbeAttemptFailure;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
+import com.streamarr.server.exceptions.ProbeCancelledException;
+import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import java.time.Clock;
 import java.time.Duration;
@@ -50,6 +56,57 @@ public class ProbeTaskCompletion {
                         operations.reschedule(complete, clock.instant().plus(quietPeriod()), next);
                   }
                 });
+  }
+
+  /**
+   * Records why an attempt at the requested inputs failed, in the transaction in which {@code
+   * retry} reschedules it. A cancelled attempt retries without a recorded failure, and any other
+   * exception counts as a temporary failure so that it does not wait unrecorded.
+   */
+  public FailureHandler<ProbeTaskRequest> recordingFailures(
+      FailureHandler<ProbeTaskRequest> retry) {
+    return (complete, operations) ->
+        new TransactionTemplate(transactionManager)
+            .executeWithoutResult(
+                _ -> {
+                  attemptFailure(complete).ifPresent(failure -> recordFailure(complete, failure));
+                  retry.onFailure(complete, operations);
+                });
+  }
+
+  private void recordFailure(ExecutionComplete complete, ProbeAttemptFailure failure) {
+    var request = (ProbeTaskRequest) complete.getExecution().taskInstance.getData();
+    outcomes.recordProbeFailure(
+        request.mediaFileId(),
+        new ProbeInputs(request.snapshot(), request.probeVersion()),
+        failure);
+  }
+
+  private static Optional<ProbeAttemptFailure> attemptFailure(ExecutionComplete complete) {
+    return complete
+        .getCause()
+        .flatMap(
+            cause ->
+                switch (cause) {
+                  case ProbeCancelledException _ -> Optional.empty();
+                  case ProbeExecutionException failure ->
+                      Optional.of(attemptFailure(failure.reason(), failure.getMessage(), complete));
+                  default ->
+                      Optional.of(
+                          attemptFailure(
+                              ItemFailureReason.TEMPORARY,
+                              "Unexpected " + cause.getClass().getSimpleName(),
+                              complete));
+                });
+  }
+
+  private static ProbeAttemptFailure attemptFailure(
+      ItemFailureReason reason, String detail, ExecutionComplete complete) {
+    return ProbeAttemptFailure.builder()
+        .reason(reason)
+        .detail(detail)
+        .failedAt(complete.getTimeDone())
+        .build();
   }
 
   private ProbeExecutionResult latestResult(ProbeTaskRequest request, ProbeExecutionResult result) {

@@ -14,6 +14,7 @@ import com.github.kagkarlsson.scheduler.task.Task;
 import com.github.kagkarlsson.scheduler.task.TaskInstanceId;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.config.LibraryWatcherProperties;
+import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
@@ -194,7 +195,8 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   void shouldRescheduleWithBackoffWhenTheProducerFailsTransiently() throws IOException {
     var file = createMediaFile();
     var request = request(file);
-    producer.failWith(new ProbeExecutionException("no worker connected"));
+    producer.failWith(
+        new ProbeExecutionException(ItemFailureReason.TEMPORARY, "no worker connected"));
     var requestedAt = Instant.now();
     scheduling.request(request);
 
