@@ -165,8 +165,9 @@ https://github.com/streamarr/streamarr-adr/blob/main/adr/0013-stream-decision-ar
 https://github.com/streamarr/streamarr-adr/blob/main/adr/0032-media-file-probe-results-are-persisted.adoc[ADR 0032] persists container and stream data separately from title metadata.
 Scans and watcher events schedule missing or outdated probes before skipping already matched files.
 A scan finishes after matching and enrichment, and after every required artwork request and probe it made has a saved result or a recorded error.
-A probe no longer belongs to the scan once a later change replaced its inputs or its file was removed.
-Person and company artwork and the retries of failed probes continue after the scan.
+A probe no longer belongs to the scan once a later change replaced its inputs, a newer probe version stored an outcome for the same source, or its file was removed.
+A scan retries a failed probe at once and counts only a failure recorded after its own request, so a rescan after a share comes back waits for fresh attempts; playback requests keep the backoff.
+Person and company artwork and the later retries of failed probes continue after the scan.
 Playback reads stored outcomes.
 It returns a typed not-ready error when no usable outcome exists and a typed failure for a retained terminal media error.
 
