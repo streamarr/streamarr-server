@@ -24,6 +24,8 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.SegmentPublication;
+import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptCompleted;
@@ -69,6 +71,7 @@ import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -749,6 +752,69 @@ class WorkerSessionServerIT {
   }
 
   @Test
+  @DisplayName(
+      "Should keep the stored segments and reject the upload when a replacement attempt's initialization segment differs")
+  void shouldKeepStoredSegmentsAndRejectUploadWhenReplacementAttemptsInitializationSegmentDiffers(
+      @TempDir Path segments) throws Exception {
+    var segmentStore = new LocalSegmentStore(segments);
+    var storedInitialization = "ftyp moov from encoder A".getBytes();
+    var firstMediaSegment = "moof mdat of segment 0".getBytes();
+    var differingInitialization = "ftyp moov from encoder B".getBytes();
+    try (var server = server(segmentStore)) {
+      server.start();
+      var channel = workerChannel(server.port());
+
+      var identity = workerIdentity(UUID.randomUUID());
+      try (var worker = connect(channel, identity)) {
+        var workerSession = worker.nextResponse().getSessionAccepted();
+        var initial = variantJob();
+        var streamSessionId = fromProto(initial.getStreamSessionId());
+        assertThat(server.dispatch(initial)).isTrue();
+        assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(initial);
+        var initialUpload = segmentMetadata(workerSession, identity, initial);
+        upload(
+                channel,
+                fmp4Metadata(initialUpload, "init.mp4", storedInitialization),
+                storedInitialization)
+            .get(5, TimeUnit.SECONDS);
+        upload(
+                channel,
+                fmp4Metadata(initialUpload, "segment0.m4s", firstMediaSegment),
+                firstMediaSegment)
+            .get(5, TimeUnit.SECONDS);
+        worker.send(
+            EstablishWorkerSessionRequest.newBuilder()
+                .setJobAttemptFailed(
+                    JobAttemptFailed.newBuilder()
+                        .setJobAttemptId(initial.getJobAttemptId())
+                        .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED))
+                .build());
+        await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId, "720p"));
+        var replacement = initial.toBuilder().setJobAttemptId(toProto(UUID.randomUUID())).build();
+        assertThat(server.dispatch(replacement)).isTrue();
+        assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(replacement);
+
+        var refused =
+            upload(
+                channel,
+                fmp4Metadata(
+                    segmentMetadata(workerSession, identity, replacement),
+                    "init.mp4",
+                    differingInitialization),
+                differingInitialization);
+
+        assertUploadRejected(refused, Status.Code.FAILED_PRECONDITION);
+        assertThat(segmentStore.readSegment(streamSessionId, "720p/init.mp4"))
+            .isEqualTo(storedInitialization);
+        assertThat(segmentStore.readSegment(streamSessionId, "720p/segment0.m4s"))
+            .isEqualTo(firstMediaSegment);
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
+  @Test
   @DisplayName("Should not publish an incomplete segment upload when handling a worker session")
   void shouldNotPublishIncompleteSegmentUploadWhenHandlingWorkerSession() throws Exception {
     var segmentStore = new FakeSegmentStore();
@@ -1255,7 +1321,7 @@ class WorkerSessionServerIT {
     return server(new FakeSegmentStore());
   }
 
-  private WorkerSessionServer server(FakeSegmentStore segmentStore) {
+  private WorkerSessionServer server(SegmentStore segmentStore) {
     return new WorkerSessionServer(serverConfigurationBuilder().build(), segmentStore);
   }
 
@@ -1357,6 +1423,15 @@ class WorkerSessionServerIT {
         .setVariantLabel(job.getVariant().getVariantLabel())
         .setSegmentName("segment0.ts")
         .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP2T);
+  }
+
+  private static SegmentUploadMetadata fmp4Metadata(
+      SegmentUploadMetadata.Builder metadata, String segmentName, byte[] data) {
+    return metadata
+        .setSegmentName(segmentName)
+        .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP4)
+        .setContentLengthBytes(data.length)
+        .build();
   }
 
   private CompletableFuture<UploadSegmentResponse> upload(

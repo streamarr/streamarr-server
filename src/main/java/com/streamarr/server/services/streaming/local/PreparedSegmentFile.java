@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.local;
 
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -17,6 +18,11 @@ final class PreparedSegmentFile implements AutoCloseable {
     void moveAtomically(Path source, Path target) throws IOException;
 
     void moveReplacing(Path source, Path target) throws IOException;
+
+    /** Fails with {@link FileAlreadyExistsException} when {@code target} already exists. */
+    void link(Path source, Path target) throws IOException;
+
+    boolean hasSameContent(Path first, Path second) throws IOException;
 
     void delete(Path path) throws IOException;
   }
@@ -43,6 +49,16 @@ final class PreparedSegmentFile implements AutoCloseable {
     @Override
     public void moveReplacing(Path source, Path target) throws IOException {
       Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    @Override
+    public void link(Path source, Path target) throws IOException {
+      Files.createLink(target, source);
+    }
+
+    @Override
+    public boolean hasSameContent(Path first, Path second) throws IOException {
+      return Files.mismatch(first, second) == -1L;
     }
 
     @Override
@@ -85,6 +101,24 @@ final class PreparedSegmentFile implements AutoCloseable {
     } catch (AtomicMoveNotSupportedException _) {
       files.moveReplacing(temporary, target);
     }
+  }
+
+  /**
+   * Publishes only when nothing exists at {@code target} yet. A rename replaces an existing target,
+   * so a hard link is the create-if-absent that lets exactly one of several racing publications
+   * win.
+   */
+  boolean tryPublishIfAbsent(Path target) throws IOException {
+    try {
+      files.link(temporary, target);
+      return true;
+    } catch (FileAlreadyExistsException _) {
+      return false;
+    }
+  }
+
+  boolean hasSameContentAs(Path target) throws IOException {
+    return files.hasSameContent(temporary, target);
   }
 
   @Override

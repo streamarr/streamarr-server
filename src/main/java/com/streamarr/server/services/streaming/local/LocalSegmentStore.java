@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.local;
 
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
 import java.io.IOException;
@@ -73,11 +74,23 @@ public class LocalSegmentStore implements SegmentStore {
       var segmentPath = resolveSegmentPath(sessionId, segmentName);
       try {
         Files.createDirectories(segmentPath.getParent());
+        if (SegmentNames.isInitSegment(segmentName)) {
+          return publishInitialization(segmentPath);
+        }
+
         temporary.publishTo(segmentPath);
         return SegmentPublication.PUBLISHED;
       } catch (IOException e) {
         throw new UncheckedIOException("Failed to store segment: " + segmentName, e);
       }
+    }
+
+    private SegmentPublication publishInitialization(Path segmentPath) throws IOException {
+      if (temporary.tryPublishIfAbsent(segmentPath) || temporary.hasSameContentAs(segmentPath)) {
+        return SegmentPublication.PUBLISHED;
+      }
+
+      return SegmentPublication.INITIALIZATION_SEGMENT_DIFFERS;
     }
 
     @Override

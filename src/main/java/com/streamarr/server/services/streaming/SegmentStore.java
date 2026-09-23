@@ -20,6 +20,11 @@ public interface SegmentStore {
 
   interface PreparedSegment extends AutoCloseable {
 
+    /**
+     * Makes the prepared bytes readable under the segment's name. A variant's initialization
+     * segment is stored once: its first publication is atomic, identical bytes publish again
+     * without change, and different bytes are refused while the stored segment stays untouched.
+     */
     SegmentPublication publish();
 
     @Override

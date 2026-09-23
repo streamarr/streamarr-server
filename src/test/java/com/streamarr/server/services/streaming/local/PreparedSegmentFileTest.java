@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -83,6 +84,16 @@ class PreparedSegmentFileTest {
     @Override
     public void moveReplacing(Path source, Path target) {
       contents.put(target, contents.remove(source));
+    }
+
+    @Override
+    public void link(Path source, Path target) {
+      contents.putIfAbsent(target, contents.get(source));
+    }
+
+    @Override
+    public boolean hasSameContent(Path first, Path second) {
+      return Arrays.equals(contents.get(first), contents.get(second));
     }
 
     @Override

@@ -135,6 +135,13 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
       return;
     }
 
+    if (publication.get() == SegmentPublication.INITIALIZATION_SEGMENT_DIFFERS) {
+      reject(
+          Status.FAILED_PRECONDITION.withDescription(
+              "Initialization segment differs from the one stored for the variant"));
+      return;
+    }
+
     var acceptedLength = data.size();
     close();
     responseObserver.onNext(

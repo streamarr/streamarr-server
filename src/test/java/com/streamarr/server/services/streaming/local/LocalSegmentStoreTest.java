@@ -6,11 +6,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.services.streaming.SegmentPublication;
+import com.streamarr.server.services.streaming.SegmentStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -147,6 +154,77 @@ class LocalSegmentStoreTest {
 
     assertThat(store.segmentExists(sessionId, segmentName)).isTrue();
     assertThat(store.readSegment(sessionId, segmentName)).isEqualTo(segmentData);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the stored initialization segment when a different one is published for the variant")
+  void shouldKeepStoredInitializationSegmentWhenDifferentOneIsPublishedForVariant() {
+    var sessionId = UUID.randomUUID();
+    var stored = "ftyp moov from encoder A".getBytes();
+    store.storeSegment(sessionId, "720p/init.mp4", stored);
+
+    var publication =
+        store.storeSegment(sessionId, "720p/init.mp4", "ftyp moov from encoder B".getBytes());
+
+    assertThat(publication).isEqualTo(SegmentPublication.INITIALIZATION_SEGMENT_DIFFERS);
+    assertThat(store.readSegment(sessionId, "720p/init.mp4")).isEqualTo(stored);
+  }
+
+  @Test
+  @DisplayName(
+      "Should publish an initialization segment when it matches the one stored for the variant")
+  void shouldPublishInitializationSegmentWhenItMatchesOneStoredForVariant() {
+    var sessionId = UUID.randomUUID();
+    var stored = "ftyp moov from encoder A".getBytes();
+    store.storeSegment(sessionId, "init.mp4", stored);
+
+    var publication = store.storeSegment(sessionId, "init.mp4", stored.clone());
+
+    assertThat(publication).isEqualTo(SegmentPublication.PUBLISHED);
+    assertThat(store.readSegment(sessionId, "init.mp4")).isEqualTo(stored);
+  }
+
+  @Test
+  @DisplayName(
+      "Should store exactly one initialization segment when differing ones are published concurrently")
+  void shouldStoreExactlyOneInitializationSegmentWhenDifferingOnesArePublishedConcurrently()
+      throws Exception {
+    var contenders = 8;
+    try (var executor = Executors.newFixedThreadPool(contenders)) {
+      for (var round = 0; round < 25; round++) {
+        var sessionId = UUID.randomUUID();
+        var start = new CountDownLatch(1);
+        var publications = new ArrayList<Future<SegmentPublication>>();
+        for (var contender = 0; contender < contenders; contender++) {
+          var prepared =
+              store.prepareSegment(sessionId, "720p/init.mp4", ("encoder " + contender).getBytes());
+          publications.add(executor.submit(() -> publishAfter(start, prepared)));
+        }
+
+        start.countDown();
+
+        var published = new ArrayList<Integer>();
+        for (var contender = 0; contender < contenders; contender++) {
+          if (publications.get(contender).get(5, TimeUnit.SECONDS)
+              == SegmentPublication.PUBLISHED) {
+            published.add(contender);
+          }
+        }
+
+        assertThat(published).as("contenders stored in round %s", round).hasSize(1);
+        assertThat(store.readSegment(sessionId, "720p/init.mp4"))
+            .isEqualTo(("encoder " + published.getFirst()).getBytes());
+      }
+    }
+  }
+
+  private static SegmentPublication publishAfter(
+      CountDownLatch start, SegmentStore.PreparedSegment prepared) throws InterruptedException {
+    try (prepared) {
+      start.await();
+      return prepared.publish();
+    }
   }
 
   @Test
