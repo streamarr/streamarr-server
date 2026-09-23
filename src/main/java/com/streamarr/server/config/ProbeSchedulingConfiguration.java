@@ -8,7 +8,9 @@ import com.github.kagkarlsson.scheduler.TaskResolver;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
 import com.github.kagkarlsson.scheduler.event.SchedulerListeners;
 import com.github.kagkarlsson.scheduler.jdbc.AutodetectJdbcCustomization;
+import com.github.kagkarlsson.scheduler.jdbc.JdbcCustomization;
 import com.github.kagkarlsson.scheduler.jdbc.JdbcTaskRepository;
+import com.github.kagkarlsson.scheduler.jdbc.PostgreSqlJdbcCustomization;
 import com.github.kagkarlsson.scheduler.serializer.Serializer;
 import com.github.kagkarlsson.scheduler.task.Task;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
@@ -94,6 +96,15 @@ public class ProbeSchedulingConfiguration {
     @Override
     public Optional<ExecutorService> executorService() {
       return Optional.of(Executors.newVirtualThreadPerTaskExecutor());
+    }
+
+    // The library's single-statement PostgreSQL claim nests its LIMIT inside the UPDATE's IN
+    // subquery. When the planner rescans that subquery per candidate row, rows the statement has
+    // already updated are skipped and the LIMIT bounds each rescan, so one claim can pick every
+    // due execution. The generic claim selects the limited rows first and updates exactly them.
+    @Override
+    public Optional<JdbcCustomization> jdbcCustomization() {
+      return Optional.of(new PostgreSqlJdbcCustomization(true, false));
     }
 
     @Override

@@ -28,6 +28,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Clock;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -64,6 +65,22 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
 
   @BeforeEach
   void clearScheduledTasks() {
+    dsl.deleteFrom(DSL.table("scheduled_tasks")).execute();
+  }
+
+  // Statistics gathered at one row make PostgreSQL join the claim's LIMIT subquery as a rescanned
+  // inner side, the plan under which a single-statement lock-and-fetch claims every due execution.
+  void analyzeScheduledTasksWithOneRow() {
+    dsl.insertInto(
+            DSL.table("scheduled_tasks"),
+            DSL.field("task_name"),
+            DSL.field("task_instance"),
+            DSL.field("execution_time"),
+            DSL.field("picked"),
+            DSL.field("version"))
+        .values("statistics-only", UUID.randomUUID().toString(), OffsetDateTime.now(), false, 0L)
+        .execute();
+    dsl.execute("ANALYZE scheduled_tasks");
     dsl.deleteFrom(DSL.table("scheduled_tasks")).execute();
   }
 
