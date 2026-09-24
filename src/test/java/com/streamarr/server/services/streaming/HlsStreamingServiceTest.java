@@ -84,25 +84,25 @@ class HlsStreamingServiceTest {
       "Should reject the stream session when the video must be encoded and the probe has no frame rate")
   void shouldRejectTheStreamSessionWhenTheVideoMustBeEncodedAndTheProbeHasNoFrameRate(
       String audioCodec, VideoQuality quality, TranscodeMode encodingMode) {
-    var probe =
-        defaultProbeBuilder()
-            .videoCodec("hevc")
-            .audioCodec(audioCodec)
-            .framerate(OptionalDouble.empty())
-            .build();
-    probeResults.setDefaultProbe(probe);
+    var probe = defaultProbeBuilder().videoCodec("hevc").audioCodec(audioCodec);
     var options =
         StreamingOptions.builder().quality(quality).supportedCodecs(List.of("h264")).build();
-    assertThat(new TranscodeDecisionService().decide(probe, options).transcodeMode())
-        .isEqualTo(encodingMode);
     var file = seedMediaFile();
+    var profileId = UUID.randomUUID();
+    probeResults.setDefaultProbe(probe.framerate(OptionalDouble.of(23.976)).build());
+    var encoded = createSession(file.getId(), profileId, options);
+    service.destroySession(encoded.getSessionId());
+    var startedRequests = List.copyOf(transcodeExecutor.getStartedRequests());
+    probeResults.setDefaultProbe(probe.framerate(OptionalDouble.empty()).build());
 
-    assertThat(
-            service.createSession(
-                createStreamSessionCommand(file.getId(), UUID.randomUUID(), options)))
+    var outcome =
+        service.createSession(createStreamSessionCommand(file.getId(), profileId, options));
+
+    assertThat(encoded.getTranscodeDecision().transcodeMode()).isEqualTo(encodingMode);
+    assertThat(outcome)
         .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.FrameRateUnknown()));
     assertThat(service.getActiveSessionCount()).isZero();
-    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+    assertThat(transcodeExecutor.getStartedRequests()).isEqualTo(startedRequests);
   }
 
   @Test
