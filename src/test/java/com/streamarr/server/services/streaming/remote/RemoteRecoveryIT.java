@@ -6,7 +6,6 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.playbackAuthori
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-import com.google.common.primitives.Bytes;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -16,6 +15,7 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
+import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.RecordedStream;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
@@ -101,9 +101,8 @@ class RemoteRecoveryIT {
                 ready ->
                     assertThat(RecordedStream.START_AT_ZERO.bytes())
                         .startsWith(
-                            Bytes.concat(
-                                segmentStore.readSegment(streamSessionId, "init.mp4"),
-                                ready.data())));
+                            Fmp4Fixture.withInitializationSegment(
+                                segmentStore, streamSessionId, ready.data())));
         assertThat(rig.session().getHandle().orElseThrow().status())
             .isEqualTo(TranscodeStatus.ACTIVE);
       }
@@ -185,8 +184,8 @@ class RemoteRecoveryIT {
               SegmentDelivery.Ready.class,
               ready ->
                   assertThat(
-                          Bytes.concat(
-                              segmentStore.readSegment(streamSessionId, "init.mp4"), ready.data()))
+                          Fmp4Fixture.withInitializationSegment(
+                              segmentStore, streamSessionId, ready.data()))
                       .as("the stored initialization segment and the replacement's segment 1")
                       .isEqualTo(RecordedStream.SEEK_TO_SIX_SECONDS.bytes()));
       assertInitialAttemptsSegmentsStored(segmentStore, streamSessionId);
@@ -273,8 +272,9 @@ class RemoteRecoveryIT {
     assertThat(RecordedStream.START_AT_ZERO.bytes())
         .as("the initial attempt's initialization segment and segment 0 stay stored")
         .startsWith(
-            Bytes.concat(
-                segmentStore.readSegment(streamSessionId, "init.mp4"),
+            Fmp4Fixture.withInitializationSegment(
+                segmentStore,
+                streamSessionId,
                 segmentStore.readSegment(streamSessionId, "segment0.m4s")));
   }
 

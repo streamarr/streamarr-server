@@ -11,6 +11,7 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
+import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
@@ -174,7 +175,7 @@ class HlsRecoveryContinuitySmokeTest {
         .as("the replacement attempt's initialization segment matched the stored one")
         .isInstanceOf(SegmentDelivery.Ready.class);
     assertThat(segmentStore.readSegment(sessionId, "init.mp4")).isEqualTo(storedInitialization);
-    var recoveredMedia = withInitializationSegment(sessionId, "segment1.m4s");
+    var recoveredMedia = decodableMediaFile(sessionId, "segment1.m4s");
 
     assertThat(workerFixture.worker().decodedVideoFrameCount(recoveredMedia))
         .as("recovered initialization and media fragment must decode together")
@@ -215,20 +216,14 @@ class HlsRecoveryContinuitySmokeTest {
   }
 
   private List<Double> packetTimestamps(UUID sessionId, String segmentName) throws Exception {
-    return workerFixture
-        .worker()
-        .packetTimestamps(withInitializationSegment(sessionId, segmentName));
+    return workerFixture.worker().packetTimestamps(decodableMediaFile(sessionId, segmentName));
   }
 
-  /** A media segment decodes only after its variant's initialization segment. */
-  private Path withInitializationSegment(UUID sessionId, String segmentName) throws Exception {
-    var outputDir = segmentStore.getOutputDirectory(sessionId);
+  private Path decodableMediaFile(UUID sessionId, String segmentName) throws Exception {
     var media = temporaryDirectory.resolve("decodable-" + segmentName + ".mp4");
-    try (var output = Files.newOutputStream(media)) {
-      Files.copy(outputDir.resolve(SegmentNames.INITIALIZATION_SEGMENT), output);
-      Files.copy(outputDir.resolve(segmentName), output);
-    }
-
-    return media;
+    return Files.write(
+        media,
+        Fmp4Fixture.withInitializationSegment(
+            segmentStore, sessionId, segmentStore.readSegment(sessionId, segmentName)));
   }
 }

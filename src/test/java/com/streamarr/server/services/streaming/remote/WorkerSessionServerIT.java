@@ -778,12 +778,12 @@ class WorkerSessionServerIT {
         var initialUpload = segmentMetadata(workerSession, identity, initial);
         upload(
                 channel,
-                fmp4Metadata(initialUpload, "init.mp4", storedInitialization),
+                namedSegment(initialUpload, "init.mp4", storedInitialization),
                 storedInitialization)
             .get(5, TimeUnit.SECONDS);
         upload(
                 channel,
-                fmp4Metadata(initialUpload, "segment0.m4s", firstMediaSegment),
+                namedSegment(initialUpload, "segment0.m4s", firstMediaSegment),
                 firstMediaSegment)
             .get(5, TimeUnit.SECONDS);
         worker.send(
@@ -801,7 +801,7 @@ class WorkerSessionServerIT {
         var refused =
             upload(
                 channel,
-                fmp4Metadata(
+                namedSegment(
                     segmentMetadata(workerSession, identity, replacement),
                     "init.mp4",
                     differingInitialization),
@@ -817,7 +817,7 @@ class WorkerSessionServerIT {
         assertUploadRejected(
             upload(
                 channel,
-                fmp4Metadata(
+                namedSegment(
                     segmentMetadata(workerSession, identity, replacement),
                     "segment1.m4s",
                     laterMediaSegment),
@@ -1463,13 +1463,9 @@ class WorkerSessionServerIT {
         .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP4);
   }
 
-  private static SegmentUploadMetadata fmp4Metadata(
+  private static SegmentUploadMetadata namedSegment(
       SegmentUploadMetadata.Builder metadata, String segmentName, byte[] data) {
-    return metadata
-        .setSegmentName(segmentName)
-        .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP4)
-        .setContentLengthBytes(data.length)
-        .build();
+    return metadata.setSegmentName(segmentName).setContentLengthBytes(data.length).build();
   }
 
   private CompletableFuture<UploadSegmentResponse> upload(

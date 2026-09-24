@@ -118,7 +118,7 @@ final class MeshMediaHandler implements HttpHandler {
     }
 
     try {
-      return segments.awaitFirstSegment(sessionId);
+      return segments.awaitFirstDecodableMedia(sessionId);
     } finally {
       server.stopStreamSession(sessionId);
       segments.deleteSession(sessionId);

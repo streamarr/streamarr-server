@@ -23,6 +23,7 @@ import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeStreamingService;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
+import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.RecordedStream;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
@@ -33,7 +34,6 @@ import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -121,7 +121,7 @@ class RemotePlaybackIT {
               });
       var bodies = responses.stream().map(ResponseEntity::getBody).toList();
       assertThat(bodies)
-          .extracting(RemotePlaybackIT::firstBoxType)
+          .extracting(Fmp4Fixture::firstBoxType)
           .as("the initialization segment, then media segments that each open with a fragment")
           .containsExactly("ftyp", "moof", "moof");
       assertThat(Bytes.concat(bodies.toArray(byte[][]::new)))
@@ -194,11 +194,11 @@ class RemotePlaybackIT {
       var response = playback.controller().getSegment(streamSessionId, "segment0.m4s");
 
       assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
-      assertThat(firstBoxType(response.getBody())).isEqualTo("moof");
+      assertThat(Fmp4Fixture.firstBoxType(response.getBody())).isEqualTo("moof");
       assertThat(RecordedStream.START_AT_ZERO.bytes())
           .startsWith(
-              Bytes.concat(
-                  segmentStore.readSegment(streamSessionId, "init.mp4"), response.getBody()));
+              Fmp4Fixture.withInitializationSegment(
+                  segmentStore, streamSessionId, response.getBody()));
     }
   }
 
@@ -612,11 +612,6 @@ class RemotePlaybackIT {
               .containsSubsequence("-b:a", "128k");
       case NONE -> assertThat(command).doesNotContain("-c:a", "0:a:0");
     }
-  }
-
-  private static String firstBoxType(byte[] media) {
-    assertThat(media).hasSizeGreaterThanOrEqualTo(8);
-    return new String(media, 4, 4, StandardCharsets.US_ASCII);
   }
 
   private String argument(List<String> command, String flag) {

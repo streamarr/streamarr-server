@@ -23,7 +23,7 @@ class MeshSegmentStoreTest {
     store.storeSegment(sessionId, "segment1.m4s", "later".getBytes(StandardCharsets.UTF_8));
     store.storeSegment(sessionId, "segment0.m4s", "first".getBytes(StandardCharsets.UTF_8));
 
-    assertThat(store.awaitFirstSegment(sessionId))
+    assertThat(store.awaitFirstDecodableMedia(sessionId))
         .isEqualTo("init first".getBytes(StandardCharsets.UTF_8));
   }
 
@@ -38,7 +38,7 @@ class MeshSegmentStoreTest {
     store.storeSegment(sessionId, "init.mp4", "init ".getBytes(StandardCharsets.UTF_8));
     store.storeSegment(sessionId, "segment0.m4s", "next".getBytes(StandardCharsets.UTF_8));
 
-    assertThat(store.awaitFirstSegment(sessionId))
+    assertThat(store.awaitFirstDecodableMedia(sessionId))
         .isEqualTo("init next".getBytes(StandardCharsets.UTF_8));
   }
 }

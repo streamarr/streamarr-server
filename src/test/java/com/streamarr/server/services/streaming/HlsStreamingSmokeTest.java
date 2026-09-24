@@ -19,6 +19,7 @@ import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.RecordedStream;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.filepath.FilepathCodec;
@@ -28,7 +29,6 @@ import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.support.OutcomeTestSupport;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -267,8 +267,8 @@ class HlsStreamingSmokeTest {
 
     var initialization = segmentStore.readSegment(session.getSessionId(), "init.mp4");
     var segmentData = segmentStore.readSegment(session.getSessionId(), "segment0.m4s");
-    assertThat(boxType(initialization)).isEqualTo("ftyp");
-    assertThat(boxType(segmentData)).isEqualTo("moof");
+    assertThat(Fmp4Fixture.firstBoxType(initialization)).isEqualTo("ftyp");
+    assertThat(Fmp4Fixture.firstBoxType(segmentData)).isEqualTo("moof");
   }
 
   @Test
@@ -411,10 +411,5 @@ class HlsStreamingSmokeTest {
                   .isTrue();
               assertThat(workerFixture.worker().processRunning(attemptId)).isFalse();
             });
-  }
-
-  private static String boxType(byte[] media) {
-    assertThat(media).hasSizeGreaterThanOrEqualTo(8);
-    return new String(media, 4, 4, StandardCharsets.US_ASCII);
   }
 }
