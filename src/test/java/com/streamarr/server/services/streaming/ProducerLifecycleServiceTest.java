@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming;
 import static com.streamarr.server.fixtures.StreamSessionFixture.abrSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
+import static com.streamarr.server.fixtures.StreamSessionFixture.sessionWithDurationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 
@@ -381,14 +382,16 @@ class ProducerLifecycleServiceTest {
   @DisplayName(
       "Should advertise the whole timeline's media segment count when installing a replacement attempt")
   void shouldAdvertiseTheWholeTimelineMediaSegmentCountWhenInstallingReplacementAttempt() {
-    var session = startedSession();
-    transcodeExecutor.markDead(session.getSessionId());
+    var sixtySecondSession = sessionWithDurationBuilder(60).build();
+    runtimeRegistry.save(sixtySecondSession);
+    lifecycle.startAll(sixtySecondSession, 0, 0);
+    transcodeExecutor.markDead(sixtySecondSession.getSessionId());
 
-    recover(session);
+    recover(sixtySecondSession);
 
     var request = transcodeExecutor.getStartedRequests().getLast();
     assertThat(request.startSequenceNumber()).isEqualTo(2);
-    assertThat(request.mediaSegmentCount()).isEqualTo(1200);
+    assertThat(request.mediaSegmentCount()).isEqualTo(10);
   }
 
   @Test
