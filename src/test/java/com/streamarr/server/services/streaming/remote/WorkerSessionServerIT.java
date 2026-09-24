@@ -812,12 +812,7 @@ class WorkerSessionServerIT {
             .isEqualTo(replacement.getJobAttemptId());
         assertThat(server.isRunning(streamSessionId, "720p")).isFalse();
         assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
-        assertThat(
-                meterRegistry
-                    .get("streamarr.streaming.initialization_segment_mismatches")
-                    .counter()
-                    .count())
-            .isEqualTo(1);
+        assertThat(InitializationSegmentMismatchMetric.count(meterRegistry)).isEqualTo(1);
         var laterMediaSegment = "moof mdat of segment 1".getBytes();
         assertUploadRejected(
             upload(

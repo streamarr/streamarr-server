@@ -295,11 +295,8 @@ class RemoteRecoveryIT {
                     .isRunning(streamSessionId, StreamSession.defaultVariant()));
   }
 
-  private static double initializationSegmentMismatches(SimpleMeterRegistry meterRegistry) {
-    return meterRegistry
-        .get("streamarr.streaming.initialization_segment_mismatches")
-        .counter()
-        .count();
+  private static double initializationSegmentMismatches(MeterRegistry meterRegistry) {
+    return InitializationSegmentMismatchMetric.count(meterRegistry);
   }
 
   private record RecoveryRig(
