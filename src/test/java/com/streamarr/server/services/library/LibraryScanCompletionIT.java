@@ -108,7 +108,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
 
   @Test
   @DisplayName("Should finish the scan once the probe failure is recorded and keep retrying it")
-  void shouldFinishTheScanOnceTheProbeFailureIsRecordedAndKeepRetryingIt() throws Exception {
+  void shouldFinishTheScanOnceTheProbeFailureIsRecordedAndKeepRetryingIt() {
     var client =
         startScheduler(
             probeExecution.toBuilder()
