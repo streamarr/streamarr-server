@@ -154,14 +154,17 @@ class HlsStreamingServiceTest {
     service = serviceWith(transcodeExecutor, runtimeRegistry);
   }
 
+  private static StreamingProperties streamingProperties() {
+    return StreamingProperties.builder()
+        .maxConcurrentTranscodes(3)
+        .targetSegmentDuration(Duration.ofSeconds(6))
+        .sessionTimeout(Duration.ofSeconds(60))
+        .build();
+  }
+
   private HlsStreamingService serviceWith(
       TranscodeExecutor executor, RuntimeStreamSessionRegistry registry) {
-    var properties =
-        StreamingProperties.builder()
-            .maxConcurrentTranscodes(3)
-            .targetSegmentDuration(Duration.ofSeconds(6))
-            .sessionTimeout(Duration.ofSeconds(60))
-            .build();
+    var properties = streamingProperties();
     var rig =
         StreamingRigFixture.streamingRigBuilder()
             .transcodeExecutor(executor)
