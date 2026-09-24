@@ -76,6 +76,20 @@ class SegmentNamesTest {
     assertThat(SegmentNames.isInitSegment("notinit.mp4")).isFalse();
   }
 
+  @ParameterizedTest
+  @ValueSource(strings = {"segment3.m4s", "720p/segment3.m4s", "init.mp4", "720p/init.mp4"})
+  @DisplayName("Should match the naming scheme when the name is a media or initialization segment")
+  void shouldMatchNamingSchemeWhenNameIsMediaOrInitializationSegment(String name) {
+    assertThat(SegmentNames.matchesNamingScheme(name)).isTrue();
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"segment7.ts", "foo.m4s", "notinit.mp4", "segment5.mp4", "init.m4s"})
+  @DisplayName("Should match no naming scheme when the name is neither kind of segment")
+  void shouldMatchNoNamingSchemeWhenNameIsNeitherKindOfSegment(String name) {
+    assertThat(SegmentNames.matchesNamingScheme(name)).isFalse();
+  }
+
   @Test
   @DisplayName("Should recognize fMP4 extensions when a name ends in m4s or mp4")
   void shouldRecognizeFmp4ExtensionsWhenNameEndsInM4sOrMp4() {

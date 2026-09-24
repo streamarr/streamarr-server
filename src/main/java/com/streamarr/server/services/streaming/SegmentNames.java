@@ -38,6 +38,11 @@ public final class SegmentNames {
     return INITIALIZATION_SEGMENT_NAME.equals(basename(segmentName));
   }
 
+  /** Whether the name is a media segment's or an initialization segment's. */
+  public static boolean matchesNamingScheme(String segmentName) {
+    return indexOf(segmentName).isPresent() || isInitSegment(segmentName);
+  }
+
   public static OptionalInt indexOf(String segmentName) {
     var matcher = MEDIA_SEGMENT_PATTERN.matcher(basename(segmentName));
     if (!matcher.matches()) {
@@ -53,11 +58,11 @@ public final class SegmentNames {
    * point progress checks at a file no job attempt can ever produce.
    */
   public static String siblingName(String segmentName, int index) {
-    var base = basename(segmentName);
-    if (!MEDIA_SEGMENT_PATTERN.matcher(base).matches() && !isInitSegment(segmentName)) {
+    if (!matchesNamingScheme(segmentName)) {
       throw new IllegalArgumentException("Segment name matches no known scheme: " + segmentName);
     }
 
+    var base = basename(segmentName);
     var directory = segmentName.substring(0, segmentName.length() - base.length());
     return directory + mediaSegmentName(index);
   }
