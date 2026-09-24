@@ -12,13 +12,16 @@ import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
+import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.support.AuthTestSupport;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -36,8 +39,11 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MovieRepository movieRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
+  @Autowired private AuthTestSupport authTestSupport;
 
   @TempDir Path tempDir;
+
+  private AuthTestSupport.TestIdentity admin;
 
   @BeforeEach
   void cleanupDatabase() {
@@ -45,6 +51,43 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     mediaFileRepository.deleteAll();
     movieRepository.deleteAll();
     libraryRepository.deleteAll();
+  }
+
+  @AfterEach
+  void deleteAdmin() {
+    if (admin != null) {
+      authTestSupport.deleteIdentity(admin);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a library's movie and file when another library holding the same movie is"
+          + " removed")
+  void shouldKeepLibraryMovieAndFileWhenAnotherLibraryHoldingSameMovieIsRemoved()
+      throws IOException {
+    var removedLibrary = createMovieLibrary(tempDir.resolve("removed"));
+    var keptLibrary = createMovieLibrary(tempDir.resolve("kept"));
+    createMovieFile("removed/Inception (2010)", "Inception (2010).mkv");
+    var keptFile = createMovieFile("kept/Inception (2010)", "Inception (2010).mkv");
+
+    stubTmdbMovieSearch("Inception", "27205", "Inception", "2010-07-16");
+    stubTmdbMovieMetadata("27205", "Inception");
+
+    libraryManagementService.scanLibrary(removedLibrary.getId());
+    libraryManagementService.scanLibrary(keptLibrary.getId());
+
+    admin = authTestSupport.createAdminIdentity();
+    libraryManagementService.removeLibrary(
+        authTestSupport.identityOf(admin), removedLibrary.getId());
+
+    assertThat(mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(keptFile)))
+        .as("kept library's media file")
+        .isPresent();
+    assertThat(movieRepository.findByLibrary_Id(keptLibrary.getId()))
+        .as("kept library's movies")
+        .extracting(Movie::getTitle)
+        .containsExactly("Inception");
   }
 
   @Test
@@ -97,13 +140,18 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
 
   // --- Helpers ---
 
-  private Library createMovieLibrary() {
+  private Library createMovieLibrary() throws IOException {
+    return createMovieLibrary(tempDir);
+  }
+
+  private Library createMovieLibrary(Path root) throws IOException {
+    Files.createDirectories(root);
     return libraryRepository.saveAndFlush(
         Library.builder()
             .name("Movies")
             .backend(LibraryBackend.LOCAL)
             .status(LibraryStatus.HEALTHY)
-            .filepathUri(FilepathCodec.encode(tempDir))
+            .filepathUri(FilepathCodec.encode(root))
             .externalAgentStrategy(ExternalAgentStrategy.TMDB)
             .type(MediaType.MOVIE)
             .build());

@@ -11,6 +11,8 @@ import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ContentRating;
+import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
@@ -20,6 +22,7 @@ import com.streamarr.server.repositories.CompanyRepository;
 import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.PersonRepository;
+import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
@@ -27,6 +30,7 @@ import com.streamarr.server.utils.TitleSortUtil;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Stream;
 import org.jooq.SortOrder;
 import org.junit.jupiter.api.BeforeAll;
@@ -56,6 +60,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
   @Autowired private JdbcTemplate jdbcTemplate;
 
   @Autowired private MovieService movieService;
+
+  @Autowired private MediaFileRepository mediaFileRepository;
 
   private Library savedLibraryA;
   private Library savedLibraryB;
@@ -417,6 +423,42 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
       assertThat(libraryAMovies.items()).hasSize(2);
       assertThat(libraryBMovies.items()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("Should not attach media file to another library's movie when TMDB ids match")
+    void shouldNotAttachMediaFileToAnotherLibrarysMovieWhenTmdbIdsMatch() {
+      var tmdbId = UUID.randomUUID().toString();
+      var otherLibrary = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+      var fileLibrary = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+      var otherLibraryMovie =
+          movieRepository.saveAndFlush(
+              Movie.builder()
+                  .title("Inception")
+                  .library(otherLibrary)
+                  .externalIds(
+                      Set.of(
+                          ExternalIdentifier.builder()
+                              .externalId(tmdbId)
+                              .externalSourceType(ExternalSourceType.TMDB)
+                              .build()))
+                  .build());
+      var mediaFile =
+          mediaFileRepository.saveAndFlush(
+              MediaFile.builder()
+                  .libraryId(fileLibrary.getId())
+                  .filepathUri("file:///library/" + tmdbId + "/Inception (2010).mkv")
+                  .filename("Inception (2010).mkv")
+                  .status(MediaFileStatus.UNMATCHED)
+                  .build());
+
+      movieService.addMediaFileToMovieByTmdbId(tmdbId, mediaFile);
+
+      assertThat(mediaFileRepository.findById(mediaFile.getId()))
+          .get()
+          .extracting(MediaFile::getMediaId)
+          .as("media id of the file in library %s", fileLibrary.getId())
+          .isNotEqualTo(otherLibraryMovie.getId());
     }
   }
 
