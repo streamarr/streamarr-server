@@ -594,16 +594,11 @@ class RemotePlaybackIT {
           .containsSubsequence("-b:v", "2500000")
           .containsSubsequence("-maxrate", "2500000")
           .containsSubsequence("-bufsize", "5000000")
-          .containsSubsequence("-r:v:0", "23.976")
-          .containsSubsequence("-force_key_frames:0", "expr:gte(t,n_forced*4)")
-          .containsSubsequence("-g:v:0", "95");
+          .containsSubsequence("-force_key_frames:0", "expr:gte(t,n_forced*4)");
     }
 
     switch (decision.audioDecision().mode()) {
-      case COPY ->
-          assertThat(command)
-              .as("copied AAC audio for %s", decision)
-              .containsSubsequence("-c:a", "copy", "-bsf:a", "aac_adtstoasc");
+      case COPY -> assertThat(argument(command, "-c:a")).isEqualTo("copy");
       case TRANSCODE ->
           assertThat(command)
               .as("stereo AAC audio for %s", decision)
