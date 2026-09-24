@@ -82,10 +82,10 @@ class FileDiscoveryRunsTest {
 
   @Test
   @DisplayName("Should report required results when secondary artwork is still pending")
-  void shouldReportRequiredResultsWhenSecondaryArtworkIsStillPending() throws IOException {
+  void shouldReportRequiredResultsWhenSecondaryArtworkIsStillPending() throws Exception {
     imageDownloader.holdPathsStartingWith("/profile");
     artworkService.fetchSecondary(personArtwork(), ImageRefreshMode.PRESERVE);
-    await().atMost(Duration.ofSeconds(5)).until(() -> imageDownloader.heldDownloads() == 1);
+    imageDownloader.awaitHeldDownloads(1, Duration.ofSeconds(5));
     var runs = fileDiscoveryRuns();
     var discovery = runs.open("scan of", library);
     try (discovery) {
@@ -173,7 +173,7 @@ class FileDiscoveryRunsTest {
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var results = executor.submit(() -> runs.awaitResults(discovery));
-      await().atMost(Duration.ofSeconds(5)).until(() -> imageDownloader.heldDownloads() == 1);
+      imageDownloader.awaitHeldDownloads(1, Duration.ofSeconds(5));
       await().pollDelay(Duration.ofMillis(300)).until(() -> true);
       imageDownloader.releaseHeldDownloads();
 

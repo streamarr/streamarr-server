@@ -5,7 +5,6 @@ import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
-import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
@@ -227,13 +226,13 @@ class ArtworkServiceTest {
 
     @Test
     @DisplayName("Should report failure when the service stops during a download")
-    void shouldReportFailureWhenServiceStopsDuringDownload() {
+    void shouldReportFailureWhenServiceStopsDuringDownload() throws Exception {
       var downloader = new GatedImageDownloader(createTestImage(600, 900));
       downloader.holdPathsStartingWith("/");
       var service = artworkServiceWith(downloader);
       var run = service.openRun("scan", ImageRefreshMode.PRESERVE);
       var request = service.fetchRequired(run, movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
-      await().atMost(Duration.ofSeconds(5)).until(() -> downloader.heldDownloads() == 2);
+      downloader.awaitHeldDownloads(2, Duration.ofSeconds(5));
 
       service.shutdown();
       run.close();
@@ -332,13 +331,13 @@ class ArtworkServiceTest {
 
     @Test
     @DisplayName("Should time run until the last request finishes after discovery closes")
-    void shouldTimeRunUntilLastRequestFinishesAfterDiscoveryCloses() {
+    void shouldTimeRunUntilLastRequestFinishesAfterDiscoveryCloses() throws Exception {
       var downloader = new GatedImageDownloader(createTestImage(600, 900));
       downloader.holdPathsStartingWith("/poster");
       var service = artworkServiceWith(downloader);
       var run = service.openRun("scan", ImageRefreshMode.PRESERVE);
       var request = service.fetchRequired(run, movieArtwork(UUID.randomUUID(), POSTER));
-      await().atMost(Duration.ofSeconds(5)).until(() -> downloader.heldDownloads() == 1);
+      downloader.awaitHeldDownloads(1, Duration.ofSeconds(5));
 
       clock.advance(Duration.ofSeconds(4));
       run.close();
@@ -412,7 +411,7 @@ class ArtworkServiceTest {
 
     @Test
     @DisplayName("Should finish required artwork while secondary downloads are held open")
-    void shouldFinishRequiredArtworkWhileSecondaryDownloadsAreHeldOpen() {
+    void shouldFinishRequiredArtworkWhileSecondaryDownloadsAreHeldOpen() throws Exception {
       var downloader = new GatedImageDownloader(createTestImage(600, 900));
       downloader.holdPathsStartingWith("/profile");
       var service =
@@ -428,7 +427,7 @@ class ArtworkServiceTest {
                       service.fetchSecondary(
                           personArtwork("/profile-" + index + ".jpg"), ImageRefreshMode.PRESERVE))
               .toList();
-      await().atMost(Duration.ofSeconds(5)).until(() -> downloader.heldDownloads() == 2);
+      downloader.awaitHeldDownloads(2, Duration.ofSeconds(5));
 
       List<ArtworkResult> requiredResults;
       try (var run = service.openRun("scan", ImageRefreshMode.PRESERVE)) {
@@ -480,13 +479,13 @@ class ArtworkServiceTest {
 
     @Test
     @DisplayName("Should report pending source images when required artwork is in flight")
-    void shouldReportPendingSourceImagesWhenRequiredArtworkIsInFlight() {
+    void shouldReportPendingSourceImagesWhenRequiredArtworkIsInFlight() throws Exception {
       var downloader = new GatedImageDownloader(createTestImage(600, 900));
       downloader.holdPathsStartingWith("/");
       var service = artworkServiceWith(downloader);
       var run = service.openRun("scan", ImageRefreshMode.PRESERVE);
       service.fetchRequired(run, movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
-      await().atMost(Duration.ofSeconds(5)).until(() -> downloader.heldDownloads() == 2);
+      downloader.awaitHeldDownloads(2, Duration.ofSeconds(5));
       clock.advance(Duration.ofSeconds(5));
 
       var reports = progress.reportProgress();
@@ -505,14 +504,14 @@ class ArtworkServiceTest {
 
     @Test
     @DisplayName("Should stop the lane timer when work finishes rather than when it is reported")
-    void shouldStopLaneTimerWhenWorkFinishesRatherThanWhenReported() {
+    void shouldStopLaneTimerWhenWorkFinishesRatherThanWhenReported() throws Exception {
       var downloader = new GatedImageDownloader(createTestImage(600, 900));
       downloader.holdPathsStartingWith("/");
       var service = artworkServiceWith(downloader);
       List<ArtworkResult> results;
       try (var run = service.openRun("scan", ImageRefreshMode.PRESERVE)) {
         var request = service.fetchRequired(run, movieArtwork(UUID.randomUUID(), POSTER));
-        await().atMost(Duration.ofSeconds(5)).until(() -> downloader.heldDownloads() == 1);
+        downloader.awaitHeldDownloads(1, Duration.ofSeconds(5));
         clock.advance(Duration.ofSeconds(4));
         downloader.releaseHeldDownloads();
         results = awaitResult(request);
@@ -606,14 +605,15 @@ class ArtworkServiceTest {
     @DisplayName(
         "Should fail the run only after its other requests finish when a result cannot be"
             + " recorded")
-    void shouldFailTheRunOnlyAfterItsOtherRequestsFinishWhenAResultCannotBeRecorded() {
+    void shouldFailTheRunOnlyAfterItsOtherRequestsFinishWhenAResultCannotBeRecorded()
+        throws Exception {
       var downloader = new GatedImageDownloader(createTestImage(600, 900));
       downloader.holdPathsStartingWith("/held");
       var service = artworkServiceWith(downloader);
       var run = service.openRun("scan", ImageRefreshMode.PRESERVE);
       service.fetchRequired(
           run, movieArtwork(UUID.randomUUID(), new TmdbImageSource(ImageType.POSTER, "/held.jpg")));
-      await().atMost(Duration.ofSeconds(5)).until(() -> downloader.heldDownloads() == 1);
+      downloader.awaitHeldDownloads(1, Duration.ofSeconds(5));
       itemResults.failWritesWith(recordingFailure);
 
       var failed = service.fetchRequired(run, movieArtwork(UUID.randomUUID(), POSTER));
