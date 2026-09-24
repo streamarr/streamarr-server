@@ -83,6 +83,9 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
 
   @BeforeEach
   void setUp() {
+    // The completion latch counts any execution, so a due execution left by an earlier class
+    // would release it before the test's own probe runs.
+    dsl.deleteFrom(DSL.table("scheduled_tasks")).execute();
     var execution =
         ProbeExecution.builder()
             .mediaFiles(mediaFileRepository)
