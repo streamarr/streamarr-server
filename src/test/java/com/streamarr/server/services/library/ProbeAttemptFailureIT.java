@@ -17,6 +17,7 @@ import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
+import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import java.time.Duration;
@@ -39,6 +40,7 @@ class ProbeAttemptFailureIT extends AbstractProbeSchedulerIntegrationTest {
 
   @Autowired private MediaFileContainerInfoRepository outcomes;
   @Autowired private ProbeTaskRequests probeTaskRequests;
+  @Autowired private MediaFileRepository mediaFileRepository;
 
   @Test
   @DisplayName(
@@ -177,6 +179,26 @@ class ProbeAttemptFailureIT extends AbstractProbeSchedulerIntegrationTest {
         .hasValueSatisfying(
             failure ->
                 assertThat(failure.reason()).isEqualTo(ItemFailureReason.SOURCE_INACCESSIBLE));
+  }
+
+  @Test
+  @DisplayName("Should stop retrying when the media file is deleted during a failing attempt")
+  void shouldStopRetryingWhenTheMediaFileIsDeletedDuringAFailingAttempt() throws Exception {
+    var request = requestUnchangedFiles(1).getFirst();
+    var probing = new CountDownLatch(1);
+    var release = new CompletableFuture<Void>();
+    var completions = new CountDownLatch(1);
+    var client =
+        startScheduler(
+            probeExecution.toBuilder().producer(workerFailingAfter(probing, release)).build(),
+            countingCompletions(completions));
+    assertThat(probing.await(10, TimeUnit.SECONDS)).isTrue();
+    mediaFileRepository.deleteById(request.mediaFileId());
+
+    release.complete(null);
+
+    assertThat(completions.await(10, TimeUnit.SECONDS)).isTrue();
+    assertThat(client.getScheduledExecution(instanceOf(request))).isEmpty();
   }
 
   private SchedulerClient runOnce(RuntimeException failure) throws InterruptedException {
