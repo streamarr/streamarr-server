@@ -3,6 +3,7 @@ package com.streamarr.server.fixtures.mesh;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 
+import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.transcode.v1.AudioDecision;
 import com.streamarr.transcode.v1.AudioMode;
@@ -21,6 +22,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -30,6 +32,10 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RequiredArgsConstructor
 final class MeshMediaHandler implements HttpHandler {
+
+  // The mesh fixture is the committed 10.005 s clip, advertised on a 2 s grid.
+  private static final MediaSegmentTimeline FIXTURE_TIMELINE =
+      new MediaSegmentTimeline(Duration.ofMillis(10_005), Duration.ofSeconds(2));
 
   private final WorkerSessionServer server;
   private final MeshSegmentStore segments;
@@ -111,7 +117,11 @@ final class MeshMediaHandler implements HttpHandler {
                     .setHeight(180)
                     .setBitrateBitsPerSecond(400_000))
             .setExecution(
-                TranscodeExecution.newBuilder().setTargetSegmentDurationSeconds(2).setFramerate(24))
+                TranscodeExecution.newBuilder()
+                    .setTargetSegmentDurationSeconds(
+                        FIXTURE_TIMELINE.targetSegmentDurationSeconds())
+                    .setMediaSegmentCount(FIXTURE_TIMELINE.mediaSegmentCount())
+                    .setFramerate(24))
             .build();
     if (!server.dispatch(job)) {
       throw new IllegalStateException("No worker accepted the media fixture transcode");

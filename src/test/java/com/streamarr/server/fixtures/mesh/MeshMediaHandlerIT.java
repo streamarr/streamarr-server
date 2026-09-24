@@ -3,7 +3,10 @@ package com.streamarr.server.fixtures.mesh;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
+import com.streamarr.server.fixtures.Fmp4Fixture;
+import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
 import com.streamarr.server.services.streaming.remote.protocol.WorkerIdentityMetadata;
@@ -32,6 +35,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -41,6 +46,7 @@ import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -127,6 +133,51 @@ class MeshMediaHandlerIT {
     }
   }
 
+  @Test
+  @DisplayName("Should advertise the fixture's media segment count when dispatching the media job")
+  void shouldAdvertiseFixturesMediaSegmentCountWhenDispatchingTheMediaJob() throws Exception {
+    try (var rig = Rig.builder().media(ProbeMediaInfo.getDefaultInstance()).build()) {
+      rig.request("/media/segment");
+
+      var execution = rig.worker.started.get(5, TimeUnit.SECONDS).getExecution();
+      assertThat(execution.getTargetSegmentDurationSeconds()).isEqualTo(2);
+      assertThat(execution.getMediaSegmentCount())
+          .as("the 10.005 s fixture clip spans six 2 s media segments")
+          .isEqualTo(6);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should return decodable fMP4 media when the standalone worker image executes the media job")
+  void shouldReturnDecodableFmp4MediaWhenStandaloneWorkerImageExecutesTheMediaJob(
+      @TempDir Path tempDir) throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    var clip = MeshMediaHandlerIT.class.getResource("/BigBuckBunny_320x180_10s.mp4");
+    assertThat(clip).isNotNull();
+    Files.copy(Path.of(clip.toURI()), mediaRoot.resolve("mesh-fixture.mkv"));
+
+    try (var rig = Rig.builder().withoutWorker(true).build();
+        var worker =
+            WorkerContainerFixture.builder()
+                .workerSessions(rig.server)
+                .sourceNamespaceId(MeshValidationServer.SOURCE_ID)
+                .sourceRoot(mediaRoot)
+                .build()) {
+      worker.start();
+      await()
+          .atMost(10, TimeUnit.SECONDS)
+          .until(() -> !rig.server.eligibleWorkers(MeshValidationServer.SOURCE_ID).isEmpty());
+
+      var response = rig.requestMedia("/media/segment");
+
+      assertThat(response.statusCode()).isEqualTo(200);
+      assertThat(Fmp4Fixture.firstBoxType(response.body())).isEqualTo("ftyp");
+      var media = Files.write(tempDir.resolve("mesh-media.mp4"), response.body());
+      assertThat(worker.decodedVideoFrameCount(media)).isPositive();
+    }
+  }
+
   @ParameterizedTest
   @ValueSource(strings = {"/media/probe", "/media/segment"})
   @DisplayName("Should reject media proof when no worker is connected")
@@ -196,12 +247,18 @@ class MeshMediaHandlerIT {
     }
 
     private HttpResponse<String> request(String path) throws Exception {
-      return client.send(
-          HttpRequest.newBuilder(
-                  URI.create("http://127.0.0.1:" + http.getAddress().getPort() + path))
-              .timeout(Duration.ofSeconds(15))
-              .build(),
-          HttpResponse.BodyHandlers.ofString());
+      return client.send(httpRequest(path), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<byte[]> requestMedia(String path) throws Exception {
+      return client.send(httpRequest(path), HttpResponse.BodyHandlers.ofByteArray());
+    }
+
+    private HttpRequest httpRequest(String path) {
+      return HttpRequest.newBuilder(
+              URI.create("http://127.0.0.1:" + http.getAddress().getPort() + path))
+          .timeout(Duration.ofSeconds(15))
+          .build();
     }
 
     @Override
