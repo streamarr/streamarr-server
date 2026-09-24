@@ -17,8 +17,8 @@ import lombok.RequiredArgsConstructor;
 public enum RecordedStream {
   /**
    * The initial job attempt, media time 0 to 8 s: an initialization segment, then media segments 0
-   * and 1. An encoded replacement attempt for segment 1 seeks one period early, to 0 s, and writes
-   * these same bytes; the worker discards its segment 0 as preroll.
+   * and 1. An encoded replacement attempt for segment 1 writes these same bytes, which {@code
+   * record.sh} checks.
    */
   START_AT_ZERO("start-0s.fmp4"),
   /**

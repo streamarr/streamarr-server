@@ -260,8 +260,8 @@ class RemoteRecoveryIT {
   // until the kill ends its output inside a box. Every other job attempt is a replacement attempt,
   // which writes the given recording and exits cleanly; the worker discards the recording's segment
   // 0 as preroll. The script knows an attempt by the id the worker names it with: an encoded
-  // replacement attempt for segment 1 seeks to 0 s like the initial attempt, and recovery may send
-  // a replacement attempt to a worker that has not run the initial attempt.
+  // replacement attempt for segment 1 runs the initial attempt's command (RecordedStream), and
+  // recovery may send a replacement attempt to a worker that has not run the initial attempt.
   private static String killableThenReplacedScript(
       UUID initialAttemptId, RecordedStream replacementRecording) {
     return """
