@@ -167,7 +167,7 @@ class StreamingResolverTest {
             Map.of(
                 "__typename", "MediaFileFrameRateUnknownError",
                 "message",
-                    "This file's video must be converted for this device, but its frame rate is unknown."));
+                    "This file's video must be converted for playback, but its frame rate is unknown."));
   }
 
   @Test

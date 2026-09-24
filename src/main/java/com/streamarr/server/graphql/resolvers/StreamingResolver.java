@@ -92,7 +92,7 @@ public class StreamingResolver {
       case CreateStreamSessionRejection.ProbeFailed(var reason) -> probeFailureError(reason);
       case CreateStreamSessionRejection.FrameRateUnknown() ->
           new CreateStreamSessionError.MediaFileFrameRateUnknownError(
-              "This file's video must be converted for this device, but its frame rate is unknown.");
+              "This file's video must be converted for playback, but its frame rate is unknown.");
     };
   }
 
