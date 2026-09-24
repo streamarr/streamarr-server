@@ -1,8 +1,10 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.github.kagkarlsson.scheduler.SchedulerClient;
+import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
@@ -15,11 +17,13 @@ import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
+import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
@@ -147,6 +151,32 @@ class ProbeAttemptFailureIT extends AbstractProbeSchedulerIntegrationTest {
 
     assertThat(recorded).isFalse();
     assertThat(stateOf(request).failure()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should record the failure for the requested inputs when an attempt at older inputs fails")
+  void shouldRecordTheFailureForTheRequestedInputsWhenAnAttemptAtOlderInputsFails()
+      throws Exception {
+    var request = requestUnchangedFiles(1).getFirst();
+    var probing = new CountDownLatch(1);
+    var release = new CompletableFuture<Void>();
+    startScheduler(
+        probeExecution.toBuilder().producer(workerFailingAfter(probing, release)).build(),
+        new AbstractSchedulerListener() {});
+    assertThat(probing.await(10, TimeUnit.SECONDS)).isTrue();
+    var changed = changedSnapshot(request);
+    probeTaskRequests.request(changed);
+    makeUnreadable(FilepathCodec.decode(request.filepathUri()));
+
+    release.complete(null);
+
+    await().atMost(Duration.ofSeconds(10)).until(() -> stateOf(request).failure().isPresent());
+    assertThat(stateOf(request).requested()).contains(changed.inputs());
+    assertThat(stateOf(request).failure())
+        .hasValueSatisfying(
+            failure ->
+                assertThat(failure.reason()).isEqualTo(ItemFailureReason.SOURCE_INACCESSIBLE));
   }
 
   private SchedulerClient runOnce(RuntimeException failure) throws InterruptedException {

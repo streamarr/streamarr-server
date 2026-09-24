@@ -34,6 +34,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -133,6 +134,35 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
                             assertThat(failure.reason())
                                 .isEqualTo(ItemFailureReason.SOURCE_INACCESSIBLE)));
     assertThat(client.getScheduledExecution(instanceOf(mediaFile))).isPresent();
+  }
+
+  @Test
+  @DisplayName(
+      "Should finish the scan when the source becomes unreadable while an attempt at older inputs"
+          + " runs")
+  void shouldFinishTheScanWhenTheSourceBecomesUnreadableWhileAnAttemptAtOlderInputsRuns()
+      throws Exception {
+    var probing = new CountDownLatch(1);
+    var release = new CompletableFuture<Void>();
+    probeTaskRequests.request(request(mediaFile));
+    startScheduler(
+        probeExecution.toBuilder().producer(workerFailingAfter(probing, release)).build(),
+        new AbstractSchedulerListener() {});
+    assertThat(probing.await(10, TimeUnit.SECONDS)).isTrue();
+    var source = FilepathCodec.decode(mediaFile.getFilepathUri());
+    Files.writeString(source, "changed media");
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var scan = executor.submit(() -> libraryManagementService.scanLibrary(library.getId()));
+      var changed = snapshotOf(mediaFile);
+      await().atMost(Duration.ofSeconds(10)).until(() -> isRequestedAt(mediaFile, changed));
+      makeUnreadable(source);
+      release.complete(null);
+
+      scan.get(20, TimeUnit.SECONDS);
+    }
+
+    assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
   }
 
   @Test
@@ -263,6 +293,13 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
   private boolean isScheduled(MediaFile file) {
     return outcomes.findProbeStates(List.of(file.getId())).stream()
         .anyMatch(state -> state.requested().isPresent());
+  }
+
+  private boolean isRequestedAt(MediaFile file, SourceFileSnapshot snapshot) {
+    return outcomes.findProbeStates(List.of(file.getId())).stream()
+        .anyMatch(
+            state ->
+                state.requested().filter(inputs -> inputs.snapshot().equals(snapshot)).isPresent());
   }
 
   private LibraryStatus statusOf(Library scanned) {
