@@ -1,8 +1,8 @@
 package com.streamarr.server.services.streaming.local;
 
+import com.streamarr.server.services.streaming.SegmentPublication;
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
-import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -19,8 +19,7 @@ final class PreparedSegmentFile implements AutoCloseable {
 
     void moveReplacing(Path source, Path target) throws IOException;
 
-    /** Fails with {@link FileAlreadyExistsException} when {@code target} already exists. */
-    void link(Path source, Path target) throws IOException;
+    boolean notExists(Path path);
 
     boolean hasSameContent(Path first, Path second) throws IOException;
 
@@ -52,8 +51,8 @@ final class PreparedSegmentFile implements AutoCloseable {
     }
 
     @Override
-    public void link(Path source, Path target) throws IOException {
-      Files.createLink(target, source);
+    public boolean notExists(Path path) {
+      return Files.notExists(path);
     }
 
     @Override
@@ -104,21 +103,21 @@ final class PreparedSegmentFile implements AutoCloseable {
   }
 
   /**
-   * Publishes only when nothing exists at {@code target} yet. A rename replaces an existing target,
-   * so a hard link is the create-if-absent that lets exactly one of several racing publications
-   * win.
+   * Publishes when nothing is stored at {@code target} yet; otherwise leaves the stored file
+   * untouched and reports whether it holds the same bytes. Callers serialize publications to one
+   * target.
    */
-  boolean tryPublishIfAbsent(Path target) throws IOException {
-    try {
-      files.link(temporary, target);
-      return true;
-    } catch (FileAlreadyExistsException _) {
-      return false;
+  SegmentPublication publishUnlessStored(Path target) throws IOException {
+    if (files.notExists(target)) {
+      publishTo(target);
+      return SegmentPublication.PUBLISHED;
     }
-  }
 
-  boolean hasSameContentAs(Path target) throws IOException {
-    return files.hasSameContent(temporary, target);
+    if (files.hasSameContent(temporary, target)) {
+      return SegmentPublication.PUBLISHED;
+    }
+
+    return SegmentPublication.INITIALIZATION_SEGMENT_DIFFERS;
   }
 
   @Override

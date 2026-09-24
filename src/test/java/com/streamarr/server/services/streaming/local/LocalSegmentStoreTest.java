@@ -4,12 +4,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.google.common.jimfs.Configuration;
+import com.google.common.jimfs.Feature;
+import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -195,6 +199,44 @@ class LocalSegmentStoreTest {
       "Should store exactly one initialization segment when differing ones are published concurrently")
   void shouldStoreExactlyOneInitializationSegmentWhenDifferingOnesArePublishedConcurrently() {
     assertExactlyOneContenderStoredPerRace(store);
+  }
+
+  @Test
+  @DisplayName(
+      "Should store the first initialization segment when the segment volume cannot create hard links")
+  void shouldStoreFirstInitializationSegmentWhenSegmentVolumeCannotCreateHardLinks()
+      throws IOException {
+    try (var volume = volumeWithoutHardLinks()) {
+      var linklessStore = new LocalSegmentStore(volume.getPath("/segments"));
+      var sessionId = UUID.randomUUID();
+      var initialization = "ftyp moov from encoder A".getBytes();
+
+      var publication =
+          linklessStore.storeSegment(sessionId, VARIANT_INITIALIZATION_SEGMENT, initialization);
+
+      assertThat(publication).isEqualTo(SegmentPublication.PUBLISHED);
+      assertThat(linklessStore.readSegment(sessionId, VARIANT_INITIALIZATION_SEGMENT))
+          .isEqualTo(initialization);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should store exactly one initialization segment when differing ones race on a volume that cannot create hard links")
+  void shouldStoreExactlyOneInitializationSegmentWhenDifferingOnesRaceOnVolumeWithoutHardLinks()
+      throws IOException {
+    try (var volume = volumeWithoutHardLinks()) {
+      assertExactlyOneContenderStoredPerRace(new LocalSegmentStore(volume.getPath("/segments")));
+    }
+  }
+
+  /** Like exFAT and some network mounts: renames work, hard links do not. */
+  private static FileSystem volumeWithoutHardLinks() {
+    return Jimfs.newFileSystem(
+        Configuration.unix().toBuilder()
+            .setSupportedFeatures(
+                Feature.SYMBOLIC_LINKS, Feature.SECURE_DIRECTORY_STREAM, Feature.FILE_CHANNEL)
+            .build());
   }
 
   private static void assertExactlyOneContenderStoredPerRace(SegmentStore store) {
