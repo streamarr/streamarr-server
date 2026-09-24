@@ -117,7 +117,9 @@ class OrphanedMediaFileCleanupServiceIT extends AbstractIntegrationTest {
     assertThat(itemResults.findByItem(movie.getId(), ImageEntityType.MOVIE)).isEmpty();
     assertThat(imageRepository.findByEntityIdAndEntityType(movie.getId(), ImageEntityType.MOVIE))
         .isEmpty();
-    assertThat(poster.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
+    assertThat(poster.writtenFiles())
+        .isNotEmpty()
+        .allSatisfy(path -> assertThat(path).doesNotExist());
   }
 
   private static MediaFile.MediaFileBuilder<?, ?> mediaFileBuilder(Path path) {

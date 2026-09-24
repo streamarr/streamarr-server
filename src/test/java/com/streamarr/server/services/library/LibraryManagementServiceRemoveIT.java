@@ -352,7 +352,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
     libraryManagementService.removeLibrary(IDENTITY, library.getId());
 
     assertNothingStoredFor(movie.getId(), ImageEntityType.MOVIE);
-    assertThat(artworkFiles).allSatisfy(path -> assertThat(path).doesNotExist());
+    assertThat(artworkFiles).isNotEmpty().allSatisfy(path -> assertThat(path).doesNotExist());
   }
 
   @Test
@@ -389,7 +389,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
     assertNothingStoredFor(series.getId(), ImageEntityType.SERIES);
     assertNothingStoredFor(season.getId(), ImageEntityType.SEASON);
     assertNothingStoredFor(episode.getId(), ImageEntityType.EPISODE);
-    assertThat(artworkFiles).allSatisfy(path -> assertThat(path).doesNotExist());
+    assertThat(artworkFiles).isNotEmpty().allSatisfy(path -> assertThat(path).doesNotExist());
   }
 
   @Test
@@ -421,8 +421,8 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
             imageRepository.findByEntityIdAndEntityType(company.getId(), ImageEntityType.COMPANY))
         .isNotEmpty();
     assertThat(itemResults.findByItem(company.getId(), ImageEntityType.COMPANY)).isNotEmpty();
-    assertThat(personFiles).allSatisfy(path -> assertThat(path).exists());
-    assertThat(companyFiles).allSatisfy(path -> assertThat(path).exists());
+    assertThat(personFiles).isNotEmpty().allSatisfy(path -> assertThat(path).exists());
+    assertThat(companyFiles).isNotEmpty().allSatisfy(path -> assertThat(path).exists());
   }
 
   @Test

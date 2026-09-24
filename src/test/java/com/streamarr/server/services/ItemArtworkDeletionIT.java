@@ -75,7 +75,7 @@ class ItemArtworkDeletionIT extends AbstractIntegrationTest {
 
     assertThat(imageRepository.findByEntityIdAndEntityType(movieId, ImageEntityType.MOVIE))
         .hasSize(ImageSize.values().length);
-    assertThat(poster.writtenFiles()).allSatisfy(path -> assertThat(path).exists());
+    assertThat(poster.writtenFiles()).isNotEmpty().allSatisfy(path -> assertThat(path).exists());
   }
 
   @Test
@@ -105,8 +105,12 @@ class ItemArtworkDeletionIT extends AbstractIntegrationTest {
     assertThat(imageRepository.findByEntityIdAndEntityType(movieId, ImageEntityType.MOVIE))
         .isEmpty();
     assertThat(itemResults.findByItem(movieId, ImageEntityType.MOVIE)).isEmpty();
-    assertThat(poster.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
-    assertThat(replacement.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
+    assertThat(poster.writtenFiles())
+        .isNotEmpty()
+        .allSatisfy(path -> assertThat(path).doesNotExist());
+    assertThat(replacement.writtenFiles())
+        .isNotEmpty()
+        .allSatisfy(path -> assertThat(path).doesNotExist());
   }
 
   @Test
@@ -119,7 +123,9 @@ class ItemArtworkDeletionIT extends AbstractIntegrationTest {
         .isInstanceOf(DataIntegrityViolationException.class);
     assertThat(imageRepository.findByEntityIdAndEntityType(movieId, ImageEntityType.MOVIE))
         .isEmpty();
-    assertThat(replacement.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
+    assertThat(replacement.writtenFiles())
+        .isNotEmpty()
+        .allSatisfy(path -> assertThat(path).doesNotExist());
   }
 
   private ProcessedImage processedPoster(String key) {
