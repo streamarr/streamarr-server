@@ -13,15 +13,18 @@ import org.junit.jupiter.api.Test;
 class MeshSegmentStoreTest {
 
   @Test
-  @DisplayName("Should return the first segment when later segments arrive before it")
-  void shouldReturnTheFirstSegmentWhenLaterSegmentsArriveBeforeIt() throws Exception {
+  @DisplayName(
+      "Should return the initialization and first segments when later segments arrive before it")
+  void shouldReturnInitializationAndFirstSegmentsWhenLaterSegmentsArriveBeforeIt()
+      throws Exception {
     var store = new MeshSegmentStore();
     var sessionId = UUID.randomUUID();
-    store.storeSegment(sessionId, "segment1.ts", "later".getBytes(StandardCharsets.UTF_8));
-    var first = "first".getBytes(StandardCharsets.UTF_8);
-    store.storeSegment(sessionId, "segment0.ts", first);
+    store.storeSegment(sessionId, "init.mp4", "init ".getBytes(StandardCharsets.UTF_8));
+    store.storeSegment(sessionId, "segment1.m4s", "later".getBytes(StandardCharsets.UTF_8));
+    store.storeSegment(sessionId, "segment0.m4s", "first".getBytes(StandardCharsets.UTF_8));
 
-    assertThat(store.awaitFirstSegment(sessionId)).isEqualTo(first);
+    assertThat(store.awaitFirstSegment(sessionId))
+        .isEqualTo("init first".getBytes(StandardCharsets.UTF_8));
   }
 
   @Test
@@ -29,11 +32,13 @@ class MeshSegmentStoreTest {
   void shouldDiscardTheCompletedSegmentWhenItsSessionIsDeleted() throws Exception {
     var store = new MeshSegmentStore();
     var sessionId = UUID.randomUUID();
-    store.storeSegment(sessionId, "segment0.ts", "old".getBytes(StandardCharsets.UTF_8));
+    store.storeSegment(sessionId, "init.mp4", "init ".getBytes(StandardCharsets.UTF_8));
+    store.storeSegment(sessionId, "segment0.m4s", "old".getBytes(StandardCharsets.UTF_8));
     store.deleteSession(sessionId);
-    var next = "next".getBytes(StandardCharsets.UTF_8);
-    store.storeSegment(sessionId, "segment0.ts", next);
+    store.storeSegment(sessionId, "init.mp4", "init ".getBytes(StandardCharsets.UTF_8));
+    store.storeSegment(sessionId, "segment0.m4s", "next".getBytes(StandardCharsets.UTF_8));
 
-    assertThat(store.awaitFirstSegment(sessionId)).isEqualTo(next);
+    assertThat(store.awaitFirstSegment(sessionId))
+        .isEqualTo("init next".getBytes(StandardCharsets.UTF_8));
   }
 }

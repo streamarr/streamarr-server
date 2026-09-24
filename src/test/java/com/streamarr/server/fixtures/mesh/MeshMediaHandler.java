@@ -102,7 +102,7 @@ final class MeshMediaHandler implements HttpHandler {
                             .setBitrateBitsPerSecond(128_000))
                     .setSubtitle(
                         SubtitleDecision.newBuilder().setMode(SubtitleMode.SUBTITLE_MODE_EXCLUDE))
-                    .setContainer(ContainerFormat.CONTAINER_FORMAT_MPEG_TS)
+                    .setContainer(ContainerFormat.CONTAINER_FORMAT_FMP4)
                     .setAlignKeyframesToSegments(true))
             .setVariant(
                 VariantSpec.newBuilder()

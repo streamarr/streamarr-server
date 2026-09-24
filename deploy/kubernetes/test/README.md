@@ -47,8 +47,9 @@ After the scripted clients have disconnected, the image phase verifies:
 
 - Both worker Actuator health groups report `UP` after the session is accepted.
 - The worker probes the fixture as MP4 with H.264 video at 320 × 180.
-- A full transcode uploads an HLS segment through the real server upload endpoint. FFprobe checks
-  its H.264 video dimensions and AAC audio. FFmpeg decodes the segment with errors treated as fatal.
+- A full transcode uploads an fMP4 initialization segment and its first media segment through the
+  real server upload endpoint. FFprobe checks the H.264 video dimensions and AAC audio of the two
+  together. FFmpeg decodes them with errors treated as fatal.
 - The wrong ServiceAccount and unmeshed Service and Pod IP connections remain denied while the
   real worker is connected.
 

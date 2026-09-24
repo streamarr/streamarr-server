@@ -49,6 +49,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 @DisplayName("Mesh Media Exchange Tests")
 class MeshMediaHandlerIT {
 
+  private static final String INITIALIZATION = "published initialization from the worker ";
   private static final String SEGMENT = "published segment from the worker";
 
   @Test
@@ -116,10 +117,10 @@ class MeshMediaHandlerIT {
       var response = rig.request("/media/segment");
 
       assertThat(response.statusCode()).isEqualTo(200);
-      assertThat(response.body()).isEqualTo(SEGMENT);
+      assertThat(response.body()).isEqualTo(INITIALIZATION + SEGMENT);
       var job = rig.worker.started.get(5, TimeUnit.SECONDS);
       assertThat(rig.worker.stopped.get(5, TimeUnit.SECONDS)).isEqualTo(job.getJobAttemptId());
-      assertThat(rig.segments.segmentExists(fromProto(job.getStreamSessionId()), "segment0.ts"))
+      assertThat(rig.segments.segmentExists(fromProto(job.getStreamSessionId()), "segment0.m4s"))
           .isFalse();
     }
   }
@@ -249,10 +250,11 @@ class MeshMediaHandlerIT {
       if (response.hasStartVariant()) {
         var job = response.getStartVariant().getJob();
         started.complete(job);
+        var streamSessionId = fromProto(job.getStreamSessionId());
         segments.storeSegment(
-            fromProto(job.getStreamSessionId()),
-            "segment0.ts",
-            SEGMENT.getBytes(StandardCharsets.UTF_8));
+            streamSessionId, "init.mp4", INITIALIZATION.getBytes(StandardCharsets.UTF_8));
+        segments.storeSegment(
+            streamSessionId, "segment0.m4s", SEGMENT.getBytes(StandardCharsets.UTF_8));
         return;
       }
 

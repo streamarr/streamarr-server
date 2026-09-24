@@ -190,10 +190,10 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
   private static boolean contentTypeMatchesName(
       SegmentContentType contentType, String segmentName) {
     return switch (contentType) {
-      case SEGMENT_CONTENT_TYPE_VIDEO_MP2T -> segmentName.endsWith(".ts");
       case SEGMENT_CONTENT_TYPE_VIDEO_MP4 ->
           segmentName.endsWith(".m4s") || segmentName.endsWith(".mp4");
-      case SEGMENT_CONTENT_TYPE_UNSPECIFIED, UNRECOGNIZED -> false;
+      // HLS delivery is fMP4 only (ADR 0037); the additive contract keeps the MPEG-TS value.
+      case SEGMENT_CONTENT_TYPE_VIDEO_MP2T, SEGMENT_CONTENT_TYPE_UNSPECIFIED, UNRECOGNIZED -> false;
     };
   }
 

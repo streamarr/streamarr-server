@@ -1016,6 +1016,10 @@ class WorkerSessionServerIT {
                 metadata.toBuilder()
                     .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_UNSPECIFIED)
                     .build(),
+                metadata.toBuilder()
+                    .setSegmentName("segment0.ts")
+                    .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP2T)
+                    .build(),
                 metadata.toBuilder().setContentTypeValue(999).build());
 
         invalidMetadata.forEach(
@@ -1048,6 +1052,9 @@ class WorkerSessionServerIT {
         assertThat(
                 segmentStore.segmentExists(
                     fromProto(job.getStreamSessionId()), "720p/segment0.m4s"))
+            .isFalse();
+        assertThat(
+                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
             .isFalse();
       } finally {
         shutdown(channel);
