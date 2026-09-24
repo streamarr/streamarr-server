@@ -30,8 +30,8 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * Real-FFmpeg proof of ADR 0019's recovery contract: after a producer dies mid-stream, the next
  * request replaces it at the requested segment's offset and the replacement's timestamps continue
- * the absolute timeline. PTS/DTS continuity comes from {@code -copyts} + input {@code -ss} + {@code
- * -start_number}.
+ * the absolute timeline. PTS/DTS continuity comes from input {@code -ss} with {@code -copyts} and
+ * {@code -start_at_zero}.
  */
 @Tag("SmokeTest")
 @DisplayName("HLS Recovery Continuity Smoke Tests")
@@ -136,8 +136,7 @@ class HlsRecoveryContinuitySmokeTest {
             .commandFor(session.getHandle().orElseThrow().attemptId())
             .orElseThrow();
     assertThat(replacementCommand)
-        .containsSubsequence("-ss", String.valueOf(2 * SEGMENT_DURATION_SECONDS))
-        .containsSubsequence("-start_number", "2");
+        .containsSubsequence("-ss", String.valueOf(2 * SEGMENT_DURATION_SECONDS));
 
     // The continuity contract is measured against the first run's timeline, not absolute zero.
     var timelineOffset = packetTimestamps(sessionId, "segment0.m4s").getFirst();

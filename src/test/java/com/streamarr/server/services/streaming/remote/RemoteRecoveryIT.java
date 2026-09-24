@@ -6,6 +6,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.playbackAuthori
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import com.google.common.primitives.Bytes;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -15,6 +16,7 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
+import com.streamarr.server.fixtures.RecordedStream;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.services.streaming.SegmentDelivery;
@@ -25,9 +27,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -48,9 +48,6 @@ class RemoteRecoveryIT {
 
   private static final UUID SOURCE_NAMESPACE_ID =
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
-  private static final byte[] STORED_INITIALIZATION = "ftyp moov from encoder A".getBytes();
-  private static final byte[] FIRST_MEDIA_SEGMENT = "moof mdat of segment 0".getBytes();
-  private static final byte[] SECOND_MEDIA_SEGMENT = "moof mdat of segment 1".getBytes();
 
   @TempDir Path tempDir;
 
@@ -63,7 +60,6 @@ class RemoteRecoveryIT {
     var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
     var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
     var streamSessionId = UUID.randomUUID();
-    var segmentData = "recovered remote segment".getBytes();
 
     try (var server = server(segmentStore)) {
       server.start();
@@ -88,9 +84,7 @@ class RemoteRecoveryIT {
 
       try (var healthyWorker =
           workerBuilder(server, mediaRoot)
-              .ffmpegScript(
-                  WorkerContainerFixture.emitSegments(
-                      Map.of("init.mp4", STORED_INITIALIZATION, "segment0.m4s", segmentData)))
+              .ffmpegScript(WorkerContainerFixture.emitRecordedStream(RecordedStream.START_AT_ZERO))
               .build()) {
         healthyWorker.start();
         await()
@@ -101,8 +95,15 @@ class RemoteRecoveryIT {
             rig.coordinator()
                 .deliver(streamSessionId, StreamSession.defaultVariant(), "segment0.m4s");
 
-        assertThat(delivery).isInstanceOf(SegmentDelivery.Ready.class);
-        assertThat(((SegmentDelivery.Ready) delivery).data()).isEqualTo(segmentData);
+        assertThat(delivery)
+            .isInstanceOfSatisfying(
+                SegmentDelivery.Ready.class,
+                ready ->
+                    assertThat(RecordedStream.START_AT_ZERO.bytes())
+                        .startsWith(
+                            Bytes.concat(
+                                segmentStore.readSegment(streamSessionId, "init.mp4"),
+                                ready.data())));
         assertThat(rig.session().getHandle().orElseThrow().status())
             .isEqualTo(TranscodeStatus.ACTIVE);
       }
@@ -161,7 +162,7 @@ class RemoteRecoveryIT {
     try (var server = server(segmentStore, meterRegistry);
         var worker =
             workerBuilder(server, mediaRoot)
-                .ffmpegScript(killableThenReplacedScript(STORED_INITIALIZATION))
+                .ffmpegScript(killableThenReplacedScript(RecordedStream.SEEK_TO_SIX_SECONDS))
                 .build()) {
       server.start();
       worker.start();
@@ -179,11 +180,16 @@ class RemoteRecoveryIT {
           rig.coordinator()
               .deliver(streamSessionId, StreamSession.defaultVariant(), "segment1.m4s");
 
-      assertThat(delivery).isEqualTo(new SegmentDelivery.Ready(SECOND_MEDIA_SEGMENT));
-      assertThat(segmentStore.readSegment(streamSessionId, "init.mp4"))
-          .isEqualTo(STORED_INITIALIZATION);
-      assertThat(segmentStore.readSegment(streamSessionId, "segment0.m4s"))
-          .isEqualTo(FIRST_MEDIA_SEGMENT);
+      assertThat(delivery)
+          .isInstanceOfSatisfying(
+              SegmentDelivery.Ready.class,
+              ready ->
+                  assertThat(
+                          Bytes.concat(
+                              segmentStore.readSegment(streamSessionId, "init.mp4"), ready.data()))
+                      .as("the stored initialization segment and the replacement's segment 1")
+                      .isEqualTo(RecordedStream.SEEK_TO_SIX_SECONDS.bytes()));
+      assertInitialAttemptsSegmentsStored(segmentStore, streamSessionId);
       assertThat(initializationSegmentMismatches(meterRegistry)).isZero();
     }
   }
@@ -199,7 +205,9 @@ class RemoteRecoveryIT {
     var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
     var meterRegistry = new SimpleMeterRegistry();
     var streamSessionId = UUID.randomUUID();
-    var script = killableThenReplacedScript("ftyp moov from encoder B".getBytes());
+    var script =
+        killableThenReplacedScript(
+            RecordedStream.SEEK_TO_SIX_SECONDS_WITH_DIFFERING_INITIALIZATION);
 
     try (var server = server(segmentStore, meterRegistry);
         var firstWorker = workerBuilder(server, mediaRoot).ffmpegScript(script).build();
@@ -225,46 +233,49 @@ class RemoteRecoveryIT {
       assertThat(initializationSegmentMismatches(meterRegistry))
           .as("each eligible worker ran one replacement attempt and was refused")
           .isEqualTo(2);
-      assertThat(segmentStore.readSegment(streamSessionId, "init.mp4"))
-          .isEqualTo(STORED_INITIALIZATION);
-      assertThat(segmentStore.readSegment(streamSessionId, "segment0.m4s"))
-          .isEqualTo(FIRST_MEDIA_SEGMENT);
+      assertInitialAttemptsSegmentsStored(segmentStore, streamSessionId);
       assertThat(segmentStore.segmentExists(streamSessionId, "segment1.m4s")).isFalse();
       assertThat(rig.session().getHandle().orElseThrow().status())
           .isEqualTo(TranscodeStatus.FAILED);
     }
   }
 
-  private static String killableThenReplacedScript(byte[] replacementInitialization) {
-    var initial = new LinkedHashMap<String, byte[]>();
-    initial.put("init.mp4", STORED_INITIALIZATION);
-    initial.put("segment0.m4s", FIRST_MEDIA_SEGMENT);
-    var replacement = new LinkedHashMap<String, byte[]>();
-    replacement.put("init.mp4", replacementInitialization);
-    replacement.put("segment1.m4s", SECOND_MEDIA_SEGMENT);
-    // The initial attempt (start number 0) writes its segments in a subshell, which confines the
-    // emitted script's exit, then stays alive until the test kills it. The replacement attempt
-    // starts at segment 1.
+  /**
+   * The initial attempt writes the whole start-at-zero stream, so the worker closes and delivers
+   * segment 0, then leaves a box header unfinished and stays alive until the test kills it: its
+   * output ends inside a box, so it fails without delivering segment 1. A replacement attempt,
+   * which seeks to segment 1, writes the given recording and exits cleanly.
+   */
+  private static String killableThenReplacedScript(RecordedStream replacement) {
     return """
-        start=0
+        seek=0
         previous=
         for option in "$@"; do
-          if [[ $previous == -start_number ]]; then
-            start=$option
+          if [[ $previous == -ss ]]; then
+            seek=$option
           fi
           previous=$option
         done
-        if [[ $start == 0 ]]; then
-          (
-        %s
-          )
+        if [[ $seek == 0 ]]; then
+          cat %s
+          printf 'moo'
           exec sleep 300
         fi
         %s
         """
         .formatted(
-            WorkerContainerFixture.emitSegments(initial),
-            WorkerContainerFixture.emitSegments(replacement));
+            RecordedStream.START_AT_ZERO.containerPath(),
+            WorkerContainerFixture.emitRecordedStream(replacement));
+  }
+
+  private static void assertInitialAttemptsSegmentsStored(
+      LocalSegmentStore segmentStore, UUID streamSessionId) {
+    assertThat(RecordedStream.START_AT_ZERO.bytes())
+        .as("the initial attempt's initialization segment and segment 0 stay stored")
+        .startsWith(
+            Bytes.concat(
+                segmentStore.readSegment(streamSessionId, "init.mp4"),
+                segmentStore.readSegment(streamSessionId, "segment0.m4s")));
   }
 
   private void startThenKillInitialAttempt(RecoveryRig rig, List<WorkerContainerFixture> workers)

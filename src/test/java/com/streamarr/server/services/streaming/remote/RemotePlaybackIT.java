@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
+import com.google.common.primitives.Bytes;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.controllers.StreamController;
 import com.streamarr.server.domain.media.ProbeVersion;
@@ -22,6 +23,7 @@ import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeStreamingService;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
+import com.streamarr.server.fixtures.RecordedStream;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
@@ -31,6 +33,7 @@ import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -49,6 +52,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.http.ResponseEntity;
 
 @Tag("IntegrationTest")
 @DisplayName("Remote Playback Integration Tests")
@@ -63,26 +67,20 @@ class RemotePlaybackIT {
 
   @Test
   @DisplayName(
-      "Should serve sequential segments of probed media when using the standalone worker image")
-  void shouldServeSequentialSegmentsOfProbedMediaWhenUsingTheStandaloneWorkerImage()
-      throws Exception {
+      "Should serve the producer's initialization and media segments of probed media when using the standalone worker image")
+  void
+      shouldServeProducersInitializationAndMediaSegmentsOfProbedMediaWhenUsingStandaloneWorkerImage()
+          throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = copyTestClip(mediaRoot.resolve("movie.mkv"));
-    var segments =
-        Map.of(
-            "init.mp4", "remote initialization".getBytes(),
-            "segment0.m4s", "first remote segment".getBytes(),
-            "segment1.m4s", "second remote segment".getBytes());
     var segmentStore = new PublishingSegmentStore(tempDir.resolve("server-segments"));
     var streamSessionId = UUID.randomUUID();
 
     try (var server = server(segmentStore);
         var worker =
-            WorkerContainerFixture.builder()
-                .workerSessions(server)
-                .sourceNamespaceId(SOURCE_NAMESPACE_ID)
-                .sourceRoot(mediaRoot)
-                .ffmpegScript(WorkerContainerFixture.emitSegments(segments))
+            workerBuilder(server, mediaRoot)
+                .ffmpegScript(
+                    WorkerContainerFixture.emitRecordedStream(RecordedStream.START_AT_ZERO))
                 .build()) {
       server.start();
       worker.start();
@@ -101,7 +99,7 @@ class RemotePlaybackIT {
               });
 
       executor.start(transcodeRequest(streamSessionId, mediaFile));
-      segmentStore.publication("segment1.m4s").get(5, TimeUnit.SECONDS);
+      segmentStore.publication("segment1.m4s").get(10, TimeUnit.SECONDS);
       var streamController =
           rig(PlaybackRigConfiguration.builder()
                   .streamSessionId(streamSessionId)
@@ -109,70 +107,33 @@ class RemotePlaybackIT {
                   .executor(executor)
                   .build())
               .controller();
-      var first = streamController.getSegment(streamSessionId, "segment0.m4s");
-      var second = streamController.getSegment(streamSessionId, "segment1.m4s");
+      var responses =
+          List.of(
+              streamController.getInitSegment(streamSessionId),
+              streamController.getSegment(streamSessionId, "segment0.m4s"),
+              streamController.getSegment(streamSessionId, "segment1.m4s"));
 
-      assertThat(first.getStatusCode().is2xxSuccessful()).as("first segment status").isTrue();
-      assertThat(first.getHeaders().getContentType())
-          .as("first segment content type")
-          .hasToString("video/mp4");
-      assertThat(first.getBody()).as("first segment bytes").isEqualTo(segments.get("segment0.m4s"));
-      assertThat(second.getStatusCode().is2xxSuccessful()).as("second segment status").isTrue();
-      assertThat(second.getHeaders().getContentType())
-          .as("second segment content type")
-          .hasToString("video/mp4");
-      assertThat(second.getBody())
-          .as("second segment bytes")
-          .isEqualTo(segments.get("segment1.m4s"));
+      assertThat(responses)
+          .allSatisfy(
+              response -> {
+                assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+                assertThat(response.getHeaders().getContentType()).hasToString("video/mp4");
+              });
+      var bodies = responses.stream().map(ResponseEntity::getBody).toList();
+      assertThat(bodies)
+          .extracting(RemotePlaybackIT::firstBoxType)
+          .as("the initialization segment, then media segments that each open with a fragment")
+          .containsExactly("ftyp", "moof", "moof");
+      assertThat(Bytes.concat(bodies.toArray(byte[][]::new)))
+          .as("every byte FFmpeg wrote, in order and split only between segments")
+          .isEqualTo(RecordedStream.START_AT_ZERO.bytes());
     }
   }
 
   @Test
   @DisplayName(
-      "Should serve the initialization segment and media produced by an outbound worker when using a remote worker")
-  void shouldServeInitializationSegmentAndMediaProducedByOutboundWorkerWhenUsingRemoteWorker()
-      throws Exception {
-    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
-    var segments =
-        Map.of(
-            "init.mp4", "remote initialization".getBytes(),
-            "segment0.m4s", "remote media fragment".getBytes());
-    var segmentStore = new PublishingSegmentStore(tempDir.resolve("server-segments"));
-    var streamSessionId = UUID.randomUUID();
-
-    try (var server = server(segmentStore);
-        var worker =
-            workerBuilder(server, mediaRoot)
-                .ffmpegScript(WorkerContainerFixture.emitSegments(segments))
-                .build()) {
-      server.start();
-      worker.start();
-      var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
-
-      executor.start(transcodeRequest(streamSessionId, mediaFile));
-      segmentStore.publication("segment0.m4s").get(5, TimeUnit.SECONDS);
-      var streamController =
-          rig(PlaybackRigConfiguration.builder()
-                  .streamSessionId(streamSessionId)
-                  .segmentStore(segmentStore)
-                  .executor(executor)
-                  .build())
-              .controller();
-      var initialization = streamController.getInitSegment(streamSessionId);
-      var media = streamController.getSegment(streamSessionId, "segment0.m4s");
-
-      assertThat(initialization.getHeaders().getContentType()).hasToString("video/mp4");
-      assertThat(initialization.getBody()).isEqualTo(segments.get("init.mp4"));
-      assertThat(media.getHeaders().getContentType()).hasToString("video/mp4");
-      assertThat(media.getBody()).isEqualTo(segments.get("segment0.m4s"));
-    }
-  }
-
-  @Test
-  @DisplayName(
-      "Should withhold unfinished initialization when the producer exits before its first fragment")
-  void shouldWithholdUnfinishedInitializationWhenProducerExitsBeforeItsFirstFragment()
+      "Should withhold an unfinished initialization segment when the producer's output ends inside it")
+  void shouldWithholdUnfinishedInitializationSegmentWhenProducersOutputEndsInsideIt()
       throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
@@ -183,8 +144,8 @@ class RemotePlaybackIT {
         var worker =
             workerBuilder(server, mediaRoot)
                 .ffmpegScript(
-                    WorkerContainerFixture.emitSegments(
-                        Map.of("init.mp4", new byte[] {0, 0, 0, 24, 'f', 't', 'y', 'p'})))
+                    "head -c 100 %s\nexit 0\n"
+                        .formatted(RecordedStream.START_AT_ZERO.containerPath()))
                 .build()) {
       server.start();
       worker.start();
@@ -196,7 +157,7 @@ class RemotePlaybackIT {
           .until(() -> !executor.isRunning(streamSessionId, StreamSession.defaultVariant()));
 
       assertThat(segmentStore.segmentExists(streamSessionId, "init.mp4"))
-          .as("An unfinished initialization header must never become available to playback")
+          .as("An unfinished initialization segment must never become available to playback")
           .isFalse();
     }
   }
@@ -208,17 +169,14 @@ class RemotePlaybackIT {
       throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
-    var segments =
-        Map.of(
-            "init.mp4", "remote initialization".getBytes(),
-            "segment0.m4s", "first remote segment".getBytes());
     var segmentStore = new FirstRequestSegmentStore(tempDir.resolve("server-segments"));
     var streamSessionId = UUID.randomUUID();
 
     try (var server = server(segmentStore);
         var worker =
             workerBuilder(server, mediaRoot)
-                .ffmpegScript(WorkerContainerFixture.emitSegments(segments))
+                .ffmpegScript(
+                    WorkerContainerFixture.emitRecordedStream(RecordedStream.START_AT_ZERO))
                 .build()) {
       server.start();
       worker.start();
@@ -236,7 +194,11 @@ class RemotePlaybackIT {
       var response = playback.controller().getSegment(streamSessionId, "segment0.m4s");
 
       assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
-      assertThat(response.getBody()).isEqualTo(segments.get("segment0.m4s"));
+      assertThat(firstBoxType(response.getBody())).isEqualTo("moof");
+      assertThat(RecordedStream.START_AT_ZERO.bytes())
+          .startsWith(
+              Bytes.concat(
+                  segmentStore.readSegment(streamSessionId, "init.mp4"), response.getBody()));
     }
   }
 
@@ -612,12 +574,18 @@ class RemotePlaybackIT {
         .as("video codec for %s", decision)
         .isEqualTo(expectedVideoCodec);
     assertThat(command)
-        .as("source, seek and segment timeline for %s", decision)
+        .as("source, seek and absolute timeline for %s", decision)
         .containsSubsequence("-i", "/media/movie.mkv")
-        .containsSubsequence("-start_number", "3")
-        .containsSubsequence("-hls_time", "4")
-        .containsSubsequence("-map", "-0:s");
+        .containsSubsequence("-map", "-0:s")
+        .contains("-copyts", "-start_at_zero")
+        .doesNotContain("-start_number");
     assertThat(Double.parseDouble(argument(command, "-ss"))).isEqualTo(12);
+    assertThat(command)
+        .as("fragmented MP4 on standard output for %s", decision)
+        .containsSubsequence("-f", "mp4")
+        .containsSubsequence("-movflags", "cmaf+delay_moov+skip_trailer+frag_keyframe+frag_discont")
+        .endsWith("pipe:1")
+        .doesNotContain("-hls_time", "-hls_segment_type");
 
     if (expectedVideoCodec.equals("libx264")) {
       assertThat(command)
@@ -626,11 +594,16 @@ class RemotePlaybackIT {
           .containsSubsequence("-b:v", "2500000")
           .containsSubsequence("-maxrate", "2500000")
           .containsSubsequence("-bufsize", "5000000")
-          .containsSubsequence("-force_key_frames:0", "expr:gte(t,n_forced*4)");
+          .containsSubsequence("-r:v:0", "23.976")
+          .containsSubsequence("-force_key_frames:0", "expr:gte(t,n_forced*4)")
+          .containsSubsequence("-g:v:0", "95");
     }
 
     switch (decision.audioDecision().mode()) {
-      case COPY -> assertThat(argument(command, "-c:a")).isEqualTo("copy");
+      case COPY ->
+          assertThat(command)
+              .as("copied AAC audio for %s", decision)
+              .containsSubsequence("-c:a", "copy", "-bsf:a", "aac_adtstoasc");
       case TRANSCODE ->
           assertThat(command)
               .as("stereo AAC audio for %s", decision)
@@ -639,8 +612,11 @@ class RemotePlaybackIT {
               .containsSubsequence("-b:a", "128k");
       case NONE -> assertThat(command).doesNotContain("-c:a", "0:a:0");
     }
+  }
 
-    assertThat(command).containsSubsequence("-hls_segment_type", "fmp4");
+  private static String firstBoxType(byte[] media) {
+    assertThat(media).hasSizeGreaterThanOrEqualTo(8);
+    return new String(media, 4, 4, StandardCharsets.US_ASCII);
   }
 
   private String argument(List<String> command, String flag) {

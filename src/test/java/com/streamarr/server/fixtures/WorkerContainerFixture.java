@@ -8,9 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
-import java.util.HexFormat;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.UUID;
@@ -82,18 +80,19 @@ public final class WorkerContainerFixture implements AutoCloseable {
             .withEnv("TRANSCODE_WORKER_SOURCE_NAMESPACE_ID", sourceNamespaceId.toString())
             .withEnv("TRANSCODE_WORKER_SOURCE_ROOT", "/media")
             .withEnv("TRANSCODE_WORKER_SLOTS", String.valueOf(availableSlots))
-            .withEnv("TRANSCODE_WORKER_SEGMENT_BASE_PATH", "/tmp/segments")
             .withEnv("BPL_JVM_THREAD_COUNT", "100")
             .withFileSystemBind(
                 sourceRoot.toAbsolutePath().toString(), "/media", BindMode.READ_ONLY)
             .waitingFor(Wait.forHttp("/actuator/health/readiness").forPort(9091))
             .withStartupTimeout(Duration.ofMinutes(2));
+    // The worker names the job attempt in FFmpeg's environment; FFmpeg has no working directory
+    // of its own.
     var script =
         """
         #!/bin/bash
         for argument in "$@"; do
           if [[ $argument == /media/* ]]; then
-            attempt=${PWD##*/}
+            attempt=${STREAMARR_JOB_ATTEMPT_ID:?the worker names the job attempt}
             printf '%s\\0' "$@" > "/tmp/command-$attempt"
             printf '%s' "$$" > "/tmp/producer-$attempt.tmp"
             mv "/tmp/producer-$attempt.tmp" "/tmp/producer-$attempt"
@@ -107,6 +106,11 @@ public final class WorkerContainerFixture implements AutoCloseable {
     container
         .withCopyToContainer(Transferable.of(script, 0755), "/tmp/scripted-ffmpeg")
         .withEnv("TRANSCODE_WORKER_FFMPEG_PATH", "/tmp/scripted-ffmpeg");
+    for (var recording : RecordedStream.values()) {
+      container.withCopyToContainer(
+          Transferable.of(recording.bytes(), 0644), recording.containerPath());
+    }
+
     if (ffprobeScript != null) {
       container
           .withCopyToContainer(
@@ -132,15 +136,12 @@ public final class WorkerContainerFixture implements AutoCloseable {
     }
   }
 
-  public static String emitSegments(Map<String, byte[]> segments) {
-    var script = new StringBuilder();
-    segments.forEach(
-        (name, bytes) -> {
-          assertThat(name).matches("[a-zA-Z0-9.]+");
-          var escaped = HexFormat.of().formatHex(bytes).replaceAll("(..)", "\\\\x$1");
-          script.append("printf '%b' '").append(escaped).append("' > ").append(name).append('\n');
-        });
-    return script.append("exit 0\n").toString();
+  /**
+   * A scripted FFmpeg body that writes the recording to standard output, as the mp4 muxer writes to
+   * {@code pipe:1}, and exits cleanly.
+   */
+  public static String emitRecordedStream(RecordedStream recording) {
+    return "cat " + recording.containerPath() + "\nexit 0\n";
   }
 
   public Optional<List<String>> commandFor(UUID attemptId) throws Exception {

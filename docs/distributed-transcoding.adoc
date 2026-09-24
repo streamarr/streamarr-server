@@ -37,8 +37,9 @@ An authorized worker can claim another worker's UUID. Workers in that role there
 Set `STREAMING_REMOTE_SOURCE_NAMESPACE_ID` and `STREAMING_REMOTE_SOURCE_ROOT` for the server's media mapping.
 Configure the same namespace UUID on each worker with `TRANSCODE_WORKER_SOURCE_NAMESPACE_ID` and `TRANSCODE_WORKER_SOURCE_ROOT`.
 Container paths may differ, but a relative key beneath each source root must identify the same media.
-Mount media read-only and give each worker its own writable temporary output directory.
+Mount media read-only.
 Workers on different nodes need storage that supports those simultaneous mounts.
+Workers need no writable output directory: FFmpeg writes fragmented MP4 to the worker over standard output (https://github.com/streamarr/streamarr-adr/blob/main/adr/0037-worker-delivers-fmp4-segments-from-ffmpeg-stdout.adoc[ADR 0037]).
 
 Set `TRANSCODE_WORKER_FFPROBE_PATH` to the worker's ffprobe binary. It defaults to `ffprobe` on `PATH`.
 `STREAMING_WORKER_SESSION_PROBE_TIMEOUT` bounds each probe on the server. It defaults to `1m`.

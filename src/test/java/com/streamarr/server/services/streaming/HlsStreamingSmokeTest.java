@@ -19,6 +19,7 @@ import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fixtures.RecordedStream;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
@@ -70,10 +71,7 @@ class HlsStreamingSmokeTest {
             .ffmpegScript(
                 """
                 if [[ -f /media/hold-producer ]]; then
-                  printf 'ftyp' > init.mp4.tmp
-                  mv init.mp4.tmp init.mp4
-                  printf 'moof' > segment0.m4s.tmp
-                  mv segment0.m4s.tmp segment0.m4s
+                  cat __RECORDING__
                   while IFS= read -r -n 1 input; do
                     if [[ "$input" == q ]]; then exit 0; fi
                   done
@@ -84,7 +82,8 @@ class HlsStreamingSmokeTest {
                     printf '%064d\n' 0 >&2
                   done
                 fi
-                """)
+                """
+                    .replace("__RECORDING__", RecordedStream.START_AT_ZERO.containerPath()))
             .segmentStore(segmentStore)
             .build();
     var transcodeExecutor =
