@@ -21,7 +21,7 @@ public final class MediaProbeTask {
   public static Task<ProbeTaskRequest> create(
       ProbeExecution execution, ProbeTaskCompletion completion, Clock clock) {
     return Tasks.custom(NAME, ProbeTaskRequest.class)
-        .onFailure(completion.recordingFailures(new CappedExponentialBackoff<>(clock)))
+        .onFailure(completion.failureHandler(new CappedExponentialBackoff<>(clock)))
         .execute(
             (instance, _) ->
                 completion.handlerFor(instance.getData(), execution.execute(instance.getData())));

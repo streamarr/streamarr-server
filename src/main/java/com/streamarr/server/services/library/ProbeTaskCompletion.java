@@ -64,14 +64,13 @@ public class ProbeTaskCompletion {
   }
 
   /**
-   * Records why an attempt at the requested inputs failed, in the transaction in which {@code
-   * retry} reschedules it. An attempt at inputs that a newer request replaced retries the requested
-   * inputs at once instead, because its failure says nothing about them. A cancelled attempt
-   * retries without a recorded failure, and any other exception counts as a temporary failure so
-   * that it does not wait unrecorded.
+   * Handles a failed attempt in one transaction. When a newer request replaced the attempted
+   * inputs, it retries the requested inputs at once without recording a failure, because the
+   * failure says nothing about them. Otherwise it records why the attempt failed and lets {@code
+   * backoff} reschedule it. A cancelled attempt backs off without a recorded failure, and any other
+   * exception counts as a temporary failure so that it does not wait unrecorded.
    */
-  public FailureHandler<ProbeTaskRequest> recordingFailures(
-      FailureHandler<ProbeTaskRequest> retry) {
+  public FailureHandler<ProbeTaskRequest> failureHandler(FailureHandler<ProbeTaskRequest> backoff) {
     return (complete, operations) ->
         new TransactionTemplate(transactionManager)
             .executeWithoutResult(
@@ -87,7 +86,7 @@ public class ProbeTaskCompletion {
                       .getCause()
                       .flatMap(ProbeTaskCompletion::failureOf)
                       .ifPresent(failure -> recordFailure(attempted, failure));
-                  retry.onFailure(complete, operations);
+                  backoff.onFailure(complete, operations);
                 });
   }
 
