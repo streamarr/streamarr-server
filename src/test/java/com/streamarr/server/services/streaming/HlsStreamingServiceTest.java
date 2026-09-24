@@ -310,9 +310,6 @@ class HlsStreamingServiceTest {
     assertThat(audio.bitrate()).isEqualTo(64_000L);
   }
 
-  // Expected strings: RFC 6381 forms of the sample entry, and for mp4a the esds
-  // objectTypeIndication and audio object type, in the initialization segment the pinned worker
-  // image writes when it stream-copies each codec at 48 kHz.
   @ParameterizedTest(name = "{0} → {1}")
   @CsvSource({
     "aac, mp4a.40.2",

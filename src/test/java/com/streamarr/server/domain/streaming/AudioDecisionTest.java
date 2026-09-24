@@ -38,20 +38,10 @@ class AudioDecisionTest {
     assertThat(decision.bitrate()).isEqualTo(128_000L);
   }
 
-  @ParameterizedTest(name = "codec={0} → hls={1}")
-  @DisplayName("Should return correct HLS codec string when codec varies")
-  @CsvSource({
-    "aac, mp4a.40.2",
-    "ac3, ac-3",
-    "eac3, ec-3",
-    "mp3, mp4a.6B",
-    "flac, fLaC",
-    "opus, Opus",
-    "alac, alac"
-  })
-  void shouldReturnCorrectHlsCodecStringWhenCodecVaries(String codec, String expected) {
-    var decision = new AudioDecision(AudioMode.COPY, codec, 2, 128_000L);
-    assertThat(decision.hlsCodecString()).isEqualTo(expected);
+  @Test
+  @DisplayName("Should return the codec's HLS codec string when HLS delivery carries the codec")
+  void shouldReturnCodecsHlsCodecStringWhenHlsDeliveryCarriesTheCodec() {
+    assertThat(AudioDecision.copy("eac3", 6, 640_000L).hlsCodecString()).isEqualTo("ec-3");
   }
 
   @Test
