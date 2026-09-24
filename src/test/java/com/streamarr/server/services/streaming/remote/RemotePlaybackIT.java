@@ -63,8 +63,8 @@ class RemotePlaybackIT {
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
   // The committed 10 s clip, and the first 8 s of it that each recording holds, both span two 6 s
   // media segments.
-  private static final int CLIP_MEDIA_SEGMENTS =
-      new MediaSegmentTimeline(Duration.ofSeconds(10), Duration.ofSeconds(6)).mediaSegmentCount();
+  private static final MediaSegmentTimeline CLIP_TIMELINE =
+      new MediaSegmentTimeline(Duration.ofSeconds(10), Duration.ofSeconds(6));
 
   private static final String UNICODE_KEY =
       "東京 Café’s 🎬 %2F ..%2F dir/Ame\u0301lie’s 100%23 #1 한국 𝄞 (2001).mkv";
@@ -494,7 +494,7 @@ class RemotePlaybackIT {
     var streamingService = new FakeStreamingService(registry);
     var properties =
         StreamingProperties.builder()
-            .targetSegmentDuration(Duration.ofSeconds(6))
+            .targetSegmentDuration(CLIP_TIMELINE.targetSegmentDuration())
             .producerStallThreshold(Duration.ofSeconds(5))
             .build();
     var rig =
@@ -520,8 +520,8 @@ class RemotePlaybackIT {
     return TranscodeRequest.builder()
         .sessionId(streamSessionId)
         .sourcePath(mediaFile)
-        .targetSegmentDuration(6)
-        .mediaSegmentCount(CLIP_MEDIA_SEGMENTS)
+        .targetSegmentDuration(CLIP_TIMELINE.targetSegmentDurationSeconds())
+        .mediaSegmentCount(CLIP_TIMELINE.mediaSegmentCount())
         .framerate(OptionalDouble.of(23.976))
         .transcodeDecision(transcodeDecision())
         .width(1920)
@@ -573,47 +573,45 @@ class RemotePlaybackIT {
   }
 
   private void assertCommandPreservesDecision(List<String> command, TranscodeDecision decision) {
-    var expectedVideoCodec =
+    var streamCopiesVideo =
         switch (decision.transcodeMode()) {
-          case REMUX, AUDIO_TRANSCODE -> "copy";
-          case VIDEO_TRANSCODE, FULL_TRANSCODE -> "libx264";
+          case REMUX, AUDIO_TRANSCODE -> true;
+          case VIDEO_TRANSCODE, FULL_TRANSCODE -> false;
         };
-    assertThat(argument(command, "-c:v"))
-        .as("video codec for %s", decision)
-        .isEqualTo(expectedVideoCodec);
     assertThat(command)
         .as("source and absolute timeline for %s", decision)
         .containsSubsequence("-i", "/media/movie.mkv")
         .containsSubsequence("-map", "-0:s")
         .contains("-copyts", "-start_at_zero")
         .doesNotContain("-start_number");
-    var seek = Double.parseDouble(argument(command, "-ss"));
-    switch (decision.transcodeMode()) {
-      case REMUX, AUDIO_TRANSCODE ->
-          assertThat(seek).as("stream copy seek for %s", decision).isEqualTo(12);
-      case VIDEO_TRANSCODE, FULL_TRANSCODE ->
-          assertThat(seek)
-              .as("encode seek at or before the first advertised boundary for %s", decision)
-              .isLessThanOrEqualTo(12);
-    }
-
     assertThat(command)
         .as("fragmented MP4 on standard output for %s", decision)
         .containsSubsequence("-f", "mp4")
         .containsSubsequence("-movflags", "cmaf+delay_moov+skip_trailer+frag_keyframe+frag_discont")
         .endsWith("pipe:1")
         .doesNotContain("-hls_time", "-hls_segment_type");
-
-    if (expectedVideoCodec.equals("libx264")) {
-      assertThat(command)
-          .as("video encoding settings for %s", decision)
-          .containsSubsequence("-vf", "scale=-2:720")
-          .containsSubsequence("-b:v", "2500000")
-          .containsSubsequence("-maxrate", "2500000")
-          .containsSubsequence("-bufsize", "5000000")
-          .containsSubsequence("-force_key_frames:0", "12,16,20");
+    assertAudioPreservesDecision(command, decision);
+    var seek = Double.parseDouble(argument(command, "-ss"));
+    if (streamCopiesVideo) {
+      assertThat(argument(command, "-c:v")).as("video codec for %s", decision).isEqualTo("copy");
+      assertThat(seek).as("stream copy seek for %s", decision).isEqualTo(12);
+      return;
     }
 
+    assertThat(argument(command, "-c:v")).as("video codec for %s", decision).isEqualTo("libx264");
+    assertThat(seek)
+        .as("encode seek at or before the first advertised boundary for %s", decision)
+        .isLessThanOrEqualTo(12);
+    assertThat(command)
+        .as("video encoding settings for %s", decision)
+        .containsSubsequence("-vf", "scale=-2:720")
+        .containsSubsequence("-b:v", "2500000")
+        .containsSubsequence("-maxrate", "2500000")
+        .containsSubsequence("-bufsize", "5000000")
+        .containsSubsequence("-force_key_frames:0", "12,16,20");
+  }
+
+  private void assertAudioPreservesDecision(List<String> command, TranscodeDecision decision) {
     switch (decision.audioDecision().mode()) {
       case COPY -> assertThat(argument(command, "-c:a")).isEqualTo("copy");
       case TRANSCODE ->
