@@ -5,7 +5,8 @@ import java.util.regex.Pattern;
 
 /**
  * Naming scheme for HLS artifacts: media segments are {@code segment{index}.{ts|m4s}}, optionally
- * under a variant directory, and each fMP4 run rewrites a sibling {@code init.mp4}.
+ * under a variant directory, beside an fMP4 variant's {@code init.mp4}, which the variant stores
+ * once and keeps across job attempts.
  */
 public final class SegmentNames {
 
@@ -16,7 +17,7 @@ public final class SegmentNames {
 
   private SegmentNames() {}
 
-  /** Whether the name is a run's init segment: a basename of exactly {@code init.mp4}. */
+  /** Whether the name is an initialization segment: a basename of exactly {@code init.mp4}. */
   public static boolean isInitSegment(String segmentName) {
     return "init.mp4".equals(basename(segmentName));
   }
