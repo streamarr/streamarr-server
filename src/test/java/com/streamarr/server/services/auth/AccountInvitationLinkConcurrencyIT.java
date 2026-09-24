@@ -467,7 +467,7 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
       var selection =
           executor.submit(
               () ->
-                  sessionContextService.recordProfileSelection(
+                  sessionContextService.saveProfileSelection(
                       accountIdentity(targetAdmin), orphan.getId()));
       var blockerPid = backendPid(sessionLock);
       await().atMost(Duration.ofSeconds(5)).until(() -> blockedConnectionCount(blockerPid) == 1);

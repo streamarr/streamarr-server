@@ -205,7 +205,7 @@ class SessionContextServiceTest {
   void shouldRecordSelectionWhenProfileShareInContextIsActive() {
     var session = session(account.getHouseholdId(), null);
 
-    var context = service.recordProfileSelection(identity(session), personal.getId());
+    var context = service.saveProfileSelection(identity(session), personal.getId());
 
     assertThat(context.profileId()).contains(personal.getId());
     assertThat(sessions.findById(session.getId()).orElseThrow().getSelectedProfileId())
@@ -219,7 +219,7 @@ class SessionContextServiceTest {
     var identity = identity(session);
     var unsharedId = profiles.save(ProfileFixture.defaultProfileBuilder().build()).getId();
 
-    assertThatThrownBy(() -> service.recordProfileSelection(identity, unsharedId))
+    assertThatThrownBy(() -> service.saveProfileSelection(identity, unsharedId))
         .isInstanceOf(ProfileAccessDeniedException.class);
     assertThat(sessions.findById(session.getId()).orElseThrow().getSelectedProfileId()).isNull();
   }
