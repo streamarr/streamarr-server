@@ -33,6 +33,7 @@ import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalDouble;
@@ -244,6 +245,37 @@ class RemotePlaybackIT {
   void shouldPreserveExecutableTranscodeSettingsWhenUsingRemoteWorker() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var requests =
+        supportedTranscodeDecisions().stream()
+            .map(
+                decision ->
+                    executableRequestBuilder(mediaFile)
+                        .framerate(OptionalDouble.of(23.976))
+                        .transcodeDecision(decision)
+                        .build())
+            .toList();
+
+    launchedCommands(mediaRoot, requests)
+        .forEach(
+            (request, command) ->
+                assertCommandPreservesDecision(command, request.transcodeDecision()));
+  }
+
+  private TranscodeRequest.TranscodeRequestBuilder executableRequestBuilder(Path mediaFile) {
+    return TranscodeRequest.builder()
+        .sessionId(UUID.randomUUID())
+        .sourcePath(mediaFile)
+        .targetSegmentDuration(4)
+        .width(1920)
+        .height(720)
+        .bitrate(2_500_000)
+        .seekPosition(12)
+        .startSequenceNumber(3)
+        .variantLabel(StreamSession.defaultVariant());
+  }
+
+  private Map<TranscodeRequest, List<String>> launchedCommands(
+      Path mediaRoot, List<TranscodeRequest> requests) throws Exception {
     var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
 
     try (var server = server(segmentStore);
@@ -254,35 +286,21 @@ class RemotePlaybackIT {
       server.start();
       worker.start();
       var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
+      var commands = new LinkedHashMap<TranscodeRequest, List<String>>();
 
-      for (var decision : supportedTranscodeDecisions()) {
-        var streamSessionId = UUID.randomUUID();
-        var request =
-            TranscodeRequest.builder()
-                .sessionId(streamSessionId)
-                .sourcePath(mediaFile)
-                .targetSegmentDuration(4)
-                .framerate(OptionalDouble.of(23.976))
-                .transcodeDecision(decision)
-                .width(1920)
-                .height(720)
-                .bitrate(2_500_000)
-                .seekPosition(12)
-                .startSequenceNumber(3)
-                .variantLabel(StreamSession.defaultVariant())
-                .build();
-
+      for (var request : requests) {
         var handle = executor.start(request);
         await()
             .atMost(2, TimeUnit.SECONDS)
             .until(() -> worker.commandFor(handle.attemptId()).isPresent());
-        assertCommandPreservesDecision(
-            worker.commandFor(handle.attemptId()).orElseThrow(), decision);
-        executor.stop(streamSessionId);
+        commands.put(request, worker.commandFor(handle.attemptId()).orElseThrow());
+        executor.stop(request.sessionId());
         await()
             .atMost(5, TimeUnit.SECONDS)
             .until(() -> server.availableSlots(SOURCE_NAMESPACE_ID) == 1);
       }
+
+      return commands;
     }
   }
 
