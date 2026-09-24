@@ -167,8 +167,9 @@ class ProbeRunsTest {
   @DisplayName("Should stop waiting for a media file when it is removed")
   void shouldStopWaitingForAMediaFileWhenItIsRemoved() throws Exception {
     var run = probeRuns.open();
-    run.request(mediaFile("movie.mkv").getId());
-    sleeper.onSleep(_ -> outcomes.mediaFileExistsWhen(_ -> false));
+    var mediaFileId = mediaFile("movie.mkv").getId();
+    run.request(mediaFileId);
+    sleeper.onSleep(_ -> outcomes.deleteMediaFile(mediaFileId));
 
     var summary = probeRuns.awaitResults(run);
 
