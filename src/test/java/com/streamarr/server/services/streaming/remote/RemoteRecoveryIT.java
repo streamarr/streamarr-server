@@ -38,6 +38,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /**
  * Acceptance proof for ADR 0019's distributed recovery: a variant whose worker attempt fails is
@@ -147,28 +149,34 @@ class RemoteRecoveryIT {
     }
   }
 
-  @Test
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
+      value = TranscodeMode.class,
+      names = {"REMUX", "VIDEO_TRANSCODE"})
   @DisplayName(
       "Should publish a replacement attempt's media segments when its initialization segment matches the stored one")
-  void shouldPublishReplacementAttemptsMediaSegmentsWhenItsInitializationSegmentMatchesStoredOne()
-      throws Exception {
+  void shouldPublishReplacementAttemptsMediaSegmentsWhenItsInitializationSegmentMatchesStoredOne(
+      TranscodeMode mode) throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
     var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
     var meterRegistry = new SimpleMeterRegistry();
     var streamSessionId = UUID.randomUUID();
+    var initialAttempt = initialAttempt(streamSessionId, mediaFile, mode);
 
     try (var server = server(segmentStore, meterRegistry);
         var worker =
             workerBuilder(server, mediaRoot)
-                .ffmpegScript(killableThenReplacedScript(RecordedStream.START_AT_ZERO))
+                .ffmpegScript(
+                    killableThenReplacedScript(
+                        initialAttempt.attemptId(), RecordedStream.START_AT_ZERO))
                 .build()) {
       server.start();
       worker.start();
       var rig =
           recoveryRig(
               RecoveryRigConfiguration.builder()
-                  .initialAttempt(initialAttempt(streamSessionId, mediaFile, TranscodeMode.REMUX))
+                  .initialAttempt(initialAttempt)
                   .segmentStore(segmentStore)
                   .executor(new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot))
                   .build());
@@ -207,8 +215,10 @@ class RemoteRecoveryIT {
     var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
     var meterRegistry = new SimpleMeterRegistry();
     var streamSessionId = UUID.randomUUID();
+    var initialAttempt = initialAttempt(streamSessionId, mediaFile, TranscodeMode.REMUX);
     var script =
-        killableThenReplacedScript(RecordedStream.REPLACEMENT_WITH_DIFFERING_INITIALIZATION);
+        killableThenReplacedScript(
+            initialAttempt.attemptId(), RecordedStream.REPLACEMENT_WITH_DIFFERING_INITIALIZATION);
 
     try (var server = server(segmentStore, meterRegistry);
         var firstWorker = workerBuilder(server, mediaRoot).ffmpegScript(script).build();
@@ -219,7 +229,7 @@ class RemoteRecoveryIT {
       var rig =
           recoveryRig(
               RecoveryRigConfiguration.builder()
-                  .initialAttempt(initialAttempt(streamSessionId, mediaFile, TranscodeMode.REMUX))
+                  .initialAttempt(initialAttempt)
                   .segmentStore(segmentStore)
                   .executor(new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot))
                   .build());
@@ -241,20 +251,15 @@ class RemoteRecoveryIT {
   }
 
   // The initial job attempt delivers segment 0, then stays alive with its output inside a box until
-  // the test kills it, so it fails without delivering segment 1. A replacement attempt, which a
-  // stream copy seeks to segment 1 for, writes the given recording and exits cleanly; the worker
-  // discards the recording's segment 0 as preroll.
-  private static String killableThenReplacedScript(RecordedStream replacementRecording) {
+  // the test kills it, so it fails without delivering segment 1. Every other job attempt is a
+  // replacement, which writes the given recording and exits cleanly; the worker discards the
+  // recording's segment 0 as preroll. The script knows an attempt by the id the worker names it
+  // with: an encoded replacement for segment 1 seeks to 0 s like the initial attempt, and recovery
+  // may send a replacement to a worker that has not run the initial attempt.
+  private static String killableThenReplacedScript(
+      UUID initialAttemptId, RecordedStream replacementRecording) {
     return """
-        seek=0
-        previous=
-        for option in "$@"; do
-          if [[ $previous == -ss ]]; then
-            seek=$option
-          fi
-          previous=$option
-        done
-        if [[ $seek == 0 ]]; then
+        if [[ $STREAMARR_JOB_ATTEMPT_ID == %s ]]; then
           cat %s
           # Three bytes of an eight-byte box header: the output ends inside a box.
           printf 'moo'
@@ -263,6 +268,7 @@ class RemoteRecoveryIT {
         %s
         """
         .formatted(
+            initialAttemptId,
             RecordedStream.START_AT_ZERO.containerPath(),
             WorkerContainerFixture.emitRecordedStream(replacementRecording));
   }
