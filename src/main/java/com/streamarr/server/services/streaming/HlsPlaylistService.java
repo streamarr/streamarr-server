@@ -109,7 +109,7 @@ public class HlsPlaylistService {
     sb.append("#EXT-X-MEDIA-SEQUENCE:0\n");
     sb.append("#EXT-X-PLAYLIST-TYPE:VOD\n");
     sb.append("#EXT-X-MAP:URI=\"")
-        .append(SegmentNames.INITIALIZATION_SEGMENT)
+        .append(SegmentNames.INITIALIZATION_SEGMENT_NAME)
         .append("?t=")
         .append(token)
         .append("\"\n");
@@ -117,7 +117,7 @@ public class HlsPlaylistService {
     for (int i = 0; i < segmentCount; i++) {
       var durationMs = timeline.mediaSegmentDuration(i).toMillis();
       sb.append("#EXTINF:").append(String.format("%.6f", durationMs / 1000.0)).append(",\n");
-      sb.append(SegmentNames.mediaSegment(i)).append("?t=").append(token).append("\n");
+      sb.append(SegmentNames.mediaSegmentName(i)).append("?t=").append(token).append("\n");
     }
 
     sb.append("#EXT-X-ENDLIST\n");

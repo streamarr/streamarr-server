@@ -212,7 +212,7 @@ class HlsRecoveryContinuitySmokeTest {
 
     var outputDir = segmentStore.getOutputDirectory(session.getSessionId());
     for (var index = firstMissingIndex; index < 16; index++) {
-      Files.deleteIfExists(outputDir.resolve(SegmentNames.mediaSegment(index)));
+      Files.deleteIfExists(outputDir.resolve(SegmentNames.mediaSegmentName(index)));
     }
   }
 

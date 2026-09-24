@@ -778,12 +778,12 @@ class WorkerSessionServerIT {
         var initialUpload = segmentMetadata(workerSession, identity, initial);
         upload(
                 channel,
-                namedSegment(initialUpload, "init.mp4", storedInitialization),
+                namedUploadMetadata(initialUpload, "init.mp4", storedInitialization),
                 storedInitialization)
             .get(5, TimeUnit.SECONDS);
         upload(
                 channel,
-                namedSegment(initialUpload, "segment0.m4s", firstMediaSegment),
+                namedUploadMetadata(initialUpload, "segment0.m4s", firstMediaSegment),
                 firstMediaSegment)
             .get(5, TimeUnit.SECONDS);
         worker.send(
@@ -801,7 +801,7 @@ class WorkerSessionServerIT {
         var refused =
             upload(
                 channel,
-                namedSegment(
+                namedUploadMetadata(
                     segmentMetadata(workerSession, identity, replacement),
                     "init.mp4",
                     differingInitialization),
@@ -817,7 +817,7 @@ class WorkerSessionServerIT {
         assertUploadRejected(
             upload(
                 channel,
-                namedSegment(
+                namedUploadMetadata(
                     segmentMetadata(workerSession, identity, replacement),
                     "segment1.m4s",
                     laterMediaSegment),
@@ -1463,7 +1463,7 @@ class WorkerSessionServerIT {
         .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP4);
   }
 
-  private static SegmentUploadMetadata namedSegment(
+  private static SegmentUploadMetadata namedUploadMetadata(
       SegmentUploadMetadata.Builder metadata, String segmentName, byte[] data) {
     return metadata.setSegmentName(segmentName).setContentLengthBytes(data.length).build();
   }

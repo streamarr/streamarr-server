@@ -23,7 +23,7 @@ final class MeshSegmentStore extends FakeSegmentStore {
   @Override
   public void addSegment(UUID sessionId, String segmentName, byte[] data) {
     super.addSegment(sessionId, segmentName, data);
-    if (segmentName.equals(SegmentNames.mediaSegment(0))) {
+    if (segmentName.equals(SegmentNames.mediaSegmentName(0))) {
       firstSegments
           .computeIfAbsent(sessionId, _ -> new CompletableFuture<>())
           .complete(Fmp4Fixture.withInitializationSegment(this, sessionId, data));

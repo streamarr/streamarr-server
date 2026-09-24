@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
 public final class SegmentNames {
 
   /** The basename of a variant's initialization segment. */
-  public static final String INITIALIZATION_SEGMENT = "init.mp4";
+  public static final String INITIALIZATION_SEGMENT_NAME = "init.mp4";
 
   /** The extension of every media segment's name. */
   public static final String MEDIA_SEGMENT_EXTENSION = ".m4s";
@@ -24,7 +24,7 @@ public final class SegmentNames {
   private SegmentNames() {}
 
   /** The name of the media segment at {@code index} on the variant's zero-based timeline. */
-  public static String mediaSegment(int index) {
+  public static String mediaSegmentName(int index) {
     return "segment" + index + MEDIA_SEGMENT_EXTENSION;
   }
 
@@ -35,7 +35,7 @@ public final class SegmentNames {
 
   /** Whether the name is an initialization segment: a basename of exactly {@code init.mp4}. */
   public static boolean isInitSegment(String segmentName) {
-    return INITIALIZATION_SEGMENT.equals(basename(segmentName));
+    return INITIALIZATION_SEGMENT_NAME.equals(basename(segmentName));
   }
 
   public static OptionalInt indexOf(String segmentName) {
@@ -59,7 +59,7 @@ public final class SegmentNames {
     }
 
     var directory = segmentName.substring(0, segmentName.length() - base.length());
-    return directory + mediaSegment(index);
+    return directory + mediaSegmentName(index);
   }
 
   private static String basename(String segmentName) {

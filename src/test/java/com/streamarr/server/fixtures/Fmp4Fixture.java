@@ -25,7 +25,7 @@ public final class Fmp4Fixture {
   public static byte[] withInitializationSegment(
       SegmentStore segmentStore, UUID sessionId, byte[] mediaSegment) {
     var media = new ByteArrayOutputStream();
-    media.writeBytes(segmentStore.readSegment(sessionId, SegmentNames.INITIALIZATION_SEGMENT));
+    media.writeBytes(segmentStore.readSegment(sessionId, SegmentNames.INITIALIZATION_SEGMENT_NAME));
     media.writeBytes(mediaSegment);
     return media.toByteArray();
   }

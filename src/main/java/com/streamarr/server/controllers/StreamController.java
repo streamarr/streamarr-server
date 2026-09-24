@@ -34,8 +34,8 @@ public class StreamController {
   private static final MediaType HLS_MEDIA_TYPE =
       MediaType.parseMediaType("application/vnd.apple.mpegurl");
   private static final MediaType MP4_MEDIA_TYPE = MediaType.parseMediaType("video/mp4");
-  private static final String MEDIA_SEGMENT_NAME =
-      "{segmentName:.+\\" + SegmentNames.MEDIA_SEGMENT_EXTENSION + "}";
+  private static final String MEDIA_SEGMENT_PATH_VARIABLE =
+      "{segmentName:.+\\Q" + SegmentNames.MEDIA_SEGMENT_EXTENSION + "\\E}";
 
   private final StreamingService streamingService;
   private final HlsPlaylistService playlistService;
@@ -70,7 +70,7 @@ public class StreamController {
     return ResponseEntity.ok().contentType(HLS_MEDIA_TYPE).body(playlist);
   }
 
-  @GetMapping("/{sessionId}/" + SegmentNames.INITIALIZATION_SEGMENT)
+  @GetMapping("/{sessionId}/" + SegmentNames.INITIALIZATION_SEGMENT_NAME)
   @ApiResponse(
       responseCode = "200",
       content =
@@ -84,10 +84,10 @@ public class StreamController {
     }
 
     return serveSegment(
-        sessionId, StreamSession.defaultVariant(), SegmentNames.INITIALIZATION_SEGMENT);
+        sessionId, StreamSession.defaultVariant(), SegmentNames.INITIALIZATION_SEGMENT_NAME);
   }
 
-  @GetMapping("/{sessionId}/" + MEDIA_SEGMENT_NAME)
+  @GetMapping("/{sessionId}/" + MEDIA_SEGMENT_PATH_VARIABLE)
   @ApiResponse(responseCode = "400", description = "Invalid segment path", content = @Content)
   @ApiResponse(
       responseCode = "200",
@@ -128,7 +128,7 @@ public class StreamController {
     return ResponseEntity.ok().contentType(HLS_MEDIA_TYPE).body(playlist);
   }
 
-  @GetMapping("/{sessionId}/{variantLabel}/" + SegmentNames.INITIALIZATION_SEGMENT)
+  @GetMapping("/{sessionId}/{variantLabel}/" + SegmentNames.INITIALIZATION_SEGMENT_NAME)
   @ApiResponse(
       responseCode = "200",
       content =
@@ -150,10 +150,10 @@ public class StreamController {
     }
 
     return serveSegment(
-        sessionId, variantLabel, variantLabel + "/" + SegmentNames.INITIALIZATION_SEGMENT);
+        sessionId, variantLabel, variantLabel + "/" + SegmentNames.INITIALIZATION_SEGMENT_NAME);
   }
 
-  @GetMapping("/{sessionId}/{variantLabel}/" + MEDIA_SEGMENT_NAME)
+  @GetMapping("/{sessionId}/{variantLabel}/" + MEDIA_SEGMENT_PATH_VARIABLE)
   @ApiResponse(responseCode = "400", description = "Invalid segment path", content = @Content)
   @ApiResponse(responseCode = "503", description = "Segment unavailable", content = @Content)
   @ApiResponse(
