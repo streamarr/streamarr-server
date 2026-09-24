@@ -3,7 +3,6 @@ package com.streamarr.server.services.library;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.awaitility.Awaitility.await;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
@@ -16,11 +15,13 @@ import com.streamarr.server.domain.task.ProbeState;
 import com.streamarr.server.domain.task.RequestedProbeResult;
 import com.streamarr.server.exceptions.ArtworkResultNotSavedException;
 import com.streamarr.server.exceptions.LibraryScanFailedException;
+import com.streamarr.server.fakes.CountingSleeper;
 import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeProbeTaskRequests;
 import com.streamarr.server.fakes.GatedImageDownloader;
+import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.ArtworkServiceFixture;
 import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
@@ -30,6 +31,7 @@ import com.streamarr.server.services.ArtworkSources;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
+import com.streamarr.server.support.BoundedTask;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
@@ -38,8 +40,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,6 +52,8 @@ import org.springframework.dao.DataAccessResourceFailureException;
 @Tag("UnitTest")
 @DisplayName("File discovery runs")
 class FileDiscoveryRunsTest {
+
+  private static final Duration RESULTS_BOUND = Duration.ofSeconds(5);
 
   private final FakeMediaFileRepository mediaFiles = new FakeMediaFileRepository();
   private final FakeItemResultRepository itemResults = new FakeItemResultRepository();
@@ -152,33 +155,52 @@ class FileDiscoveryRunsTest {
       artworkService.fetchRequired(discovery.artworkRun(), movieArtwork());
     }
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      assertThat(executor.submit(() -> runs.awaitResults(discovery)))
-          .failsWithin(Duration.ofSeconds(5))
-          .withThrowableOfType(ExecutionException.class)
-          .withCauseInstanceOf(LibraryScanFailedException.class);
-    }
+    assertThatThrownBy(
+            () -> BoundedTask.runWithin(RESULTS_BOUND, () -> runs.awaitResults(discovery)))
+        .isInstanceOf(LibraryScanFailedException.class);
   }
 
   @Test
   @DisplayName("Should stop the probe timer when probes finish before required artwork")
   void shouldStopTheProbeTimerWhenProbesFinishBeforeRequiredArtwork() throws Exception {
+    var clock = new MutableClock();
+    var timedArtwork =
+        ArtworkServiceFixture.artworkServiceBuilder()
+            .imageDownloader(imageDownloader)
+            .itemResults(itemResults)
+            .clock(clock)
+            .build();
+    var probeWait = new CompletableFuture<Thread>();
+    var sleeper = new CountingSleeper();
+    probeTaskRequests.dispatchWith(_ -> {});
+    sleeper.onSleep(
+        _ -> {
+          probeTaskRequests.succeed(probeTaskRequests.requests().getFirst());
+          probeWait.complete(Thread.currentThread());
+        });
     imageDownloader.holdPathsStartingWith("/poster");
-    var runs = fileDiscoveryRuns();
+    var runs =
+        fileDiscoveryRunsBuilder()
+            .artworkService(timedArtwork)
+            .clock(clock)
+            .sleeper(sleeper)
+            .build();
     var discovery = runs.open("scan of", library);
     try (discovery) {
       discovery.probeRun().request(mediaFile().getId());
-      artworkService.fetchRequired(discovery.artworkRun(), movieArtwork());
+      timedArtwork.fetchRequired(discovery.artworkRun(), movieArtwork());
     }
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var results = executor.submit(() -> runs.awaitResults(discovery));
-      imageDownloader.awaitHeldDownloads(1, Duration.ofSeconds(5));
-      await().pollDelay(Duration.ofMillis(300)).until(() -> true);
+    try (var results = BoundedTask.start(() -> runs.awaitResults(discovery))) {
+      assertThat(probeWait.get(5, TimeUnit.SECONDS).join(RESULTS_BOUND))
+          .as("probe wait finished")
+          .isTrue();
+      clock.advance(Duration.ofSeconds(60));
       imageDownloader.releaseHeldDownloads();
 
-      var finished = results.get(5, TimeUnit.SECONDS);
-      assertThat(finished.probes().elapsed()).isLessThan(finished.artwork().elapsed());
+      var finished = results.await(RESULTS_BOUND);
+      assertThat(finished.probes().elapsed()).isZero();
+      assertThat(finished.artwork().elapsed()).isEqualTo(Duration.ofSeconds(60));
     }
   }
 
@@ -204,13 +226,16 @@ class FileDiscoveryRunsTest {
   }
 
   private FileDiscoveryRuns fileDiscoveryRuns() {
+    return fileDiscoveryRunsBuilder().build();
+  }
+
+  private FileDiscoveryRunsFixture.FileDiscoveryRunsBuilder fileDiscoveryRunsBuilder() {
     return FileDiscoveryRunsFixture.fileDiscoveryRunsBuilder()
         .artworkService(artworkService)
         .mediaFiles(mediaFiles)
         .outcomes(outcomes)
         .probeTaskRequests(probeTaskRequests)
-        .fileSystem(fileSystem)
-        .build();
+        .fileSystem(fileSystem);
   }
 
   private MediaFile mediaFile() throws IOException {
