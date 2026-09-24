@@ -98,11 +98,8 @@ public class HlsPlaylistService {
   public String generateMediaPlaylist(StreamSession session, String token) {
     var decision = session.getTranscodeDecision();
     var container = decision.containerFormat();
-    var probe = session.getMediaProbe();
-    var timeline = MediaSegmentTimelines.of(probe, properties);
+    var timeline = MediaSegmentTimelines.of(session.getMediaProbe(), properties);
     var targetSegmentDuration = timeline.targetSegmentDurationSeconds();
-    var totalDurationMs = probe.duration().toMillis();
-    var segmentDurationMs = targetSegmentDuration * 1000L;
     var segmentCount = timeline.mediaSegmentCount();
     var extension = container.segmentExtension();
 
@@ -118,8 +115,7 @@ public class HlsPlaylistService {
     }
 
     for (int i = 0; i < segmentCount; i++) {
-      var remainingMs = totalDurationMs - (i * segmentDurationMs);
-      var durationMs = Math.min(segmentDurationMs, remainingMs);
+      var durationMs = timeline.mediaSegmentDuration(i).toMillis();
       sb.append("#EXTINF:").append(String.format("%.6f", durationMs / 1000.0)).append(",\n");
       sb.append("segment").append(i).append(extension).append("?t=").append(token).append("\n");
     }

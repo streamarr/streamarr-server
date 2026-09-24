@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
@@ -435,9 +436,9 @@ public class ProducerLifecycleService {
 
   private TranscodeRequest replacementRequest(
       StreamSession session, ReplaceProducerCommand command) {
+    var seekPosition = timelineOf(session).mediaSegmentStartSeconds(command.segmentIndex());
     var request =
-        baseRequest(
-                session, command.segmentIndex() * segmentDurationSeconds(), command.segmentIndex())
+        baseRequest(session, seekPosition, command.segmentIndex())
             .variantLabel(command.variantLabel());
 
     var variant =
@@ -499,7 +500,7 @@ public class ProducerLifecycleService {
 
     var segmentIndex = requestedIndex(session, segmentName);
     transcodeExecutor.stop(sessionId);
-    startAll(session, segmentIndex * segmentDurationSeconds(), segmentIndex);
+    startAll(session, timelineOf(session).mediaSegmentStartSeconds(segmentIndex), segmentIndex);
     session.setLastAccessedAt(Instant.now());
     runtimeRegistry.save(session);
 
@@ -528,8 +529,8 @@ public class ProducerLifecycleService {
     return Math.max(1, (int) gapSegments);
   }
 
-  private int segmentDurationSeconds() {
-    return (int) properties.targetSegmentDuration().toSeconds();
+  private MediaSegmentTimeline timelineOf(StreamSession session) {
+    return MediaSegmentTimelines.of(session.getMediaProbe(), properties);
   }
 
   private void doResume(UUID sessionId, String segmentName) {
@@ -539,7 +540,7 @@ public class ProducerLifecycleService {
     }
 
     var segmentIndex = requestedIndex(session, segmentName);
-    var resumeSeek = segmentIndex * segmentDurationSeconds();
+    var resumeSeek = timelineOf(session).mediaSegmentStartSeconds(segmentIndex);
 
     startAll(session, resumeSeek, segmentIndex);
     session.setLastAccessedAt(Instant.now());
@@ -589,7 +590,7 @@ public class ProducerLifecycleService {
   private TranscodeRequest.TranscodeRequestBuilder baseRequest(
       StreamSession session, int seekPosition, int startSequenceNumber) {
     var probe = session.getMediaProbe();
-    var timeline = MediaSegmentTimelines.of(probe, properties);
+    var timeline = timelineOf(session);
     return TranscodeRequest.builder()
         .sessionId(session.getSessionId())
         .sourcePath(session.getSourcePath())

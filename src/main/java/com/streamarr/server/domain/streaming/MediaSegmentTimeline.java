@@ -16,7 +16,19 @@ public record MediaSegmentTimeline(
   }
 
   public int mediaSegmentCount() {
-    return Math.toIntExact(
-        Math.ceilDiv(mediaDuration.toMillis(), targetSegmentDurationSeconds() * 1000L));
+    return Math.toIntExact(Math.ceilDiv(mediaDuration.toMillis(), targetSegmentMillis()));
+  }
+
+  public int mediaSegmentStartSeconds(int index) {
+    return index * targetSegmentDurationSeconds();
+  }
+
+  public Duration mediaSegmentDuration(int index) {
+    var remainingMillis = mediaDuration.toMillis() - index * targetSegmentMillis();
+    return Duration.ofMillis(Math.min(targetSegmentMillis(), remainingMillis));
+  }
+
+  private long targetSegmentMillis() {
+    return targetSegmentDurationSeconds() * 1000L;
   }
 }
