@@ -8,8 +8,9 @@ public interface ProbeTaskRequests {
   void request(ProbeTaskRequest request);
 
   /**
-   * Requests the probe like {@link #request}, and runs a retry that waits out the backoff of a
-   * failed attempt at once. A pending probe that waits for any other reason keeps its time.
+   * Requests the probe like {@link #request}, and runs it at once when the last attempt failed with
+   * a saved reason, so its backoff starts again. A pending probe whose last attempt saved no
+   * failure keeps its time.
    */
   void requestRetryingFailure(ProbeTaskRequest request);
 }

@@ -11,6 +11,8 @@ import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -42,15 +44,25 @@ public class SchedulerProbeTaskRequests implements ProbeTaskRequests {
   @Override
   @Transactional
   public void requestRetryingFailure(ProbeTaskRequest request) {
+    // Read before enqueue, which clears the saved failure when the request carries new inputs.
+    var lastAttemptFailed = hasSavedFailure(request.mediaFileId());
     enqueue(request);
+    if (!lastAttemptFailed) {
+      return;
+    }
+
     var instance = task.instance(request.mediaFileId().toString(), request);
     var now = clock.instant();
     client
         .getScheduledExecution(instance)
         .filter(pending -> !pending.isPicked())
-        .filter(pending -> pending.getConsecutiveFailures() > 0)
         .filter(pending -> now.isBefore(pending.getExecutionTime()))
         .ifPresent(_ -> replacePendingInputs(instance, request, now));
+  }
+
+  private boolean hasSavedFailure(UUID mediaFileId) {
+    return outcomes.findProbeStates(List.of(mediaFileId)).stream()
+        .anyMatch(state -> state.failure().isPresent());
   }
 
   private void enqueue(ProbeTaskRequest request) {
