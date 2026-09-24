@@ -193,9 +193,7 @@ class RemoteRecoveryIT {
                   assertThat(
                           Bytes.concat(
                               Fmp4Fixture.withInitializationSegment(
-                                  segmentStore,
-                                  streamSessionId,
-                                  segmentStore.readSegment(streamSessionId, "segment0.m4s")),
+                                  segmentStore, streamSessionId, "segment0.m4s"),
                               ready.data()))
                       .as(
                           "the stored initialization segment, the initial attempt's segment 0 and the replacement attempt's segment 1")
@@ -278,10 +276,7 @@ class RemoteRecoveryIT {
     assertThat(RecordedStream.START_AT_ZERO.bytes())
         .as("the initial attempt's initialization segment and segment 0 stay stored")
         .startsWith(
-            Fmp4Fixture.withInitializationSegment(
-                segmentStore,
-                streamSessionId,
-                segmentStore.readSegment(streamSessionId, "segment0.m4s")));
+            Fmp4Fixture.withInitializationSegment(segmentStore, streamSessionId, "segment0.m4s"));
   }
 
   private void startThenKillInitialAttempt(RecoveryRig rig, List<WorkerContainerFixture> workers)

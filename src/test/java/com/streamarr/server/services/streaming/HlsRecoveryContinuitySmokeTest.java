@@ -223,8 +223,6 @@ class HlsRecoveryContinuitySmokeTest {
   private Path decodableMediaFile(UUID sessionId, String segmentName) throws Exception {
     var media = temporaryDirectory.resolve("decodable-" + segmentName + ".mp4");
     return Files.write(
-        media,
-        Fmp4Fixture.withInitializationSegment(
-            segmentStore, sessionId, segmentStore.readSegment(sessionId, segmentName)));
+        media, Fmp4Fixture.withInitializationSegment(segmentStore, sessionId, segmentName));
   }
 }

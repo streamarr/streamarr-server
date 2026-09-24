@@ -29,4 +29,11 @@ public final class Fmp4Fixture {
     media.writeBytes(mediaSegment);
     return media.toByteArray();
   }
+
+  /** The stream session's stored initialization segment followed by its stored media segment. */
+  public static byte[] withInitializationSegment(
+      SegmentStore segmentStore, UUID sessionId, String mediaSegmentName) {
+    return withInitializationSegment(
+        segmentStore, sessionId, segmentStore.readSegment(sessionId, mediaSegmentName));
+  }
 }
