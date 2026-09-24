@@ -144,29 +144,31 @@ class FileEventProcessorTest {
         new MutationTransactions(new FakeTransactionManager(), new ConstraintViolationTranslator());
 
     var libraryManagementService =
-        new LibraryManagementService(
-            ignoredFileValidator,
-            videoExtensionValidator,
-            movieFileProcessor,
-            seriesFileProcessor,
-            libraryRepository,
-            new FakeLibraryMetadataRepository(),
-            mediaFileRepository,
-            movieService,
-            seriesService,
-            event -> eventPublisherRef.get().publishEvent(event),
-            new MutexFactoryProvider(),
-            mock(LibraryRefreshService.class),
-            fileSystem,
-            new FakeLibraryMutationTransaction(),
-            mutationTransactions,
-            FileDiscoveryRunsFixture.fileDiscoveryRunsBuilder()
-                .artworkService(ArtworkServiceFixture.artworkServiceBuilder().build())
-                .mediaFiles(mediaFileRepository)
-                .outcomes(probeOutcomes)
-                .probeTaskRequests(probeTaskRequests)
-                .fileSystem(fileSystem)
-                .build());
+        LibraryManagementService.builder()
+            .ignoredFileValidator(ignoredFileValidator)
+            .videoExtensionValidator(videoExtensionValidator)
+            .movieFileProcessor(movieFileProcessor)
+            .seriesFileProcessor(seriesFileProcessor)
+            .libraryRepository(libraryRepository)
+            .libraryMetadataRepository(new FakeLibraryMetadataRepository())
+            .mediaFileRepository(mediaFileRepository)
+            .movieService(movieService)
+            .seriesService(seriesService)
+            .eventPublisher(event -> eventPublisherRef.get().publishEvent(event))
+            .mutexFactoryProvider(new MutexFactoryProvider())
+            .libraryRefreshService(mock(LibraryRefreshService.class))
+            .fileSystem(fileSystem)
+            .libraryMutationTransaction(new FakeLibraryMutationTransaction())
+            .mutationTransactions(mutationTransactions)
+            .fileDiscoveryRuns(
+                FileDiscoveryRunsFixture.fileDiscoveryRunsBuilder()
+                    .artworkService(ArtworkServiceFixture.artworkServiceBuilder().build())
+                    .mediaFiles(mediaFileRepository)
+                    .outcomes(probeOutcomes)
+                    .probeTaskRequests(probeTaskRequests)
+                    .fileSystem(fileSystem)
+                    .build())
+            .build();
 
     eventProcessor =
         new FileEventProcessor(

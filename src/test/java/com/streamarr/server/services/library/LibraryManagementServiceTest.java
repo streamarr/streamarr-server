@@ -221,24 +221,7 @@ class LibraryManagementServiceTest {
   private final CountingSleeper probeCheckSleeper = new CountingSleeper();
   private final FileDiscoveryRuns fileDiscoveryRuns = fileDiscoveryRunsWith(artworkService);
 
-  private final LibraryManagementService libraryManagementService =
-      new LibraryManagementService(
-          new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
-          new VideoExtensionValidator(),
-          movieFileProcessor,
-          seriesFileProcessor,
-          fakeLibraryRepository,
-          new FakeLibraryMetadataRepository(),
-          fakeMediaFileRepository,
-          movieService,
-          seriesService,
-          capturingEventPublisher,
-          new MutexFactoryProvider(),
-          libraryRefreshService,
-          fileSystem,
-          libraryMutationTransaction,
-          mutationTransactions,
-          fileDiscoveryRuns);
+  private final LibraryManagementService libraryManagementService = serviceBuilder().build();
 
   private UUID savedLibraryId;
 
@@ -987,29 +970,18 @@ class LibraryManagementServiceTest {
             null,
             null,
             null);
-    return new LibraryManagementService(
-        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
-        new VideoExtensionValidator(),
-        new MovieFileProcessor(
-            new DefaultVideoFileMetadataParser(),
-            new ExternalIdVideoFileMetadataParser(),
-            fakeMovieMetadataProviderResolver,
-            artworkMovieService,
-            fakeMediaFileRepository,
-            new MutexFactoryProvider()),
-        seriesFileProcessor,
-        fakeLibraryRepository,
-        new FakeLibraryMetadataRepository(),
-        fakeMediaFileRepository,
-        artworkMovieService,
-        seriesService,
-        capturingEventPublisher,
-        new MutexFactoryProvider(),
-        libraryRefreshService,
-        fileSystem,
-        libraryMutationTransaction,
-        mutationTransactions,
-        fileDiscoveryRunsWith(artwork));
+    return serviceBuilder()
+        .movieFileProcessor(
+            new MovieFileProcessor(
+                new DefaultVideoFileMetadataParser(),
+                new ExternalIdVideoFileMetadataParser(),
+                fakeMovieMetadataProviderResolver,
+                artworkMovieService,
+                fakeMediaFileRepository,
+                new MutexFactoryProvider()))
+        .movieService(artworkMovieService)
+        .fileDiscoveryRuns(fileDiscoveryRunsWith(artwork))
+        .build();
   }
 
   private void saveMatchedMediaFile(Path path) {
@@ -2238,66 +2210,41 @@ class LibraryManagementServiceTest {
         new MutexFactoryProvider());
   }
 
+  private LibraryManagementService.LibraryManagementServiceBuilder serviceBuilder() {
+    return LibraryManagementService.builder()
+        .ignoredFileValidator(new IgnoredFileValidator(new LibraryScanProperties(null, null, null)))
+        .videoExtensionValidator(new VideoExtensionValidator())
+        .movieFileProcessor(movieFileProcessor)
+        .seriesFileProcessor(seriesFileProcessor)
+        .libraryRepository(fakeLibraryRepository)
+        .libraryMetadataRepository(new FakeLibraryMetadataRepository())
+        .mediaFileRepository(fakeMediaFileRepository)
+        .movieService(movieService)
+        .seriesService(seriesService)
+        .eventPublisher(capturingEventPublisher)
+        .mutexFactoryProvider(new MutexFactoryProvider())
+        .libraryRefreshService(libraryRefreshService)
+        .fileSystem(fileSystem)
+        .libraryMutationTransaction(libraryMutationTransaction)
+        .mutationTransactions(mutationTransactions)
+        .fileDiscoveryRuns(fileDiscoveryRuns);
+  }
+
   private LibraryManagementService serviceWith(FileSystem alternateFileSystem) {
-    return new LibraryManagementService(
-        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
-        new VideoExtensionValidator(),
-        movieFileProcessor,
-        seriesFileProcessor,
-        fakeLibraryRepository,
-        new FakeLibraryMetadataRepository(),
-        fakeMediaFileRepository,
-        movieService,
-        seriesService,
-        capturingEventPublisher,
-        new MutexFactoryProvider(),
-        libraryRefreshService,
-        alternateFileSystem,
-        libraryMutationTransaction,
-        mutationTransactions,
-        fileDiscoveryRuns);
+    return serviceBuilder().fileSystem(alternateFileSystem).build();
   }
 
   private LibraryManagementService libraryManagementServiceWith(
       MovieFileProcessor movieProcessor, SeriesFileProcessor seriesProcessor) {
-    return new LibraryManagementService(
-        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
-        new VideoExtensionValidator(),
-        movieProcessor,
-        seriesProcessor,
-        fakeLibraryRepository,
-        new FakeLibraryMetadataRepository(),
-        fakeMediaFileRepository,
-        movieService,
-        seriesService,
-        capturingEventPublisher,
-        new MutexFactoryProvider(),
-        libraryRefreshService,
-        fileSystem,
-        libraryMutationTransaction,
-        mutationTransactions,
-        fileDiscoveryRuns);
+    return serviceBuilder()
+        .movieFileProcessor(movieProcessor)
+        .seriesFileProcessor(seriesProcessor)
+        .build();
   }
 
   private LibraryManagementService libraryManagementServiceWithRefreshService(
       LibraryRefreshService refreshService) {
-    return new LibraryManagementService(
-        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
-        new VideoExtensionValidator(),
-        movieFileProcessor,
-        seriesFileProcessor,
-        fakeLibraryRepository,
-        new FakeLibraryMetadataRepository(),
-        fakeMediaFileRepository,
-        movieService,
-        seriesService,
-        capturingEventPublisher,
-        new MutexFactoryProvider(),
-        refreshService,
-        fileSystem,
-        libraryMutationTransaction,
-        mutationTransactions,
-        fileDiscoveryRuns);
+    return serviceBuilder().libraryRefreshService(refreshService).build();
   }
 
   private Path pathWithDisplayName(String filepathUri, String displayName) throws IOException {
