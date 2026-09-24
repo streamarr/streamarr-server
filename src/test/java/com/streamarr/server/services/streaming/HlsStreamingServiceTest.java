@@ -329,7 +329,7 @@ class HlsStreamingServiceTest {
   void shouldAdvertiseTheMediaPlaylistSegmentCountToTheJobAttemptWhenCreatingSession(
       Duration mediaDuration, int expectedCount) {
     probeResults.setDefaultProbe(
-        defaultProbeBuilder().framerate(23.976).duration(mediaDuration).build());
+        defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).duration(mediaDuration).build());
     var file = seedMediaFile();
 
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
