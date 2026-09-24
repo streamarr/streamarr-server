@@ -6,6 +6,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.playbackAuthori
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import com.google.common.primitives.Bytes;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
@@ -162,7 +163,7 @@ class RemoteRecoveryIT {
     try (var server = server(segmentStore, meterRegistry);
         var worker =
             workerBuilder(server, mediaRoot)
-                .ffmpegScript(killableThenReplacedScript(RecordedStream.SEEK_TO_SIX_SECONDS))
+                .ffmpegScript(killableThenReplacedScript(RecordedStream.START_AT_ZERO))
                 .build()) {
       server.start();
       worker.start();
@@ -185,12 +186,15 @@ class RemoteRecoveryIT {
               SegmentDelivery.Ready.class,
               ready ->
                   assertThat(
-                          Fmp4Fixture.withInitializationSegment(
-                              segmentStore, streamSessionId, ready.data()))
+                          Bytes.concat(
+                              Fmp4Fixture.withInitializationSegment(
+                                  segmentStore,
+                                  streamSessionId,
+                                  segmentStore.readSegment(streamSessionId, "segment0.m4s")),
+                              ready.data()))
                       .as(
-                          "the stored initialization segment and the replacement attempt's segment 1")
-                      .isEqualTo(RecordedStream.SEEK_TO_SIX_SECONDS.bytes()));
-      assertInitialAttemptsSegmentsStored(segmentStore, streamSessionId);
+                          "the stored initialization segment, the initial attempt's segment 0 and the replacement attempt's segment 1")
+                      .isEqualTo(RecordedStream.START_AT_ZERO.bytes()));
       assertThat(initializationSegmentMismatches(meterRegistry)).isZero();
     }
   }
@@ -207,8 +211,7 @@ class RemoteRecoveryIT {
     var meterRegistry = new SimpleMeterRegistry();
     var streamSessionId = UUID.randomUUID();
     var script =
-        killableThenReplacedScript(
-            RecordedStream.SEEK_TO_SIX_SECONDS_WITH_DIFFERING_INITIALIZATION);
+        killableThenReplacedScript(RecordedStream.REPLACEMENT_WITH_DIFFERING_INITIALIZATION);
 
     try (var server = server(segmentStore, meterRegistry);
         var firstWorker = workerBuilder(server, mediaRoot).ffmpegScript(script).build();
@@ -242,8 +245,9 @@ class RemoteRecoveryIT {
   }
 
   // The initial job attempt delivers segment 0, then stays alive with its output inside a box until
-  // the test kills it, so it fails without delivering segment 1. A replacement attempt, which seeks
-  // to segment 1, writes the given recording and exits cleanly.
+  // the test kills it, so it fails without delivering segment 1. A replacement attempt, which a
+  // stream copy seeks to segment 1 for, writes the given recording and exits cleanly; the worker
+  // discards the recording's segment 0 as preroll.
   private static String killableThenReplacedScript(RecordedStream replacementRecording) {
     return """
         seek=0
