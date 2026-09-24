@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.OptionalDouble;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
@@ -64,7 +65,7 @@ class HlsPlaylistServiceTest {
             .mediaProbe(
                 MediaProbe.builder()
                     .duration(duration)
-                    .framerate(23.976)
+                    .framerate(OptionalDouble.of(23.976))
                     .width(1920)
                     .height(1080)
                     .videoCodec("h264")
@@ -98,7 +99,7 @@ class HlsPlaylistServiceTest {
             .mediaProbe(
                 MediaProbe.builder()
                     .duration(Duration.ofSeconds(120))
-                    .framerate(23.976)
+                    .framerate(OptionalDouble.of(23.976))
                     .width(1920)
                     .height(1080)
                     .videoCodec("h264")
@@ -155,7 +156,7 @@ class HlsPlaylistServiceTest {
             .mediaProbe(
                 MediaProbe.builder()
                     .duration(Duration.ofSeconds(durationSeconds))
-                    .framerate(23.976)
+                    .framerate(OptionalDouble.of(23.976))
                     .width(1920)
                     .height(1080)
                     .videoCodec("hevc")
@@ -602,7 +603,7 @@ class HlsPlaylistServiceTest {
               .mediaProbe(
                   MediaProbe.builder()
                       .duration(Duration.ofSeconds(120))
-                      .framerate(23.976)
+                      .framerate(OptionalDouble.of(23.976))
                       .width(1920)
                       .height(1080)
                       .videoCodec("hevc")

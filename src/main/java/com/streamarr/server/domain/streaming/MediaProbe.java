@@ -3,14 +3,16 @@ package com.streamarr.server.domain.streaming;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import lombok.Builder;
+import lombok.NonNull;
 
 @Builder
 public record MediaProbe(
     Duration duration,
-    double framerate,
+    @NonNull OptionalDouble framerate,
     int width,
     int height,
     String videoCodec,
@@ -33,9 +35,10 @@ public record MediaProbe(
     }
   }
 
-  @SuppressWarnings("java:S1068") // Lombok builder default — field is used by generated code
+  @SuppressWarnings("java:S1068") // Lombok builder defaults — fields are used by generated code
   public static class MediaProbeBuilder {
     private Optional<String> containerFormat = Optional.empty();
+    private OptionalDouble framerate = OptionalDouble.empty();
   }
 
   public List<StreamInfo> audioStreams() {

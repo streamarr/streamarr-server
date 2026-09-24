@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -35,6 +36,18 @@ class ProbeOutcomeTest {
     assertThat(outcome.mediaProbe()).isEqualTo(summary);
     assertThat(outcome.mediaProbe().videoCodec()).isEqualTo("h264");
     assertThat(outcome.mediaProbe().audioCodec()).isEqualTo("ac3");
+  }
+
+  @Test
+  @DisplayName("Should leave the playback frame rate unknown when the first video stream has none")
+  void shouldLeaveThePlaybackFrameRateUnknownWhenTheFirstVideoStreamHasNone() {
+    var firstVideo = streamBuilder("video", "h264").index(0).build();
+    var laterVideo =
+        streamBuilder("video", "hevc").index(1).framerate(OptionalDouble.of(23.976)).build();
+    var outcome =
+        new ProbeOutcome.Success(ProbeContainer.builder().build(), List.of(firstVideo, laterVideo));
+
+    assertThat(outcome.mediaProbe().framerate()).isEmpty();
   }
 
   @Test

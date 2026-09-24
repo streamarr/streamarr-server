@@ -45,6 +45,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
@@ -150,6 +151,23 @@ class StreamingResolverTest {
             Map.of(
                 "__typename", "MediaFileProbeNotReadyError",
                 "message", "This file is being prepared for playback. Try again shortly."));
+  }
+
+  @Test
+  @DisplayName(
+      "Should return a typed frame-rate error when the video must be encoded without a frame rate")
+  void shouldReturnATypedFrameRateErrorWhenTheVideoMustBeEncodedWithoutAFrameRate() {
+    STUB_SERVICE.setRejection(new CreateStreamSessionRejection.FrameRateUnknown());
+    var context = requestSession(UUID.randomUUID().toString());
+    List<Map<String, String>> errors = context.read("data.createStreamSession.userErrors");
+
+    assertThat(context.read("data.createStreamSession.session", Object.class)).isNull();
+    assertThat(errors)
+        .containsExactly(
+            Map.of(
+                "__typename", "MediaFileFrameRateUnknownError",
+                "message",
+                    "This file's video must be converted for playback, but its frame rate is unknown."));
   }
 
   @Test
@@ -303,7 +321,7 @@ class StreamingResolverTest {
         .mediaProbe(
             MediaProbe.builder()
                 .duration(Duration.ofMinutes(120))
-                .framerate(24.0)
+                .framerate(OptionalDouble.of(24.0))
                 .width(1920)
                 .height(1080)
                 .videoCodec("h264")

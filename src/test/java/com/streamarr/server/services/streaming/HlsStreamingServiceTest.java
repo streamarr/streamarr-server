@@ -40,12 +40,15 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataAccessResourceFailureException;
 
@@ -75,13 +78,76 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getRunningCount()).isZero();
   }
 
+  @ParameterizedTest
+  @CsvSource({"aac, AUTO, VIDEO_TRANSCODE", "flac, HIGH_720P, FULL_TRANSCODE"})
+  @DisplayName(
+      "Should reject the stream session when the video must be encoded and the probe has no frame rate")
+  void shouldRejectTheStreamSessionWhenTheVideoMustBeEncodedAndTheProbeHasNoFrameRate(
+      String audioCodec, VideoQuality quality, TranscodeMode encodingMode) {
+    var probe = defaultProbeBuilder().videoCodec("hevc").audioCodec(audioCodec);
+    var options =
+        StreamingOptions.builder().quality(quality).supportedCodecs(List.of("h264")).build();
+    var file = seedMediaFile();
+    var profileId = UUID.randomUUID();
+    probeResults.setDefaultProbe(probe.framerate(OptionalDouble.of(23.976)).build());
+    var encoded = createSession(file.getId(), profileId, options);
+    service.destroySession(encoded.getSessionId());
+    var startedRequests = List.copyOf(transcodeExecutor.getStartedRequests());
+    probeResults.setDefaultProbe(probe.framerate(OptionalDouble.empty()).build());
+
+    var outcome =
+        service.createSession(createStreamSessionCommand(file.getId(), profileId, options));
+
+    assertThat(encoded.getTranscodeDecision().transcodeMode()).isEqualTo(encodingMode);
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.FrameRateUnknown()));
+    assertThat(service.getActiveSessionCount()).isZero();
+    assertThat(transcodeExecutor.getStartedRequests()).isEqualTo(startedRequests);
+  }
+
+  @Test
+  @DisplayName(
+      "Should report the unknown frame rate when the video must be encoded and no transcode slot is free")
+  void shouldReportTheUnknownFrameRateWhenTheVideoMustBeEncodedAndNoTranscodeSlotIsFree() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").framerate(OptionalDouble.empty()).build());
+    transcodeExecutor.setAvailableSlots(0);
+    var file = seedMediaFile();
+
+    assertThat(
+            service.createSession(
+                createStreamSessionCommand(file.getId(), UUID.randomUUID(), defaultOptions())))
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.FrameRateUnknown()));
+  }
+
+  @ParameterizedTest
+  @CsvSource({"aac, REMUX", "flac, AUDIO_TRANSCODE"})
+  @DisplayName(
+      "Should copy the video with no encoded variants when the probe has no frame rate and the codec is supported")
+  void shouldCopyTheVideoWithNoEncodedVariantsWhenTheProbeHasNoFrameRateAndTheCodecIsSupported(
+      String audioCodec, TranscodeMode copyMode) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().audioCodec(audioCodec).framerate(OptionalDouble.empty()).build());
+    var file = seedMediaFile();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(copyMode);
+    assertThat(session.getVariants()).isEmpty();
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(TranscodeRequest::framerate)
+        .isEqualTo(OptionalDouble.empty());
+  }
+
   @BeforeEach
   void setUp() {
     mediaFileRepository = new FakeMediaFileRepository();
     transcodeExecutor = new FakeTranscodeExecutor();
     segmentStore = new FakeSegmentStore();
     probeResults = new FakeMediaFileContainerInfoRepository();
-    probeResults.setDefaultProbe(defaultProbeBuilder().framerate(23.976).build());
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).build());
     probeEvents = new CapturingEventPublisher();
     authorityGate = new FakePlaybackAuthorityGate();
     runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
@@ -406,7 +472,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should reject full transcode when at concurrency limit")
   void shouldRejectFullTranscodeWhenAtConcurrencyLimit() {
     probeResults.setDefaultProbe(
-        defaultProbeBuilder().framerate(23.976).videoCodec("hevc").build());
+        defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).videoCodec("hevc").build());
 
     var options =
         StreamingOptions.builder()
@@ -432,7 +498,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should not count a session against the transcode limit when suspended")
   void shouldNotCountSessionAgainstTranscodeLimitWhenSuspended() {
     probeResults.setDefaultProbe(
-        defaultProbeBuilder().framerate(23.976).videoCodec("hevc").build());
+        defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).videoCodec("hevc").build());
 
     var options =
         StreamingOptions.builder()
@@ -459,7 +525,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should allow remux sessions when at transcode concurrency limit")
   void shouldAllowRemuxSessionsWhenAtTranscodeConcurrencyLimit() {
     probeResults.setDefaultProbe(
-        defaultProbeBuilder().framerate(23.976).videoCodec("hevc").build());
+        defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).videoCodec("hevc").build());
 
     var transcodeOptions =
         StreamingOptions.builder()
@@ -472,7 +538,8 @@ class HlsStreamingServiceTest {
       createSession(file.getId(), UUID.randomUUID(), transcodeOptions);
     }
 
-    probeResults.setDefaultProbe(defaultProbeBuilder().framerate(23.976).build());
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).build());
 
     var remuxOptions = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
     var file = seedMediaFile();
@@ -525,7 +592,11 @@ class HlsStreamingServiceTest {
   @DisplayName("Should start multiple variants when auto quality with full transcode")
   void shouldStartMultipleVariantsWhenAutoQualityWithFullTranscode() {
     probeResults.setDefaultProbe(
-        defaultProbeBuilder().framerate(23.976).videoCodec("hevc").bitrate(8_000_000L).build());
+        defaultProbeBuilder()
+            .framerate(OptionalDouble.of(23.976))
+            .videoCodec("hevc")
+            .bitrate(8_000_000L)
+            .build());
 
     var file = seedMediaFile();
     var options = defaultOptions();
@@ -555,7 +626,11 @@ class HlsStreamingServiceTest {
   @DisplayName("Should roll back running transcodes when a later variant startup fails")
   void shouldRollbackRunningTranscodesWhenLaterVariantStartupFails() {
     probeResults.setDefaultProbe(
-        defaultProbeBuilder().framerate(23.976).videoCodec("hevc").bitrate(8_000_000L).build());
+        defaultProbeBuilder()
+            .framerate(OptionalDouble.of(23.976))
+            .videoCodec("hevc")
+            .bitrate(8_000_000L)
+            .build());
     var failingExecutor = new FailingStartupTranscodeExecutor(1, segmentStore);
     service = serviceWith(failingExecutor, runtimeRegistry);
     var file = seedMediaFile();
@@ -616,7 +691,11 @@ class HlsStreamingServiceTest {
   @DisplayName("Should use single variant when explicit quality is specified")
   void shouldUseSingleVariantWhenExplicitQualityIsSpecified() {
     probeResults.setDefaultProbe(
-        defaultProbeBuilder().framerate(23.976).videoCodec("hevc").bitrate(8_000_000L).build());
+        defaultProbeBuilder()
+            .framerate(OptionalDouble.of(23.976))
+            .videoCodec("hevc")
+            .bitrate(8_000_000L)
+            .build());
 
     var file = seedMediaFile();
     var options =
@@ -636,7 +715,11 @@ class HlsStreamingServiceTest {
       "Should pass variant label to transcode request for ABR session when managing a session")
   void shouldPassVariantLabelToTranscodeRequestForAbrSessionWhenManagingSession() {
     probeResults.setDefaultProbe(
-        defaultProbeBuilder().framerate(23.976).videoCodec("hevc").bitrate(8_000_000L).build());
+        defaultProbeBuilder()
+            .framerate(OptionalDouble.of(23.976))
+            .videoCodec("hevc")
+            .bitrate(8_000_000L)
+            .build());
 
     var file = seedMediaFile();
     var options = defaultOptions();
@@ -753,7 +836,11 @@ class HlsStreamingServiceTest {
             .build();
 
     probeResults.setDefaultProbe(
-        defaultProbeBuilder().framerate(23.976).videoCodec("hevc").bitrate(8_000_000L).build());
+        defaultProbeBuilder()
+            .framerate(OptionalDouble.of(23.976))
+            .videoCodec("hevc")
+            .bitrate(8_000_000L)
+            .build());
 
     var file = seedMediaFile();
     var options = defaultOptions();
@@ -771,7 +858,11 @@ class HlsStreamingServiceTest {
   void shouldTruncateVariantsToExecutorSlotsAvailableNowWhenManagingSession() {
     transcodeExecutor.setAvailableSlots(2);
     probeResults.setDefaultProbe(
-        defaultProbeBuilder().framerate(23.976).videoCodec("hevc").bitrate(8_000_000L).build());
+        defaultProbeBuilder()
+            .framerate(OptionalDouble.of(23.976))
+            .videoCodec("hevc")
+            .bitrate(8_000_000L)
+            .build());
     var file = seedMediaFile();
     var options = defaultOptions();
 
@@ -785,7 +876,11 @@ class HlsStreamingServiceTest {
   @DisplayName("Should truncate to one variant when only one slot is available")
   void shouldTruncateToOneVariantWhenOnlyOneSlotAvailable() {
     probeResults.setDefaultProbe(
-        defaultProbeBuilder().framerate(23.976).videoCodec("hevc").bitrate(8_000_000L).build());
+        defaultProbeBuilder()
+            .framerate(OptionalDouble.of(23.976))
+            .videoCodec("hevc")
+            .bitrate(8_000_000L)
+            .build());
 
     var singleVariantOptions =
         StreamingOptions.builder()
@@ -810,7 +905,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should reject ABR session when all transcode slots are full")
   void shouldRejectAbrSessionWhenAllTranscodeSlotsAreFull() {
     probeResults.setDefaultProbe(
-        defaultProbeBuilder().framerate(23.976).videoCodec("hevc").build());
+        defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).videoCodec("hevc").build());
 
     var singleVariantOptions =
         StreamingOptions.builder()

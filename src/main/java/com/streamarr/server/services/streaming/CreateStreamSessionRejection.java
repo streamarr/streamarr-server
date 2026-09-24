@@ -14,4 +14,7 @@ public sealed interface CreateStreamSessionRejection {
   record ProbeNotReady() implements CreateStreamSessionRejection {}
 
   record ProbeFailed(@NonNull ProbeError reason) implements CreateStreamSessionRejection {}
+
+  /** The video must be encoded, and the probe recorded no usable frame rate to encode it at. */
+  record FrameRateUnknown() implements CreateStreamSessionRejection {}
 }

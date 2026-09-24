@@ -6,6 +6,7 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import java.time.Duration;
 import java.util.List;
+import java.util.OptionalDouble;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -152,7 +153,7 @@ class QualityLadderServiceTest {
   private MediaProbe buildProbe(int width, int height, long bitrate) {
     return MediaProbe.builder()
         .duration(Duration.ofMinutes(120))
-        .framerate(24.0)
+        .framerate(OptionalDouble.of(24.0))
         .width(width)
         .height(height)
         .videoCodec("h264")

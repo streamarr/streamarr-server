@@ -90,6 +90,9 @@ public class StreamingResolver {
           new CreateStreamSessionError.MediaFileProbeNotReadyError(
               "This file is being prepared for playback. Try again shortly.");
       case CreateStreamSessionRejection.ProbeFailed(var reason) -> probeFailureError(reason);
+      case CreateStreamSessionRejection.FrameRateUnknown() ->
+          new CreateStreamSessionError.MediaFileFrameRateUnknownError(
+              "This file's video must be converted for playback, but its frame rate is unknown.");
     };
   }
 

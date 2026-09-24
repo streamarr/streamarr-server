@@ -28,7 +28,7 @@ public sealed interface ProbeOutcome {
           .videoCodec(video.codec().orElse(null))
           .width(video.width().orElse(0))
           .height(video.height().orElse(0))
-          .framerate(video.framerate().orElse(0))
+          .framerate(video.framerate())
           .audioCodec(audio.flatMap(StreamInfo::codec).orElse(null))
           .audioChannels(audio.map(StreamInfo::channels).orElse(OptionalInt.empty()))
           .audioBitrate(audio.map(StreamInfo::bitrate).orElse(OptionalLong.empty()))

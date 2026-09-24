@@ -51,6 +51,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
@@ -1089,7 +1090,7 @@ class WorkerSessionServerIT {
                 .sessionId(UUID.randomUUID())
                 .sourcePath(Path.of("/media/movie.mkv"))
                 .targetSegmentDuration(6)
-                .framerate(23.976)
+                .framerate(OptionalDouble.of(23.976))
                 .transcodeDecision(StreamSessionFixture.remuxMpegtsDecision())
                 .width(1920)
                 .height(1080)

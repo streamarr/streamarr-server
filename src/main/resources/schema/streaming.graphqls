@@ -14,7 +14,7 @@ type CreateStreamSessionPayload {
     userErrors: [CreateStreamSessionError!]!
 }
 
-union CreateStreamSessionError = InvalidIdError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | TranscodeCapacityUnavailableError
+union CreateStreamSessionError = InvalidIdError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | MediaFileFrameRateUnknownError | TranscodeCapacityUnavailableError
 
 enum TranscodeMode {
     REMUX

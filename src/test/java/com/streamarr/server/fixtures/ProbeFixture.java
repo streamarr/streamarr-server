@@ -7,7 +7,6 @@ import com.streamarr.server.domain.streaming.StreamInfo;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import lombok.experimental.UtilityClass;
@@ -37,7 +36,7 @@ public class ProbeFixture {
             .codec(Optional.ofNullable(probe.videoCodec()))
             .width(OptionalInt.of(probe.width()))
             .height(OptionalInt.of(probe.height()))
-            .framerate(OptionalDouble.of(probe.framerate()))
+            .framerate(probe.framerate())
             .build());
     if (probe.audioCodec() == null) {
       return streams;

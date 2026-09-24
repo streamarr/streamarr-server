@@ -19,6 +19,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.OptionalDouble;
 import java.util.UUID;
 
 public final class StreamSessionFixture {
@@ -58,7 +59,7 @@ public final class StreamSessionFixture {
   public static MediaProbe.MediaProbeBuilder defaultProbeBuilder() {
     return MediaProbe.builder()
         .duration(Duration.ofMinutes(120))
-        .framerate(24.0)
+        .framerate(OptionalDouble.of(24.0))
         .width(1920)
         .height(1080)
         .videoCodec("h264")
@@ -164,7 +165,7 @@ public final class StreamSessionFixture {
         .mediaProbe(
             defaultProbeBuilder()
                 .duration(Duration.ZERO)
-                .framerate(0)
+                .framerate(OptionalDouble.empty())
                 .width(0)
                 .height(0)
                 .bitrate(0)
