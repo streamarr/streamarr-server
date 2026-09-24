@@ -21,7 +21,10 @@ public final class FileDiscoveryRunsFixture {
 
   private FileDiscoveryRunsFixture() {}
 
-  /** Probe results are checked every ten milliseconds with real sleeps. */
+  /**
+   * Probe results are checked again without waiting in real time. A check yields to other virtual
+   * threads, and a cancelled wait stops at its next check.
+   */
   @Builder(builderMethodName = "fileDiscoveryRunsBuilder")
   private static FileDiscoveryRuns fileDiscoveryRuns(
       @NonNull ArtworkService artworkService,
@@ -41,7 +44,14 @@ public final class FileDiscoveryRunsFixture {
                         .fileSystem(fileSystem)
                         .build())
                 .outcomes(outcomes)
-                .sleeper(duration -> Thread.sleep(duration.toMillis()))
+                .sleeper(
+                    _ -> {
+                      if (Thread.interrupted()) {
+                        throw new InterruptedException();
+                      }
+
+                      Thread.yield();
+                    })
                 .clock(Clock.systemUTC())
                 .properties(new ProbeSchedulingProperties(null, CHECK_INTERVAL))
                 .build())
