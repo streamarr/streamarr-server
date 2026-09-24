@@ -30,9 +30,9 @@ import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Real-FFmpeg proof of ADR 0019's recovery contract: after a producer dies mid-stream, the next
- * request replaces it at the requested segment's offset and the replacement's timestamps continue
- * the absolute timeline. PTS/DTS continuity comes from input {@code -ss} with {@code -copyts} and
- * {@code -start_at_zero}.
+ * request starts a replacement attempt at the requested segment's offset, and its timestamps
+ * continue on media time. Input {@code -ss} with {@code -copyts} and {@code -start_at_zero} put
+ * every job attempt's timestamps on media time.
  */
 @Tag("SmokeTest")
 @DisplayName("HLS Recovery Continuity Smoke Tests")
@@ -139,13 +139,15 @@ class HlsRecoveryContinuitySmokeTest {
     assertThat(replacementCommand)
         .containsSubsequence("-ss", String.valueOf(2 * SEGMENT_DURATION_SECONDS));
 
-    // The continuity contract is measured against the first run's timeline, not absolute zero.
-    var timelineOffset = packetTimestamps(sessionId, "segment0.m4s").getFirst();
-    var lastPtsBeforeDeath = packetTimestamps(sessionId, "segment1.m4s").getLast();
-    var replacementPts = packetTimestamps(sessionId, "segment2.m4s");
-    assertThat(replacementPts.getFirst())
-        .isCloseTo(timelineOffset + 2.0 * SEGMENT_DURATION_SECONDS, offset(0.5));
-    assertThat(replacementPts.getFirst()).isGreaterThanOrEqualTo(lastPtsBeforeDeath - 0.1);
+    // fMP4 output adds no muxer offset, so each job attempt's timestamps are media time itself.
+    var initialTimestamps = packetTimestamps(sessionId, "segment0.m4s");
+    var lastTimestampBeforeDeath = packetTimestamps(sessionId, "segment1.m4s").getLast();
+    var replacementTimestamps = packetTimestamps(sessionId, "segment2.m4s");
+    assertThat(initialTimestamps.getFirst()).isCloseTo(0.0, offset(0.1));
+    assertThat(replacementTimestamps.getFirst())
+        .isCloseTo(2.0 * SEGMENT_DURATION_SECONDS, offset(0.5));
+    assertThat(replacementTimestamps.getFirst())
+        .isGreaterThanOrEqualTo(lastTimestampBeforeDeath - 0.1);
 
     // The replacement emits a contiguous run from the requested index, never a lone segment.
     await()
@@ -154,9 +156,8 @@ class HlsRecoveryContinuitySmokeTest {
   }
 
   @Test
-  @DisplayName(
-      "Should keep the stored initialization segment when a dead fMP4 producer is replaced")
-  void shouldKeepStoredInitializationSegmentWhenDeadFmp4ProducerIsReplaced() throws Exception {
+  @DisplayName("Should keep the stored initialization segment when a dead producer is replaced")
+  void shouldKeepStoredInitializationSegmentWhenDeadProducerIsReplaced() throws Exception {
     var session = startedSession(remuxDecision());
     var sessionId = session.getSessionId();
     await()
