@@ -45,6 +45,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
@@ -303,7 +304,7 @@ class StreamingResolverTest {
         .mediaProbe(
             MediaProbe.builder()
                 .duration(Duration.ofMinutes(120))
-                .framerate(24.0)
+                .framerate(OptionalDouble.of(24.0))
                 .width(1920)
                 .height(1080)
                 .videoCodec("h264")

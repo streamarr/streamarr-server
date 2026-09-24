@@ -7,6 +7,7 @@ import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.services.streaming.FfprobeService;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -21,7 +22,7 @@ public class FakeFfprobeService implements FfprobeService {
   private MediaProbe defaultProbe =
       MediaProbe.builder()
           .duration(Duration.ofMinutes(120))
-          .framerate(23.976)
+          .framerate(OptionalDouble.of(23.976))
           .width(1920)
           .height(1080)
           .videoCodec("h264")

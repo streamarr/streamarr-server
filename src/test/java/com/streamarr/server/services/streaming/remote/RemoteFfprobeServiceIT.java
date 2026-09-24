@@ -300,7 +300,7 @@ class RemoteFfprobeServiceIT {
     assertThat(probe.videoCodec()).isEqualTo("h264");
     assertThat(probe.width()).isEqualTo(1920);
     assertThat(probe.height()).isEqualTo(1080);
-    assertThat(probe.framerate()).isEqualTo(24);
+    assertThat(probe.framerate()).hasValue(24);
     assertThat(probe.audioCodec()).isEqualTo("ac3");
     assertThat(probe.audioChannels()).hasValue(6);
     assertThat(probe.audioBitrate()).hasValue(384_000);
@@ -333,7 +333,7 @@ class RemoteFfprobeServiceIT {
     assertThat(probe.videoCodec()).isNull();
     assertThat(probe.width()).isZero();
     assertThat(probe.height()).isZero();
-    assertThat(probe.framerate()).isZero();
+    assertThat(probe.framerate()).isEmpty();
     assertThat(probe.audioCodec()).isNull();
     assertThat(probe.audioChannels()).isEmpty();
     assertThat(probe.audioBitrate()).isEmpty();

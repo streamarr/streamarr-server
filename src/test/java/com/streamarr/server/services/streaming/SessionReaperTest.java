@@ -17,6 +17,7 @@ import com.streamarr.server.fixtures.StreamingRigFixture;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.OptionalDouble;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -176,7 +177,7 @@ class SessionReaperTest {
             .sourcePath(Path.of("/media/movie.mkv"))
             .seekPosition(0)
             .targetSegmentDuration(6)
-            .framerate(24.0)
+            .framerate(OptionalDouble.of(24.0))
             .transcodeDecision(session.getTranscodeDecision())
             .width(1920)
             .height(1080)
@@ -228,7 +229,7 @@ class SessionReaperTest {
             .sourcePath(Path.of("/media/movie.mkv"))
             .seekPosition(0)
             .targetSegmentDuration(6)
-            .framerate(24.0)
+            .framerate(OptionalDouble.of(24.0))
             .transcodeDecision(session.getTranscodeDecision())
             .width(1920)
             .height(1080)
@@ -241,7 +242,7 @@ class SessionReaperTest {
             .sourcePath(Path.of("/media/movie.mkv"))
             .seekPosition(0)
             .targetSegmentDuration(6)
-            .framerate(24.0)
+            .framerate(OptionalDouble.of(24.0))
             .transcodeDecision(session.getTranscodeDecision())
             .width(1280)
             .height(720)

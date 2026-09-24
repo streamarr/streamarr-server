@@ -25,6 +25,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Map;
+import java.util.OptionalDouble;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import lombok.Builder;
@@ -192,7 +193,7 @@ class RemoteRecoveryIT {
         .sessionId(streamSessionId)
         .sourcePath(mediaFile)
         .targetSegmentDuration(6)
-        .framerate(23.976)
+        .framerate(OptionalDouble.of(23.976))
         .transcodeDecision(transcodeDecision())
         .width(1920)
         .height(1080)
