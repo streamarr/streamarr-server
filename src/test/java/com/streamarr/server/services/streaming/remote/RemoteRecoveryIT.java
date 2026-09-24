@@ -69,15 +69,14 @@ class RemoteRecoveryIT {
       var rig =
           recoveryRig(
               RecoveryRigConfiguration.builder()
-                  .streamSessionId(streamSessionId)
-                  .mediaFile(mediaFile)
+                  .initialAttempt(initialAttempt(streamSessionId, mediaFile, TranscodeMode.REMUX))
                   .segmentStore(segmentStore)
                   .executor(executor)
                   .build());
 
       try (var failingWorker = workerBuilder(server, mediaRoot).ffmpegScript("exit 73\n").build()) {
         failingWorker.start();
-        var handle = executor.start(transcodeRequest(streamSessionId, mediaFile));
+        var handle = executor.start(rig.configuration().initialAttempt());
         rig.session().setHandle(handle);
         await()
             .atMost(5, TimeUnit.SECONDS)
@@ -127,13 +126,12 @@ class RemoteRecoveryIT {
       var rig =
           recoveryRig(
               RecoveryRigConfiguration.builder()
-                  .streamSessionId(streamSessionId)
-                  .mediaFile(mediaFile)
+                  .initialAttempt(initialAttempt(streamSessionId, mediaFile, TranscodeMode.REMUX))
                   .segmentStore(segmentStore)
                   .executor(executor)
                   .build());
 
-      var handle = executor.start(transcodeRequest(streamSessionId, mediaFile));
+      var handle = executor.start(rig.configuration().initialAttempt());
       rig.session().setHandle(handle);
       await()
           .atMost(5, TimeUnit.SECONDS)
@@ -170,8 +168,7 @@ class RemoteRecoveryIT {
       var rig =
           recoveryRig(
               RecoveryRigConfiguration.builder()
-                  .streamSessionId(streamSessionId)
-                  .mediaFile(mediaFile)
+                  .initialAttempt(initialAttempt(streamSessionId, mediaFile, TranscodeMode.REMUX))
                   .segmentStore(segmentStore)
                   .executor(new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot))
                   .build());
@@ -222,8 +219,7 @@ class RemoteRecoveryIT {
       var rig =
           recoveryRig(
               RecoveryRigConfiguration.builder()
-                  .streamSessionId(streamSessionId)
-                  .mediaFile(mediaFile)
+                  .initialAttempt(initialAttempt(streamSessionId, mediaFile, TranscodeMode.REMUX))
                   .segmentStore(segmentStore)
                   .executor(new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot))
                   .build());
@@ -285,11 +281,8 @@ class RemoteRecoveryIT {
   private void startThenKillInitialAttempt(RecoveryRig rig, List<WorkerContainerFixture> workers)
       throws Exception {
     var configuration = rig.configuration();
-    var streamSessionId = configuration.streamSessionId();
-    var handle =
-        configuration
-            .executor()
-            .start(transcodeRequest(streamSessionId, configuration.mediaFile()));
+    var streamSessionId = configuration.initialAttempt().sessionId();
+    var handle = configuration.executor().start(configuration.initialAttempt());
     rig.session().setHandle(handle);
     await()
         .atMost(30, TimeUnit.SECONDS)
@@ -320,20 +313,20 @@ class RemoteRecoveryIT {
 
   @Builder
   private record RecoveryRigConfiguration(
-      UUID streamSessionId,
-      Path mediaFile,
+      TranscodeRequest initialAttempt,
       LocalSegmentStore segmentStore,
       RemoteTranscodeExecutor executor) {}
 
   private RecoveryRig recoveryRig(RecoveryRigConfiguration configuration) {
+    var initialAttempt = configuration.initialAttempt();
     var session =
         StreamSession.builder()
-            .sessionId(configuration.streamSessionId())
+            .sessionId(initialAttempt.sessionId())
             .mediaFileId(UUID.randomUUID())
             .authority(playbackAuthorityFor(UUID.randomUUID()))
-            .sourcePath(configuration.mediaFile())
+            .sourcePath(initialAttempt.sourcePath())
             .mediaProbe(defaultProbeBuilder().build())
-            .transcodeDecision(transcodeDecision())
+            .transcodeDecision(initialAttempt.transcodeDecision())
             .build();
     var registry = new FakeRuntimeStreamSessionRegistry();
     registry.save(session);
@@ -370,7 +363,8 @@ class RemoteRecoveryIT {
         .sourceRoot(mediaRoot);
   }
 
-  private static TranscodeRequest transcodeRequest(UUID streamSessionId, Path mediaFile) {
+  private static TranscodeRequest initialAttempt(
+      UUID streamSessionId, Path mediaFile, TranscodeMode mode) {
     var sessionTimeline =
         new MediaSegmentTimeline(defaultProbeBuilder().build().duration(), Duration.ofSeconds(6));
     return TranscodeRequest.builder()
@@ -379,7 +373,7 @@ class RemoteRecoveryIT {
         .targetSegmentDuration(sessionTimeline.targetSegmentDurationSeconds())
         .mediaSegmentCount(sessionTimeline.mediaSegmentCount())
         .framerate(OptionalDouble.of(23.976))
-        .transcodeDecision(transcodeDecision())
+        .transcodeDecision(transcodeDecision(mode))
         .width(1920)
         .height(1080)
         .bitrate(5_000_000)
@@ -387,9 +381,9 @@ class RemoteRecoveryIT {
         .build();
   }
 
-  private static TranscodeDecision transcodeDecision() {
+  private static TranscodeDecision transcodeDecision(TranscodeMode mode) {
     return TranscodeDecision.builder()
-        .transcodeMode(TranscodeMode.REMUX)
+        .transcodeMode(mode)
         .videoCodecFamily("h264")
         .audioDecision(AudioDecision.copy("aac", 2, 128_000))
         .subtitleDecision(SubtitleDecision.exclude())
