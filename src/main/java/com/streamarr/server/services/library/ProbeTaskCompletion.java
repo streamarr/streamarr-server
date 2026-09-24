@@ -65,8 +65,10 @@ public class ProbeTaskCompletion {
 
   /**
    * Records why an attempt at the requested inputs failed, in the transaction in which {@code
-   * retry} reschedules it. A cancelled attempt retries without a recorded failure, and any other
-   * exception counts as a temporary failure so that it does not wait unrecorded.
+   * retry} reschedules it. An attempt at inputs that a newer request replaced retries the requested
+   * inputs at once instead, because its failure says nothing about them. A cancelled attempt
+   * retries without a recorded failure, and any other exception counts as a temporary failure so
+   * that it does not wait unrecorded.
    */
   public FailureHandler<ProbeTaskRequest> recordingFailures(
       FailureHandler<ProbeTaskRequest> retry) {
@@ -74,16 +76,29 @@ public class ProbeTaskCompletion {
         new TransactionTemplate(transactionManager)
             .executeWithoutResult(
                 _ -> {
+                  var attempted = requestOf(complete);
+                  var requested = newerRequest(attempted);
+                  if (requested.isPresent()) {
+                    operations.reschedule(complete, clock.instant(), requested.get());
+                    return;
+                  }
+
                   complete
                       .getCause()
                       .flatMap(ProbeTaskCompletion::failureOf)
-                      .ifPresent(failure -> recordFailure(complete, failure));
+                      .ifPresent(failure -> recordFailure(attempted, failure));
                   retry.onFailure(complete, operations);
                 });
   }
 
-  private void recordFailure(ExecutionComplete complete, ItemOutcome.Failed failure) {
-    var request = requestOf(complete);
+  private Optional<ProbeTaskRequest> newerRequest(ProbeTaskRequest attempted) {
+    return outcomes
+        .lockProbeInputs(attempted.mediaFileId())
+        .filter(inputs -> !inputs.equals(attempted.inputs()))
+        .map(inputs -> withInputs(attempted, inputs));
+  }
+
+  private void recordFailure(ProbeTaskRequest request, ItemOutcome.Failed failure) {
     outcomes.recordProbeFailure(
         request.mediaFileId(),
         request.inputs(),
