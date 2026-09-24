@@ -49,6 +49,11 @@ public class MediaFileProbeTaskScheduler {
     return schedule(mediaFileId, probeTaskRequests::requestRetryingFailure);
   }
 
+  /** Schedules like {@link #schedule(UUID)} with a snapshot the caller already observed. */
+  public ProbeInputs schedule(UUID mediaFileId, SourceFileSnapshot observed) {
+    return request(mediaFile(mediaFileId), observed, probeTaskRequests::requestRetryingFailure);
+  }
+
   private Optional<ProbeInputs> schedule(UUID mediaFileId, Consumer<ProbeTaskRequest> requests) {
     var mediaFile = mediaFile(mediaFileId);
     return snapshot(mediaFile).map(observed -> request(mediaFile, observed, requests));
