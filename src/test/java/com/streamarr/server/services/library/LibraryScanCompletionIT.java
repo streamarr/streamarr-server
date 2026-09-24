@@ -75,8 +75,8 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should stay scanning while every worker is busy and finish once the probe succeeds")
-  void shouldStayScanningWhileEveryWorkerIsBusyAndFinishOnceTheProbeSucceeds() throws Exception {
+  @DisplayName("Should stay scanning until the probe succeeds when every worker is busy")
+  void shouldStayScanningUntilTheProbeSucceedsWhenEveryWorkerIsBusy() throws Exception {
     var busy = new AtomicBoolean(true);
     var deferred = new CountDownLatch(1);
     var producer = new FakeFfprobeService();
@@ -107,8 +107,8 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should finish the scan once the probe failure is recorded and keep retrying it")
-  void shouldFinishTheScanOnceTheProbeFailureIsRecordedAndKeepRetryingIt() {
+  @DisplayName("Should finish the scan and keep retrying when a probe failure is recorded")
+  void shouldFinishTheScanAndKeepRetryingWhenAProbeFailureIsRecorded() {
     var client =
         startScheduler(
             probeExecution.toBuilder()
@@ -209,8 +209,8 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should not wait for the pending probes of another library")
-  void shouldNotWaitForThePendingProbesOfAnotherLibrary() throws Exception {
+  @DisplayName("Should finish the scan when another library has pending probes")
+  void shouldFinishTheScanWhenAnotherLibraryHasPendingProbes() throws Exception {
     var otherLibrary = scannedLibrary(Files.createDirectories(tempDir.resolve("other")));
     probeTaskRequests.request(request(matchedFile(otherLibrary, "Other (2024).mkv")));
     outcomes.publish(

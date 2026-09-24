@@ -142,8 +142,8 @@ class ProbeAttemptFailureIT extends AbstractProbeSchedulerIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should not record a failure for inputs that are no longer requested")
-  void shouldNotRecordAFailureForInputsThatAreNoLongerRequested() throws Exception {
+  @DisplayName("Should not record a failure when the attempted inputs are no longer requested")
+  void shouldNotRecordAFailureWhenTheAttemptedInputsAreNoLongerRequested() throws Exception {
     var request = requestUnchangedFiles(1).getFirst();
     probeTaskRequests.request(changedSnapshot(request));
 

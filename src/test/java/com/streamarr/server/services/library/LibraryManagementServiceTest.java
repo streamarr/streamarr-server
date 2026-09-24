@@ -702,8 +702,8 @@ class LibraryManagementServiceTest {
   }
 
   @Test
-  @DisplayName("Should wait for durable probe enqueue before completing a scan")
-  void shouldWaitForDurableProbeEnqueueBeforeCompletingScan() throws Exception {
+  @DisplayName("Should keep scanning when the probe request is still being saved")
+  void shouldKeepScanningWhenTheProbeRequestIsStillBeingSaved() throws Exception {
     var rootPath = createRootLibraryDirectory();
     var path = createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
     saveMatchedMediaFile(path);
@@ -810,8 +810,8 @@ class LibraryManagementServiceTest {
   class ScanCompletionTests {
 
     @Test
-    @DisplayName("Should stay scanning until the requested probe stores an outcome")
-    void shouldStayScanningUntilTheRequestedProbeStoresAnOutcome() throws Exception {
+    @DisplayName("Should stay scanning when the requested probe has no outcome")
+    void shouldStayScanningWhenTheRequestedProbeHasNoOutcome() throws Exception {
       saveMatchedMediaFile(createMovieFile(createRootLibraryDirectory(), "Held", "Held.mkv"));
       probeTaskRequests.dispatchWith(_ -> {});
 
@@ -829,8 +829,8 @@ class LibraryManagementServiceTest {
     }
 
     @Test
-    @DisplayName("Should finish the scan once the failure of a probe attempt is recorded")
-    void shouldFinishTheScanOnceTheFailureOfAProbeAttemptIsRecorded() throws Exception {
+    @DisplayName("Should finish the scan when a probe attempt failure is recorded")
+    void shouldFinishTheScanWhenAProbeAttemptFailureIsRecorded() throws Exception {
       saveMatchedMediaFile(createMovieFile(createRootLibraryDirectory(), "Share", "Share.mkv"));
       probeTaskRequests.dispatchWith(_ -> {});
 
@@ -847,8 +847,8 @@ class LibraryManagementServiceTest {
     }
 
     @Test
-    @DisplayName("Should stay scanning until required artwork is saved")
-    void shouldStayScanningUntilRequiredArtworkIsSaved() throws Exception {
+    @DisplayName("Should stay scanning when required artwork is not saved")
+    void shouldStayScanningWhenRequiredArtworkIsNotSaved() throws Exception {
       createMovieFile(createRootLibraryDirectory(), "About Time", "About Time (2013).mkv");
       var downloader = new GatedImageDownloader(createTestImage(600, 900));
       downloader.holdPathsStartingWith("/poster");

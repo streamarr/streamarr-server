@@ -201,8 +201,8 @@ class SessionContextServiceTest {
   }
 
   @Test
-  @DisplayName("Should record the selection when the Profile's share in the context is active")
-  void shouldRecordSelectionWhenProfileShareInContextIsActive() {
+  @DisplayName("Should save the selection when the Profile's share in the context is active")
+  void shouldSaveSelectionWhenProfileShareInContextIsActive() {
     var session = session(account.getHouseholdId(), null);
 
     var context = service.saveProfileSelection(identity(session), personal.getId());

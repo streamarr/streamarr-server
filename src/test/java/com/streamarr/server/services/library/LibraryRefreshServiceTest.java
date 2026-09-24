@@ -567,8 +567,8 @@ class LibraryRefreshServiceTest {
   }
 
   @Test
-  @DisplayName("Should return only after the required artwork of the refresh is saved")
-  void shouldReturnOnlyAfterTheRequiredArtworkOfTheRefreshIsSaved() throws Exception {
+  @DisplayName("Should keep the refresh running when required artwork is not saved")
+  void shouldKeepTheRefreshRunningWhenRequiredArtworkIsNotSaved() throws Exception {
     var library = buildMovieLibrary();
     var movie = saveMovieWithTmdbId("Inception", "27205", library);
     stubMovieMetadataWithPoster("27205", library);

@@ -204,8 +204,9 @@ class RemoteProbeResultMapperTest {
 
   @ParameterizedTest
   @MethodSource("unknownOutcomes")
-  @DisplayName("Should leave an unknown or missing worker outcome retryable")
-  void shouldLeaveUnknownOrMissingWorkerOutcomeRetryable(ProbeAttemptResult result) {
+  @DisplayName("Should report a temporary failure when the worker outcome is unknown or missing")
+  void shouldReportATemporaryFailureWhenTheWorkerOutcomeIsUnknownOrMissing(
+      ProbeAttemptResult result) {
     var mapper = new RemoteProbeResultMapper();
 
     assertThatThrownBy(() -> mapper.map(result))

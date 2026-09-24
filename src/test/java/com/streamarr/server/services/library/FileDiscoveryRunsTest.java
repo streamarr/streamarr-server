@@ -81,8 +81,8 @@ class FileDiscoveryRunsTest {
   }
 
   @Test
-  @DisplayName("Should report required results while secondary artwork continues")
-  void shouldReportRequiredResultsWhileSecondaryArtworkContinues() throws IOException {
+  @DisplayName("Should report required results when secondary artwork is still pending")
+  void shouldReportRequiredResultsWhenSecondaryArtworkIsStillPending() throws IOException {
     imageDownloader.holdPathsStartingWith("/profile");
     artworkService.fetchSecondary(personArtwork(), ImageRefreshMode.PRESERVE);
     await().atMost(Duration.ofSeconds(5)).until(() -> imageDownloader.heldDownloads() == 1);
@@ -184,8 +184,8 @@ class FileDiscoveryRunsTest {
   }
 
   @Test
-  @DisplayName("Should time the probes without the wait for required artwork")
-  void shouldTimeTheProbesWithoutTheWaitForRequiredArtwork() throws Exception {
+  @DisplayName("Should stop the probe timer when probes finish before required artwork")
+  void shouldStopTheProbeTimerWhenProbesFinishBeforeRequiredArtwork() throws Exception {
     imageDownloader.holdPathsStartingWith("/poster");
     var runs = fileDiscoveryRuns();
     var discovery = runs.open("scan of", library);

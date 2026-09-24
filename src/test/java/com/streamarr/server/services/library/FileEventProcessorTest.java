@@ -204,8 +204,8 @@ class FileEventProcessorTest {
   }
 
   @Test
-  @DisplayName("Should request a probe only after the file stops changing")
-  void shouldRequestAProbeOnlyAfterTheFileStopsChanging() throws Exception {
+  @DisplayName("Should delay the probe request when the file is still changing")
+  void shouldDelayTheProbeRequestWhenTheFileIsStillChanging() throws Exception {
     var path = createFile("/media/shows/Show.S01E01.mkv");
     var waiting = new CountDownLatch(1);
     var stopsChanging = new CountDownLatch(1);
@@ -224,8 +224,8 @@ class FileEventProcessorTest {
   }
 
   @Test
-  @DisplayName("Should request probes for other files while one file is still changing")
-  void shouldRequestProbesForOtherFilesWhileOneFileIsStillChanging() throws Exception {
+  @DisplayName("Should request probes for other files when one file is still changing")
+  void shouldRequestProbesForOtherFilesWhenOneFileIsStillChanging() throws Exception {
     var changing = createFile("/media/shows/Show.S01E01.mkv");
     var unchanged = createFile("/media/shows/Show.S01E02.mkv");
     var waiting = new CountDownLatch(1);
