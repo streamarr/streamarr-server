@@ -32,21 +32,30 @@ public record ScanResults(
         "required artwork in %s seconds (%s)"
             .formatted(seconds(artwork.elapsed()), artwork.counts().describe()),
         "probes in %s seconds (%s)".formatted(seconds(probes.elapsed()), probes.describe()),
-        "in the background: %d secondary images pending across all libraries, %d failed probes retrying, %d changed files to probe"
+        "in the background: %s pending across all libraries, %s retrying, %s to probe"
             .formatted(
-                secondaryImagesPending,
-                probes.count(RequestedProbeResult.FAILED),
-                probes.count(RequestedProbeResult.SUPERSEDED)));
+                SummaryText.counted(secondaryImagesPending, "secondary image", "secondary images"),
+                SummaryText.counted(
+                    probes.count(RequestedProbeResult.FAILED), "failed probe", "failed probes"),
+                SummaryText.counted(
+                    probes.count(RequestedProbeResult.SUPERSEDED),
+                    "changed file",
+                    "changed files")));
   }
 
   private String describeFiles() {
     var total = files.values().stream().mapToLong(Long::longValue).sum();
+    var fileCount = SummaryText.counted(total, "file", "files");
+    if (total == 0) {
+      return fileCount;
+    }
+
     var statuses =
         files.entrySet().stream()
             .sorted(Map.Entry.comparingByKey())
             .map(entry -> entry.getValue() + " " + words(entry.getKey().name()))
             .collect(Collectors.joining(", "));
-    return "%d files (%s)".formatted(total, statuses);
+    return "%s (%s)".formatted(fileCount, statuses);
   }
 
   private static String words(String constant) {
