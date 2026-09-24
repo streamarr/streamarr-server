@@ -9,8 +9,8 @@
 # cmaf+delay_moov+skip_trailer+frag_keyframe+frag_discont, a 1 s fragmentation target, -copyts
 # -start_at_zero, and a forced keyframe at every 6 s segment period. The source is the first 8 s of
 # the committed BigBuckBunny_320x180_10s.mp4 clip, scaled down and encoded at a low bitrate so that
-# each stream stays small. Only the -to that ends each run at media time 8 s is not part of the
-# worker's command; under -copyts it compares against the absolute timeline.
+# each stream stays small. Only the -to that ends each recording at media time 8 s is not part of
+# the worker's command; under -copyts it compares against the absolute timeline.
 #
 # - start-0s.fmp4: media time 0 to 8 s, so its media segments are 0 and 1.
 # - seek-6s.fmp4: the same encoder settings after a seek to 6 s, as a replacement attempt for

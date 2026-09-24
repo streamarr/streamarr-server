@@ -48,9 +48,9 @@ public final class SegmentNames {
   }
 
   /**
-   * The same run's media segment at {@code index}, in the same variant directory. A name matching
-   * no scheme throws rather than passing through unchanged — a fabricated sibling would point
-   * progress checks at a file no run can ever produce.
+   * The same job attempt's media segment at {@code index}, in the same variant directory. A name
+   * matching no scheme throws rather than passing through unchanged — a fabricated sibling would
+   * point progress checks at a file no job attempt can ever produce.
    */
   public static String siblingName(String segmentName, int index) {
     var base = basename(segmentName);

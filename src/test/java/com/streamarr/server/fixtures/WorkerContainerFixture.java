@@ -85,8 +85,8 @@ public final class WorkerContainerFixture implements AutoCloseable {
                 sourceRoot.toAbsolutePath().toString(), "/media", BindMode.READ_ONLY)
             .waitingFor(Wait.forHttp("/actuator/health/readiness").forPort(9091))
             .withStartupTimeout(Duration.ofMinutes(2));
-    // The worker names the job attempt in FFmpeg's environment; FFmpeg has no working directory
-    // of its own.
+    // The worker no longer runs FFmpeg in a per-attempt directory, so the scripted FFmpeg reads the
+    // job attempt from the environment the worker gives it.
     var script =
         """
         #!/bin/bash

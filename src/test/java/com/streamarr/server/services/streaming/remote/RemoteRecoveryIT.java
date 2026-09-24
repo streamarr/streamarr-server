@@ -186,7 +186,8 @@ class RemoteRecoveryIT {
                   assertThat(
                           Fmp4Fixture.withInitializationSegment(
                               segmentStore, streamSessionId, ready.data()))
-                      .as("the stored initialization segment and the replacement's segment 1")
+                      .as(
+                          "the stored initialization segment and the replacement attempt's segment 1")
                       .isEqualTo(RecordedStream.SEEK_TO_SIX_SECONDS.bytes()));
       assertInitialAttemptsSegmentsStored(segmentStore, streamSessionId);
       assertThat(initializationSegmentMismatches(meterRegistry)).isZero();
@@ -239,13 +240,10 @@ class RemoteRecoveryIT {
     }
   }
 
-  /**
-   * The initial attempt writes the whole start-at-zero stream, so the worker closes and delivers
-   * segment 0, then leaves a box header unfinished and stays alive until the test kills it: its
-   * output ends inside a box, so it fails without delivering segment 1. A replacement attempt,
-   * which seeks to segment 1, writes the given recording and exits cleanly.
-   */
-  private static String killableThenReplacedScript(RecordedStream replacement) {
+  // The initial job attempt delivers segment 0, then stays alive with its output inside a box until
+  // the test kills it, so it fails without delivering segment 1. A replacement attempt, which seeks
+  // to segment 1, writes the given recording and exits cleanly.
+  private static String killableThenReplacedScript(RecordedStream replacementRecording) {
     return """
         seek=0
         previous=
@@ -257,6 +255,7 @@ class RemoteRecoveryIT {
         done
         if [[ $seek == 0 ]]; then
           cat %s
+          # Three bytes of an eight-byte box header: the output ends inside a box.
           printf 'moo'
           exec sleep 300
         fi
@@ -264,7 +263,7 @@ class RemoteRecoveryIT {
         """
         .formatted(
             RecordedStream.START_AT_ZERO.containerPath(),
-            WorkerContainerFixture.emitRecordedStream(replacement));
+            WorkerContainerFixture.emitRecordedStream(replacementRecording));
   }
 
   private static void assertInitialAttemptsSegmentsStored(
