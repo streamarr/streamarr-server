@@ -5,10 +5,13 @@ import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
+import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
+import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
@@ -93,6 +96,25 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
 
     assertThat(movieRepository.findAll()).hasSize(1);
     assertThat(movieRepository.findAll().getFirst().getTitle()).isEqualTo("Inception");
+  }
+
+  @Test
+  @DisplayName(
+      "Should move movie to its new letter in the alphabet index when refresh changes title")
+  void shouldMoveMovieToNewLetterInAlphabetIndexWhenRefreshChangesTitle() throws IOException {
+    var library = createMovieLibrary();
+    var file = createMovieFile("Movies", "Inception (2010).mkv");
+
+    stubTmdbMovieSearch("Inception", "27205", "Inception", "2010-07-16");
+    stubTmdbMovieMetadata("27205", "Inception");
+    libraryManagementService.processDiscoveredFile(library.getId(), file);
+
+    stubTmdbMovieMetadata("27205", "Origin");
+    libraryManagementService.refreshLibrary(library.getId());
+
+    assertThat(libraryManagementService.getAlphabetIndex(library.getId()))
+        .extracting(LibraryMetadata::getLetter, LibraryMetadata::getItemCount)
+        .containsExactly(tuple(AlphabetLetter.O, 1));
   }
 
   // --- Helpers ---

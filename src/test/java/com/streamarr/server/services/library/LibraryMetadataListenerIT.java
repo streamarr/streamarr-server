@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.AlphabetLetter;
@@ -11,11 +12,13 @@ import com.streamarr.server.repositories.LibraryMetadataRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.events.library.ItemProcessedEvent;
+import com.streamarr.server.services.events.library.RefreshEndedEvent;
 import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 
 @Tag("IntegrationTest")
 @DisplayName("Library Metadata Listener Integration Tests")
@@ -28,6 +31,8 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
   @Autowired private MovieRepository movieRepository;
 
   @Autowired private LibraryMetadataRepository metadataRepository;
+
+  @Autowired private ApplicationEventPublisher eventPublisher;
 
   @Test
   @DisplayName("Should calculate correct letter counts when scan completed")
@@ -142,5 +147,25 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
 
     var metadata = metadataRepository.findByLibraryIdOrderByLetterAsc(savedEmpty.getId());
     assertThat(metadata).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should recalculate letter counts when library refresh ended")
+  void shouldRecalculateLetterCountsWhenLibraryRefreshEnded() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Origin").titleSort("Origin").library(library).build());
+    metadataRepository.save(
+        LibraryMetadata.builder()
+            .libraryId(library.getId())
+            .letter(AlphabetLetter.I)
+            .itemCount(1)
+            .build());
+
+    eventPublisher.publishEvent(new RefreshEndedEvent(library.getId()));
+
+    assertThat(metadataRepository.findByLibraryIdOrderByLetterAsc(library.getId()))
+        .extracting(LibraryMetadata::getLetter, LibraryMetadata::getItemCount)
+        .containsExactly(tuple(AlphabetLetter.O, 1));
   }
 }
