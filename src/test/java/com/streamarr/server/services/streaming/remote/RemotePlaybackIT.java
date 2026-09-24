@@ -33,6 +33,7 @@ import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -259,6 +260,30 @@ class RemotePlaybackIT {
         .forEach(
             (request, command) ->
                 assertCommandPreservesDecision(command, request.transcodeDecision()));
+  }
+
+  @Test
+  @DisplayName("Should launch a stream copy when the request has no frame rate")
+  void shouldLaunchAStreamCopyWhenTheRequestHasNoFrameRate() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var streamCopyModes = EnumSet.of(TranscodeMode.REMUX, TranscodeMode.AUDIO_TRANSCODE);
+    var requests =
+        supportedTranscodeDecisions().stream()
+            .filter(decision -> streamCopyModes.contains(decision.transcodeMode()))
+            .map(
+                decision ->
+                    executableRequestBuilder(mediaFile)
+                        .framerate(OptionalDouble.empty())
+                        .transcodeDecision(decision)
+                        .build())
+            .toList();
+
+    var commands = launchedCommands(mediaRoot, requests);
+
+    assertThat(commands).hasSize(2);
+    commands.forEach(
+        (request, command) -> assertCommandPreservesDecision(command, request.transcodeDecision()));
   }
 
   private TranscodeRequest.TranscodeRequestBuilder executableRequestBuilder(Path mediaFile) {
