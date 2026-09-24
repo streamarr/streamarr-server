@@ -107,11 +107,11 @@ message TranscodeExecution {
   uint32 target_segment_duration_seconds = 2;
   double framerate = 3;
   uint32 start_sequence_number = 4;
-  // The number of media segments the variant's playlist advertises, the same for every job
-  // attempt of the variant. When the worker encodes video, it forces a keyframe at every boundary
-  // k × target_segment_duration_seconds of media time for each k from start_sequence_number up to,
-  // but not including, this count. Zero is not a valid count. The count does not make the worker
-  // responsible for coverage: covering the advertised timeline stays the server's job.
+  // The number of media segments the variant's media playlist advertises on the zero-based grid of
+  // target_segment_duration_seconds. Every job attempt of the variant carries the same count,
+  // whatever its transcode mode, and its start_sequence_number is below it; a job without the
+  // count, or whose start_sequence_number is not below it, is an invalid specification. ADR 0037
+  // describes how the worker bounds its list of forced keyframes with it.
   uint32 media_segment_count = 5;
 }
 
