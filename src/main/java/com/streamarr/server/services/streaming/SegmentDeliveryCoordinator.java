@@ -51,16 +51,11 @@ public class SegmentDeliveryCoordinator {
       return ready;
     }
 
-    var recovery = producerLifecycle.recover(sessionId, variantLabel, segmentName);
-    if (recovery == ProducerLifecycleService.RecoveryResult.EXHAUSTED) {
-      return exhaustedDelivery(sessionId, segmentName);
-    }
-
-    if (recovery == ProducerLifecycleService.RecoveryResult.SESSION_GONE) {
-      return new SegmentDelivery.SessionEnded();
-    }
-
-    return null;
+    return switch (producerLifecycle.recover(sessionId, variantLabel, segmentName)) {
+      case EXHAUSTED -> exhaustedDelivery(sessionId, segmentName);
+      case SESSION_GONE -> new SegmentDelivery.SessionEnded();
+      case WAITING -> null;
+    };
   }
 
   private SegmentDelivery exhaustedDelivery(UUID sessionId, String segmentName) {
