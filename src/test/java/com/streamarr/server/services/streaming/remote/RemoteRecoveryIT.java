@@ -190,8 +190,9 @@ class RemoteRecoveryIT {
   @Test
   @DisplayName(
       "Should keep the stored segments and try every worker when each replacement attempt's initialization segment differs")
-  void shouldKeepStoredSegmentsAndTryEveryWorkerWhenEachReplacementAttemptsInitializationDiffers()
-      throws Exception {
+  void
+      shouldKeepStoredSegmentsAndTryEveryWorkerWhenEachReplacementAttemptsInitializationSegmentDiffers()
+          throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
     var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
