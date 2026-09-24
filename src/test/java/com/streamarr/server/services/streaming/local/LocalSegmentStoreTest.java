@@ -12,12 +12,13 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -28,6 +29,10 @@ import org.junit.jupiter.api.io.TempDir;
 @Tag("UnitTest")
 @DisplayName("Local Segment Store Tests")
 class LocalSegmentStoreTest {
+
+  private static final String VARIANT_INITIALIZATION_SEGMENT = "720p/init.mp4";
+  private static final int CONTENDERS = 8;
+  private static final int RACE_ROUNDS = 25;
 
   @TempDir Path tempDir;
 
@@ -188,42 +193,67 @@ class LocalSegmentStoreTest {
   @Test
   @DisplayName(
       "Should store exactly one initialization segment when differing ones are published concurrently")
-  void shouldStoreExactlyOneInitializationSegmentWhenDifferingOnesArePublishedConcurrently()
-      throws Exception {
-    var contenders = 8;
-    try (var executor = Executors.newFixedThreadPool(contenders)) {
-      for (var round = 0; round < 25; round++) {
-        var sessionId = UUID.randomUUID();
-        var start = new CountDownLatch(1);
-        var publications = new ArrayList<Future<SegmentPublication>>();
-        for (var contender = 0; contender < contenders; contender++) {
-          var prepared =
-              store.prepareSegment(sessionId, "720p/init.mp4", ("encoder " + contender).getBytes());
-          publications.add(executor.submit(() -> publishAfter(start, prepared)));
-        }
+  void shouldStoreExactlyOneInitializationSegmentWhenDifferingOnesArePublishedConcurrently() {
+    assertExactlyOneContenderStoredPerRace(store);
+  }
 
-        start.countDown();
+  private static void assertExactlyOneContenderStoredPerRace(SegmentStore store) {
+    for (var round = 0; round < RACE_ROUNDS; round++) {
+      var sessionId = UUID.randomUUID();
 
-        var published = new ArrayList<Integer>();
-        for (var contender = 0; contender < contenders; contender++) {
-          if (publications.get(contender).get(5, TimeUnit.SECONDS)
-              == SegmentPublication.PUBLISHED) {
-            published.add(contender);
-          }
-        }
+      var stored = contendersStoredByConcurrentPublication(store, sessionId);
 
-        assertThat(published).as("contenders stored in round %s", round).hasSize(1);
-        assertThat(store.readSegment(sessionId, "720p/init.mp4"))
-            .isEqualTo(("encoder " + published.getFirst()).getBytes());
-      }
+      assertThat(stored).as("contenders stored in round %s", round).hasSize(1);
+      assertThat(store.readSegment(sessionId, VARIANT_INITIALIZATION_SEGMENT))
+          .isEqualTo(contenderInitialization(stored.getFirst()));
     }
   }
 
+  private static List<Integer> contendersStoredByConcurrentPublication(
+      SegmentStore store, UUID sessionId) {
+    var start = new CountDownLatch(1);
+    var prepared =
+        IntStream.range(0, CONTENDERS)
+            .mapToObj(
+                contender ->
+                    store.prepareSegment(
+                        sessionId,
+                        VARIANT_INITIALIZATION_SEGMENT,
+                        contenderInitialization(contender)))
+            .toList();
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var publications =
+          prepared.stream()
+              .map(
+                  segment ->
+                      CompletableFuture.supplyAsync(() -> publishAfter(start, segment), executor))
+              .toList();
+      start.countDown();
+      return IntStream.range(0, CONTENDERS)
+          .filter(
+              contender ->
+                  publications.get(contender).orTimeout(5, TimeUnit.SECONDS).join()
+                      == SegmentPublication.PUBLISHED)
+          .boxed()
+          .toList();
+    }
+  }
+
+  private static byte[] contenderInitialization(int contender) {
+    return ("encoder " + contender).getBytes();
+  }
+
   private static SegmentPublication publishAfter(
-      CountDownLatch start, SegmentStore.PreparedSegment prepared) throws InterruptedException {
+      CountDownLatch start, SegmentStore.PreparedSegment prepared) {
     try (prepared) {
-      start.await();
+      if (!start.await(5, TimeUnit.SECONDS)) {
+        throw new AssertionError("Timed out waiting for the race to start");
+      }
+
       return prepared.publish();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new AssertionError(e);
     }
   }
 
