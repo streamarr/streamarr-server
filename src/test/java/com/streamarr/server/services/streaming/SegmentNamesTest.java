@@ -16,7 +16,7 @@ class SegmentNamesTest {
   @Test
   @DisplayName("Should parse the timeline index when the name is a canonical media segment")
   void shouldParseTimelineIndexWhenNameIsCanonicalMediaSegment() {
-    assertThat(SegmentNames.indexOf("segment5.ts")).hasValue(5);
+    assertThat(SegmentNames.indexOf("segment5.m4s")).hasValue(5);
     assertThat(SegmentNames.indexOf("segment0.m4s")).hasValue(0);
     assertThat(SegmentNames.indexOf("720p/segment12.m4s")).hasValue(12);
   }
@@ -32,7 +32,15 @@ class SegmentNamesTest {
 
   @ParameterizedTest
   @ValueSource(
-      strings = {"foo.ts", "notasegment5.ts", "segment5.mp4", "segment.ts", "segment5", "init.m4s"})
+      strings = {
+        "segment5.ts",
+        "foo.m4s",
+        "notasegment5.m4s",
+        "segment5.mp4",
+        "segment.m4s",
+        "segment5",
+        "init.m4s"
+      })
   @DisplayName("Should carry no index when the name matches no naming scheme")
   void shouldCarryNoIndexWhenNameMatchesNoNamingScheme(String name) {
     assertThat(SegmentNames.indexOf(name)).isEmpty();
@@ -41,14 +49,14 @@ class SegmentNamesTest {
   @Test
   @DisplayName("Should carry no index when the index overflows the naming scheme")
   void shouldCarryNoIndexWhenIndexOverflowsTheNamingScheme() {
-    assertThat(SegmentNames.indexOf("segment99999999999999999999.ts")).isEmpty();
+    assertThat(SegmentNames.indexOf("segment99999999999999999999.m4s")).isEmpty();
     assertThat(SegmentNames.indexOf("segment9999999999.m4s")).isEmpty();
   }
 
   @Test
   @DisplayName("Should compute the sibling name when the name carries an index")
   void shouldComputeSiblingNameWhenNameCarriesAnIndex() {
-    assertThat(SegmentNames.siblingName("segment7.ts", 3)).isEqualTo("segment3.ts");
+    assertThat(SegmentNames.siblingName("segment7.m4s", 3)).isEqualTo("segment3.m4s");
     assertThat(SegmentNames.siblingName("720p/segment7.m4s", 3)).isEqualTo("720p/segment3.m4s");
   }
 
@@ -69,7 +77,7 @@ class SegmentNamesTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"foo.ts", "notinit.mp4", "segment5.mp4"})
+  @ValueSource(strings = {"segment7.ts", "foo.m4s", "notinit.mp4", "segment5.mp4"})
   @DisplayName("Should throw when a sibling is requested for a name matching no naming scheme")
   void shouldThrowWhenSiblingRequestedForNameMatchingNoNamingScheme(String name) {
     assertThatThrownBy(() -> SegmentNames.siblingName(name, 3))

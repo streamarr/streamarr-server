@@ -21,6 +21,6 @@ docs {
 tests {
   test("Should return the segment bytes", function() {
     expect(res.status).to.equal(200);
-    expect(["video/mp2t", "video/mp4"]).to.include(res.headers["content-type"]);
+    expect(res.headers["content-type"]).to.equal("video/mp4");
   });
 }

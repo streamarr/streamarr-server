@@ -203,9 +203,7 @@ class OpenApiContractIT extends AbstractIntegrationTest {
       /api/stream/{sessionId}/init.mp4, video/mp4
       /api/stream/{sessionId}/{variantLabel}/init.mp4, video/mp4
       /api/stream/{sessionId}/{segmentName}, video/mp4
-      /api/stream/{sessionId}/{segmentName}, video/mp2t
       /api/stream/{sessionId}/{variantLabel}/{segmentName}, video/mp4
-      /api/stream/{sessionId}/{variantLabel}/{segmentName}, video/mp2t
       """)
   @DisplayName("Should declare raw binary content when media bytes are served")
   void shouldDeclareRawBinaryContentWhenMediaBytesAreServed(String path, String mediaType)

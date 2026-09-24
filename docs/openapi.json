@@ -1429,12 +1429,6 @@
         "responses": {
           "200": {
             "content": {
-              "video/mp2t": {
-                "schema": {
-                  "format": "binary",
-                  "type": "string"
-                }
-              },
               "video/mp4": {
                 "schema": {
                   "format": "binary",
@@ -1664,12 +1658,6 @@
         "responses": {
           "200": {
             "content": {
-              "video/mp2t": {
-                "schema": {
-                  "format": "binary",
-                  "type": "string"
-                }
-              },
               "video/mp4": {
                 "schema": {
                   "format": "binary",

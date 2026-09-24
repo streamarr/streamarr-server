@@ -117,23 +117,18 @@ class StreamControllerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should serve TS segment with correct content type when segment is available")
-  void shouldServeTsSegmentWithCorrectContentTypeWhenSegmentIsAvailable() throws Exception {
+  @DisplayName("Should return 404 when a segment is requested as MPEG-TS")
+  void shouldReturn404WhenSegmentIsRequestedAsMpegTs() throws Exception {
     var session = StreamSessionFixture.buildActiveSession();
-    var segmentData = new byte[] {0x47, 0x00, 0x11, 0x10};
     STUB_SERVICE.addSession(session);
-    FAKE_SEGMENT_STORE.addSegment(session.getSessionId(), "segment0.ts", segmentData);
+    FAKE_SEGMENT_STORE.addSegment(
+        session.getSessionId(), "segment0.ts", new byte[] {0x47, 0x00, 0x11, 0x10});
 
-    var result =
-        mockMvc
-            .perform(
-                get("/api/stream/{id}/segment0.ts", session.getSessionId())
-                    .param("t", playbackToken(session.getSessionId())))
-            .andExpect(status().isOk())
-            .andReturn();
-
-    assertThat(result.getResponse().getContentType()).isEqualTo("video/mp2t");
-    assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(segmentData);
+    mockMvc
+        .perform(
+            get("/api/stream/{id}/segment0.ts", session.getSessionId())
+                .param("t", playbackToken(session.getSessionId())))
+        .andExpect(status().isNotFound());
   }
 
   @Test

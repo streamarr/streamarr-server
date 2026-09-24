@@ -217,21 +217,16 @@ class StreamControllerTest {
     assertThat(result.getResponse().getContentAsString()).contains("#EXT-X-ENDLIST");
   }
 
-  @Test
-  @DisplayName("Should serve TS segment with correct content type when segment is available")
-  void shouldServeTsSegmentWithCorrectContentTypeWhenSegmentIsAvailable() throws Exception {
-    streamingService.setSession(buildSession());
-    var segmentData = new byte[] {0x47, 0x00, 0x11, 0x10};
-    segmentStore.addSegment(SESSION_ID, "segment0.ts", segmentData);
+  @ParameterizedTest
+  @ValueSource(strings = {"segment0.ts", "720p/segment0.ts"})
+  @DisplayName("Should return 404 when a segment is requested as MPEG-TS")
+  void shouldReturn404WhenSegmentIsRequestedAsMpegTs(String segmentName) throws Exception {
+    streamingService.setSession(buildAbrSession());
+    segmentStore.addSegment(SESSION_ID, segmentName, new byte[] {0x47, 0x00, 0x11, 0x10});
 
-    var result =
-        mockMvc
-            .perform(get("/api/stream/{sessionId}/segment0.ts", SESSION_ID))
-            .andExpect(status().isOk())
-            .andReturn();
-
-    assertThat(result.getResponse().getContentType()).isEqualTo("video/mp2t");
-    assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(segmentData);
+    mockMvc
+        .perform(get("/api/stream/{sessionId}/" + segmentName, SESSION_ID))
+        .andExpect(status().isNotFound());
   }
 
   @Test

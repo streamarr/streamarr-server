@@ -32,7 +32,6 @@ public class StreamController {
 
   private static final MediaType HLS_MEDIA_TYPE =
       MediaType.parseMediaType("application/vnd.apple.mpegurl");
-  private static final MediaType MPEGTS_MEDIA_TYPE = MediaType.parseMediaType("video/mp2t");
   private static final MediaType MP4_MEDIA_TYPE = MediaType.parseMediaType("video/mp4");
 
   private final StreamingService streamingService;
@@ -84,14 +83,12 @@ public class StreamController {
     return serveInitSegment(sessionId, StreamSession.defaultVariant(), "init.mp4");
   }
 
-  @GetMapping("/{sessionId}/{segmentName:.+\\.(?:ts|m4s)}")
+  @GetMapping("/{sessionId}/{segmentName:.+\\.m4s}")
   @ApiResponse(responseCode = "400", description = "Invalid segment path", content = @Content)
   @ApiResponse(
       responseCode = "200",
-      content = {
-        @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")),
-        @Content(mediaType = "video/mp2t", schema = @Schema(type = "string", format = "binary"))
-      })
+      content =
+          @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
   @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
   @ApiResponse(responseCode = "503", description = "Segment unavailable", content = @Content)
   public ResponseEntity<byte[]> getSegment(
@@ -151,15 +148,13 @@ public class StreamController {
     return serveInitSegment(sessionId, variantLabel, variantLabel + "/init.mp4");
   }
 
-  @GetMapping("/{sessionId}/{variantLabel}/{segmentName:.+\\.(?:ts|m4s)}")
+  @GetMapping("/{sessionId}/{variantLabel}/{segmentName:.+\\.m4s}")
   @ApiResponse(responseCode = "400", description = "Invalid segment path", content = @Content)
   @ApiResponse(responseCode = "503", description = "Segment unavailable", content = @Content)
   @ApiResponse(
       responseCode = "200",
-      content = {
-        @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")),
-        @Content(mediaType = "video/mp2t", schema = @Schema(type = "string", format = "binary"))
-      })
+      content =
+          @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
   @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
   public ResponseEntity<byte[]> getVariantSegment(
       @PathVariable UUID sessionId,
@@ -190,9 +185,8 @@ public class StreamController {
 
   private ResponseEntity<byte[]> serveSegment(
       UUID sessionId, String variantLabel, String segmentName) {
-    var contentType = segmentName.endsWith(".ts") ? MPEGTS_MEDIA_TYPE : MP4_MEDIA_TYPE;
-
-    return respond(deliveryCoordinator.deliver(sessionId, variantLabel, segmentName), contentType);
+    return respond(
+        deliveryCoordinator.deliver(sessionId, variantLabel, segmentName), MP4_MEDIA_TYPE);
   }
 
   private static ResponseEntity<byte[]> respond(SegmentDelivery delivery, MediaType contentType) {

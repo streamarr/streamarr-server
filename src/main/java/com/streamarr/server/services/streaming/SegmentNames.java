@@ -4,16 +4,15 @@ import java.util.OptionalInt;
 import java.util.regex.Pattern;
 
 /**
- * Naming scheme for HLS artifacts: media segments are {@code segment{index}.{ts|m4s}}, optionally
- * under a variant directory, beside an fMP4 variant's {@code init.mp4}, which the variant stores
- * once and keeps across job attempts.
+ * Naming scheme for HLS artifacts, which are fMP4 only: media segments are {@code
+ * segment{index}.m4s}, optionally under a variant directory, beside the variant's {@code init.mp4},
+ * which the variant stores once and keeps across job attempts.
  */
 public final class SegmentNames {
 
   // Nine digits keep every parsed index inside int range; a longer run of digits is not a
   // media-segment name.
-  private static final Pattern MEDIA_SEGMENT_PATTERN =
-      Pattern.compile("segment(\\d{1,9})\\.(ts|m4s)");
+  private static final Pattern MEDIA_SEGMENT_PATTERN = Pattern.compile("segment(\\d{1,9})\\.m4s");
 
   /** The basename of a variant's initialization segment. */
   public static final String INITIALIZATION_SEGMENT = "init.mp4";
@@ -40,24 +39,18 @@ public final class SegmentNames {
   }
 
   /**
-   * The same run's media segment at {@code index}: same variant directory, same container. A name
-   * matching no scheme throws rather than passing through unchanged — a fabricated sibling would
-   * point progress checks at a file no run can ever produce.
+   * The same run's media segment at {@code index}, in the same variant directory. A name matching
+   * no scheme throws rather than passing through unchanged — a fabricated sibling would point
+   * progress checks at a file no run can ever produce.
    */
   public static String siblingName(String segmentName, int index) {
     var base = basename(segmentName);
+    if (!MEDIA_SEGMENT_PATTERN.matcher(base).matches() && !isInitSegment(segmentName)) {
+      throw new IllegalArgumentException("Segment name matches no known scheme: " + segmentName);
+    }
+
     var directory = segmentName.substring(0, segmentName.length() - base.length());
-    var matcher = MEDIA_SEGMENT_PATTERN.matcher(base);
-    if (matcher.matches()) {
-      return directory + "segment" + index + "." + matcher.group(2);
-    }
-
-    // Only fMP4 runs have an init.mp4; their media segments are .m4s.
-    if (isInitSegment(segmentName)) {
-      return directory + "segment" + index + ".m4s";
-    }
-
-    throw new IllegalArgumentException("Segment name matches no known scheme: " + segmentName);
+    return directory + mediaSegment(index);
   }
 
   private static String basename(String segmentName) {
