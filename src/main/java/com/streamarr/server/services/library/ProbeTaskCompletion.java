@@ -10,6 +10,7 @@ import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.task.ProbeAttemptFailure;
+import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
@@ -118,12 +119,7 @@ public class ProbeTaskCompletion {
 
     var inputs = desired.get();
     if (!inputs.equals(request.inputs())) {
-      return retryWithRequestedInputs(
-          result,
-          request.toBuilder()
-              .snapshot(inputs.snapshot())
-              .probeVersion(inputs.probeVersion())
-              .build());
+      return retryWithRequestedInputs(result, withInputs(request, inputs));
     }
 
     nextInputs(result)
@@ -142,6 +138,13 @@ public class ProbeTaskCompletion {
           ProbeExecutionResult.SourceRemoved _ ->
           new ProbeExecutionResult.Rescheduled(requested);
     };
+  }
+
+  private static ProbeTaskRequest withInputs(ProbeTaskRequest request, ProbeInputs inputs) {
+    return request.toBuilder()
+        .snapshot(inputs.snapshot())
+        .probeVersion(inputs.probeVersion())
+        .build();
   }
 
   private static Optional<ProbeTaskRequest> nextInputs(ProbeExecutionResult result) {
