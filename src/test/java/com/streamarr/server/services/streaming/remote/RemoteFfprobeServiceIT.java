@@ -7,6 +7,7 @@ import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
@@ -17,10 +18,12 @@ import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.LoopbackProbeWorker;
+import com.streamarr.server.support.BoundedTask;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeContainerInfo;
 import com.streamarr.transcode.v1.ProbeFailure;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
+import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
 import io.grpc.Status;
 import java.nio.file.Path;
@@ -33,6 +36,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -102,7 +106,10 @@ class RemoteFfprobeServiceIT {
         worker.disconnect();
 
         assertThatThrownBy(() -> result.get(5, TimeUnit.SECONDS))
-            .hasCauseInstanceOf(ProbeExecutionException.class);
+            .cause()
+            .isInstanceOfSatisfying(
+                ProbeExecutionException.class,
+                failure -> assertThat(failure.reason()).isEqualTo(ItemFailureReason.TEMPORARY));
       }
     }
   }
@@ -135,7 +142,9 @@ class RemoteFfprobeServiceIT {
             .isExactlyInstanceOf(ProbeExecutionException.class)
             .hasMessage(
                 "No connected worker can read the source namespace at the requested probe"
-                    + " version");
+                    + " version")
+            .extracting(failure -> ((ProbeExecutionException) failure).reason())
+            .isEqualTo(ItemFailureReason.MISCONFIGURED);
       }
     }
   }
@@ -358,6 +367,63 @@ class RemoteFfprobeServiceIT {
     assertThat(outcome).isEqualTo(new ProbeOutcome.Failure(expected));
   }
 
+  @ParameterizedTest
+  @CsvSource({
+    "PROBE_FAILURE_SOURCE_UNAVAILABLE,SOURCE_INACCESSIBLE",
+    "PROBE_FAILURE_UNSUPPORTED_VERSION,MISCONFIGURED",
+    "PROBE_FAILURE_EXECUTION_FAILED,TEMPORARY",
+    "PROBE_FAILURE_UNSPECIFIED,TEMPORARY"
+  })
+  @DisplayName(
+      "Should fail for persisted retry with the worker's reason when a probe attempt fails")
+  void shouldFailForPersistedRetryWithTheWorkersReasonWhenAProbeAttemptFails(
+      ProbeFailure failure, ItemFailureReason expected) {
+    assertThatThrownBy(() -> remoteReply(ProbeAttemptResult.newBuilder().setFailure(failure)))
+        .isInstanceOfSatisfying(
+            ProbeExecutionException.class,
+            thrown -> assertThat(thrown.reason()).isEqualTo(expected));
+  }
+
+  @Test
+  @DisplayName(
+      "Should fail for persisted retry as temporary when the worker reports an unknown failure")
+  void shouldFailForPersistedRetryAsTemporaryWhenTheWorkerReportsAnUnknownFailure() {
+    assertThatThrownBy(() -> remoteReply(ProbeAttemptResult.newBuilder().setFailureValue(999)))
+        .isInstanceOfSatisfying(
+            ProbeExecutionException.class,
+            thrown -> assertThat(thrown.reason()).isEqualTo(ItemFailureReason.TEMPORARY));
+  }
+
+  @Test
+  @DisplayName(
+      "Should fail for persisted retry as misconfigured when the worker replies at another probe"
+          + " version")
+  void shouldFailForPersistedRetryAsMisconfiguredWhenTheWorkerRepliesAtAnotherProbeVersion() {
+    assertThatThrownBy(
+            () ->
+                remoteReply(
+                    dispatched ->
+                        ProbeAttemptResult.newBuilder()
+                            .setProbeAttemptId(dispatched.getProbeAttemptId())
+                            .setProbeVersion(dispatched.getProbeVersion() + 1)
+                            .setMedia(ProbeMediaInfo.getDefaultInstance())))
+        .isInstanceOfSatisfying(
+            ProbeExecutionException.class,
+            thrown -> assertThat(thrown.reason()).isEqualTo(ItemFailureReason.MISCONFIGURED));
+  }
+
+  @Test
+  @DisplayName("Should cancel the probe without a failure reason when the worker cancels it")
+  void shouldCancelTheProbeWithoutAFailureReasonWhenTheWorkerCancelsIt() {
+    assertThatThrownBy(
+            () ->
+                remoteReply(
+                    ProbeAttemptResult.newBuilder()
+                        .setFailure(ProbeFailure.PROBE_FAILURE_CANCELLED)))
+        .isInstanceOf(ProbeCancelledException.class)
+        .isNotInstanceOf(ProbeExecutionException.class);
+  }
+
   private ProbeOutcome.Success remoteOutcome(ProbeMediaInfo media) throws Exception {
     var outcome = remoteReply(ProbeAttemptResult.newBuilder().setMedia(media));
     assertThat(outcome).isInstanceOf(ProbeOutcome.Success.class);
@@ -365,20 +431,26 @@ class RemoteFfprobeServiceIT {
   }
 
   private ProbeOutcome remoteReply(ProbeAttemptResult.Builder reply) throws Exception {
-    try (var server = server();
-        var calls = Executors.newVirtualThreadPerTaskExecutor()) {
+    return remoteReply(
+        dispatched ->
+            reply
+                .setProbeAttemptId(dispatched.getProbeAttemptId())
+                .setProbeVersion(dispatched.getProbeVersion()));
+  }
+
+  /** Answers the dispatched request with the reply built from it, and returns the outcome. */
+  private ProbeOutcome remoteReply(Function<ProbeRequest, ProbeAttemptResult.Builder> reply)
+      throws Exception {
+    try (var server = server()) {
       server.start();
       try (var worker = worker(server.port(), 1)) {
         var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
         var request = request().build();
-        var result = calls.submit(() -> service.probe(request));
-        var dispatched = worker.nextResponse().getStartProbe().getRequest();
-        worker.reply(
-            reply
-                .setProbeAttemptId(dispatched.getProbeAttemptId())
-                .setProbeVersion(dispatched.getProbeVersion())
-                .build());
-        return result.get(5, TimeUnit.SECONDS);
+        try (var result = BoundedTask.start(() -> service.probe(request))) {
+          var dispatched = worker.nextResponse().getStartProbe().getRequest();
+          worker.reply(reply.apply(dispatched).build());
+          return result.await(Duration.ofSeconds(5));
+        }
       }
     }
   }
