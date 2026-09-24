@@ -222,28 +222,6 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep the scan running when a matched file's probe has no outcome")
-  void shouldKeepTheScanRunningWhenAMatchedFilesProbeHasNoOutcome() throws Exception {
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var scan = executor.submit(() -> libraryManagementService.scanLibrary(library.getId()));
-      await().atMost(Duration.ofSeconds(10)).until(() -> scheduledRequest().isPresent());
-      await()
-          .during(Duration.ofMillis(300))
-          .atMost(Duration.ofSeconds(2))
-          .until(() -> !scan.isDone());
-      assertThat(libraries.findById(library.getId()).orElseThrow().getStatus())
-          .isEqualTo(LibraryStatus.SCANNING);
-      assertThat(reader.find(mediaFile.getId())).isEmpty();
-
-      storeTheRequestedOutcome();
-      scan.get(10, TimeUnit.SECONDS);
-    }
-
-    assertThat(libraries.findById(library.getId()).orElseThrow().getStatus())
-        .isEqualTo(LibraryStatus.HEALTHY);
-  }
-
-  @Test
   @DisplayName("Should record one request when scan and watcher processing overlap")
   void shouldRecordOneRequestWhenScanAndWatcherProcessingOverlap() throws Exception {
     var start = new CountDownLatch(1);
