@@ -141,29 +141,6 @@ class FileDiscoveryRunsTest {
   }
 
   @Test
-  @DisplayName("Should fail the scan when reading probe results throws unexpectedly")
-  void shouldFailTheScanWhenReadingProbeResultsThrowsUnexpectedly() throws IOException {
-    var unexpected = new IllegalStateException("unexpected probe state");
-    outcomes =
-        new FakeMediaFileContainerInfoRepository() {
-          @Override
-          public List<ProbeState> findProbeStates(Collection<UUID> mediaFileIds) {
-            throw unexpected;
-          }
-        };
-    probeTaskRequests = new FakeProbeTaskRequests(outcomes);
-    var runs = fileDiscoveryRuns();
-    var discovery = runs.open("scan of", library);
-    try (discovery) {
-      discovery.probeRun().request(mediaFile().getId());
-    }
-
-    assertThatThrownBy(() -> runs.awaitResults(discovery))
-        .isInstanceOf(LibraryScanFailedException.class)
-        .hasCause(unexpected);
-  }
-
-  @Test
   @DisplayName("Should fail the scan when artwork cannot be recorded while a probe is pending")
   void shouldFailTheScanWhenArtworkCannotBeRecordedWhileAProbeIsPending() throws Exception {
     probeTaskRequests.dispatchWith(_ -> {});

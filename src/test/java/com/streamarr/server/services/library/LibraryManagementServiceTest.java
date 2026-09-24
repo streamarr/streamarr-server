@@ -117,6 +117,7 @@ import java.nio.file.spi.FileSystemProvider;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -159,12 +160,19 @@ class LibraryManagementServiceTest {
       new MovieMetadataProviderResolver(List.of(tmdbMovieProvider));
   private final LibraryRepository fakeLibraryRepository = new FakeLibraryRepository();
   private Runnable beforeProbeSchedulingReadsMediaFile = () -> {};
+  private Runnable beforeCountingFileStatuses = () -> {};
   private final MediaFileRepository fakeMediaFileRepository =
       new FakeMediaFileRepository() {
         @Override
         public Optional<MediaFile> findById(UUID id) {
           beforeProbeSchedulingReadsMediaFile.run();
           return super.findById(id);
+        }
+
+        @Override
+        public Map<MediaFileStatus, Long> countStatuses(Collection<UUID> mediaFileIds) {
+          beforeCountingFileStatuses.run();
+          return super.countStatuses(mediaFileIds);
         }
       };
   private final MovieRepository fakeMovieRepository = new FakeMovieRepository();
@@ -888,6 +896,23 @@ class LibraryManagementServiceTest {
       matchMovieWithPoster("About Time");
 
       service.scanLibrary(savedLibraryId);
+
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+      assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should become unhealthy when the statuses of the scanned files cannot be read")
+    void shouldBecomeUnhealthyWhenTheStatusesOfTheScannedFilesCannotBeRead() throws Exception {
+      var path =
+          createMovieFile(createRootLibraryDirectory(), "About Time", "About Time (2013).mkv");
+      saveMatchedMediaFile(path);
+      beforeCountingFileStatuses =
+          () -> {
+            throw new DataAccessResourceFailureException("database unavailable");
+          };
+
+      libraryManagementService.scanLibrary(savedLibraryId);
 
       assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
       assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
