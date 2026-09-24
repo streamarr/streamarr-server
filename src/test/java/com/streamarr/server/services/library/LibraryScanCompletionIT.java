@@ -209,6 +209,41 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should finish the scan when the source is removed during an attempt at replaced inputs")
+  void shouldFinishTheScanWhenTheSourceIsRemovedDuringAnAttemptAtReplacedInputs() throws Exception {
+    var probing = new CountDownLatch(1);
+    var release = new CompletableFuture<Void>();
+    var producer = new FakeFfprobeService();
+    probeTaskRequests.request(request(mediaFile));
+    startScheduler(
+        probeExecution.toBuilder()
+            .producer(
+                request -> {
+                  probing.countDown();
+                  release.join();
+                  return producer.probe(request);
+                })
+            .build(),
+        new AbstractSchedulerListener() {});
+    assertThat(probing.await(10, TimeUnit.SECONDS)).isTrue();
+    var source = FilepathCodec.decode(mediaFile.getFilepathUri());
+    Files.writeString(source, "changed media");
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var scan = executor.submit(() -> libraryManagementService.scanLibrary(library.getId()));
+      var changed = snapshotOf(mediaFile);
+      await().atMost(Duration.ofSeconds(10)).until(() -> isRequestedAt(mediaFile, changed));
+      Files.delete(source);
+      release.complete(null);
+
+      scan.get(20, TimeUnit.SECONDS);
+    }
+
+    assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
+  }
+
+  @Test
   @DisplayName("Should finish the scan when another library has pending probes")
   void shouldFinishTheScanWhenAnotherLibraryHasPendingProbes() throws Exception {
     var otherLibrary = scannedLibrary(Files.createDirectories(tempDir.resolve("other")));
