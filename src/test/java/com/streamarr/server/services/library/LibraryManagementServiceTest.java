@@ -776,6 +776,8 @@ class LibraryManagementServiceTest {
             throw new UncheckedIOException(exception);
           }
         };
+    probeTaskRequests.dispatchWith(
+        request -> probeOutcomes.withdrawProbeRequest(request.mediaFileId()));
 
     libraryManagementService.scanLibrary(savedLibraryId);
 
@@ -787,9 +789,8 @@ class LibraryManagementServiceTest {
 
   @Test
   @DisplayName(
-      "Should mark the scan unhealthy when the source becomes a symbolic-link loop after enumeration")
-  void shouldMarkScanUnhealthyWhenSourceBecomesASymbolicLinkLoopAfterEnumeration()
-      throws Exception {
+      "Should finish the scan when a source becomes unreadable after the library is listed")
+  void shouldFinishTheScanWhenASourceBecomesUnreadableAfterTheLibraryIsListed() throws Exception {
     var rootPath = createRootLibraryDirectory();
     var path = createMovieFile(rootPath, "Unavailable mount", "movie.mkv");
     saveMatchedMediaFile(path);
@@ -804,13 +805,16 @@ class LibraryManagementServiceTest {
             throw new UncheckedIOException(exception);
           }
         };
+    probeTaskRequests.dispatchWith(
+        request ->
+            probeTaskRequests.fail(request, ItemFailureReason.SOURCE_INACCESSIBLE, Instant.now()));
 
     libraryManagementService.scanLibrary(savedLibraryId);
 
     assertThat(Files.isSymbolicLink(path)).isTrue();
     assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
-        .isEqualTo(LibraryStatus.UNHEALTHY);
-    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
+        .isEqualTo(LibraryStatus.HEALTHY);
+    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).hasSize(1);
   }
 
   @Nested

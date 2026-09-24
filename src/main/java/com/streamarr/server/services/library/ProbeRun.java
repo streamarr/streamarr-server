@@ -1,5 +1,7 @@
 package com.streamarr.server.services.library;
 
+import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.RequestedProbe;
 import java.time.Clock;
 import java.time.Instant;
@@ -32,13 +34,21 @@ public final class ProbeRun {
    */
   public void request(UUID mediaFileId) {
     var requestedAt = clock.instant();
-    scheduler
-        .schedule(mediaFileId)
-        .ifPresent(
-            inputs -> {
-              firstRequestedAt.compareAndSet(null, requestedAt);
-              requested.put(mediaFileId, new RequestedProbe(inputs, requestedAt));
-            });
+    scheduler.schedule(mediaFileId).ifPresent(inputs -> track(mediaFileId, inputs, requestedAt));
+  }
+
+  /**
+   * Requests the probe like {@link #request(UUID)} with a snapshot the caller already observed, so
+   * the source is not read again. A source that cannot be read by then fails its probe attempt.
+   */
+  public void request(UUID mediaFileId, SourceFileSnapshot observed) {
+    var requestedAt = clock.instant();
+    track(mediaFileId, scheduler.schedule(mediaFileId, observed), requestedAt);
+  }
+
+  private void track(UUID mediaFileId, ProbeInputs inputs, Instant requestedAt) {
+    firstRequestedAt.compareAndSet(null, requestedAt);
+    requested.put(mediaFileId, new RequestedProbe(inputs, requestedAt));
   }
 
   Set<UUID> mediaFileIds() {

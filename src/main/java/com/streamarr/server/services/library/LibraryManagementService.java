@@ -5,6 +5,7 @@ import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
 import com.streamarr.server.exceptions.LibraryScanFailedException;
@@ -36,6 +37,7 @@ import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -365,7 +367,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
             .orElseThrow(() -> new LibraryNotFoundException(libraryId));
 
     try (var discovery = fileDiscoveryRuns.open("file discovery in", library)) {
-      if (processFile(discovery, path)) {
+      if (processFile(discovery, path, discovery.probeRun()::request)) {
         eventPublisher.publishEvent(new ItemProcessedEvent(libraryId));
       }
     }
@@ -400,9 +402,9 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
 
       var tasks =
           stream
-              .filter(Files::isRegularFile)
-              .filter(file -> !ignoredFileValidator.shouldIgnore(file))
-              .map(file -> executor.submit(() -> processFile(discovery, file)))
+              .flatMap(file -> regularFile(file).stream())
+              .filter(listed -> !ignoredFileValidator.shouldIgnore(listed.path()))
+              .map(listed -> executor.submit(() -> processListedFile(discovery, listed)))
               .toList();
       awaitFileProcessing(library, tasks);
 
@@ -412,6 +414,31 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
 
     return discovery;
   }
+
+  // Like Files.isRegularFile, this follows links and skips a file whose attributes cannot be read.
+  private static Optional<ListedFile> regularFile(Path path) {
+    try {
+      var attributes = Files.readAttributes(path, BasicFileAttributes.class);
+      if (!attributes.isRegularFile()) {
+        return Optional.empty();
+      }
+
+      return Optional.of(new ListedFile(path, SourceFileSnapshot.of(attributes)));
+    } catch (IOException _) {
+      return Optional.empty();
+    }
+  }
+
+  // The probe is requested with the snapshot the listing observed, so a source that becomes
+  // unreadable afterwards fails its probe attempt rather than the scan.
+  private boolean processListedFile(FileDiscovery discovery, ListedFile listed) {
+    return processFile(
+        discovery,
+        listed.path(),
+        mediaFileId -> discovery.probeRun().request(mediaFileId, listed.snapshot()));
+  }
+
+  private record ListedFile(Path path, SourceFileSnapshot snapshot) {}
 
   private static void awaitFileProcessing(Library library, List<? extends Future<?>> tasks) {
     var failures = new ArrayList<Throwable>();
@@ -491,7 +518,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     }
   }
 
-  private boolean processFile(FileDiscovery discovery, Path path) {
+  private boolean processFile(FileDiscovery discovery, Path path, Consumer<UUID> requestProbe) {
     var library = discovery.library();
 
     if (!hasSupportedExtension(path)) {
@@ -503,7 +530,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     }
 
     var mediaFile = findOrCreateMediaFile(library, path);
-    discovery.probeRun().request(mediaFile.getId());
+    requestProbe.accept(mediaFile.getId());
 
     if (isAlreadyMatched(mediaFile)) {
       return false;
