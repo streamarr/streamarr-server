@@ -115,11 +115,11 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
       return;
     }
     var segmentName = qualifiedSegmentName();
-    Optional<SegmentPublication> publication;
+    Optional<SegmentPublication> outcome;
     try (var prepared =
         segmentStore.prepareSegment(
             fromProto(metadata.getStreamSessionId()), segmentName, data.toByteArray())) {
-      publication =
+      outcome =
           workerConnections.publishIfAuthorized(authenticatedWorkerId, metadata, prepared::publish);
     } catch (RuntimeException e) {
       log.error(
@@ -130,15 +130,15 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
       reject(Status.INTERNAL.withDescription("Segment could not be stored"));
       return;
     }
-    if (publication.isEmpty()) {
-      reject(Status.PERMISSION_DENIED.withDescription("Segment upload lost connection ownership"));
-      return;
-    }
-
-    if (publication.get() == SegmentPublication.INITIALIZATION_SEGMENT_DIFFERS) {
-      reject(
-          Status.FAILED_PRECONDITION.withDescription(
-              "Initialization segment differs from the one stored for the variant"));
+    var status =
+        outcome
+            .map(SegmentUploadObserver::responseStatus)
+            .orElseGet(
+                () ->
+                    Status.PERMISSION_DENIED.withDescription(
+                        "Segment upload lost connection ownership"));
+    if (!status.isOk()) {
+      reject(status);
       return;
     }
 
@@ -151,6 +151,15 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
             .setAcceptedLengthBytes(acceptedLength)
             .build());
     responseObserver.onCompleted();
+  }
+
+  private static Status responseStatus(SegmentPublication outcome) {
+    return switch (outcome) {
+      case PUBLISHED -> Status.OK;
+      case INITIALIZATION_SEGMENT_DIFFERS ->
+          Status.FAILED_PRECONDITION.withDescription(
+              "Initialization segment differs from the one stored for the variant");
+    };
   }
 
   private String qualifiedSegmentName() {

@@ -260,14 +260,14 @@ final class LiveWorkerConnectionRegistry {
   Optional<SegmentPublication> publishIfAuthorized(
       UUID authenticatedWorkerId,
       SegmentUploadMetadata metadata,
-      Supplier<SegmentPublication> publication) {
+      Supplier<SegmentPublication> publish) {
     // Unsynchronized on purpose: a segment publish is a filesystem move and must not queue
     // behind worker register/disconnect. Stale lookups fail the connection's re-check.
     var connection = connections.get(authenticatedWorkerId);
     if (connection == null) {
       return Optional.empty();
     }
-    return connection.publishIfStillAuthorized(metadata, publication);
+    return connection.publishIfStillAuthorized(metadata, publish);
   }
 
   private final class WorkerConnection {
@@ -551,12 +551,12 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private synchronized Optional<SegmentPublication> publishIfStillAuthorized(
-        SegmentUploadMetadata metadata, Supplier<SegmentPublication> publication) {
+        SegmentUploadMetadata metadata, Supplier<SegmentPublication> publish) {
       if (!authorizesUpload(metadata)) {
         return Optional.empty();
       }
 
-      var outcome = publication.get();
+      var outcome = publish.get();
       if (outcome == SegmentPublication.INITIALIZATION_SEGMENT_DIFFERS) {
         endAttemptWithDifferingInitialization(metadata);
       }
