@@ -1,6 +1,6 @@
 package com.streamarr.server.services;
 
-import com.streamarr.server.exceptions.ArtworkResultNotRecordedException;
+import com.streamarr.server.exceptions.ArtworkResultNotSavedException;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.time.Clock;
 import java.time.Duration;
@@ -14,7 +14,7 @@ import java.util.concurrent.CompletableFuture;
  * The required artwork requested by one scan, refresh, or file discovery. The run completes once it
  * is closed to new requests and every registered request has finished or been withdrawn, so a
  * pending count that briefly reaches zero while discovery continues does not complete it. It
- * completes exceptionally with {@link ArtworkResultNotRecordedException} when the database did not
+ * completes exceptionally with {@link ArtworkResultNotSavedException} when the database did not
  * store the results of any of its requests.
  */
 public final class ArtworkRun implements AutoCloseable {
@@ -24,7 +24,7 @@ public final class ArtworkRun implements AutoCloseable {
   private final Clock clock;
   private final CompletableFuture<ArtworkRunSummary> completion = new CompletableFuture<>();
 
-  private final List<Throwable> recordingFailures = new ArrayList<>();
+  private final List<Throwable> saveFailures = new ArrayList<>();
 
   private int pendingRequests;
   private ArtworkCounts counts = ArtworkCounts.NONE;
@@ -83,10 +83,10 @@ public final class ArtworkRun implements AutoCloseable {
   }
 
   /** Finishes a request whose results the database did not store. */
-  void finishUnrecorded(List<ArtworkResult> results, Throwable failure) {
+  void finishUnsaved(List<ArtworkResult> results, Throwable failure) {
     Optional<ArtworkRunSummary> summary;
     synchronized (this) {
-      recordingFailures.add(failure);
+      saveFailures.add(failure);
       summary = countFinished(results);
     }
 
@@ -102,7 +102,7 @@ public final class ArtworkRun implements AutoCloseable {
   private void complete(ArtworkRunSummary summary) {
     List<Throwable> failures;
     synchronized (this) {
-      failures = List.copyOf(recordingFailures);
+      failures = List.copyOf(saveFailures);
     }
 
     if (failures.isEmpty()) {
@@ -110,7 +110,7 @@ public final class ArtworkRun implements AutoCloseable {
       return;
     }
 
-    completion.completeExceptionally(new ArtworkResultNotRecordedException(description, failures));
+    completion.completeExceptionally(new ArtworkResultNotSavedException(description, failures));
   }
 
   private Optional<ArtworkRunSummary> completedSummary() {

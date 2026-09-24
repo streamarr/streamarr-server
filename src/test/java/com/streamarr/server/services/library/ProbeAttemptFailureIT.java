@@ -90,7 +90,7 @@ class ProbeAttemptFailureIT extends AbstractProbeSchedulerIntegrationTest {
   @DisplayName("Should clear the recorded failure when an outcome is stored for the same inputs")
   void shouldClearTheRecordedFailureWhenAnOutcomeIsStoredForTheSameInputs() throws Exception {
     var request = requestUnchangedFiles(1).getFirst();
-    assertThat(outcomes.recordProbeFailure(request.mediaFileId(), request.inputs(), failure()))
+    assertThat(outcomes.trySaveProbeFailure(request.mediaFileId(), request.inputs(), failure()))
         .isTrue();
 
     outcomes.publish(
@@ -121,7 +121,7 @@ class ProbeAttemptFailureIT extends AbstractProbeSchedulerIntegrationTest {
   @DisplayName("Should keep the recorded failure when the same inputs are requested again")
   void shouldKeepTheRecordedFailureWhenTheSameInputsAreRequestedAgain() throws Exception {
     var request = requestUnchangedFiles(1).getFirst();
-    outcomes.recordProbeFailure(request.mediaFileId(), request.inputs(), failure());
+    outcomes.trySaveProbeFailure(request.mediaFileId(), request.inputs(), failure());
 
     probeTaskRequests.request(request);
 
@@ -132,7 +132,7 @@ class ProbeAttemptFailureIT extends AbstractProbeSchedulerIntegrationTest {
   @DisplayName("Should clear the recorded failure when a request carries different inputs")
   void shouldClearTheRecordedFailureWhenARequestCarriesDifferentInputs() throws Exception {
     var request = requestUnchangedFiles(1).getFirst();
-    outcomes.recordProbeFailure(request.mediaFileId(), request.inputs(), failure());
+    outcomes.trySaveProbeFailure(request.mediaFileId(), request.inputs(), failure());
     var changed = changedSnapshot(request);
 
     probeTaskRequests.request(changed);
@@ -147,7 +147,7 @@ class ProbeAttemptFailureIT extends AbstractProbeSchedulerIntegrationTest {
     var request = requestUnchangedFiles(1).getFirst();
     probeTaskRequests.request(changedSnapshot(request));
 
-    var recorded = outcomes.recordProbeFailure(request.mediaFileId(), request.inputs(), failure());
+    var recorded = outcomes.trySaveProbeFailure(request.mediaFileId(), request.inputs(), failure());
 
     assertThat(recorded).isFalse();
     assertThat(stateOf(request).failure()).isEmpty();

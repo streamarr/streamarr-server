@@ -139,7 +139,7 @@ public class ArtworkService {
     } catch (RuntimeException e) {
       log.error("Failed to record artwork results for entity {}", fetch.artwork().entityId(), e);
       var failures = fetch.artwork().failures(e);
-      fetch.run().finishUnrecorded(failures, e);
+      fetch.run().finishUnsaved(failures, e);
       progress.finished(ArtworkPriority.REQUIRED, fetch.sourceImages(), failures);
       fetch.request().completeExceptionally(e);
       return;

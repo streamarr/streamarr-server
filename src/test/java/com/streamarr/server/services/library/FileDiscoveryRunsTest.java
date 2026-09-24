@@ -14,7 +14,7 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.task.ProbeState;
 import com.streamarr.server.domain.task.RequestedProbeResult;
-import com.streamarr.server.exceptions.ArtworkResultNotRecordedException;
+import com.streamarr.server.exceptions.ArtworkResultNotSavedException;
 import com.streamarr.server.exceptions.LibraryScanFailedException;
 import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
@@ -114,7 +114,7 @@ class FileDiscoveryRunsTest {
 
     assertThatThrownBy(() -> runs.awaitResults(discovery))
         .isInstanceOf(LibraryScanFailedException.class)
-        .hasCauseInstanceOf(ArtworkResultNotRecordedException.class);
+        .hasCauseInstanceOf(ArtworkResultNotSavedException.class);
   }
 
   @Test

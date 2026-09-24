@@ -84,7 +84,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   }
 
   @Override
-  public synchronized boolean recordProbeRequest(UUID mediaFileId, ProbeInputs inputs) {
+  public synchronized boolean trySaveProbeRequest(UUID mediaFileId, ProbeInputs inputs) {
     if (!mediaFileExists.test(mediaFileId)) {
       return false;
     }
@@ -98,7 +98,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   }
 
   @Override
-  public synchronized boolean recordProbeFailure(
+  public synchronized boolean trySaveProbeFailure(
       UUID mediaFileId, ProbeInputs inputs, ProbeAttemptFailure failure) {
     if (!inputs.equals(desiredInputs.get(mediaFileId))) {
       return false;

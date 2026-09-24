@@ -85,7 +85,7 @@ public class ProbeTaskCompletion {
                   complete
                       .getCause()
                       .flatMap(ProbeTaskCompletion::failureOf)
-                      .ifPresent(failure -> recordFailure(attempted, failure));
+                      .ifPresent(failure -> saveFailure(attempted, failure));
                   backoff.onFailure(complete, operations);
                 });
   }
@@ -97,8 +97,8 @@ public class ProbeTaskCompletion {
         .map(inputs -> withInputs(attempted, inputs));
   }
 
-  private void recordFailure(ProbeTaskRequest request, ItemOutcome.Failed failure) {
-    outcomes.recordProbeFailure(
+  private void saveFailure(ProbeTaskRequest request, ItemOutcome.Failed failure) {
+    outcomes.trySaveProbeFailure(
         request.mediaFileId(),
         request.inputs(),
         ProbeAttemptFailure.builder()
@@ -137,7 +137,7 @@ public class ProbeTaskCompletion {
     }
 
     nextInputs(result)
-        .ifPresent(next -> outcomes.recordProbeRequest(next.mediaFileId(), next.inputs()));
+        .ifPresent(next -> outcomes.trySaveProbeRequest(next.mediaFileId(), next.inputs()));
     return result;
   }
 
