@@ -15,9 +15,9 @@ import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
 import com.streamarr.server.exceptions.ProbeTaskSchedulingException;
-import com.streamarr.server.fakes.CapturingProbeTaskRequests;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeProbeTaskRequests;
 import com.streamarr.server.services.events.library.MediaFileProbeTaskRequested;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.library.MediaFileProbeTaskScheduler.MediaFileProbeTaskSchedulerBuilder;
@@ -44,7 +44,9 @@ class MediaFileProbeTaskSchedulerTest {
   private static final Instant MODIFIED_AT = Instant.parse("2026-09-10T12:00:00.999999999Z");
 
   private final FakeMediaFileRepository files = new FakeMediaFileRepository();
-  private final CapturingProbeTaskRequests requests = new CapturingProbeTaskRequests();
+  private final FakeMediaFileContainerInfoRepository outcomes =
+      new FakeMediaFileContainerInfoRepository();
+  private final FakeProbeTaskRequests requests = new FakeProbeTaskRequests(outcomes);
   private FileSystem fileSystem;
   private Path path;
   private MediaFile mediaFile;
@@ -86,19 +88,6 @@ class MediaFileProbeTaskSchedulerTest {
                 .build());
   }
 
-  @Test
-  @DisplayName("Should retry a failed probe at once when discovery schedules the file")
-  void shouldRetryAFailedProbeAtOnceWhenDiscoverySchedulesTheFile() {
-    var scheduler = schedulerBuilder().build();
-
-    scheduler.schedule(mediaFile.getId());
-
-    assertThat(requests.retryingRequests())
-        .singleElement()
-        .satisfies(request -> assertThat(request.mediaFileId()).isEqualTo(mediaFile.getId()));
-    assertThat(requests.requests()).isEmpty();
-  }
-
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   @DisplayName("Should skip enqueue when the current outcome matches the observed source")
@@ -110,9 +99,8 @@ class MediaFileProbeTaskSchedulerTest {
             .probeVersion(ProbeVersion.CURRENT)
             .probeError(terminalFailure ? ProbeError.INVALID_MEDIA : null)
             .build();
-    var stored = new FakeMediaFileContainerInfoRepository();
-    stored.store(outcome);
-    var scheduler = schedulerBuilder().reader(new PersistedProbeReader(stored)).build();
+    outcomes.store(outcome);
+    var scheduler = schedulerBuilder().build();
 
     scheduler.onProbeTaskRequested(new MediaFileProbeTaskRequested(mediaFile.getId()));
 
@@ -125,15 +113,14 @@ class MediaFileProbeTaskSchedulerTest {
   void shouldEnqueueAFreshProbeWhenTheSourceChangedAfterAPartialCopyOutcome(
       boolean terminalFailure) {
     var partialCopy = new SourceFileSnapshot(2, MODIFIED_AT.minusSeconds(1));
-    var stored = new FakeMediaFileContainerInfoRepository();
-    stored.store(
+    outcomes.store(
         MediaFileContainerInfo.builder()
             .mediaFileId(mediaFile.getId())
             .snapshot(partialCopy)
             .probeVersion(ProbeVersion.CURRENT)
             .probeError(terminalFailure ? ProbeError.INVALID_MEDIA : null)
             .build());
-    var scheduler = schedulerBuilder().reader(new PersistedProbeReader(stored)).build();
+    var scheduler = schedulerBuilder().build();
 
     scheduler.onProbeTaskRequested(new MediaFileProbeTaskRequested(mediaFile.getId()));
 
@@ -187,7 +174,7 @@ class MediaFileProbeTaskSchedulerTest {
   private MediaFileProbeTaskSchedulerBuilder schedulerBuilder() {
     return MediaFileProbeTaskScheduler.builder()
         .mediaFileRepository(files)
-        .reader(new PersistedProbeReader(new FakeMediaFileContainerInfoRepository()))
+        .reader(new PersistedProbeReader(outcomes))
         .probeTaskRequests(requests)
         .fileSystem(fileSystem);
   }

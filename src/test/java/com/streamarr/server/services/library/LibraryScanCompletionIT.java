@@ -187,6 +187,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
         new AbstractSchedulerListener() {});
     scan(library);
     assertThat(reader.find(mediaFile.getId())).isEmpty();
+    delayExecution(mediaFile.getId());
 
     readable.set(true);
     scan(library);

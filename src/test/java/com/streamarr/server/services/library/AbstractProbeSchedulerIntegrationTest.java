@@ -31,7 +31,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -178,6 +180,18 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
                 assertThat(stored.probeVersion()).isEqualTo(request.probeVersion());
               });
     }
+  }
+
+  /** Moves the media file's pending probe five minutes out, as a long backoff would. */
+  Instant delayExecution(UUID mediaFileId) {
+    var executionTime = Instant.now().plusSeconds(300).truncatedTo(ChronoUnit.SECONDS);
+    assertThat(
+            dsl.update(DSL.table("scheduled_tasks"))
+                .set(DSL.field("execution_time", Instant.class), executionTime)
+                .where(DSL.field("task_instance", String.class).eq(mediaFileId.toString()))
+                .execute())
+        .isOne();
+    return executionTime;
   }
 
   static TaskInstanceId instanceOf(ProbeTaskRequest request) {

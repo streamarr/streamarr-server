@@ -13,11 +13,11 @@ import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
-import com.streamarr.server.fakes.CapturingProbeTaskRequests;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
+import com.streamarr.server.fakes.FakeProbeTaskRequests;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamingRigFixture;
@@ -234,15 +234,13 @@ class AdversarialPlaybackTest {
     }
 
     @Bean
-    CapturingProbeTaskRequests probeRequests() {
-      return new CapturingProbeTaskRequests();
+    FakeProbeTaskRequests probeRequests() {
+      return new FakeProbeTaskRequests(outcomes);
     }
 
     @Bean
     MediaFileProbeTaskScheduler scheduler(
-        PersistedProbeReader reader,
-        CapturingProbeTaskRequests requests,
-        FileSystem sourceFileSystem) {
+        PersistedProbeReader reader, FakeProbeTaskRequests requests, FileSystem sourceFileSystem) {
       return MediaFileProbeTaskScheduler.builder()
           .mediaFileRepository(files)
           .reader(reader)
