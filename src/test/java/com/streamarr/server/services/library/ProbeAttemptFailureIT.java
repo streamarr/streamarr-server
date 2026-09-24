@@ -1,10 +1,8 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import com.github.kagkarlsson.scheduler.SchedulerClient;
-import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
@@ -165,9 +163,10 @@ class ProbeAttemptFailureIT extends AbstractProbeSchedulerIntegrationTest {
     var request = requestUnchangedFiles(1).getFirst();
     var probing = new CountDownLatch(1);
     var release = new CompletableFuture<Void>();
+    var olderAndRequestedAttempts = new CountDownLatch(2);
     startScheduler(
         probeExecution.toBuilder().producer(workerFailingAfter(probing, release)).build(),
-        new AbstractSchedulerListener() {});
+        countingCompletions(olderAndRequestedAttempts));
     assertThat(probing.await(10, TimeUnit.SECONDS)).isTrue();
     var changed = changedSnapshot(request);
     probeTaskRequests.request(changed);
@@ -175,12 +174,15 @@ class ProbeAttemptFailureIT extends AbstractProbeSchedulerIntegrationTest {
 
     release.complete(null);
 
-    await().atMost(Duration.ofSeconds(10)).until(() -> stateOf(request).failure().isPresent());
+    assertThat(olderAndRequestedAttempts.await(10, TimeUnit.SECONDS)).isTrue();
     assertThat(stateOf(request).requested()).contains(changed.inputs());
     assertThat(stateOf(request).failure())
+        .as("the failure of the attempt at the requested inputs, not the worker's")
         .hasValueSatisfying(
-            failure ->
-                assertThat(failure.reason()).isEqualTo(ItemFailureReason.SOURCE_INACCESSIBLE));
+            failure -> {
+              assertThat(failure.reason()).isEqualTo(ItemFailureReason.SOURCE_INACCESSIBLE);
+              assertThat(failure.detail()).isEqualTo("The server could not read the media source");
+            });
   }
 
   @Test

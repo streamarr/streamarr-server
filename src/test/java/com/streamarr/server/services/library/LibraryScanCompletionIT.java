@@ -311,6 +311,8 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
     return saved;
   }
 
+  // Tests poll this and isRequestedAt: a scan saves its probe requests inside the service, which
+  // gives a test no hook to wait on.
   private boolean isScheduled(MediaFile file) {
     return outcomes.findProbeStates(List.of(file.getId())).stream()
         .anyMatch(state -> state.requested().isPresent());
