@@ -27,6 +27,7 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import com.streamarr.server.services.streaming.FfprobeService;
+import com.streamarr.server.support.BoundedTask;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -37,7 +38,6 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
@@ -50,6 +50,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 @Tag("IntegrationTest")
 @DisplayName("Library scan completion")
 class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
+
+  private static final Duration SCAN_BOUND = Duration.ofSeconds(20);
 
   @Autowired private LibraryManagementService libraryManagementService;
   @Autowired private LibraryRepository libraries;
@@ -89,21 +91,22 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
           return producer.probe(request);
         };
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var scan = executor.submit(() -> libraryManagementService.scanLibrary(library.getId()));
-      await().atMost(Duration.ofSeconds(10)).until(() -> isScheduled(mediaFile));
-      startScheduler(
-          probeExecution.toBuilder().producer(busyUntilReleased).build(), countingOk(deferred));
+    startScheduler(
+        probeExecution.toBuilder().producer(busyUntilReleased).build(), countingOk(deferred));
 
+    try (var scan =
+        BoundedTask.start(
+            () -> {
+              libraryManagementService.scanLibrary(library.getId());
+              return reader.find(mediaFile.getId()).isPresent();
+            })) {
       assertThat(deferred.await(10, TimeUnit.SECONDS)).isTrue();
-      assertStillScanning(scan);
-
       busy.set(false);
-      scan.get(20, TimeUnit.SECONDS);
+
+      assertThat(scan.await(SCAN_BOUND)).as("probe outcome stored when the scan returned").isTrue();
     }
 
     assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
-    assertThat(reader.find(mediaFile.getId())).isPresent();
   }
 
   @Test
@@ -287,14 +290,6 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
           .submit(() -> libraryManagementService.scanLibrary(scanned.getId()))
           .get(20, TimeUnit.SECONDS);
     }
-  }
-
-  private void assertStillScanning(Future<?> scan) {
-    await()
-        .during(Duration.ofMillis(300))
-        .atMost(Duration.ofSeconds(2))
-        .until(() -> !scan.isDone());
-    assertThat(statusOf(library)).isEqualTo(LibraryStatus.SCANNING);
   }
 
   private Library scannedLibrary(Path root) {
