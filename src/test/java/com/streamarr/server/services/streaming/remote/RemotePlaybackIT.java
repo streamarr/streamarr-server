@@ -524,6 +524,7 @@ class RemotePlaybackIT {
             .sessionId(configuration.streamSessionId())
             .mediaFileId(UUID.randomUUID())
             .authority(StreamSessionFixture.playbackAuthorityFor(UUID.randomUUID()))
+            .mediaProbe(StreamSessionFixture.defaultProbeBuilder().build())
             .transcodeDecision(transcodeDecision(configuration.containerFormat()))
             .build();
     var registry = new FakeRuntimeStreamSessionRegistry();

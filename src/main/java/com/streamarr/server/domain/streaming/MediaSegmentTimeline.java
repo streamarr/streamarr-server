@@ -19,6 +19,10 @@ public record MediaSegmentTimeline(
     return Math.toIntExact(Math.ceilDiv(mediaDuration.toMillis(), targetSegmentMillis()));
   }
 
+  public boolean advertises(int index) {
+    return index >= 0 && index < mediaSegmentCount();
+  }
+
   public int mediaSegmentStartSeconds(int index) {
     return index * targetSegmentDurationSeconds();
   }

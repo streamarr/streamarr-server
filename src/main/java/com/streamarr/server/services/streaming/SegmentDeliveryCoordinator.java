@@ -53,7 +53,7 @@ public class SegmentDeliveryCoordinator {
 
     return switch (producerLifecycle.recover(sessionId, variantLabel, segmentName)) {
       case EXHAUSTED -> exhaustedDelivery(sessionId, segmentName);
-      case SESSION_GONE -> new SegmentDelivery.SessionEnded();
+      case SESSION_GONE, SEGMENT_NOT_ADVERTISED -> new SegmentDelivery.SessionEnded();
       case WAITING -> null;
     };
   }

@@ -45,7 +45,8 @@ public class ProducerLifecycleService {
   public enum RecoveryResult {
     WAITING,
     EXHAUSTED,
-    SESSION_GONE
+    SESSION_GONE,
+    SEGMENT_NOT_ADVERTISED
   }
 
   private record VariantKey(UUID sessionId, String variantLabel) {}
@@ -77,6 +78,12 @@ public class ProducerLifecycleService {
     var handle = session.getVariantHandle(variantLabel).orElse(null);
     if (handle == null) {
       return RecoveryResult.SESSION_GONE;
+    }
+
+    // No job attempt may start at or past the media segment count it advertises, so a request
+    // beyond the playlist must neither relocate nor replace the variant's producer.
+    if (isUnadvertisedMediaSegment(session, segmentName)) {
+      return RecoveryResult.SEGMENT_NOT_ADVERTISED;
     }
 
     if (segmentStore.segmentExists(sessionId, segmentName)) {
@@ -527,6 +534,11 @@ public class ProducerLifecycleService {
     var gapSegments =
         FORWARD_RELOCATION_GAP.toSeconds() / properties.targetSegmentDuration().toSeconds();
     return Math.max(1, (int) gapSegments);
+  }
+
+  private boolean isUnadvertisedMediaSegment(StreamSession session, String segmentName) {
+    return SegmentNames.indexOf(segmentName).stream()
+        .anyMatch(index -> !timelineOf(session).advertises(index));
   }
 
   private MediaSegmentTimeline timelineOf(StreamSession session) {

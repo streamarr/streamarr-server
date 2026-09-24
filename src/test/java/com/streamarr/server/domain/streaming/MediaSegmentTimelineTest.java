@@ -55,6 +55,17 @@ class MediaSegmentTimelineTest {
   }
 
   @Test
+  @DisplayName("Should advertise only the indices inside the timeline when asked about an index")
+  void shouldAdvertiseOnlyTheIndicesInsideTheTimelineWhenAskedAboutAnIndex() {
+    var timeline = new MediaSegmentTimeline(Duration.ofSeconds(60), SIX_SECONDS);
+
+    assertThat(timeline.advertises(0)).isTrue();
+    assertThat(timeline.advertises(9)).isTrue();
+    assertThat(timeline.advertises(10)).isFalse();
+    assertThat(timeline.advertises(-1)).isFalse();
+  }
+
+  @Test
   @DisplayName("Should keep whole seconds of the target when it carries a fraction")
   void shouldKeepWholeSecondsOfTheTargetWhenItCarriesAFraction() {
     var timeline = new MediaSegmentTimeline(Duration.ofSeconds(13), Duration.ofMillis(6_500));

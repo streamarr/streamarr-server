@@ -395,6 +395,42 @@ class ProducerLifecycleServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should leave the running producer in place when a request names a media segment past the advertised timeline")
+  void shouldLeaveRunningProducerInPlaceWhenRequestNamesMediaSegmentPastTheAdvertisedTimeline() {
+    var sixtySecondSession = sessionWithDurationBuilder(60).build();
+    runtimeRegistry.save(sixtySecondSession);
+    lifecycle.startAll(sixtySecondSession, 0, 0);
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    var result =
+        lifecycle.recover(
+            sixtySecondSession.getSessionId(), StreamSession.defaultVariant(), "segment10.m4s");
+
+    assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.SEGMENT_NOT_ADVERTISED);
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
+    assertThat(transcodeExecutor.getStopped()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should install no replacement attempt when a request names a media segment past the advertised timeline")
+  void shouldInstallNoReplacementAttemptWhenRequestNamesMediaSegmentPastTheAdvertisedTimeline() {
+    var sixtySecondSession = sessionWithDurationBuilder(60).build();
+    runtimeRegistry.save(sixtySecondSession);
+    lifecycle.startAll(sixtySecondSession, 0, 0);
+    transcodeExecutor.markDead(sixtySecondSession.getSessionId());
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    var result =
+        lifecycle.recover(
+            sixtySecondSession.getSessionId(), StreamSession.defaultVariant(), "segment10.m4s");
+
+    assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.SEGMENT_NOT_ADVERTISED);
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
+  }
+
+  @Test
   @DisplayName("Should stop and replace the producer when its startup budget expires")
   void shouldStopAndReplaceProducerWhenItsStartupBudgetExpires() {
     var session = startedSession();

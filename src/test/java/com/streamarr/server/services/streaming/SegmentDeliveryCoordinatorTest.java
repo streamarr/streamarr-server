@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import static com.streamarr.server.fixtures.StreamSessionFixture.abrSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.sessionWithDurationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.StreamingProperties;
@@ -246,6 +247,28 @@ class SegmentDeliveryCoordinatorTest {
     assertThat(transcodeExecutor.isRunning(session.getSessionId(), StreamSession.defaultVariant()))
         .isTrue();
     assertThat(transcodeExecutor.getStoppedVariants()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject a media segment past the advertised timeline without disturbing the producer when delivering a segment")
+  void
+      shouldRejectMediaSegmentPastTheAdvertisedTimelineWithoutDisturbingTheProducerWhenDeliveringSegment()
+          throws Exception {
+    var sixtySecondSession = sessionWithDurationBuilder(60).build();
+    runtimeRegistry.save(sixtySecondSession);
+    lifecycle.startAll(sixtySecondSession, 0, 0);
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    var delivery = deliverAsync(sixtySecondSession.getSessionId(), "segment10.m4s");
+
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.SessionEnded.class);
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
+    assertThat(transcodeExecutor.getStopped()).isEmpty();
+    assertThat(
+            transcodeExecutor.isRunning(
+                sixtySecondSession.getSessionId(), StreamSession.defaultVariant()))
+        .isTrue();
   }
 
   @Test
