@@ -37,7 +37,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
@@ -111,7 +110,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
 
   @Test
   @DisplayName("Should finish the scan and keep retrying when a probe failure is recorded")
-  void shouldFinishTheScanAndKeepRetryingWhenAProbeFailureIsRecorded() {
+  void shouldFinishTheScanAndKeepRetryingWhenAProbeFailureIsRecorded() throws Exception {
     var client =
         startScheduler(
             probeExecution.toBuilder()
@@ -124,7 +123,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
                 .build(),
             new AbstractSchedulerListener() {});
 
-    libraryManagementService.scanLibrary(library.getId());
+    scan(library);
 
     assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
     assertThat(outcomes.findProbeStates(List.of(mediaFile.getId())))
@@ -155,14 +154,14 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
     var source = FilepathCodec.decode(mediaFile.getFilepathUri());
     Files.writeString(source, "changed media");
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var scan = executor.submit(() -> libraryManagementService.scanLibrary(library.getId()));
+    try (var scan =
+        BoundedTask.start(() -> libraryManagementService.scanLibrary(library.getId()))) {
       var changed = snapshotOf(mediaFile);
       await().atMost(Duration.ofSeconds(10)).until(() -> isRequestedAt(mediaFile, changed));
       makeUnreadable(source);
       release.complete(null);
 
-      scan.get(20, TimeUnit.SECONDS);
+      scan.await(SCAN_BOUND);
     }
 
     assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
@@ -199,13 +198,13 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
   @Test
   @DisplayName("Should finish the scan when a requested source is removed before it is probed")
   void shouldFinishTheScanWhenARequestedSourceIsRemovedBeforeItIsProbed() throws Exception {
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var scan = executor.submit(() -> libraryManagementService.scanLibrary(library.getId()));
+    try (var scan =
+        BoundedTask.start(() -> libraryManagementService.scanLibrary(library.getId()))) {
       await().atMost(Duration.ofSeconds(10)).until(() -> isScheduled(mediaFile));
       Files.delete(FilepathCodec.decode(mediaFile.getFilepathUri()));
 
       startScheduler(probeExecution, new AbstractSchedulerListener() {});
-      scan.get(20, TimeUnit.SECONDS);
+      scan.await(SCAN_BOUND);
     }
 
     assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
@@ -233,14 +232,14 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
     var source = FilepathCodec.decode(mediaFile.getFilepathUri());
     Files.writeString(source, "changed media");
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var scan = executor.submit(() -> libraryManagementService.scanLibrary(library.getId()));
+    try (var scan =
+        BoundedTask.start(() -> libraryManagementService.scanLibrary(library.getId()))) {
       var changed = snapshotOf(mediaFile);
       await().atMost(Duration.ofSeconds(10)).until(() -> isRequestedAt(mediaFile, changed));
       Files.delete(source);
       release.complete(null);
 
-      scan.get(20, TimeUnit.SECONDS);
+      scan.await(SCAN_BOUND);
     }
 
     assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
@@ -259,7 +258,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
             .outcome(new ProbeOutcome.Failure(ProbeError.INVALID_MEDIA))
             .build());
 
-    libraryManagementService.scanLibrary(library.getId());
+    scan(library);
 
     assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
   }
@@ -275,21 +274,13 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
             .outcome(new ProbeOutcome.Failure(ProbeError.INVALID_MEDIA))
             .build());
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      executor
-          .submit(() -> libraryManagementService.scanLibrary(library.getId()))
-          .get(20, TimeUnit.SECONDS);
-    }
+    scan(library);
 
     assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
   }
 
   private void scan(Library scanned) throws Exception {
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      executor
-          .submit(() -> libraryManagementService.scanLibrary(scanned.getId()))
-          .get(20, TimeUnit.SECONDS);
-    }
+    BoundedTask.runWithin(SCAN_BOUND, () -> libraryManagementService.scanLibrary(scanned.getId()));
   }
 
   private Library scannedLibrary(Path root) {
