@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 
+import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.transcode.v1.SegmentContentType;
@@ -190,8 +191,7 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
   private static boolean contentTypeMatchesName(
       SegmentContentType contentType, String segmentName) {
     return switch (contentType) {
-      case SEGMENT_CONTENT_TYPE_VIDEO_MP4 ->
-          segmentName.endsWith(".m4s") || segmentName.endsWith(".mp4");
+      case SEGMENT_CONTENT_TYPE_VIDEO_MP4 -> SegmentNames.hasFmp4Extension(segmentName);
       // HLS delivery is fMP4 only (ADR 0037); the additive contract keeps the MPEG-TS value.
       case SEGMENT_CONTENT_TYPE_VIDEO_MP2T, SEGMENT_CONTENT_TYPE_UNSPECIFIED, UNRECOGNIZED -> false;
     };

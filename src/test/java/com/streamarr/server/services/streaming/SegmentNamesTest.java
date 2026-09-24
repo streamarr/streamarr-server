@@ -76,6 +76,15 @@ class SegmentNamesTest {
     assertThat(SegmentNames.isInitSegment("notinit.mp4")).isFalse();
   }
 
+  @Test
+  @DisplayName("Should recognize fMP4 extensions when a name ends in m4s or mp4")
+  void shouldRecognizeFmp4ExtensionsWhenNameEndsInM4sOrMp4() {
+    assertThat(SegmentNames.hasFmp4Extension("segment3.m4s")).isTrue();
+    assertThat(SegmentNames.hasFmp4Extension("init.mp4")).isTrue();
+    assertThat(SegmentNames.hasFmp4Extension("segment3.ts")).isFalse();
+    assertThat(SegmentNames.hasFmp4Extension("segment3.m4s.part")).isFalse();
+  }
+
   @ParameterizedTest
   @ValueSource(strings = {"segment7.ts", "foo.m4s", "notinit.mp4", "segment5.mp4"})
   @DisplayName("Should throw when a sibling is requested for a name matching no naming scheme")

@@ -10,18 +10,27 @@ import java.util.regex.Pattern;
  */
 public final class SegmentNames {
 
-  // Nine digits keep every parsed index inside int range; a longer run of digits is not a
-  // media-segment name.
-  private static final Pattern MEDIA_SEGMENT_PATTERN = Pattern.compile("segment(\\d{1,9})\\.m4s");
-
   /** The basename of a variant's initialization segment. */
   public static final String INITIALIZATION_SEGMENT = "init.mp4";
+
+  /** The extension of every media segment's name. */
+  public static final String MEDIA_SEGMENT_EXTENSION = ".m4s";
+
+  // Nine digits keep every parsed index inside int range; a longer run of digits is not a
+  // media-segment name.
+  private static final Pattern MEDIA_SEGMENT_PATTERN =
+      Pattern.compile("segment(\\d{1,9})" + Pattern.quote(MEDIA_SEGMENT_EXTENSION));
 
   private SegmentNames() {}
 
   /** The name of the media segment at {@code index} on the variant's zero-based timeline. */
   public static String mediaSegment(int index) {
-    return "segment" + index + ".m4s";
+    return "segment" + index + MEDIA_SEGMENT_EXTENSION;
+  }
+
+  /** Whether the name carries the extension of a media segment or an initialization segment. */
+  public static boolean hasFmp4Extension(String segmentName) {
+    return segmentName.endsWith(MEDIA_SEGMENT_EXTENSION) || segmentName.endsWith(".mp4");
   }
 
   /** Whether the name is an initialization segment: a basename of exactly {@code init.mp4}. */
