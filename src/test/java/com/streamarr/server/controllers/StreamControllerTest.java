@@ -363,8 +363,8 @@ class StreamControllerTest {
   }
 
   @Test
-  @DisplayName("Should serve init segment when session exists")
-  void shouldServeInitSegmentWhenSessionExists() throws Exception {
+  @DisplayName("Should serve the initialization segment when the session exists")
+  void shouldServeInitializationSegmentWhenSessionExists() throws Exception {
     streamingService.setSession(buildSession());
     var initData = new byte[] {0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70};
     segmentStore.addSegment(SESSION_ID, "init.mp4", initData);
@@ -493,8 +493,8 @@ class StreamControllerTest {
   }
 
   @Test
-  @DisplayName("Should serve variant init segment when variant exists")
-  void shouldServeVariantInitSegmentWhenVariantExists() throws Exception {
+  @DisplayName("Should serve the variant initialization segment when the variant exists")
+  void shouldServeVariantInitializationSegmentWhenVariantExists() throws Exception {
     var session = buildAbrSession();
     streamingService.setSession(session);
     var initData = new byte[] {0x00, 0x00, 0x00, 0x20};
@@ -512,8 +512,9 @@ class StreamControllerTest {
   }
 
   @Test
-  @DisplayName("Should return 404 for variant init segment when variant not found")
-  void shouldReturn404ForVariantInitSegmentWhenVariantNotFound() throws Exception {
+  @DisplayName(
+      "Should return 404 for the variant initialization segment when the variant is not found")
+  void shouldReturn404ForVariantInitializationSegmentWhenVariantNotFound() throws Exception {
     streamingService.setSession(buildAbrSession());
 
     mockMvc

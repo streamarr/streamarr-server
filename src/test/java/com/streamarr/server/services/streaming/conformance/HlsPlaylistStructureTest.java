@@ -163,8 +163,9 @@ class HlsPlaylistStructureTest {
     // RFC 8216 §4.3.2.5: EXT-X-MAP specifies the Media Initialization Section required to parse the
     // fMP4 Media Segments that follow it; an fMP4 media playlist MUST declare one.
     @Test
-    @DisplayName("Should declare EXT-X-MAP init segment when generating media playlist (§4.3.2.5)")
-    void shouldDeclareExtXMapInitSegmentWhenGeneratingMediaPlaylist() {
+    @DisplayName(
+        "Should declare the EXT-X-MAP initialization segment when generating the media playlist (§4.3.2.5)")
+    void shouldDeclareExtXMapInitializationSegmentWhenGeneratingMediaPlaylist() {
       var playlist = MediaPlaylist.parse(generateMediaPlaylist());
 
       assertThat(playlist.hasMap()).isTrue();
