@@ -80,7 +80,7 @@ public class StreamController {
       return ResponseEntity.notFound().build();
     }
 
-    return serveInitSegment(sessionId, StreamSession.defaultVariant(), "init.mp4");
+    return serveSegment(sessionId, StreamSession.defaultVariant(), "init.mp4");
   }
 
   @GetMapping("/{sessionId}/{segmentName:.+\\.m4s}")
@@ -145,7 +145,7 @@ public class StreamController {
       return ResponseEntity.notFound().build();
     }
 
-    return serveInitSegment(sessionId, variantLabel, variantLabel + "/init.mp4");
+    return serveSegment(sessionId, variantLabel, variantLabel + "/init.mp4");
   }
 
   @GetMapping("/{sessionId}/{variantLabel}/{segmentName:.+\\.m4s}")
@@ -177,22 +177,15 @@ public class StreamController {
     return serveSegment(sessionId, variantLabel, qualifiedName);
   }
 
-  private ResponseEntity<byte[]> serveInitSegment(
-      UUID sessionId, String variantLabel, String segmentName) {
-    return respond(
-        deliveryCoordinator.deliver(sessionId, variantLabel, segmentName), MP4_MEDIA_TYPE);
-  }
-
   private ResponseEntity<byte[]> serveSegment(
       UUID sessionId, String variantLabel, String segmentName) {
-    return respond(
-        deliveryCoordinator.deliver(sessionId, variantLabel, segmentName), MP4_MEDIA_TYPE);
+    return respond(deliveryCoordinator.deliver(sessionId, variantLabel, segmentName));
   }
 
-  private static ResponseEntity<byte[]> respond(SegmentDelivery delivery, MediaType contentType) {
+  private static ResponseEntity<byte[]> respond(SegmentDelivery delivery) {
     return switch (delivery) {
       case SegmentDelivery.Ready(byte[] data) ->
-          ResponseEntity.ok().contentType(contentType).body(data);
+          ResponseEntity.ok().contentType(MP4_MEDIA_TYPE).body(data);
       case SegmentDelivery.SessionEnded() -> ResponseEntity.notFound().build();
       case SegmentDelivery.Cancelled() ->
           ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
