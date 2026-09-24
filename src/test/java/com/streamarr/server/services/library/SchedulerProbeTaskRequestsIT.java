@@ -1,7 +1,6 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import com.github.kagkarlsson.scheduler.Scheduler;
 import com.github.kagkarlsson.scheduler.SchedulerClient;
@@ -176,22 +175,17 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should publish the outcome and remove the instance when the scheduler executes a request")
   void shouldPublishTheOutcomeAndRemoveTheInstanceWhenTheSchedulerExecutesARequest()
-      throws IOException {
+      throws Exception {
     var file = createMediaFile();
     var request = request(file);
     scheduling.request(request);
 
     startScheduler();
 
-    await()
-        .atMost(Duration.ofSeconds(15))
-        .untilAsserted(
-            () -> {
-              assertThat(reader.find(file.getId()))
-                  .hasValueSatisfying(
-                      stored -> assertThat(stored.snapshot()).isEqualTo(request.snapshot()));
-              assertThat(client.getScheduledExecution(instanceOf(request))).isEmpty();
-            });
+    assertThat(firstExecutionFinished.await(15, TimeUnit.SECONDS)).isTrue();
+    assertThat(reader.find(file.getId()))
+        .hasValueSatisfying(stored -> assertThat(stored.snapshot()).isEqualTo(request.snapshot()));
+    assertThat(client.getScheduledExecution(instanceOf(request))).isEmpty();
     assertThat(producer.wasLastProbeOnVirtualThread()).isTrue();
   }
 
@@ -284,7 +278,7 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should reschedule with backoff when the producer fails transiently")
-  void shouldRescheduleWithBackoffWhenTheProducerFailsTransiently() throws IOException {
+  void shouldRescheduleWithBackoffWhenTheProducerFailsTransiently() throws Exception {
     var file = createMediaFile();
     var request = request(file);
     producer.failWith(
@@ -294,18 +288,14 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
 
     startScheduler();
 
-    await()
-        .atMost(Duration.ofSeconds(15))
-        .untilAsserted(
-            () ->
-                assertThat(client.getScheduledExecution(instanceOf(request)))
-                    .hasValueSatisfying(
-                        execution -> {
-                          assertThat(execution.getConsecutiveFailures()).isEqualTo(1);
-                          assertThat(execution.isPicked()).isFalse();
-                          assertThat(execution.getExecutionTime())
-                              .isAfterOrEqualTo(requestedAt.plusSeconds(4));
-                        }));
+    assertThat(firstExecutionFinished.await(15, TimeUnit.SECONDS)).isTrue();
+    assertThat(client.getScheduledExecution(instanceOf(request)))
+        .hasValueSatisfying(
+            execution -> {
+              assertThat(execution.getConsecutiveFailures()).isEqualTo(1);
+              assertThat(execution.isPicked()).isFalse();
+              assertThat(execution.getExecutionTime()).isAfterOrEqualTo(requestedAt.plusSeconds(4));
+            });
     assertThat(reader.find(file.getId())).isEmpty();
   }
 
@@ -375,7 +365,6 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
     return file;
   }
 
-  // Moves the pending execution five minutes out with the given failure history.
   private void saveFailure(ProbeTaskRequest request) {
     assertThat(
             outcomes.trySaveProbeFailure(
@@ -389,6 +378,7 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
         .isTrue();
   }
 
+  // Moves the pending execution five minutes out with the given failure history.
   private Instant delay(ProbeTaskRequest request, int consecutiveFailures) {
     var executionTime = Instant.now().plusSeconds(300).truncatedTo(ChronoUnit.SECONDS);
     dsl.update(DSL.table("scheduled_tasks"))
