@@ -77,7 +77,7 @@ Master Playlist (master.m3u8)
 
 Streamarr serves every variant as multiplexed fragmented MP4 in an HLS version 6 playlist, whatever the codec (https://github.com/streamarr/streamarr-adr/blob/main/adr/0037-worker-delivers-fmp4-segments-from-ffmpeg-stdout.adoc[ADR 0037]).
 Each media playlist names the variant's initialization segment (`init.mp4`) with an `EXT-X-MAP` tag, and the player loads it before any media segment.
-The container is a fact of HLS delivery, not part of the transcode decision.
+HLS delivery is always fragmented MP4; the transcode decision does not choose it.
 
 == REMUX vs Transcode
 
