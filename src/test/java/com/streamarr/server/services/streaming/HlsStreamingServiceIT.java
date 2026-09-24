@@ -16,6 +16,7 @@ import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeError;
+import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
@@ -214,9 +215,12 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   }
 
   private void storeProbe(MediaProbe probe) {
+    storeOutcome(ProbeFixture.completeProbe(probe));
+  }
+
+  private void storeOutcome(ProbeOutcome.Success outcome) {
     var row =
-        PersistedProbeFixture.storedProbeBuilder(
-                savedMediaFile.getId(), ProbeFixture.completeProbe(probe))
+        PersistedProbeFixture.storedProbeBuilder(savedMediaFile.getId(), outcome)
             .snapshot(sourceSnapshot)
             .build();
     new TransactionTemplate(transactionManager)
