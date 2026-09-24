@@ -15,6 +15,7 @@ import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.SubtitleMode;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
+import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
@@ -466,11 +467,7 @@ class WorkerSessionServerIT {
   void shouldPreserveSubtitleSelectionWhenDispatchingRemoteTranscode(
       SubtitleMode mode, String wireMode) throws Exception {
     var decision =
-        TranscodeDecision.builder()
-            .transcodeMode(TranscodeMode.FULL_TRANSCODE)
-            .videoCodecFamily("h264")
-            .audioDecision(AudioDecision.stereoAac())
-            .containerFormat(ContainerFormat.FMP4)
+        fullTranscodeH264Decision()
             .subtitleDecision(
                 subtitleSelection().mode(mode).codec("srt").streamIndex(2).language("eng").build())
             .build();
@@ -480,27 +477,17 @@ class WorkerSessionServerIT {
             .sourcePath(Path.of("/media/movie.mkv"))
             .transcodeDecision(decision)
             .build();
-    try (var server = server()) {
-      server.start();
-      var channel = workerChannel(server.port());
-      try (var worker = connect(channel, AUTHENTICATED_WORKER_ID)) {
-        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
-        var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, Path.of("/media"));
 
-        var handle = executor.start(request);
+    var dispatched = dispatchThroughRemoteExecutor(request);
 
-        var job = worker.nextResponse().getStartVariant().getJob();
-        assertThat(fromProto(job.getJobAttemptId())).isEqualTo(handle.attemptId());
-        var subtitle = job.getDecision().getSubtitle();
-        assertThat(subtitle.getMode().name()).isEqualTo(wireMode);
-        assertThat(subtitle.getCodec()).isEqualTo("srt");
-        assertThat(subtitle.hasStreamIndex()).isTrue();
-        assertThat(subtitle.getStreamIndex()).isEqualTo(2);
-        assertThat(subtitle.getLanguage()).isEqualTo("eng");
-      } finally {
-        shutdown(channel);
-      }
-    }
+    var job = dispatched.job();
+    assertThat(fromProto(job.getJobAttemptId())).isEqualTo(dispatched.handle().attemptId());
+    var subtitle = job.getDecision().getSubtitle();
+    assertThat(subtitle.getMode().name()).isEqualTo(wireMode);
+    assertThat(subtitle.getCodec()).isEqualTo("srt");
+    assertThat(subtitle.hasStreamIndex()).isTrue();
+    assertThat(subtitle.getStreamIndex()).isEqualTo(2);
+    assertThat(subtitle.getLanguage()).isEqualTo("eng");
   }
 
   @Test
@@ -512,34 +499,16 @@ class WorkerSessionServerIT {
         TranscodeRequest.builder()
             .sessionId(UUID.randomUUID())
             .sourcePath(Path.of("/media/movie.mkv"))
-            .transcodeDecision(
-                TranscodeDecision.builder()
-                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
-                    .videoCodecFamily("h264")
-                    .audioDecision(AudioDecision.stereoAac())
-                    .containerFormat(ContainerFormat.FMP4)
-                    .subtitleDecision(SubtitleDecision.exclude())
-                    .build())
+            .transcodeDecision(fullTranscodeH264Decision().build())
             .targetSegmentDuration(6)
             .startSequenceNumber(2)
             .mediaSegmentCount(1200)
             .build();
-    try (var server = server()) {
-      server.start();
-      var channel = workerChannel(server.port());
-      try (var worker = connect(channel, AUTHENTICATED_WORKER_ID)) {
-        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
-        var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, Path.of("/media"));
 
-        executor.start(request);
+    var execution = dispatchThroughRemoteExecutor(request).job().getExecution();
 
-        var execution = worker.nextResponse().getStartVariant().getJob().getExecution();
-        assertThat(execution.getStartSequenceNumber()).isEqualTo(2);
-        assertThat(execution.getMediaSegmentCount()).isEqualTo(1200);
-      } finally {
-        shutdown(channel);
-      }
-    }
+    assertThat(execution.getStartSequenceNumber()).isEqualTo(2);
+    assertThat(execution.getMediaSegmentCount()).isEqualTo(1200);
   }
 
   @Builder(builderMethodName = "subtitleSelection")
@@ -548,6 +517,34 @@ class WorkerSessionServerIT {
     return new SubtitleDecision(
         mode, Optional.of(codec), OptionalInt.of(streamIndex), Optional.of(language));
   }
+
+  private static TranscodeDecision.TranscodeDecisionBuilder fullTranscodeH264Decision() {
+    return TranscodeDecision.builder()
+        .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+        .videoCodecFamily("h264")
+        .audioDecision(AudioDecision.stereoAac())
+        .containerFormat(ContainerFormat.FMP4)
+        .subtitleDecision(SubtitleDecision.exclude());
+  }
+
+  private DispatchedJob dispatchThroughRemoteExecutor(TranscodeRequest request) throws Exception {
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+      try (var worker = connect(channel, AUTHENTICATED_WORKER_ID)) {
+        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
+        var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, Path.of("/media"));
+
+        var handle = executor.start(request);
+
+        return new DispatchedJob(handle, worker.nextResponse().getStartVariant().getJob());
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
+  private record DispatchedJob(TranscodeHandle handle, VariantJob job) {}
 
   @Test
   @DisplayName("Should stop dispatching when the worker connection closes")
@@ -1117,37 +1114,26 @@ class WorkerSessionServerIT {
       "Should dispatch jobs carrying the handle's attempt identity end to end when handling a worker session")
   void shouldDispatchJobsCarryingTheHandlesAttemptIdentityEndToEndWhenHandlingWorkerSession()
       throws Exception {
-    try (var server = server()) {
-      server.start();
-      var channel = workerChannel(server.port());
+    var request =
+        TranscodeRequest.builder()
+            .sessionId(UUID.randomUUID())
+            .sourcePath(Path.of("/media/movie.mkv"))
+            .targetSegmentDuration(6)
+            .framerate(OptionalDouble.of(23.976))
+            .transcodeDecision(StreamSessionFixture.remuxMpegtsDecision())
+            .width(1920)
+            .height(1080)
+            .bitrate(5_000_000)
+            .variantLabel("720p")
+            .build();
 
-      try (var worker = connect(channel, AUTHENTICATED_WORKER_ID)) {
-        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
-        var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, Path.of("/media"));
-        var request =
-            TranscodeRequest.builder()
-                .sessionId(UUID.randomUUID())
-                .sourcePath(Path.of("/media/movie.mkv"))
-                .targetSegmentDuration(6)
-                .framerate(OptionalDouble.of(23.976))
-                .transcodeDecision(StreamSessionFixture.remuxMpegtsDecision())
-                .width(1920)
-                .height(1080)
-                .bitrate(5_000_000)
-                .variantLabel("720p")
-                .build();
+    var dispatched = dispatchThroughRemoteExecutor(request);
 
-        var handle = executor.start(request);
-
-        // The attempt identity is minted once, upstream: the dispatched job, the returned handle,
-        // and any later failure result all name the same attempt.
-        var job = worker.nextResponse().getStartVariant().getJob();
-        assertThat(fromProto(job.getJobAttemptId())).isEqualTo(handle.attemptId());
-        assertThat(handle.attemptId()).isEqualTo(request.attemptId());
-      } finally {
-        shutdown(channel);
-      }
-    }
+    // The attempt identity is minted once, upstream: the dispatched job, the returned handle,
+    // and any later failure result all name the same attempt.
+    var handle = dispatched.handle();
+    assertThat(fromProto(dispatched.job().getJobAttemptId())).isEqualTo(handle.attemptId());
+    assertThat(handle.attemptId()).isEqualTo(request.attemptId());
   }
 
   @Test
