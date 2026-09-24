@@ -18,8 +18,8 @@ import java.util.function.Consumer;
 
 /**
  * Records desired inputs as the scheduler-backed requests do. A test decides what a dispatcher does
- * with each request, and a dispatcher that throws rejects the request; by default every request
- * stays pending.
+ * with each request, and a dispatcher that throws rejects the request and rolls back its saved
+ * inputs, as the transactional request does; by default every request stays pending.
  */
 public class FakeProbeTaskRequests implements ProbeTaskRequests {
 
@@ -34,6 +34,10 @@ public class FakeProbeTaskRequests implements ProbeTaskRequests {
 
   @Override
   public void request(ProbeTaskRequest request) {
+    outcomes.rollBackOnFailure(request.mediaFileId(), () -> saveAndDispatch(request));
+  }
+
+  private void saveAndDispatch(ProbeTaskRequest request) {
     if (!outcomes.trySaveProbeRequest(request.mediaFileId(), request.inputs())) {
       return;
     }

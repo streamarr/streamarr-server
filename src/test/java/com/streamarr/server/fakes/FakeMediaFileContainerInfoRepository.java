@@ -150,6 +150,38 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     rows.put(row.getMediaFileId(), row);
   }
 
+  /**
+   * Runs writes for one media file and restores its probe state when they throw, as a rolled-back
+   * transaction would.
+   */
+  public void rollBackOnFailure(UUID mediaFileId, Runnable writes) {
+    Optional<ProbeInputs> requested;
+    Optional<ProbeAttemptFailure> failure;
+    Optional<MediaFileContainerInfo> row;
+    synchronized (this) {
+      requested = Optional.ofNullable(desiredInputs.get(mediaFileId));
+      failure = Optional.ofNullable(failures.get(mediaFileId));
+      row = Optional.ofNullable(rows.get(mediaFileId));
+    }
+
+    try {
+      writes.run();
+    } catch (RuntimeException rejected) {
+      synchronized (this) {
+        restore(desiredInputs, mediaFileId, requested);
+        restore(failures, mediaFileId, failure);
+        restore(rows, mediaFileId, row);
+      }
+
+      throw rejected;
+    }
+  }
+
+  private static <T> void restore(Map<UUID, T> values, UUID mediaFileId, Optional<T> value) {
+    value.ifPresentOrElse(
+        earlier -> values.put(mediaFileId, earlier), () -> values.remove(mediaFileId));
+  }
+
   public void mediaFileExistsWhen(Predicate<UUID> predicate) {
     this.mediaFileExists = predicate;
   }
