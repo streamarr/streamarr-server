@@ -38,6 +38,7 @@ import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.CountingSleeper;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
@@ -105,6 +106,7 @@ import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataPa
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
+import com.streamarr.server.support.BoundedTask;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
@@ -125,7 +127,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -147,7 +148,7 @@ import org.springframework.dao.DataAccessResourceFailureException;
 @DisplayName("Library Management Service Tests")
 class LibraryManagementServiceTest {
 
-  private static final Duration REQUEST_BOUND = Duration.ofSeconds(5);
+  private static final Duration SCAN_BOUND = Duration.ofSeconds(5);
 
   private final AuthenticatedIdentity identity = defaultIdentityBuilder().build();
   private final FakeLibraryMutationTransaction libraryMutationTransaction =
@@ -217,6 +218,7 @@ class LibraryManagementServiceTest {
   private final FakeMediaFileContainerInfoRepository probeOutcomes =
       new FakeMediaFileContainerInfoRepository();
   private final FakeProbeTaskRequests probeTaskRequests = succeedingProbeRequests(probeOutcomes);
+  private final CountingSleeper probeCheckSleeper = new CountingSleeper();
   private final FileDiscoveryRuns fileDiscoveryRuns = fileDiscoveryRunsWith(artworkService);
 
   private final LibraryManagementService libraryManagementService =
@@ -725,17 +727,16 @@ class LibraryManagementServiceTest {
           probeTaskRequests.succeed(request);
         });
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var scan = executor.submit(() -> libraryManagementService.scanLibrary(savedLibraryId));
+    try (var scan = BoundedTask.start(() -> libraryManagementService.scanLibrary(savedLibraryId))) {
       try {
         assertThat(enqueueStarted.await(5, TimeUnit.SECONDS)).isTrue();
-        assertThat(scan).isNotDone();
+        assertThat(libraryStatus()).isEqualTo(LibraryStatus.SCANNING);
         assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
       } finally {
         enqueueReleased.countDown();
       }
 
-      scan.get(5, TimeUnit.SECONDS);
+      scan.await(SCAN_BOUND);
     }
 
     assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).hasSize(1);
@@ -827,16 +828,16 @@ class LibraryManagementServiceTest {
     void shouldStayScanningWhenTheRequestedProbeHasNoOutcome() throws Exception {
       saveMatchedMediaFile(createMovieFile(createRootLibraryDirectory(), "Held", "Held.mkv"));
       probeTaskRequests.dispatchWith(_ -> {});
+      var whileWaiting = new AtomicReference<ScanState>();
+      probeCheckSleeper.onSleep(
+          _ -> {
+            whileWaiting.compareAndSet(null, scanState());
+            probeTaskRequests.succeed(probeTaskRequests.requests().getFirst());
+          });
 
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-        var scan = executor.submit(() -> libraryManagementService.scanLibrary(savedLibraryId));
-        var request = probeTaskRequests.awaitRequest(REQUEST_BOUND);
-        assertStillScanning(scan);
+      scan(libraryManagementService);
 
-        probeTaskRequests.succeed(request);
-        scan.get(5, TimeUnit.SECONDS);
-      }
-
+      assertThat(whileWaiting).hasValue(new ScanState(LibraryStatus.SCANNING, 0));
       assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
       assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).hasSize(1);
     }
@@ -846,16 +847,19 @@ class LibraryManagementServiceTest {
     void shouldFinishTheScanWhenAProbeAttemptFailureIsRecorded() throws Exception {
       saveMatchedMediaFile(createMovieFile(createRootLibraryDirectory(), "Share", "Share.mkv"));
       probeTaskRequests.dispatchWith(_ -> {});
+      var whileWaiting = new AtomicReference<ScanState>();
+      probeCheckSleeper.onSleep(
+          _ -> {
+            whileWaiting.compareAndSet(null, scanState());
+            probeTaskRequests.fail(
+                probeTaskRequests.requests().getFirst(),
+                ItemFailureReason.SOURCE_INACCESSIBLE,
+                Instant.now());
+          });
 
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-        var scan = executor.submit(() -> libraryManagementService.scanLibrary(savedLibraryId));
-        var request = probeTaskRequests.awaitRequest(REQUEST_BOUND);
-        assertStillScanning(scan);
+      scan(libraryManagementService);
 
-        probeTaskRequests.fail(request, ItemFailureReason.SOURCE_INACCESSIBLE, Instant.now());
-        scan.get(5, TimeUnit.SECONDS);
-      }
-
+      assertThat(whileWaiting).hasValue(new ScanState(LibraryStatus.SCANNING, 0));
       assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
     }
 
@@ -874,13 +878,12 @@ class LibraryManagementServiceTest {
                   .build());
       matchMovieWithPoster("About Time");
 
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-        var scan = executor.submit(() -> service.scanLibrary(savedLibraryId));
+      try (var scan = BoundedTask.start(() -> service.scanLibrary(savedLibraryId))) {
         downloader.awaitHeldDownloads(1, Duration.ofSeconds(5));
-        assertStillScanning(scan);
+        assertStillScanning();
 
         downloader.releaseHeldDownloads();
-        scan.get(5, TimeUnit.SECONDS);
+        scan.await(SCAN_BOUND);
       } finally {
         downloader.releaseHeldDownloads();
       }
@@ -923,13 +926,23 @@ class LibraryManagementServiceTest {
       assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
     }
 
-    private void assertStillScanning(Future<?> scan) {
+    // The wait for required artwork offers no hook, so only a window can show the scan keeps
+    // waiting.
+    private void assertStillScanning() {
       await()
           .during(Duration.ofMillis(200))
           .atMost(Duration.ofSeconds(2))
-          .until(() -> !scan.isDone());
-      assertThat(libraryStatus()).isEqualTo(LibraryStatus.SCANNING);
-      assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
+          .until(() -> scanState().equals(new ScanState(LibraryStatus.SCANNING, 0)));
+    }
+
+    private void scan(LibraryManagementService service) throws Exception {
+      BoundedTask.runWithin(SCAN_BOUND, () -> service.scanLibrary(savedLibraryId));
+    }
+
+    private ScanState scanState() {
+      return new ScanState(
+          libraryStatus(),
+          capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class).size());
     }
 
     private void matchMovieWithPoster(String title) {
@@ -951,6 +964,8 @@ class LibraryManagementServiceTest {
                       .build()));
     }
   }
+
+  private record ScanState(LibraryStatus status, int completedEvents) {}
 
   private LibraryStatus libraryStatus() {
     return fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus();
@@ -2185,6 +2200,7 @@ class LibraryManagementServiceTest {
         .outcomes(probeOutcomes)
         .probeTaskRequests(probeTaskRequests)
         .fileSystem(fileSystem)
+        .sleeper(probeCheckSleeper)
         .build();
   }
 
