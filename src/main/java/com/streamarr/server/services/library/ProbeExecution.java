@@ -120,9 +120,8 @@ public class ProbeExecution {
 
   private static Optional<SourceFileSnapshot> snapshot(Path path) {
     try {
-      var attributes = Files.readAttributes(path, BasicFileAttributes.class);
       return Optional.of(
-          new SourceFileSnapshot(attributes.size(), attributes.lastModifiedTime().toInstant()));
+          SourceFileSnapshot.of(Files.readAttributes(path, BasicFileAttributes.class)));
     } catch (NoSuchFileException _) {
       return Optional.empty();
     } catch (IOException exception) {

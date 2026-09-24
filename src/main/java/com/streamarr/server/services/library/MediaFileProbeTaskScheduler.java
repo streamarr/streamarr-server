@@ -50,21 +50,18 @@ public class MediaFileProbeTaskScheduler {
   }
 
   private Optional<ProbeInputs> schedule(UUID mediaFileId, Consumer<ProbeTaskRequest> requests) {
-    var mediaFile =
-        mediaFileRepository
-            .findById(mediaFileId)
-            .orElseThrow(() -> new MediaFileNotFoundException(mediaFileId));
-    var observedSnapshot = snapshot(mediaFile);
-    if (observedSnapshot.isEmpty()) {
-      return Optional.empty();
-    }
+    var mediaFile = mediaFile(mediaFileId);
+    return snapshot(mediaFile).map(observed -> request(mediaFile, observed, requests));
+  }
 
-    var inputs = new ProbeInputs(observedSnapshot.get(), ProbeVersion.CURRENT);
+  private ProbeInputs request(
+      MediaFile mediaFile, SourceFileSnapshot observed, Consumer<ProbeTaskRequest> requests) {
+    var inputs = new ProbeInputs(observed, ProbeVersion.CURRENT);
     if (reader
         .find(mediaFile.getId())
         .filter(outcome -> outcome.matches(inputs.snapshot(), inputs.probeVersion()))
         .isPresent()) {
-      return Optional.of(inputs);
+      return inputs;
     }
 
     requests.accept(
@@ -75,15 +72,20 @@ public class MediaFileProbeTaskScheduler {
             .snapshot(inputs.snapshot())
             .probeVersion(inputs.probeVersion())
             .build());
-    return Optional.of(inputs);
+    return inputs;
+  }
+
+  private MediaFile mediaFile(UUID mediaFileId) {
+    return mediaFileRepository
+        .findById(mediaFileId)
+        .orElseThrow(() -> new MediaFileNotFoundException(mediaFileId));
   }
 
   private Optional<SourceFileSnapshot> snapshot(MediaFile mediaFile) {
     var path = FilepathCodec.decode(fileSystem, mediaFile.getFilepathUri());
     try {
-      var attributes = Files.readAttributes(path, BasicFileAttributes.class);
       return Optional.of(
-          new SourceFileSnapshot(attributes.size(), attributes.lastModifiedTime().toInstant()));
+          SourceFileSnapshot.of(Files.readAttributes(path, BasicFileAttributes.class)));
     } catch (NoSuchFileException _) {
       return Optional.empty();
     } catch (IOException exception) {
