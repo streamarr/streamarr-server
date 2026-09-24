@@ -53,12 +53,12 @@ final class VariantDeliveryState {
         .findFirst();
   }
 
-  void recordReplacement(ExecutionTargetId target, TranscodeHandle handle, Instant now) {
+  void trackReplacement(ExecutionTargetId target, TranscodeHandle handle, Instant now) {
     attemptedSinceProgress.add(target);
     trackAttempt(handle, now);
   }
 
-  void recordRefusal(ExecutionTargetId target) {
+  void markRefused(ExecutionTargetId target) {
     attemptedSinceProgress.add(target);
   }
 

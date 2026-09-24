@@ -172,7 +172,7 @@ public class ProducerLifecycleService {
               .reason(reason)
               .target(target.get())
               .build();
-      var outcome = replaceAndRecord(state, session, command);
+      var outcome = replaceAndTrack(state, session, command);
       if (outcome.isPresent()) {
         return outcome.get();
       }
@@ -199,11 +199,11 @@ public class ProducerLifecycleService {
     return RecoveryResult.EXHAUSTED;
   }
 
-  private Optional<RecoveryResult> replaceAndRecord(
+  private Optional<RecoveryResult> replaceAndTrack(
       VariantDeliveryState state, StreamSession session, ReplaceProducerCommand command) {
     return switch (doReplace(command)) {
       case ReplaceResult.Replaced(UUID newAttemptId) -> {
-        state.recordReplacement(
+        state.trackReplacement(
             command.target(),
             session.getVariantHandle(command.variantLabel()).orElseThrow(),
             clock.instant());
@@ -217,7 +217,7 @@ public class ProducerLifecycleService {
         yield Optional.of(RecoveryResult.WAITING);
       }
       case ReplaceResult.Refused(String refusal) -> {
-        state.recordRefusal(command.target());
+        state.markRefused(command.target());
         log.warn(
             "Execution target {} refused replacement for session {} variant {}: {}",
             command.target().value(),

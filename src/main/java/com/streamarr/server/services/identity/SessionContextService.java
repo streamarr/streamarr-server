@@ -38,13 +38,13 @@ public class SessionContextService {
   private final Clock clock;
 
   /**
-   * Records an authorized selection on the live session (the caller has already decided). The
-   * Profile and every Household where it is available are locked before the active share, matching
-   * LINK acceptance's lock order. The share still precedes sessions, so a concurrent unshare either
+   * Saves an authorized selection on the live session (the caller has already decided). The Profile
+   * and every Household where it is available are locked before the active share, matching LINK
+   * acceptance's lock order. The share still precedes sessions, so a concurrent unshare either
    * refuses this selection or clears it — never leaves a session selecting an ended Profile.
    */
   @Transactional
-  public TokenContext recordProfileSelection(AuthenticatedIdentity identity, UUID profileId) {
+  public TokenContext saveProfileSelection(AuthenticatedIdentity identity, UUID profileId) {
     var account = liveSessions.loadAccount(identity.accountId());
     if (!profileRepository.lockById(profileId)) {
       throw new ProfileAccessDeniedException();
