@@ -100,11 +100,11 @@ public class HlsPlaylistService {
     var decision = session.getTranscodeDecision();
     var container = decision.containerFormat();
     var probe = session.getMediaProbe();
-    var targetSegmentDuration = (int) properties.targetSegmentDuration().toSeconds();
+    var timeline = new MediaSegmentTimeline(probe.duration(), properties.targetSegmentDuration());
+    var targetSegmentDuration = timeline.targetSegmentDurationSeconds();
     var totalDurationMs = probe.duration().toMillis();
     var segmentDurationMs = targetSegmentDuration * 1000L;
-    var segmentCount =
-        new MediaSegmentTimeline(probe.duration(), targetSegmentDuration).mediaSegmentCount();
+    var segmentCount = timeline.mediaSegmentCount();
     var extension = container.segmentExtension();
 
     var sb = new StringBuilder();

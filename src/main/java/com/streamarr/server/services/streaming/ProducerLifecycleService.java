@@ -590,12 +590,12 @@ public class ProducerLifecycleService {
   private TranscodeRequest.TranscodeRequestBuilder baseRequest(
       StreamSession session, int seekPosition, int startSequenceNumber) {
     var probe = session.getMediaProbe();
-    var timeline = new MediaSegmentTimeline(probe.duration(), segmentDurationSeconds());
+    var timeline = new MediaSegmentTimeline(probe.duration(), properties.targetSegmentDuration());
     return TranscodeRequest.builder()
         .sessionId(session.getSessionId())
         .sourcePath(session.getSourcePath())
         .seekPosition(seekPosition)
-        .targetSegmentDuration(timeline.periodSeconds())
+        .targetSegmentDuration(timeline.targetSegmentDurationSeconds())
         .framerate(probe.framerate())
         .transcodeDecision(session.getTranscodeDecision())
         .startSequenceNumber(startSequenceNumber)
