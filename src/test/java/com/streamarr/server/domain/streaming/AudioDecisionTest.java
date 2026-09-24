@@ -44,7 +44,7 @@ class AudioDecisionTest {
     "aac, mp4a.40.2",
     "ac3, ac-3",
     "eac3, ec-3",
-    "mp3, mp4a.40.34",
+    "mp3, mp4a.6B",
     "flac, fLaC",
     "opus, Opus",
     "alac, alac"

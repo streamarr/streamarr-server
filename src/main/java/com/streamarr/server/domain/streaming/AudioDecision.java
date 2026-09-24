@@ -9,13 +9,15 @@ import lombok.Builder;
 public record AudioDecision(AudioMode mode, String codec, int channels, long bitrate) {
 
   // Every HLS variant is multiplexed fragmented MP4, which carries exactly these audio codecs. Each
-  // maps to the RFC 6381 codecs parameter that the Apple HLS authoring specification names for it.
+  // maps to the RFC 6381 form of what FFmpeg's mp4 muxer writes into the initialization segment.
+  // MP3 is esds objectTypeIndication 0x6B above 24 kHz; at 24 kHz or below the muxer writes 0x69,
+  // which the probe cannot yet distinguish.
   private static final Map<String, String> HLS_CODEC_STRINGS =
       Map.of(
           "aac", "mp4a.40.2",
           "ac3", "ac-3",
           "eac3", "ec-3",
-          "mp3", "mp4a.40.34",
+          "mp3", "mp4a.6B",
           "flac", "fLaC",
           "opus", "Opus",
           "alac", "alac");
