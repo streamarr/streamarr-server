@@ -31,6 +31,7 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
+import com.streamarr.server.services.streaming.PlaybackProbeService;
 import java.io.IOException;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
@@ -73,6 +74,7 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   @Autowired private ProbeTaskCompletion completion;
   @Autowired private DbSchedulerCustomizer schedulerCustomizer;
   @Autowired private LibraryWatcherProperties watcherProperties;
+  @Autowired private PlaybackProbeService playbackProbeService;
 
   private final FakeFfprobeService producer = new FakeFfprobeService();
   private final List<MediaFile> createdFiles = new ArrayList<>();
@@ -250,13 +252,15 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep a failed probe's backoff when playback requests it again")
-  void shouldKeepAFailedProbesBackoffWhenPlaybackRequestsItAgain() throws IOException {
-    var request = request(createMediaFile());
+  @DisplayName("Should keep a failed probe's backoff when playback reads its missing outcome")
+  void shouldKeepAFailedProbesBackoffWhenPlaybackReadsItsMissingOutcome() throws IOException {
+    var file = createMediaFile();
+    var request = request(file);
     scheduling.request(request);
+    saveFailure(request);
     var retryAt = delay(request, 2);
 
-    scheduling.request(request);
+    playbackProbeService.read(file.getId());
 
     assertThat(client.getScheduledExecution(instanceOf(request)))
         .hasValueSatisfying(pending -> assertThat(pending.getExecutionTime()).isEqualTo(retryAt));
