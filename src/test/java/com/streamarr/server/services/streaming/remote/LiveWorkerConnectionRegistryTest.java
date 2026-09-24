@@ -237,15 +237,7 @@ class LiveWorkerConnectionRegistryTest {
     var job = variantJob();
     assertThat(registry.dispatch(job)).isTrue();
 
-    var metadata =
-        SegmentUploadMetadata.newBuilder()
-            .setWorkerSessionId(toProto(workerSessionId))
-            .setWorker(worker)
-            .setJobAttemptId(job.getJobAttemptId())
-            .setStreamSessionId(job.getStreamSessionId())
-            .setJobId(job.getJobId())
-            .setVariantLabel(job.getVariant().getVariantLabel())
-            .build();
+    var metadata = uploadMetadata(workerSessionId, worker, job);
 
     var inPublish = new CountDownLatch(1);
     var releasePublish = new CountDownLatch(1);
@@ -351,6 +343,18 @@ class LiveWorkerConnectionRegistryTest {
                 .setSourceNamespaceId(toProto(SOURCE_NAMESPACE_ID))
                 .setRelativeKey("movie.mkv"))
         .setVariant(VariantSpec.newBuilder().setVariantLabel("720p"))
+        .build();
+  }
+
+  private static SegmentUploadMetadata uploadMetadata(
+      UUID workerSessionId, WorkerIdentity worker, VariantJob job) {
+    return SegmentUploadMetadata.newBuilder()
+        .setWorkerSessionId(toProto(workerSessionId))
+        .setWorker(worker)
+        .setJobAttemptId(job.getJobAttemptId())
+        .setStreamSessionId(job.getStreamSessionId())
+        .setJobId(job.getJobId())
+        .setVariantLabel(job.getVariant().getVariantLabel())
         .build();
   }
 

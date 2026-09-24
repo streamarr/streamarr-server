@@ -261,8 +261,9 @@ final class LiveWorkerConnectionRegistry {
       UUID authenticatedWorkerId,
       SegmentUploadMetadata metadata,
       Supplier<SegmentPublication> publish) {
-    // Unsynchronized on purpose: a segment publish is a filesystem move and must not queue
-    // behind worker register/disconnect. Stale lookups fail the connection's re-check.
+    // Unsynchronized on purpose: a segment publish renames a file, or reads and compares an
+    // initialization segment, and must not queue behind worker register/disconnect. Stale lookups
+    // fail the connection's re-check.
     var connection = connections.get(authenticatedWorkerId);
     if (connection == null) {
       return Optional.empty();
@@ -558,13 +559,13 @@ final class LiveWorkerConnectionRegistry {
 
       var outcome = publish.get();
       if (outcome == SegmentPublication.INITIALIZATION_SEGMENT_DIFFERS) {
-        endAttemptWithDifferingInitialization(metadata);
+        refuseDifferingInitialization(metadata);
       }
 
       return Optional.of(outcome);
     }
 
-    private void endAttemptWithDifferingInitialization(SegmentUploadMetadata metadata) {
+    private void refuseDifferingInitialization(SegmentUploadMetadata metadata) {
       // Stopping under the monitor that authorized this upload fences the attempt's later uploads;
       // recovery then finds no running producer and moves on to its next execution target.
       tryStop(fromProto(metadata.getJobAttemptId()));
@@ -578,9 +579,9 @@ final class LiveWorkerConnectionRegistry {
     }
 
     /**
-     * Takes no connection monitor: a publish holds it across a filesystem move, and a disconnect
-     * must not wait for that. This is also why {@code activeVariants} is a {@code
-     * ConcurrentHashMap}.
+     * Takes no connection monitor: a publish holds it across file I/O (a rename, or reading and
+     * comparing an initialization segment), and a disconnect must not wait for that. This is also
+     * why {@code activeVariants} is a {@code ConcurrentHashMap}.
      */
     private List<VariantJob> abandonAllJobsWithoutWaiting() {
       var drained = List.copyOf(activeVariants.values());
