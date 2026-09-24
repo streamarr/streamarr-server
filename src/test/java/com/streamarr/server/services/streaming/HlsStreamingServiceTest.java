@@ -316,6 +316,27 @@ class HlsStreamingServiceTest {
         .isTrue();
   }
 
+  @ParameterizedTest
+  @CsvSource({"PT3S, 1", "PT12S, 2", "PT12.0004S, 2", "PT2M5.5S, 21"})
+  @DisplayName(
+      "Should advertise the media playlist's segment count to the job attempt when creating session")
+  void shouldAdvertiseTheMediaPlaylistSegmentCountToTheJobAttemptWhenCreatingSession(
+      Duration mediaDuration, int expectedCount) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().framerate(23.976).duration(mediaDuration).build());
+    var file = seedMediaFile();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMediaPlaylist(session, "token");
+    assertThat(playlist.lines().filter(line -> line.startsWith("#EXTINF:"))).hasSize(expectedCount);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .isNotEmpty()
+        .extracting(TranscodeRequest::mediaSegmentCount)
+        .containsOnly(expectedCount);
+  }
+
   @Test
   @DisplayName("Should preserve non-UTF-8 filepath bytes when creating session")
   void shouldPreserveNonUtf8FilepathBytesWhenCreatingSession() {

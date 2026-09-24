@@ -107,6 +107,12 @@ message TranscodeExecution {
   uint32 target_segment_duration_seconds = 2;
   double framerate = 3;
   uint32 start_sequence_number = 4;
+  // The number of media segments the variant's playlist advertises, the same for every job
+  // attempt of the variant. When the worker encodes video, it forces a keyframe at every boundary
+  // k × target_segment_duration_seconds of media time for each k from start_sequence_number up to,
+  // but not including, this count. Zero is not a valid count. The count does not make the worker
+  // responsible for coverage: covering the advertised timeline stays the server's job.
+  uint32 media_segment_count = 5;
 }
 
 message VariantJob {

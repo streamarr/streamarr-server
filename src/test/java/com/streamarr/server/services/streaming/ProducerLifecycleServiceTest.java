@@ -378,6 +378,20 @@ class ProducerLifecycleServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should advertise the whole timeline's media segment count when installing a replacement attempt")
+  void shouldAdvertiseTheWholeTimelineMediaSegmentCountWhenInstallingReplacementAttempt() {
+    var session = startedSession();
+    transcodeExecutor.markDead(session.getSessionId());
+
+    recover(session);
+
+    var request = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(request.startSequenceNumber()).isEqualTo(2);
+    assertThat(request.mediaSegmentCount()).isEqualTo(1200);
+  }
+
+  @Test
   @DisplayName("Should stop and replace the producer when its startup budget expires")
   void shouldStopAndReplaceProducerWhenItsStartupBudgetExpires() {
     var session = startedSession();

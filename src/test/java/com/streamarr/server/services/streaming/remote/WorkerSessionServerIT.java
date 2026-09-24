@@ -503,6 +503,45 @@ class WorkerSessionServerIT {
     }
   }
 
+  @Test
+  @DisplayName(
+      "Should advertise the variant's media segment count to the worker when dispatching a remote transcode")
+  void shouldAdvertiseVariantMediaSegmentCountToWorkerWhenDispatchingRemoteTranscode()
+      throws Exception {
+    var request =
+        TranscodeRequest.builder()
+            .sessionId(UUID.randomUUID())
+            .sourcePath(Path.of("/media/movie.mkv"))
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                    .videoCodecFamily("h264")
+                    .audioDecision(AudioDecision.stereoAac())
+                    .containerFormat(ContainerFormat.FMP4)
+                    .subtitleDecision(SubtitleDecision.exclude())
+                    .build())
+            .targetSegmentDuration(6)
+            .startSequenceNumber(2)
+            .mediaSegmentCount(1200)
+            .build();
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+      try (var worker = connect(channel, AUTHENTICATED_WORKER_ID)) {
+        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
+        var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, Path.of("/media"));
+
+        executor.start(request);
+
+        var execution = worker.nextResponse().getStartVariant().getJob().getExecution();
+        assertThat(execution.getStartSequenceNumber()).isEqualTo(2);
+        assertThat(execution.getMediaSegmentCount()).isEqualTo(1200);
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
   @Builder(builderMethodName = "subtitleSelection")
   private static SubtitleDecision subtitleDecision(
       SubtitleMode mode, String codec, int streamIndex, String language) {

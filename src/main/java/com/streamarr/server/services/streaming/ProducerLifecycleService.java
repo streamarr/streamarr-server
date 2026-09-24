@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
@@ -588,14 +589,17 @@ public class ProducerLifecycleService {
 
   private TranscodeRequest.TranscodeRequestBuilder baseRequest(
       StreamSession session, int seekPosition, int startSequenceNumber) {
+    var probe = session.getMediaProbe();
+    var timeline = new MediaSegmentTimeline(probe.duration(), segmentDurationSeconds());
     return TranscodeRequest.builder()
         .sessionId(session.getSessionId())
         .sourcePath(session.getSourcePath())
         .seekPosition(seekPosition)
-        .targetSegmentDuration(segmentDurationSeconds())
-        .framerate(session.getMediaProbe().framerate())
+        .targetSegmentDuration(timeline.periodSeconds())
+        .framerate(probe.framerate())
         .transcodeDecision(session.getTranscodeDecision())
-        .startSequenceNumber(startSequenceNumber);
+        .startSequenceNumber(startSequenceNumber)
+        .mediaSegmentCount(timeline.mediaSegmentCount());
   }
 
   private void withSessionLock(UUID sessionId, Runnable action) {
