@@ -25,7 +25,8 @@ class WorkerSessionRegistrationIdentityTest {
       "Should reject registration with UNAUTHENTICATED when no worker identity is in context")
   void shouldRejectRegistrationWithUnauthenticatedWhenNoWorkerIdentityInContext() {
     var service =
-        new WorkerSessionGrpcService(new LiveWorkerConnectionRegistry(), new FakeSegmentStore());
+        new WorkerSessionGrpcService(
+            LiveWorkerConnectionRegistryFixture.defaultRegistry(), new FakeSegmentStore());
     var responses = new RecordingResponseObserver();
 
     // Deliberately no AUTHENTICATED_WORKER_ID in the current context: the server was wired

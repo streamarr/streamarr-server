@@ -40,7 +40,7 @@ class SegmentUploadReclaimTest {
     var workerId = UUID.randomUUID();
     var sourceNamespaceId = UUID.randomUUID();
     var worker = worker(workerId);
-    var workerConnections = new LiveWorkerConnectionRegistry();
+    var workerConnections = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var workerSessionId =
         workerConnections.register(
             workerId, registration(worker, sourceNamespaceId), noOpResponseObserver());

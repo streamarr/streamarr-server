@@ -42,7 +42,7 @@ class SegmentUploadObserverTest {
     var observer =
         SegmentUploadObserver.builder()
             .authenticatedWorkerId(UUID.randomUUID())
-            .workerConnections(new LiveWorkerConnectionRegistry())
+            .workerConnections(LiveWorkerConnectionRegistryFixture.defaultRegistry())
             .responseObserver(errorCapturingResponseObserver(error))
             .uploadTicket(ticket)
             .build();

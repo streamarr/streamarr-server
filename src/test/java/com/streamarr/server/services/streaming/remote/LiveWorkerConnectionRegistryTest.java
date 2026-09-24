@@ -39,7 +39,7 @@ class LiveWorkerConnectionRegistryTest {
   @Test
   @DisplayName("Should expose the connection when acknowledgement is in progress")
   void shouldExposeConnectionWhenAcknowledgementIsInProgress() throws Exception {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var observer = new BlockingAcceptanceObserver();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -59,7 +59,7 @@ class LiveWorkerConnectionRegistryTest {
   @Test
   @DisplayName("Should remove the connection when its initial acknowledgement fails")
   void shouldRemoveConnectionWhenInitialAcknowledgementFails() {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var workerRegistration = registration();
     var observer = new RejectingAcceptanceObserver();
 
@@ -73,7 +73,7 @@ class LiveWorkerConnectionRegistryTest {
   @Test
   @DisplayName("Should restore the previous connection when replacement acknowledgement fails")
   void shouldRestorePreviousConnectionWhenReplacementAcknowledgementFails() {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var originalResponses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
     registry.register(WORKER_ID, registration(), collecting(originalResponses));
     var workerRegistration = registration();
@@ -96,7 +96,7 @@ class LiveWorkerConnectionRegistryTest {
       "Should accept a replacement worker before dispatching work to it when managing a connection")
   void shouldAcceptReplacementWorkerBeforeDispatchingWorkToItWhenManagingConnection()
       throws Exception {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var replacementClosing = new CountDownLatch(1);
     var continueReplacement = new CountDownLatch(1);
     var original = new BlockingCloseObserver(replacementClosing, continueReplacement);
@@ -127,7 +127,7 @@ class LiveWorkerConnectionRegistryTest {
   @Test
   @DisplayName("Should report dispatch failure when a disconnect completes mid-dispatch")
   void shouldReportDispatchFailureWhenDisconnectCompletesMidDispatch() throws Exception {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var observer = new GatedDispatchObserver();
     var workerSessionId = registry.register(WORKER_ID, registration(), observer);
     var job = variantJob();
@@ -150,7 +150,7 @@ class LiveWorkerConnectionRegistryTest {
   @DisplayName(
       "Should report dispatch failure when the worker call is cancelled but not yet reaped")
   void shouldReportDispatchFailureWhenWorkerCallIsCancelledButNotYetReaped() {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var observer = new CancellableObserver();
     registry.register(WORKER_ID, registration(), observer);
     observer.cancel();
@@ -170,7 +170,7 @@ class LiveWorkerConnectionRegistryTest {
   @DisplayName(
       "Should report health and capacity only for the requested source namespace when managing a connection")
   void shouldReportHealthAndCapacityOnlyForRequestedSourceNamespaceWhenManagingConnection() {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     registry.register(WORKER_ID, registration(), new CancellableObserver());
     var unavailableNamespace = UUID.randomUUID();
 
@@ -185,7 +185,7 @@ class LiveWorkerConnectionRegistryTest {
   @Test
   @DisplayName("Should total available capacity across distinct workers when managing a connection")
   void shouldTotalAvailableCapacityAcrossDistinctWorkersWhenManagingConnection() {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var secondWorkerId = UUID.randomUUID();
     registry.register(WORKER_ID, registration(WORKER_ID, 1), new CancellableObserver());
     registry.register(secondWorkerId, registration(secondWorkerId, 2), new CancellableObserver());
@@ -202,7 +202,7 @@ class LiveWorkerConnectionRegistryTest {
       "Should survive stopping a session whose worker call is cancelled but not yet reaped when managing a connection")
   void
       shouldSurviveStoppingSessionWhoseWorkerCallIsCancelledButNotYetReapedWhenManagingConnection() {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var observer = new CancellableObserver();
     registry.register(WORKER_ID, registration(), observer);
     var job = variantJob();
@@ -220,7 +220,7 @@ class LiveWorkerConnectionRegistryTest {
       "Should not block worker disconnect while a segment publish is in progress when managing a connection")
   void shouldNotBlockDisconnectWhileSegmentPublishInProgressWhenManagingConnection()
       throws Exception {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var worker =
         WorkerIdentity.newBuilder()
             .setWorkerId(toProto(WORKER_ID))
@@ -315,7 +315,7 @@ class LiveWorkerConnectionRegistryTest {
   @DisplayName(
       "Should ignore a stale disconnect after the worker connection was replaced when managing a connection")
   void shouldIgnoreAStaleDisconnectAfterTheWorkerConnectionWasReplacedWhenManagingConnection() {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var staleObserver = new CancellableObserver();
     var staleSessionId = registry.register(WORKER_ID, registration(), staleObserver);
     var freshResponses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
@@ -333,7 +333,7 @@ class LiveWorkerConnectionRegistryTest {
   @DisplayName(
       "Should ignore a stale result after the worker connection was replaced when managing a connection")
   void shouldIgnoreAStaleResultAfterTheWorkerConnectionWasReplacedWhenManagingConnection() {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var staleSessionId = registry.register(WORKER_ID, registration(), new CancellableObserver());
     registry.register(WORKER_ID, registration(), collecting(new CopyOnWriteArrayList<>()));
     var replacementJob = variantJob();

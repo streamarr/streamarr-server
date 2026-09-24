@@ -23,7 +23,6 @@ import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +36,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -50,12 +50,9 @@ final class LiveWorkerConnectionRegistry {
   private final long probeCancellationTimeoutNanos;
   private final Counter initializationSegmentMismatches;
 
-  LiveWorkerConnectionRegistry() {
-    this(WorkerSessionServerConfiguration.builder().build(), new SimpleMeterRegistry());
-  }
-
   LiveWorkerConnectionRegistry(
-      WorkerSessionServerConfiguration configuration, MeterRegistry meterRegistry) {
+      @NonNull WorkerSessionServerConfiguration configuration,
+      @NonNull MeterRegistry meterRegistry) {
     probeTimeoutNanos = configuration.probeTimeout().toNanos();
     probeCancellationTimeoutNanos = configuration.probeCancellationTimeout().toNanos();
     initializationSegmentMismatches =
