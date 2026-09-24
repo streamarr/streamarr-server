@@ -56,6 +56,8 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Media probe scheduling")
@@ -75,6 +77,7 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   @Autowired private DbSchedulerCustomizer schedulerCustomizer;
   @Autowired private LibraryWatcherProperties watcherProperties;
   @Autowired private PlaybackProbeService playbackProbeService;
+  @Autowired private PlatformTransactionManager transactionManager;
 
   private final FakeFfprobeService producer = new FakeFfprobeService();
   private final List<MediaFile> createdFiles = new ArrayList<>();
@@ -110,6 +113,24 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
     dsl.deleteFrom(DSL.table("scheduled_tasks")).execute();
     mediaFileRepository.deleteAll(createdFiles);
     createdFiles.clear();
+  }
+
+  @Test
+  @DisplayName("Should keep no probe request when the requesting transaction rolls back")
+  void shouldKeepNoProbeRequestWhenTheRequestingTransactionRollsBack() throws IOException {
+    var request = requestFor(createMediaFile());
+
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            status -> {
+              scheduling.request(request);
+              status.setRollbackOnly();
+            });
+
+    assertThat(client.getScheduledExecution(instanceOf(request))).isEmpty();
+    assertThat(outcomes.findProbeStates(List.of(request.mediaFileId())))
+        .singleElement()
+        .satisfies(state -> assertThat(state.requested()).isEmpty());
   }
 
   @Test
