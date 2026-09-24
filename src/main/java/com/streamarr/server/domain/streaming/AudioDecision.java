@@ -1,9 +1,14 @@
 package com.streamarr.server.domain.streaming;
 
+import java.util.Set;
 import lombok.Builder;
 
 @Builder
 public record AudioDecision(AudioMode mode, String codec, int channels, long bitrate) {
+
+  // Every HLS variant is multiplexed fragmented MP4, which carries these audio codecs.
+  private static final Set<String> DELIVERABLE_CODECS =
+      Set.of("aac", "ac3", "eac3", "mp3", "flac", "opus", "alac");
 
   public static AudioDecision stereoAac() {
     return new AudioDecision(AudioMode.TRANSCODE, "aac", 2, 128_000L);
@@ -15,6 +20,11 @@ public record AudioDecision(AudioMode mode, String codec, int channels, long bit
 
   public static AudioDecision none() {
     return new AudioDecision(AudioMode.NONE, null, 0, 0L);
+  }
+
+  /** The audio codecs that HLS delivery carries, by their probed codec names. */
+  public static Set<String> deliverableCodecs() {
+    return DELIVERABLE_CODECS;
   }
 
   public String hlsCodecString() {

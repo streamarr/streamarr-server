@@ -19,10 +19,6 @@ public class TranscodeDecisionService {
 
   private static final List<String> CODEC_PREFERENCE = List.of("av1", "h264");
 
-  // Every HLS variant is multiplexed fragmented MP4, which carries these audio codecs.
-  private static final Set<String> DELIVERABLE_AUDIO_CODECS =
-      Set.of("aac", "ac3", "eac3", "mp3", "flac", "opus", "alac");
-
   public TranscodeDecision decide(MediaProbe source, StreamingOptions clientOptions) {
     var supportedCodecs = clientOptions.supportedCodecs();
     boolean videoCompatible = supportedCodecs.contains(source.videoCodec());
@@ -77,7 +73,7 @@ public class TranscodeDecisionService {
             .orElse(StreamingOptions.DEFAULT_MAX_AUDIO_CHANNELS);
 
     var candidates = new HashSet<>(clientAudioCodecs);
-    candidates.retainAll(DELIVERABLE_AUDIO_CODECS);
+    candidates.retainAll(AudioDecision.deliverableCodecs());
 
     int normalizedChannels = AudioDecision.normalizeChannels(source.audioChannels().orElse(2));
     int effectiveChannels = Math.min(normalizedChannels, maxChannels);
