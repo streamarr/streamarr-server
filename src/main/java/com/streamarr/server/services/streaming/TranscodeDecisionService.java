@@ -78,7 +78,7 @@ public class TranscodeDecisionService {
     int normalizedChannels = AudioDecision.normalizeChannels(source.audioChannels().orElse(2));
     int effectiveChannels = Math.min(normalizedChannels, maxChannels);
 
-    if (canCopyAudio(source, candidates, normalizedChannels, maxChannels)) {
+    if (candidates.contains(source.audioCodec()) && normalizedChannels <= maxChannels) {
       return AudioDecision.copy(
           source.audioCodec(),
           normalizedChannels,
@@ -86,11 +86,6 @@ public class TranscodeDecisionService {
     }
 
     return selectTranscodeAudio(candidates, effectiveChannels);
-  }
-
-  private boolean canCopyAudio(
-      MediaProbe source, Set<String> candidates, int normalizedChannels, int maxChannels) {
-    return candidates.contains(source.audioCodec()) && normalizedChannels <= maxChannels;
   }
 
   private AudioDecision selectTranscodeAudio(Set<String> candidates, int effectiveChannels) {
