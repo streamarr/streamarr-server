@@ -111,6 +111,17 @@ The exception is a saved image's result: because it is written in the image's tr
 A terminal probe error is reused while the source snapshot and probe version are unchanged; scans and refreshes do not force a new probe for it.
 Recorded results survive a restart, but artwork work that stopped before recording a result is not resumed yet; https://github.com/streamarr/streamarr-server/issues/412[#412] adds that.
 
+=== Deleting Items
+
+`item_result` and `image` rows reference their movie, series, season, episode, person, or company through generated columns with `ON DELETE CASCADE` foreign keys.
+Every delete path therefore removes an item's results and image rows, and the database rejects a result or image for an item that does not exist.
+A delete locks its items, including a series' seasons and episodes, before it reads their artwork paths, and it deletes those files only after it commits; a rolled-back delete keeps every file.
+
+Writers of results and images lock the item row with `FOR KEY SHARE` before any result or image row, so the full order for a replacement is advisory lock, item row, image rows.
+Result writes and replacements take that lock explicitly; saving new artwork locks no existing row and takes it through the foreign-key check of its first image insert.
+A delete then waits for a writer holding the item and removes what it wrote, or finishes first and leaves the writer nothing to write for.
+A guarded result for a deleted item records nothing, as a stale attempt does; saving or replacing artwork for a deleted item fails, and the artwork fetcher deletes the files it wrote.
+
 == Service Communication
 
 Services coordinate library lifecycle events using Spring Application Events rather than direct method calls. `LibraryManagementService` publishes events; interested services listen and react independently.

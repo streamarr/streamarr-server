@@ -19,7 +19,6 @@ import com.streamarr.server.domain.media.ContentRating;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
-import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
@@ -297,35 +296,6 @@ class SeriesServiceTest {
 
       assertThat(awaitArtwork().counts()).isEqualTo(ArtworkCounts.builder().unavailable(2).build());
       assertThat(imageDownloader.getDownloadCount()).isZero();
-    }
-
-    @Test
-    @DisplayName("Should delete images for entity when deleting series by ID")
-    void shouldDeleteImagesForEntityWhenDeletingSeriesById() {
-      var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
-      seedImage(series.getId());
-
-      seriesService.deleteSeriesById(series.getId());
-
-      assertThat(imageRepository.findByEntityId(series.getId())).isEmpty();
-    }
-
-    @Test
-    @DisplayName("Should delete images for each series when deleting by library ID")
-    void shouldDeleteImagesForEachSeriesWhenDeletingByLibraryId() {
-      var libraryId = UUID.randomUUID();
-      var library = Library.builder().id(libraryId).name("TV Shows").build();
-      var series1 =
-          seriesRepository.save(Series.builder().title("Series 1").library(library).build());
-      var series2 =
-          seriesRepository.save(Series.builder().title("Series 2").library(library).build());
-      seedImage(series1.getId());
-      seedImage(series2.getId());
-
-      seriesService.deleteByLibraryId(libraryId);
-
-      assertThat(imageRepository.findByEntityId(series1.getId())).isEmpty();
-      assertThat(imageRepository.findByEntityId(series2.getId())).isEmpty();
     }
 
     @Test
@@ -894,18 +864,5 @@ class SeriesServiceTest {
 
   private static Series.SeriesBuilder<?, ?> seriesBuilder(String title) {
     return Series.builder().title(title).titleSort(title);
-  }
-
-  private void seedImage(UUID entityId) {
-    imageRepository.save(
-        Image.builder()
-            .entityId(entityId)
-            .entityType(ImageEntityType.SERIES)
-            .imageType(ImageType.POSTER)
-            .variant(ImageSize.SMALL)
-            .width(185)
-            .height(278)
-            .path("series/" + entityId + "/poster/small.jpg")
-            .build());
   }
 }

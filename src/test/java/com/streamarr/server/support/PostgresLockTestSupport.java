@@ -93,6 +93,14 @@ public final class PostgresLockTestSupport {
         queryPattern);
   }
 
+  /** Waits until exactly {@code waiters} backends wait behind {@code blockerPid}. */
+  public static void awaitWaitersBehind(JdbcTemplate jdbcTemplate, int blockerPid, int waiters) {
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(
+            () -> assertThat(waitersBehind(jdbcTemplate, blockerPid, "%")).isEqualTo(waiters));
+  }
+
   public static void awaitLatch(CountDownLatch latch) {
     try {
       assertThat(latch.await(10, TimeUnit.SECONDS)).isTrue();

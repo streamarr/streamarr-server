@@ -1,6 +1,10 @@
 package com.streamarr.server.repositories.media;
 
+import static com.streamarr.server.jooq.generated.tables.Episode.EPISODE;
 import static com.streamarr.server.jooq.generated.tables.Image.IMAGE;
+import static com.streamarr.server.jooq.generated.tables.Movie.MOVIE;
+import static com.streamarr.server.jooq.generated.tables.Season.SEASON;
+import static com.streamarr.server.jooq.generated.tables.Series.SERIES;
 
 import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.media.AmbientColors;
@@ -10,6 +14,7 @@ import com.streamarr.server.jooq.generated.enums.ImageSize;
 import com.streamarr.server.jooq.generated.enums.ImageType;
 import com.streamarr.server.repositories.PostgresTransactionLocks;
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,8 +22,10 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.AuditorAware;
 
 @RequiredArgsConstructor
@@ -28,6 +35,7 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
   private final AuditorAware<UUID> auditorAware;
   private final ImageProperties imageProperties;
   private final PostgresTransactionLocks transactionLocks;
+  private final ItemLocks itemLocks;
 
   @Override
   public Set<UUID> insertAllIfAbsent(List<Image> images) {
@@ -58,6 +66,12 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
             .getMostSignificantBits();
     transactionLocks.limitLockWait(imageProperties.replacementLockTimeout());
     transactionLocks.lock(lockKey);
+    if (!itemLocks.tryLockAgainstDeletion(first.getEntityId(), first.getEntityType())) {
+      throw new DataIntegrityViolationException(
+          "Cannot replace artwork of deleted %s %s"
+              .formatted(first.getEntityType(), first.getEntityId()));
+    }
+
     var condition =
         IMAGE
             .ENTITY_ID
@@ -73,6 +87,29 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
     images.forEach(image -> dsl.insertInto(IMAGE).set(imageValues(image, auditUser)).execute());
 
     return replacedPaths;
+  }
+
+  @Override
+  public List<String> lockMoviesAndFindArtworkPaths(Collection<UUID> movieIds) {
+    var movies = itemLocks.lockForDeletion(MOVIE.ID, MOVIE.ID.in(movieIds));
+    return artworkPaths(IMAGE.MOVIE_ID.in(movies));
+  }
+
+  @Override
+  public List<String> lockSeriesAndFindArtworkPaths(Collection<UUID> seriesIds) {
+    var series = itemLocks.lockForDeletion(SERIES.ID, SERIES.ID.in(seriesIds));
+    var seasons = itemLocks.lockForDeletion(SEASON.ID, SEASON.SERIES_ID.in(series));
+    var episodes = itemLocks.lockForDeletion(EPISODE.ID, EPISODE.SEASON_ID.in(seasons));
+    return artworkPaths(
+        IMAGE
+            .SERIES_ID
+            .in(series)
+            .or(IMAGE.SEASON_ID.in(seasons))
+            .or(IMAGE.EPISODE_ID.in(episodes)));
+  }
+
+  private List<String> artworkPaths(Condition owners) {
+    return dsl.select(IMAGE.PATH).from(IMAGE).where(owners).fetch(IMAGE.PATH);
   }
 
   private boolean insertIfAbsent(Image image, UUID auditUser) {

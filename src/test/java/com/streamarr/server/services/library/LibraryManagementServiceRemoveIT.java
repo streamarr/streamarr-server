@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.defaultIdentityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
@@ -10,11 +11,14 @@ import static org.mockito.Mockito.mock;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.Episode;
+import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.domain.streaming.StreamingOptions;
@@ -29,14 +33,18 @@ import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.PersistedProbeFixture;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamSessionFixture;
+import com.streamarr.server.repositories.CompanyRepository;
 import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
+import com.streamarr.server.repositories.media.ImageRepository;
+import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.streaming.FfprobeService;
@@ -48,6 +56,8 @@ import jakarta.persistence.EntityManager;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -72,6 +82,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
   private static final AuthenticatedIdentity IDENTITY = defaultIdentityBuilder().build();
+  private static final Instant ATTEMPTED_AT = Instant.parse("2026-09-23T10:00:00Z");
 
   @Autowired private LibraryManagementService libraryManagementService;
 
@@ -90,6 +101,14 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
   @Autowired private PersonRepository personRepository;
 
   @Autowired private GenreRepository genreRepository;
+
+  @Autowired private CompanyRepository companyRepository;
+
+  @Autowired private ImageService imageService;
+
+  @Autowired private ImageRepository imageRepository;
+
+  @Autowired private ItemResultRepository itemResults;
 
   @Autowired private StreamingService streamingService;
   @Autowired private EntityManager entityManager;
@@ -323,6 +342,90 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should remove the results and artwork of movies when a movie library is removed")
+  void shouldRemoveTheResultsAndArtworkOfMoviesWhenAMovieLibraryIsRemoved() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var movie =
+        movieRepository.saveAndFlush(Movie.builder().title("Artwork").library(library).build());
+    var artworkFiles = storeArtwork(movie.getId(), ImageEntityType.MOVIE);
+
+    libraryManagementService.removeLibrary(IDENTITY, library.getId());
+
+    assertNothingStoredFor(movie.getId(), ImageEntityType.MOVIE);
+    assertThat(artworkFiles).isNotEmpty().allSatisfy(path -> assertThat(path).doesNotExist());
+  }
+
+  @Test
+  @DisplayName(
+      "Should remove the results and artwork of series, seasons and episodes when a series"
+          + " library is removed")
+  void shouldRemoveTheResultsAndArtworkOfSeriesSeasonsAndEpisodesWhenASeriesLibraryIsRemoved() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+    var series =
+        seriesRepository.saveAndFlush(Series.builder().title("Artwork").library(library).build());
+    var season =
+        seasonRepository.saveAndFlush(
+            Season.builder()
+                .title("Season 1")
+                .seasonNumber(1)
+                .series(series)
+                .library(library)
+                .build());
+    var episode =
+        episodeRepository.saveAndFlush(
+            Episode.builder()
+                .title("Pilot")
+                .episodeNumber(1)
+                .season(season)
+                .library(library)
+                .build());
+    var artworkFiles = new ArrayList<Path>();
+    artworkFiles.addAll(storeArtwork(series.getId(), ImageEntityType.SERIES));
+    artworkFiles.addAll(storeArtwork(season.getId(), ImageEntityType.SEASON));
+    artworkFiles.addAll(storeArtwork(episode.getId(), ImageEntityType.EPISODE));
+
+    libraryManagementService.removeLibrary(IDENTITY, library.getId());
+
+    assertNothingStoredFor(series.getId(), ImageEntityType.SERIES);
+    assertNothingStoredFor(season.getId(), ImageEntityType.SEASON);
+    assertNothingStoredFor(episode.getId(), ImageEntityType.EPISODE);
+    assertThat(artworkFiles).isNotEmpty().allSatisfy(path -> assertThat(path).doesNotExist());
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the results and artwork of shared people and companies when a library is"
+          + " removed")
+  void shouldKeepTheResultsAndArtworkOfSharedPeopleAndCompaniesWhenALibraryIsRemoved() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var person =
+        personRepository.saveAndFlush(
+            Person.builder().name("Shared Actor").sourceId("tmdb-" + UUID.randomUUID()).build());
+    var company =
+        companyRepository.saveAndFlush(
+            Company.builder().name("Shared Studio").sourceId("tmdb-" + UUID.randomUUID()).build());
+    var movie =
+        movieRepository.saveAndFlush(Movie.builder().title("Shared").library(library).build());
+    movie.getCast().add(person);
+    movie.getStudios().add(company);
+    movieRepository.saveAndFlush(movie);
+    var personFiles = storeArtwork(person.getId(), ImageEntityType.PERSON);
+    var companyFiles = storeArtwork(company.getId(), ImageEntityType.COMPANY);
+
+    libraryManagementService.removeLibrary(IDENTITY, library.getId());
+
+    assertThat(imageRepository.findByEntityIdAndEntityType(person.getId(), ImageEntityType.PERSON))
+        .isNotEmpty();
+    assertThat(itemResults.findByItem(person.getId(), ImageEntityType.PERSON)).isNotEmpty();
+    assertThat(
+            imageRepository.findByEntityIdAndEntityType(company.getId(), ImageEntityType.COMPANY))
+        .isNotEmpty();
+    assertThat(itemResults.findByItem(company.getId(), ImageEntityType.COMPANY)).isNotEmpty();
+    assertThat(personFiles).isNotEmpty().allSatisfy(path -> assertThat(path).exists());
+    assertThat(companyFiles).isNotEmpty().allSatisfy(path -> assertThat(path).exists());
+  }
+
+  @Test
   @DisplayName("Should throw LibraryNotFoundException when library does not exist")
   void shouldThrowLibraryNotFoundExceptionWhenLibraryDoesNotExist() {
     var nonExistentId = UUID.randomUUID();
@@ -490,5 +593,20 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
     assertThat(Files.readString(movieFile))
         .as("File content must remain intact")
         .isEqualTo("fake video content");
+  }
+
+  // Saving artwork also stores the item's artwork result.
+  private List<Path> storeArtwork(UUID itemId, ImageEntityType itemType) {
+    var poster =
+        imageService.processImage(
+            createTestImage(600, 900), ImageType.POSTER, itemId, itemType, "/" + itemId + ".jpg");
+    imageService.saveImages(poster.images(), ATTEMPTED_AT);
+    assertThat(itemResults.findByItem(itemId, itemType)).isNotEmpty();
+    return poster.writtenFiles();
+  }
+
+  private void assertNothingStoredFor(UUID itemId, ImageEntityType itemType) {
+    assertThat(itemResults.findByItem(itemId, itemType)).isEmpty();
+    assertThat(imageRepository.findByEntityIdAndEntityType(itemId, itemType)).isEmpty();
   }
 }

@@ -18,8 +18,12 @@ import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.fixtures.SavedMediaFixture;
+import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.ImageRepository;
+import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.ImageService;
+import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.io.IOException;
@@ -56,6 +60,9 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
   @Autowired private ImageRepository imageRepository;
   @Autowired private ImageService imageService;
   @Autowired private DataSource dataSource;
+  @Autowired private MovieService movieService;
+  @Autowired private LibraryRepository libraryRepository;
+  @Autowired private MovieRepository movieRepository;
 
   @BeforeEach
   void resetStubs() {
@@ -65,7 +72,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
   @Test
   @DisplayName("Should persist images with correct type when event published within a transaction")
   void shouldPersistImagesWithCorrectTypeWhenEventPublishedWithinTransaction() {
-    var entityId = UUID.randomUUID();
+    var entityId = savedMovieId();
     stubImageDownload("/poster.jpg");
 
     transactionTemplate.executeWithoutResult(
@@ -89,7 +96,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
   @Test
   @DisplayName("Should persist null ambient colors when artwork has insufficient opaque coverage")
   void shouldPersistNullAmbientColorsWhenArtworkHasInsufficientOpaqueCoverage() {
-    var entityId = UUID.randomUUID();
+    var entityId = savedMovieId();
     stubImageDownload("/transparent.png", createTransparentPngImage());
 
     transactionTemplate.executeWithoutResult(
@@ -117,7 +124,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
   @DisplayName("Should persist source key and content SHA-256 when enrichment completes")
   void shouldPersistSourceKeyAndContentSha256WhenEnrichmentCompletes()
       throws NoSuchAlgorithmException {
-    var entityId = UUID.randomUUID();
+    var entityId = savedMovieId();
     var imageData = createTestImage(600, 900);
     var sourceKey = "/poster.jpg";
     var processed =
@@ -137,7 +144,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
                 assertThat(image.getContentSha256()).isEqualTo(expectedContentSha256);
               });
     } finally {
-      imageService.deleteImagesForEntity(entityId, ImageEntityType.MOVIE);
+      movieService.deleteMovieById(entityId);
       imageService.deleteFiles(processed.writtenFiles());
     }
   }
@@ -147,7 +154,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
       "Should replace changed artwork and recompute derived metadata when replacement commits atomically")
   void shouldReplaceChangedArtworkAndRecomputeDerivedMetadataWhenReplacementCommitsAtomically()
       throws NoSuchAlgorithmException {
-    var entityId = UUID.randomUUID();
+    var entityId = savedMovieId();
     var oldKey = "/old-poster.jpg";
     var newKey = "/new-poster.png";
     var original =
@@ -200,7 +207,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
       assertThatThrownBy(() -> imageService.readImageFile(originalSmall))
           .isInstanceOf(IOException.class);
     } finally {
-      imageService.deleteImagesForEntity(entityId, ImageEntityType.MOVIE);
+      movieService.deleteMovieById(entityId);
       imageService.deleteFiles(original.writtenFiles());
       imageService.deleteFiles(replacement.writtenFiles());
     }
@@ -209,7 +216,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
   @Test
   @DisplayName("Should roll back database replacement and preserve files when insert fails")
   void shouldRollBackDatabaseReplacementAndPreserveFilesWhenInsertFails() {
-    var entityId = UUID.randomUUID();
+    var entityId = savedMovieId();
     var oldKey = "/rollback-old.jpg";
     var original =
         imageService.processImage(
@@ -240,7 +247,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
           .allSatisfy(image -> assertThat(imageService.readImageFile(image)).isNotEmpty());
       assertThat(replacement.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
     } finally {
-      imageService.deleteImagesForEntity(entityId, ImageEntityType.MOVIE);
+      movieService.deleteMovieById(entityId);
       imageService.deleteFiles(original.writtenFiles());
       imageService.deleteFiles(replacement.writtenFiles());
     }
@@ -288,7 +295,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
   @Test
   @DisplayName("Should preserve coherent artwork files when replacements run concurrently")
   void shouldPreserveCoherentArtworkFilesWhenReplacementsRunConcurrently() throws Exception {
-    var entityId = UUID.randomUUID();
+    var entityId = savedMovieId();
     var original =
         imageService.processImage(
             createSolidPngImage(600, 900, 0x0000FF),
@@ -360,11 +367,15 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
           .allSatisfy(path -> assertThat(path).doesNotExist());
       assertThat(original.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
     } finally {
-      imageService.deleteImagesForEntity(entityId, ImageEntityType.MOVIE);
+      movieService.deleteMovieById(entityId);
       imageService.deleteFiles(original.writtenFiles());
       imageService.deleteFiles(cyanReplacement.writtenFiles());
       imageService.deleteFiles(magentaReplacement.writtenFiles());
     }
+  }
+
+  private UUID savedMovieId() {
+    return SavedMediaFixture.saveMovie(libraryRepository, movieRepository).getId();
   }
 
   private void stubImageDownload(String path) {

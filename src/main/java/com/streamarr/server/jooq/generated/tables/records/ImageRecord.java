@@ -360,6 +360,90 @@ public class ImageRecord extends UpdatableRecordImpl<ImageRecord> {
         return (String) get(23);
     }
 
+    /**
+     * Setter for <code>public.image.movie_id</code>.
+     */
+    public void setMovieId(UUID value) {
+        set(24, value);
+    }
+
+    /**
+     * Getter for <code>public.image.movie_id</code>.
+     */
+    public UUID getMovieId() {
+        return (UUID) get(24);
+    }
+
+    /**
+     * Setter for <code>public.image.series_id</code>.
+     */
+    public void setSeriesId(UUID value) {
+        set(25, value);
+    }
+
+    /**
+     * Getter for <code>public.image.series_id</code>.
+     */
+    public UUID getSeriesId() {
+        return (UUID) get(25);
+    }
+
+    /**
+     * Setter for <code>public.image.season_id</code>.
+     */
+    public void setSeasonId(UUID value) {
+        set(26, value);
+    }
+
+    /**
+     * Getter for <code>public.image.season_id</code>.
+     */
+    public UUID getSeasonId() {
+        return (UUID) get(26);
+    }
+
+    /**
+     * Setter for <code>public.image.episode_id</code>.
+     */
+    public void setEpisodeId(UUID value) {
+        set(27, value);
+    }
+
+    /**
+     * Getter for <code>public.image.episode_id</code>.
+     */
+    public UUID getEpisodeId() {
+        return (UUID) get(27);
+    }
+
+    /**
+     * Setter for <code>public.image.person_id</code>.
+     */
+    public void setPersonId(UUID value) {
+        set(28, value);
+    }
+
+    /**
+     * Getter for <code>public.image.person_id</code>.
+     */
+    public UUID getPersonId() {
+        return (UUID) get(28);
+    }
+
+    /**
+     * Setter for <code>public.image.company_id</code>.
+     */
+    public void setCompanyId(UUID value) {
+        set(29, value);
+    }
+
+    /**
+     * Getter for <code>public.image.company_id</code>.
+     */
+    public UUID getCompanyId() {
+        return (UUID) get(29);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -383,7 +467,7 @@ public class ImageRecord extends UpdatableRecordImpl<ImageRecord> {
     /**
      * Create a detached, initialised ImageRecord
      */
-    public ImageRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID entityId, ImageEntityType entityType, ImageType imageType, ImageSize variant, Integer width, Integer height, String blurHash, String path, String ambientTopLeft, String ambientTopRight, String ambientBottomRight, String ambientBottomLeft, String ambientPrimary, String key, String contentSha256, String ambientDarkVibrant, String ambientDarkMuted, String ambientLightVibrant, String ambientLightMuted) {
+    public ImageRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID entityId, ImageEntityType entityType, ImageType imageType, ImageSize variant, Integer width, Integer height, String blurHash, String path, String ambientTopLeft, String ambientTopRight, String ambientBottomRight, String ambientBottomLeft, String ambientPrimary, String key, String contentSha256, String ambientDarkVibrant, String ambientDarkMuted, String ambientLightVibrant, String ambientLightMuted, UUID movieId, UUID seriesId, UUID seasonId, UUID episodeId, UUID personId, UUID companyId) {
         super(Image.IMAGE);
 
         setId(id);
@@ -410,6 +494,12 @@ public class ImageRecord extends UpdatableRecordImpl<ImageRecord> {
         setAmbientDarkMuted(ambientDarkMuted);
         setAmbientLightVibrant(ambientLightVibrant);
         setAmbientLightMuted(ambientLightMuted);
+        setMovieId(movieId);
+        setSeriesId(seriesId);
+        setSeasonId(seasonId);
+        setEpisodeId(episodeId);
+        setPersonId(personId);
+        setCompanyId(companyId);
         resetTouchedOnNotNull();
     }
 }

@@ -6,7 +6,6 @@ import static com.streamarr.server.fakes.TestImages.createTestImageWithMismatche
 import static com.streamarr.server.fakes.TestImages.createTransparentPngImage;
 import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.google.common.jimfs.Configuration;
@@ -240,35 +239,6 @@ class ImageServiceTest {
     var result = imageService.readImageFile(image);
 
     assertThat(result).isEqualTo(content);
-  }
-
-  @Test
-  @DisplayName("Should delete image rows and files when deleting for entity")
-  void shouldDeleteImageRowsAndFilesWhenDeletingForEntity() {
-    var entityId = UUID.randomUUID();
-    var imageData = createTestImage(600, 900);
-
-    var result =
-        imageService.processImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
-    imageService.saveImages(result.images(), ATTEMPTED_AT);
-
-    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
-        .isNotEmpty();
-
-    imageService.deleteImagesForEntity(entityId, ImageEntityType.MOVIE);
-
-    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
-        .isEmpty();
-
-    assertThat(result.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
-  }
-
-  @Test
-  @DisplayName("Should not fail when deleting images for entity with no images")
-  void shouldNotFailWhenDeletingImagesForEntityWithNoImages() {
-    assertThatCode(
-            () -> imageService.deleteImagesForEntity(UUID.randomUUID(), ImageEntityType.MOVIE))
-        .doesNotThrowAnyException();
   }
 
   @Test

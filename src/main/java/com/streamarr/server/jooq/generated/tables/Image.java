@@ -10,6 +10,12 @@ import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.enums.ImageEntityType;
 import com.streamarr.server.jooq.generated.enums.ImageSize;
 import com.streamarr.server.jooq.generated.enums.ImageType;
+import com.streamarr.server.jooq.generated.tables.Company.CompanyPath;
+import com.streamarr.server.jooq.generated.tables.Episode.EpisodePath;
+import com.streamarr.server.jooq.generated.tables.Movie.MoviePath;
+import com.streamarr.server.jooq.generated.tables.Person.PersonPath;
+import com.streamarr.server.jooq.generated.tables.Season.SeasonPath;
+import com.streamarr.server.jooq.generated.tables.Series.SeriesPath;
 import com.streamarr.server.jooq.generated.tables.records.ImageRecord;
 
 import java.time.OffsetDateTime;
@@ -21,10 +27,14 @@ import java.util.UUID;
 import org.jooq.Check;
 import org.jooq.Condition;
 import org.jooq.Field;
+import org.jooq.ForeignKey;
 import org.jooq.Index;
+import org.jooq.InverseForeignKey;
 import org.jooq.Name;
+import org.jooq.Path;
 import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
+import org.jooq.Record;
 import org.jooq.SQL;
 import org.jooq.Schema;
 import org.jooq.Stringly;
@@ -180,6 +190,36 @@ public class Image extends TableImpl<ImageRecord> {
      */
     public final TableField<ImageRecord, String> AMBIENT_LIGHT_MUTED = createField(DSL.name("ambient_light_muted"), SQLDataType.CLOB, this, "");
 
+    /**
+     * The column <code>public.image.movie_id</code>.
+     */
+    public final TableField<ImageRecord, UUID> MOVIE_ID = createField(DSL.name("movie_id"), SQLDataType.UUID, this, "");
+
+    /**
+     * The column <code>public.image.series_id</code>.
+     */
+    public final TableField<ImageRecord, UUID> SERIES_ID = createField(DSL.name("series_id"), SQLDataType.UUID, this, "");
+
+    /**
+     * The column <code>public.image.season_id</code>.
+     */
+    public final TableField<ImageRecord, UUID> SEASON_ID = createField(DSL.name("season_id"), SQLDataType.UUID, this, "");
+
+    /**
+     * The column <code>public.image.episode_id</code>.
+     */
+    public final TableField<ImageRecord, UUID> EPISODE_ID = createField(DSL.name("episode_id"), SQLDataType.UUID, this, "");
+
+    /**
+     * The column <code>public.image.person_id</code>.
+     */
+    public final TableField<ImageRecord, UUID> PERSON_ID = createField(DSL.name("person_id"), SQLDataType.UUID, this, "");
+
+    /**
+     * The column <code>public.image.company_id</code>.
+     */
+    public final TableField<ImageRecord, UUID> COMPANY_ID = createField(DSL.name("company_id"), SQLDataType.UUID, this, "");
+
     private Image(Name alias, Table<ImageRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -209,6 +249,39 @@ public class Image extends TableImpl<ImageRecord> {
         this(DSL.name("image"), null);
     }
 
+    public <O extends Record> Image(Table<O> path, ForeignKey<O, ImageRecord> childPath, InverseForeignKey<O, ImageRecord> parentPath) {
+        super(path, childPath, parentPath, IMAGE);
+    }
+
+    /**
+     * A subtype implementing {@link Path} for simplified path-based joins.
+     */
+    public static class ImagePath extends Image implements Path<ImageRecord> {
+
+        private static final long serialVersionUID = 1L;
+        public <O extends Record> ImagePath(Table<O> path, ForeignKey<O, ImageRecord> childPath, InverseForeignKey<O, ImageRecord> parentPath) {
+            super(path, childPath, parentPath);
+        }
+        private ImagePath(Name alias, Table<ImageRecord> aliased) {
+            super(alias, aliased);
+        }
+
+        @Override
+        public ImagePath as(String alias) {
+            return new ImagePath(DSL.name(alias), this);
+        }
+
+        @Override
+        public ImagePath as(Name alias) {
+            return new ImagePath(alias, this);
+        }
+
+        @Override
+        public ImagePath as(Table<?> alias) {
+            return new ImagePath(alias.getQualifiedName(), this);
+        }
+    }
+
     @Override
     public Schema getSchema() {
         return aliased() ? null : Public.PUBLIC;
@@ -216,12 +289,89 @@ public class Image extends TableImpl<ImageRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IMAGE_ENTITY_ID_IMAGE_TYPE_VARIANT_IDX, Indexes.IMAGE_ENTITY_TYPE_ENTITY_ID_IDX);
+        return Arrays.asList(Indexes.IMAGE_COMPANY_ID_IDX, Indexes.IMAGE_ENTITY_ID_IMAGE_TYPE_VARIANT_IDX, Indexes.IMAGE_ENTITY_TYPE_ENTITY_ID_IDX, Indexes.IMAGE_EPISODE_ID_IDX, Indexes.IMAGE_MOVIE_ID_IDX, Indexes.IMAGE_PERSON_ID_IDX, Indexes.IMAGE_SEASON_ID_IDX, Indexes.IMAGE_SERIES_ID_IDX);
     }
 
     @Override
     public UniqueKey<ImageRecord> getPrimaryKey() {
         return Keys.IMAGE_PKEY;
+    }
+
+    @Override
+    public List<ForeignKey<ImageRecord, ?>> getReferences() {
+        return Arrays.asList(Keys.IMAGE__IMAGE_COMPANY_ID_FKEY, Keys.IMAGE__IMAGE_EPISODE_ID_FKEY, Keys.IMAGE__IMAGE_MOVIE_ID_FKEY, Keys.IMAGE__IMAGE_PERSON_ID_FKEY, Keys.IMAGE__IMAGE_SEASON_ID_FKEY, Keys.IMAGE__IMAGE_SERIES_ID_FKEY);
+    }
+
+    private transient CompanyPath _company;
+
+    /**
+     * Get the implicit join path to the <code>public.company</code> table.
+     */
+    public CompanyPath company() {
+        if (_company == null)
+            _company = new CompanyPath(this, Keys.IMAGE__IMAGE_COMPANY_ID_FKEY, null);
+
+        return _company;
+    }
+
+    private transient EpisodePath _episode;
+
+    /**
+     * Get the implicit join path to the <code>public.episode</code> table.
+     */
+    public EpisodePath episode() {
+        if (_episode == null)
+            _episode = new EpisodePath(this, Keys.IMAGE__IMAGE_EPISODE_ID_FKEY, null);
+
+        return _episode;
+    }
+
+    private transient MoviePath _movie;
+
+    /**
+     * Get the implicit join path to the <code>public.movie</code> table.
+     */
+    public MoviePath movie() {
+        if (_movie == null)
+            _movie = new MoviePath(this, Keys.IMAGE__IMAGE_MOVIE_ID_FKEY, null);
+
+        return _movie;
+    }
+
+    private transient PersonPath _person;
+
+    /**
+     * Get the implicit join path to the <code>public.person</code> table.
+     */
+    public PersonPath person() {
+        if (_person == null)
+            _person = new PersonPath(this, Keys.IMAGE__IMAGE_PERSON_ID_FKEY, null);
+
+        return _person;
+    }
+
+    private transient SeasonPath _season;
+
+    /**
+     * Get the implicit join path to the <code>public.season</code> table.
+     */
+    public SeasonPath season() {
+        if (_season == null)
+            _season = new SeasonPath(this, Keys.IMAGE__IMAGE_SEASON_ID_FKEY, null);
+
+        return _season;
+    }
+
+    private transient SeriesPath _series;
+
+    /**
+     * Get the implicit join path to the <code>public.series</code> table.
+     */
+    public SeriesPath series() {
+        if (_series == null)
+            _series = new SeriesPath(this, Keys.IMAGE__IMAGE_SERIES_ID_FKEY, null);
+
+        return _series;
     }
 
     @Override
