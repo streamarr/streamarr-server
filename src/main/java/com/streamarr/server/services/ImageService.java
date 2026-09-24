@@ -20,6 +20,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.EnumSet;
 import java.util.HexFormat;
 import java.util.List;
@@ -151,8 +152,7 @@ public class ImageService {
       validateVariantSet(replacement.images());
       var replacedPaths = imageRepository.replaceLogicalArtwork(replacement.images());
       itemResults.overwrite(savedArtwork(replacement.images().getFirst(), attemptedAt));
-      var existingFiles = replacedPaths.stream().map(this::resolveAbsolutePath).toList();
-      scheduleSupersededFileCleanup(existingFiles);
+      deleteFilesAfterCommit(resolveAbsolutePaths(replacedPaths));
     } catch (RuntimeException e) {
       if (!cleanupDeferred) {
         deleteFiles(replacement.writtenFiles());
@@ -232,9 +232,9 @@ public class ImageService {
     return true;
   }
 
-  private void scheduleSupersededFileCleanup(List<Path> existingFiles) {
+  private void deleteFilesAfterCommit(List<Path> files) {
     if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-      deleteFiles(existingFiles);
+      deleteFiles(files);
       return;
     }
 
@@ -242,7 +242,7 @@ public class ImageService {
         new TransactionSynchronization() {
           @Override
           public void afterCommit() {
-            deleteFiles(existingFiles);
+            deleteFiles(files);
           }
         });
   }
@@ -260,15 +260,26 @@ public class ImageService {
     return Files.readAllBytes(absolutePath);
   }
 
-  @Transactional
-  public void deleteImagesForEntity(UUID entityId, ImageEntityType entityType) {
-    var images = imageRepository.findByEntityIdAndEntityType(entityId, entityType);
+  /**
+   * Locks the movies against new artwork and results, and deletes their artwork files after the
+   * current transaction commits. Call it in the transaction that deletes the movies, before
+   * deleting them; deleting a movie deletes its image rows.
+   */
+  @Transactional(propagation = Propagation.MANDATORY)
+  public void prepareMovieDeletion(Collection<UUID> movieIds) {
+    deleteFilesAfterCommit(
+        resolveAbsolutePaths(imageRepository.lockMoviesAndFindArtworkPaths(movieIds)));
+  }
 
-    for (var image : images) {
-      deleteFile(resolveAbsolutePath(image.getPath()));
-    }
+  /** Prepares the series, with their seasons and episodes, like {@link #prepareMovieDeletion}. */
+  @Transactional(propagation = Propagation.MANDATORY)
+  public void prepareSeriesDeletion(Collection<UUID> seriesIds) {
+    deleteFilesAfterCommit(
+        resolveAbsolutePaths(imageRepository.lockSeriesAndFindArtworkPaths(seriesIds)));
+  }
 
-    imageRepository.deleteByEntityIdAndEntityType(entityId, entityType);
+  private List<Path> resolveAbsolutePaths(List<String> relativePaths) {
+    return relativePaths.stream().map(this::resolveAbsolutePath).toList();
   }
 
   private String buildRelativePath(

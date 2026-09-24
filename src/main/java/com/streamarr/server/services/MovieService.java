@@ -68,21 +68,20 @@ public class MovieService {
 
   @Transactional
   public void deleteMovieById(UUID movieId) {
-    imageService.deleteImagesForEntity(movieId, ImageEntityType.MOVIE);
-    movieRepository.deleteById(movieId);
+    movieRepository.findById(movieId).ifPresent(movie -> deleteMovies(List.of(movie)));
   }
 
   @Transactional
   public void deleteByLibraryId(UUID libraryId) {
-    var movies = movieRepository.findByLibrary_Id(libraryId);
+    deleteMovies(movieRepository.findByLibrary_Id(libraryId));
+  }
+
+  private void deleteMovies(List<Movie> movies) {
     if (movies.isEmpty()) {
       return;
     }
 
-    for (var movie : movies) {
-      imageService.deleteImagesForEntity(movie.getId(), ImageEntityType.MOVIE);
-    }
-
+    imageService.prepareMovieDeletion(movies.stream().map(Movie::getId).toList());
     movieRepository.deleteAll(movies);
   }
 

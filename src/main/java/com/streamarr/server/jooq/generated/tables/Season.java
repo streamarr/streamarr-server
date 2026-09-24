@@ -9,6 +9,8 @@ import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable.BaseCollectablePath;
 import com.streamarr.server.jooq.generated.tables.Episode.EpisodePath;
+import com.streamarr.server.jooq.generated.tables.Image.ImagePath;
+import com.streamarr.server.jooq.generated.tables.ItemResult.ItemResultPath;
 import com.streamarr.server.jooq.generated.tables.Series.SeriesPath;
 import com.streamarr.server.jooq.generated.tables.records.SeasonRecord;
 
@@ -211,6 +213,31 @@ public class Season extends TableImpl<SeasonRecord> {
             _episode = new EpisodePath(this, null, Keys.EPISODE__FK_SEASON.getInverseKey());
 
         return _episode;
+    }
+
+    private transient ImagePath _image;
+
+    /**
+     * Get the implicit to-many join path to the <code>public.image</code> table
+     */
+    public ImagePath image() {
+        if (_image == null)
+            _image = new ImagePath(this, null, Keys.IMAGE__IMAGE_SEASON_ID_FKEY.getInverseKey());
+
+        return _image;
+    }
+
+    private transient ItemResultPath _itemResult;
+
+    /**
+     * Get the implicit to-many join path to the <code>public.item_result</code>
+     * table
+     */
+    public ItemResultPath itemResult() {
+        if (_itemResult == null)
+            _itemResult = new ItemResultPath(this, null, Keys.ITEM_RESULT__ITEM_RESULT_SEASON_ID_FKEY.getInverseKey());
+
+        return _itemResult;
     }
 
     @Override

@@ -6,6 +6,8 @@ package com.streamarr.server.jooq.generated.tables;
 
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
+import com.streamarr.server.jooq.generated.tables.Image.ImagePath;
+import com.streamarr.server.jooq.generated.tables.ItemResult.ItemResultPath;
 import com.streamarr.server.jooq.generated.tables.MovieCompany.MovieCompanyPath;
 import com.streamarr.server.jooq.generated.tables.Series.SeriesPath;
 import com.streamarr.server.jooq.generated.tables.SeriesCompany.SeriesCompanyPath;
@@ -171,6 +173,31 @@ public class Company extends TableImpl<CompanyRecord> {
     @Override
     public List<UniqueKey<CompanyRecord>> getUniqueKeys() {
         return Arrays.asList(Keys.COMPANY_SOURCE_ID_UNIQUE);
+    }
+
+    private transient ImagePath _image;
+
+    /**
+     * Get the implicit to-many join path to the <code>public.image</code> table
+     */
+    public ImagePath image() {
+        if (_image == null)
+            _image = new ImagePath(this, null, Keys.IMAGE__IMAGE_COMPANY_ID_FKEY.getInverseKey());
+
+        return _image;
+    }
+
+    private transient ItemResultPath _itemResult;
+
+    /**
+     * Get the implicit to-many join path to the <code>public.item_result</code>
+     * table
+     */
+    public ItemResultPath itemResult() {
+        if (_itemResult == null)
+            _itemResult = new ItemResultPath(this, null, Keys.ITEM_RESULT__ITEM_RESULT_COMPANY_ID_FKEY.getInverseKey());
+
+        return _itemResult;
     }
 
     private transient MovieCompanyPath _movieCompany;
