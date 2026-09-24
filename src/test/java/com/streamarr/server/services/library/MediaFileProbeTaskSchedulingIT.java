@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.fixtures.ProbeTaskRequestFixture.requestFor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
@@ -11,7 +12,6 @@ import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
-import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.task.ProbePublication;
@@ -28,7 +28,6 @@ import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.support.BoundedTask;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
@@ -304,19 +303,6 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
 
   private int scheduledCount() {
     return jdbc.queryForObject("SELECT count(*) FROM scheduled_tasks", Integer.class);
-  }
-
-  private static ProbeTaskRequest requestFor(MediaFile file) throws Exception {
-    var source = FilepathCodec.decode(file.getFilepathUri());
-    var attributes = Files.readAttributes(source, BasicFileAttributes.class);
-    return ProbeTaskRequest.builder()
-        .mediaFileId(file.getId())
-        .libraryId(file.getLibraryId())
-        .filepathUri(file.getFilepathUri())
-        .snapshot(
-            new SourceFileSnapshot(attributes.size(), attributes.lastModifiedTime().toInstant()))
-        .probeVersion(ProbeVersion.CURRENT)
-        .build();
   }
 
   private static void awaitStart(CountDownLatch start) throws InterruptedException {
