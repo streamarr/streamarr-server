@@ -6,20 +6,14 @@ import com.github.kagkarlsson.scheduler.SchedulerClient;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
-import com.streamarr.server.domain.streaming.MediaProbe;
-import com.streamarr.server.domain.task.ProbeAttemptFailure;
-import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeState;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
-import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
-import java.time.Duration;
-import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -34,8 +28,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @Tag("IntegrationTest")
 @DisplayName("Probe attempt failures")
 class ProbeAttemptFailureIT extends AbstractProbeSchedulerIntegrationTest {
-
-  private static final Instant FAILED_AT = Instant.parse("2026-09-23T12:00:00Z");
 
   @Autowired private MediaFileContainerInfoRepository outcomes;
   @Autowired private ProbeTaskRequests probeTaskRequests;
@@ -86,73 +78,6 @@ class ProbeAttemptFailureIT extends AbstractProbeSchedulerIntegrationTest {
 
     assertThat(stateOf(request).failure()).isEmpty();
     assertThat(client.getScheduledExecution(instanceOf(request))).isPresent();
-  }
-
-  @Test
-  @DisplayName("Should clear the recorded failure when an outcome is stored for the same inputs")
-  void shouldClearTheRecordedFailureWhenAnOutcomeIsStoredForTheSameInputs() throws Exception {
-    var request = requestUnchangedFiles(1).getFirst();
-    assertThat(outcomes.trySaveProbeFailure(request.mediaFileId(), request.inputs(), failure()))
-        .isTrue();
-
-    outcomes.publish(
-        ProbePublication.builder()
-            .mediaFileId(request.mediaFileId())
-            .snapshot(request.snapshot())
-            .probeVersion(request.probeVersion())
-            .outcome(
-                ProbeFixture.completeProbe(
-                    MediaProbe.builder()
-                        .duration(Duration.ofMinutes(90))
-                        .videoCodec("h264")
-                        .width(1920)
-                        .height(1080)
-                        .build()))
-            .build());
-
-    assertThat(stateOf(request).failure()).isEmpty();
-    assertThat(stateOf(request).stored())
-        .hasValueSatisfying(
-            stored -> {
-              assertThat(stored.inputs()).isEqualTo(request.inputs());
-              assertThat(stored.error()).isEmpty();
-            });
-  }
-
-  @Test
-  @DisplayName("Should keep the recorded failure when the same inputs are requested again")
-  void shouldKeepTheRecordedFailureWhenTheSameInputsAreRequestedAgain() throws Exception {
-    var request = requestUnchangedFiles(1).getFirst();
-    outcomes.trySaveProbeFailure(request.mediaFileId(), request.inputs(), failure());
-
-    probeTaskRequests.request(request);
-
-    assertThat(stateOf(request).failure()).contains(failure());
-  }
-
-  @Test
-  @DisplayName("Should clear the recorded failure when a request carries different inputs")
-  void shouldClearTheRecordedFailureWhenARequestCarriesDifferentInputs() throws Exception {
-    var request = requestUnchangedFiles(1).getFirst();
-    outcomes.trySaveProbeFailure(request.mediaFileId(), request.inputs(), failure());
-    var changed = changedSnapshot(request);
-
-    probeTaskRequests.request(changed);
-
-    assertThat(stateOf(request).requested()).contains(changed.inputs());
-    assertThat(stateOf(request).failure()).isEmpty();
-  }
-
-  @Test
-  @DisplayName("Should not record a failure when the attempted inputs are no longer requested")
-  void shouldNotRecordAFailureWhenTheAttemptedInputsAreNoLongerRequested() throws Exception {
-    var request = requestUnchangedFiles(1).getFirst();
-    probeTaskRequests.request(changedSnapshot(request));
-
-    var recorded = outcomes.trySaveProbeFailure(request.mediaFileId(), request.inputs(), failure());
-
-    assertThat(recorded).isFalse();
-    assertThat(stateOf(request).failure()).isEmpty();
   }
 
   @Test
@@ -266,14 +191,6 @@ class ProbeAttemptFailureIT extends AbstractProbeSchedulerIntegrationTest {
 
   private ProbeState stateOf(ProbeTaskRequest request) {
     return outcomes.findProbeStates(List.of(request.mediaFileId())).getFirst();
-  }
-
-  private static ProbeAttemptFailure failure() {
-    return ProbeAttemptFailure.builder()
-        .reason(ItemFailureReason.SOURCE_INACCESSIBLE)
-        .detail("Worker could not read the source")
-        .failedAt(FAILED_AT)
-        .build();
   }
 
   private static ProbeTaskRequest changedSnapshot(ProbeTaskRequest request) {

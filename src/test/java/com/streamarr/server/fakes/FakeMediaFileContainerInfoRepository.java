@@ -17,9 +17,9 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Predicate;
 
 public class FakeMediaFileContainerInfoRepository implements MediaFileContainerInfoRepository {
 
@@ -28,7 +28,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   private final Map<UUID, ProbeAttemptFailure> failures = new ConcurrentHashMap<>();
   private final List<ProbePublication> publications = new ArrayList<>();
   private Optional<ProbeOutcome.Success> defaultProbe = Optional.empty();
-  private Predicate<UUID> mediaFileExists = _ -> true;
+  private final Set<UUID> deletedMediaFiles = ConcurrentHashMap.newKeySet();
 
   /** Answers every media file id with this probe unless a row was stored for it. */
   public void setDefaultProbe(MediaProbe probe) {
@@ -48,6 +48,10 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
 
   @Override
   public Optional<MediaFileContainerInfo> findByMediaFileId(UUID mediaFileId) {
+    if (deletedMediaFiles.contains(mediaFileId)) {
+      return Optional.empty();
+    }
+
     return Optional.ofNullable(rows.get(mediaFileId))
         .or(
             () ->
@@ -57,7 +61,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
 
   @Override
   public synchronized boolean publish(ProbePublication publication) {
-    if (!mediaFileExists.test(publication.mediaFileId())) {
+    if (deletedMediaFiles.contains(publication.mediaFileId())) {
       return false;
     }
 
@@ -85,7 +89,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
 
   @Override
   public synchronized boolean trySaveProbeRequest(UUID mediaFileId, ProbeInputs inputs) {
-    if (!mediaFileExists.test(mediaFileId)) {
+    if (deletedMediaFiles.contains(mediaFileId)) {
       return false;
     }
 
@@ -100,7 +104,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   @Override
   public synchronized boolean trySaveProbeFailure(
       UUID mediaFileId, ProbeInputs inputs, ProbeAttemptFailure failure) {
-    if (!inputs.equals(desiredInputs.get(mediaFileId))) {
+    if (deletedMediaFiles.contains(mediaFileId) || !inputs.equals(desiredInputs.get(mediaFileId))) {
       return false;
     }
 
@@ -111,7 +115,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   @Override
   public synchronized List<ProbeState> findProbeStates(Collection<UUID> mediaFileIds) {
     return mediaFileIds.stream()
-        .filter(mediaFileExists)
+        .filter(mediaFileId -> !deletedMediaFiles.contains(mediaFileId))
         .map(
             mediaFileId ->
                 ProbeState.builder()
@@ -135,7 +139,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   }
 
   @Override
-  public Optional<ProbeInputs> lockProbeInputs(UUID mediaFileId) {
+  public synchronized Optional<ProbeInputs> lockProbeInputs(UUID mediaFileId) {
     return Optional.ofNullable(desiredInputs.get(mediaFileId));
   }
 
@@ -182,8 +186,15 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
         earlier -> values.put(mediaFileId, earlier), () -> values.remove(mediaFileId));
   }
 
-  public void mediaFileExistsWhen(Predicate<UUID> predicate) {
-    this.mediaFileExists = predicate;
+  /**
+   * Deletes the media file as the database would: its outcome, requested inputs and failure go with
+   * it, and later writes for it are rejected.
+   */
+  public synchronized void deleteMediaFile(UUID mediaFileId) {
+    deletedMediaFiles.add(mediaFileId);
+    rows.remove(mediaFileId);
+    desiredInputs.remove(mediaFileId);
+    failures.remove(mediaFileId);
   }
 
   public synchronized List<ProbePublication> publications() {
