@@ -198,6 +198,13 @@ class RemoteRecoveryIT {
                       .as(
                           "the stored initialization segment, the initial attempt's segment 0 and the replacement attempt's segment 1")
                       .isEqualTo(RecordedStream.START_AT_ZERO.bytes()));
+      var replacementAttemptId = rig.session().getHandle().orElseThrow().attemptId();
+      assertThat(replacementAttemptId)
+          .as("recovery replaced the initial attempt")
+          .isNotEqualTo(initialAttempt.attemptId());
+      assertThat(worker.commandFor(replacementAttemptId))
+          .as("the worker ran the replacement attempt")
+          .isPresent();
       assertThat(initializationSegmentMismatches(meterRegistry)).isZero();
     }
   }
@@ -248,19 +255,18 @@ class RemoteRecoveryIT {
     }
   }
 
-  // The initial job attempt delivers segment 0, then stays alive with its output inside a box until
-  // the test kills it, so it fails without delivering segment 1. Every other job attempt is a
-  // replacement attempt, which writes the given recording and exits cleanly; the worker discards
-  // the recording's segment 0 as preroll. The script knows an attempt by the id the worker names it
-  // with: an encoded replacement attempt for segment 1 seeks to 0 s like the initial attempt, and
-  // recovery may send a replacement attempt to a worker that has not run the initial attempt.
+  // The initial job attempt writes all but the last byte of the recording, so its output never
+  // completes segment 1 however late the test kills it: it delivers segment 0, then stays alive
+  // until the kill ends its output inside a box. Every other job attempt is a replacement attempt,
+  // which writes the given recording and exits cleanly; the worker discards the recording's segment
+  // 0 as preroll. The script knows an attempt by the id the worker names it with: an encoded
+  // replacement attempt for segment 1 seeks to 0 s like the initial attempt, and recovery may send
+  // a replacement attempt to a worker that has not run the initial attempt.
   private static String killableThenReplacedScript(
       UUID initialAttemptId, RecordedStream replacementRecording) {
     return """
         if [[ $STREAMARR_JOB_ATTEMPT_ID == %s ]]; then
-          cat %s
-          # Three bytes of an eight-byte box header: the output ends inside a box.
-          printf 'moo'
+          head -c -1 %s
           exec sleep 300
         fi
         %s
@@ -301,6 +307,9 @@ class RemoteRecoveryIT {
                 !configuration
                     .executor()
                     .isRunning(streamSessionId, StreamSession.defaultVariant()));
+    assertThat(configuration.segmentStore().segmentExists(streamSessionId, "segment1.m4s"))
+        .as("the initial attempt ended without delivering segment 1")
+        .isFalse();
   }
 
   private static double initializationSegmentMismatches(MeterRegistry meterRegistry) {
