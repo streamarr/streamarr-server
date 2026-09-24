@@ -16,6 +16,7 @@ import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -274,6 +275,40 @@ class LiveWorkerConnectionRegistryTest {
           .as("disconnect must not be blocked by an in-progress segment publish")
           .isTrue();
     }
+  }
+
+  @Test
+  @DisplayName(
+      "Should count a refused initialization segment when its worker disconnects during the publication")
+  void shouldCountRefusedInitializationSegmentWhenItsWorkerDisconnectsDuringPublication() {
+    var meterRegistry = new SimpleMeterRegistry();
+    var registry =
+        new LiveWorkerConnectionRegistry(
+            WorkerSessionServerConfiguration.builder().build(), meterRegistry);
+    var responses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    var workerRegistration = registration();
+    var workerSessionId = registry.register(WORKER_ID, workerRegistration, collecting(responses));
+    var job = variantJob();
+    assertThat(registry.dispatch(job)).isTrue();
+
+    // The disconnect drains the attempt while the refused upload holds the connection monitor.
+    var outcome =
+        registry.publishIfAuthorized(
+            WORKER_ID,
+            uploadMetadata(workerSessionId, workerRegistration.getWorker(), job),
+            () -> {
+              registry.disconnect(WORKER_ID, workerSessionId);
+              return SegmentPublication.INITIALIZATION_SEGMENT_DIFFERS;
+            });
+
+    assertThat(outcome).contains(SegmentPublication.INITIALIZATION_SEGMENT_DIFFERS);
+    assertThat(InitializationSegmentMismatchMetric.count(meterRegistry)).isEqualTo(1);
+    assertThat(responses)
+        .extracting(EstablishWorkerSessionResponse::getCommandCase)
+        .containsExactly(
+            EstablishWorkerSessionResponse.CommandCase.SESSION_ACCEPTED,
+            EstablishWorkerSessionResponse.CommandCase.START_VARIANT);
+    assertThat(registry.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isFalse();
   }
 
   @Test

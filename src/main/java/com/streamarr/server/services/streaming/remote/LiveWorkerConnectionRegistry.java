@@ -61,8 +61,8 @@ final class LiveWorkerConnectionRegistry {
     initializationSegmentMismatches =
         Counter.builder(INITIALIZATION_SEGMENT_MISMATCH_METRIC)
             .description(
-                "Job attempts ended because their initialization segment differed from the one"
-                    + " stored for the variant")
+                "Initialization segment uploads refused because they differ from the one stored"
+                    + " for the variant")
             .register(meterRegistry);
   }
 
@@ -566,16 +566,20 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private void refuseDifferingInitialization(SegmentUploadMetadata metadata) {
-      // Stopping under the monitor that authorized this upload fences the attempt's later uploads;
-      // recovery then finds no running producer and moves on to its next execution target.
-      tryStop(fromProto(metadata.getJobAttemptId()));
+      // Stopping under the monitor that authorized this upload fences the attempt's later uploads,
+      // so recovery finds no running producer and moves on. Workers upload an attempt's
+      // initialization segment first and await its acknowledgement (ADR 0037), so none of its
+      // media segments is published yet. A concurrent disconnect may already have ended it.
+      var jobAttemptId = fromProto(metadata.getJobAttemptId());
+      var stopped = tryStop(jobAttemptId);
       initializationSegmentMismatches.increment();
       log.warn(
-          "Ended job attempt {} for stream session {} variant {}: its initialization segment"
-              + " differs from the one stored for the variant",
-          fromProto(metadata.getJobAttemptId()),
+          "Refused the initialization segment of job attempt {} for stream session {} variant {}"
+              + " because it differs from the one stored for the variant; attempt stopped: {}",
+          jobAttemptId,
           fromProto(metadata.getStreamSessionId()),
-          metadata.getVariantLabel());
+          metadata.getVariantLabel(),
+          stopped);
     }
 
     /**
