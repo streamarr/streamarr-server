@@ -1,11 +1,11 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.fixtures.ProbeTaskRequestFixture.requestFor;
+import static com.streamarr.server.fixtures.ProbeTaskRequestFixture.snapshotOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
-import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
-import com.github.kagkarlsson.scheduler.task.TaskInstanceId;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.ItemFailureReason;
@@ -16,7 +16,6 @@ import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.task.ProbePublication;
-import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.FakeFfprobeService;
@@ -31,7 +30,6 @@ import com.streamarr.server.support.BoundedTask;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -146,7 +144,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
       throws Exception {
     var probing = new CountDownLatch(1);
     var release = new CompletableFuture<Void>();
-    probeTaskRequests.request(request(mediaFile));
+    probeTaskRequests.request(requestFor(mediaFile));
     startScheduler(
         probeExecution.toBuilder().producer(workerFailingAfter(probing, release)).build(),
         new AbstractSchedulerListener() {});
@@ -218,7 +216,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
     var probing = new CountDownLatch(1);
     var release = new CompletableFuture<Void>();
     var producer = new FakeFfprobeService();
-    probeTaskRequests.request(request(mediaFile));
+    probeTaskRequests.request(requestFor(mediaFile));
     startScheduler(
         probeExecution.toBuilder()
             .producer(
@@ -250,7 +248,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
   @DisplayName("Should finish the scan when another library has pending probes")
   void shouldFinishTheScanWhenAnotherLibraryHasPendingProbes() throws Exception {
     var otherLibrary = scannedLibrary(Files.createDirectories(tempDir.resolve("other")));
-    probeTaskRequests.request(request(matchedFile(otherLibrary, "Other (2024).mkv")));
+    probeTaskRequests.request(requestFor(matchedFile(otherLibrary, "Other (2024).mkv")));
     outcomes.publish(
         ProbePublication.builder()
             .mediaFileId(mediaFile.getId())
@@ -328,37 +326,5 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
 
   private LibraryStatus statusOf(Library scanned) {
     return libraries.findById(scanned.getId()).orElseThrow().getStatus();
-  }
-
-  private static AbstractSchedulerListener countingOk(CountDownLatch completions) {
-    return new AbstractSchedulerListener() {
-      @Override
-      public void onExecutionComplete(ExecutionComplete executionComplete) {
-        if (executionComplete.getResult() == ExecutionComplete.Result.OK) {
-          completions.countDown();
-        }
-      }
-    };
-  }
-
-  private static TaskInstanceId instanceOf(MediaFile file) {
-    return TaskInstanceId.of(MediaProbeTask.NAME, file.getId().toString());
-  }
-
-  private static ProbeTaskRequest request(MediaFile file) throws IOException {
-    return ProbeTaskRequest.builder()
-        .mediaFileId(file.getId())
-        .libraryId(file.getLibraryId())
-        .filepathUri(file.getFilepathUri())
-        .snapshot(snapshotOf(file))
-        .probeVersion(ProbeVersion.CURRENT)
-        .build();
-  }
-
-  private static SourceFileSnapshot snapshotOf(MediaFile file) throws IOException {
-    var attributes =
-        Files.readAttributes(
-            FilepathCodec.decode(file.getFilepathUri()), BasicFileAttributes.class);
-    return new SourceFileSnapshot(attributes.size(), attributes.lastModifiedTime().toInstant());
   }
 }
