@@ -310,6 +310,38 @@ class HlsStreamingServiceTest {
     assertThat(audio.bitrate()).isEqualTo(64_000L);
   }
 
+  // Expected strings: RFC 6381 codecs parameters from the Apple HLS authoring specification.
+  @ParameterizedTest(name = "{0} → {1}")
+  @CsvSource({
+    "aac, mp4a.40.2",
+    "ac3, ac-3",
+    "eac3, ec-3",
+    "mp3, mp4a.40.34",
+    "flac, fLaC",
+    "opus, Opus",
+    "alac, alac"
+  })
+  @DisplayName(
+      "Should advertise the copied audio codec in the playlist when the client supports the source audio codec")
+  void shouldAdvertiseCopiedAudioCodecInPlaylistWhenClientSupportsSourceAudioCodec(
+      String sourceAudioCodec, String codecsParameter) {
+    probeResults.setDefaultProbe(defaultProbeBuilder().audioCodec(sourceAudioCodec).build());
+    var file = seedMediaFile();
+    var options =
+        StreamingOptions.builder()
+            .supportedCodecs(List.of("h264"))
+            .supportedAudioCodecs(List.of(sourceAudioCodec))
+            .build();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
+    var playlist =
+        new HlsPlaylistService(StreamingProperties.builder().build())
+            .generateMultivariantPlaylist(session, "token");
+
+    assertThat(session.getTranscodeDecision().audioDecision().mode()).isEqualTo(AudioMode.COPY);
+    assertThat(playlist).contains("CODECS=\"avc1.640028," + codecsParameter + "\"");
+  }
+
   @Test
   @DisplayName("Should start transcode when creating session")
   void shouldStartTranscodeWhenCreatingSession() {

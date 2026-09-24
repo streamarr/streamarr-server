@@ -1,6 +1,7 @@
 package com.streamarr.server.domain.streaming;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -39,7 +40,15 @@ class AudioDecisionTest {
 
   @ParameterizedTest(name = "codec={0} → hls={1}")
   @DisplayName("Should return correct HLS codec string when codec varies")
-  @CsvSource({"aac, mp4a.40.2", "ac3, ac-3", "eac3, ec-3"})
+  @CsvSource({
+    "aac, mp4a.40.2",
+    "ac3, ac-3",
+    "eac3, ec-3",
+    "mp3, mp4a.40.34",
+    "flac, fLaC",
+    "opus, Opus",
+    "alac, alac"
+  })
   void shouldReturnCorrectHlsCodecStringWhenCodecVaries(String codec, String expected) {
     var decision = new AudioDecision(AudioMode.COPY, codec, 2, 128_000L);
     assertThat(decision.hlsCodecString()).isEqualTo(expected);
@@ -63,11 +72,13 @@ class AudioDecisionTest {
   }
 
   @Test
-  @DisplayName("Should return AAC codec string when codec is unrecognized")
-  void shouldReturnAacCodecStringWhenCodecIsUnrecognized() {
-    var decision = new AudioDecision(AudioMode.COPY, "opus", 2, 128_000L);
+  @DisplayName("Should refuse an HLS codec string when HLS delivery cannot carry the codec")
+  void shouldRefuseHlsCodecStringWhenHlsDeliveryCannotCarryTheCodec() {
+    var decision = new AudioDecision(AudioMode.COPY, "dts", 6, 768_000L);
 
-    assertThat(decision.hlsCodecString()).isEqualTo("mp4a.40.2");
+    assertThatThrownBy(decision::hlsCodecString)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("dts");
   }
 
   @Test
