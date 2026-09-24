@@ -31,6 +31,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Probe attempt failures")
@@ -41,6 +42,7 @@ class ProbeAttemptFailureIT extends AbstractProbeSchedulerIntegrationTest {
   @Autowired private MediaFileContainerInfoRepository outcomes;
   @Autowired private ProbeTaskRequests probeTaskRequests;
   @Autowired private MediaFileRepository mediaFileRepository;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   @Test
   @DisplayName(
@@ -199,6 +201,50 @@ class ProbeAttemptFailureIT extends AbstractProbeSchedulerIntegrationTest {
 
     assertThat(completions.await(10, TimeUnit.SECONDS)).isTrue();
     assertThat(client.getScheduledExecution(instanceOf(request))).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should keep the attempt claimed when its failure reason cannot be saved")
+  void shouldKeepTheAttemptClaimedWhenItsFailureReasonCannotBeSaved() throws Exception {
+    var request = requestUnchangedFiles(1).getFirst();
+
+    try (var _ = rejectFailureReasons()) {
+      var client =
+          runOnce(
+              new ProbeExecutionException(
+                  ItemFailureReason.SOURCE_INACCESSIBLE, "Worker could not read the source"));
+
+      assertThat(stateOf(request).failure()).isEmpty();
+      assertThat(client.getScheduledExecution(instanceOf(request)))
+          .hasValueSatisfying(
+              pending -> {
+                assertThat(pending.isPicked())
+                    .as("claimed until db-scheduler finds the execution dead")
+                    .isTrue();
+                assertThat(pending.getConsecutiveFailures()).as("no backoff applied").isZero();
+              });
+    }
+  }
+
+  private AutoCloseable rejectFailureReasons() {
+    jdbcTemplate.execute(
+        """
+        CREATE FUNCTION reject_probe_failure() RETURNS trigger AS $$
+        BEGIN
+          RAISE EXCEPTION 'simulated probe failure write failure';
+        END
+        $$ LANGUAGE plpgsql
+        """);
+    jdbcTemplate.execute(
+        """
+        CREATE TRIGGER reject_probe_failure BEFORE UPDATE ON media_file_probe_task_request
+        FOR EACH ROW WHEN (NEW.failure_reason IS NOT NULL)
+        EXECUTE FUNCTION reject_probe_failure()
+        """);
+    return () -> {
+      jdbcTemplate.execute("DROP TRIGGER reject_probe_failure ON media_file_probe_task_request");
+      jdbcTemplate.execute("DROP FUNCTION reject_probe_failure()");
+    };
   }
 
   private SchedulerClient runOnce(RuntimeException failure) throws InterruptedException {
