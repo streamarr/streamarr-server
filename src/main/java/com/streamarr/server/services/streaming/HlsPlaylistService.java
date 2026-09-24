@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ContainerFormat;
+import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.StreamSession;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -102,7 +103,8 @@ public class HlsPlaylistService {
     var targetSegmentDuration = (int) properties.targetSegmentDuration().toSeconds();
     var totalDurationMs = probe.duration().toMillis();
     var segmentDurationMs = targetSegmentDuration * 1000L;
-    var segmentCount = (int) Math.ceil((double) totalDurationMs / segmentDurationMs);
+    var segmentCount =
+        new MediaSegmentTimeline(probe.duration(), targetSegmentDuration).mediaSegmentCount();
     var extension = container.segmentExtension();
 
     var sb = new StringBuilder();
