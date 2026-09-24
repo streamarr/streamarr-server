@@ -54,7 +54,7 @@ public class SchedulerProbeTaskRequests implements ProbeTaskRequests {
   }
 
   private void enqueue(ProbeTaskRequest request) {
-    if (!outcomes.recordProbeRequest(request.mediaFileId(), request.inputs())) {
+    if (!outcomes.trySaveProbeRequest(request.mediaFileId(), request.inputs())) {
       return;
     }
 

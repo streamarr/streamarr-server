@@ -33,7 +33,7 @@ import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Person;
-import com.streamarr.server.exceptions.ArtworkResultNotRecordedException;
+import com.streamarr.server.exceptions.ArtworkResultNotSavedException;
 import com.streamarr.server.exceptions.LibraryRefreshFailedException;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
@@ -601,7 +601,7 @@ class LibraryRefreshServiceTest {
 
     assertThatThrownBy(() -> refreshService.refreshLibrary(library))
         .isInstanceOf(LibraryRefreshFailedException.class)
-        .hasCauseInstanceOf(ArtworkResultNotRecordedException.class);
+        .hasCauseInstanceOf(ArtworkResultNotSavedException.class);
   }
 
   @Test

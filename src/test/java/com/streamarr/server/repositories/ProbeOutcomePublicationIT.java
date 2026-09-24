@@ -175,7 +175,7 @@ class ProbeOutcomePublicationIT extends AbstractIntegrationTest {
             .outcome(success("h264", "aac"))
             .build());
 
-    repository.recordProbeRequest(file.getId(), new ProbeInputs(SNAPSHOT_B, 1));
+    repository.trySaveProbeRequest(file.getId(), new ProbeInputs(SNAPSHOT_B, 1));
 
     assertThat(repository.findByMediaFileId(file.getId())).isEmpty();
     assertThat(streamRowCount(file.getId())).isZero();
@@ -193,7 +193,7 @@ class ProbeOutcomePublicationIT extends AbstractIntegrationTest {
             .outcome(success("h264", "aac"))
             .build());
 
-    repository.recordProbeRequest(file.getId(), new ProbeInputs(SNAPSHOT_A, 1));
+    repository.trySaveProbeRequest(file.getId(), new ProbeInputs(SNAPSHOT_A, 1));
 
     assertThat(repository.findByMediaFileId(file.getId())).isPresent();
     assertThat(streamRowCount(file.getId())).isEqualTo(2);
@@ -221,7 +221,7 @@ class ProbeOutcomePublicationIT extends AbstractIntegrationTest {
           case SNAPSHOT -> new ProbeInputs(SNAPSHOT_B, 1);
           case VERSION -> new ProbeInputs(SNAPSHOT_A, 2);
         };
-    repository.recordProbeRequest(file.getId(), desired);
+    repository.trySaveProbeRequest(file.getId(), desired);
     var obsolete =
         ProbePublication.builder()
             .mediaFileId(file.getId())
@@ -249,7 +249,7 @@ class ProbeOutcomePublicationIT extends AbstractIntegrationTest {
             .outcome(outcome)
             .build());
 
-    repository.recordProbeRequest(file.getId(), new ProbeInputs(SNAPSHOT_A, 2));
+    repository.trySaveProbeRequest(file.getId(), new ProbeInputs(SNAPSHOT_A, 2));
 
     assertThat(reader.find(file.getId()))
         .hasValueSatisfying(

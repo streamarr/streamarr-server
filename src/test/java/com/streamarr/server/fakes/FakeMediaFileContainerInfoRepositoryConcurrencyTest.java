@@ -45,7 +45,7 @@ class FakeMediaFileContainerInfoRepositoryConcurrencyTest {
 
         runConcurrently(
             executor,
-            () -> assertThat(repository.recordProbeRequest(mediaFileId, requested)).isTrue(),
+            () -> assertThat(repository.trySaveProbeRequest(mediaFileId, requested)).isTrue(),
             () -> assertThat(repository.publish(replacement)).isTrue());
 
         assertThat(repository.findByMediaFileId(mediaFileId))
@@ -66,14 +66,14 @@ class FakeMediaFileContainerInfoRepositoryConcurrencyTest {
       for (var attempt = 0; attempt < ATTEMPTS; attempt++) {
         var repository = new FakeMediaFileContainerInfoRepository();
         assertThat(
-                repository.recordProbeRequest(
+                repository.trySaveProbeRequest(
                     mediaFileId, new ProbeInputs(OLD_SOURCE, ProbeVersion.CURRENT)))
             .isTrue();
 
         runConcurrently(
             executor,
             () -> repository.publish(previous),
-            () -> assertThat(repository.recordProbeRequest(mediaFileId, requested)).isTrue());
+            () -> assertThat(repository.trySaveProbeRequest(mediaFileId, requested)).isTrue());
 
         assertThat(repository.findByMediaFileId(mediaFileId))
             .as("Both serial orders discard the old outcome; concurrent attempt %s", attempt)
@@ -94,7 +94,7 @@ class FakeMediaFileContainerInfoRepositoryConcurrencyTest {
         requestFirst,
         () ->
             assertThat(
-                    repository.recordProbeRequest(
+                    repository.trySaveProbeRequest(
                         mediaFileId, new ProbeInputs(NEW_SOURCE, ProbeVersion.CURRENT)))
                 .isTrue(),
         () ->
@@ -112,7 +112,7 @@ class FakeMediaFileContainerInfoRepositoryConcurrencyTest {
     var mediaFileId = UUID.randomUUID();
     var repository = new FakeMediaFileContainerInfoRepository();
     assertThat(
-            repository.recordProbeRequest(
+            repository.trySaveProbeRequest(
                 mediaFileId, new ProbeInputs(OLD_SOURCE, ProbeVersion.CURRENT)))
         .isTrue();
 
@@ -120,7 +120,7 @@ class FakeMediaFileContainerInfoRepositoryConcurrencyTest {
         requestFirst,
         () ->
             assertThat(
-                    repository.recordProbeRequest(
+                    repository.trySaveProbeRequest(
                         mediaFileId, new ProbeInputs(NEW_SOURCE, ProbeVersion.CURRENT)))
                 .isTrue(),
         () ->

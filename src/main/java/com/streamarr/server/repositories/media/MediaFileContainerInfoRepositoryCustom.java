@@ -20,17 +20,17 @@ public interface MediaFileContainerInfoRepositoryCustom {
   boolean publish(ProbePublication publication);
 
   /**
-   * Records desired inputs and invalidates a changed-source outcome under the media file lock.
+   * Saves desired inputs and invalidates a changed-source outcome under the media file lock.
    * Different inputs also clear the failure recorded for the previous inputs. Returns false when
    * the media file no longer exists.
    */
-  boolean recordProbeRequest(UUID mediaFileId, ProbeInputs inputs);
+  boolean trySaveProbeRequest(UUID mediaFileId, ProbeInputs inputs);
 
   /**
-   * Records why an attempt at these inputs failed. Returns {@code false} without writing when they
+   * Saves why an attempt at these inputs failed. Returns {@code false} without writing when they
    * are no longer the latest requested inputs.
    */
-  boolean recordProbeFailure(UUID mediaFileId, ProbeInputs inputs, ProbeAttemptFailure failure);
+  boolean trySaveProbeFailure(UUID mediaFileId, ProbeInputs inputs, ProbeAttemptFailure failure);
 
   /** Returns the probe state of each listed media file that still exists. */
   List<ProbeState> findProbeStates(Collection<UUID> mediaFileIds);

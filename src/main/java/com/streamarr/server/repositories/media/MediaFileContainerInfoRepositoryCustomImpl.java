@@ -66,7 +66,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
 
   @Override
   @Transactional
-  public boolean recordProbeRequest(UUID mediaFileId, ProbeInputs inputs) {
+  public boolean trySaveProbeRequest(UUID mediaFileId, ProbeInputs inputs) {
     if (!lockMediaFile(mediaFileId)) {
       return false;
     }
@@ -99,7 +99,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
 
   @Override
   @Transactional
-  public boolean recordProbeFailure(
+  public boolean trySaveProbeFailure(
       UUID mediaFileId, ProbeInputs inputs, ProbeAttemptFailure failure) {
     if (!lockMediaFile(mediaFileId)) {
       return false;

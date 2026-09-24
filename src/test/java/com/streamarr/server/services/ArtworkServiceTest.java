@@ -11,7 +11,7 @@ import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
-import com.streamarr.server.exceptions.ArtworkResultNotRecordedException;
+import com.streamarr.server.exceptions.ArtworkResultNotSavedException;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
@@ -598,7 +598,7 @@ class ArtworkServiceTest {
           .failsWithin(Duration.ofSeconds(5))
           .withThrowableOfType(ExecutionException.class)
           .havingCause()
-          .isInstanceOf(ArtworkResultNotRecordedException.class)
+          .isInstanceOf(ArtworkResultNotSavedException.class)
           .withCause(recordingFailure);
     }
 
@@ -629,7 +629,7 @@ class ArtworkServiceTest {
           .failsWithin(Duration.ofSeconds(5))
           .withThrowableOfType(ExecutionException.class)
           .havingCause()
-          .isInstanceOf(ArtworkResultNotRecordedException.class);
+          .isInstanceOf(ArtworkResultNotSavedException.class);
     }
 
     @Test

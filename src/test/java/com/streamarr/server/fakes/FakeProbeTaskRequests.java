@@ -30,7 +30,7 @@ public class FakeProbeTaskRequests implements ProbeTaskRequests {
 
   @Override
   public void request(ProbeTaskRequest request) {
-    if (!outcomes.recordProbeRequest(request.mediaFileId(), request.inputs())) {
+    if (!outcomes.trySaveProbeRequest(request.mediaFileId(), request.inputs())) {
       return;
     }
 
@@ -74,7 +74,7 @@ public class FakeProbeTaskRequests implements ProbeTaskRequests {
   }
 
   public void fail(ProbeTaskRequest request, ItemFailureReason reason, Instant failedAt) {
-    outcomes.recordProbeFailure(
+    outcomes.trySaveProbeFailure(
         request.mediaFileId(),
         request.inputs(),
         ProbeAttemptFailure.builder()
