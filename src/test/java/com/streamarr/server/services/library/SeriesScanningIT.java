@@ -5,24 +5,47 @@ import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
+import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.domain.media.ItemOutcome;
+import com.streamarr.server.domain.media.ItemResult;
+import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
+import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.ArtworkService;
+import com.streamarr.server.services.SeasonWithEpisodesRequest;
+import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.services.metadata.series.SeasonDetails;
+import com.streamarr.server.services.metadata.series.SeasonDetails.EpisodeDetails;
+import com.streamarr.server.support.PostgresLockTestSupport.HeldRowLock;
+import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -30,6 +53,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 @Isolated
 @Tag("IntegrationTest")
@@ -42,6 +66,12 @@ class SeriesScanningIT extends AbstractScanningIntegrationTest {
   @Autowired private SeasonRepository seasonRepository;
   @Autowired private EpisodeRepository episodeRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
+  @Autowired private ItemResultRepository itemResults;
+  @Autowired private SeriesService seriesService;
+  @Autowired private SeriesFileProcessor seriesFileProcessor;
+  @Autowired private ArtworkService artworkService;
+  @Autowired private JdbcTemplate jdbcTemplate;
+  @Autowired private DataSource dataSource;
 
   @TempDir Path tempDir;
 
@@ -598,7 +628,190 @@ class SeriesScanningIT extends AbstractScanningIntegrationTest {
     wireMock.verify(0, getRequestedFor(urlPathEqualTo("/tv/9999")));
   }
 
+  @Test
+  @DisplayName(
+      "Should match a watcher-discovered episode when a concurrent refresh inserts the same episode")
+  void shouldMatchWatcherDiscoveredEpisodeWhenConcurrentRefreshInsertsSameEpisode()
+      throws Exception {
+    var library = scanBreakingBadSeasonOneWithSevenEpisodes();
+    var season = seasonRepository.findAll().getFirst();
+    stubTmdbSeasonDetails("1396", 1, buildMinimalSeasonResponse(1, 8));
+    var newEpisodeFile = createSeriesFile("Breaking Bad", "Season 01", "breaking.bad.s01e08.mkv");
+
+    try (var seasonLock = lockRow(seasonRow(season.getId()));
+        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var refresh = executor.submit(() -> libraryManagementService.refreshLibrary(library.getId()));
+      awaitEpisodeInsertsBehind(seasonLock, 1);
+      var discovery =
+          executor.submit(
+              () ->
+                  libraryManagementService.processDiscoveredFile(library.getId(), newEpisodeFile));
+      awaitEpisodeInsertsBehind(seasonLock, 2);
+      seasonLock.release();
+
+      refresh.get(10, TimeUnit.SECONDS);
+      discovery.get(10, TimeUnit.SECONDS);
+    }
+
+    assertMatchedToEpisode(newEpisodeFile, season.getId(), 8);
+  }
+
+  @Test
+  @DisplayName(
+      "Should record the series refresh as succeeded when a watcher-discovered file inserts the"
+          + " same episode first")
+  void shouldRecordSeriesRefreshAsSucceededWhenWatcherDiscoveredFileInsertsSameEpisodeFirst()
+      throws Exception {
+    var library = scanBreakingBadSeasonOneWithSevenEpisodes();
+    var series = seriesRepository.findAll().getFirst();
+    var season = seasonRepository.findAll().getFirst();
+    stubTmdbSeasonDetails("1396", 1, buildMinimalSeasonResponse(1, 8));
+    var newEpisodeFile = createSeriesFile("Breaking Bad", "Season 01", "breaking.bad.s01e08.mkv");
+
+    try (var seasonLock = lockRow(seasonRow(season.getId()));
+        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var discovery =
+          executor.submit(
+              () ->
+                  libraryManagementService.processDiscoveredFile(library.getId(), newEpisodeFile));
+      awaitEpisodeInsertsBehind(seasonLock, 1);
+      var refresh = executor.submit(() -> libraryManagementService.refreshLibrary(library.getId()));
+      awaitEpisodeInsertsBehind(seasonLock, 2);
+      seasonLock.release();
+
+      discovery.get(10, TimeUnit.SECONDS);
+      refresh.get(10, TimeUnit.SECONDS);
+    }
+
+    assertThat(itemResults.findByItem(series.getId(), ImageEntityType.SERIES))
+        .filteredOn(result -> result.step() == ItemStep.METADATA)
+        .singleElement()
+        .extracting(ItemResult::outcome)
+        .isEqualTo(new ItemOutcome.Succeeded());
+  }
+
+  @Test
+  @DisplayName("Should match the file to the episode when a season refresh is inserting it")
+  void shouldMatchFileToEpisodeWhenSeasonRefreshIsInsertingIt() throws Exception {
+    var library = createSeriesLibrary();
+    stubTmdbSearch("Breaking Bad", "1396", "Breaking Bad");
+    stubTmdbSeriesMetadata("1396");
+    stubTmdbSeasonDetails("1396", 1, buildMinimalSeasonResponse(1, 7));
+    libraryManagementService.processDiscoveredFile(
+        library.getId(), createSeriesFile("Breaking Bad", "Season 01", "breaking.bad.s01e01.mkv"));
+    var series = seriesRepository.findAll().getFirst();
+    var season = seasonRepository.findAll().getFirst();
+    var newEpisodeFile = createSeriesFile("Breaking Bad", "Season 01", "breaking.bad.s01e08.mkv");
+    var mediaFile = saveUnmatchedMediaFile(library, newEpisodeFile);
+
+    try (var seasonLock = lockRow(seasonRow(season.getId()));
+        var refreshRun = artworkService.openRun("season refresh", ImageRefreshMode.PRESERVE);
+        var discoveryRun = artworkService.openRun("file discovery", ImageRefreshMode.PRESERVE);
+        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var seasonRefresh =
+          SeasonWithEpisodesRequest.builder()
+              .series(series)
+              .details(minimalSeasonOneDetails(8))
+              .library(library)
+              .artworkRun(refreshRun)
+              .build();
+      var refresh = executor.submit(() -> seriesService.refreshSeasonWithEpisodes(seasonRefresh));
+      awaitEpisodeInsertsBehind(seasonLock, 1);
+      var match =
+          executor.submit(
+              () ->
+                  seriesFileProcessor.process(new FileDiscovery(library, discoveryRun), mediaFile));
+      awaitEpisodeInsertsBehind(seasonLock, 2);
+      seasonLock.release();
+
+      refresh.get(10, TimeUnit.SECONDS);
+      match.get(10, TimeUnit.SECONDS);
+    }
+
+    assertMatchedToEpisode(newEpisodeFile, season.getId(), 8);
+  }
+
   // --- Helpers ---
+
+  private Library scanBreakingBadSeasonOneWithSevenEpisodes() throws IOException {
+    var library = createSeriesLibrary();
+    createSeriesFile("Breaking Bad", "Season 01", "breaking.bad.s01e01.mkv");
+    stubTmdbSearch("Breaking Bad", "1396", "Breaking Bad");
+    stubTmdbSeriesMetadataWithSeasons(
+        "1396",
+        "Breaking Bad",
+        """
+        [{"id": 3572, "season_number": 1, "name": "Season 1", "episode_count": 7}]
+        """);
+    stubTmdbSeasonDetails("1396", 1, buildMinimalSeasonResponse(1, 7));
+
+    libraryManagementService.scanLibrary(library.getId());
+
+    assertThat(episodeRepository.findAll()).hasSize(7);
+    return library;
+  }
+
+  private RowLockTarget seasonRow(UUID seasonId) {
+    return RowLockTarget.builder().dataSource(dataSource).table("season").rowId(seasonId).build();
+  }
+
+  // An episode insert parks on its season foreign-key check after it has claimed its
+  // (season_id, episode_number) unique index entry; a second insert of that number waits on it.
+  private void awaitEpisodeInsertsBehind(HeldRowLock seasonLock, int inserts) {
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(
+            () ->
+                assertThat(
+                        waitersBehind(
+                            jdbcTemplate, seasonLock.backendPid(), "%insert into episode %"))
+                    .isEqualTo(inserts));
+  }
+
+  private MediaFile saveUnmatchedMediaFile(Library library, Path file) {
+    var filepathUri = FilepathCodec.encode(file);
+    return mediaFileRepository.saveAndFlush(
+        MediaFile.builder()
+            .status(MediaFileStatus.UNMATCHED)
+            .filename(FilepathCodec.filenameOf(filepathUri))
+            .filepathUri(filepathUri)
+            .size(0L)
+            .libraryId(library.getId())
+            .build());
+  }
+
+  private static SeasonDetails minimalSeasonOneDetails(int episodeCount) {
+    return SeasonDetails.builder()
+        .name("Season 1")
+        .seasonNumber(1)
+        .overview("Season 1 overview.")
+        .imageSources(List.of())
+        .episodes(
+            IntStream.rangeClosed(1, episodeCount)
+                .mapToObj(
+                    number ->
+                        EpisodeDetails.builder()
+                            .episodeNumber(number)
+                            .name("Episode " + number)
+                            .overview("Episode " + number + ".")
+                            .imageSources(List.of())
+                            .runtime(45)
+                            .build())
+                .toList())
+        .build();
+  }
+
+  private void assertMatchedToEpisode(Path file, UUID seasonId, int episodeNumber) {
+    var episode =
+        episodeRepository.findBySeasonIdAndEpisodeNumber(seasonId, episodeNumber).orElseThrow();
+    assertThat(mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(file)))
+        .get()
+        .satisfies(
+            mediaFile -> {
+              assertThat(mediaFile.getStatus()).isEqualTo(MediaFileStatus.MATCHED);
+              assertThat(mediaFile.getMediaId()).isEqualTo(episode.getId());
+            });
+  }
 
   private Library createSeriesLibrary() {
     return libraryRepository.saveAndFlush(
