@@ -129,22 +129,23 @@ Both modes copy the video stream verbatim (`-c:v copy`). The video resolution an
 
 === Architecture: One FFmpeg per Variant
 
-Each quality variant runs as a separate FFmpeg process writing segments to its own subdirectory:
+Each quality variant runs as a separate FFmpeg process on a worker.
+FFmpeg writes fragmented MP4 to its standard output, and the worker groups the fragments into media segments and uploads the variant's initialization segment and each media segment to the server (https://github.com/streamarr/streamarr-adr/blob/main/adr/0037-worker-delivers-fmp4-segments-from-ffmpeg-stdout.adoc[ADR 0037]).
+The server stores them under the variant's directory:
 
 ----
 session-{uuid}/
     ├── 1080p/
-    │       ├── stream.m3u8
     │       ├── init.mp4
     │       ├── segment0.m4s
     │       └── ...
-    ├── 720p/
-    │       ├── stream.m3u8
-    │       └── ...
-    └── master.m3u8
+    └── 720p/
+            ├── init.mp4
+            └── ...
 ----
 
-This keeps each process simple (single output) and allows independent lifecycle management -- a variant can be started, stopped, or restarted without affecting others.
+The server generates every playlist itself (https://github.com/streamarr/streamarr-adr/blob/main/adr/0008-server-generated-hls-playlists.adoc[ADR 0008]), so the store holds no playlist files.
+One process per variant keeps each process simple (single output) and allows independent lifecycle management -- a variant can be started, stopped, or replaced by a replacement attempt without affecting others.
 
 === FFmpeg Flags per Variant
 
