@@ -270,6 +270,19 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
+  @DisplayName("Should transcode MP3 audio to AAC when the client supports MP3")
+  void shouldTranscodeMp3AudioToAacWhenClientSupportsMp3() {
+    var source = probe("h264", "mp3", 2, 128_000L);
+    var clientOptions = options(List.of("h264"), List.of("aac", "mp3"), 2);
+
+    var decision = service.decide(source, clientOptions);
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
+    assertThat(decision.audioDecision().codec()).isEqualTo("aac");
+  }
+
+  @Test
   @DisplayName(
       "Should video transcode with audio copy when video incompatible but audio compatible")
   void shouldVideoTranscodeWithAudioCopyWhenVideoIncompatibleButAudioCompatible() {

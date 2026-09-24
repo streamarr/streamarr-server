@@ -14,6 +14,7 @@ import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -33,6 +34,7 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.SegmentPublication;
+import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Files;
@@ -342,6 +344,74 @@ class RemotePlaybackIT {
           .as("first segment transcoded from the Unicode source")
           .succeedsWithin(Duration.ofSeconds(30));
       executor.stop(streamSessionId);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should stream an MP3 source whose sample rate fragmented MP4 cannot carry when the client supports MP3")
+  void shouldStreamMp3SourceWhoseSampleRateFragmentedMp4CannotCarryWhenClientSupportsMp3()
+      throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    var segmentStore = new PublishingSegmentStore(tempDir.resolve("server-segments"));
+    var streamSessionId = UUID.randomUUID();
+
+    try (var server = server(segmentStore);
+        var worker = workerBuilder(server, mediaRoot).build()) {
+      server.start();
+      worker.start();
+      var mediaFile =
+          worker.generateMedia(
+              mediaRoot.resolve("eight-kilohertz-mp3.mkv"),
+              List.of(
+                  "-f",
+                  "lavfi",
+                  "-i",
+                  "testsrc=size=64x36:rate=24:duration=4",
+                  "-f",
+                  "lavfi",
+                  "-i",
+                  "sine=sample_rate=8000:duration=4",
+                  "-c:v",
+                  "libx264",
+                  "-g",
+                  "24",
+                  "-c:a",
+                  "libmp3lame"));
+      var mediaProbe =
+          switch (new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, mediaRoot)
+              .probe(probeRequest(mediaFile))) {
+            case ProbeOutcome.Success success -> success.mediaProbe();
+            case ProbeOutcome.Failure failure -> throw new AssertionError(failure.toString());
+          };
+      assertThat(mediaProbe.audioCodec()).isEqualTo("mp3");
+      var decision =
+          new TranscodeDecisionService()
+              .decide(
+                  mediaProbe,
+                  StreamingOptions.builder()
+                      .supportedCodecs(List.of("h264"))
+                      .supportedAudioCodecs(List.of("aac", "mp3"))
+                      .build());
+      var timeline = new MediaSegmentTimeline(mediaProbe.duration(), Duration.ofSeconds(6));
+
+      new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot)
+          .start(
+              TranscodeRequest.builder()
+                  .sessionId(streamSessionId)
+                  .sourcePath(mediaFile)
+                  .targetSegmentDuration(timeline.targetSegmentDurationSeconds())
+                  .mediaSegmentCount(timeline.mediaSegmentCount())
+                  .framerate(mediaProbe.framerate())
+                  .transcodeDecision(decision)
+                  .width(mediaProbe.width())
+                  .height(mediaProbe.height())
+                  .bitrate(mediaProbe.bitrate())
+                  .build());
+
+      assertThat(segmentStore.publication("segment0.m4s"))
+          .as("the first media segment of the MP3 source")
+          .succeedsWithin(Duration.ofSeconds(30));
     }
   }
 

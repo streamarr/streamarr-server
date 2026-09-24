@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
@@ -142,6 +143,21 @@ public final class WorkerContainerFixture implements AutoCloseable {
    */
   public static String emitRecordedStream(RecordedStream recording) {
     return "cat " + recording.containerPath() + "\nexit 0\n";
+  }
+
+  /**
+   * Writes media that the worker image's FFmpeg makes from {@code inputArguments} to {@code
+   * target}, a path under the source root, where the worker can read it.
+   */
+  public Path generateMedia(Path target, List<String> inputArguments) throws Exception {
+    var output = "/tmp/generated-" + UUID.randomUUID() + "-" + target.getFileName();
+    var command = new ArrayList<>(List.of("/cnb/lifecycle/launcher", "ffmpeg", "-v", "error"));
+    command.addAll(inputArguments);
+    command.add(output);
+    var result = container.execInContainer(command.toArray(String[]::new));
+    assertThat(result.getExitCode()).as("Generate media: %s", result.getStderr()).isZero();
+    container.copyFileFromContainer(output, target.toString());
+    return target;
   }
 
   public Optional<List<String>> commandFor(UUID attemptId) throws Exception {
