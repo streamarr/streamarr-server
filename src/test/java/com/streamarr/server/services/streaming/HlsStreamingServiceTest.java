@@ -47,6 +47,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataAccessResourceFailureException;
 
@@ -74,6 +76,68 @@ class HlsStreamingServiceTest {
         .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.ProbeNotReady()));
     assertThat(service.getActiveSessionCount()).isZero();
     assertThat(transcodeExecutor.getRunningCount()).isZero();
+  }
+
+  @ParameterizedTest
+  @CsvSource({"aac, AUTO, VIDEO_TRANSCODE", "flac, HIGH_720P, FULL_TRANSCODE"})
+  @DisplayName(
+      "Should reject the stream session when the video must be encoded and the probe has no frame rate")
+  void shouldRejectTheStreamSessionWhenTheVideoMustBeEncodedAndTheProbeHasNoFrameRate(
+      String audioCodec, VideoQuality quality, TranscodeMode encodingMode) {
+    var probe =
+        defaultProbeBuilder()
+            .videoCodec("hevc")
+            .audioCodec(audioCodec)
+            .framerate(OptionalDouble.empty())
+            .build();
+    probeResults.setDefaultProbe(probe);
+    var options =
+        StreamingOptions.builder().quality(quality).supportedCodecs(List.of("h264")).build();
+    assertThat(new TranscodeDecisionService().decide(probe, options).transcodeMode())
+        .isEqualTo(encodingMode);
+    var file = seedMediaFile();
+
+    assertThat(
+            service.createSession(
+                createStreamSessionCommand(file.getId(), UUID.randomUUID(), options)))
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.FrameRateUnknown()));
+    assertThat(service.getActiveSessionCount()).isZero();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should report the unknown frame rate when the video must be encoded and no transcode slot is free")
+  void shouldReportTheUnknownFrameRateWhenTheVideoMustBeEncodedAndNoTranscodeSlotIsFree() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").framerate(OptionalDouble.empty()).build());
+    transcodeExecutor.setAvailableSlots(0);
+    var file = seedMediaFile();
+
+    assertThat(
+            service.createSession(
+                createStreamSessionCommand(file.getId(), UUID.randomUUID(), defaultOptions())))
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.FrameRateUnknown()));
+  }
+
+  @ParameterizedTest
+  @CsvSource({"aac, REMUX", "flac, AUDIO_TRANSCODE"})
+  @DisplayName(
+      "Should copy the video with no encoded variants when the probe has no frame rate and the codec is supported")
+  void shouldCopyTheVideoWithNoEncodedVariantsWhenTheProbeHasNoFrameRateAndTheCodecIsSupported(
+      String audioCodec, TranscodeMode copyMode) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().audioCodec(audioCodec).framerate(OptionalDouble.empty()).build());
+    var file = seedMediaFile();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(copyMode);
+    assertThat(session.getVariants()).isEmpty();
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(TranscodeRequest::framerate)
+        .isEqualTo(OptionalDouble.empty());
   }
 
   @BeforeEach

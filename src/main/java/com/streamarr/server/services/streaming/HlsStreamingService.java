@@ -64,6 +64,11 @@ public class HlsStreamingService implements StreamingService {
     var mediaFileId = command.mediaFileId();
     var options = command.options();
     var decision = transcodeDecisionService.decide(probe, options);
+    // Workers encode at the probed frame rate and refuse an encode without one.
+    if (requiresVideoTranscode(decision.transcodeMode()) && probe.framerate().isEmpty()) {
+      return Outcome.rejected(new CreateStreamSessionRejection.FrameRateUnknown());
+    }
+
     var variants = resolveVariants(probe, options, decision);
     try {
       variants = enforceCapacityLimits(decision.transcodeMode(), variants);

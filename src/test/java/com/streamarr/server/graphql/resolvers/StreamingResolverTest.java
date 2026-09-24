@@ -154,6 +154,23 @@ class StreamingResolverTest {
   }
 
   @Test
+  @DisplayName(
+      "Should return a typed frame-rate error when the video must be encoded without a frame rate")
+  void shouldReturnATypedFrameRateErrorWhenTheVideoMustBeEncodedWithoutAFrameRate() {
+    STUB_SERVICE.setRejection(new CreateStreamSessionRejection.FrameRateUnknown());
+    var context = requestSession(UUID.randomUUID().toString());
+    List<Map<String, String>> errors = context.read("data.createStreamSession.userErrors");
+
+    assertThat(context.read("data.createStreamSession.session", Object.class)).isNull();
+    assertThat(errors)
+        .containsExactly(
+            Map.of(
+                "__typename", "MediaFileFrameRateUnknownError",
+                "message",
+                    "This file's video must be converted for this device, but its frame rate is unknown."));
+  }
+
+  @Test
   @DisplayName("Should return a playable session payload when creation succeeds")
   void shouldReturnAPlayableSessionPayloadWhenCreationSucceeds() {
     var session = buildSession(UUID.randomUUID());

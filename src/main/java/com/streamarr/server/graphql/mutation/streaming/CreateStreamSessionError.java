@@ -19,4 +19,6 @@ public sealed interface CreateStreamSessionError extends MutationError {
   record InvalidMediaFileError(String message) implements CreateStreamSessionError {}
 
   record MediaFileHasNoVideoError(String message) implements CreateStreamSessionError {}
+
+  record MediaFileFrameRateUnknownError(String message) implements CreateStreamSessionError {}
 }
