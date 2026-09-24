@@ -876,7 +876,7 @@ class LibraryManagementServiceTest {
 
       try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
         var scan = executor.submit(() -> service.scanLibrary(savedLibraryId));
-        await().atMost(Duration.ofSeconds(5)).until(() -> downloader.heldDownloads() == 1);
+        downloader.awaitHeldDownloads(1, Duration.ofSeconds(5));
         assertStillScanning(scan);
 
         downloader.releaseHeldDownloads();

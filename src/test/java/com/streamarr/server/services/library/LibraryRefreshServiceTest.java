@@ -576,7 +576,7 @@ class LibraryRefreshServiceTest {
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var refresh = executor.submit(() -> refreshService.refreshLibrary(library));
-      await().atMost(Duration.ofSeconds(5)).until(() -> imageDownloader.heldDownloads() == 1);
+      imageDownloader.awaitHeldDownloads(1, Duration.ofSeconds(5));
       await()
           .during(Duration.ofMillis(200))
           .atMost(Duration.ofSeconds(2))
