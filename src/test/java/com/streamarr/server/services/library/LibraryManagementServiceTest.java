@@ -34,7 +34,6 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
@@ -147,6 +146,8 @@ import org.springframework.dao.DataAccessResourceFailureException;
 @ExtendWith(MockitoExtension.class)
 @DisplayName("Library Management Service Tests")
 class LibraryManagementServiceTest {
+
+  private static final Duration REQUEST_BOUND = Duration.ofSeconds(5);
 
   private final AuthenticatedIdentity identity = defaultIdentityBuilder().build();
   private final FakeLibraryMutationTransaction libraryMutationTransaction =
@@ -829,7 +830,7 @@ class LibraryManagementServiceTest {
 
       try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
         var scan = executor.submit(() -> libraryManagementService.scanLibrary(savedLibraryId));
-        var request = awaitOnlyProbeRequest();
+        var request = probeTaskRequests.awaitRequest(REQUEST_BOUND);
         assertStillScanning(scan);
 
         probeTaskRequests.succeed(request);
@@ -848,7 +849,7 @@ class LibraryManagementServiceTest {
 
       try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
         var scan = executor.submit(() -> libraryManagementService.scanLibrary(savedLibraryId));
-        var request = awaitOnlyProbeRequest();
+        var request = probeTaskRequests.awaitRequest(REQUEST_BOUND);
         assertStillScanning(scan);
 
         probeTaskRequests.fail(request, ItemFailureReason.SOURCE_INACCESSIBLE, Instant.now());
@@ -920,11 +921,6 @@ class LibraryManagementServiceTest {
 
       assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
       assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
-    }
-
-    private ProbeTaskRequest awaitOnlyProbeRequest() {
-      await().atMost(Duration.ofSeconds(5)).until(() -> probeTaskRequests.requests().size() == 1);
-      return probeTaskRequests.requests().getFirst();
     }
 
     private void assertStillScanning(Future<?> scan) {

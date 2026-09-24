@@ -63,6 +63,8 @@ import org.springframework.context.ApplicationEventPublisher;
 @DisplayName("File Event Processor Tests")
 class FileEventProcessorTest {
 
+  private static final Duration REQUEST_BOUND = Duration.ofSeconds(5);
+
   private FileSystem fileSystem;
   private LibraryRepository libraryRepository;
   private FakeMediaFileRepository mediaFileRepository;
@@ -198,9 +200,8 @@ class FileEventProcessorTest {
 
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(() -> assertThat(probeTaskRequests.requests()).hasSize(1));
+    assertThat(probeTaskRequests.awaitRequest(REQUEST_BOUND).filepathUri())
+        .isEqualTo(FilepathCodec.encode(path));
   }
 
   @Test
@@ -218,9 +219,8 @@ class FileEventProcessorTest {
 
     stopsChanging.countDown();
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(() -> assertThat(probeTaskRequests.requests()).hasSize(1));
+    assertThat(probeTaskRequests.awaitRequest(REQUEST_BOUND).filepathUri())
+        .isEqualTo(FilepathCodec.encode(path));
   }
 
   @Test
@@ -238,9 +238,8 @@ class FileEventProcessorTest {
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, unchanged);
 
     try {
-      await()
-          .atMost(Duration.ofSeconds(5))
-          .untilAsserted(() -> assertThat(probeTaskRequests.requests()).hasSize(1));
+      assertThat(probeTaskRequests.awaitRequest(REQUEST_BOUND).filepathUri())
+          .isEqualTo(FilepathCodec.encode(unchanged));
       assertThat(mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(changing)))
           .isEmpty();
     } finally {
@@ -320,9 +319,8 @@ class FileEventProcessorTest {
     probeTaskRequests.dispatchWith(_ -> {});
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.MODIFY, path);
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(() -> assertThat(probeTaskRequests.requests()).hasSize(1));
+    assertThat(probeTaskRequests.awaitRequest(REQUEST_BOUND).filepathUri())
+        .isEqualTo(FilepathCodec.encode(path));
   }
 
   @Test
