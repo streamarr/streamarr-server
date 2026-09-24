@@ -10,6 +10,7 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.controllers.StreamController;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -60,6 +61,11 @@ class RemotePlaybackIT {
 
   private static final UUID SOURCE_NAMESPACE_ID =
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
+  // The committed 10 s clip, and the first 8 s of it that each recording holds, both span two 6 s
+  // media segments.
+  private static final int CLIP_MEDIA_SEGMENTS =
+      new MediaSegmentTimeline(Duration.ofSeconds(10), Duration.ofSeconds(6)).mediaSegmentCount();
+
   private static final String UNICODE_KEY =
       "東京 Café’s 🎬 %2F ..%2F dir/Ame\u0301lie’s 100%23 #1 한국 𝄞 (2001).mkv";
 
@@ -257,6 +263,7 @@ class RemotePlaybackIT {
         .bitrate(2_500_000)
         .seekPosition(12)
         .startSequenceNumber(3)
+        .mediaSegmentCount(6)
         .variantLabel(StreamSession.defaultVariant());
   }
 
@@ -514,6 +521,7 @@ class RemotePlaybackIT {
         .sessionId(streamSessionId)
         .sourcePath(mediaFile)
         .targetSegmentDuration(6)
+        .mediaSegmentCount(CLIP_MEDIA_SEGMENTS)
         .framerate(OptionalDouble.of(23.976))
         .transcodeDecision(transcodeDecision())
         .width(1920)
@@ -574,12 +582,21 @@ class RemotePlaybackIT {
         .as("video codec for %s", decision)
         .isEqualTo(expectedVideoCodec);
     assertThat(command)
-        .as("source, seek and absolute timeline for %s", decision)
+        .as("source and absolute timeline for %s", decision)
         .containsSubsequence("-i", "/media/movie.mkv")
         .containsSubsequence("-map", "-0:s")
         .contains("-copyts", "-start_at_zero")
         .doesNotContain("-start_number");
-    assertThat(Double.parseDouble(argument(command, "-ss"))).isEqualTo(12);
+    var seek = Double.parseDouble(argument(command, "-ss"));
+    switch (decision.transcodeMode()) {
+      case REMUX, AUDIO_TRANSCODE ->
+          assertThat(seek).as("stream copy seek for %s", decision).isEqualTo(12);
+      case VIDEO_TRANSCODE, FULL_TRANSCODE ->
+          assertThat(seek)
+              .as("encode seek at or before the first advertised boundary for %s", decision)
+              .isLessThanOrEqualTo(12);
+    }
+
     assertThat(command)
         .as("fragmented MP4 on standard output for %s", decision)
         .containsSubsequence("-f", "mp4")
@@ -594,7 +611,7 @@ class RemotePlaybackIT {
           .containsSubsequence("-b:v", "2500000")
           .containsSubsequence("-maxrate", "2500000")
           .containsSubsequence("-bufsize", "5000000")
-          .containsSubsequence("-force_key_frames:0", "expr:gte(t,n_forced*4)");
+          .containsSubsequence("-force_key_frames:0", "12,16,20");
     }
 
     switch (decision.audioDecision().mode()) {

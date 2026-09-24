@@ -8,6 +8,7 @@ import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
@@ -366,10 +367,13 @@ class RemoteRecoveryIT {
   }
 
   private static TranscodeRequest transcodeRequest(UUID streamSessionId, Path mediaFile) {
+    var sessionTimeline =
+        new MediaSegmentTimeline(defaultProbeBuilder().build().duration(), Duration.ofSeconds(6));
     return TranscodeRequest.builder()
         .sessionId(streamSessionId)
         .sourcePath(mediaFile)
-        .targetSegmentDuration(6)
+        .targetSegmentDuration(sessionTimeline.targetSegmentDurationSeconds())
+        .mediaSegmentCount(sessionTimeline.mediaSegmentCount())
         .framerate(OptionalDouble.of(23.976))
         .transcodeDecision(transcodeDecision())
         .width(1920)
