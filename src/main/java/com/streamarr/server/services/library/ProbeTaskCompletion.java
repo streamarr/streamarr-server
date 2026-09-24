@@ -64,11 +64,12 @@ public class ProbeTaskCompletion {
   }
 
   /**
-   * Handles a failed attempt in one transaction. When a newer request replaced the attempted
-   * inputs, it retries the requested inputs at once without recording a failure, because the
-   * failure says nothing about them. Otherwise it records why the attempt failed and lets {@code
-   * backoff} reschedule it. A cancelled attempt backs off without a recorded failure, and any other
-   * exception counts as a temporary failure so that it does not wait unrecorded.
+   * Handles a failed attempt in one transaction. When no probe is requested any more, it removes
+   * the execution. When a newer request replaced the attempted inputs, it retries the requested
+   * inputs at once without recording a failure, because the failure says nothing about them.
+   * Otherwise it records why the attempt failed and lets {@code backoff} reschedule it. A cancelled
+   * attempt backs off without a recorded failure, and any other exception counts as a temporary
+   * failure so that it does not wait unrecorded.
    */
   public FailureHandler<ProbeTaskRequest> failureHandler(FailureHandler<ProbeTaskRequest> backoff) {
     return (complete, operations) ->
@@ -76,9 +77,15 @@ public class ProbeTaskCompletion {
             .executeWithoutResult(
                 _ -> {
                   var attempted = requestOf(complete);
-                  var requested = newerRequest(attempted);
-                  if (requested.isPresent()) {
-                    operations.reschedule(complete, clock.instant(), requested.get());
+                  var requested = outcomes.lockProbeInputs(attempted.mediaFileId());
+                  if (requested.isEmpty()) {
+                    operations.remove();
+                    return;
+                  }
+
+                  if (!requested.get().equals(attempted.inputs())) {
+                    operations.reschedule(
+                        complete, clock.instant(), withInputs(attempted, requested.get()));
                     return;
                   }
 
@@ -88,13 +95,6 @@ public class ProbeTaskCompletion {
                       .ifPresent(failure -> saveFailure(attempted, failure));
                   backoff.onFailure(complete, operations);
                 });
-  }
-
-  private Optional<ProbeTaskRequest> newerRequest(ProbeTaskRequest attempted) {
-    return outcomes
-        .lockProbeInputs(attempted.mediaFileId())
-        .filter(inputs -> !inputs.equals(attempted.inputs()))
-        .map(inputs -> withInputs(attempted, inputs));
   }
 
   private void saveFailure(ProbeTaskRequest request, ItemOutcome.Failed failure) {
