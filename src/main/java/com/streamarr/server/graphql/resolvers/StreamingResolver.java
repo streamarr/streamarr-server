@@ -93,6 +93,8 @@ public class StreamingResolver {
       case CreateStreamSessionRejection.FrameRateUnknown() ->
           new CreateStreamSessionError.MediaFileFrameRateUnknownError(
               "This file's video must be converted for playback, but its frame rate is unknown.");
+      case CreateStreamSessionRejection.NoMediaSegments() ->
+          new CreateStreamSessionError.InvalidMediaFileError("This file has no playable duration.");
     };
   }
 

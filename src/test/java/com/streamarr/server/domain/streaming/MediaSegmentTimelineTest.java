@@ -16,7 +16,16 @@ class MediaSegmentTimelineTest {
   private static final Duration SIX_SECONDS = Duration.ofSeconds(6);
 
   @ParameterizedTest
-  @CsvSource({"PT2H, 1200", "PT2M5.5S, 21", "PT12S, 2", "PT12.0004S, 2", "PT3S, 1"})
+  @CsvSource({
+    "PT2H, 1200",
+    "PT2M5.5S, 21",
+    "PT12S, 2",
+    "PT12.0004S, 2",
+    "PT3S, 1",
+    "PT0.001S, 1",
+    "PT0.000999999S, 0",
+    "PT0S, 0"
+  })
   @DisplayName(
       "Should count media segments over the whole milliseconds of the media when sizing the timeline")
   void shouldCountMediaSegmentsOverTheWholeMillisecondsOfTheMediaWhenSizingTheTimeline(
