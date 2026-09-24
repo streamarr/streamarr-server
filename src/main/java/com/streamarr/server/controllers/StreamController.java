@@ -184,11 +184,7 @@ public class StreamController {
 
   private ResponseEntity<byte[]> serveSegment(
       UUID sessionId, String variantLabel, String segmentName) {
-    return respond(deliveryCoordinator.deliver(sessionId, variantLabel, segmentName));
-  }
-
-  private static ResponseEntity<byte[]> respond(SegmentDelivery delivery) {
-    return switch (delivery) {
+    return switch (deliveryCoordinator.deliver(sessionId, variantLabel, segmentName)) {
       case SegmentDelivery.Ready(byte[] data) ->
           ResponseEntity.ok().contentType(MP4_MEDIA_TYPE).body(data);
       case SegmentDelivery.SessionEnded() -> ResponseEntity.notFound().build();
