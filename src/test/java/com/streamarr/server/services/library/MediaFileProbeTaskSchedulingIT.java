@@ -222,9 +222,8 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName(
-      "Should keep a matched-file scan running until its requested probe stores an outcome")
-  void shouldKeepAMatchedFileScanRunningUntilItsRequestedProbeStoresAnOutcome() throws Exception {
+  @DisplayName("Should keep the scan running when a matched file's probe has no outcome")
+  void shouldKeepTheScanRunningWhenAMatchedFilesProbeHasNoOutcome() throws Exception {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var scan = executor.submit(() -> libraryManagementService.scanLibrary(library.getId()));
       await().atMost(Duration.ofSeconds(10)).until(() -> scheduledRequest().isPresent());

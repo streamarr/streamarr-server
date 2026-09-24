@@ -84,8 +84,8 @@ class ProbeRunsTest {
   }
 
   @Test
-  @DisplayName("Should wait until the requested probe stores an outcome")
-  void shouldWaitUntilTheRequestedProbeStoresAnOutcome() throws Exception {
+  @DisplayName("Should stop waiting when the requested probe stores an outcome")
+  void shouldStopWaitingWhenTheRequestedProbeStoresAnOutcome() throws Exception {
     var run = probeRuns.open();
     run.request(mediaFile("movie.mkv").getId());
     onCheck = _ -> requests.succeed(onlyRequest());
@@ -97,8 +97,10 @@ class ProbeRunsTest {
   }
 
   @Test
-  @DisplayName("Should count a stored outcome that already matches the source without waiting")
-  void shouldCountAStoredOutcomeThatAlreadyMatchesTheSourceWithoutWaiting() throws Exception {
+  @DisplayName(
+      "Should count the probe without waiting when a stored outcome already matches the source")
+  void shouldCountTheProbeWithoutWaitingWhenAStoredOutcomeAlreadyMatchesTheSource()
+      throws Exception {
     var mediaFileId = mediaFile("movie.mkv").getId();
     var earlier = probeRuns.open();
     earlier.request(mediaFileId);
@@ -114,8 +116,8 @@ class ProbeRunsTest {
   }
 
   @Test
-  @DisplayName("Should stop waiting once the failure of an attempt is recorded")
-  void shouldStopWaitingOnceTheFailureOfAnAttemptIsRecorded() throws Exception {
+  @DisplayName("Should stop waiting when an attempt failure is recorded")
+  void shouldStopWaitingWhenAnAttemptFailureIsRecorded() throws Exception {
     var run = probeRuns.open();
     run.request(mediaFile("movie.mkv").getId());
     onCheck =
@@ -145,8 +147,8 @@ class ProbeRunsTest {
   }
 
   @Test
-  @DisplayName("Should keep waiting while no attempt at the requested inputs has finished")
-  void shouldKeepWaitingWhileNoAttemptAtTheRequestedInputsHasFinished() throws Exception {
+  @DisplayName("Should keep waiting when no attempt at the requested inputs has finished")
+  void shouldKeepWaitingWhenNoAttemptAtTheRequestedInputsHasFinished() throws Exception {
     var run = probeRuns.open();
     run.request(mediaFile("movie.mkv").getId());
     onCheck =
@@ -163,8 +165,8 @@ class ProbeRunsTest {
   }
 
   @Test
-  @DisplayName("Should stop waiting for a file whose later change replaced the requested inputs")
-  void shouldStopWaitingForAFileWhoseLaterChangeReplacedTheRequestedInputs() throws Exception {
+  @DisplayName("Should stop waiting for a file when a later change replaced the requested inputs")
+  void shouldStopWaitingForAFileWhenALaterChangeReplacedTheRequestedInputs() throws Exception {
     var run = probeRuns.open();
     run.request(mediaFile("movie.mkv").getId());
     onCheck = _ -> requests.request(changed(onlyRequest()));
@@ -175,8 +177,8 @@ class ProbeRunsTest {
   }
 
   @Test
-  @DisplayName("Should stop waiting for a media file that was removed")
-  void shouldStopWaitingForAMediaFileThatWasRemoved() throws Exception {
+  @DisplayName("Should stop waiting for a media file when it is removed")
+  void shouldStopWaitingForAMediaFileWhenItIsRemoved() throws Exception {
     var run = probeRuns.open();
     run.request(mediaFile("movie.mkv").getId());
     onCheck = _ -> outcomes.mediaFileExistsWhen(_ -> false);
@@ -202,8 +204,8 @@ class ProbeRunsTest {
   }
 
   @Test
-  @DisplayName("Should wait only for the probes its own run requested")
-  void shouldWaitOnlyForTheProbesItsOwnRunRequested() throws Exception {
+  @DisplayName("Should ignore probes when another run requested them")
+  void shouldIgnoreProbesWhenAnotherRunRequestedThem() throws Exception {
     var other = probeRuns.open();
     other.request(mediaFile("other.mkv").getId());
     var run = probeRuns.open();
@@ -217,8 +219,8 @@ class ProbeRunsTest {
   }
 
   @Test
-  @DisplayName("Should time the probes from the first request until the last result")
-  void shouldTimeTheProbesFromTheFirstRequestUntilTheLastResult() throws Exception {
+  @DisplayName("Should stop the probe timer when the last result arrives")
+  void shouldStopTheProbeTimerWhenTheLastResultArrives() throws Exception {
     var run = probeRuns.open();
     clock.advance(Duration.ofSeconds(30));
     run.request(mediaFile("movie.mkv").getId());
