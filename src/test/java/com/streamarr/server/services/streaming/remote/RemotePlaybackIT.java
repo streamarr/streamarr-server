@@ -152,7 +152,10 @@ class RemotePlaybackIT {
         var worker =
             workerBuilder(server, mediaRoot)
                 .ffmpegScript(
-                    "head -c 100 %s\nexit 0\n"
+                    """
+                    head -c 100 %s
+                    exit 0
+                    """
                         .formatted(RecordedStream.START_AT_ZERO.containerPath()))
                 .build()) {
       server.start();
