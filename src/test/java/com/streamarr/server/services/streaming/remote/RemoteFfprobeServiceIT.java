@@ -69,9 +69,12 @@ class RemoteFfprobeServiceIT {
         try {
           assertThat(worker.nextResponse().hasStartProbe()).isTrue();
           assertThatThrownBy(() -> result.get(5, TimeUnit.SECONDS))
-              .as("The probe deadline must fail the probe")
-              .hasCauseInstanceOf(ProbeExecutionException.class)
-              .hasRootCauseInstanceOf(TimeoutException.class);
+              .as("The probe deadline must fail the probe for a later retry")
+              .hasRootCauseInstanceOf(TimeoutException.class)
+              .cause()
+              .isInstanceOfSatisfying(
+                  ProbeExecutionException.class,
+                  failure -> assertThat(failure.reason()).isEqualTo(ItemFailureReason.TEMPORARY));
           assertThat(worker.nextResponse().getCancelProbe().getProbeAttemptId())
               .as("The deadline must ask the worker to cancel the attempt")
               .isEqualTo(toProto(request.attemptId()));
