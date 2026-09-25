@@ -273,6 +273,8 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
   }
 
   // Stands in for the disabled dispatcher: stores a successful outcome for the requested inputs.
+  // It polls for the request because the scan saves it inside the service, which gives a test no
+  // hook to wait on.
   private void storeTheRequestedOutcome() {
     await().atMost(Duration.ofSeconds(10)).until(() -> scheduledRequest().isPresent());
     var request = scheduledRequest().orElseThrow();

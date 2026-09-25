@@ -67,7 +67,11 @@ public final class BoundedTask<T> implements AutoCloseable {
       stop(bound);
       throw interrupted;
     } catch (ExecutionException failure) {
-      throw rethrown(failure.getCause());
+      throw switch (failure.getCause()) {
+        case Error error -> throw error;
+        case Exception exception -> exception;
+        default -> failure;
+      };
     }
   }
 
@@ -89,14 +93,6 @@ public final class BoundedTask<T> implements AutoCloseable {
     if (!stopped) {
       throw new AssertionError("Task did not stop within " + bound + " of its interrupt");
     }
-  }
-
-  private static Exception rethrown(Throwable failure) {
-    return switch (failure) {
-      case Error error -> throw error;
-      case Exception exception -> exception;
-      default -> new IllegalStateException(failure);
-    };
   }
 
   @FunctionalInterface

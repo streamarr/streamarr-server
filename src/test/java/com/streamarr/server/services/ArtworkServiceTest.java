@@ -50,6 +50,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @DisplayName("Artwork Service Tests")
 class ArtworkServiceTest {
 
+  private static final Duration HELD_DOWNLOAD_BOUND = Duration.ofSeconds(5);
   private static final ImageSource POSTER = new TmdbImageSource(ImageType.POSTER, "/poster.jpg");
   private static final ImageSource BACKDROP =
       new TmdbImageSource(ImageType.BACKDROP, "/backdrop.jpg");
@@ -232,7 +233,7 @@ class ArtworkServiceTest {
       var service = artworkServiceWith(downloader);
       var run = service.openRun("scan", ImageRefreshMode.PRESERVE);
       var request = service.fetchRequired(run, movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
-      downloader.awaitHeldDownloads(2, Duration.ofSeconds(5));
+      downloader.awaitHeldDownloads(2, HELD_DOWNLOAD_BOUND);
 
       service.shutdown();
       run.close();
@@ -337,7 +338,7 @@ class ArtworkServiceTest {
       var service = artworkServiceWith(downloader);
       var run = service.openRun("scan", ImageRefreshMode.PRESERVE);
       var request = service.fetchRequired(run, movieArtwork(UUID.randomUUID(), POSTER));
-      downloader.awaitHeldDownloads(1, Duration.ofSeconds(5));
+      downloader.awaitHeldDownloads(1, HELD_DOWNLOAD_BOUND);
 
       clock.advance(Duration.ofSeconds(4));
       run.close();
@@ -427,7 +428,7 @@ class ArtworkServiceTest {
                       service.fetchSecondary(
                           personArtwork("/profile-" + index + ".jpg"), ImageRefreshMode.PRESERVE))
               .toList();
-      downloader.awaitHeldDownloads(2, Duration.ofSeconds(5));
+      downloader.awaitHeldDownloads(2, HELD_DOWNLOAD_BOUND);
 
       List<ArtworkResult> requiredResults;
       try (var run = service.openRun("scan", ImageRefreshMode.PRESERVE)) {
@@ -485,7 +486,7 @@ class ArtworkServiceTest {
       var service = artworkServiceWith(downloader);
       var run = service.openRun("scan", ImageRefreshMode.PRESERVE);
       service.fetchRequired(run, movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
-      downloader.awaitHeldDownloads(2, Duration.ofSeconds(5));
+      downloader.awaitHeldDownloads(2, HELD_DOWNLOAD_BOUND);
       clock.advance(Duration.ofSeconds(5));
 
       var reports = progress.reportProgress();
@@ -511,7 +512,7 @@ class ArtworkServiceTest {
       List<ArtworkResult> results;
       try (var run = service.openRun("scan", ImageRefreshMode.PRESERVE)) {
         var request = service.fetchRequired(run, movieArtwork(UUID.randomUUID(), POSTER));
-        downloader.awaitHeldDownloads(1, Duration.ofSeconds(5));
+        downloader.awaitHeldDownloads(1, HELD_DOWNLOAD_BOUND);
         clock.advance(Duration.ofSeconds(4));
         downloader.releaseHeldDownloads();
         results = awaitResult(request);
@@ -613,7 +614,7 @@ class ArtworkServiceTest {
       var run = service.openRun("scan", ImageRefreshMode.PRESERVE);
       service.fetchRequired(
           run, movieArtwork(UUID.randomUUID(), new TmdbImageSource(ImageType.POSTER, "/held.jpg")));
-      downloader.awaitHeldDownloads(1, Duration.ofSeconds(5));
+      downloader.awaitHeldDownloads(1, HELD_DOWNLOAD_BOUND);
       itemResults.failWritesWith(recordingFailure);
 
       var failed = service.fetchRequired(run, movieArtwork(UUID.randomUUID(), POSTER));

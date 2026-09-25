@@ -143,8 +143,9 @@ class RemoteFfprobeServiceIT {
             .hasMessage(
                 "No connected worker can read the source namespace at the requested probe"
                     + " version")
-            .extracting(failure -> ((ProbeExecutionException) failure).reason())
-            .isEqualTo(ItemFailureReason.MISCONFIGURED);
+            .isInstanceOfSatisfying(
+                ProbeExecutionException.class,
+                thrown -> assertThat(thrown.reason()).isEqualTo(ItemFailureReason.MISCONFIGURED));
       }
     }
   }

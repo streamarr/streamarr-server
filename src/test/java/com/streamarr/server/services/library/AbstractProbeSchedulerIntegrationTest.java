@@ -7,7 +7,6 @@ import com.github.kagkarlsson.scheduler.Scheduler;
 import com.github.kagkarlsson.scheduler.SchedulerClient;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerConfigurationSupport;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
-import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerProperties;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.stats.StatsRegistry;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
@@ -25,13 +24,13 @@ import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import com.streamarr.server.services.streaming.FfprobeService;
+import com.streamarr.server.support.UnstartedSchedulerConfiguration;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -44,8 +43,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.context.properties.bind.Bindable;
-import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.core.env.Environment;
 
 abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegrationTest {
@@ -120,10 +117,7 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
   SchedulerClient startScheduler(
       ProbeExecution execution, AbstractSchedulerListener listener, Clock clock) {
     var task = MediaProbeTask.create(execution, probeTaskCompletion);
-    var properties =
-        Binder.get(environment)
-            .bind("db-scheduler", Bindable.of(DbSchedulerProperties.class))
-            .get();
+    var properties = UnstartedSchedulerConfiguration.schedulerProperties(environment);
     properties.setThreads(2);
     scheduler =
         DbSchedulerConfigurationSupport.buildScheduler(
@@ -191,16 +185,8 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
     }
   }
 
-  /** Moves the media file's pending probe five minutes out, as a long backoff would. */
-  Instant delayExecution(UUID mediaFileId) {
-    var executionTime = Instant.now().plusSeconds(300).truncatedTo(ChronoUnit.SECONDS);
-    assertThat(
-            dsl.update(DSL.table("scheduled_tasks"))
-                .set(DSL.field("execution_time", Instant.class), executionTime)
-                .where(DSL.field("task_instance", String.class).eq(mediaFileId.toString()))
-                .execute())
-        .isOne();
-    return executionTime;
+  Instant delayExecution(UUID mediaFileId, int consecutiveFailures) {
+    return ScheduledProbeTasks.delay(dsl, mediaFileId, consecutiveFailures);
   }
 
   static TaskInstanceId instanceOf(ProbeTaskRequest request) {

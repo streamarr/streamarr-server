@@ -403,15 +403,8 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
         .isTrue();
   }
 
-  // Moves the pending execution five minutes out with the given failure history.
   private Instant delay(ProbeTaskRequest request, int consecutiveFailures) {
-    var executionTime = Instant.now().plusSeconds(300).truncatedTo(ChronoUnit.SECONDS);
-    dsl.update(DSL.table("scheduled_tasks"))
-        .set(DSL.field("consecutive_failures", Integer.class), consecutiveFailures)
-        .set(DSL.field("execution_time", Instant.class), executionTime)
-        .where(DSL.field("task_instance", String.class).eq(request.mediaFileId().toString()))
-        .execute();
-    return executionTime;
+    return ScheduledProbeTasks.delay(dsl, request.mediaFileId(), consecutiveFailures);
   }
 
   private static TaskInstanceId instanceOf(ProbeTaskRequest request) {
