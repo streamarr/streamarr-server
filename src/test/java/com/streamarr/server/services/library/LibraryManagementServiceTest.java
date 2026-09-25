@@ -861,18 +861,21 @@ class LibraryManagementServiceTest {
                   .build());
       matchMovieWithPoster("About Time");
 
-      try (var scan = BoundedTask.start(() -> service.scanLibrary(savedLibraryId))) {
+      try (var scan =
+          BoundedTask.start(
+              () -> {
+                service.scanLibrary(savedLibraryId);
+                return !imageRepository.findAll().isEmpty();
+              })) {
         downloader.awaitHeldDownloads(1, Duration.ofSeconds(5));
-        assertStillScanning();
-
         downloader.releaseHeldDownloads();
-        scan.await(SCAN_BOUND);
+
+        assertThat(scan.await(SCAN_BOUND)).as("poster saved when the scan returned").isTrue();
       } finally {
         downloader.releaseHeldDownloads();
       }
 
       assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
-      assertThat(imageRepository.findAll()).isNotEmpty();
     }
 
     @Test
@@ -907,15 +910,6 @@ class LibraryManagementServiceTest {
 
       assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
       assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
-    }
-
-    // The wait for required artwork offers no hook, so only a window can show the scan keeps
-    // waiting.
-    private void assertStillScanning() {
-      await()
-          .during(Duration.ofMillis(200))
-          .atMost(Duration.ofSeconds(2))
-          .until(() -> scanState().equals(new ScanState(LibraryStatus.SCANNING, 0)));
     }
 
     private void scan(LibraryManagementService service) throws Exception {
