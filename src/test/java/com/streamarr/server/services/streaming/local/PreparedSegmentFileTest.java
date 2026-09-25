@@ -3,9 +3,11 @@ package com.streamarr.server.services.streaming.local;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.services.streaming.SegmentPublication;
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -18,6 +20,7 @@ class PreparedSegmentFileTest {
 
   private static final Path DIRECTORY = Path.of("segments");
   private static final Path TARGET = DIRECTORY.resolve("session/720p/segment0.ts");
+  private static final Path INITIALIZATION_TARGET = DIRECTORY.resolve("session/720p/init.mp4");
 
   @Test
   @DisplayName("Should fall back to a replacement move when atomic move is unavailable")
@@ -30,6 +33,37 @@ class PreparedSegmentFileTest {
 
     assertThat(files.bytesAt(TARGET)).containsExactly(expected);
     assertThat(files.hasTemporaryFile()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should publish through a replacement move when nothing is stored and atomic move is unavailable")
+  void shouldPublishThroughReplacementMoveWhenNothingIsStoredAndAtomicMoveIsUnavailable()
+      throws Exception {
+    var files = new InMemoryFileOperations();
+    var expected = "ftyp moov from encoder A".getBytes();
+    var prepared = PreparedSegmentFile.create(files, DIRECTORY, expected);
+
+    var publication = prepared.publishUnlessStored(INITIALIZATION_TARGET);
+
+    assertThat(publication).isEqualTo(SegmentPublication.PUBLISHED);
+    assertThat(files.bytesAt(INITIALIZATION_TARGET)).containsExactly(expected);
+    assertThat(files.hasTemporaryFile()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should keep the stored bytes when the target already holds different ones")
+  void shouldKeepStoredBytesWhenTargetAlreadyHoldsDifferentOnes() throws Exception {
+    var files = new InMemoryFileOperations();
+    var stored = "ftyp moov from encoder A".getBytes();
+    PreparedSegmentFile.create(files, DIRECTORY, stored).publishUnlessStored(INITIALIZATION_TARGET);
+    var differing =
+        PreparedSegmentFile.create(files, DIRECTORY, "ftyp moov from encoder B".getBytes());
+
+    var publication = differing.publishUnlessStored(INITIALIZATION_TARGET);
+
+    assertThat(publication).isEqualTo(SegmentPublication.INITIALIZATION_SEGMENT_DIFFERS);
+    assertThat(files.bytesAt(INITIALIZATION_TARGET)).containsExactly(stored);
   }
 
   @Test
@@ -83,6 +117,16 @@ class PreparedSegmentFileTest {
     @Override
     public void moveReplacing(Path source, Path target) {
       contents.put(target, contents.remove(source));
+    }
+
+    @Override
+    public boolean notExists(Path path) {
+      return !contents.containsKey(path);
+    }
+
+    @Override
+    public boolean hasSameContent(Path first, Path second) {
+      return Arrays.equals(contents.get(first), contents.get(second));
     }
 
     @Override

@@ -39,6 +39,7 @@ import com.streamarr.server.services.watchprogress.SessionProgressService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import com.streamarr.server.support.security.WithProfileContext;
 import graphql.ExecutionResult;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
@@ -254,7 +255,9 @@ class AdversarialPlaybackTest {
     @Bean(initMethod = "start", destroyMethod = "close")
     WorkerSessionServer sessions() {
       return new WorkerSessionServer(
-          WorkerSessionServerConfiguration.builder().port(0).build(), segments);
+          WorkerSessionServerConfiguration.builder().port(0).build(),
+          segments,
+          new SimpleMeterRegistry());
     }
 
     @Bean

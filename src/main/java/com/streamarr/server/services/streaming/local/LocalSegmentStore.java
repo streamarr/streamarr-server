@@ -2,6 +2,9 @@ package com.streamarr.server.services.streaming.local;
 
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.services.streaming.SegmentNames;
+import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -19,6 +22,7 @@ public class LocalSegmentStore implements SegmentStore {
 
   private final Path baseDir;
   private final ConcurrentHashMap<UUID, Path> sessionDirs = new ConcurrentHashMap<>();
+  private final MutexFactory<Path> initializationSegmentLocks = new MutexFactory<>();
 
   public LocalSegmentStore(Path baseDir) {
     this.baseDir = baseDir;
@@ -67,14 +71,31 @@ public class LocalSegmentStore implements SegmentStore {
     }
 
     @Override
-    public void publish() {
+    public SegmentPublication publish() {
       getOutputDirectory(sessionId);
       var segmentPath = resolveSegmentPath(sessionId, segmentName);
       try {
         Files.createDirectories(segmentPath.getParent());
+        if (SegmentNames.isInitSegment(segmentName)) {
+          return publishInitialization(segmentPath);
+        }
+
         temporary.publishTo(segmentPath);
+        return SegmentPublication.PUBLISHED;
       } catch (IOException e) {
         throw new UncheckedIOException("Failed to store segment: " + segmentName, e);
+      }
+    }
+
+    private SegmentPublication publishInitialization(Path segmentPath) throws IOException {
+      // Only this store writes a session's directory, so serializing publications per path makes
+      // the first one create-if-absent on any volume that can rename.
+      var lock = initializationSegmentLocks.getMutex(segmentPath);
+      lock.lock();
+      try {
+        return temporary.publishUnlessStored(segmentPath);
+      } finally {
+        lock.unlock();
       }
     }
 

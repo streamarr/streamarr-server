@@ -5,6 +5,7 @@ import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.
 
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
+import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
@@ -20,6 +21,8 @@ import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerSessionAccepted;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -31,24 +34,33 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 final class LiveWorkerConnectionRegistry {
 
+  private static final String INITIALIZATION_SEGMENT_MISMATCH_METRIC =
+      "streamarr.streaming.initialization_segment_mismatches";
   private static final Executor PROBE_DEADLINE_CALLBACKS =
       command -> Thread.ofVirtual().name("worker-probe-deadline").start(command);
   private final long probeTimeoutNanos;
   private final long probeCancellationTimeoutNanos;
+  private final Counter initializationSegmentMismatches;
 
-  LiveWorkerConnectionRegistry() {
-    this(WorkerSessionServerConfiguration.builder().build());
-  }
-
-  LiveWorkerConnectionRegistry(WorkerSessionServerConfiguration configuration) {
+  LiveWorkerConnectionRegistry(
+      @NonNull WorkerSessionServerConfiguration configuration,
+      @NonNull MeterRegistry meterRegistry) {
     probeTimeoutNanos = configuration.probeTimeout().toNanos();
     probeCancellationTimeoutNanos = configuration.probeCancellationTimeout().toNanos();
+    initializationSegmentMismatches =
+        Counter.builder(INITIALIZATION_SEGMENT_MISMATCH_METRIC)
+            .description(
+                "Initialization segment uploads refused because they differ from the one stored"
+                    + " for the variant")
+            .register(meterRegistry);
   }
 
   private final ConcurrentHashMap<UUID, WorkerConnection> connections = new ConcurrentHashMap<>();
@@ -241,15 +253,19 @@ final class LiveWorkerConnectionRegistry {
     return connection != null && connection.authorizesUpload(metadata);
   }
 
-  boolean publishIfAuthorized(
-      UUID authenticatedWorkerId, SegmentUploadMetadata metadata, Runnable publication) {
-    // Unsynchronized on purpose: a segment publish is a filesystem move and must not queue
-    // behind worker register/disconnect. Stale lookups fail the connection's re-check.
+  /** Empty when the upload no longer belongs to an active job attempt of this connection. */
+  Optional<SegmentPublication> publishIfAuthorized(
+      UUID authenticatedWorkerId,
+      SegmentUploadMetadata metadata,
+      Supplier<SegmentPublication> publish) {
+    // Unsynchronized on purpose: a segment publish renames a file, or reads and compares an
+    // initialization segment, and must not queue behind worker register/disconnect. Stale lookups
+    // fail the connection's re-check.
     var connection = connections.get(authenticatedWorkerId);
     if (connection == null) {
-      return false;
+      return Optional.empty();
     }
-    return connection.publishIfStillAuthorized(metadata, publication);
+    return connection.publishIfStillAuthorized(metadata, publish);
   }
 
   private final class WorkerConnection {
@@ -532,19 +548,41 @@ final class LiveWorkerConnectionRegistry {
           && job.getVariant().getVariantLabel().equals(metadata.getVariantLabel());
     }
 
-    private synchronized boolean publishIfStillAuthorized(
-        SegmentUploadMetadata metadata, Runnable publication) {
+    private synchronized Optional<SegmentPublication> publishIfStillAuthorized(
+        SegmentUploadMetadata metadata, Supplier<SegmentPublication> publish) {
       if (!authorizesUpload(metadata)) {
-        return false;
+        return Optional.empty();
       }
-      publication.run();
-      return true;
+
+      var outcome = publish.get();
+      if (outcome == SegmentPublication.INITIALIZATION_SEGMENT_DIFFERS) {
+        refuseDifferingInitialization(metadata);
+      }
+
+      return Optional.of(outcome);
+    }
+
+    private void refuseDifferingInitialization(SegmentUploadMetadata metadata) {
+      // Stopping under the monitor that authorized this upload fences the attempt's later uploads,
+      // so recovery finds no running producer and moves on. Workers upload an attempt's
+      // initialization segment first and await its acknowledgement (ADR 0037), so none of its
+      // media segments is published yet. A concurrent disconnect may already have ended it.
+      var jobAttemptId = fromProto(metadata.getJobAttemptId());
+      var stopped = tryStop(jobAttemptId);
+      initializationSegmentMismatches.increment();
+      log.warn(
+          "Refused the initialization segment of job attempt {} for stream session {} variant {}"
+              + " because it differs from the one stored for the variant; attempt stopped: {}",
+          jobAttemptId,
+          fromProto(metadata.getStreamSessionId()),
+          metadata.getVariantLabel(),
+          stopped);
     }
 
     /**
-     * Takes no connection monitor: a publish holds it across a filesystem move, and a disconnect
-     * must not wait for that. This is also why {@code activeVariants} is a {@code
-     * ConcurrentHashMap}.
+     * Takes no connection monitor: a publish holds it across file I/O (a rename, or reading and
+     * comparing an initialization segment), and a disconnect must not wait for that. This is also
+     * why {@code activeVariants} is a {@code ConcurrentHashMap}.
      */
     private List<VariantJob> abandonAllJobsWithoutWaiting() {
       var drained = List.copyOf(activeVariants.values());

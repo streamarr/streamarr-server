@@ -25,6 +25,7 @@ import io.grpc.Metadata;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.MetadataUtils;
 import io.grpc.stub.StreamObserver;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -149,7 +150,9 @@ class MeshMediaHandlerIT {
     private Rig(ProbeMediaInfo media, boolean withoutWorker) throws Exception {
       server =
           new WorkerSessionServer(
-              WorkerSessionServerConfiguration.builder().port(0).build(), segments);
+              WorkerSessionServerConfiguration.builder().port(0).build(),
+              segments,
+              new SimpleMeterRegistry());
       server.start();
       http = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
       http.createContext("/media/", new MeshMediaHandler(server, segments));

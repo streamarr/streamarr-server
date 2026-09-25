@@ -6,6 +6,7 @@ import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.VariantJob;
 import io.grpc.ServerInterceptors;
 import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Set;
@@ -32,9 +33,11 @@ public final class WorkerSessionServer implements AutoCloseable {
   private boolean started;
 
   public WorkerSessionServer(
-      @NonNull WorkerSessionServerConfiguration configuration, @NonNull SegmentStore segmentStore) {
+      @NonNull WorkerSessionServerConfiguration configuration,
+      @NonNull SegmentStore segmentStore,
+      @NonNull MeterRegistry meterRegistry) {
     this.configuration = configuration;
-    workerConnections = new LiveWorkerConnectionRegistry(configuration);
+    workerConnections = new LiveWorkerConnectionRegistry(configuration, meterRegistry);
     this.segmentStore = segmentStore;
   }
 

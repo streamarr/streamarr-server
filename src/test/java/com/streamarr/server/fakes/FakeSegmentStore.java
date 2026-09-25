@@ -1,7 +1,10 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.services.streaming.SegmentNames;
+import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,8 +35,13 @@ public class FakeSegmentStore implements SegmentStore {
   public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
     return new PreparedSegment() {
       @Override
-      public void publish() {
+      public SegmentPublication publish() {
+        if (SegmentNames.isInitSegment(segmentName)) {
+          return publishInitialization(sessionId, segmentName, data);
+        }
+
         addSegment(sessionId, segmentName, data);
+        return SegmentPublication.PUBLISHED;
       }
 
       @Override
@@ -42,6 +50,19 @@ public class FakeSegmentStore implements SegmentStore {
         // release.
       }
     };
+  }
+
+  private SegmentPublication publishInitialization(
+      UUID sessionId, String segmentName, byte[] data) {
+    var stored =
+        sessions
+            .computeIfAbsent(sessionId, id -> new ConcurrentHashMap<>())
+            .putIfAbsent(segmentName, data);
+    if (stored == null || Arrays.equals(stored, data)) {
+      return SegmentPublication.PUBLISHED;
+    }
+
+    return SegmentPublication.INITIALIZATION_SEGMENT_DIFFERS;
   }
 
   @Override

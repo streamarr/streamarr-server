@@ -7,6 +7,8 @@ import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -22,7 +24,8 @@ class WorkerSessionConfigurationTest {
   private final ApplicationContextRunner contextRunner =
       new ApplicationContextRunner()
           .withUserConfiguration(WorkerSessionConfiguration.class)
-          .withBean(SegmentStore.class, FakeSegmentStore::new);
+          .withBean(SegmentStore.class, FakeSegmentStore::new)
+          .withBean(MeterRegistry.class, SimpleMeterRegistry::new);
 
   @ParameterizedTest
   @CsvSource({

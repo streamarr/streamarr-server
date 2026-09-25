@@ -161,8 +161,9 @@ class HlsRecoveryContinuitySmokeTest {
   }
 
   @Test
-  @DisplayName("Should rewrite the init segment when a dead fMP4 producer is replaced")
-  void shouldRewriteInitSegmentWhenDeadFmp4ProducerIsReplaced() throws Exception {
+  @DisplayName(
+      "Should keep the stored initialization segment when a dead fMP4 producer is replaced")
+  void shouldKeepStoredInitializationSegmentWhenDeadFmp4ProducerIsReplaced() throws Exception {
     var session = startedSession(remuxFmp4Decision());
     var sessionId = session.getSessionId();
     await()
@@ -171,14 +172,16 @@ class HlsRecoveryContinuitySmokeTest {
             () ->
                 segmentStore.segmentExists(sessionId, "init.mp4")
                     && segmentStore.segmentExists(sessionId, "segment0.m4s"));
+    var storedInitialization = segmentStore.readSegment(sessionId, "init.mp4");
 
     killProducerAndDropSegmentsFrom(session, 1, ".m4s");
-    Files.delete(segmentStore.getOutputDirectory(sessionId).resolve("init.mp4"));
 
     var delivery = coordinator.deliver(sessionId, StreamSession.defaultVariant(), "segment1.m4s");
 
-    assertThat(delivery).isInstanceOf(SegmentDelivery.Ready.class);
-    assertThat(segmentStore.segmentExists(sessionId, "init.mp4")).isTrue();
+    assertThat(delivery)
+        .as("the replacement attempt's initialization segment matched the stored one")
+        .isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(segmentStore.readSegment(sessionId, "init.mp4")).isEqualTo(storedInitialization);
     var outputDir = segmentStore.getOutputDirectory(sessionId);
     var recoveredMedia = outputDir.resolve("recovered.mp4");
     try (var output = Files.newOutputStream(recoveredMedia)) {

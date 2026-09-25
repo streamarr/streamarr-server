@@ -16,6 +16,7 @@ import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import io.grpc.ManagedChannel;
 import io.grpc.stub.StreamObserver;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -102,7 +103,8 @@ class WorkerDispatchFlowControlIT {
 
   private WorkerSessionServer server() {
     var configuration = WorkerSessionServerConfiguration.builder().port(0).build();
-    return new WorkerSessionServer(configuration, new FakeSegmentStore());
+    return new WorkerSessionServer(
+        configuration, new FakeSegmentStore(), new SimpleMeterRegistry());
   }
 
   private ManagedChannel workerChannel(int port) {

@@ -13,6 +13,7 @@ import static org.junit.jupiter.params.provider.Arguments.arguments;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
+import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
@@ -62,7 +63,7 @@ class WorkerProbeDispatchTest {
   @DisplayName("Should refuse a probe when its attempt identifier is omitted or nil")
   void shouldRefuseProbeWhenItsAttemptIdentifierIsOmittedOrNil(boolean explicitNil)
       throws Exception {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     registry.register(WORKER_ID, registration.build(), new CapturingResponses());
@@ -83,7 +84,7 @@ class WorkerProbeDispatchTest {
       "Should complete another worker probe when replacement waits for segment publication")
   void shouldCompleteAnotherWorkerProbeWhenReplacementWaitsForSegmentPublication()
       throws Exception {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var oldRegistration = registration().build();
     var oldSession = registry.register(WORKER_ID, oldRegistration, new CapturingResponses());
     var job =
@@ -161,7 +162,7 @@ class WorkerProbeDispatchTest {
 
       assertThat(publishing.get(5, TimeUnit.SECONDS))
           .as("The released segment publication must succeed")
-          .isTrue();
+          .contains(SegmentPublication.PUBLISHED);
     }
   }
 
@@ -170,7 +171,7 @@ class WorkerProbeDispatchTest {
   @DisplayName("Should reject unversioned probes even when a worker advertises version zero")
   void shouldRejectUnversionedProbesEvenWhenWorkerAdvertisesVersionZero(
       int advertisedVersion, boolean explicitZero) throws Exception {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(advertisedVersion);
     var responses = new CapturingResponses();
@@ -202,7 +203,7 @@ class WorkerProbeDispatchTest {
   @DisplayName("Should reject an unversioned reply when the pending probe requested version one")
   void shouldRejectUnversionedReplyWhenPendingProbeRequestedVersionOne(boolean explicitZero)
       throws Exception {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
@@ -228,7 +229,7 @@ class WorkerProbeDispatchTest {
   @Test
   @DisplayName("Should keep a worker available for transcodes when it advertises no probe support")
   void shouldKeepWorkerAvailableForTranscodesWhenItAdvertisesNoProbeSupport() {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var responses = new CapturingResponses();
     registry.register(WORKER_ID, registration().build(), responses);
 
@@ -251,7 +252,7 @@ class WorkerProbeDispatchTest {
   @Test
   @DisplayName("Should dispatch a probe when its version and source namespace are advertised")
   void shouldDispatchProbeWhenItsVersionAndSourceNamespaceAreAdvertised() {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var responses = new CapturingResponses();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
@@ -277,7 +278,7 @@ class WorkerProbeDispatchTest {
           + " source namespace")
   void shouldRefuseProbeAsIncompatibleWhenWorkerDoesNotAdvertiseItsVersionOrSourceNamespace(
       Incompatibility incompatibility) {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var responses = new CapturingResponses();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
@@ -297,7 +298,7 @@ class WorkerProbeDispatchTest {
           + " worker")
   void shouldRefuseProbeAsIncompatibleNotBusyWhenStreamFillsIncompatibleWorker(
       Incompatibility incompatibility) {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     registry.register(WORKER_ID, registration.build(), new CapturingResponses());
@@ -313,7 +314,7 @@ class WorkerProbeDispatchTest {
   @Test
   @DisplayName("Should refuse a probe as invalid when its source is missing")
   void shouldRefuseProbeAsInvalidWhenItsSourceIsMissing() {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     registry.register(WORKER_ID, registration.build(), new CapturingResponses());
@@ -327,7 +328,7 @@ class WorkerProbeDispatchTest {
   @DisplayName(
       "Should share worker capacity when either a probe or transcode occupies the last slot")
   void shouldShareWorkerCapacityWhenEitherProbeOrTranscodeOccupiesLastSlot(boolean probeFirst) {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     registry.register(WORKER_ID, registration.build(), new CapturingResponses());
@@ -357,7 +358,7 @@ class WorkerProbeDispatchTest {
           + " lacks the probe version")
   void shouldRefuseProbeAsBusyWhenStreamFillsCompatibleWorkerAndAnotherLacksProbeVersion(
       UUID compatibleWorker, UUID incompatibleWorker) {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var compatible = registration(compatibleWorker);
     compatible.getCapabilitiesBuilder().addProbeVersions(1);
     var compatibleSession =
@@ -380,7 +381,7 @@ class WorkerProbeDispatchTest {
           + " worker")
   void shouldDispatchProbeToFreeCompatibleWorkerWhenStreamFillsAnotherCompatibleWorker(
       UUID fullWorker, UUID freeWorker) {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var full = registration(fullWorker);
     full.getCapabilitiesBuilder().addProbeVersions(1);
     var fullSession = registry.register(fullWorker, full.build(), new CapturingResponses());
@@ -407,7 +408,7 @@ class WorkerProbeDispatchTest {
           + " stream fills the other")
   void shouldRefuseProbeAsUnreachableWhenOneCompatibleWorkerCannotReceiveItAndStreamFillsOther(
       UUID unreachableWorker, UUID fullWorker) {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     registerProbeWorker(registry, unreachableWorker, rejectingStartProbes());
     var fullSession = registerProbeWorker(registry, fullWorker, new CapturingResponses());
     assertThat(registry.dispatchTo(new ExecutionTargetId(fullSession.toString()), stream()))
@@ -427,7 +428,7 @@ class WorkerProbeDispatchTest {
           + " receive it")
   void shouldDispatchProbeToFreeCompatibleWorkerWhenAnotherCompatibleWorkerCannotReceiveIt(
       UUID unreachableWorker, UUID freeWorker) {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     registerProbeWorker(registry, unreachableWorker, rejectingStartProbes());
     var freeResponses = new CapturingResponses();
     registerProbeWorker(registry, freeWorker, freeResponses);
@@ -470,7 +471,7 @@ class WorkerProbeDispatchTest {
       "Should complete a probe and release its slot when the current session returns the requested version")
   void shouldCompleteProbeAndReleaseItsSlotWhenCurrentSessionReturnsRequestedVersion()
       throws Exception {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(2);
     var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
@@ -503,7 +504,7 @@ class WorkerProbeDispatchTest {
       "Should fail the pending probe without accepting data when its reply has another version")
   void shouldFailPendingProbeWithoutAcceptingDataWhenItsReplyHasAnotherVersion(
       int requestedVersion, int reportedVersion, String diagnostic) {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(requestedVersion);
     var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
@@ -528,7 +529,7 @@ class WorkerProbeDispatchTest {
   @Test
   @DisplayName("Should fail a pending probe for retry when its worker session disconnects")
   void shouldFailPendingProbeForRetryWhenItsWorkerSessionDisconnects() {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
@@ -546,7 +547,7 @@ class WorkerProbeDispatchTest {
   @DisplayName(
       "Should refuse a probe as having no connected worker when the only worker disconnects")
   void shouldRefuseProbeAsHavingNoConnectedWorkerWhenTheOnlyWorkerDisconnects() {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
@@ -560,7 +561,7 @@ class WorkerProbeDispatchTest {
   @Test
   @DisplayName("Should dispatch the same attempt again when its disconnected worker reconnects")
   void shouldDispatchSameAttemptAgainWhenItsDisconnectedWorkerReconnects() {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
@@ -577,7 +578,7 @@ class WorkerProbeDispatchTest {
   @DisplayName(
       "Should retain probe capacity after cancellation until the worker acknowledges termination")
   void shouldRetainProbeCapacityAfterCancellationUntilWorkerAcknowledgesTermination() {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var responses = new CapturingResponses();
@@ -613,7 +614,7 @@ class WorkerProbeDispatchTest {
   @DisplayName(
       "Should fail a disconnected probe without waiting for a concurrent segment publication")
   void shouldFailDisconnectedProbeWithoutWaitingForConcurrentSegmentPublication() throws Exception {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration().setAvailableSlots(2);
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
@@ -651,7 +652,7 @@ class WorkerProbeDispatchTest {
         release.countDown();
       }
 
-      assertThat(publishing.get(5, TimeUnit.SECONDS)).isTrue();
+      assertThat(publishing.get(5, TimeUnit.SECONDS)).contains(SegmentPublication.PUBLISHED);
     }
   }
 
@@ -659,7 +660,7 @@ class WorkerProbeDispatchTest {
   @DisplayName(
       "Should preserve the original pending probe when the same attempt is dispatched again")
   void shouldPreserveOriginalPendingProbeWhenSameAttemptIsDispatchedAgain() throws Exception {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration().setAvailableSlots(2);
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var responses = new CapturingResponses();
@@ -683,10 +684,12 @@ class WorkerProbeDispatchTest {
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(2);
   }
 
-  private static void holdPublication(CountDownLatch entered, CountDownLatch release) {
+  private static SegmentPublication holdPublication(
+      CountDownLatch entered, CountDownLatch release) {
     entered.countDown();
     try {
       release.await();
+      return SegmentPublication.PUBLISHED;
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new AssertionError(e);
@@ -698,7 +701,7 @@ class WorkerProbeDispatchTest {
   @DisplayName(
       "Should start an attempt only once when the same probe is dispatched to eligible workers")
   void shouldStartAttemptOnlyOnceWhenSameProbeIsDispatchedToEligibleWorkers(int workerCount) {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var responses = new CapturingResponses();
     for (var workerIndex = 0; workerIndex < workerCount; workerIndex++) {
       var workerId = UUID.randomUUID();
@@ -732,7 +735,7 @@ class WorkerProbeDispatchTest {
       "Should retain the pending probe when a reply belongs to another worker session or attempt")
   void shouldRetainPendingProbeWhenReplyBelongsToAnotherWorkerSessionOrAttempt(
       ReplyMismatch mismatch) throws Exception {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
@@ -761,7 +764,7 @@ class WorkerProbeDispatchTest {
   @Test
   @DisplayName("Should reject a repeated reply when its probe already completed")
   void shouldRejectRepeatedReplyWhenItsProbeAlreadyCompleted() {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
@@ -777,7 +780,7 @@ class WorkerProbeDispatchTest {
   @DisplayName(
       "Should decline a probe dispatch when its connection disappears during the command send")
   void shouldDeclineProbeDispatchWhenItsConnectionDisappearsDuringCommandSend() throws Exception {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var entered = new CountDownLatch(1);
@@ -815,7 +818,7 @@ class WorkerProbeDispatchTest {
   @DisplayName(
       "Should reserve a cancelled attempt across workers until termination is acknowledged")
   void shouldReserveCancelledAttemptAcrossWorkersUntilTerminationIsAcknowledged() {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
@@ -844,7 +847,7 @@ class WorkerProbeDispatchTest {
   @ValueSource(ints = {1, 2})
   @DisplayName("Should release an attempt reservation when the worker replies with any version")
   void shouldReleaseAttemptReservationWhenWorkerRepliesWithAnyVersion(int replyVersion) {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
@@ -865,7 +868,7 @@ class WorkerProbeDispatchTest {
   @Test
   @DisplayName("Should release an attempt reservation when its first delivery fails")
   void shouldReleaseAttemptReservationWhenItsFirstDeliveryFails() {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var failNextDelivery = new AtomicBoolean(true);
@@ -899,7 +902,7 @@ class WorkerProbeDispatchTest {
   @Test
   @DisplayName("Should fail an abandoned probe when its worker reconnects")
   void shouldFailAbandonedProbeWhenItsWorkerReconnects() {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     registry.register(WORKER_ID, registration.build(), new CapturingResponses());
@@ -915,7 +918,7 @@ class WorkerProbeDispatchTest {
   @Test
   @DisplayName("Should ignore a reply from the old session when its worker reconnects")
   void shouldIgnoreReplyFromOldSessionWhenItsWorkerReconnects() throws Exception {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var oldSession = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
@@ -985,7 +988,7 @@ class WorkerProbeDispatchTest {
 
   private boolean replacementStartsBeforeSupersededProbeFails(ExecutorService executor)
       throws Exception {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     registry.register(WORKER_ID, registration.build(), new CapturingResponses());
@@ -1034,7 +1037,7 @@ class WorkerProbeDispatchTest {
   @Test
   @DisplayName("Should release probe capacity when sending its start command fails")
   void shouldReleaseProbeCapacityWhenSendingItsStartCommandFails() {
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var responses =

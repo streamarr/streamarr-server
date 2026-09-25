@@ -4,13 +4,25 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.google.common.jimfs.Configuration;
+import com.google.common.jimfs.Feature;
+import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.services.streaming.SegmentPublication;
+import com.streamarr.server.services.streaming.SegmentStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -21,6 +33,10 @@ import org.junit.jupiter.api.io.TempDir;
 @Tag("UnitTest")
 @DisplayName("Local Segment Store Tests")
 class LocalSegmentStoreTest {
+
+  private static final String VARIANT_INITIALIZATION_SEGMENT = "720p/init.mp4";
+  private static final int CONTENDERS = 8;
+  private static final int RACE_ROUNDS = 25;
 
   @TempDir Path tempDir;
 
@@ -147,6 +163,140 @@ class LocalSegmentStoreTest {
 
     assertThat(store.segmentExists(sessionId, segmentName)).isTrue();
     assertThat(store.readSegment(sessionId, segmentName)).isEqualTo(segmentData);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the stored initialization segment when a different one is published for the variant")
+  void shouldKeepStoredInitializationSegmentWhenDifferentOneIsPublishedForVariant() {
+    var sessionId = UUID.randomUUID();
+    var stored = "ftyp moov from encoder A".getBytes();
+    store.storeSegment(sessionId, "720p/init.mp4", stored);
+
+    var publication =
+        store.storeSegment(sessionId, "720p/init.mp4", "ftyp moov from encoder B".getBytes());
+
+    assertThat(publication).isEqualTo(SegmentPublication.INITIALIZATION_SEGMENT_DIFFERS);
+    assertThat(store.readSegment(sessionId, "720p/init.mp4")).isEqualTo(stored);
+  }
+
+  @Test
+  @DisplayName(
+      "Should publish an initialization segment when it matches the one stored for the variant")
+  void shouldPublishInitializationSegmentWhenItMatchesOneStoredForVariant() {
+    var sessionId = UUID.randomUUID();
+    var stored = "ftyp moov from encoder A".getBytes();
+    store.storeSegment(sessionId, "init.mp4", stored);
+
+    var publication = store.storeSegment(sessionId, "init.mp4", stored.clone());
+
+    assertThat(publication).isEqualTo(SegmentPublication.PUBLISHED);
+    assertThat(store.readSegment(sessionId, "init.mp4")).isEqualTo(stored);
+  }
+
+  @Test
+  @DisplayName(
+      "Should store exactly one initialization segment when differing ones are published concurrently")
+  void shouldStoreExactlyOneInitializationSegmentWhenDifferingOnesArePublishedConcurrently() {
+    assertExactlyOneContenderStoredPerRace(store);
+  }
+
+  @Test
+  @DisplayName(
+      "Should store the first initialization segment when the segment volume cannot create hard links")
+  void shouldStoreFirstInitializationSegmentWhenSegmentVolumeCannotCreateHardLinks()
+      throws IOException {
+    try (var volume = volumeWithoutHardLinks()) {
+      var linklessStore = new LocalSegmentStore(volume.getPath("/segments"));
+      var sessionId = UUID.randomUUID();
+      var initialization = "ftyp moov from encoder A".getBytes();
+
+      var publication =
+          linklessStore.storeSegment(sessionId, VARIANT_INITIALIZATION_SEGMENT, initialization);
+
+      assertThat(publication).isEqualTo(SegmentPublication.PUBLISHED);
+      assertThat(linklessStore.readSegment(sessionId, VARIANT_INITIALIZATION_SEGMENT))
+          .isEqualTo(initialization);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should store exactly one initialization segment when differing ones race on a volume that cannot create hard links")
+  void shouldStoreExactlyOneInitializationSegmentWhenDifferingOnesRaceOnVolumeWithoutHardLinks()
+      throws IOException {
+    try (var volume = volumeWithoutHardLinks()) {
+      assertExactlyOneContenderStoredPerRace(new LocalSegmentStore(volume.getPath("/segments")));
+    }
+  }
+
+  /** Like exFAT and some network mounts: renames work, hard links do not. */
+  private static FileSystem volumeWithoutHardLinks() {
+    return Jimfs.newFileSystem(
+        Configuration.unix().toBuilder()
+            .setSupportedFeatures(
+                Feature.SYMBOLIC_LINKS, Feature.SECURE_DIRECTORY_STREAM, Feature.FILE_CHANNEL)
+            .build());
+  }
+
+  private static void assertExactlyOneContenderStoredPerRace(SegmentStore store) {
+    for (var round = 0; round < RACE_ROUNDS; round++) {
+      var sessionId = UUID.randomUUID();
+
+      var stored = contendersStoredByConcurrentPublication(store, sessionId);
+
+      assertThat(stored).as("contenders stored in round %s", round).hasSize(1);
+      assertThat(store.readSegment(sessionId, VARIANT_INITIALIZATION_SEGMENT))
+          .isEqualTo(contenderInitialization(stored.getFirst()));
+    }
+  }
+
+  private static List<Integer> contendersStoredByConcurrentPublication(
+      SegmentStore store, UUID sessionId) {
+    var start = new CountDownLatch(1);
+    var prepared =
+        IntStream.range(0, CONTENDERS)
+            .mapToObj(
+                contender ->
+                    store.prepareSegment(
+                        sessionId,
+                        VARIANT_INITIALIZATION_SEGMENT,
+                        contenderInitialization(contender)))
+            .toList();
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var publications =
+          prepared.stream()
+              .map(
+                  segment ->
+                      CompletableFuture.supplyAsync(() -> publishAfter(start, segment), executor))
+              .toList();
+      start.countDown();
+      return IntStream.range(0, CONTENDERS)
+          .filter(
+              contender ->
+                  publications.get(contender).orTimeout(5, TimeUnit.SECONDS).join()
+                      == SegmentPublication.PUBLISHED)
+          .boxed()
+          .toList();
+    }
+  }
+
+  private static byte[] contenderInitialization(int contender) {
+    return ("encoder " + contender).getBytes();
+  }
+
+  private static SegmentPublication publishAfter(
+      CountDownLatch start, SegmentStore.PreparedSegment prepared) {
+    try (prepared) {
+      if (!start.await(5, TimeUnit.SECONDS)) {
+        throw new AssertionError("Timed out waiting for the race to start");
+      }
+
+      return prepared.publish();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new AssertionError(e);
+    }
   }
 
   @Test

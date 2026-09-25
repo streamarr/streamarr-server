@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.google.protobuf.ByteString;
 import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptCompleted;
@@ -51,7 +52,7 @@ class WorkerSessionGrpcServiceTest {
   void shouldCompleteProbeWhenItsResultArrivesOnAuthenticatedWorkerSession() throws Exception {
     var workerId = UUID.randomUUID();
     var sourceNamespaceId = UUID.randomUUID();
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
     var session = workerSession(service, workerId, new IgnoringResponseObserver());
     var registration = registration(worker(workerId), sourceNamespaceId).toBuilder();
@@ -82,7 +83,7 @@ class WorkerSessionGrpcServiceTest {
   void shouldRetryRegistrationWhenSendingAcceptanceResponseFails() throws Exception {
     var workerId = UUID.randomUUID();
     var sourceNamespaceId = UUID.randomUUID();
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
     var session = workerSession(service, workerId, new FailingOnceResponseObserver());
     var registration =
@@ -103,7 +104,7 @@ class WorkerSessionGrpcServiceTest {
   void shouldStopRunningVariantWhenWorkerFailsJobAttempt() throws Exception {
     var workerId = UUID.randomUUID();
     var sourceNamespaceId = UUID.randomUUID();
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
     var session = workerSession(service, workerId, new IgnoringResponseObserver());
     session.onNext(
@@ -135,7 +136,7 @@ class WorkerSessionGrpcServiceTest {
       throws Exception {
     var workerId = UUID.randomUUID();
     var sourceNamespaceId = UUID.randomUUID();
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
     var session = workerSession(service, workerId, new IgnoringResponseObserver());
     session.onNext(
@@ -169,7 +170,7 @@ class WorkerSessionGrpcServiceTest {
   void shouldKeepEstablishedSessionAndRunningJobWhenWorkerRepeatsRegistration() throws Exception {
     var workerId = UUID.randomUUID();
     var sourceNamespaceId = UUID.randomUUID();
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
     var session = workerSession(service, workerId, new IgnoringResponseObserver());
     var registration =
@@ -203,7 +204,8 @@ class WorkerSessionGrpcServiceTest {
   @DisplayName("Should reject an upload when no authenticated worker identity is present")
   void shouldRejectUploadWhenNoAuthenticatedWorkerIdentityIsPresent() {
     var service =
-        new WorkerSessionGrpcService(new LiveWorkerConnectionRegistry(), new FakeSegmentStore());
+        new WorkerSessionGrpcService(
+            LiveWorkerConnectionRegistryFixture.defaultRegistry(), new FakeSegmentStore());
     var response = new RecordingUploadResponseObserver();
 
     var rejectedUpload = service.uploadSegment(response);
@@ -221,7 +223,8 @@ class WorkerSessionGrpcServiceTest {
   @DisplayName("Should reject an upload when the global concurrent upload limit is exhausted")
   void shouldRejectUploadWhenGlobalConcurrentUploadLimitIsExhausted() throws Exception {
     var service =
-        new WorkerSessionGrpcService(new LiveWorkerConnectionRegistry(), new FakeSegmentStore());
+        new WorkerSessionGrpcService(
+            LiveWorkerConnectionRegistryFixture.defaultRegistry(), new FakeSegmentStore());
     var uploads = new ArrayList<StreamObserver<UploadSegmentRequest>>();
     // A distinct worker per upload, so the global ceiling is what rejects rather than any single
     // worker's allowance.
@@ -256,7 +259,7 @@ class WorkerSessionGrpcServiceTest {
     var workerId = UUID.randomUUID();
     var sourceNamespaceId = UUID.randomUUID();
     var worker = worker(workerId);
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var workerSessionId =
         registry.register(
             workerId, registration(worker, sourceNamespaceId), new IgnoringResponseObserver());
@@ -300,7 +303,7 @@ class WorkerSessionGrpcServiceTest {
     var workerId = UUID.randomUUID();
     var sourceNamespaceId = UUID.randomUUID();
     var worker = worker(workerId);
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var workerSessionId =
         registry.register(
             workerId, registration(worker, sourceNamespaceId), new IgnoringResponseObserver());
@@ -369,7 +372,7 @@ class WorkerSessionGrpcServiceTest {
     var workerId = UUID.randomUUID();
     var sourceNamespaceId = UUID.randomUUID();
     var worker = worker(workerId);
-    var registry = new LiveWorkerConnectionRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var workerSessionId =
         registry.register(
             workerId, registration(worker, sourceNamespaceId), new IgnoringResponseObserver());
@@ -467,8 +470,8 @@ class WorkerSessionGrpcServiceTest {
       var prepared = super.prepareSegment(sessionId, segmentName, data);
       return new PreparedSegment() {
         @Override
-        public void publish() {
-          prepared.publish();
+        public SegmentPublication publish() {
+          return prepared.publish();
         }
 
         @Override

@@ -1,10 +1,12 @@
 package com.streamarr.server.services.streaming.remote;
 
 import static org.assertj.core.api.Assertions.assertThatNoException;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.transcode.v1.ProbeRequest;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.UUID;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.DisplayName;
@@ -34,6 +36,39 @@ class WorkerSessionServerTest {
   }
 
   @Test
+  @DisplayName("Should reject a worker session server when its configuration is missing")
+  void shouldRejectWorkerSessionServerWhenItsConfigurationIsMissing() {
+    var segmentStore = new FakeSegmentStore();
+    var meterRegistry = new SimpleMeterRegistry();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> new WorkerSessionServer(null, segmentStore, meterRegistry))
+        .withMessageContaining("configuration");
+  }
+
+  @Test
+  @DisplayName("Should reject a worker session server when its segment store is missing")
+  void shouldRejectWorkerSessionServerWhenItsSegmentStoreIsMissing() {
+    var configuration = WorkerSessionServerConfiguration.builder().port(0).build();
+    var meterRegistry = new SimpleMeterRegistry();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> new WorkerSessionServer(configuration, null, meterRegistry))
+        .withMessageContaining("segmentStore");
+  }
+
+  @Test
+  @DisplayName("Should reject a worker session server when its meter registry is missing")
+  void shouldRejectWorkerSessionServerWhenItsMeterRegistryIsMissing() {
+    var configuration = WorkerSessionServerConfiguration.builder().port(0).build();
+    var segmentStore = new FakeSegmentStore();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> new WorkerSessionServer(configuration, segmentStore, null))
+        .withMessageContaining("meterRegistry");
+  }
+
+  @Test
   @DisplayName("Should reject a probe dispatch when the worker session server has not started")
   void shouldRejectProbeDispatchWhenWorkerSessionServerHasNotStarted() {
     var server = unstartedServer();
@@ -44,7 +79,8 @@ class WorkerSessionServerTest {
 
   private WorkerSessionServer unstartedServer() {
     var configuration = WorkerSessionServerConfiguration.builder().port(0).build();
-    return new WorkerSessionServer(configuration, new FakeSegmentStore());
+    return new WorkerSessionServer(
+        configuration, new FakeSegmentStore(), new SimpleMeterRegistry());
   }
 
   @Test

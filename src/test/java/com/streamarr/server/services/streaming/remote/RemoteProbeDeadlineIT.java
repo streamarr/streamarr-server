@@ -12,6 +12,7 @@ import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -38,7 +39,9 @@ class RemoteProbeDeadlineIT {
     Files.copy(Path.of(source.toURI()), mediaRoot.resolve("next.mp4"));
     var configuration = serverConfigurationBuilder().probeTimeout(Duration.ofSeconds(2)).build();
     try (var calls = Executors.newVirtualThreadPerTaskExecutor();
-        var server = new WorkerSessionServer(configuration, new FakeSegmentStore());
+        var server =
+            new WorkerSessionServer(
+                configuration, new FakeSegmentStore(), new SimpleMeterRegistry());
         var worker =
             WorkerContainerFixture.builder()
                 .workerSessions(server)

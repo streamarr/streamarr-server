@@ -23,6 +23,9 @@ import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
+import com.streamarr.server.services.streaming.SegmentPublication;
+import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptCompleted;
@@ -48,6 +51,8 @@ import io.grpc.ManagedChannel;
 import io.grpc.Status;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.StreamObserver;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -68,6 +73,7 @@ import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -93,7 +99,8 @@ class WorkerSessionServerIT {
                 ending == SessionEnd.TIMED_OUT ? Duration.ofSeconds(2) : Duration.ofMinutes(1))
             .probeCancellationTimeout(Duration.ofMillis(100))
             .build();
-    try (var server = new WorkerSessionServer(configuration, segmentStore)) {
+    try (var server =
+        new WorkerSessionServer(configuration, segmentStore, new SimpleMeterRegistry())) {
       server.start();
       var channel = workerChannel(server.port());
       var identity = workerIdentity(UUID.randomUUID());
@@ -235,7 +242,7 @@ class WorkerSessionServerIT {
       var prepared = super.prepareSegment(sessionId, segmentName, bytes);
       return new PreparedSegment() {
         @Override
-        public void publish() {
+        public SegmentPublication publish() {
           entered.countDown();
           try {
             assertThat(release.await(30, TimeUnit.SECONDS)).isTrue();
@@ -244,7 +251,7 @@ class WorkerSessionServerIT {
             throw new AssertionError(exception);
           }
 
-          prepared.publish();
+          return prepared.publish();
         }
 
         @Override
@@ -741,6 +748,86 @@ class WorkerSessionServerIT {
                 segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
             .isFalse();
         replacement.close();
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should end the replacement attempt and keep the stored segments when its initialization segment differs")
+  void shouldEndReplacementAttemptAndKeepStoredSegmentsWhenItsInitializationSegmentDiffers(
+      @TempDir Path segments) throws Exception {
+    var segmentStore = new LocalSegmentStore(segments);
+    var meterRegistry = new SimpleMeterRegistry();
+    var storedInitialization = "ftyp moov from encoder A".getBytes();
+    var firstMediaSegment = "moof mdat of segment 0".getBytes();
+    var differingInitialization = "ftyp moov from encoder B".getBytes();
+    try (var server = server(segmentStore, meterRegistry)) {
+      server.start();
+      var channel = workerChannel(server.port());
+
+      var identity = workerIdentity(UUID.randomUUID());
+      try (var worker = connect(channel, identity)) {
+        var workerSession = worker.nextResponse().getSessionAccepted();
+        var initial = variantJob();
+        var streamSessionId = fromProto(initial.getStreamSessionId());
+        assertThat(server.dispatch(initial)).isTrue();
+        assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(initial);
+        var initialUpload = segmentMetadata(workerSession, identity, initial);
+        upload(
+                channel,
+                fmp4Metadata(initialUpload, "init.mp4", storedInitialization),
+                storedInitialization)
+            .get(5, TimeUnit.SECONDS);
+        upload(
+                channel,
+                fmp4Metadata(initialUpload, "segment0.m4s", firstMediaSegment),
+                firstMediaSegment)
+            .get(5, TimeUnit.SECONDS);
+        worker.send(
+            EstablishWorkerSessionRequest.newBuilder()
+                .setJobAttemptFailed(
+                    JobAttemptFailed.newBuilder()
+                        .setJobAttemptId(initial.getJobAttemptId())
+                        .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED))
+                .build());
+        await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId, "720p"));
+        var replacement = initial.toBuilder().setJobAttemptId(toProto(UUID.randomUUID())).build();
+        assertThat(server.dispatch(replacement)).isTrue();
+        assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(replacement);
+
+        var refused =
+            upload(
+                channel,
+                fmp4Metadata(
+                    segmentMetadata(workerSession, identity, replacement),
+                    "init.mp4",
+                    differingInitialization),
+                differingInitialization);
+
+        assertUploadRejected(refused, Status.Code.FAILED_PRECONDITION);
+        assertThat(worker.nextResponse().getStopVariant().getJobAttemptId())
+            .isEqualTo(replacement.getJobAttemptId());
+        assertThat(server.isRunning(streamSessionId, "720p")).isFalse();
+        assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
+        assertThat(InitializationSegmentMismatchMetric.count(meterRegistry)).isEqualTo(1);
+        var laterMediaSegment = "moof mdat of segment 1".getBytes();
+        assertUploadRejected(
+            upload(
+                channel,
+                fmp4Metadata(
+                    segmentMetadata(workerSession, identity, replacement),
+                    "segment1.m4s",
+                    laterMediaSegment),
+                laterMediaSegment),
+            Status.Code.PERMISSION_DENIED);
+        assertThat(segmentStore.readSegment(streamSessionId, "720p/init.mp4"))
+            .isEqualTo(storedInitialization);
+        assertThat(segmentStore.readSegment(streamSessionId, "720p/segment0.m4s"))
+            .isEqualTo(firstMediaSegment);
+        assertThat(segmentStore.segmentExists(streamSessionId, "720p/segment1.m4s")).isFalse();
       } finally {
         shutdown(channel);
       }
@@ -1254,8 +1341,13 @@ class WorkerSessionServerIT {
     return server(new FakeSegmentStore());
   }
 
-  private WorkerSessionServer server(FakeSegmentStore segmentStore) {
-    return new WorkerSessionServer(serverConfigurationBuilder().build(), segmentStore);
+  private WorkerSessionServer server(SegmentStore segmentStore) {
+    return server(segmentStore, new SimpleMeterRegistry());
+  }
+
+  private WorkerSessionServer server(SegmentStore segmentStore, MeterRegistry meterRegistry) {
+    return new WorkerSessionServer(
+        serverConfigurationBuilder().build(), segmentStore, meterRegistry);
   }
 
   private ManagedChannel workerChannel(int port) {
@@ -1356,6 +1448,15 @@ class WorkerSessionServerIT {
         .setVariantLabel(job.getVariant().getVariantLabel())
         .setSegmentName("segment0.ts")
         .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP2T);
+  }
+
+  private static SegmentUploadMetadata fmp4Metadata(
+      SegmentUploadMetadata.Builder metadata, String segmentName, byte[] data) {
+    return metadata
+        .setSegmentName(segmentName)
+        .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP4)
+        .setContentLengthBytes(data.length)
+        .build();
   }
 
   private CompletableFuture<UploadSegmentResponse> upload(

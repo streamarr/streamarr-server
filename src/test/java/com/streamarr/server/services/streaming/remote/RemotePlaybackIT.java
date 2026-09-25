@@ -29,7 +29,9 @@ import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
+import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -456,7 +458,9 @@ class RemotePlaybackIT {
 
   private WorkerSessionServer server(LocalSegmentStore segmentStore) {
     return new WorkerSessionServer(
-        serverConfigurationBuilder().address("127.0.0.1").build(), segmentStore);
+        serverConfigurationBuilder().address("127.0.0.1").build(),
+        segmentStore,
+        new SimpleMeterRegistry());
   }
 
   private WorkerContainerFixture.WorkerContainerFixtureBuilder workerBuilder(
@@ -690,9 +694,10 @@ class RemotePlaybackIT {
       var prepared = super.prepareSegment(sessionId, segmentName, data);
       return new PreparedSegment() {
         @Override
-        public void publish() {
-          prepared.publish();
+        public SegmentPublication publish() {
+          var outcome = prepared.publish();
           publication(segmentName).complete(null);
+          return outcome;
         }
 
         @Override
@@ -725,7 +730,7 @@ class RemotePlaybackIT {
       var prepared = super.prepareSegment(sessionId, segmentName, data);
       return new PreparedSegment() {
         @Override
-        public void publish() {
+        public SegmentPublication publish() {
           try {
             assertThat(requestedWhileMissing.await(5, TimeUnit.SECONDS))
                 .as(
@@ -737,7 +742,7 @@ class RemotePlaybackIT {
                 "Interrupted while awaiting the first segment request", exception);
           }
 
-          prepared.publish();
+          return prepared.publish();
         }
 
         @Override

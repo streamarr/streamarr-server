@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 
+import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
@@ -10,6 +11,7 @@ import com.streamarr.transcode.v1.UploadSegmentResponse;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import java.io.ByteArrayOutputStream;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.NonNull;
@@ -113,11 +115,11 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
       return;
     }
     var segmentName = qualifiedSegmentName();
-    boolean published;
+    Optional<SegmentPublication> outcome;
     try (var prepared =
         segmentStore.prepareSegment(
             fromProto(metadata.getStreamSessionId()), segmentName, data.toByteArray())) {
-      published =
+      outcome =
           workerConnections.publishIfAuthorized(authenticatedWorkerId, metadata, prepared::publish);
     } catch (RuntimeException e) {
       log.error(
@@ -128,8 +130,15 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
       reject(Status.INTERNAL.withDescription("Segment could not be stored"));
       return;
     }
-    if (!published) {
-      reject(Status.PERMISSION_DENIED.withDescription("Segment upload lost connection ownership"));
+    var status =
+        outcome
+            .map(SegmentUploadObserver::responseStatus)
+            .orElseGet(
+                () ->
+                    Status.PERMISSION_DENIED.withDescription(
+                        "Segment upload lost connection ownership"));
+    if (!status.isOk()) {
+      reject(status);
       return;
     }
 
@@ -142,6 +151,15 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
             .setAcceptedLengthBytes(acceptedLength)
             .build());
     responseObserver.onCompleted();
+  }
+
+  private static Status responseStatus(SegmentPublication outcome) {
+    return switch (outcome) {
+      case PUBLISHED -> Status.OK;
+      case INITIALIZATION_SEGMENT_DIFFERS ->
+          Status.FAILED_PRECONDITION.withDescription(
+              "Initialization segment differs from the one stored for the variant");
+    };
   }
 
   private String qualifiedSegmentName() {

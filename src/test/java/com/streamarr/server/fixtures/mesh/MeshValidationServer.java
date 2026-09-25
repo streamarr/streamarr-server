@@ -9,6 +9,7 @@ import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -27,7 +28,7 @@ public final class MeshValidationServer {
     var configuration =
         WorkerSessionServerConfiguration.builder().address("0.0.0.0").port(9090).build();
     var segments = new MeshSegmentStore();
-    try (var server = new WorkerSessionServer(configuration, segments);
+    try (var server = new WorkerSessionServer(configuration, segments, new SimpleMeterRegistry());
         var httpThreads = Executors.newVirtualThreadPerTaskExecutor()) {
       server.start();
       var http = HttpServer.create(new InetSocketAddress("0.0.0.0", 8080), 0);

@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.local;
 
+import com.streamarr.server.services.streaming.SegmentPublication;
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -17,6 +18,10 @@ final class PreparedSegmentFile implements AutoCloseable {
     void moveAtomically(Path source, Path target) throws IOException;
 
     void moveReplacing(Path source, Path target) throws IOException;
+
+    boolean notExists(Path path);
+
+    boolean hasSameContent(Path first, Path second) throws IOException;
 
     void delete(Path path) throws IOException;
   }
@@ -43,6 +48,16 @@ final class PreparedSegmentFile implements AutoCloseable {
     @Override
     public void moveReplacing(Path source, Path target) throws IOException {
       Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    @Override
+    public boolean notExists(Path path) {
+      return Files.notExists(path);
+    }
+
+    @Override
+    public boolean hasSameContent(Path first, Path second) throws IOException {
+      return Files.mismatch(first, second) == -1L;
     }
 
     @Override
@@ -85,6 +100,24 @@ final class PreparedSegmentFile implements AutoCloseable {
     } catch (AtomicMoveNotSupportedException _) {
       files.moveReplacing(temporary, target);
     }
+  }
+
+  /**
+   * Publishes when nothing is stored at {@code target} yet; otherwise leaves the stored file
+   * untouched and reports whether it holds the same bytes. Callers serialize publications to one
+   * target.
+   */
+  SegmentPublication publishUnlessStored(Path target) throws IOException {
+    if (files.notExists(target)) {
+      publishTo(target);
+      return SegmentPublication.PUBLISHED;
+    }
+
+    if (files.hasSameContent(temporary, target)) {
+      return SegmentPublication.PUBLISHED;
+    }
+
+    return SegmentPublication.INITIALIZATION_SEGMENT_DIFFERS;
   }
 
   @Override

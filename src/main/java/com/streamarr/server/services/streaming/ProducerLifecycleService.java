@@ -516,8 +516,9 @@ public class ProducerLifecycleService {
 
   /**
    * The requested segment's timeline index. A name carrying none — {@code init.mp4}, which every
-   * run rewrites — belongs to the current run, so it resolves to that run's start rather than to
-   * segment 0, which would drag a mid-timeline producer back to the top of the file.
+   * job attempt produces — belongs to the current job attempt, so it resolves to that attempt's
+   * start rather than to segment 0, which would drag a mid-timeline producer back to the top of the
+   * file.
    */
   private int requestedIndex(StreamSession session, String segmentName) {
     return SegmentNames.indexOf(segmentName).orElseGet(() -> activeStartSequenceNumber(session));

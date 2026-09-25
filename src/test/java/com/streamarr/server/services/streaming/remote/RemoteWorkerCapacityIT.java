@@ -12,6 +12,7 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.ProbeRequest;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
@@ -38,7 +39,9 @@ class RemoteWorkerCapacityIT {
 
     try (var server =
             new WorkerSessionServer(
-                serverConfigurationBuilder().address("127.0.0.1").build(), new FakeSegmentStore());
+                serverConfigurationBuilder().address("127.0.0.1").build(),
+                new FakeSegmentStore(),
+                new SimpleMeterRegistry());
         var worker =
             WorkerContainerFixture.builder()
                 .workerSessions(server)

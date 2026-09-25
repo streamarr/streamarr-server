@@ -10,9 +10,9 @@ public interface SegmentStore {
 
   PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data);
 
-  default void storeSegment(UUID sessionId, String segmentName, byte[] data) {
+  default SegmentPublication storeSegment(UUID sessionId, String segmentName, byte[] data) {
     try (var prepared = prepareSegment(sessionId, segmentName, data)) {
-      prepared.publish();
+      return prepared.publish();
     }
   }
 
@@ -20,7 +20,12 @@ public interface SegmentStore {
 
   interface PreparedSegment extends AutoCloseable {
 
-    void publish();
+    /**
+     * Makes the prepared bytes readable under the segment's name. A variant's initialization
+     * segment is stored once: its first publication is atomic, identical bytes publish again
+     * without change, and different bytes are refused while the stored segment stays untouched.
+     */
+    SegmentPublication publish();
 
     @Override
     void close();
