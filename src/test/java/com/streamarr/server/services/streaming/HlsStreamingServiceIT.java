@@ -49,7 +49,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -65,11 +64,7 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private JdbcTemplate jdbc;
-
-  @Qualifier("probeSchedulerClient")
-  @Autowired
-  private SchedulerClient client;
-
+  @Autowired private SchedulerClient client;
   @Autowired private EntityManager entityManager;
   @Autowired private PlatformTransactionManager transactionManager;
 
