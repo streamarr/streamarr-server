@@ -11,6 +11,7 @@ import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.exceptions.ArtworkResultNotSavedException;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
@@ -581,9 +582,8 @@ class ArtworkServiceTest {
         new DataAccessResourceFailureException("database unavailable");
 
     @Test
-    @DisplayName(
-        "Should fail the required request and finish its run when results cannot be recorded")
-    void shouldFailTheRequiredRequestAndFinishItsRunWhenResultsCannotBeRecorded() {
+    @DisplayName("Should fail the required request and its run when results cannot be recorded")
+    void shouldFailTheRequiredRequestAndItsRunWhenResultsCannotBeRecorded() {
       itemResults.failWritesWith(recordingFailure);
       var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
 
@@ -594,7 +594,42 @@ class ArtworkServiceTest {
           .failsWithin(Duration.ofSeconds(5))
           .withThrowableOfType(ExecutionException.class)
           .withCause(recordingFailure);
-      assertThat(awaitResult(run.completion()).counts().failed()).isEqualTo(2);
+      assertThat(run.completion())
+          .failsWithin(Duration.ofSeconds(5))
+          .withThrowableOfType(ExecutionException.class)
+          .havingCause()
+          .isInstanceOf(ArtworkResultNotSavedException.class)
+          .withCause(recordingFailure);
+    }
+
+    @Test
+    @DisplayName(
+        "Should fail the run only after its other requests finish when a result cannot be"
+            + " recorded")
+    void shouldFailTheRunOnlyAfterItsOtherRequestsFinishWhenAResultCannotBeRecorded() {
+      var downloader = new GatedImageDownloader(createTestImage(600, 900));
+      downloader.holdPathsStartingWith("/held");
+      var service = artworkServiceWith(downloader);
+      var run = service.openRun("scan", ImageRefreshMode.PRESERVE);
+      service.fetchRequired(
+          run, movieArtwork(UUID.randomUUID(), new TmdbImageSource(ImageType.POSTER, "/held.jpg")));
+      await().atMost(Duration.ofSeconds(5)).until(() -> downloader.heldDownloads() == 1);
+      itemResults.failWritesWith(recordingFailure);
+
+      var failed = service.fetchRequired(run, movieArtwork(UUID.randomUUID(), POSTER));
+      run.close();
+
+      assertThat(failed).failsWithin(Duration.ofSeconds(5));
+      assertThat(run.completion()).isNotDone();
+
+      itemResults.failWritesWith(null);
+      downloader.releaseHeldDownloads();
+
+      assertThat(run.completion())
+          .failsWithin(Duration.ofSeconds(5))
+          .withThrowableOfType(ExecutionException.class)
+          .havingCause()
+          .isInstanceOf(ArtworkResultNotSavedException.class);
     }
 
     @Test

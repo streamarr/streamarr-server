@@ -8,7 +8,7 @@ import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.streamarr.server.config.LibraryWatcherProperties;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
-import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -166,7 +166,7 @@ class SchedulerProbeCapacityIT extends AbstractProbeSchedulerIntegrationTest {
         return delegate.probe(request);
       } catch (InterruptedException exception) {
         Thread.currentThread().interrupt();
-        throw new ProbeExecutionException(exception);
+        throw new ProbeCancelledException("Probe interrupted", exception);
       } finally {
         active.decrementAndGet();
       }

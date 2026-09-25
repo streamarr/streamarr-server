@@ -5,8 +5,8 @@ import lombok.NonNull;
 
 /**
  * How one probe execution ends: the instance is done, it must run again with new inputs, its source
- * changed and it must run again once the source is quiet, or it waits for a free worker slot
- * without counting as a failure.
+ * changed and it must run again once the source is quiet, it waits for a free worker slot without
+ * counting as a failure, or its source no longer exists and no probe is requested any more.
  */
 public sealed interface ProbeExecutionResult {
 
@@ -17,4 +17,6 @@ public sealed interface ProbeExecutionResult {
   record SourceChanged(@NonNull ProbeTaskRequest request) implements ProbeExecutionResult {}
 
   record Deferred(@NonNull ProbeTaskRequest request) implements ProbeExecutionResult {}
+
+  record SourceRemoved() implements ProbeExecutionResult {}
 }

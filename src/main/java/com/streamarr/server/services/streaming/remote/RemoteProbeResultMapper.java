@@ -1,9 +1,11 @@
 package com.streamarr.server.services.streaming.remote;
 
+import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeContainerInfo;
@@ -28,18 +30,30 @@ final class RemoteProbeResultMapper {
     return switch (result.getFailure()) {
       case PROBE_FAILURE_INVALID_MEDIA -> new ProbeOutcome.Failure(ProbeError.INVALID_MEDIA);
       case PROBE_FAILURE_NO_VIDEO_STREAM -> new ProbeOutcome.Failure(ProbeError.NO_VIDEO_STREAM);
-      default ->
-          throw new ProbeExecutionException(
-              new IllegalStateException(
-                  "Worker probe reported a retryable failure: " + result.getFailure()));
+      case PROBE_FAILURE_CANCELLED ->
+          throw new ProbeCancelledException("Worker cancelled the probe: " + result.getFailure());
+      case PROBE_FAILURE_SOURCE_UNAVAILABLE ->
+          throw retryable(ItemFailureReason.SOURCE_INACCESSIBLE, result);
+      case PROBE_FAILURE_UNSUPPORTED_VERSION ->
+          throw retryable(ItemFailureReason.MISCONFIGURED, result);
+      default -> throw retryable(ItemFailureReason.TEMPORARY, result);
     };
+  }
+
+  private static ProbeExecutionException retryable(
+      ItemFailureReason reason, ProbeAttemptResult result) {
+    return new ProbeExecutionException(
+        reason, "Worker probe reported a retryable failure: " + result.getFailure());
+  }
+
+  private static ProbeExecutionException contractViolation(String message) {
+    return new ProbeExecutionException(ItemFailureReason.TEMPORARY, message);
   }
 
   private ProbeOutcome.Success success(ProbeMediaInfo media) {
     if (media.getStreamsList().stream()
         .noneMatch(stream -> "video".equals(stream.getCodecType()))) {
-      throw new ProbeExecutionException(
-          new IllegalArgumentException("Worker probe success contains no video stream"));
+      throw contractViolation("Worker probe success contains no video stream");
     }
 
     return new ProbeOutcome.Success(
@@ -73,8 +87,7 @@ final class RemoteProbeResultMapper {
     var consistentSign =
         seconds == 0 || nanos == 0 || Long.signum(seconds) == Integer.signum(nanos);
     if (!validSeconds || !validNanos || !consistentSign) {
-      throw new ProbeExecutionException(
-          new IllegalArgumentException("Worker probe duration violates the protobuf contract"));
+      throw contractViolation("Worker probe duration violates the protobuf contract");
     }
 
     return seconds < 0 || nanos < 0
@@ -84,14 +97,11 @@ final class RemoteProbeResultMapper {
 
   private StreamInfo stream(ProbeStreamInfo stream) {
     if (stream.getIndex() < 0) {
-      throw new ProbeExecutionException(
-          new IllegalArgumentException(
-              "Worker probe stream index exceeds the supported integer range"));
+      throw contractViolation("Worker probe stream index exceeds the supported integer range");
     }
 
     if (stream.getCodecType().isBlank()) {
-      throw new ProbeExecutionException(
-          new IllegalArgumentException("Worker probe stream is missing codec_type"));
+      throw contractViolation("Worker probe stream is missing codec_type");
     }
 
     return StreamInfo.builder()

@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
@@ -27,9 +28,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
- * One probe execution, independent of the scheduler that runs it. Transient failures escape as
- * {@link ProbeExecutionException} so the scheduler retries them with backoff; busy workers defer
- * the probe without a failure.
+ * One probe execution, independent of the scheduler that runs it. Failed attempts escape as {@link
+ * ProbeExecutionException} so the scheduler records their reason and retries them with backoff;
+ * cancelled attempts retry without a recorded failure, and busy workers defer the probe without a
+ * failure.
  */
 @Service
 @Builder(toBuilder = true)
@@ -59,7 +61,7 @@ public class ProbeExecution {
     var path = FilepathCodec.decode(fileSystem, request.filepathUri());
     var before = snapshot(path);
     if (before.isEmpty()) {
-      return new ProbeExecutionResult.Completed();
+      return new ProbeExecutionResult.SourceRemoved();
     }
 
     var observed = before.get();
@@ -98,7 +100,7 @@ public class ProbeExecution {
 
     var after = snapshot(path);
     if (after.isEmpty()) {
-      return new ProbeExecutionResult.Completed();
+      return new ProbeExecutionResult.SourceRemoved();
     }
 
     if (!after.get().equals(observed)) {
@@ -118,13 +120,15 @@ public class ProbeExecution {
 
   private static Optional<SourceFileSnapshot> snapshot(Path path) {
     try {
-      var attributes = Files.readAttributes(path, BasicFileAttributes.class);
       return Optional.of(
-          new SourceFileSnapshot(attributes.size(), attributes.lastModifiedTime().toInstant()));
+          SourceFileSnapshot.of(Files.readAttributes(path, BasicFileAttributes.class)));
     } catch (NoSuchFileException _) {
       return Optional.empty();
     } catch (IOException exception) {
-      throw new ProbeExecutionException(exception);
+      throw new ProbeExecutionException(
+          ItemFailureReason.SOURCE_INACCESSIBLE,
+          "The server could not read the media source",
+          exception);
     }
   }
 }

@@ -447,6 +447,9 @@ class SeriesFileProcessorTest {
   }
 
   private FileDiscovery discoveryOf(Library library) {
-    return new FileDiscovery(library, artworkService.openRun("scan", ImageRefreshMode.PRESERVE));
+    return new FileDiscovery(
+        library,
+        artworkService.openRun("scan", ImageRefreshMode.PRESERVE),
+        ProbeRuns.builder().build().open());
   }
 }

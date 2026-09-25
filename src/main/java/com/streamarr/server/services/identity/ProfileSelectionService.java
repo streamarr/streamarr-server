@@ -55,7 +55,7 @@ public class ProfileSelectionService {
             identity, new Intent.SelectProfile(profile.getId(), pinVerified));
     return switch (decision) {
       case Decision.Allowed<?> _ ->
-          sessionContextService.recordProfileSelection(identity, command.profileId());
+          sessionContextService.saveProfileSelection(identity, command.profileId());
       case Decision.Denied<?> _ -> throw denial(profile, available);
       case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
     };

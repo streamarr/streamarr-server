@@ -89,13 +89,14 @@ Item failures never change the library's status.
 |The next refresh; preserve mode fetches any image type the item lacks
 
 |Probe
-|Terminal errors in `media_file_container_info.probe_error` with the source snapshot and probe version; transient failures in the db-scheduler `media-file-probe` task
-|db-scheduler, with backoff capped at five minutes, for transient failures
+|Terminal errors in `media_file_container_info.probe_error` with the source snapshot and probe version; the reason of the latest failed attempt at the requested inputs in `media_file_probe_task_request`
+|db-scheduler, with backoff capped at five minutes, for failed attempts
 |===
 
 An `item_result` row holds the latest attempt's outcome: `SUCCEEDED`, `UNAVAILABLE` when the provider has nothing, or `FAILED` with a reason.
 The reasons are `DOWNLOAD_FAILED`, `INVALID_MEDIA`, `TEMPORARY`, and `MISCONFIGURED` (a missing provider or rejected provider credentials).
-`SOURCE_INACCESSIBLE` is reserved for a local source the server cannot read; metadata and artwork come from the provider, so no step records it yet.
+A probe attempt records `SOURCE_INACCESSIBLE` when the worker or the server cannot read the source, `MISCONFIGURED` when no connected worker supports the source namespace or probe version, and `TEMPORARY` otherwise.
+A probe that waits for a busy worker, or whose attempt was cancelled, records nothing and stays pending.
 Artwork results follow `ArtworkResult`: a saved image is `SUCCEEDED`, an image type the provider does not offer is `UNAVAILABLE`, and a failed image is `FAILED`.
 An image that preserve mode keeps is skipped and records nothing, so `UNAVAILABLE` is never mistaken for work that never ran.
 
@@ -104,7 +105,7 @@ A failure or unavailable result never replaces a result from a later attempt, so
 A saved image's result is written in the same transaction as the image, so it always describes the stored artwork; concurrent replacements still follow the last-committer-wins rule in https://github.com/streamarr/streamarr-adr/blob/main/adr/0031-transaction-scoped-artwork-replacement-locking.adoc[ADR 0031].
 Matching failures are written only while the file is not `MATCHED`.
 A failed image replacement keeps the existing image.
-When a result cannot be written, the database error reaches the caller: matching fails the scan, a refresh fails, and a required artwork request fails its future after its run counts the image as failed.
+When a result cannot be written, the database error reaches the caller: matching fails the scan, a refresh fails, and a required artwork request fails its future and then its run, which fails the waiting scan or refresh.
 The exception is a saved image's result: because it is written in the image's transaction, a failed write rolls back the image, and the attempt is recorded as `FAILED` instead.
 
 A terminal probe error is reused while the source snapshot and probe version are unchanged; scans and refreshes do not force a new probe for it.
@@ -174,7 +175,10 @@ https://github.com/streamarr/streamarr-adr/blob/main/adr/0013-stream-decision-ar
 
 https://github.com/streamarr/streamarr-adr/blob/main/adr/0032-media-file-probe-results-are-persisted.adoc[ADR 0032] persists container and stream data separately from title metadata.
 Scans and watcher events schedule missing or outdated probes before skipping already matched files.
-A successful scan means enumeration, matching, and enrichment attempts finished and required probe work was durably enqueued.
+A scan finishes after matching and enrichment, and after every required artwork request and probe it made has a saved result or a recorded error.
+A probe no longer belongs to the scan once a later change replaced its inputs, a newer probe version stored an outcome for the same source, or its file was removed.
+A scan retries a failed probe at once and counts only a failure recorded after its own request, so a rescan after a share comes back waits for fresh attempts; playback requests keep the backoff.
+Person and company artwork and the later retries of failed probes continue after the scan.
 Playback reads stored outcomes.
 It returns a typed not-ready error when no usable outcome exists and a typed failure for a retained terminal media error.
 When the video must be encoded and the probe recorded no usable frame rate, it returns a typed frame-rate error instead of starting a stream session, because workers encode at the probed frame rate.

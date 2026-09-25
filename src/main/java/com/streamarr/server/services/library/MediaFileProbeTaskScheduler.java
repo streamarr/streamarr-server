@@ -3,6 +3,7 @@ package com.streamarr.server.services.library;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
 import com.streamarr.server.exceptions.ProbeTaskSchedulingException;
@@ -17,6 +18,8 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Optional;
+import java.util.UUID;
+import java.util.function.Consumer;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
@@ -34,40 +37,60 @@ public class MediaFileProbeTaskScheduler {
 
   @EventListener
   public void onProbeTaskRequested(MediaFileProbeTaskRequested event) {
-    var mediaFile =
-        mediaFileRepository
-            .findById(event.mediaFileId())
-            .orElseThrow(() -> new MediaFileNotFoundException(event.mediaFileId()));
-    var observedSnapshot = snapshot(mediaFile);
-    if (observedSnapshot.isEmpty()) {
-      return;
-    }
+    schedule(event.mediaFileId(), probeTaskRequests::request);
+  }
 
-    var sourceSnapshot = observedSnapshot.get();
+  /**
+   * Requests a probe of the media file unless its stored outcome already matches the source, and
+   * retries a failed attempt at once. Returns the inputs whose outcome the file needs, or nothing
+   * when its source no longer exists.
+   */
+  public Optional<ProbeInputs> schedule(UUID mediaFileId) {
+    return schedule(mediaFileId, probeTaskRequests::requestRetryingFailure);
+  }
 
+  /** Schedules like {@link #schedule(UUID)} with a snapshot the caller already observed. */
+  public ProbeInputs schedule(UUID mediaFileId, SourceFileSnapshot observed) {
+    return request(mediaFile(mediaFileId), observed, probeTaskRequests::requestRetryingFailure);
+  }
+
+  private Optional<ProbeInputs> schedule(UUID mediaFileId, Consumer<ProbeTaskRequest> requests) {
+    var mediaFile = mediaFile(mediaFileId);
+    return snapshot(mediaFile).map(observed -> request(mediaFile, observed, requests));
+  }
+
+  private ProbeInputs request(
+      MediaFile mediaFile, SourceFileSnapshot observed, Consumer<ProbeTaskRequest> requests) {
+    var inputs = new ProbeInputs(observed, ProbeVersion.CURRENT);
     if (reader
         .find(mediaFile.getId())
-        .filter(outcome -> outcome.matches(sourceSnapshot, ProbeVersion.CURRENT))
+        .filter(outcome -> outcome.matches(inputs.snapshot(), inputs.probeVersion()))
         .isPresent()) {
-      return;
+      return inputs;
     }
 
-    probeTaskRequests.request(
+    requests.accept(
         ProbeTaskRequest.builder()
             .mediaFileId(mediaFile.getId())
             .libraryId(mediaFile.getLibraryId())
             .filepathUri(mediaFile.getFilepathUri())
-            .snapshot(sourceSnapshot)
-            .probeVersion(ProbeVersion.CURRENT)
+            .snapshot(inputs.snapshot())
+            .probeVersion(inputs.probeVersion())
             .build());
+    return inputs;
+  }
+
+  private MediaFile mediaFile(UUID mediaFileId) {
+    return mediaFileRepository
+        .findById(mediaFileId)
+        .orElseThrow(() -> new MediaFileNotFoundException(mediaFileId));
   }
 
   private Optional<SourceFileSnapshot> snapshot(MediaFile mediaFile) {
     var path = FilepathCodec.decode(fileSystem, mediaFile.getFilepathUri());
     try {
-      var attributes = Files.readAttributes(path, BasicFileAttributes.class);
       return Optional.of(
-          new SourceFileSnapshot(attributes.size(), attributes.lastModifiedTime().toInstant()));
+          SourceFileSnapshot.of(Files.readAttributes(path, BasicFileAttributes.class)));
     } catch (NoSuchFileException _) {
       return Optional.empty();
     } catch (IOException exception) {

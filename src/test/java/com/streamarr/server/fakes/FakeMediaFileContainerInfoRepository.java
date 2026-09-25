@@ -5,12 +5,15 @@ import com.streamarr.server.domain.media.MediaFileStreamInfo;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.task.ProbeAttemptFailure;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbePublication;
+import com.streamarr.server.domain.task.ProbeState;
 import com.streamarr.server.fixtures.PersistedProbeFixture;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -22,6 +25,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
 
   private final Map<UUID, MediaFileContainerInfo> rows = new ConcurrentHashMap<>();
   private final Map<UUID, ProbeInputs> desiredInputs = new ConcurrentHashMap<>();
+  private final Map<UUID, ProbeAttemptFailure> failures = new ConcurrentHashMap<>();
   private final List<ProbePublication> publications = new ArrayList<>();
   private Optional<ProbeOutcome.Success> defaultProbe = Optional.empty();
   private Predicate<UUID> mediaFileExists = _ -> true;
@@ -39,6 +43,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     defaultProbe = Optional.empty();
     rows.clear();
     desiredInputs.clear();
+    failures.clear();
   }
 
   @Override
@@ -74,18 +79,59 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
 
     publications.add(publication);
     rows.put(publication.mediaFileId(), toRow(publication));
+    failures.remove(publication.mediaFileId());
     return true;
   }
 
   @Override
-  public synchronized boolean recordProbeRequest(UUID mediaFileId, ProbeInputs inputs) {
+  public synchronized boolean trySaveProbeRequest(UUID mediaFileId, ProbeInputs inputs) {
     if (!mediaFileExists.test(mediaFileId)) {
       return false;
     }
 
-    desiredInputs.put(mediaFileId, inputs);
+    if (!inputs.equals(desiredInputs.put(mediaFileId, inputs))) {
+      failures.remove(mediaFileId);
+    }
+
     invalidateOutcomeUnlessSnapshotMatches(mediaFileId, inputs.snapshot());
     return true;
+  }
+
+  @Override
+  public synchronized boolean trySaveProbeFailure(
+      UUID mediaFileId, ProbeInputs inputs, ProbeAttemptFailure failure) {
+    if (!inputs.equals(desiredInputs.get(mediaFileId))) {
+      return false;
+    }
+
+    failures.put(mediaFileId, failure);
+    return true;
+  }
+
+  @Override
+  public synchronized List<ProbeState> findProbeStates(Collection<UUID> mediaFileIds) {
+    return mediaFileIds.stream()
+        .filter(mediaFileExists)
+        .map(
+            mediaFileId ->
+                ProbeState.builder()
+                    .mediaFileId(mediaFileId)
+                    .requested(Optional.ofNullable(desiredInputs.get(mediaFileId)))
+                    .stored(Optional.ofNullable(rows.get(mediaFileId)).map(this::stored))
+                    .failure(Optional.ofNullable(failures.get(mediaFileId)))
+                    .build())
+        .toList();
+  }
+
+  private ProbeState.Stored stored(MediaFileContainerInfo row) {
+    return new ProbeState.Stored(
+        new ProbeInputs(row.getSnapshot(), row.getProbeVersion()), row.getProbeError());
+  }
+
+  @Override
+  public synchronized void withdrawProbeRequest(UUID mediaFileId) {
+    desiredInputs.remove(mediaFileId);
+    failures.remove(mediaFileId);
   }
 
   @Override

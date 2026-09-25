@@ -73,7 +73,7 @@ public class CredentialAttemptGate {
     try {
       return verification.get();
     } catch (CredentialVerificationException refused) {
-      recordRefusal(reservation, refused);
+      completeRefused(reservation, refused);
       throw refused;
     } catch (RuntimeException failure) {
       log.warn(
@@ -84,7 +84,7 @@ public class CredentialAttemptGate {
     }
   }
 
-  private void recordRefusal(
+  private void completeRefused(
       CredentialAttemptReservation reservation, CredentialVerificationException refused) {
     try {
       complete(reservation, CredentialAttemptResult.FAILED);

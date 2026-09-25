@@ -5,7 +5,9 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import java.util.Collection;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -83,5 +85,15 @@ public class FakeMediaFileRepository extends FakeJpaRepository<MediaFile>
     mediaFile.setStatus(failure.status());
     mediaFile.setFailureReason(failure.reason());
     return true;
+  }
+
+  @Override
+  public Map<MediaFileStatus, Long> countStatuses(Collection<UUID> mediaFileIds) {
+    var counts = new EnumMap<MediaFileStatus, Long>(MediaFileStatus.class);
+    mediaFileIds.stream()
+        .map(database::get)
+        .filter(Objects::nonNull)
+        .forEach(mediaFile -> counts.merge(mediaFile.getStatus(), 1L, Long::sum));
+    return counts;
   }
 }

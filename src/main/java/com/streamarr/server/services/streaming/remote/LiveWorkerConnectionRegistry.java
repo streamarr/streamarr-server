@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming.remote;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 
+import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.transcode.v1.CancelProbeCommand;
@@ -415,11 +416,11 @@ final class LiveWorkerConnectionRegistry {
             .result()
             .completeExceptionally(
                 new ProbeExecutionException(
-                    new IllegalArgumentException(
-                        "Worker probe reply version mismatch: expected %s, received %s"
-                            .formatted(
-                                Integer.toUnsignedString(pending.request().getProbeVersion()),
-                                Integer.toUnsignedString(result.getProbeVersion())))));
+                    ItemFailureReason.MISCONFIGURED,
+                    "Worker probe reply version mismatch: expected %s, received %s"
+                        .formatted(
+                            Integer.toUnsignedString(pending.request().getProbeVersion()),
+                            Integer.toUnsignedString(result.getProbeVersion()))));
         return false;
       }
 
@@ -440,7 +441,7 @@ final class LiveWorkerConnectionRegistry {
       pending.terminated().complete(null);
       pending
           .result()
-          .completeExceptionally(new ProbeExecutionException(new IllegalStateException(reason)));
+          .completeExceptionally(new ProbeExecutionException(ItemFailureReason.TEMPORARY, reason));
       pendingProbes.remove(attemptId, pending.result());
     }
 

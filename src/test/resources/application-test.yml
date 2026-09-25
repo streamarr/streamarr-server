@@ -39,3 +39,7 @@ streaming:
 # the shared context only records requests.
 db-scheduler:
   enabled: false
+
+# Scans that wait for their probes check stored results often, so tests finish soon after a result.
+probe:
+  result-check-interval: 50ms

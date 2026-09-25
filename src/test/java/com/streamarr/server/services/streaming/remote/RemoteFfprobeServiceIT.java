@@ -12,6 +12,7 @@ import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.FakeSegmentStore;
@@ -188,7 +189,7 @@ class RemoteFfprobeServiceIT {
         execution.get().interrupt();
 
         assertThatThrownBy(() -> result.get(5, TimeUnit.SECONDS))
-            .hasCauseInstanceOf(ProbeExecutionException.class);
+            .hasCauseInstanceOf(ProbeCancelledException.class);
         assertThat(interrupted).isTrue();
         var cancellation = worker.nextResponse();
         assertThat(cancellation.hasCancelProbe()).isTrue();
