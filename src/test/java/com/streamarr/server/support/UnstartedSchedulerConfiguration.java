@@ -29,12 +29,8 @@ public class UnstartedSchedulerConfiguration {
       DataSource dataSource,
       List<Task<?>> tasks,
       Environment environment) {
-    var properties =
-        Binder.get(environment)
-            .bind("db-scheduler", Bindable.of(DbSchedulerProperties.class))
-            .get();
     return DbSchedulerConfigurationSupport.buildScheduler(
-        properties,
+        schedulerProperties(environment),
         customizer,
         StatsRegistry.NOOP,
         new SystemClock(),
@@ -42,5 +38,12 @@ public class UnstartedSchedulerConfiguration {
         tasks,
         List.of(),
         List.of());
+  }
+
+  /** The db-scheduler settings the starter would read, bound even though the starter is off. */
+  public static DbSchedulerProperties schedulerProperties(Environment environment) {
+    return Binder.get(environment)
+        .bind("db-scheduler", Bindable.of(DbSchedulerProperties.class))
+        .get();
   }
 }

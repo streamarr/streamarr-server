@@ -170,13 +170,13 @@ class FileDiscoveryRunsTest {
             .itemResults(itemResults)
             .clock(clock)
             .build();
-    var probeWait = new CompletableFuture<Thread>();
+    var probeWaitThread = new CompletableFuture<Thread>();
     var sleeper = new CountingSleeper();
     probeTaskRequests.dispatchWith(_ -> {});
     sleeper.onSleep(
         _ -> {
           probeTaskRequests.succeed(probeTaskRequests.requests().getFirst());
-          probeWait.complete(Thread.currentThread());
+          probeWaitThread.complete(Thread.currentThread());
         });
     imageDownloader.holdPathsStartingWith("/poster");
     var runs =
@@ -192,7 +192,7 @@ class FileDiscoveryRunsTest {
     }
 
     try (var results = BoundedTask.start(() -> runs.awaitResults(discovery))) {
-      assertThat(probeWait.get(5, TimeUnit.SECONDS).join(RESULTS_BOUND))
+      assertThat(probeWaitThread.get(5, TimeUnit.SECONDS).join(RESULTS_BOUND))
           .as("probe wait finished")
           .isTrue();
       clock.advance(Duration.ofSeconds(60));

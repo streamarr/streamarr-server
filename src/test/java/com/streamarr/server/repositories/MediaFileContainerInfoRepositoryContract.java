@@ -43,7 +43,7 @@ public interface MediaFileContainerInfoRepositoryContract {
   MediaFileContainerInfoRepository repository();
 
   /** Creates a media file the repository can hold probe results for. */
-  UUID existingMediaFile();
+  UUID createMediaFile();
 
   void deleteMediaFile(UUID mediaFileId);
 
@@ -53,7 +53,7 @@ public interface MediaFileContainerInfoRepositoryContract {
   @Test
   @DisplayName("Should replace an older compatible outcome when publishing a newer version")
   default void shouldReplaceAnOlderCompatibleOutcomeWhenPublishingANewerVersion() {
-    var mediaFileId = existingMediaFile();
+    var mediaFileId = createMediaFile();
     repository().publish(publicationBuilder(mediaFileId).build());
     var replacement = success("hevc", "eac3");
 
@@ -73,7 +73,7 @@ public interface MediaFileContainerInfoRepositoryContract {
   @Test
   @DisplayName("Should keep a newer outcome when an older version publishes the same snapshot")
   default void shouldKeepANewerOutcomeWhenAnOlderVersionPublishesTheSameSnapshot() {
-    var mediaFileId = existingMediaFile();
+    var mediaFileId = createMediaFile();
     var newer = success("hevc", "eac3");
     repository().publish(publicationBuilder(mediaFileId).probeVersion(2).outcome(newer).build());
 
@@ -91,7 +91,7 @@ public interface MediaFileContainerInfoRepositoryContract {
   @Test
   @DisplayName("Should replace the outcome when the source snapshot differs from a newer version")
   default void shouldReplaceTheOutcomeWhenTheSourceSnapshotDiffersFromANewerVersion() {
-    var mediaFileId = existingMediaFile();
+    var mediaFileId = createMediaFile();
     repository()
         .publish(
             publicationBuilder(mediaFileId)
@@ -118,7 +118,7 @@ public interface MediaFileContainerInfoRepositoryContract {
   @Test
   @DisplayName("Should reject publication when the media file no longer exists")
   default void shouldRejectPublicationWhenTheMediaFileNoLongerExists() {
-    var mediaFileId = existingMediaFile();
+    var mediaFileId = createMediaFile();
     deleteMediaFile(mediaFileId);
 
     var published = repository().publish(publicationBuilder(mediaFileId).build());
@@ -131,7 +131,7 @@ public interface MediaFileContainerInfoRepositoryContract {
   @EnumSource(InputChange.class)
   @DisplayName("Should reject obsolete publication when the requested inputs changed")
   default void shouldRejectObsoletePublicationWhenTheRequestedInputsChanged(InputChange change) {
-    var mediaFileId = existingMediaFile();
+    var mediaFileId = createMediaFile();
     var desired =
         switch (change) {
           case SNAPSHOT -> new ProbeInputs(SNAPSHOT_B, 1);
@@ -150,7 +150,7 @@ public interface MediaFileContainerInfoRepositoryContract {
   @DisplayName("Should retain a compatible outcome when only the requested probe version changed")
   default void shouldRetainACompatibleOutcomeWhenOnlyTheRequestedProbeVersionChanged(
       ProbeOutcome outcome) {
-    var mediaFileId = existingMediaFile();
+    var mediaFileId = createMediaFile();
     repository().publish(publicationBuilder(mediaFileId).outcome(outcome).build());
 
     repository().trySaveProbeRequest(mediaFileId, new ProbeInputs(SNAPSHOT_A, 2));
@@ -167,7 +167,7 @@ public interface MediaFileContainerInfoRepositoryContract {
   @Test
   @DisplayName("Should delete the stored outcome when a request carries another snapshot")
   default void shouldDeleteTheStoredOutcomeWhenARequestCarriesAnotherSnapshot() {
-    var mediaFileId = existingMediaFile();
+    var mediaFileId = createMediaFile();
     repository().publish(publicationBuilder(mediaFileId).build());
 
     repository().trySaveProbeRequest(mediaFileId, new ProbeInputs(SNAPSHOT_B, 1));
@@ -178,7 +178,7 @@ public interface MediaFileContainerInfoRepositoryContract {
   @Test
   @DisplayName("Should keep the stored outcome when a request carries the same snapshot")
   default void shouldKeepTheStoredOutcomeWhenARequestCarriesTheSameSnapshot() {
-    var mediaFileId = existingMediaFile();
+    var mediaFileId = createMediaFile();
     repository().publish(publicationBuilder(mediaFileId).build());
 
     repository().trySaveProbeRequest(mediaFileId, new ProbeInputs(SNAPSHOT_A, 1));
@@ -191,7 +191,7 @@ public interface MediaFileContainerInfoRepositoryContract {
   @Test
   @DisplayName("Should reject a probe request when the media file no longer exists")
   default void shouldRejectAProbeRequestWhenTheMediaFileNoLongerExists() {
-    var mediaFileId = existingMediaFile();
+    var mediaFileId = createMediaFile();
     deleteMediaFile(mediaFileId);
 
     var saved = repository().trySaveProbeRequest(mediaFileId, new ProbeInputs(SNAPSHOT_A, 1));
@@ -203,7 +203,7 @@ public interface MediaFileContainerInfoRepositoryContract {
   @Test
   @DisplayName("Should clear the saved failure when an outcome is stored for the same inputs")
   default void shouldClearTheSavedFailureWhenAnOutcomeIsStoredForTheSameInputs() {
-    var mediaFileId = existingMediaFile();
+    var mediaFileId = createMediaFile();
     var inputs = new ProbeInputs(SNAPSHOT_A, 1);
     repository().trySaveProbeRequest(mediaFileId, inputs);
     repository().trySaveProbeFailure(mediaFileId, inputs, failure());
@@ -218,7 +218,7 @@ public interface MediaFileContainerInfoRepositoryContract {
   @Test
   @DisplayName("Should keep the saved failure when the same inputs are requested again")
   default void shouldKeepTheSavedFailureWhenTheSameInputsAreRequestedAgain() {
-    var mediaFileId = existingMediaFile();
+    var mediaFileId = createMediaFile();
     var inputs = new ProbeInputs(SNAPSHOT_A, 1);
     repository().trySaveProbeRequest(mediaFileId, inputs);
     repository().trySaveProbeFailure(mediaFileId, inputs, failure());
@@ -231,7 +231,7 @@ public interface MediaFileContainerInfoRepositoryContract {
   @Test
   @DisplayName("Should clear the saved failure when a request carries different inputs")
   default void shouldClearTheSavedFailureWhenARequestCarriesDifferentInputs() {
-    var mediaFileId = existingMediaFile();
+    var mediaFileId = createMediaFile();
     var inputs = new ProbeInputs(SNAPSHOT_A, 1);
     repository().trySaveProbeRequest(mediaFileId, inputs);
     repository().trySaveProbeFailure(mediaFileId, inputs, failure());
@@ -246,7 +246,7 @@ public interface MediaFileContainerInfoRepositoryContract {
   @Test
   @DisplayName("Should not save a failure when the attempted inputs are no longer requested")
   default void shouldNotSaveAFailureWhenTheAttemptedInputsAreNoLongerRequested() {
-    var mediaFileId = existingMediaFile();
+    var mediaFileId = createMediaFile();
     repository().trySaveProbeRequest(mediaFileId, new ProbeInputs(SNAPSHOT_B, 1));
 
     var saved =
@@ -259,7 +259,7 @@ public interface MediaFileContainerInfoRepositoryContract {
   @Test
   @DisplayName("Should not save a failure when the media file no longer exists")
   default void shouldNotSaveAFailureWhenTheMediaFileNoLongerExists() {
-    var mediaFileId = existingMediaFile();
+    var mediaFileId = createMediaFile();
     var inputs = new ProbeInputs(SNAPSHOT_A, 1);
     repository().trySaveProbeRequest(mediaFileId, inputs);
     deleteMediaFile(mediaFileId);
@@ -272,7 +272,7 @@ public interface MediaFileContainerInfoRepositoryContract {
   @Test
   @DisplayName("Should hold no probe state when the media file has no probe yet")
   default void shouldHoldNoProbeStateWhenTheMediaFileHasNoProbeYet() {
-    var mediaFileId = existingMediaFile();
+    var mediaFileId = createMediaFile();
 
     assertThat(repository().findProbeStates(List.of(mediaFileId)))
         .containsExactly(
@@ -287,7 +287,7 @@ public interface MediaFileContainerInfoRepositoryContract {
   @Test
   @DisplayName("Should withdraw the requested inputs and their failure when the source is gone")
   default void shouldWithdrawTheRequestedInputsAndTheirFailureWhenTheSourceIsGone() {
-    var mediaFileId = existingMediaFile();
+    var mediaFileId = createMediaFile();
     var inputs = new ProbeInputs(SNAPSHOT_A, 1);
     repository().trySaveProbeRequest(mediaFileId, inputs);
     repository().trySaveProbeFailure(mediaFileId, inputs, failure());
@@ -305,7 +305,7 @@ public interface MediaFileContainerInfoRepositoryContract {
   @Test
   @DisplayName("Should lock the requested inputs when a probe is requested")
   default void shouldLockTheRequestedInputsWhenAProbeIsRequested() {
-    var mediaFileId = existingMediaFile();
+    var mediaFileId = createMediaFile();
     var inputs = new ProbeInputs(SNAPSHOT_A, 1);
     repository().trySaveProbeRequest(mediaFileId, inputs);
 
@@ -315,7 +315,7 @@ public interface MediaFileContainerInfoRepositoryContract {
   @Test
   @DisplayName("Should lock no inputs when the media file no longer exists")
   default void shouldLockNoInputsWhenTheMediaFileNoLongerExists() {
-    var mediaFileId = existingMediaFile();
+    var mediaFileId = createMediaFile();
     repository().trySaveProbeRequest(mediaFileId, new ProbeInputs(SNAPSHOT_A, 1));
     deleteMediaFile(mediaFileId);
 

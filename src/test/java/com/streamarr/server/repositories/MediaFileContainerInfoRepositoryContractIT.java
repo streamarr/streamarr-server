@@ -43,7 +43,7 @@ class MediaFileContainerInfoRepositoryContractIT extends AbstractIntegrationTest
   }
 
   @Override
-  public UUID existingMediaFile() {
+  public UUID createMediaFile() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     createdLibraries.add(library);
     var file =

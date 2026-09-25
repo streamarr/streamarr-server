@@ -19,9 +19,9 @@ class FakeMediaFileContainerInfoRepositoryTest implements MediaFileContainerInfo
     return repository;
   }
 
-  // The fake treats every media file id as existing until it is deleted.
+  // The fake treats every media file id as existing until it is deleted, so a new id is enough.
   @Override
-  public UUID existingMediaFile() {
+  public UUID createMediaFile() {
     return UUID.randomUUID();
   }
 
