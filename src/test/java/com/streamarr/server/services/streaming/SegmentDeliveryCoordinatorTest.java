@@ -272,6 +272,21 @@ class SegmentDeliveryCoordinatorTest {
   }
 
   @Test
+  @DisplayName(
+      "Should answer a stored media segment past the advertised timeline as not found when delivering a segment")
+  void shouldAnswerStoredMediaSegmentPastTheAdvertisedTimelineAsNotFoundWhenDeliveringSegment()
+      throws Exception {
+    var sixtySecondSession = sessionWithDurationBuilder(60).build();
+    runtimeRegistry.save(sixtySecondSession);
+    lifecycle.startAll(sixtySecondSession, 0, 0);
+    segmentStore.addSegment(sixtySecondSession.getSessionId(), "segment10.m4s", new byte[] {10});
+
+    var delivery = deliverAsync(sixtySecondSession.getSessionId(), "segment10.m4s");
+
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.SessionEnded.class);
+  }
+
+  @Test
   @DisplayName("Should report the session as ended when a destroy wins between existence and read")
   void shouldReportSessionEndedWhenADestroyWinsBetweenExistenceAndRead() {
     var throwingStore =

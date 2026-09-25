@@ -46,6 +46,12 @@ public class SegmentDeliveryCoordinator {
       return new SegmentDelivery.SessionEnded();
     }
 
+    // Media that outlasts its probed duration can leave segments past the advertised count in the
+    // store; the playlist never lists them, so they are not found rather than served.
+    if (producerLifecycle.isUnadvertisedMediaSegment(sessionId, segmentName)) {
+      return new SegmentDelivery.SessionEnded();
+    }
+
     var ready = tryRead(sessionId, segmentName);
     if (ready != null) {
       return ready;

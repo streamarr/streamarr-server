@@ -536,6 +536,14 @@ public class ProducerLifecycleService {
     return Math.max(1, (int) gapSegments);
   }
 
+  /** A session that no longer exists advertises nothing to refuse, so this answers false. */
+  public boolean isUnadvertisedMediaSegment(UUID sessionId, String segmentName) {
+    return runtimeRegistry
+        .findById(sessionId)
+        .map(session -> isUnadvertisedMediaSegment(session, segmentName))
+        .orElse(false);
+  }
+
   private boolean isUnadvertisedMediaSegment(StreamSession session, String segmentName) {
     return SegmentNames.indexOf(segmentName).stream()
         .anyMatch(index -> !timelineOf(session).advertises(index));
