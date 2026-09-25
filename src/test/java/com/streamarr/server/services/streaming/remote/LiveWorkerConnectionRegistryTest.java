@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming.remote;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.services.streaming.SegmentPublication;
@@ -35,6 +36,26 @@ class LiveWorkerConnectionRegistryTest {
   private static final UUID WORKER_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
   private static final UUID SOURCE_NAMESPACE_ID =
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
+
+  @Test
+  @DisplayName("Should reject a registry when its configuration is missing")
+  void shouldRejectRegistryWhenItsConfigurationIsMissing() {
+    var meterRegistry = new SimpleMeterRegistry();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> new LiveWorkerConnectionRegistry(null, meterRegistry))
+        .withMessageContaining("configuration");
+  }
+
+  @Test
+  @DisplayName("Should reject a registry when its meter registry is missing")
+  void shouldRejectRegistryWhenItsMeterRegistryIsMissing() {
+    var configuration = WorkerSessionServerConfiguration.builder().build();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> new LiveWorkerConnectionRegistry(configuration, null))
+        .withMessageContaining("meterRegistry");
+  }
 
   @Test
   @DisplayName("Should expose the connection when acknowledgement is in progress")

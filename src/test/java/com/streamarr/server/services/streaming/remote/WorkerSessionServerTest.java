@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming.remote;
 
 import static org.assertj.core.api.Assertions.assertThatNoException;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.fakes.FakeSegmentStore;
@@ -32,6 +33,39 @@ class WorkerSessionServerTest {
             () ->
                 new WorkerSessionServerConfiguration(address, 0, probeTimeout, cancellationTimeout))
         .hasMessageContaining("address");
+  }
+
+  @Test
+  @DisplayName("Should reject a worker session server when its configuration is missing")
+  void shouldRejectWorkerSessionServerWhenItsConfigurationIsMissing() {
+    var segmentStore = new FakeSegmentStore();
+    var meterRegistry = new SimpleMeterRegistry();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> new WorkerSessionServer(null, segmentStore, meterRegistry))
+        .withMessageContaining("configuration");
+  }
+
+  @Test
+  @DisplayName("Should reject a worker session server when its segment store is missing")
+  void shouldRejectWorkerSessionServerWhenItsSegmentStoreIsMissing() {
+    var configuration = WorkerSessionServerConfiguration.builder().port(0).build();
+    var meterRegistry = new SimpleMeterRegistry();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> new WorkerSessionServer(configuration, null, meterRegistry))
+        .withMessageContaining("segmentStore");
+  }
+
+  @Test
+  @DisplayName("Should reject a worker session server when its meter registry is missing")
+  void shouldRejectWorkerSessionServerWhenItsMeterRegistryIsMissing() {
+    var configuration = WorkerSessionServerConfiguration.builder().port(0).build();
+    var segmentStore = new FakeSegmentStore();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> new WorkerSessionServer(configuration, segmentStore, null))
+        .withMessageContaining("meterRegistry");
   }
 
   @Test
