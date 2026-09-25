@@ -1,7 +1,7 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.fixtures.ProbeTaskRequestFixture.requestFor;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import com.github.kagkarlsson.scheduler.Scheduler;
 import com.github.kagkarlsson.scheduler.SchedulerClient;
@@ -32,11 +32,11 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
+import com.streamarr.server.services.streaming.PlaybackProbeService;
 import java.io.IOException;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -56,6 +56,8 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Media probe scheduling")
@@ -74,6 +76,8 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   @Autowired private ProbeTaskCompletion completion;
   @Autowired private DbSchedulerCustomizer schedulerCustomizer;
   @Autowired private LibraryWatcherProperties watcherProperties;
+  @Autowired private PlaybackProbeService playbackProbeService;
+  @Autowired private PlatformTransactionManager transactionManager;
 
   private final FakeFfprobeService producer = new FakeFfprobeService();
   private final List<MediaFile> createdFiles = new ArrayList<>();
@@ -112,9 +116,27 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should keep no probe request when the requesting transaction rolls back")
+  void shouldKeepNoProbeRequestWhenTheRequestingTransactionRollsBack() throws IOException {
+    var request = requestFor(createMediaFile());
+
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            status -> {
+              scheduling.request(request);
+              status.setRollbackOnly();
+            });
+
+    assertThat(client.getScheduledExecution(instanceOf(request))).isEmpty();
+    assertThat(outcomes.findProbeStates(List.of(request.mediaFileId())))
+        .singleElement()
+        .satisfies(state -> assertThat(state.requested()).isEmpty());
+  }
+
+  @Test
   @DisplayName("Should record one instance when the same probe is requested twice")
   void shouldRecordOneInstanceWhenTheSameProbeIsRequestedTwice() throws IOException {
-    var request = request(createMediaFile());
+    var request = requestFor(createMediaFile());
 
     scheduling.request(request);
     scheduling.request(request);
@@ -132,7 +154,7 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   @DisplayName("Should replace the pending inputs when a request carries a new snapshot")
   void shouldReplaceThePendingInputsWhenARequestCarriesANewSnapshot() throws IOException {
     var file = createMediaFile();
-    var first = request(file);
+    var first = requestFor(file);
     scheduling.request(first);
     var second =
         first.toBuilder()
@@ -149,7 +171,7 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   @DisplayName("Should delete a stored outcome when a request carries a different snapshot")
   void shouldDeleteAStoredOutcomeWhenARequestCarriesADifferentSnapshot() throws IOException {
     var file = createMediaFile();
-    var stale = request(file);
+    var stale = requestFor(file);
     outcomes.publish(
         ProbePublication.builder()
             .mediaFileId(file.getId())
@@ -176,29 +198,24 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should publish the outcome and remove the instance when the scheduler executes a request")
   void shouldPublishTheOutcomeAndRemoveTheInstanceWhenTheSchedulerExecutesARequest()
-      throws IOException {
+      throws Exception {
     var file = createMediaFile();
-    var request = request(file);
+    var request = requestFor(file);
     scheduling.request(request);
 
     startScheduler();
 
-    await()
-        .atMost(Duration.ofSeconds(15))
-        .untilAsserted(
-            () -> {
-              assertThat(reader.find(file.getId()))
-                  .hasValueSatisfying(
-                      stored -> assertThat(stored.snapshot()).isEqualTo(request.snapshot()));
-              assertThat(client.getScheduledExecution(instanceOf(request))).isEmpty();
-            });
+    assertThat(firstExecutionFinished.await(15, TimeUnit.SECONDS)).isTrue();
+    assertThat(reader.find(file.getId()))
+        .hasValueSatisfying(stored -> assertThat(stored.snapshot()).isEqualTo(request.snapshot()));
+    assertThat(client.getScheduledExecution(instanceOf(request))).isEmpty();
     assertThat(producer.wasLastProbeOnVirtualThread()).isTrue();
   }
 
   @Test
   @DisplayName("Should run a failed probe's retry at once when discovery requests it again")
   void shouldRunAFailedProbesRetryAtOnceWhenDiscoveryRequestsItAgain() throws IOException {
-    var request = request(createMediaFile());
+    var request = requestFor(createMediaFile());
     scheduling.request(request);
     saveFailure(request);
     delay(request, 2);
@@ -220,12 +237,12 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   @DisplayName("Should run a failed probe at once when discovery requests new inputs for it")
   void shouldRunAFailedProbeAtOnceWhenDiscoveryRequestsNewInputsForIt() throws IOException {
     var file = createMediaFile();
-    var request = request(file);
+    var request = requestFor(file);
     scheduling.request(request);
     saveFailure(request);
     delay(request, 2);
     Files.write(FilepathCodec.decode(file.getFilepathUri()), new byte[] {4, 5, 6, 7, 8});
-    var changed = request(file);
+    var changed = requestFor(file);
     var requestedAt = Instant.now().truncatedTo(ChronoUnit.SECONDS);
 
     scheduling.requestRetryingFailure(changed);
@@ -245,7 +262,7 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
       "Should keep the backoff when discovery requests a probe whose last attempt was cancelled")
   void shouldKeepTheBackoffWhenDiscoveryRequestsAProbeWhoseLastAttemptWasCancelled()
       throws IOException {
-    var request = request(createMediaFile());
+    var request = requestFor(createMediaFile());
     scheduling.request(request);
     var retryAt = delay(request, 1);
 
@@ -256,13 +273,15 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep a failed probe's backoff when playback requests it again")
-  void shouldKeepAFailedProbesBackoffWhenPlaybackRequestsItAgain() throws IOException {
-    var request = request(createMediaFile());
+  @DisplayName("Should keep a failed probe's backoff when playback reads its missing outcome")
+  void shouldKeepAFailedProbesBackoffWhenPlaybackReadsItsMissingOutcome() throws IOException {
+    var file = createMediaFile();
+    var request = requestFor(file);
     scheduling.request(request);
+    saveFailure(request);
     var retryAt = delay(request, 2);
 
-    scheduling.request(request);
+    playbackProbeService.read(file.getId());
 
     assertThat(client.getScheduledExecution(instanceOf(request)))
         .hasValueSatisfying(pending -> assertThat(pending.getExecutionTime()).isEqualTo(retryAt));
@@ -271,7 +290,7 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should keep a quiet period when discovery requests the same inputs again")
   void shouldKeepAQuietPeriodWhenDiscoveryRequestsTheSameInputsAgain() throws IOException {
-    var request = request(createMediaFile());
+    var request = requestFor(createMediaFile());
     scheduling.request(request);
     var quietUntil = delay(request, 0);
 
@@ -284,9 +303,9 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should reschedule with backoff when the producer fails transiently")
-  void shouldRescheduleWithBackoffWhenTheProducerFailsTransiently() throws IOException {
+  void shouldRescheduleWithBackoffWhenTheProducerFailsTransiently() throws Exception {
     var file = createMediaFile();
-    var request = request(file);
+    var request = requestFor(file);
     producer.failWith(
         new ProbeExecutionException(ItemFailureReason.TEMPORARY, "no worker connected"));
     var requestedAt = Instant.now();
@@ -294,18 +313,14 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
 
     startScheduler();
 
-    await()
-        .atMost(Duration.ofSeconds(15))
-        .untilAsserted(
-            () ->
-                assertThat(client.getScheduledExecution(instanceOf(request)))
-                    .hasValueSatisfying(
-                        execution -> {
-                          assertThat(execution.getConsecutiveFailures()).isEqualTo(1);
-                          assertThat(execution.isPicked()).isFalse();
-                          assertThat(execution.getExecutionTime())
-                              .isAfterOrEqualTo(requestedAt.plusSeconds(4));
-                        }));
+    assertThat(firstExecutionFinished.await(15, TimeUnit.SECONDS)).isTrue();
+    assertThat(client.getScheduledExecution(instanceOf(request)))
+        .hasValueSatisfying(
+            execution -> {
+              assertThat(execution.getConsecutiveFailures()).isEqualTo(1);
+              assertThat(execution.isPicked()).isFalse();
+              assertThat(execution.getExecutionTime()).isAfterOrEqualTo(requestedAt.plusSeconds(4));
+            });
     assertThat(reader.find(file.getId())).isEmpty();
   }
 
@@ -316,10 +331,10 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   void shouldWaitAQuietPeriodWithTheObservedSnapshotWhenTheSourceChangedBeforeExecution()
       throws Exception {
     var file = createMediaFile();
-    var original = request(file);
+    var original = requestFor(file);
     scheduling.request(original);
     Files.write(FilepathCodec.decode(file.getFilepathUri()), new byte[] {4, 5, 6, 7, 8});
-    var changed = request(file);
+    var changed = requestFor(file);
     var observedAt = Instant.now();
 
     startScheduler();
@@ -375,7 +390,6 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
     return file;
   }
 
-  // Moves the pending execution five minutes out with the given failure history.
   private void saveFailure(ProbeTaskRequest request) {
     assertThat(
             outcomes.trySaveProbeFailure(
@@ -390,26 +404,7 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   }
 
   private Instant delay(ProbeTaskRequest request, int consecutiveFailures) {
-    var executionTime = Instant.now().plusSeconds(300).truncatedTo(ChronoUnit.SECONDS);
-    dsl.update(DSL.table("scheduled_tasks"))
-        .set(DSL.field("consecutive_failures", Integer.class), consecutiveFailures)
-        .set(DSL.field("execution_time", Instant.class), executionTime)
-        .where(DSL.field("task_instance", String.class).eq(request.mediaFileId().toString()))
-        .execute();
-    return executionTime;
-  }
-
-  private static ProbeTaskRequest request(MediaFile file) throws IOException {
-    var path = FilepathCodec.decode(file.getFilepathUri());
-    var attributes = Files.readAttributes(path, BasicFileAttributes.class);
-    return ProbeTaskRequest.builder()
-        .mediaFileId(file.getId())
-        .libraryId(file.getLibraryId())
-        .filepathUri(file.getFilepathUri())
-        .snapshot(
-            new SourceFileSnapshot(attributes.size(), attributes.lastModifiedTime().toInstant()))
-        .probeVersion(ProbeVersion.CURRENT)
-        .build();
+    return ScheduledProbeTasks.delay(dsl, request.mediaFileId(), consecutiveFailures);
   }
 
   private static TaskInstanceId instanceOf(ProbeTaskRequest request) {

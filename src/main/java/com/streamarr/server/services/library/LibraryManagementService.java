@@ -51,6 +51,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.springframework.context.ApplicationEventPublisher;
@@ -84,6 +85,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
   private final Set<UUID> activeScans = ConcurrentHashMap.newKeySet();
   private final Set<UUID> activeRefreshes = ConcurrentHashMap.newKeySet();
 
+  @Builder
   public LibraryManagementService(
       IgnoredFileValidator ignoredFileValidator,
       VideoExtensionValidator videoExtensionValidator,

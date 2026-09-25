@@ -1,7 +1,6 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 import static org.mockito.Mockito.mock;
 
 import com.google.common.jimfs.Configuration;
@@ -37,6 +36,7 @@ import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParse
 import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataParser;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
+import com.streamarr.server.support.TrackingExecutors;
 import io.methvin.watcher.DirectoryChangeEvent;
 import java.io.IOException;
 import java.nio.file.FileSystem;
@@ -63,10 +63,14 @@ import org.springframework.context.ApplicationEventPublisher;
 @DisplayName("File Event Processor Tests")
 class FileEventProcessorTest {
 
+  private static final Duration REQUEST_BOUND = Duration.ofSeconds(5);
+  private static final Duration QUIET_BOUND = Duration.ofSeconds(5);
+
   private FileSystem fileSystem;
   private LibraryRepository libraryRepository;
   private FakeMediaFileRepository mediaFileRepository;
   private FakeProbeTaskRequests probeTaskRequests;
+  private final TrackingExecutors executors = new TrackingExecutors();
   private AtomicReference<FileStabilityChecker> stabilityCheckerRef;
   private AtomicReference<ApplicationEventPublisher> eventPublisherRef;
   private FileEventProcessor eventProcessor;
@@ -142,35 +146,39 @@ class FileEventProcessorTest {
         new MutationTransactions(new FakeTransactionManager(), new ConstraintViolationTranslator());
 
     var libraryManagementService =
-        new LibraryManagementService(
-            ignoredFileValidator,
-            videoExtensionValidator,
-            movieFileProcessor,
-            seriesFileProcessor,
-            libraryRepository,
-            new FakeLibraryMetadataRepository(),
-            mediaFileRepository,
-            movieService,
-            seriesService,
-            event -> eventPublisherRef.get().publishEvent(event),
-            new MutexFactoryProvider(),
-            mock(LibraryRefreshService.class),
-            fileSystem,
-            new FakeLibraryMutationTransaction(),
-            mutationTransactions,
-            FileDiscoveryRunsFixture.fileDiscoveryRunsBuilder()
-                .artworkService(ArtworkServiceFixture.artworkServiceBuilder().build())
-                .mediaFiles(mediaFileRepository)
-                .outcomes(probeOutcomes)
-                .probeTaskRequests(probeTaskRequests)
-                .fileSystem(fileSystem)
-                .build());
+        LibraryManagementService.builder()
+            .ignoredFileValidator(ignoredFileValidator)
+            .videoExtensionValidator(videoExtensionValidator)
+            .movieFileProcessor(movieFileProcessor)
+            .seriesFileProcessor(seriesFileProcessor)
+            .libraryRepository(libraryRepository)
+            .libraryMetadataRepository(new FakeLibraryMetadataRepository())
+            .mediaFileRepository(mediaFileRepository)
+            .movieService(movieService)
+            .seriesService(seriesService)
+            .eventPublisher(event -> eventPublisherRef.get().publishEvent(event))
+            .mutexFactoryProvider(new MutexFactoryProvider())
+            .libraryRefreshService(mock(LibraryRefreshService.class))
+            .fileSystem(fileSystem)
+            .libraryMutationTransaction(new FakeLibraryMutationTransaction())
+            .mutationTransactions(mutationTransactions)
+            .fileDiscoveryRuns(
+                FileDiscoveryRunsFixture.fileDiscoveryRunsBuilder()
+                    .artworkService(ArtworkServiceFixture.artworkServiceBuilder().build())
+                    .mediaFiles(mediaFileRepository)
+                    .outcomes(probeOutcomes)
+                    .probeTaskRequests(probeTaskRequests)
+                    .fileSystem(fileSystem)
+                    .build())
+            .build();
 
     eventProcessor =
-        new FileEventProcessor(
-            path -> stabilityCheckerRef.get().waitForStability(path),
-            libraryManagementService,
-            ignoredFileValidator);
+        FileEventProcessor.builder()
+            .fileStabilityChecker(path -> stabilityCheckerRef.get().waitForStability(path))
+            .libraryManagementService(libraryManagementService)
+            .ignoredFileValidator(ignoredFileValidator)
+            .executors(executors)
+            .build();
 
     eventProcessor.reset(libraryRepository.findAll());
   }
@@ -198,9 +206,8 @@ class FileEventProcessorTest {
 
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(() -> assertThat(probeTaskRequests.requests()).hasSize(1));
+    assertThat(probeTaskRequests.awaitRequest(REQUEST_BOUND).filepathUri())
+        .isEqualTo(FilepathCodec.encode(path));
   }
 
   @Test
@@ -218,9 +225,8 @@ class FileEventProcessorTest {
 
     stopsChanging.countDown();
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(() -> assertThat(probeTaskRequests.requests()).hasSize(1));
+    assertThat(probeTaskRequests.awaitRequest(REQUEST_BOUND).filepathUri())
+        .isEqualTo(FilepathCodec.encode(path));
   }
 
   @Test
@@ -238,9 +244,8 @@ class FileEventProcessorTest {
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, unchanged);
 
     try {
-      await()
-          .atMost(Duration.ofSeconds(5))
-          .untilAsserted(() -> assertThat(probeTaskRequests.requests()).hasSize(1));
+      assertThat(probeTaskRequests.awaitRequest(REQUEST_BOUND).filepathUri())
+          .isEqualTo(FilepathCodec.encode(unchanged));
       assertThat(mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(changing)))
           .isEmpty();
     } finally {
@@ -320,9 +325,8 @@ class FileEventProcessorTest {
     probeTaskRequests.dispatchWith(_ -> {});
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.MODIFY, path);
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(() -> assertThat(probeTaskRequests.requests()).hasSize(1));
+    assertThat(probeTaskRequests.awaitRequest(REQUEST_BOUND).filepathUri())
+        .isEqualTo(FilepathCodec.encode(path));
   }
 
   @Test
@@ -340,10 +344,8 @@ class FileEventProcessorTest {
 
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
-    await()
-        .during(Duration.ofMillis(100))
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(() -> assertThat(processed.get()).isFalse());
+    executors.awaitQuiet(QUIET_BOUND);
+    assertThat(processed).isFalse();
   }
 
   @Test
@@ -385,14 +387,9 @@ class FileEventProcessorTest {
 
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> {
-              var mediaFile =
-                  mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
-              assertThat(mediaFile).isPresent();
-            });
+    assertThat(probeTaskRequests.awaitRequest(REQUEST_BOUND).filepathUri())
+        .isEqualTo(FilepathCodec.encode(path));
+    assertThat(mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path))).isPresent();
   }
 
   @Test
@@ -442,10 +439,8 @@ class FileEventProcessorTest {
 
     blockLatch.countDown();
 
-    await()
-        .during(Duration.ofMillis(100))
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(() -> assertThat(stabilityCallCount.get()).isEqualTo(1));
+    executors.awaitQuiet(QUIET_BOUND);
+    assertThat(stabilityCallCount).hasValue(1);
   }
 
   @Test
@@ -464,10 +459,8 @@ class FileEventProcessorTest {
 
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
-    await()
-        .during(Duration.ofMillis(100))
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(() -> assertThat(stabilityCheckerCalled.get()).isFalse());
+    executors.awaitQuiet(QUIET_BOUND);
+    assertThat(stabilityCheckerCalled).isFalse();
 
     var mediaFile = mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
     assertThat(mediaFile).isEmpty();
@@ -480,15 +473,11 @@ class FileEventProcessorTest {
 
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> {
-              var mediaFile =
-                  mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
-              assertThat(mediaFile).isPresent();
-              assertThat(mediaFile.get().getLibraryId()).isEqualTo(specialLibraryId);
-            });
+    assertThat(probeTaskRequests.awaitRequest(REQUEST_BOUND).libraryId())
+        .isEqualTo(specialLibraryId);
+    assertThat(mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path)))
+        .hasValueSatisfying(
+            mediaFile -> assertThat(mediaFile.getLibraryId()).isEqualTo(specialLibraryId));
   }
 
   @Test
@@ -506,10 +495,8 @@ class FileEventProcessorTest {
 
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
-    await()
-        .during(Duration.ofMillis(100))
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(() -> assertThat(stabilityCheckerCalled.get()).isFalse());
+    executors.awaitQuiet(QUIET_BOUND);
+    assertThat(stabilityCheckerCalled).isFalse();
 
     var mediaFile = mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
     assertThat(mediaFile).isEmpty();
@@ -529,18 +516,11 @@ class FileEventProcessorTest {
 
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .pollInterval(Duration.ofMillis(50))
-        .until(
-            () -> {
-              if (callCount.get() < 2) {
-                eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.MODIFY, path);
-              }
-              return callCount.get() >= 2;
-            });
+    executors.awaitQuiet(QUIET_BOUND);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.MODIFY, path);
 
-    assertThat(callCount.get()).isEqualTo(2);
+    executors.awaitQuiet(QUIET_BOUND);
+    assertThat(callCount).hasValue(2);
   }
 
   @Test
@@ -557,18 +537,11 @@ class FileEventProcessorTest {
 
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .pollInterval(Duration.ofMillis(50))
-        .until(
-            () -> {
-              if (callCount.get() < 2) {
-                eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
-              }
-              return callCount.get() >= 2;
-            });
+    executors.awaitQuiet(QUIET_BOUND);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
-    assertThat(callCount.get()).isEqualTo(2);
+    executors.awaitQuiet(QUIET_BOUND);
+    assertThat(callCount).hasValue(2);
   }
 
   @Test
@@ -630,18 +603,11 @@ class FileEventProcessorTest {
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.DELETE, path);
     firstBlockLatch.countDown();
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .pollInterval(Duration.ofMillis(50))
-        .until(
-            () -> {
-              if (callCount.get() < 2) {
-                eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
-              }
-              return callCount.get() >= 2;
-            });
+    executors.awaitQuiet(QUIET_BOUND);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
-    assertThat(callCount.get()).isEqualTo(2);
+    executors.awaitQuiet(QUIET_BOUND);
+    assertThat(callCount).hasValue(2);
   }
 
   @Test
@@ -658,18 +624,11 @@ class FileEventProcessorTest {
 
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .pollInterval(Duration.ofMillis(50))
-        .until(
-            () -> {
-              if (callCount.get() < 2) {
-                eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
-              }
-              return callCount.get() >= 2;
-            });
+    executors.awaitQuiet(QUIET_BOUND);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
-    assertThat(callCount.get()).isEqualTo(2);
+    executors.awaitQuiet(QUIET_BOUND);
+    assertThat(callCount).hasValue(2);
   }
 
   @Test
@@ -698,10 +657,8 @@ class FileEventProcessorTest {
 
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
-    await()
-        .during(Duration.ofMillis(100))
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(() -> assertThat(stabilityCheckerCalled.get()).isFalse());
+    executors.awaitQuiet(QUIET_BOUND);
+    assertThat(stabilityCheckerCalled).isFalse();
 
     var mediaFile = mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
     assertThat(mediaFile).isEmpty();
@@ -790,10 +747,8 @@ class FileEventProcessorTest {
 
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, dir);
 
-    await()
-        .during(Duration.ofMillis(100))
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(() -> assertThat(stabilityCheckerCalled.get()).isFalse());
+    executors.awaitQuiet(QUIET_BOUND);
+    assertThat(stabilityCheckerCalled).isFalse();
   }
 
   private Path createFile(String pathStr) throws IOException {

@@ -12,6 +12,7 @@ import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.domain.task.RequestedProbeResult;
+import com.streamarr.server.fakes.CountingSleeper;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeProbeTaskRequests;
@@ -22,11 +23,8 @@ import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.IntConsumer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -44,8 +42,7 @@ class ProbeRunsTest {
       new FakeMediaFileContainerInfoRepository();
   private final FakeProbeTaskRequests requests = new FakeProbeTaskRequests(outcomes);
   private final MutableClock clock = new MutableClock();
-  private final List<Duration> sleeps = new ArrayList<>();
-  private IntConsumer onCheck = _ -> {};
+  private final CountingSleeper sleeper = new CountingSleeper(clock);
   private FileSystem fileSystem;
   private ProbeRuns probeRuns;
 
@@ -62,17 +59,7 @@ class ProbeRunsTest {
                     .fileSystem(fileSystem)
                     .build())
             .outcomes(outcomes)
-            .sleeper(
-                duration -> {
-                  // Honor the default test timeout's interrupt, since this sleeper never blocks.
-                  if (Thread.interrupted()) {
-                    throw new InterruptedException();
-                  }
-
-                  sleeps.add(duration);
-                  clock.advance(duration);
-                  onCheck.accept(sleeps.size());
-                })
+            .sleeper(sleeper)
             .clock(clock)
             .properties(new ProbeSchedulingProperties(null, CHECK_INTERVAL))
             .build();
@@ -88,12 +75,12 @@ class ProbeRunsTest {
   void shouldStopWaitingWhenTheRequestedProbeStoresAnOutcome() throws Exception {
     var run = probeRuns.open();
     run.request(mediaFile("movie.mkv").getId());
-    onCheck = _ -> requests.succeed(onlyRequest());
+    sleeper.onSleep(_ -> requests.succeed(onlyRequest()));
 
     var summary = probeRuns.awaitResults(run);
 
     assertThat(summary.count(RequestedProbeResult.READY)).isOne();
-    assertThat(sleeps).containsExactly(CHECK_INTERVAL);
+    assertThat(sleeper.sleeps()).containsExactly(CHECK_INTERVAL);
   }
 
   @Test
@@ -112,7 +99,7 @@ class ProbeRunsTest {
 
     assertThat(requests.requests()).hasSize(1);
     assertThat(summary.count(RequestedProbeResult.READY)).isOne();
-    assertThat(sleeps).isEmpty();
+    assertThat(sleeper.sleeps()).isEmpty();
   }
 
   @Test
@@ -120,13 +107,13 @@ class ProbeRunsTest {
   void shouldStopWaitingWhenAnAttemptFailureIsRecorded() throws Exception {
     var run = probeRuns.open();
     run.request(mediaFile("movie.mkv").getId());
-    onCheck =
-        _ -> requests.fail(onlyRequest(), ItemFailureReason.SOURCE_INACCESSIBLE, clock.instant());
+    sleeper.onSleep(
+        _ -> requests.fail(onlyRequest(), ItemFailureReason.SOURCE_INACCESSIBLE, clock.instant()));
 
     var summary = probeRuns.awaitResults(run);
 
     assertThat(summary.count(RequestedProbeResult.FAILED)).isOne();
-    assertThat(sleeps).hasSize(1);
+    assertThat(sleeper.sleeps()).hasSize(1);
   }
 
   @Test
@@ -138,12 +125,12 @@ class ProbeRunsTest {
     clock.advance(Duration.ofSeconds(1));
     var run = probeRuns.open();
     run.request(mediaFileId);
-    onCheck = _ -> requests.succeed(requests.requests().getLast());
+    sleeper.onSleep(_ -> requests.succeed(requests.requests().getLast()));
 
     var summary = probeRuns.awaitResults(run);
 
     assertThat(summary.count(RequestedProbeResult.READY)).isOne();
-    assertThat(sleeps).hasSize(1);
+    assertThat(sleeper.sleeps()).hasSize(1);
   }
 
   @Test
@@ -151,17 +138,17 @@ class ProbeRunsTest {
   void shouldKeepWaitingWhenNoAttemptAtTheRequestedInputsHasFinished() throws Exception {
     var run = probeRuns.open();
     run.request(mediaFile("movie.mkv").getId());
-    onCheck =
+    sleeper.onSleep(
         checks -> {
           if (checks == 3) {
             requests.succeed(onlyRequest());
           }
-        };
+        });
 
     var summary = probeRuns.awaitResults(run);
 
     assertThat(summary.count(RequestedProbeResult.READY)).isOne();
-    assertThat(sleeps).hasSize(3);
+    assertThat(sleeper.sleeps()).hasSize(3);
   }
 
   @Test
@@ -169,7 +156,7 @@ class ProbeRunsTest {
   void shouldStopWaitingForAFileWhenALaterChangeReplacedTheRequestedInputs() throws Exception {
     var run = probeRuns.open();
     run.request(mediaFile("movie.mkv").getId());
-    onCheck = _ -> requests.request(changed(onlyRequest()));
+    sleeper.onSleep(_ -> requests.request(changed(onlyRequest())));
 
     var summary = probeRuns.awaitResults(run);
 
@@ -180,8 +167,9 @@ class ProbeRunsTest {
   @DisplayName("Should stop waiting for a media file when it is removed")
   void shouldStopWaitingForAMediaFileWhenItIsRemoved() throws Exception {
     var run = probeRuns.open();
-    run.request(mediaFile("movie.mkv").getId());
-    onCheck = _ -> outcomes.mediaFileExistsWhen(_ -> false);
+    var mediaFileId = mediaFile("movie.mkv").getId();
+    run.request(mediaFileId);
+    sleeper.onSleep(_ -> outcomes.deleteMediaFile(mediaFileId));
 
     var summary = probeRuns.awaitResults(run);
 
@@ -200,7 +188,7 @@ class ProbeRunsTest {
 
     assertThat(requests.requests()).isEmpty();
     assertThat(summary.counts()).isEmpty();
-    assertThat(sleeps).isEmpty();
+    assertThat(sleeper.sleeps()).isEmpty();
   }
 
   @Test
@@ -215,7 +203,7 @@ class ProbeRunsTest {
     var summary = probeRuns.awaitResults(run);
 
     assertThat(summary.counts()).isEqualTo(Map.of(RequestedProbeResult.READY, 1));
-    assertThat(sleeps).isEmpty();
+    assertThat(sleeper.sleeps()).isEmpty();
   }
 
   @Test
@@ -224,12 +212,12 @@ class ProbeRunsTest {
     var run = probeRuns.open();
     clock.advance(Duration.ofSeconds(30));
     run.request(mediaFile("movie.mkv").getId());
-    onCheck =
+    sleeper.onSleep(
         checks -> {
           if (checks == 2) {
             requests.succeed(onlyRequest());
           }
-        };
+        });
 
     var summary = probeRuns.awaitResults(run);
 

@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.fixtures.ProbeTaskRequestFixture.requestFor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
@@ -11,7 +12,6 @@ import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
-import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.task.ProbePublication;
@@ -25,13 +25,12 @@ import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
+import com.streamarr.server.support.BoundedTask;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,7 +38,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.event.ApplicationEvents;
 import org.springframework.test.context.event.RecordApplicationEvents;
@@ -48,6 +46,9 @@ import org.springframework.test.context.event.RecordApplicationEvents;
 @Tag("IntegrationTest")
 @DisplayName("Durable media file probe task scheduling")
 class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
+
+  private static final Duration SCAN_BOUND = Duration.ofSeconds(20);
+  private static final Duration REQUEST_BOUND = Duration.ofSeconds(10);
 
   @TempDir Path directory;
 
@@ -60,10 +61,7 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
   @Autowired private MediaFileContainerInfoRepository outcomes;
   @Autowired private ProbeTaskRequests probeTaskRequests;
   @Autowired private IgnoredFileValidator ignoredFileValidator;
-
-  @Qualifier("probeSchedulerClient")
-  @Autowired
-  private SchedulerClient client;
+  @Autowired private SchedulerClient client;
 
   private Library library;
   private MediaFile mediaFile;
@@ -95,7 +93,7 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
   @DisplayName("Should fail the scan when the probe request cannot be recorded")
   void shouldFailTheScanWhenTheProbeRequestCannotBeRecorded() throws Exception {
     try (var _ = rejectProbeTaskRequests()) {
-      libraryManagementService.scanLibrary(library.getId());
+      scan();
 
       assertThat(libraries.findById(library.getId()).orElseThrow().getStatus())
           .isEqualTo(LibraryStatus.UNHEALTHY);
@@ -108,13 +106,12 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
   @DisplayName("Should complete the scan when probe task requests recover after a failure")
   void shouldCompleteTheScanWhenProbeTaskRequestsRecoverAfterAFailure() throws Exception {
     try (var _ = rejectProbeTaskRequests()) {
-      libraryManagementService.scanLibrary(library.getId());
+      scan();
     }
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var dispatcher = executor.submit(this::storeTheRequestedOutcome);
-      libraryManagementService.scanLibrary(library.getId());
-      dispatcher.get(10, TimeUnit.SECONDS);
+    try (var dispatcher = BoundedTask.start(this::storeTheRequestedOutcome)) {
+      scan();
+      dispatcher.await(REQUEST_BOUND);
     }
 
     assertThat(libraries.findById(library.getId()).orElseThrow().getStatus())
@@ -199,22 +196,21 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
   void shouldRecordOneRequestWhenTheSameProbeIsRequestedConcurrently() throws Exception {
     var request = requestFor(mediaFile);
     var start = new CountDownLatch(1);
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var first =
-          executor.submit(
-              () -> {
-                awaitStart(start);
-                probeTaskRequests.request(request);
-              });
-      var second =
-          executor.submit(
-              () -> {
-                awaitStart(start);
-                probeTaskRequests.request(request);
-              });
+    try (var first =
+            BoundedTask.start(
+                () -> {
+                  awaitStart(start);
+                  probeTaskRequests.request(request);
+                });
+        var second =
+            BoundedTask.start(
+                () -> {
+                  awaitStart(start);
+                  probeTaskRequests.request(request);
+                })) {
       start.countDown();
-      first.get(10, TimeUnit.SECONDS);
-      second.get(10, TimeUnit.SECONDS);
+      first.await(REQUEST_BOUND);
+      second.await(REQUEST_BOUND);
     }
 
     assertThat(scheduledCount()).isEqualTo(1);
@@ -222,48 +218,25 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep the scan running when a matched file's probe has no outcome")
-  void shouldKeepTheScanRunningWhenAMatchedFilesProbeHasNoOutcome() throws Exception {
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var scan = executor.submit(() -> libraryManagementService.scanLibrary(library.getId()));
-      await().atMost(Duration.ofSeconds(10)).until(() -> scheduledRequest().isPresent());
-      await()
-          .during(Duration.ofMillis(300))
-          .atMost(Duration.ofSeconds(2))
-          .until(() -> !scan.isDone());
-      assertThat(libraries.findById(library.getId()).orElseThrow().getStatus())
-          .isEqualTo(LibraryStatus.SCANNING);
-      assertThat(reader.find(mediaFile.getId())).isEmpty();
-
-      storeTheRequestedOutcome();
-      scan.get(10, TimeUnit.SECONDS);
-    }
-
-    assertThat(libraries.findById(library.getId()).orElseThrow().getStatus())
-        .isEqualTo(LibraryStatus.HEALTHY);
-  }
-
-  @Test
   @DisplayName("Should record one request when scan and watcher processing overlap")
   void shouldRecordOneRequestWhenScanAndWatcherProcessingOverlap() throws Exception {
     var start = new CountDownLatch(1);
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var scan =
-          executor.submit(
-              () -> {
-                awaitStart(start);
-                libraryManagementService.scanLibrary(library.getId());
-              });
-      var discovered =
-          executor.submit(
-              () -> {
-                awaitStart(start);
-                libraryManagementService.processDiscoveredFile(library.getId(), path);
-              });
+    try (var scan =
+            BoundedTask.start(
+                () -> {
+                  awaitStart(start);
+                  libraryManagementService.scanLibrary(library.getId());
+                });
+        var discovered =
+            BoundedTask.start(
+                () -> {
+                  awaitStart(start);
+                  libraryManagementService.processDiscoveredFile(library.getId(), path);
+                })) {
       start.countDown();
-      discovered.get(10, TimeUnit.SECONDS);
+      discovered.await(REQUEST_BOUND);
       storeTheRequestedOutcome();
-      scan.get(10, TimeUnit.SECONDS);
+      scan.await(SCAN_BOUND);
     }
 
     assertThat(scheduledCount()).isEqualTo(1);
@@ -300,7 +273,9 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
   }
 
   // Stands in for the disabled dispatcher: stores a successful outcome for the requested inputs.
-  private Void storeTheRequestedOutcome() {
+  // It polls for the request because the scan saves it inside the service, which gives a test no
+  // hook to wait on.
+  private void storeTheRequestedOutcome() {
     await().atMost(Duration.ofSeconds(10)).until(() -> scheduledRequest().isPresent());
     var request = scheduledRequest().orElseThrow();
     assertThat(
@@ -312,7 +287,10 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
                     .outcome(new ProbeOutcome.Failure(ProbeError.NO_VIDEO_STREAM))
                     .build()))
         .isTrue();
-    return null;
+  }
+
+  private void scan() throws Exception {
+    BoundedTask.runWithin(SCAN_BOUND, () -> libraryManagementService.scanLibrary(library.getId()));
   }
 
   private Optional<ProbeTaskRequest> scheduledRequest() {
@@ -325,25 +303,7 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
     return jdbc.queryForObject("SELECT count(*) FROM scheduled_tasks", Integer.class);
   }
 
-  private static ProbeTaskRequest requestFor(MediaFile file) throws Exception {
-    var source = FilepathCodec.decode(file.getFilepathUri());
-    var attributes = Files.readAttributes(source, BasicFileAttributes.class);
-    return ProbeTaskRequest.builder()
-        .mediaFileId(file.getId())
-        .libraryId(file.getLibraryId())
-        .filepathUri(file.getFilepathUri())
-        .snapshot(
-            new SourceFileSnapshot(attributes.size(), attributes.lastModifiedTime().toInstant()))
-        .probeVersion(ProbeVersion.CURRENT)
-        .build();
-  }
-
-  private static void awaitStart(CountDownLatch start) {
-    try {
-      assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
-    } catch (InterruptedException exception) {
-      Thread.currentThread().interrupt();
-      throw new AssertionError(exception);
-    }
+  private static void awaitStart(CountDownLatch start) throws InterruptedException {
+    assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
   }
 }

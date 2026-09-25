@@ -14,7 +14,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,7 +27,6 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class SchedulerProbeTaskRequests implements ProbeTaskRequests {
 
-  @Qualifier("probeSchedulerClient")
   private final SchedulerClient client;
 
   private final Task<ProbeTaskRequest> task;

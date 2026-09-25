@@ -14,9 +14,12 @@ import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
+import com.streamarr.server.fakes.FakeProbeTaskRequests;
 import com.streamarr.server.fixtures.ArtworkServiceFixture;
+import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.services.ArtworkService;
@@ -25,7 +28,6 @@ import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
@@ -39,6 +41,7 @@ import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParse
 import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.io.IOException;
+import java.nio.file.FileSystems;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
@@ -341,9 +344,14 @@ class MovieFileProcessorTest {
   }
 
   private FileDiscovery discoveryOf(Library library) {
-    return new FileDiscovery(
-        library,
-        artworkService.openRun("scan", ImageRefreshMode.PRESERVE),
-        ProbeRuns.builder().build().open());
+    var outcomes = new FakeMediaFileContainerInfoRepository();
+    return FileDiscoveryRunsFixture.fileDiscoveryRunsBuilder()
+        .artworkService(artworkService)
+        .mediaFiles(fakeMediaFileRepository)
+        .outcomes(outcomes)
+        .probeTaskRequests(new FakeProbeTaskRequests(outcomes))
+        .fileSystem(FileSystems.getDefault())
+        .build()
+        .open("scan", library);
   }
 }

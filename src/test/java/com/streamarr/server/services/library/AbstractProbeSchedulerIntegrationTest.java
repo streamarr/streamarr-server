@@ -1,12 +1,12 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.fixtures.ProbeTaskRequestFixture.requestFor;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.kagkarlsson.scheduler.Scheduler;
 import com.github.kagkarlsson.scheduler.SchedulerClient;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerConfigurationSupport;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
-import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerProperties;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.stats.StatsRegistry;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
@@ -15,8 +15,6 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
-import com.streamarr.server.domain.media.ProbeVersion;
-import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
@@ -26,11 +24,12 @@ import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import com.streamarr.server.services.streaming.FfprobeService;
+import com.streamarr.server.support.UnstartedSchedulerConfiguration;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -44,8 +43,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.context.properties.bind.Bindable;
-import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.core.env.Environment;
 
 abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegrationTest {
@@ -105,7 +102,7 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
     libraryId = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary()).getId();
     var requests = new ArrayList<ProbeTaskRequest>();
     for (var index = 0; index < count; index++) {
-      var request = request(createMediaFile());
+      var request = requestFor(createMediaFile());
       requests.add(request);
       scheduling.request(request);
     }
@@ -120,10 +117,7 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
   SchedulerClient startScheduler(
       ProbeExecution execution, AbstractSchedulerListener listener, Clock clock) {
     var task = MediaProbeTask.create(execution, probeTaskCompletion);
-    var properties =
-        Binder.get(environment)
-            .bind("db-scheduler", Bindable.of(DbSchedulerProperties.class))
-            .get();
+    var properties = UnstartedSchedulerConfiguration.schedulerProperties(environment);
     properties.setThreads(2);
     scheduler =
         DbSchedulerConfigurationSupport.buildScheduler(
@@ -141,6 +135,17 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
             .build();
     scheduler.start();
     return client;
+  }
+
+  static AbstractSchedulerListener countingOk(CountDownLatch completions) {
+    return new AbstractSchedulerListener() {
+      @Override
+      public void onExecutionComplete(ExecutionComplete executionComplete) {
+        if (executionComplete.getResult() == ExecutionComplete.Result.OK) {
+          completions.countDown();
+        }
+      }
+    };
   }
 
   static AbstractSchedulerListener countingCompletions(CountDownLatch completions) {
@@ -180,8 +185,16 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
     }
   }
 
+  Instant delayExecution(UUID mediaFileId, int consecutiveFailures) {
+    return ScheduledProbeTasks.delay(dsl, mediaFileId, consecutiveFailures);
+  }
+
   static TaskInstanceId instanceOf(ProbeTaskRequest request) {
     return TaskInstanceId.of(MediaProbeTask.NAME, request.mediaFileId().toString());
+  }
+
+  static TaskInstanceId instanceOf(MediaFile file) {
+    return TaskInstanceId.of(MediaProbeTask.NAME, file.getId().toString());
   }
 
   private MediaFile createMediaFile() throws IOException {
@@ -198,18 +211,5 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
                 .build());
     createdFiles.add(file);
     return file;
-  }
-
-  private static ProbeTaskRequest request(MediaFile file) throws IOException {
-    var path = FilepathCodec.decode(file.getFilepathUri());
-    var attributes = Files.readAttributes(path, BasicFileAttributes.class);
-    return ProbeTaskRequest.builder()
-        .mediaFileId(file.getId())
-        .libraryId(file.getLibraryId())
-        .filepathUri(file.getFilepathUri())
-        .snapshot(
-            new SourceFileSnapshot(attributes.size(), attributes.lastModifiedTime().toInstant()))
-        .probeVersion(ProbeVersion.CURRENT)
-        .build();
   }
 }

@@ -67,6 +67,7 @@ import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
 import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.support.BoundedTask;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -74,8 +75,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -574,21 +573,21 @@ class LibraryRefreshServiceTest {
     stubMovieMetadataWithPoster("27205", library);
     imageDownloader.holdPathsStartingWith("/poster");
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var refresh = executor.submit(() -> refreshService.refreshLibrary(library));
-      await().atMost(Duration.ofSeconds(5)).until(() -> imageDownloader.heldDownloads() == 1);
-      await()
-          .during(Duration.ofMillis(200))
-          .atMost(Duration.ofSeconds(2))
-          .until(() -> !refresh.isDone());
-
+    try (var refresh =
+        BoundedTask.start(
+            () -> {
+              refreshService.refreshLibrary(library);
+              return !imagesOf(movie.getId(), ImageEntityType.MOVIE).isEmpty();
+            })) {
+      imageDownloader.awaitHeldDownloads(1, Duration.ofSeconds(5));
       imageDownloader.releaseHeldDownloads();
-      refresh.get(5, TimeUnit.SECONDS);
+
+      assertThat(refresh.await(Duration.ofSeconds(5)))
+          .as("poster saved when the refresh returned")
+          .isTrue();
     } finally {
       imageDownloader.releaseHeldDownloads();
     }
-
-    assertThat(imagesOf(movie.getId(), ImageEntityType.MOVIE)).isNotEmpty();
   }
 
   @Test
