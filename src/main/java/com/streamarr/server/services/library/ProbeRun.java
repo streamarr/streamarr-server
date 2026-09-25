@@ -47,8 +47,17 @@ public final class ProbeRun {
   }
 
   private void track(UUID mediaFileId, ProbeInputs inputs, Instant requestedAt) {
-    firstRequestedAt.compareAndSet(null, requestedAt);
+    firstRequestedAt.accumulateAndGet(requestedAt, ProbeRun::earlier);
     requested.put(mediaFileId, new RequestedProbe(inputs, requestedAt));
+  }
+
+  // Requests read the clock before scheduling, so a later request can finish scheduling first.
+  private static Instant earlier(Instant current, Instant candidate) {
+    if (current == null || candidate.isBefore(current)) {
+      return candidate;
+    }
+
+    return current;
   }
 
   Set<UUID> mediaFileIds() {
