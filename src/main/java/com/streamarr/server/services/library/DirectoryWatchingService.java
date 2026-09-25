@@ -14,6 +14,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.annotation.DependsOn;
@@ -39,8 +40,12 @@ public class DirectoryWatchingService implements InitializingBean, LibraryWatchT
       IgnoredFileValidator ignoredFileValidator) {
     this.libraryRepository = libraryRepository;
     this.fileEventProcessor =
-        new FileEventProcessor(
-            fileStabilityChecker, libraryManagementService, ignoredFileValidator);
+        FileEventProcessor.builder()
+            .fileStabilityChecker(fileStabilityChecker)
+            .libraryManagementService(libraryManagementService)
+            .ignoredFileValidator(ignoredFileValidator)
+            .executors(Executors::newVirtualThreadPerTaskExecutor)
+            .build();
   }
 
   public void setup(List<Library> libraries) throws IOException {
