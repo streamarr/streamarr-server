@@ -89,12 +89,14 @@ final class RemoteVariantJobMapper {
   }
 
   private static TranscodeExecution execution(TranscodeRequest request) {
-    return TranscodeExecution.newBuilder()
-        .setSeekPositionSeconds(request.seekPosition())
-        .setTargetSegmentDurationSeconds(request.targetSegmentDuration())
-        .setFramerate(request.framerate())
-        .setStartSequenceNumber(request.startSequenceNumber())
-        .build();
+    var execution =
+        TranscodeExecution.newBuilder()
+            .setSeekPositionSeconds(request.seekPosition())
+            .setTargetSegmentDurationSeconds(request.targetSegmentDuration())
+            .setStartSequenceNumber(request.startSequenceNumber())
+            .setMediaSegmentCount(request.mediaSegmentCount());
+    request.framerate().ifPresent(execution::setFramerate);
+    return execution.build();
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")

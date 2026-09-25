@@ -15,9 +15,12 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
+import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.fakes.FakeSegmentStore;
@@ -181,6 +184,28 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should refuse playback without starting a job attempt when the persisted probe has no duration")
+  void shouldRefusePlaybackWithoutStartingJobAttemptWhenThePersistedProbeHasNoDuration() {
+    var complete = ProbeFixture.completeProbe(defaultProbeBuilder().build());
+    storeOutcome(
+        new ProbeOutcome.Success(
+            ProbeContainer.builder().format(complete.container().format()).build(),
+            complete.streams()));
+    var command =
+        createStreamSessionCommand(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(streamingService.createSession(command))
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoMediaSegments()));
+    assertThat(streamingService.getAllSessions())
+        .extracting(StreamSession::getMediaFileId)
+        .doesNotContain(savedMediaFile.getId());
+    assertThat(FAKE_EXECUTOR.getStartedRequests())
+        .extracting(TranscodeRequest::sourcePath)
+        .doesNotContain(FilepathCodec.decode(savedMediaFile.getFilepathUri()));
+  }
+
+  @Test
   @DisplayName("Should keep serving persisted values when a compatible refresh is pending")
   void shouldKeepServingPersistedValuesWhenACompatibleRefreshIsPending() {
     var storedProbe =
@@ -214,9 +239,12 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   }
 
   private void storeProbe(MediaProbe probe) {
+    storeOutcome(ProbeFixture.completeProbe(probe));
+  }
+
+  private void storeOutcome(ProbeOutcome.Success outcome) {
     var row =
-        PersistedProbeFixture.storedProbeBuilder(
-                savedMediaFile.getId(), ProbeFixture.completeProbe(probe))
+        PersistedProbeFixture.storedProbeBuilder(savedMediaFile.getId(), outcome)
             .snapshot(sourceSnapshot)
             .build();
     new TransactionTemplate(transactionManager)

@@ -181,6 +181,8 @@ A scan retries a failed probe at once and counts only a failure recorded after i
 Person and company artwork and the later retries of failed probes continue after the scan.
 Playback reads stored outcomes.
 It returns a typed not-ready error when no usable outcome exists and a typed failure for a retained terminal media error.
+When the video must be encoded and the probe recorded no usable frame rate, it returns a typed frame-rate error instead of starting a stream session, because workers encode at the probed frame rate.
+A stream copy of the same file still plays.
 
 https://github.com/streamarr/streamarr-adr/blob/main/adr/0033-transcode-worker-is-a-separate-service.adoc[ADR 0033] requires workers for probing, transcoding, and remuxing.
 Each worker opens an outbound, long-lived gRPC `WorkerSession` over the server's single plaintext listener.

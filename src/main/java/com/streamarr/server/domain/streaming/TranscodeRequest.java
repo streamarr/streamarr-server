@@ -1,6 +1,7 @@
 package com.streamarr.server.domain.streaming;
 
 import java.nio.file.Path;
+import java.util.OptionalDouble;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.NonNull;
@@ -12,13 +13,14 @@ public record TranscodeRequest(
     @NonNull Path sourcePath,
     int seekPosition,
     int targetSegmentDuration,
-    double framerate,
+    @NonNull OptionalDouble framerate,
     @NonNull TranscodeDecision transcodeDecision,
     int width,
     int height,
     long bitrate,
     String variantLabel,
-    int startSequenceNumber) {
+    int startSequenceNumber,
+    int mediaSegmentCount) {
 
   public TranscodeRequest {
     if (variantLabel == null) {
@@ -30,5 +32,10 @@ public record TranscodeRequest(
     if (attemptId == null) {
       attemptId = UUID.randomUUID();
     }
+  }
+
+  @SuppressWarnings("java:S1068") // Lombok builder default — field is used by generated code
+  public static class TranscodeRequestBuilder {
+    private OptionalDouble framerate = OptionalDouble.empty();
   }
 }

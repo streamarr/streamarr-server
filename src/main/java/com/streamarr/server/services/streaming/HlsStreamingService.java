@@ -60,10 +60,19 @@ public class HlsStreamingService implements StreamingService {
 
   private Outcome<StreamSession, CreateStreamSessionRejection> startSession(
       CreateStreamSessionCommand command, MediaFile mediaFile, MediaProbe probe) {
+    if (MediaSegmentTimelines.of(probe, properties).mediaSegmentCount() == 0) {
+      return Outcome.rejected(new CreateStreamSessionRejection.NoMediaSegments());
+    }
+
     var authority = command.identity().playbackAuthority();
     var mediaFileId = command.mediaFileId();
     var options = command.options();
     var decision = transcodeDecisionService.decide(probe, options);
+    // Workers encode at the probed frame rate and refuse an encode without one.
+    if (requiresVideoTranscode(decision.transcodeMode()) && probe.framerate().isEmpty()) {
+      return Outcome.rejected(new CreateStreamSessionRejection.FrameRateUnknown());
+    }
+
     var variants = resolveVariants(probe, options, decision);
     try {
       variants = enforceCapacityLimits(decision.transcodeMode(), variants);

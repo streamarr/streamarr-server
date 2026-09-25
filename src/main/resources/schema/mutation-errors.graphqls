@@ -21,6 +21,11 @@ type MediaFileHasNoVideoError implements MutationError {
     message: String!
 }
 
+"The video must be encoded for playback, and the probe recorded no usable frame rate to encode it at."
+type MediaFileFrameRateUnknownError implements MutationError {
+    message: String!
+}
+
 type MediaFileNotFoundError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!

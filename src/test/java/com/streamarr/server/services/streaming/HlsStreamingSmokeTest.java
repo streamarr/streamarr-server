@@ -224,7 +224,7 @@ class HlsStreamingSmokeTest {
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     var probe = session.getMediaProbe();
-    assertThat(probe.framerate()).isGreaterThan(0);
+    assertThat(probe.framerate().orElseThrow()).isPositive();
     assertThat(probe.duration()).isGreaterThan(Duration.ofSeconds(9));
     assertThat(probe.bitrate()).isGreaterThan(0);
   }

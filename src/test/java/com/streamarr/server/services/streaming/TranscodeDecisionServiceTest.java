@@ -9,6 +9,7 @@ import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import java.time.Duration;
 import java.util.List;
+import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import org.junit.jupiter.api.DisplayName;
@@ -29,7 +30,7 @@ class TranscodeDecisionServiceTest {
       String videoCodec, String audioCodec, int audioChannels, long audioBitrate) {
     return MediaProbe.builder()
         .duration(Duration.ofMinutes(120))
-        .framerate(23.976)
+        .framerate(OptionalDouble.of(23.976))
         .width(1920)
         .height(1080)
         .videoCodec(videoCodec)
@@ -215,7 +216,7 @@ class TranscodeDecisionServiceTest {
     var source =
         MediaProbe.builder()
             .duration(Duration.ofMinutes(120))
-            .framerate(23.976)
+            .framerate(OptionalDouble.of(23.976))
             .width(1920)
             .height(1080)
             .videoCodec("h264")
@@ -427,7 +428,7 @@ class TranscodeDecisionServiceTest {
     var source =
         MediaProbe.builder()
             .duration(Duration.ofMinutes(120))
-            .framerate(23.976)
+            .framerate(OptionalDouble.of(23.976))
             .width(1920)
             .height(1080)
             .videoCodec("h264")

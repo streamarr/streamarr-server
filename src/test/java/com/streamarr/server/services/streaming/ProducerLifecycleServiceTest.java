@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming;
 import static com.streamarr.server.fixtures.StreamSessionFixture.abrSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
+import static com.streamarr.server.fixtures.StreamSessionFixture.sessionWithDurationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 
@@ -375,6 +376,58 @@ class ProducerLifecycleServiceTest {
     assertThat(request.seekPosition()).isEqualTo(12);
     assertThat(request.startSequenceNumber()).isEqualTo(2);
     assertThat(request.attemptId()).isEqualTo(handle.attemptId());
+  }
+
+  @Test
+  @DisplayName(
+      "Should advertise the whole timeline's media segment count when installing a replacement attempt")
+  void shouldAdvertiseTheWholeTimelineMediaSegmentCountWhenInstallingReplacementAttempt() {
+    var sixtySecondSession = sessionWithDurationBuilder(60).build();
+    runtimeRegistry.save(sixtySecondSession);
+    lifecycle.startAll(sixtySecondSession, 0, 0);
+    transcodeExecutor.markDead(sixtySecondSession.getSessionId());
+
+    recover(sixtySecondSession);
+
+    var request = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(request.startSequenceNumber()).isEqualTo(2);
+    assertThat(request.mediaSegmentCount()).isEqualTo(10);
+  }
+
+  @Test
+  @DisplayName(
+      "Should leave the running producer in place when a request names a media segment past the advertised timeline")
+  void shouldLeaveRunningProducerInPlaceWhenRequestNamesMediaSegmentPastTheAdvertisedTimeline() {
+    var sixtySecondSession = sessionWithDurationBuilder(60).build();
+    runtimeRegistry.save(sixtySecondSession);
+    lifecycle.startAll(sixtySecondSession, 0, 0);
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    var result =
+        lifecycle.recover(
+            sixtySecondSession.getSessionId(), StreamSession.defaultVariant(), "segment10.m4s");
+
+    assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.SEGMENT_NOT_ADVERTISED);
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
+    assertThat(transcodeExecutor.getStopped()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should install no replacement attempt when a request names a media segment past the advertised timeline")
+  void shouldInstallNoReplacementAttemptWhenRequestNamesMediaSegmentPastTheAdvertisedTimeline() {
+    var sixtySecondSession = sessionWithDurationBuilder(60).build();
+    runtimeRegistry.save(sixtySecondSession);
+    lifecycle.startAll(sixtySecondSession, 0, 0);
+    transcodeExecutor.markDead(sixtySecondSession.getSessionId());
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    var result =
+        lifecycle.recover(
+            sixtySecondSession.getSessionId(), StreamSession.defaultVariant(), "segment10.m4s");
+
+    assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.SEGMENT_NOT_ADVERTISED);
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
   }
 
   @Test
