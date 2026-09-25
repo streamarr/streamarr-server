@@ -30,6 +30,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("HLS Playlist Service Tests")
@@ -211,24 +212,22 @@ class HlsPlaylistServiceTest {
     assertThat(playlist).contains("stream.m3u8?t=test-token");
   }
 
-  @Test
-  @DisplayName("Should use version 6 when generating media playlist")
-  void shouldUseVersion6WhenGeneratingMediaPlaylist() {
-    var session = createSession(TranscodeMode.FULL_TRANSCODE, 60);
+  @ParameterizedTest(name = "{0}")
+  @ValueSource(
+      strings = {
+        "#EXT-X-VERSION:6",
+        "#EXT-X-MAP:URI=\"init.mp4?t=test-token\"",
+        "#EXT-X-PLAYLIST-TYPE:VOD",
+        "#EXT-X-TARGETDURATION:6",
+        "#EXT-X-ENDLIST"
+      })
+  @DisplayName("Should include each fixed tag when generating media playlist")
+  void shouldIncludeEachFixedTagWhenGeneratingMediaPlaylist(String tag) {
+    var session = createSession(TranscodeMode.FULL_TRANSCODE, 30);
 
     var playlist = service.generateMediaPlaylist(session, "test-token");
 
-    assertThat(playlist).contains("#EXT-X-VERSION:6");
-  }
-
-  @Test
-  @DisplayName("Should include EXT-X-MAP when generating media playlist")
-  void shouldIncludeExtXMapWhenGeneratingMediaPlaylist() {
-    var session = createSession(TranscodeMode.FULL_TRANSCODE, 60);
-
-    var playlist = service.generateMediaPlaylist(session, "test-token");
-
-    assertThat(playlist).contains("#EXT-X-MAP:URI=\"init.mp4?t=test-token\"");
+    assertThat(playlist).contains(tag);
   }
 
   @Test
@@ -242,36 +241,6 @@ class HlsPlaylistServiceTest {
         .contains("segment0.m4s?t=test-token")
         .contains("segment1.m4s?t=test-token")
         .contains("segment2.m4s?t=test-token");
-  }
-
-  @Test
-  @DisplayName("Should include end list when generating media playlist")
-  void shouldIncludeEndListWhenGeneratingMediaPlaylist() {
-    var session = createSession(TranscodeMode.FULL_TRANSCODE, 30);
-
-    var playlist = service.generateMediaPlaylist(session, "test-token");
-
-    assertThat(playlist).contains("#EXT-X-ENDLIST");
-  }
-
-  @Test
-  @DisplayName("Should include playlist type VOD when generating media playlist")
-  void shouldIncludePlaylistTypeVodWhenGeneratingMediaPlaylist() {
-    var session = createSession(TranscodeMode.FULL_TRANSCODE, 30);
-
-    var playlist = service.generateMediaPlaylist(session, "test-token");
-
-    assertThat(playlist).contains("#EXT-X-PLAYLIST-TYPE:VOD");
-  }
-
-  @Test
-  @DisplayName("Should include target duration when generating media playlist")
-  void shouldIncludeTargetDurationWhenGeneratingMediaPlaylist() {
-    var session = createSession(TranscodeMode.FULL_TRANSCODE, 30);
-
-    var playlist = service.generateMediaPlaylist(session, "test-token");
-
-    assertThat(playlist).contains("#EXT-X-TARGETDURATION:6");
   }
 
   @Test
