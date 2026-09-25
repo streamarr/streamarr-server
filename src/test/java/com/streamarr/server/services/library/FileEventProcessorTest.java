@@ -385,14 +385,9 @@ class FileEventProcessorTest {
 
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> {
-              var mediaFile =
-                  mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
-              assertThat(mediaFile).isPresent();
-            });
+    assertThat(probeTaskRequests.awaitRequest(REQUEST_BOUND).filepathUri())
+        .isEqualTo(FilepathCodec.encode(path));
+    assertThat(mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path))).isPresent();
   }
 
   @Test
@@ -480,15 +475,11 @@ class FileEventProcessorTest {
 
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> {
-              var mediaFile =
-                  mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
-              assertThat(mediaFile).isPresent();
-              assertThat(mediaFile.get().getLibraryId()).isEqualTo(specialLibraryId);
-            });
+    assertThat(probeTaskRequests.awaitRequest(REQUEST_BOUND).libraryId())
+        .isEqualTo(specialLibraryId);
+    assertThat(mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path)))
+        .hasValueSatisfying(
+            mediaFile -> assertThat(mediaFile.getLibraryId()).isEqualTo(specialLibraryId));
   }
 
   @Test

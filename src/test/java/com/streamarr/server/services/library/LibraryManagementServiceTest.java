@@ -123,10 +123,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -1394,33 +1392,21 @@ class LibraryManagementServiceTest {
     var rootPath = createRootLibraryDirectory();
     var path = createMovieFile(rootPath, "Concurrent Test", "Concurrent Test (2024).mkv");
     var barrier = new CyclicBarrier(2);
-    var exceptions = new CopyOnWriteArrayList<Exception>();
-
-    Runnable task =
+    BoundedTask.Action discover =
         () -> {
-          try {
-            barrier.await();
-            libraryManagementService.processDiscoveredFile(savedLibraryId, path);
-          } catch (Exception e) {
-            exceptions.add(e);
-          }
+          barrier.await(5, TimeUnit.SECONDS);
+          libraryManagementService.processDiscoveredFile(savedLibraryId, path);
         };
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      executor.submit(task);
-      executor.submit(task);
+    try (var first = BoundedTask.start(discover);
+        var second = BoundedTask.start(discover)) {
+      first.await(SCAN_BOUND);
+      second.await(SCAN_BOUND);
     }
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> {
-              assertThat(exceptions).isEmpty();
-              var mediaFiles = fakeMediaFileRepository.findByLibraryId(savedLibraryId);
-              assertThat(mediaFiles)
-                  .as("Expected exactly one MediaFile for the same filepath")
-                  .hasSize(1);
-            });
+    assertThat(fakeMediaFileRepository.findByLibraryId(savedLibraryId))
+        .as("Expected exactly one MediaFile for the same filepath")
+        .hasSize(1);
   }
 
   @Test
