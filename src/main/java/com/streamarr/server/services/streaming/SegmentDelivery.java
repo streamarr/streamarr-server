@@ -30,7 +30,7 @@ public sealed interface SegmentDelivery {
 
   /**
    * The session — or the requested variant or segment name — was destroyed, never existed, or names
-   * nothing a run can produce; the request maps to 404.
+   * nothing the playlist advertises; the request maps to 404.
    */
   record SessionEnded() implements SegmentDelivery {}
 

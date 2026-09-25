@@ -15,6 +15,8 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.ProbeContainer;
+import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
@@ -31,6 +33,7 @@ import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
+import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.probe.PersistedProbeReader;
@@ -43,12 +46,15 @@ import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataAccessResourceFailureException;
 
@@ -154,14 +160,17 @@ class HlsStreamingServiceTest {
     service = serviceWith(transcodeExecutor, runtimeRegistry);
   }
 
+  private static StreamingProperties streamingProperties() {
+    return StreamingProperties.builder()
+        .maxConcurrentTranscodes(3)
+        .targetSegmentDuration(Duration.ofSeconds(6))
+        .sessionTimeout(Duration.ofSeconds(60))
+        .build();
+  }
+
   private HlsStreamingService serviceWith(
       TranscodeExecutor executor, RuntimeStreamSessionRegistry registry) {
-    var properties =
-        StreamingProperties.builder()
-            .maxConcurrentTranscodes(3)
-            .targetSegmentDuration(Duration.ofSeconds(6))
-            .sessionTimeout(Duration.ofSeconds(60))
-            .build();
+    var properties = streamingProperties();
     var rig =
         StreamingRigFixture.streamingRigBuilder()
             .transcodeExecutor(executor)
@@ -311,6 +320,62 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStarted()).contains(session.getSessionId());
     assertThat(transcodeExecutor.isRunning(session.getSessionId(), StreamSession.defaultVariant()))
         .isTrue();
+  }
+
+  @ParameterizedTest
+  @CsvSource({"PT0.001S, 1", "PT3S, 1", "PT12S, 2", "PT12.0004S, 2", "PT2M5.5S, 21"})
+  @DisplayName(
+      "Should advertise the media playlist's segment count to the job attempt when creating session")
+  void shouldAdvertiseTheMediaPlaylistSegmentCountToTheJobAttemptWhenCreatingSession(
+      Duration mediaDuration, int expectedCount) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).duration(mediaDuration).build());
+    var file = seedMediaFile();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMediaPlaylist(session, "token");
+    assertThat(playlist.lines().filter(line -> line.startsWith("#EXTINF:"))).hasSize(expectedCount);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .isNotEmpty()
+        .extracting(TranscodeRequest::mediaSegmentCount)
+        .containsOnly(expectedCount);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("probesWithoutAMediaSegment")
+  @DisplayName(
+      "Should reject session creation without starting a job attempt when the probe gives no media segment")
+  void shouldRejectSessionCreationWithoutStartingJobAttemptWhenTheProbeGivesNoMediaSegment(
+      String probedDuration, ProbeOutcome.Success probe) {
+    probeResults.setDefaultOutcome(probe);
+    var file = seedMediaFile();
+    var command = createStreamSessionCommand(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(service.createSession(command))
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoMediaSegments()));
+    assertThat(service.getActiveSessionCount()).isZero();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  static Stream<Arguments> probesWithoutAMediaSegment() {
+    var complete = ProbeFixture.completeProbe(defaultProbeBuilder().build());
+    var withoutDuration =
+        new ProbeOutcome.Success(
+            ProbeContainer.builder()
+                .format(complete.container().format())
+                .bitrate(complete.container().bitrate())
+                .build(),
+            complete.streams());
+    return Stream.of(
+        Arguments.of("missing", withoutDuration),
+        Arguments.of("zero", probeLasting(Duration.ZERO)),
+        Arguments.of("under one millisecond", probeLasting(Duration.ofNanos(999_999))));
+  }
+
+  private static ProbeOutcome.Success probeLasting(Duration duration) {
+    return ProbeFixture.completeProbe(defaultProbeBuilder().duration(duration).build());
   }
 
   @Test

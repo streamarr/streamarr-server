@@ -171,6 +171,22 @@ class StreamingResolverTest {
   }
 
   @Test
+  @DisplayName(
+      "Should return a typed invalid file error when the probed media gives no media segment")
+  void shouldReturnATypedInvalidFileErrorWhenTheProbedMediaGivesNoMediaSegment() {
+    STUB_SERVICE.setRejection(new CreateStreamSessionRejection.NoMediaSegments());
+    var context = requestSession(UUID.randomUUID().toString());
+    List<Map<String, String>> errors = context.read("data.createStreamSession.userErrors");
+
+    assertThat(context.read("data.createStreamSession.session", Object.class)).isNull();
+    assertThat(errors)
+        .containsExactly(
+            Map.of(
+                "__typename", "InvalidMediaFileError",
+                "message", "This file has no playable duration."));
+  }
+
+  @Test
   @DisplayName("Should return a playable session payload when creation succeeds")
   void shouldReturnAPlayableSessionPayloadWhenCreationSucceeds() {
     var session = buildSession(UUID.randomUUID());

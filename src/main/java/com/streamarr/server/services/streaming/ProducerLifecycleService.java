@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
@@ -44,7 +45,8 @@ public class ProducerLifecycleService {
   public enum RecoveryResult {
     WAITING,
     EXHAUSTED,
-    SESSION_GONE
+    SESSION_GONE,
+    SEGMENT_NOT_ADVERTISED
   }
 
   private record VariantKey(UUID sessionId, String variantLabel) {}
@@ -76,6 +78,12 @@ public class ProducerLifecycleService {
     var handle = session.getVariantHandle(variantLabel).orElse(null);
     if (handle == null) {
       return RecoveryResult.SESSION_GONE;
+    }
+
+    // No job attempt may start at or past the media segment count it advertises, so a request
+    // beyond the playlist must neither relocate nor replace the variant's producer.
+    if (isUnadvertisedMediaSegment(session, segmentName)) {
+      return RecoveryResult.SEGMENT_NOT_ADVERTISED;
     }
 
     if (segmentStore.segmentExists(sessionId, segmentName)) {
@@ -435,9 +443,9 @@ public class ProducerLifecycleService {
 
   private TranscodeRequest replacementRequest(
       StreamSession session, ReplaceProducerCommand command) {
+    var seekPosition = timelineOf(session).mediaSegmentStartSeconds(command.segmentIndex());
     var request =
-        baseRequest(
-                session, command.segmentIndex() * segmentDurationSeconds(), command.segmentIndex())
+        baseRequest(session, seekPosition, command.segmentIndex())
             .variantLabel(command.variantLabel());
 
     var variant =
@@ -499,7 +507,7 @@ public class ProducerLifecycleService {
 
     var segmentIndex = requestedIndex(session, segmentName);
     transcodeExecutor.stop(sessionId);
-    startAll(session, segmentIndex * segmentDurationSeconds(), segmentIndex);
+    startAll(session, timelineOf(session).mediaSegmentStartSeconds(segmentIndex), segmentIndex);
     session.setLastAccessedAt(Instant.now());
     runtimeRegistry.save(session);
 
@@ -528,8 +536,21 @@ public class ProducerLifecycleService {
     return Math.max(1, (int) gapSegments);
   }
 
-  private int segmentDurationSeconds() {
-    return (int) properties.targetSegmentDuration().toSeconds();
+  /** A session that no longer exists advertises nothing to refuse, so this answers false. */
+  public boolean isUnadvertisedMediaSegment(UUID sessionId, String segmentName) {
+    return runtimeRegistry
+        .findById(sessionId)
+        .map(session -> isUnadvertisedMediaSegment(session, segmentName))
+        .orElse(false);
+  }
+
+  private boolean isUnadvertisedMediaSegment(StreamSession session, String segmentName) {
+    return SegmentNames.indexOf(segmentName).stream()
+        .anyMatch(index -> !timelineOf(session).advertises(index));
+  }
+
+  private MediaSegmentTimeline timelineOf(StreamSession session) {
+    return MediaSegmentTimelines.of(session.getMediaProbe(), properties);
   }
 
   private void doResume(UUID sessionId, String segmentName) {
@@ -539,7 +560,7 @@ public class ProducerLifecycleService {
     }
 
     var segmentIndex = requestedIndex(session, segmentName);
-    var resumeSeek = segmentIndex * segmentDurationSeconds();
+    var resumeSeek = timelineOf(session).mediaSegmentStartSeconds(segmentIndex);
 
     startAll(session, resumeSeek, segmentIndex);
     session.setLastAccessedAt(Instant.now());
@@ -588,14 +609,17 @@ public class ProducerLifecycleService {
 
   private TranscodeRequest.TranscodeRequestBuilder baseRequest(
       StreamSession session, int seekPosition, int startSequenceNumber) {
+    var probe = session.getMediaProbe();
+    var timeline = timelineOf(session);
     return TranscodeRequest.builder()
         .sessionId(session.getSessionId())
         .sourcePath(session.getSourcePath())
         .seekPosition(seekPosition)
-        .targetSegmentDuration(segmentDurationSeconds())
-        .framerate(session.getMediaProbe().framerate())
+        .targetSegmentDuration(timeline.targetSegmentDurationSeconds())
+        .framerate(probe.framerate())
         .transcodeDecision(session.getTranscodeDecision())
-        .startSequenceNumber(startSequenceNumber);
+        .startSequenceNumber(startSequenceNumber)
+        .mediaSegmentCount(timeline.mediaSegmentCount());
   }
 
   private void withSessionLock(UUID sessionId, Runnable action) {

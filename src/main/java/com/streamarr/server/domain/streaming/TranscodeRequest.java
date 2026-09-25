@@ -19,7 +19,8 @@ public record TranscodeRequest(
     int height,
     long bitrate,
     String variantLabel,
-    int startSequenceNumber) {
+    int startSequenceNumber,
+    int mediaSegmentCount) {
 
   public TranscodeRequest {
     if (variantLabel == null) {

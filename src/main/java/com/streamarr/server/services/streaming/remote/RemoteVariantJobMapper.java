@@ -93,7 +93,8 @@ final class RemoteVariantJobMapper {
         TranscodeExecution.newBuilder()
             .setSeekPositionSeconds(request.seekPosition())
             .setTargetSegmentDurationSeconds(request.targetSegmentDuration())
-            .setStartSequenceNumber(request.startSequenceNumber());
+            .setStartSequenceNumber(request.startSequenceNumber())
+            .setMediaSegmentCount(request.mediaSegmentCount());
     request.framerate().ifPresent(execution::setFramerate);
     return execution.build();
   }
