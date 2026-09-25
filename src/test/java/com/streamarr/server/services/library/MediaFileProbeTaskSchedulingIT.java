@@ -38,7 +38,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.event.ApplicationEvents;
 import org.springframework.test.context.event.RecordApplicationEvents;
@@ -62,10 +61,7 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
   @Autowired private MediaFileContainerInfoRepository outcomes;
   @Autowired private ProbeTaskRequests probeTaskRequests;
   @Autowired private IgnoredFileValidator ignoredFileValidator;
-
-  @Qualifier("probeSchedulerClient")
-  @Autowired
-  private SchedulerClient client;
+  @Autowired private SchedulerClient client;
 
   private Library library;
   private MediaFile mediaFile;
