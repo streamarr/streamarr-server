@@ -12,6 +12,7 @@ import com.streamarr.server.domain.task.ProbeState;
 import com.streamarr.server.fixtures.PersistedProbeFixture;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -29,6 +30,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   private final List<ProbePublication> publications = new ArrayList<>();
   private Optional<ProbeOutcome.Success> defaultProbe = Optional.empty();
   private final Set<UUID> deletedMediaFiles = ConcurrentHashMap.newKeySet();
+  private final MediaFileRowLocks rowLocks = new MediaFileRowLocks();
 
   /** Answers every media file id with this probe unless a row was stored for it. */
   public void setDefaultProbe(MediaProbe probe) {
@@ -48,7 +50,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
 
   @Override
   public Optional<MediaFileContainerInfo> findByMediaFileId(UUID mediaFileId) {
-    if (deletedMediaFiles.contains(mediaFileId)) {
+    if (isDeleted(mediaFileId)) {
       return Optional.empty();
     }
 
@@ -60,8 +62,12 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   }
 
   @Override
-  public synchronized boolean publish(ProbePublication publication) {
-    if (deletedMediaFiles.contains(publication.mediaFileId())) {
+  public boolean publish(ProbePublication publication) {
+    return rowLocks.holding(publication.mediaFileId(), () -> publishHoldingRowLock(publication));
+  }
+
+  private synchronized boolean publishHoldingRowLock(ProbePublication publication) {
+    if (isDeleted(publication.mediaFileId())) {
       return false;
     }
 
@@ -88,8 +94,14 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   }
 
   @Override
-  public synchronized boolean trySaveProbeRequest(UUID mediaFileId, ProbeInputs inputs) {
-    if (deletedMediaFiles.contains(mediaFileId)) {
+  public boolean trySaveProbeRequest(UUID mediaFileId, ProbeInputs inputs) {
+    return rowLocks.holding(
+        mediaFileId, () -> trySaveProbeRequestHoldingRowLock(mediaFileId, inputs));
+  }
+
+  private synchronized boolean trySaveProbeRequestHoldingRowLock(
+      UUID mediaFileId, ProbeInputs inputs) {
+    if (isDeleted(mediaFileId)) {
       return false;
     }
 
@@ -102,9 +114,19 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   }
 
   @Override
-  public synchronized boolean trySaveProbeFailure(
+  public boolean trySaveProbeFailure(
       UUID mediaFileId, ProbeInputs inputs, ProbeAttemptFailure failure) {
-    if (deletedMediaFiles.contains(mediaFileId) || !inputs.equals(desiredInputs.get(mediaFileId))) {
+    return rowLocks.holding(
+        mediaFileId, () -> trySaveProbeFailureHoldingRowLock(mediaFileId, inputs, failure));
+  }
+
+  private synchronized boolean trySaveProbeFailureHoldingRowLock(
+      UUID mediaFileId, ProbeInputs inputs, ProbeAttemptFailure failure) {
+    if (isDeleted(mediaFileId)) {
+      return false;
+    }
+
+    if (!inputs.equals(desiredInputs.get(mediaFileId))) {
       return false;
     }
 
@@ -115,7 +137,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   @Override
   public synchronized List<ProbeState> findProbeStates(Collection<UUID> mediaFileIds) {
     return mediaFileIds.stream()
-        .filter(mediaFileId -> !deletedMediaFiles.contains(mediaFileId))
+        .filter(mediaFileId -> !isDeleted(mediaFileId))
         .map(
             mediaFileId ->
                 ProbeState.builder()
@@ -127,19 +149,35 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
         .toList();
   }
 
+  private boolean isDeleted(UUID mediaFileId) {
+    return deletedMediaFiles.contains(mediaFileId);
+  }
+
   private ProbeState.Stored stored(MediaFileContainerInfo row) {
     return new ProbeState.Stored(
         new ProbeInputs(row.getSnapshot(), row.getProbeVersion()), row.getProbeError());
   }
 
   @Override
-  public synchronized void withdrawProbeRequest(UUID mediaFileId) {
-    desiredInputs.remove(mediaFileId);
-    failures.remove(mediaFileId);
+  public void withdrawProbeRequest(UUID mediaFileId) {
+    rowLocks.holding(
+        mediaFileId,
+        () -> {
+          synchronized (this) {
+            desiredInputs.remove(mediaFileId);
+            failures.remove(mediaFileId);
+          }
+
+          return null;
+        });
   }
 
   @Override
-  public synchronized Optional<ProbeInputs> lockProbeInputs(UUID mediaFileId) {
+  public Optional<ProbeInputs> lockProbeInputs(UUID mediaFileId) {
+    return rowLocks.holding(mediaFileId, () -> requestedInputs(mediaFileId));
+  }
+
+  private synchronized Optional<ProbeInputs> requestedInputs(UUID mediaFileId) {
     return Optional.ofNullable(desiredInputs.get(mediaFileId));
   }
 
@@ -154,11 +192,26 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     rows.put(row.getMediaFileId(), row);
   }
 
+  /** Waits until {@code count} writes for the media file wait for another's open writes. */
+  public void awaitBlockedWrites(UUID mediaFileId, int count, Duration bound)
+      throws InterruptedException {
+    rowLocks.awaitWaiting(mediaFileId, count, bound);
+  }
+
   /**
-   * Runs writes for one media file and restores its probe state when they throw, as a rolled-back
-   * transaction would.
+   * Runs writes for one media file as one transaction: other writers for the file wait until they
+   * finish, and the file's probe state is restored when they throw.
    */
   public void rollBackOnFailure(UUID mediaFileId, Runnable writes) {
+    rowLocks.holding(
+        mediaFileId,
+        () -> {
+          runRollingBack(mediaFileId, writes);
+          return null;
+        });
+  }
+
+  private void runRollingBack(UUID mediaFileId, Runnable writes) {
     Optional<ProbeInputs> requested;
     Optional<ProbeAttemptFailure> failure;
     Optional<MediaFileContainerInfo> row;
@@ -190,11 +243,19 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
    * Deletes the media file as the database would: its outcome, requested inputs and failure go with
    * it, and later writes for it are rejected.
    */
-  public synchronized void deleteMediaFile(UUID mediaFileId) {
-    deletedMediaFiles.add(mediaFileId);
-    rows.remove(mediaFileId);
-    desiredInputs.remove(mediaFileId);
-    failures.remove(mediaFileId);
+  public void deleteMediaFile(UUID mediaFileId) {
+    rowLocks.holding(
+        mediaFileId,
+        () -> {
+          synchronized (this) {
+            deletedMediaFiles.add(mediaFileId);
+            rows.remove(mediaFileId);
+            desiredInputs.remove(mediaFileId);
+            failures.remove(mediaFileId);
+          }
+
+          return null;
+        });
   }
 
   public synchronized List<ProbePublication> publications() {
