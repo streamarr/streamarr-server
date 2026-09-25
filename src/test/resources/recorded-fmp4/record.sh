@@ -42,7 +42,9 @@ record() {
   local output=$1 forced_keyframe_times=$2
   shift 2
 
-  docker run --rm --entrypoint /cnb/lifecycle/launcher -v "$work:/work" "$image" bash -c "
+  # The invoking user owns the private work directory; the image's own user (1002:1001) would not.
+  docker run --rm --user "$(id -u):$(id -g)" --entrypoint /cnb/lifecycle/launcher \
+    -v "$work:/work" "$image" bash -c "
     ffmpeg -v error -y -i /work/source.mp4 \
       -map 0:v:0 -map 0:a:0 -map -0:s -map_metadata -1 -map_chapters -1 \
       -copyts -avoid_negative_ts disabled -start_at_zero -max_muxing_queue_size 128 \
