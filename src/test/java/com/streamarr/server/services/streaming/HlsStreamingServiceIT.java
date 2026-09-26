@@ -233,8 +233,13 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
     assertThat(playlistService.generateMultivariantPlaylist(session, "token"))
         .contains("BANDWIDTH=2400000,AVERAGE-BANDWIDTH=2000000,RESOLUTION=1280x720");
     assertThat(playlistService.generateMediaPlaylist(session, "token"))
-        .contains("#EXTINF:1.000000,", "segment12.ts?t=token", "#EXT-X-ENDLIST")
-        .doesNotContain("segment13.ts");
+        .contains(
+            "#EXT-X-VERSION:6",
+            "#EXT-X-MAP:URI=\"init.mp4?t=token\"",
+            "#EXTINF:1.000000,",
+            "segment12.m4s?t=token",
+            "#EXT-X-ENDLIST")
+        .doesNotContain("segment13.m4s", ".ts?");
     assertThat(scheduledRequest()).contains(refresh);
   }
 

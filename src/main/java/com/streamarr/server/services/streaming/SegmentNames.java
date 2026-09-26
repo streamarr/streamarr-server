@@ -4,22 +4,43 @@ import java.util.OptionalInt;
 import java.util.regex.Pattern;
 
 /**
- * Naming scheme for HLS artifacts: media segments are {@code segment{index}.{ts|m4s}}, optionally
- * under a variant directory, beside an fMP4 variant's {@code init.mp4}, which the variant stores
- * once and keeps across job attempts.
+ * Naming scheme for HLS artifacts, which are fMP4 only: media segments are {@code
+ * segment{index}.m4s}, optionally under a variant directory, beside the variant's {@code init.mp4},
+ * which the variant stores once and keeps across job attempts.
  */
 public final class SegmentNames {
+
+  /** The basename of a variant's initialization segment. */
+  public static final String INITIALIZATION_SEGMENT_NAME = "init.mp4";
+
+  /** The extension of every media segment's name. */
+  public static final String MEDIA_SEGMENT_EXTENSION = ".m4s";
 
   // Nine digits keep every parsed index inside int range; a longer run of digits is not a
   // media-segment name.
   private static final Pattern MEDIA_SEGMENT_PATTERN =
-      Pattern.compile("segment(\\d{1,9})\\.(ts|m4s)");
+      Pattern.compile("segment(\\d{1,9})" + Pattern.quote(MEDIA_SEGMENT_EXTENSION));
 
   private SegmentNames() {}
 
+  /** The name of the media segment at {@code index} on the variant's zero-based timeline. */
+  public static String mediaSegmentName(int index) {
+    return "segment" + index + MEDIA_SEGMENT_EXTENSION;
+  }
+
+  /** Whether the name carries the extension of a media segment or an initialization segment. */
+  public static boolean hasFmp4Extension(String segmentName) {
+    return segmentName.endsWith(MEDIA_SEGMENT_EXTENSION) || segmentName.endsWith(".mp4");
+  }
+
   /** Whether the name is an initialization segment: a basename of exactly {@code init.mp4}. */
   public static boolean isInitSegment(String segmentName) {
-    return "init.mp4".equals(basename(segmentName));
+    return INITIALIZATION_SEGMENT_NAME.equals(basename(segmentName));
+  }
+
+  /** Whether the name is a media segment's or an initialization segment's. */
+  public static boolean matchesNamingScheme(String segmentName) {
+    return indexOf(segmentName).isPresent() || isInitSegment(segmentName);
   }
 
   public static OptionalInt indexOf(String segmentName) {
@@ -32,24 +53,18 @@ public final class SegmentNames {
   }
 
   /**
-   * The same run's media segment at {@code index}: same variant directory, same container. A name
+   * The same job attempt's media segment at {@code index}, in the same variant directory. A name
    * matching no scheme throws rather than passing through unchanged — a fabricated sibling would
-   * point progress checks at a file no run can ever produce.
+   * point progress checks at a file no job attempt can ever produce.
    */
   public static String siblingName(String segmentName, int index) {
+    if (!matchesNamingScheme(segmentName)) {
+      throw new IllegalArgumentException("Segment name matches no known scheme: " + segmentName);
+    }
+
     var base = basename(segmentName);
     var directory = segmentName.substring(0, segmentName.length() - base.length());
-    var matcher = MEDIA_SEGMENT_PATTERN.matcher(base);
-    if (matcher.matches()) {
-      return directory + "segment" + index + "." + matcher.group(2);
-    }
-
-    // Only fMP4 runs have an init.mp4; their media segments are .m4s.
-    if (isInitSegment(segmentName)) {
-      return directory + "segment" + index + ".m4s";
-    }
-
-    throw new IllegalArgumentException("Segment name matches no known scheme: " + segmentName);
+    return directory + mediaSegmentName(index);
   }
 
   private static String basename(String segmentName) {

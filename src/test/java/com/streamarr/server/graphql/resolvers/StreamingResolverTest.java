@@ -11,7 +11,6 @@ import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.streaming.AudioDecision;
-import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.ProbeError;
@@ -350,7 +349,6 @@ class StreamingResolverTest {
                 .videoCodecFamily("h264")
                 .audioDecision(AudioDecision.copy("aac", 2, 0))
                 .subtitleDecision(SubtitleDecision.exclude())
-                .containerFormat(ContainerFormat.MPEGTS)
                 .needsKeyframeAlignment(true)
                 .build())
         .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())

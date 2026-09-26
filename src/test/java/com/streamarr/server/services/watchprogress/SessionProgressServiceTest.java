@@ -81,7 +81,7 @@ class SessionProgressServiceTest {
   }
 
   private StreamSession addSession() {
-    var session = StreamSessionFixture.buildMpegtsSessionOwnedBy(PROFILE_ID);
+    var session = StreamSessionFixture.buildActiveSessionOwnedBy(PROFILE_ID);
     runtimeRegistry.save(session);
     saveMediaFileForSession(session);
     return session;
@@ -281,7 +281,7 @@ class SessionProgressServiceTest {
     @Test
     @DisplayName("Should treat session owned by another profile as not found when reading progress")
     void shouldTreatSessionOwnedByAnotherProfileAsNotFoundWhenReadingProgress() {
-      var session = StreamSessionFixture.buildMpegtsSessionOwnedBy(UUID.randomUUID());
+      var session = StreamSessionFixture.buildActiveSessionOwnedBy(UUID.randomUUID());
       runtimeRegistry.save(session);
       saveMediaFileForSession(session);
 

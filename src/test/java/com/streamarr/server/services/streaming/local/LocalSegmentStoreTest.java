@@ -79,9 +79,9 @@ class LocalSegmentStoreTest {
     var sessionId = UUID.randomUUID();
     var outputDir = store.getOutputDirectory(sessionId);
     var expectedBytes = "segment data".getBytes();
-    Files.write(outputDir.resolve("segment0.ts"), expectedBytes);
+    Files.write(outputDir.resolve("segment0.m4s"), expectedBytes);
 
-    var result = store.readSegment(sessionId, "segment0.ts");
+    var result = store.readSegment(sessionId, "segment0.m4s");
 
     assertThat(result).isEqualTo(expectedBytes);
   }
@@ -92,7 +92,7 @@ class LocalSegmentStoreTest {
     var sessionId = UUID.randomUUID();
     store.getOutputDirectory(sessionId);
 
-    assertThatThrownBy(() -> store.readSegment(sessionId, "missing.ts"))
+    assertThatThrownBy(() -> store.readSegment(sessionId, "missing.m4s"))
         .isInstanceOf(TranscodeException.class);
   }
 
@@ -101,7 +101,7 @@ class LocalSegmentStoreTest {
   void shouldDeleteDirectoryAndContentsWhenSessionIsDeleted() throws IOException {
     var sessionId = UUID.randomUUID();
     var outputDir = store.getOutputDirectory(sessionId);
-    Files.write(outputDir.resolve("segment0.ts"), "data".getBytes());
+    Files.write(outputDir.resolve("segment0.m4s"), "data".getBytes());
 
     store.deleteSession(sessionId);
 
@@ -123,7 +123,7 @@ class LocalSegmentStoreTest {
 
     // In remote mode nothing creates the directory until a worker's first upload; the miss must
     // read as "not yet present", never as an error.
-    assertThat(store.segmentExists(sessionId, "segment0.ts")).isFalse();
+    assertThat(store.segmentExists(sessionId, "segment0.m4s")).isFalse();
   }
 
   @Test
@@ -132,7 +132,7 @@ class LocalSegmentStoreTest {
     var sessionId = UUID.randomUUID();
     store.getOutputDirectory(sessionId);
 
-    assertThatThrownBy(() -> store.readSegment(sessionId, "../../etc/passwd.ts"))
+    assertThatThrownBy(() -> store.readSegment(sessionId, "../../etc/passwd.m4s"))
         .isInstanceOf(InvalidSegmentPathException.class);
   }
 
@@ -143,9 +143,9 @@ class LocalSegmentStoreTest {
     var outputDir = store.getOutputDirectory(sessionId);
     var variantDir = outputDir.resolve("720p");
     Files.createDirectories(variantDir);
-    Files.write(variantDir.resolve("segment0.ts"), "data".getBytes());
+    Files.write(variantDir.resolve("segment0.m4s"), "data".getBytes());
 
-    var result = store.readSegment(sessionId, "720p/segment0.ts");
+    var result = store.readSegment(sessionId, "720p/segment0.m4s");
 
     assertThat(result).isEqualTo("data".getBytes());
   }
@@ -155,7 +155,7 @@ class LocalSegmentStoreTest {
   void shouldStoreCompleteSegmentWhenRemoteUploadIsPublished() {
     var sessionId = UUID.randomUUID();
     var segmentData = "remote segment".getBytes();
-    var segmentName = "720p/segment0.ts";
+    var segmentName = "720p/segment0.m4s";
 
     assertThat(store.segmentExists(sessionId, segmentName)).isFalse();
 
@@ -305,14 +305,14 @@ class LocalSegmentStoreTest {
     var sessionId = UUID.randomUUID();
     var segmentData = "remote segment".getBytes();
 
-    try (var prepared = store.prepareSegment(sessionId, "720p/segment0.ts", segmentData)) {
+    try (var prepared = store.prepareSegment(sessionId, "720p/segment0.m4s", segmentData)) {
       assertThat(tempDir.resolve(sessionId.toString())).doesNotExist();
-      assertThat(store.segmentExists(sessionId, "720p/segment0.ts")).isFalse();
+      assertThat(store.segmentExists(sessionId, "720p/segment0.m4s")).isFalse();
 
       prepared.publish();
     }
 
-    assertThat(store.readSegment(sessionId, "720p/segment0.ts")).isEqualTo(segmentData);
+    assertThat(store.readSegment(sessionId, "720p/segment0.m4s")).isEqualTo(segmentData);
   }
 
   @Test
@@ -320,7 +320,8 @@ class LocalSegmentStoreTest {
   void shouldDiscardPreparedSegmentWhenClosedWithoutPublication() {
     var sessionId = UUID.randomUUID();
 
-    try (var _ = store.prepareSegment(sessionId, "720p/segment0.ts", "remote segment".getBytes())) {
+    try (var _ =
+        store.prepareSegment(sessionId, "720p/segment0.m4s", "remote segment".getBytes())) {
       assertThat(tempDir.resolve(sessionId.toString())).doesNotExist();
     }
 
@@ -331,7 +332,7 @@ class LocalSegmentStoreTest {
   @DisplayName("Should translate cleanup I/O failure when a prepared segment is closed")
   void shouldTranslateCleanupIoFailureWhenPreparedSegmentIsClosed() throws Exception {
     var prepared =
-        store.prepareSegment(UUID.randomUUID(), "720p/segment0.ts", "remote segment".getBytes());
+        store.prepareSegment(UUID.randomUUID(), "720p/segment0.m4s", "remote segment".getBytes());
     Path temporary;
     try (var files = Files.list(tempDir)) {
       temporary = files.findFirst().orElseThrow();
@@ -342,7 +343,7 @@ class LocalSegmentStoreTest {
 
     assertThatThrownBy(prepared::close)
         .isInstanceOf(UncheckedIOException.class)
-        .hasMessage("Failed to clean up segment upload: 720p/segment0.ts")
+        .hasMessage("Failed to clean up segment upload: 720p/segment0.m4s")
         .cause()
         .isInstanceOf(IOException.class);
   }
@@ -352,7 +353,7 @@ class LocalSegmentStoreTest {
   void shouldCleanTemporaryFileWhenSegmentPreparationFails() {
     var sessionId = UUID.randomUUID();
 
-    assertThatThrownBy(() -> store.prepareSegment(sessionId, "segment0.ts", null))
+    assertThatThrownBy(() -> store.prepareSegment(sessionId, "segment0.m4s", null))
         .isInstanceOf(NullPointerException.class);
     assertThat(tempDir).isEmptyDirectory();
   }
@@ -367,7 +368,7 @@ class LocalSegmentStoreTest {
 
     // Deliberately NOT TranscodeException: the delivery loop swallows that type as a destroy
     // race, so a genuine storage failure must surface as UncheckedIOException instead.
-    assertThatThrownBy(() -> store.storeSegment(sessionId, "segment0.ts", new byte[] {0x47}))
+    assertThatThrownBy(() -> store.storeSegment(sessionId, "segment0.m4s", new byte[] {0x47}))
         .isInstanceOf(UncheckedIOException.class)
         .hasMessageContaining("session directory");
   }
@@ -378,7 +379,7 @@ class LocalSegmentStoreTest {
     var sessionId = UUID.randomUUID();
     var segmentData = "data".getBytes();
 
-    assertThatThrownBy(() -> store.storeSegment(sessionId, "../../escaped.ts", segmentData))
+    assertThatThrownBy(() -> store.storeSegment(sessionId, "../../escaped.m4s", segmentData))
         .isInstanceOf(InvalidSegmentPathException.class);
   }
 

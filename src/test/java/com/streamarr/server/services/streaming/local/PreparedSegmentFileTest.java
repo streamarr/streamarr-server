@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
 class PreparedSegmentFileTest {
 
   private static final Path DIRECTORY = Path.of("segments");
-  private static final Path TARGET = DIRECTORY.resolve("session/720p/segment0.ts");
+  private static final Path TARGET = DIRECTORY.resolve("session/720p/segment0.m4s");
   private static final Path INITIALIZATION_TARGET = DIRECTORY.resolve("session/720p/init.mp4");
 
   @Test

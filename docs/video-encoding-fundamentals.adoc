@@ -23,11 +23,11 @@ A *codec* (H.264, H.265, AV1) is the compression algorithm applied to the raw vi
 
 | MPEGTS
 | `.ts`
-| Transport stream for HLS. Carries H.264 + AAC. Each segment is independently decodable
+| Transport stream, common in broadcast recordings. Streamarr reads it as a source container but never delivers HLS in it
 
 | fMP4
 | `.m4s` + `.mp4` init
-| Fragmented MP4 for HLS. Required for AV1 and H.265 in HLS. Needs an initialization segment (`init.mp4`) containing codec parameters
+| Fragmented MP4. Streamarr delivers every HLS variant in it, whatever the codec. Needs an initialization segment (`init.mp4`) containing codec parameters
 |===
 
 === Common Codecs
@@ -38,17 +38,17 @@ A *codec* (H.264, H.265, AV1) is the compression algorithm applied to the raw vi
 | H.264 (AVC)
 | Baseline
 | Universal (every GPU since ~2012)
-| Default for maximum compatibility. Uses MPEGTS container in HLS
+| Default for maximum compatibility
 
 | H.265 (HEVC)
 | ~40% better than H.264
 | Broad (most GPUs since ~2016)
-| Patent licensing complexity. Uses fMP4 container in HLS
+| Patent licensing complexity
 
 | AV1
 | ~30-50% better than H.264
 | Growing (Intel Arc, NVIDIA Ada+, AMD RDNA3+)
-| Royalty-free, Netflix uses for 30%+ of traffic in 2026. Uses fMP4 container in HLS
+| Royalty-free, Netflix uses for 30%+ of traffic in 2026
 |===
 
 == How HLS Works
@@ -58,11 +58,13 @@ HTTP Live Streaming (RFC 8216) delivers video as a sequence of small HTTP-downlo
 ----
 Master Playlist (master.m3u8)
     ├── Variant 1: 1080p (stream_1080p.m3u8)
-    │       ├── segment0.ts
-    │       ├── segment1.ts
+    │       ├── init.mp4
+    │       ├── segment0.m4s
+    │       ├── segment1.m4s
     │       └── ...
     ├── Variant 2: 720p (stream_720p.m3u8)
-    │       ├── segment0.ts
+    │       ├── init.mp4
+    │       ├── segment0.m4s
     │       └── ...
     └── Variant 3: 480p (stream_480p.m3u8)
             └── ...
@@ -73,7 +75,9 @@ Master Playlist (master.m3u8)
 3. The *media playlist* lists the segments for that variant with their durations
 4. The client downloads segments sequentially, switching variants adaptively
 
-The container (MPEGTS vs fMP4) is a packaging detail -- the client sees segments regardless. fMP4 requires an additional initialization segment (`init.mp4`) containing decoder configuration.
+Streamarr serves every variant as multiplexed fragmented MP4 in an HLS version 6 playlist, whatever the codec (https://github.com/streamarr/streamarr-adr/blob/main/adr/0037-worker-delivers-fmp4-segments-from-ffmpeg-stdout.adoc[ADR 0037]).
+Each media playlist names the variant's initialization segment (`init.mp4`) with an `EXT-X-MAP` tag, and the player loads it before any media segment.
+HLS delivery is always fragmented MP4; the transcode decision does not choose it.
 
 == REMUX vs Transcode
 
@@ -125,21 +129,23 @@ Both modes copy the video stream verbatim (`-c:v copy`). The video resolution an
 
 === Architecture: One FFmpeg per Variant
 
-Each quality variant runs as a separate FFmpeg process writing segments to its own subdirectory:
+Each quality variant runs as a separate FFmpeg process on a worker.
+FFmpeg writes fragmented MP4 to its standard output, and the worker groups the fragments into media segments and uploads the variant's initialization segment and each media segment to the server (https://github.com/streamarr/streamarr-adr/blob/main/adr/0037-worker-delivers-fmp4-segments-from-ffmpeg-stdout.adoc[ADR 0037]).
+The server stores them under the variant's directory:
 
 ----
 session-{uuid}/
     ├── 1080p/
-    │       ├── stream.m3u8
-    │       ├── segment0.ts
+    │       ├── init.mp4
+    │       ├── segment0.m4s
     │       └── ...
-    ├── 720p/
-    │       ├── stream.m3u8
-    │       └── ...
-    └── master.m3u8
+    └── 720p/
+            ├── init.mp4
+            └── ...
 ----
 
-This keeps each process simple (single output) and allows independent lifecycle management -- a variant can be started, stopped, or restarted without affecting others.
+The server generates every playlist itself (https://github.com/streamarr/streamarr-adr/blob/main/adr/0008-server-generated-hls-playlists.adoc[ADR 0008]), so the store holds no playlist files.
+One process per variant keeps each process simple (single output) and allows independent lifecycle management -- a variant can be started, stopped, or replaced by a replacement attempt without affecting others.
 
 === FFmpeg Flags per Variant
 

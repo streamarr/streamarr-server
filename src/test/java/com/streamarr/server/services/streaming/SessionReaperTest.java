@@ -210,13 +210,13 @@ class SessionReaperTest {
   }
 
   private StreamSession buildSession(Instant lastAccessedAt) {
-    var session = StreamSessionFixture.buildMpegtsSession();
+    var session = StreamSessionFixture.buildActiveSession();
     session.setLastAccessedAt(lastAccessedAt);
     return session;
   }
 
   private StreamSession buildAbrSession(Instant lastAccessedAt) {
-    var session = StreamSessionFixture.buildMpegtsSession();
+    var session = StreamSessionFixture.buildActiveSession();
     session.setLastAccessedAt(lastAccessedAt);
 
     session.setVariantHandle(

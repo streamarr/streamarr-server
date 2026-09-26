@@ -310,6 +310,36 @@ class HlsStreamingServiceTest {
     assertThat(audio.bitrate()).isEqualTo(64_000L);
   }
 
+  @ParameterizedTest(name = "{0} → {1}")
+  @CsvSource({
+    "aac, mp4a.40.2",
+    "ac3, ac-3",
+    "eac3, ec-3",
+    "flac, fLaC",
+    "opus, Opus",
+    "alac, alac"
+  })
+  @DisplayName(
+      "Should advertise the copied audio codec in the playlist when the client supports the source audio codec")
+  void shouldAdvertiseCopiedAudioCodecInPlaylistWhenClientSupportsSourceAudioCodec(
+      String sourceAudioCodec, String codecsParameter) {
+    probeResults.setDefaultProbe(defaultProbeBuilder().audioCodec(sourceAudioCodec).build());
+    var file = seedMediaFile();
+    var options =
+        StreamingOptions.builder()
+            .supportedCodecs(List.of("h264"))
+            .supportedAudioCodecs(List.of(sourceAudioCodec))
+            .build();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
+    var playlist =
+        new HlsPlaylistService(StreamingProperties.builder().build())
+            .generateMultivariantPlaylist(session, "token");
+
+    assertThat(session.getTranscodeDecision().audioDecision().mode()).isEqualTo(AudioMode.COPY);
+    assertThat(playlist).contains("CODECS=\"avc1.640028," + codecsParameter + "\"");
+  }
+
   @Test
   @DisplayName("Should start transcode when creating session")
   void shouldStartTranscodeWhenCreatingSession() {
@@ -522,7 +552,7 @@ class HlsStreamingServiceTest {
   void shouldDeleteStoredSegmentsWhenDestroyFailsToStopTranscode() {
     var file = seedMediaFile();
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
-    segmentStore.addSegment(session.getSessionId(), "segment0.ts", "data".getBytes());
+    segmentStore.addSegment(session.getSessionId(), "segment0.m4s", "data".getBytes());
     transcodeExecutor.failOnStop(session.getSessionId());
     var sessionId = session.getSessionId();
 
@@ -530,7 +560,7 @@ class HlsStreamingServiceTest {
         .isInstanceOf(TranscodeException.class);
 
     assertThat(accessSession(session)).isEmpty();
-    assertThat(segmentStore.segmentExists(session.getSessionId(), "segment0.ts")).isFalse();
+    assertThat(segmentStore.segmentExists(session.getSessionId(), "segment0.m4s")).isFalse();
   }
 
   @Test
@@ -737,7 +767,7 @@ class HlsStreamingServiceTest {
     var sessionId = executor.getAttemptedRequests().getFirst().sessionId();
     assertThat(runtimeRegistry.findById(sessionId)).isEmpty();
     assertThat(executor.getRunningCount()).isZero();
-    assertThat(segmentStore.segmentExists(sessionId, "startup.ts")).isFalse();
+    assertThat(segmentStore.segmentExists(sessionId, "startup.m4s")).isFalse();
   }
 
   @Test
@@ -1008,7 +1038,7 @@ class HlsStreamingServiceTest {
     @Override
     public TranscodeHandle start(TranscodeRequest request) {
       attemptedRequests.add(request);
-      segmentStore.addSegment(request.sessionId(), "startup.ts", new byte[] {1});
+      segmentStore.addSegment(request.sessionId(), "startup.m4s", new byte[] {1});
       if (attemptedRequests.size() > successfulStarts) {
         throw new TranscodeException("Simulated transcode startup failure");
       }

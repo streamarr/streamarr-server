@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.within;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
-import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.QualityVariant;
@@ -31,6 +30,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("HLS Playlist Service Tests")
@@ -49,13 +49,11 @@ class HlsPlaylistServiceTest {
     service = new HlsPlaylistService(properties);
   }
 
-  private StreamSession createSession(
-      ContainerFormat container, TranscodeMode mode, int durationSeconds) {
-    return createSessionWithDuration(container, mode, Duration.ofSeconds(durationSeconds));
+  private StreamSession createSession(TranscodeMode mode, int durationSeconds) {
+    return createSessionWithDuration(mode, Duration.ofSeconds(durationSeconds));
   }
 
-  private StreamSession createSessionWithDuration(
-      ContainerFormat container, TranscodeMode mode, Duration duration) {
+  private StreamSession createSessionWithDuration(TranscodeMode mode, Duration duration) {
     var session =
         StreamSession.builder()
             .sessionId(UUID.randomUUID())
@@ -75,10 +73,9 @@ class HlsPlaylistServiceTest {
             .transcodeDecision(
                 TranscodeDecision.builder()
                     .transcodeMode(mode)
-                    .videoCodecFamily(container == ContainerFormat.FMP4 ? "av1" : "h264")
+                    .videoCodecFamily("h264")
                     .audioDecision(AudioDecision.stereoAac())
                     .subtitleDecision(SubtitleDecision.exclude())
-                    .containerFormat(container)
                     .needsKeyframeAlignment(mode != TranscodeMode.FULL_TRANSCODE)
                     .build())
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
@@ -89,7 +86,6 @@ class HlsPlaylistServiceTest {
   }
 
   private StreamSession createSessionWithAudio(AudioDecision audio, String videoCodecFamily) {
-    var container = "av1".equals(videoCodecFamily) ? ContainerFormat.FMP4 : ContainerFormat.MPEGTS;
     var session =
         StreamSession.builder()
             .sessionId(UUID.randomUUID())
@@ -112,7 +108,6 @@ class HlsPlaylistServiceTest {
                     .videoCodecFamily(videoCodecFamily)
                     .audioDecision(audio)
                     .subtitleDecision(SubtitleDecision.exclude())
-                    .containerFormat(container)
                     .needsKeyframeAlignment(true)
                     .build())
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
@@ -169,7 +164,6 @@ class HlsPlaylistServiceTest {
                     .videoCodecFamily("h264")
                     .audioDecision(AudioDecision.stereoAac())
                     .subtitleDecision(SubtitleDecision.exclude())
-                    .containerFormat(ContainerFormat.MPEGTS)
                     .needsKeyframeAlignment(false)
                     .build())
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
@@ -187,7 +181,7 @@ class HlsPlaylistServiceTest {
   @Test
   @DisplayName("Should start with EXTM3U when generating multivariant playlist")
   void shouldStartWithExtm3uWhenGeneratingMultivariantPlaylist() {
-    var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
+    var session = createSession(TranscodeMode.FULL_TRANSCODE, 120);
 
     var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
@@ -198,7 +192,7 @@ class HlsPlaylistServiceTest {
   @DisplayName(
       "Should include stream inf with bandwidth and resolution when generating multivariant playlist")
   void shouldIncludeStreamInfWithBandwidthAndResolutionWhenGeneratingMultivariantPlaylist() {
-    var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
+    var session = createSession(TranscodeMode.FULL_TRANSCODE, 120);
 
     var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
@@ -211,124 +205,62 @@ class HlsPlaylistServiceTest {
   @Test
   @DisplayName("Should point to stream playlist URL when generating multivariant playlist")
   void shouldPointToStreamPlaylistUrlWhenGeneratingMultivariantPlaylist() {
-    var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
+    var session = createSession(TranscodeMode.FULL_TRANSCODE, 120);
 
     var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
     assertThat(playlist).contains("stream.m3u8?t=test-token");
   }
 
-  @Test
-  @DisplayName("Should use version 3 when container is MPEGTS")
-  void shouldUseVersion3WhenContainerIsMpegts() {
-    var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 60);
+  @ParameterizedTest(name = "{0}")
+  @ValueSource(
+      strings = {
+        "#EXT-X-VERSION:6",
+        "#EXT-X-MAP:URI=\"init.mp4?t=test-token\"",
+        "#EXT-X-PLAYLIST-TYPE:VOD",
+        "#EXT-X-TARGETDURATION:6",
+        "#EXT-X-ENDLIST"
+      })
+  @DisplayName("Should include each fixed tag when generating media playlist")
+  void shouldIncludeEachFixedTagWhenGeneratingMediaPlaylist(String tag) {
+    var session = createSession(TranscodeMode.FULL_TRANSCODE, 30);
 
     var playlist = service.generateMediaPlaylist(session, "test-token");
 
-    assertThat(playlist).contains("#EXT-X-VERSION:3");
+    assertThat(playlist).contains(tag);
   }
 
   @Test
-  @DisplayName("Should use version 6 when container is fMP4")
-  void shouldUseVersion6WhenContainerIsFmp4() {
-    var session = createSession(ContainerFormat.FMP4, TranscodeMode.FULL_TRANSCODE, 60);
-
-    var playlist = service.generateMediaPlaylist(session, "test-token");
-
-    assertThat(playlist).contains("#EXT-X-VERSION:6");
-  }
-
-  @Test
-  @DisplayName("Should include EXT-X-Map when container is fMP4")
-  void shouldIncludeExtXMapWhenContainerIsFmp4() {
-    var session = createSession(ContainerFormat.FMP4, TranscodeMode.FULL_TRANSCODE, 60);
-
-    var playlist = service.generateMediaPlaylist(session, "test-token");
-
-    assertThat(playlist).contains("#EXT-X-MAP:URI=\"init.mp4?t=test-token\"");
-  }
-
-  @Test
-  @DisplayName("Should not include EXT-X-MAP when container is MPEGTS")
-  void shouldNotIncludeExtXMapWhenContainerIsMpegts() {
-    var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 60);
-
-    var playlist = service.generateMediaPlaylist(session, "test-token");
-
-    assertThat(playlist).doesNotContain("#EXT-X-MAP");
-  }
-
-  @Test
-  @DisplayName("Should use .ts extension when container is MPEGTS")
-  void shouldUseTsExtensionWhenContainerIsMpegts() {
-    var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 18);
+  @DisplayName("Should use .m4s extension when generating media playlist")
+  void shouldUseM4sExtensionWhenGeneratingMediaPlaylist() {
+    var session = createSession(TranscodeMode.FULL_TRANSCODE, 18);
 
     var playlist = service.generateMediaPlaylist(session, "test-token");
 
     assertThat(playlist)
-        .contains("segment0.ts?t=test-token")
-        .contains("segment1.ts?t=test-token")
-        .contains("segment2.ts?t=test-token");
-  }
-
-  @Test
-  @DisplayName("Should use .m4s extension when container is fMP4")
-  void shouldUseM4sExtensionWhenContainerIsFmp4() {
-    var session = createSession(ContainerFormat.FMP4, TranscodeMode.FULL_TRANSCODE, 18);
-
-    var playlist = service.generateMediaPlaylist(session, "test-token");
-
-    assertThat(playlist).contains("segment0.m4s?t=test-token");
-  }
-
-  @Test
-  @DisplayName("Should include end list when generating media playlist")
-  void shouldIncludeEndListWhenGeneratingMediaPlaylist() {
-    var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 30);
-
-    var playlist = service.generateMediaPlaylist(session, "test-token");
-
-    assertThat(playlist).contains("#EXT-X-ENDLIST");
-  }
-
-  @Test
-  @DisplayName("Should include playlist type VOD when generating media playlist")
-  void shouldIncludePlaylistTypeVodWhenGeneratingMediaPlaylist() {
-    var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 30);
-
-    var playlist = service.generateMediaPlaylist(session, "test-token");
-
-    assertThat(playlist).contains("#EXT-X-PLAYLIST-TYPE:VOD");
-  }
-
-  @Test
-  @DisplayName("Should include target duration when generating media playlist")
-  void shouldIncludeTargetDurationWhenGeneratingMediaPlaylist() {
-    var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 30);
-
-    var playlist = service.generateMediaPlaylist(session, "test-token");
-
-    assertThat(playlist).contains("#EXT-X-TARGETDURATION:6");
+        .contains("segment0.m4s?t=test-token")
+        .contains("segment1.m4s?t=test-token")
+        .contains("segment2.m4s?t=test-token");
   }
 
   @Test
   @DisplayName("Should calculate correct segment count when duration is 18 seconds")
   void shouldCalculateCorrectSegmentCountWhenDurationIs18Seconds() {
-    var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 18);
+    var session = createSession(TranscodeMode.FULL_TRANSCODE, 18);
 
     var playlist = service.generateMediaPlaylist(session, "test-token");
 
     assertThat(playlist)
-        .contains("segment0.ts")
-        .contains("segment1.ts")
-        .contains("segment2.ts")
-        .doesNotContain("segment3.ts");
+        .contains("segment0.m4s")
+        .contains("segment1.m4s")
+        .contains("segment2.m4s")
+        .doesNotContain("segment3.m4s");
   }
 
   @Test
   @DisplayName("Should start media playlist with EXTM3U when generating playlist")
   void shouldStartMediaPlaylistWithExtm3uWhenGeneratingPlaylist() {
-    var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 30);
+    var session = createSession(TranscodeMode.FULL_TRANSCODE, 30);
 
     var playlist = service.generateMediaPlaylist(session, "test-token");
 
@@ -338,7 +270,7 @@ class HlsPlaylistServiceTest {
   @Test
   @DisplayName("Should include codecs attribute when generating multivariant playlist")
   void shouldIncludeCodecsAttributeWhenGeneratingMultivariantPlaylist() {
-    var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 30);
+    var session = createSession(TranscodeMode.FULL_TRANSCODE, 30);
 
     var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
@@ -348,7 +280,7 @@ class HlsPlaylistServiceTest {
   @Test
   @DisplayName("Should not contain multivariant playlist tags when generating media playlist")
   void shouldNotContainMultivariantPlaylistTagsWhenGeneratingMediaPlaylist() {
-    var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 30);
+    var session = createSession(TranscodeMode.FULL_TRANSCODE, 30);
 
     var playlist = service.generateMediaPlaylist(session, "test-token");
 
@@ -358,7 +290,7 @@ class HlsPlaylistServiceTest {
   @Test
   @DisplayName("Should set last segment duration when shorter than target duration")
   void shouldSetLastSegmentDurationWhenShorterThanTargetDuration() {
-    var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 16);
+    var session = createSession(TranscodeMode.FULL_TRANSCODE, 16);
 
     var playlist = service.generateMediaPlaylist(session, "test-token");
 
@@ -374,16 +306,14 @@ class HlsPlaylistServiceTest {
   @Test
   @DisplayName("Should include extra segment when duration has sub-second remainder")
   void shouldIncludeExtraSegmentWhenDurationHasSubSecondRemainder() {
-    var session =
-        createSessionWithDuration(
-            ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, Duration.ofMillis(18500));
+    var session = createSessionWithDuration(TranscodeMode.FULL_TRANSCODE, Duration.ofMillis(18500));
 
     var playlist = service.generateMediaPlaylist(session, "test-token");
 
     var segmentLines =
         playlist
             .lines()
-            .filter(l -> l.startsWith("segment") && l.endsWith(".ts?t=test-token"))
+            .filter(l -> l.startsWith("segment") && l.endsWith(".m4s?t=test-token"))
             .toList();
     assertThat(segmentLines).hasSize(4);
   }
@@ -391,9 +321,7 @@ class HlsPlaylistServiceTest {
   @Test
   @DisplayName("Should calculate last segment duration when duration has sub-second precision")
   void shouldCalculateLastSegmentDurationWhenDurationHasSubSecondPrecision() {
-    var session =
-        createSessionWithDuration(
-            ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, Duration.ofMillis(18500));
+    var session = createSessionWithDuration(TranscodeMode.FULL_TRANSCODE, Duration.ofMillis(18500));
 
     var playlist = service.generateMediaPlaylist(session, "test-token");
 
@@ -409,7 +337,7 @@ class HlsPlaylistServiceTest {
   @DisplayName("Should keep the full segment count when playback advances")
   void shouldKeepTheFullSegmentCountWhenPlaybackAdvances() {
     // The playlist timeline is absolute: 120s / 6s = 20 segments, always.
-    var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
+    var session = createSession(TranscodeMode.FULL_TRANSCODE, 120);
     session.updatePlaybackState(90, PlaybackState.PLAYING);
 
     var playlist = service.generateMediaPlaylist(session, "test-token");
@@ -417,7 +345,7 @@ class HlsPlaylistServiceTest {
     var segmentLines =
         playlist
             .lines()
-            .filter(l -> l.startsWith("segment") && l.endsWith(".ts?t=test-token"))
+            .filter(l -> l.startsWith("segment") && l.endsWith(".m4s?t=test-token"))
             .toList();
     assertThat(segmentLines).hasSize(20);
   }
@@ -425,14 +353,14 @@ class HlsPlaylistServiceTest {
   @Test
   @DisplayName("Should generate full segments when seek position is zero")
   void shouldGenerateFullSegmentsWhenSeekPositionIsZero() {
-    var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
+    var session = createSession(TranscodeMode.FULL_TRANSCODE, 120);
 
     var playlist = service.generateMediaPlaylist(session, "test-token");
 
     var segmentLines =
         playlist
             .lines()
-            .filter(l -> l.startsWith("segment") && l.endsWith(".ts?t=test-token"))
+            .filter(l -> l.startsWith("segment") && l.endsWith(".m4s?t=test-token"))
             .toList();
     assertThat(segmentLines).hasSize(20);
   }
@@ -486,7 +414,7 @@ class HlsPlaylistServiceTest {
     @Test
     @DisplayName("Should keep single variant format when session has no variant list")
     void shouldKeepSingleVariantFormatWhenSessionHasNoVariantList() {
-      var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
+      var session = createSession(TranscodeMode.FULL_TRANSCODE, 120);
 
       var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
@@ -616,7 +544,6 @@ class HlsPlaylistServiceTest {
                       .videoCodecFamily("h264")
                       .audioDecision(audio)
                       .subtitleDecision(SubtitleDecision.exclude())
-                      .containerFormat(ContainerFormat.MPEGTS)
                       .needsKeyframeAlignment(false)
                       .build())
               .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())

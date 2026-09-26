@@ -16,8 +16,8 @@ class StreamingShutdownHookTest {
   @DisplayName("Should destroy all active sessions when shutdown hook fires")
   void shouldDestroyAllActiveSessionsWhenShutdownHookFires() {
     var service = new FakeStreamingService();
-    var session1 = StreamSessionFixture.buildMpegtsSession();
-    var session2 = StreamSessionFixture.buildMpegtsSession();
+    var session1 = StreamSessionFixture.buildActiveSession();
+    var session2 = StreamSessionFixture.buildActiveSession();
     service.addSession(session1);
     service.addSession(session2);
 

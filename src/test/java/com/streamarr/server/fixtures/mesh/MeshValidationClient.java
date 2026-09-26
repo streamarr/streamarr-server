@@ -113,7 +113,7 @@ public final class MeshValidationClient {
         throw new IllegalStateException("Media segment exchange failed: " + response.statusCode());
       }
 
-      Files.write(Path.of("/tmp/mesh-segment.ts"), response.body());
+      Files.write(Path.of("/tmp/mesh-segment.mp4"), response.body());
       System.out.println("MEDIA_SEGMENT_RECEIVED");
     }
   }

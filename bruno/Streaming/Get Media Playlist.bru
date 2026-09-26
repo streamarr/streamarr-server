@@ -17,7 +17,7 @@ docs {
 
 script:post-response {
   if (res.status === 200 && typeof res.body === "string") {
-    const segment = res.body.match(/^[^#\s]+\.(?:ts|m4s)\?t=\S+$/m);
+    const segment = res.body.match(/^[^#\s]+\.m4s\?t=\S+$/m);
     if (segment) {
       bru.setVar("SEGMENT_PATH", segment[0]);
     }
@@ -30,5 +30,6 @@ tests {
     expect(res.headers["content-type"]).to.contain("application/vnd.apple.mpegurl");
     expect(res.body).to.contain("#EXTM3U");
     expect(res.body).to.contain("#EXT-X-TARGETDURATION:");
+    expect(res.body).to.contain("#EXT-X-MAP:URI=");
   });
 }

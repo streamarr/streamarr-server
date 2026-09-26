@@ -128,14 +128,14 @@ class SegmentRecoveryConcurrencyTest {
             threads.submit(
                 () ->
                     rig.lifecycle()
-                        .recover(sessionId, StreamSession.defaultVariant(), "segment0.ts"));
+                        .recover(sessionId, StreamSession.defaultVariant(), "segment0.m4s"));
         await(executor.starting);
         var seeking = new CountDownLatch(1);
         var seek =
             threads.submit(
                 () -> {
                   seeking.countDown();
-                  rig.lifecycle().ensurePositioned(sessionId, "segment50.ts");
+                  rig.lifecycle().ensurePositioned(sessionId, "segment50.m4s");
                 });
         await(seeking);
         executor.proceed.countDown();
@@ -148,13 +148,13 @@ class SegmentRecoveryConcurrencyTest {
         executor.acceptTarget(ExecutionTargetId.LOCAL);
         executor.markDead(sessionId);
         assertThat(
-                rig.lifecycle().recover(sessionId, StreamSession.defaultVariant(), "segment50.ts"))
+                rig.lifecycle().recover(sessionId, StreamSession.defaultVariant(), "segment50.m4s"))
             .isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
         assertThat(executor.isRunning(sessionId, StreamSession.defaultVariant())).isTrue();
-        store.addSegment(sessionId, "segment50.ts", new byte[] {0x47});
+        store.addSegment(sessionId, "segment50.m4s", new byte[] {0x47});
         assertThat(
                 rig.coordinator()
-                    .deliver(sessionId, StreamSession.defaultVariant(), "segment50.ts"))
+                    .deliver(sessionId, StreamSession.defaultVariant(), "segment50.m4s"))
             .isInstanceOf(SegmentDelivery.Ready.class);
       } finally {
         executor.proceed.countDown();
@@ -188,7 +188,7 @@ class SegmentRecoveryConcurrencyTest {
     var sessionId = session.getSessionId();
     registry.save(session);
     lifecycle.startAll(session, 0, 0);
-    lifecycle.recover(sessionId, StreamSession.defaultVariant(), "segment0.ts");
+    lifecycle.recover(sessionId, StreamSession.defaultVariant(), "segment0.m4s");
     if (stalled) {
       clock.advance(properties.producerStallThreshold().plus(properties.targetSegmentDuration()));
     }
@@ -205,7 +205,7 @@ class SegmentRecoveryConcurrencyTest {
                   race.first = Thread.currentThread();
                   try {
                     return coordinator.deliver(
-                        sessionId, StreamSession.defaultVariant(), "segment0.ts");
+                        sessionId, StreamSession.defaultVariant(), "segment0.m4s");
                   } finally {
                     race.firstFinished.countDown();
                   }
@@ -216,13 +216,13 @@ class SegmentRecoveryConcurrencyTest {
                 () -> {
                   race.second = Thread.currentThread();
                   return coordinator.deliver(
-                      sessionId, StreamSession.defaultVariant(), "segment0.ts");
+                      sessionId, StreamSession.defaultVariant(), "segment0.m4s");
                 });
 
         assertThat(first.get(5, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
         assertThat(second.get(5, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
       } finally {
-        store.addSegment(sessionId, "segment0.ts", new byte[] {0x47});
+        store.addSegment(sessionId, "segment0.m4s", new byte[] {0x47});
         race.continueRecovery.countDown();
         race.firstFinished.countDown();
       }
@@ -334,11 +334,11 @@ class SegmentRecoveryConcurrencyTest {
         if (running && !getStartedTargets().isEmpty() && Thread.currentThread() == second) {
           continueRecovery.countDown();
           awaitUnserializedWaiter();
-          store.addSegment(sessionId, "segment0.ts", new byte[] {0x47});
+          store.addSegment(sessionId, "segment0.m4s", new byte[] {0x47});
         }
 
         if (running && !getStartedTargets().isEmpty() && Thread.currentThread() == first) {
-          store.addSegment(sessionId, "segment0.ts", new byte[] {0x47});
+          store.addSegment(sessionId, "segment0.m4s", new byte[] {0x47});
         }
 
         return running;

@@ -115,8 +115,8 @@ class TranscodeWorkerContractTest {
             .setJobId(uuid(UUID.randomUUID()))
             .setJobAttemptId(attemptId)
             .setVariantLabel("720p")
-            .setSegmentName("segment0.ts")
-            .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP2T)
+            .setSegmentName("segment0.m4s")
+            .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP4)
             .setContentLengthBytes(4)
             .build();
     var request = UploadSegmentRequest.newBuilder().setMetadata(metadata).build();
@@ -124,7 +124,7 @@ class TranscodeWorkerContractTest {
     var parsed = UploadSegmentRequest.parseFrom(request.toByteArray());
 
     assertThat(parsed.getMetadata().getJobAttemptId()).isEqualTo(attemptId);
-    assertThat(parsed.getMetadata().getSegmentName()).isEqualTo("segment0.ts");
+    assertThat(parsed.getMetadata().getSegmentName()).isEqualTo("segment0.m4s");
   }
 
   @Test

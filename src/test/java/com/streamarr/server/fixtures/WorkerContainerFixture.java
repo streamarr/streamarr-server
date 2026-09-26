@@ -8,9 +8,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
-import java.util.HexFormat;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.UUID;
@@ -82,18 +81,19 @@ public final class WorkerContainerFixture implements AutoCloseable {
             .withEnv("TRANSCODE_WORKER_SOURCE_NAMESPACE_ID", sourceNamespaceId.toString())
             .withEnv("TRANSCODE_WORKER_SOURCE_ROOT", "/media")
             .withEnv("TRANSCODE_WORKER_SLOTS", String.valueOf(availableSlots))
-            .withEnv("TRANSCODE_WORKER_SEGMENT_BASE_PATH", "/tmp/segments")
             .withEnv("BPL_JVM_THREAD_COUNT", "100")
             .withFileSystemBind(
                 sourceRoot.toAbsolutePath().toString(), "/media", BindMode.READ_ONLY)
             .waitingFor(Wait.forHttp("/actuator/health/readiness").forPort(9091))
             .withStartupTimeout(Duration.ofMinutes(2));
+    // The worker names the job attempt in STREAMARR_JOB_ATTEMPT_ID; the script keys its command and
+    // process files by it.
     var script =
         """
         #!/bin/bash
         for argument in "$@"; do
           if [[ $argument == /media/* ]]; then
-            attempt=${PWD##*/}
+            attempt=${STREAMARR_JOB_ATTEMPT_ID:?the worker names the job attempt}
             printf '%s\\0' "$@" > "/tmp/command-$attempt"
             printf '%s' "$$" > "/tmp/producer-$attempt.tmp"
             mv "/tmp/producer-$attempt.tmp" "/tmp/producer-$attempt"
@@ -107,6 +107,11 @@ public final class WorkerContainerFixture implements AutoCloseable {
     container
         .withCopyToContainer(Transferable.of(script, 0755), "/tmp/scripted-ffmpeg")
         .withEnv("TRANSCODE_WORKER_FFMPEG_PATH", "/tmp/scripted-ffmpeg");
+    for (var recording : RecordedStream.values()) {
+      container.withCopyToContainer(
+          Transferable.of(recording.bytes(), 0644), recording.containerPath());
+    }
+
     if (ffprobeScript != null) {
       container
           .withCopyToContainer(
@@ -132,15 +137,27 @@ public final class WorkerContainerFixture implements AutoCloseable {
     }
   }
 
-  public static String emitSegments(Map<String, byte[]> segments) {
-    var script = new StringBuilder();
-    segments.forEach(
-        (name, bytes) -> {
-          assertThat(name).matches("[a-zA-Z0-9.]+");
-          var escaped = HexFormat.of().formatHex(bytes).replaceAll("(..)", "\\\\x$1");
-          script.append("printf '%b' '").append(escaped).append("' > ").append(name).append('\n');
-        });
-    return script.append("exit 0\n").toString();
+  /**
+   * A scripted FFmpeg body that writes the recording to standard output, as the mp4 muxer writes to
+   * {@code pipe:1}, and exits cleanly.
+   */
+  public static String emitRecordedStream(RecordedStream recording) {
+    return "cat " + recording.containerPath() + "\nexit 0\n";
+  }
+
+  /**
+   * Writes media that the worker image's FFmpeg makes from {@code inputArguments} to {@code
+   * target}, a path under the source root, where the worker can read it.
+   */
+  public Path generateMedia(Path target, List<String> inputArguments) throws Exception {
+    var output = "/tmp/generated-" + UUID.randomUUID() + "-" + target.getFileName();
+    var command = new ArrayList<>(List.of("/cnb/lifecycle/launcher", "ffmpeg", "-v", "error"));
+    command.addAll(inputArguments);
+    command.add(output);
+    var result = container.execInContainer(command.toArray(String[]::new));
+    assertThat(result.getExitCode()).as("Generate media: %s", result.getStderr()).isZero();
+    container.copyFileFromContainer(output, target.toString());
+    return target;
   }
 
   public Optional<List<String>> commandFor(UUID attemptId) throws Exception {
@@ -182,9 +199,9 @@ public final class WorkerContainerFixture implements AutoCloseable {
     assertThat(result.getExitCode()).as(result.getStderr()).isZero();
   }
 
-  public List<Double> packetTimestamps(Path segment) throws Exception {
-    var input = "/tmp/inspect-" + UUID.randomUUID() + ".ts";
-    container.copyFileToContainer(Transferable.of(Files.readAllBytes(segment), 0644), input);
+  public List<Double> packetTimestamps(Path media) throws Exception {
+    var input = "/tmp/inspect-" + UUID.randomUUID() + ".mp4";
+    container.copyFileToContainer(Transferable.of(Files.readAllBytes(media), 0644), input);
     // A native output file excludes launcher diagnostics and avoids truncated Docker exec stdout.
     var probe =
         container.execInContainer(

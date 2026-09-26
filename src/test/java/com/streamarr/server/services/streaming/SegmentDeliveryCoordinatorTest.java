@@ -125,10 +125,10 @@ class SegmentDeliveryCoordinatorTest {
       "Should serve a segment the moment it exists without waiting for its successor when delivering a segment")
   void shouldServeSegmentTheMomentItExistsWithoutWaitingForItsSuccessorWhenDeliveringSegment() {
     var session = startedSession();
-    segmentStore.addSegment(session.getSessionId(), "segment0.ts", new byte[] {0x47});
+    segmentStore.addSegment(session.getSessionId(), "segment0.m4s", new byte[] {0x47});
 
     var delivery =
-        coordinator.deliver(session.getSessionId(), StreamSession.defaultVariant(), "segment0.ts");
+        coordinator.deliver(session.getSessionId(), StreamSession.defaultVariant(), "segment0.m4s");
 
     assertThat(delivery).isInstanceOf(SegmentDelivery.Ready.class);
     assertThat(((SegmentDelivery.Ready) delivery).data()).containsExactly(0x47);
@@ -138,7 +138,7 @@ class SegmentDeliveryCoordinatorTest {
   @DisplayName("Should return session ended when the session does not exist")
   void shouldReturnSessionEndedWhenTheSessionDoesNotExist() {
     var delivery =
-        coordinator.deliver(UUID.randomUUID(), StreamSession.defaultVariant(), "segment0.ts");
+        coordinator.deliver(UUID.randomUUID(), StreamSession.defaultVariant(), "segment0.m4s");
 
     assertThat(delivery).isInstanceOf(SegmentDelivery.SessionEnded.class);
   }
@@ -148,7 +148,7 @@ class SegmentDeliveryCoordinatorTest {
   void shouldReturnSessionEndedWhenTheVariantIsUnknownOnALiveSession() {
     var session = startedSession();
 
-    var delivery = coordinator.deliver(session.getSessionId(), "1080p", "1080p/segment0.ts");
+    var delivery = coordinator.deliver(session.getSessionId(), "1080p", "1080p/segment0.m4s");
 
     assertThat(delivery).isInstanceOf(SegmentDelivery.SessionEnded.class);
     assertThat(transcodeExecutor.isRunning(session.getSessionId(), StreamSession.defaultVariant()))
@@ -181,7 +181,7 @@ class SegmentDeliveryCoordinatorTest {
                 () ->
                     outcome.set(
                         rig.coordinator()
-                            .deliver(sessionId, StreamSession.defaultVariant(), "segment0.ts")));
+                            .deliver(sessionId, StreamSession.defaultVariant(), "segment0.m4s")));
 
     try {
       delivery.join(2000);
@@ -218,14 +218,14 @@ class SegmentDeliveryCoordinatorTest {
             () ->
                 outcome.set(
                     rig.coordinator()
-                        .deliver(sessionId, StreamSession.defaultVariant(), "segment0.ts")),
+                        .deliver(sessionId, StreamSession.defaultVariant(), "segment0.m4s")),
             "last-gasp-exhauster");
     trapStore.armTrap(
         exhauster, () -> session.getHandle().orElseThrow().status() == TranscodeStatus.FAILED);
     exhauster.start();
     assertThat(trapStore.reachedTrap.await(5, TimeUnit.SECONDS)).isTrue();
 
-    trapStore.addSegment(sessionId, "segment0.ts", new byte[] {0x47});
+    trapStore.addSegment(sessionId, "segment0.m4s", new byte[] {0x47});
     trapStore.releaseTrap.countDown();
     exhauster.join(5000);
 
@@ -241,7 +241,7 @@ class SegmentDeliveryCoordinatorTest {
           throws Exception {
     var session = startedSession();
 
-    var delivery = deliverAsync(session.getSessionId(), "foo.ts");
+    var delivery = deliverAsync(session.getSessionId(), "foo.m4s");
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.SessionEnded.class);
     assertThat(transcodeExecutor.isRunning(session.getSessionId(), StreamSession.defaultVariant()))
@@ -297,11 +297,11 @@ class SegmentDeliveryCoordinatorTest {
           }
         };
     var sessionId = UUID.randomUUID();
-    throwingStore.addSegment(sessionId, "segment0.ts", new byte[] {0x47});
+    throwingStore.addSegment(sessionId, "segment0.m4s", new byte[] {0x47});
     var rig = rigWith(transcodeExecutor, throwingStore);
 
     var delivery =
-        rig.coordinator().deliver(sessionId, StreamSession.defaultVariant(), "segment0.ts");
+        rig.coordinator().deliver(sessionId, StreamSession.defaultVariant(), "segment0.m4s");
 
     assertThat(delivery).isInstanceOf(SegmentDelivery.SessionEnded.class);
   }
@@ -316,7 +316,7 @@ class SegmentDeliveryCoordinatorTest {
         coordinator.deliver(
             session.getSessionId(),
             StreamSession.defaultVariant(),
-            "segment99999999999999999999.ts");
+            "segment99999999999999999999.m4s");
 
     assertThat(delivery).isInstanceOf(SegmentDelivery.SessionEnded.class);
   }
@@ -329,11 +329,11 @@ class SegmentDeliveryCoordinatorTest {
     var session = startedSession();
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
-    var delivery = deliverAsync(session.getSessionId(), "segment1.ts");
+    var delivery = deliverAsync(session.getSessionId(), "segment1.m4s");
     // Several poll cycles pass with no publication; the frozen clock means no stall is declared.
     awaitLivenessChecks(3);
     assertThat(delivery).isNotDone();
-    segmentStore.addSegment(session.getSessionId(), "segment1.ts", new byte[] {1});
+    segmentStore.addSegment(session.getSessionId(), "segment1.m4s", new byte[] {1});
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(startsBefore);
@@ -348,9 +348,9 @@ class SegmentDeliveryCoordinatorTest {
     transcodeExecutor.markDead(session.getSessionId());
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
-    var delivery = deliverAsync(session.getSessionId(), "segment2.ts");
+    var delivery = deliverAsync(session.getSessionId(), "segment2.m4s");
     transcodeExecutor.awaitStartedRequestCount(startsBefore + 1);
-    segmentStore.addSegment(session.getSessionId(), "segment2.ts", new byte[] {2});
+    segmentStore.addSegment(session.getSessionId(), "segment2.m4s", new byte[] {2});
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     var replacement = transcodeExecutor.getStartedRequests().getLast();
@@ -370,9 +370,9 @@ class SegmentDeliveryCoordinatorTest {
     transcodeExecutor.markDead(session.getSessionId(), "1080p");
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
-    var delivery = deliverAsync(session.getSessionId(), "1080p", "1080p/segment0.ts");
+    var delivery = deliverAsync(session.getSessionId(), "1080p", "1080p/segment0.m4s");
     transcodeExecutor.awaitStartedRequestCount(startsBefore + 1);
-    segmentStore.addSegment(session.getSessionId(), "1080p/segment0.ts", new byte[] {1});
+    segmentStore.addSegment(session.getSessionId(), "1080p/segment0.m4s", new byte[] {1});
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     var replacement = transcodeExecutor.getStartedRequests().getLast();
@@ -390,14 +390,14 @@ class SegmentDeliveryCoordinatorTest {
     var session = startedSession();
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
-    var delivery = deliverAsync(session.getSessionId(), "segment1.ts");
+    var delivery = deliverAsync(session.getSessionId(), "segment1.m4s");
     // Publishing segment0 takes the run out of startup, so the stall budget that follows is the
     // steady-state threshold measured from a real publication.
-    segmentStore.addSegment(session.getSessionId(), "segment0.ts", new byte[] {1});
+    segmentStore.addSegment(session.getSessionId(), "segment0.m4s", new byte[] {1});
     awaitLivenessChecks(2);
     clock.advance(STALL_THRESHOLD.plusMillis(50));
     transcodeExecutor.awaitStartedRequestCount(startsBefore + 1);
-    segmentStore.addSegment(session.getSessionId(), "segment1.ts", new byte[] {1});
+    segmentStore.addSegment(session.getSessionId(), "segment1.m4s", new byte[] {1});
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     assertThat(transcodeExecutor.getStoppedVariants())
@@ -410,12 +410,12 @@ class SegmentDeliveryCoordinatorTest {
     var session = startedSession();
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
-    var delivery = deliverAsync(session.getSessionId(), "segment1.ts");
-    segmentStore.addSegment(session.getSessionId(), "segment0.ts", new byte[] {1});
+    var delivery = deliverAsync(session.getSessionId(), "segment1.m4s");
+    segmentStore.addSegment(session.getSessionId(), "segment0.m4s", new byte[] {1});
     awaitLivenessChecks(2);
     clock.advance(STALL_THRESHOLD);
     transcodeExecutor.awaitStartedRequestCount(startsBefore + 1);
-    segmentStore.addSegment(session.getSessionId(), "segment1.ts", new byte[] {1});
+    segmentStore.addSegment(session.getSessionId(), "segment1.m4s", new byte[] {1});
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     assertThat(transcodeExecutor.getStoppedVariants())
@@ -430,7 +430,7 @@ class SegmentDeliveryCoordinatorTest {
     var session = startedSession();
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
-    var delivery = deliverAsync(session.getSessionId(), "segment0.ts");
+    var delivery = deliverAsync(session.getSessionId(), "segment0.m4s");
     awaitLivenessChecks(1);
     // A run that has published nothing yet has to encode a whole segment before it can; the
     // steady-state threshold alone would kill a healthy encoder and restart it identically.
@@ -479,17 +479,17 @@ class SegmentDeliveryCoordinatorTest {
     var session = startedSession();
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
-    var delivery = deliverAsync(session.getSessionId(), "segment2.ts");
+    var delivery = deliverAsync(session.getSessionId(), "segment2.m4s");
     // Each earlier segment is published, then a poll cycle advances the frontier past it — which
     // resets the stall clock — before time advances by a sub-threshold gap. The reset keeps those
     // gaps from ever accumulating into a stall, so no replacement happens.
-    segmentStore.addSegment(session.getSessionId(), "segment0.ts", new byte[] {1});
+    segmentStore.addSegment(session.getSessionId(), "segment0.m4s", new byte[] {1});
     awaitLivenessChecks(2);
     clock.advance(STALL_THRESHOLD.minusMillis(50));
-    segmentStore.addSegment(session.getSessionId(), "segment1.ts", new byte[] {1});
+    segmentStore.addSegment(session.getSessionId(), "segment1.m4s", new byte[] {1});
     awaitLivenessChecks(2);
     clock.advance(STALL_THRESHOLD.minusMillis(50));
-    segmentStore.addSegment(session.getSessionId(), "segment2.ts", new byte[] {2});
+    segmentStore.addSegment(session.getSessionId(), "segment2.m4s", new byte[] {2});
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(startsBefore);
@@ -503,12 +503,12 @@ class SegmentDeliveryCoordinatorTest {
     var session = startedSession();
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
-    var delivery = deliverAsync(session.getSessionId(), "segment2.ts");
+    var delivery = deliverAsync(session.getSessionId(), "segment2.m4s");
     // Let the delivery reach its wait loop, then suspend the session out from under it.
     awaitLivenessChecks(1);
     lifecycle.suspend(session.getSessionId());
     transcodeExecutor.awaitStartedRequestCount(startsBefore + 1);
-    segmentStore.addSegment(session.getSessionId(), "segment2.ts", new byte[] {2});
+    segmentStore.addSegment(session.getSessionId(), "segment2.m4s", new byte[] {2});
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     // A planned suspension resumes through positioning; nothing is ever marked FAILED.
@@ -524,7 +524,7 @@ class SegmentDeliveryCoordinatorTest {
     transcodeExecutor.setExecutionTargets(List.of(TARGET_A, TARGET_B));
     transcodeExecutor.markDead(sessionId);
 
-    var delivery = deliverAsync(sessionId, "segment0.ts");
+    var delivery = deliverAsync(sessionId, "segment0.m4s");
     transcodeExecutor.awaitStartedTargetCount(1);
     // The fake records the start before the lifecycle installs its returned handle. The next
     // liveness poll proves that installation completed before this test kills the replacement.
@@ -533,7 +533,7 @@ class SegmentDeliveryCoordinatorTest {
     // retried, and target B is next.
     transcodeExecutor.markDead(sessionId);
     transcodeExecutor.awaitStartedTargetCount(2);
-    segmentStore.addSegment(sessionId, "segment0.ts", new byte[] {1});
+    segmentStore.addSegment(sessionId, "segment0.m4s", new byte[] {1});
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     assertThat(transcodeExecutor.getStartedTargets()).containsExactly(TARGET_A, TARGET_B);
@@ -549,16 +549,16 @@ class SegmentDeliveryCoordinatorTest {
     transcodeExecutor.setExecutionTargets(List.of(TARGET_A));
     transcodeExecutor.markDead(sessionId);
 
-    var firstDelivery = deliverAsync(sessionId, "segment0.ts");
+    var firstDelivery = deliverAsync(sessionId, "segment0.m4s");
     transcodeExecutor.awaitStartedTargetCount(1);
-    segmentStore.addSegment(sessionId, "segment0.ts", new byte[] {1});
+    segmentStore.addSegment(sessionId, "segment0.m4s", new byte[] {1});
 
     assertThat(firstDelivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
 
     transcodeExecutor.markDead(sessionId);
-    var secondDelivery = deliverAsync(sessionId, "segment1.ts");
+    var secondDelivery = deliverAsync(sessionId, "segment1.m4s");
     transcodeExecutor.awaitStartedTargetCount(2);
-    segmentStore.addSegment(sessionId, "segment1.ts", new byte[] {2});
+    segmentStore.addSegment(sessionId, "segment1.m4s", new byte[] {2});
 
     assertThat(secondDelivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     assertThat(transcodeExecutor.getStartedTargets()).containsExactly(TARGET_A, TARGET_A);
@@ -580,9 +580,9 @@ class SegmentDeliveryCoordinatorTest {
     exhaustRecovery(session);
 
     var retry =
-        coordinator.deliver(session.getSessionId(), StreamSession.defaultVariant(), "segment0.ts");
+        coordinator.deliver(session.getSessionId(), StreamSession.defaultVariant(), "segment0.m4s");
     var drifted =
-        coordinator.deliver(session.getSessionId(), StreamSession.defaultVariant(), "segment3.ts");
+        coordinator.deliver(session.getSessionId(), StreamSession.defaultVariant(), "segment3.m4s");
 
     assertThat(retry).isInstanceOf(SegmentDelivery.Unrecoverable.class);
     assertThat(drifted).isInstanceOf(SegmentDelivery.Unrecoverable.class);
@@ -597,9 +597,9 @@ class SegmentDeliveryCoordinatorTest {
     exhaustRecovery(session);
     transcodeExecutor.setExecutionTargets(List.of(TARGET_A, TARGET_B, TARGET_C));
 
-    var delivery = deliverAsync(sessionId, "segment0.ts");
+    var delivery = deliverAsync(sessionId, "segment0.m4s");
     transcodeExecutor.awaitStartedTarget(TARGET_C);
-    segmentStore.addSegment(sessionId, "segment0.ts", new byte[] {1});
+    segmentStore.addSegment(sessionId, "segment0.m4s", new byte[] {1});
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
@@ -616,9 +616,9 @@ class SegmentDeliveryCoordinatorTest {
     var targetedStartsBefore = transcodeExecutor.getStartedTargets().size();
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
-    var delivery = deliverAsync(sessionId, "segment50.ts");
+    var delivery = deliverAsync(sessionId, "segment50.m4s");
     transcodeExecutor.awaitStartedRequestCount(startsBefore + 1);
-    segmentStore.addSegment(sessionId, "segment50.ts", new byte[] {1});
+    segmentStore.addSegment(sessionId, "segment50.m4s", new byte[] {1});
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     // The seek revived the variant through positioning — a planned restart, not failed-window
@@ -637,7 +637,7 @@ class SegmentDeliveryCoordinatorTest {
     transcodeExecutor.markDead(sessionId);
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
-    var delivery = deliverAsync(sessionId, "segment2.ts");
+    var delivery = deliverAsync(sessionId, "segment2.m4s");
     transcodeExecutor.awaitStartedRequestCount(startsBefore + 1);
     // The replacement also completes without producing the advertised segment.
     transcodeExecutor.markDead(sessionId);
@@ -657,7 +657,7 @@ class SegmentDeliveryCoordinatorTest {
     var startupBudget =
         properties.producerStallThreshold().plus(properties.targetSegmentDuration());
 
-    var delivery = deliverAsync(sessionId, "segment0.ts");
+    var delivery = deliverAsync(sessionId, "segment0.m4s");
     try {
       transcodeExecutor.awaitStartedRequestCount(startsBefore + 1);
       awaitLivenessChecks(2);
@@ -687,13 +687,13 @@ class SegmentDeliveryCoordinatorTest {
     transcodeExecutor.markDead(sessionId);
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
-    var first = deliverAsync(sessionId, "segment0.ts");
-    var second = deliverAsync(sessionId, "segment0.ts");
+    var first = deliverAsync(sessionId, "segment0.m4s");
+    var second = deliverAsync(sessionId, "segment0.m4s");
     transcodeExecutor.awaitStartedRequestCount(startsBefore + 1);
     // Give the losing waiter its own recovery pass (superseded by the mutex predicate) before
     // publishing, so the "exactly one start" assertion covers the second waiter's attempt.
     awaitLivenessChecks(2);
-    segmentStore.addSegment(sessionId, "segment0.ts", new byte[] {1});
+    segmentStore.addSegment(sessionId, "segment0.m4s", new byte[] {1});
 
     assertThat(first.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     assertThat(second.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
@@ -705,7 +705,7 @@ class SegmentDeliveryCoordinatorTest {
   void shouldEndTheWaitPromptlyWhenTheSessionIsDestroyed() throws Exception {
     var session = startedSession();
 
-    var delivery = deliverAsync(session.getSessionId(), "segment1.ts");
+    var delivery = deliverAsync(session.getSessionId(), "segment1.m4s");
     // Let the delivery reach its wait loop, then remove the session; it must wake within one poll.
     awaitLivenessChecks(1);
     runtimeRegistry.removeById(session.getSessionId());
@@ -726,7 +726,7 @@ class SegmentDeliveryCoordinatorTest {
             () -> {
               outcome.set(
                   coordinator.deliver(
-                      session.getSessionId(), StreamSession.defaultVariant(), "segment1.ts"));
+                      session.getSessionId(), StreamSession.defaultVariant(), "segment1.m4s"));
               interruptRestored.set(Thread.currentThread().isInterrupted());
             });
     waiter.start();
@@ -773,9 +773,9 @@ class SegmentDeliveryCoordinatorTest {
     lifecycle.suspend(session.getSessionId());
     transcodeExecutor.failUntargetedStarts();
 
-    var delivery = deliverAsync(sessionId, "segment1.ts");
+    var delivery = deliverAsync(sessionId, "segment1.m4s");
     transcodeExecutor.awaitStartedTarget(ExecutionTargetId.LOCAL);
-    segmentStore.addSegment(sessionId, "segment1.ts", new byte[] {1});
+    segmentStore.addSegment(sessionId, "segment1.m4s", new byte[] {1});
 
     // A failed resume enters recovery instead of escaping as a raw server error.
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
@@ -791,7 +791,7 @@ class SegmentDeliveryCoordinatorTest {
     transcodeExecutor.refuseTarget(ExecutionTargetId.LOCAL);
 
     var delivery =
-        coordinator.deliver(session.getSessionId(), StreamSession.defaultVariant(), "segment1.ts");
+        coordinator.deliver(session.getSessionId(), StreamSession.defaultVariant(), "segment1.m4s");
 
     assertThat(delivery).isInstanceOf(SegmentDelivery.Unrecoverable.class);
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
@@ -822,7 +822,7 @@ class SegmentDeliveryCoordinatorTest {
             () ->
                 exhausterOutcome.set(
                     rig.coordinator()
-                        .deliver(sessionId, StreamSession.defaultVariant(), "segment0.ts")),
+                        .deliver(sessionId, StreamSession.defaultVariant(), "segment0.m4s")),
             "exhauster");
     trapStore.armTrap(
         exhauster, () -> session.getHandle().orElseThrow().status() == TranscodeStatus.FAILED);
@@ -836,7 +836,7 @@ class SegmentDeliveryCoordinatorTest {
             () ->
                 seekerOutcome.set(
                     rig.coordinator()
-                        .deliver(sessionId, StreamSession.defaultVariant(), "segment50.ts")),
+                        .deliver(sessionId, StreamSession.defaultVariant(), "segment50.m4s")),
             "seeker");
     var startsBefore = transcodeExecutor.getStartedRequests().size();
     seeker.start();
@@ -863,9 +863,9 @@ class SegmentDeliveryCoordinatorTest {
         CompletableFuture.supplyAsync(
             () ->
                 rig.coordinator()
-                    .deliver(sessionId, StreamSession.defaultVariant(), "segment50.ts"));
+                    .deliver(sessionId, StreamSession.defaultVariant(), "segment50.m4s"));
     transcodeExecutor.awaitStartedTargetCount(targetedStartsBefore + 1);
-    trapStore.addSegment(sessionId, "segment50.ts", new byte[] {1});
+    trapStore.addSegment(sessionId, "segment50.m4s", new byte[] {1});
 
     assertThat(recovered.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
   }
@@ -894,7 +894,7 @@ class SegmentDeliveryCoordinatorTest {
     var replace =
         CompletableFuture.supplyAsync(
             () ->
-                rig.lifecycle().recover(sessionId, StreamSession.defaultVariant(), "segment1.ts"));
+                rig.lifecycle().recover(sessionId, StreamSession.defaultVariant(), "segment1.m4s"));
     gatingExecutor.awaitTargetedStartEntered();
 
     // Destroy must serialize with the in-flight replace instead of losing to its save. The latch
@@ -922,7 +922,7 @@ class SegmentDeliveryCoordinatorTest {
     transcodeExecutor.refuseTarget(TARGET_B);
     transcodeExecutor.markDead(session.getSessionId());
     var delivery =
-        coordinator.deliver(session.getSessionId(), StreamSession.defaultVariant(), "segment0.ts");
+        coordinator.deliver(session.getSessionId(), StreamSession.defaultVariant(), "segment0.m4s");
     assertThat(delivery).isInstanceOf(SegmentDelivery.Unrecoverable.class);
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
   }

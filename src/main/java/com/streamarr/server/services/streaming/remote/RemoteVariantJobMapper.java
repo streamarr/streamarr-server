@@ -5,11 +5,11 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
-import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.SubtitleMode;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
+import com.streamarr.transcode.v1.ContainerFormat;
 import com.streamarr.transcode.v1.TranscodeExecution;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
@@ -50,7 +50,8 @@ final class RemoteVariantJobMapper {
         .setVideoCodecFamily(decision.videoCodecFamily())
         .setAudio(audio(decision.audioDecision()))
         .setSubtitle(subtitle(decision.subtitleDecision()))
-        .setContainer(container(decision.containerFormat()))
+        // Every HLS variant is fMP4 (ADR 0037); the additive contract keeps the field.
+        .setContainer(ContainerFormat.CONTAINER_FORMAT_FMP4)
         .setAlignKeyframesToSegments(decision.needsKeyframeAlignment())
         .build();
   }
@@ -128,14 +129,6 @@ final class RemoteVariantJobMapper {
       case SIDECAR -> com.streamarr.transcode.v1.SubtitleMode.SUBTITLE_MODE_SIDECAR;
       case HLS -> com.streamarr.transcode.v1.SubtitleMode.SUBTITLE_MODE_HLS;
       case EMBED -> com.streamarr.transcode.v1.SubtitleMode.SUBTITLE_MODE_EMBED;
-    };
-  }
-
-  @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static com.streamarr.transcode.v1.ContainerFormat container(ContainerFormat format) {
-    return switch (format) {
-      case MPEGTS -> com.streamarr.transcode.v1.ContainerFormat.CONTAINER_FORMAT_MPEG_TS;
-      case FMP4 -> com.streamarr.transcode.v1.ContainerFormat.CONTAINER_FORMAT_FMP4;
     };
   }
 }

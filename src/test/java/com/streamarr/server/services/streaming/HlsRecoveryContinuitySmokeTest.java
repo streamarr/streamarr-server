@@ -2,25 +2,24 @@ package com.streamarr.server.services.streaming;
 
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
-import static com.streamarr.server.fixtures.StreamSessionFixture.remuxMpegtsDecision;
+import static com.streamarr.server.fixtures.StreamSessionFixture.remuxDecision;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.data.Offset.offset;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.config.StreamingProperties;
-import com.streamarr.server.domain.streaming.AudioDecision;
-import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
-import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
+import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,10 +30,9 @@ import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Real-FFmpeg proof of ADR 0019's recovery contract: after a producer dies mid-stream, the next
- * request replaces it at the requested segment's offset and the replacement's timestamps continue
- * the absolute timeline. MPEG-TS continuity-counter preservation across a replacement producer is
- * deliberately NOT asserted — the CC reset is a documented ADR 0019 deviation (following Jellyfin);
- * PTS/DTS continuity comes from {@code -copyts} + input {@code -ss} + {@code -start_number}.
+ * request starts a replacement attempt at the requested segment's offset, and its timestamps
+ * continue on media time. Input {@code -ss} with {@code -copyts} and {@code -start_at_zero} put
+ * every job attempt's timestamps on media time.
  */
 @Tag("SmokeTest")
 @DisplayName("HLS Recovery Continuity Smoke Tests")
@@ -116,21 +114,21 @@ class HlsRecoveryContinuitySmokeTest {
   }
 
   @Test
-  @DisplayName("Should continue the absolute timeline when a dead MPEG-TS producer is replaced")
-  void shouldContinueAbsoluteTimelineWhenDeadMpegtsProducerIsReplaced() throws Exception {
-    var session = startedSession(remuxMpegtsDecision());
+  @DisplayName("Should continue the absolute timeline when a dead producer is replaced")
+  void shouldContinueAbsoluteTimelineWhenDeadProducerIsReplaced() throws Exception {
+    var session = startedSession(remuxDecision());
     assertThat(session.getHandle().orElseThrow().processId()).isEmpty();
     var sessionId = session.getSessionId();
     await()
         .atMost(30, TimeUnit.SECONDS)
         .until(
             () ->
-                segmentStore.segmentExists(sessionId, "segment0.ts")
-                    && segmentStore.segmentExists(sessionId, "segment1.ts"));
+                segmentStore.segmentExists(sessionId, "segment0.m4s")
+                    && segmentStore.segmentExists(sessionId, "segment1.m4s"));
 
-    killProducerAndDropSegmentsFrom(session, 2, ".ts");
+    killProducerAndDropSegmentsFrom(session, 2);
 
-    var delivery = coordinator.deliver(sessionId, StreamSession.defaultVariant(), "segment2.ts");
+    var delivery = coordinator.deliver(sessionId, StreamSession.defaultVariant(), "segment2.m4s");
 
     assertThat(delivery).isInstanceOf(SegmentDelivery.Ready.class);
     var replacementCommand =
@@ -139,32 +137,28 @@ class HlsRecoveryContinuitySmokeTest {
             .commandFor(session.getHandle().orElseThrow().attemptId())
             .orElseThrow();
     assertThat(replacementCommand)
-        .containsSubsequence("-ss", String.valueOf(2 * SEGMENT_DURATION_SECONDS))
-        .containsSubsequence("-start_number", "2");
+        .containsSubsequence("-ss", String.valueOf(2 * SEGMENT_DURATION_SECONDS));
 
-    var outputDir = segmentStore.getOutputDirectory(sessionId);
-    // The MPEG-TS muxer applies a constant output offset (from -max_delay) to every run; the
-    // continuity contract is measured against the first run's timeline, not absolute zero.
-    var timelineOffset =
-        workerFixture.worker().packetTimestamps(outputDir.resolve("segment0.ts")).getFirst();
-    var lastPtsBeforeDeath =
-        workerFixture.worker().packetTimestamps(outputDir.resolve("segment1.ts")).getLast();
-    var replacementPts = workerFixture.worker().packetTimestamps(outputDir.resolve("segment2.ts"));
-    assertThat(replacementPts.getFirst())
-        .isCloseTo(timelineOffset + 2.0 * SEGMENT_DURATION_SECONDS, offset(0.5));
-    assertThat(replacementPts.getFirst()).isGreaterThanOrEqualTo(lastPtsBeforeDeath - 0.1);
+    // fMP4 output adds no muxer offset, so each job attempt's timestamps are media time itself.
+    var initialTimestamps = packetTimestamps(sessionId, "segment0.m4s");
+    var lastTimestampBeforeDeath = packetTimestamps(sessionId, "segment1.m4s").getLast();
+    var replacementTimestamps = packetTimestamps(sessionId, "segment2.m4s");
+    assertThat(initialTimestamps.getFirst()).isCloseTo(0.0, offset(0.1));
+    assertThat(replacementTimestamps.getFirst())
+        .isCloseTo(2.0 * SEGMENT_DURATION_SECONDS, offset(0.5));
+    assertThat(replacementTimestamps.getFirst())
+        .isGreaterThanOrEqualTo(lastTimestampBeforeDeath - 0.1);
 
     // The replacement emits a contiguous run from the requested index, never a lone segment.
     await()
         .atMost(30, TimeUnit.SECONDS)
-        .until(() -> segmentStore.segmentExists(sessionId, "segment3.ts"));
+        .until(() -> segmentStore.segmentExists(sessionId, "segment3.m4s"));
   }
 
   @Test
-  @DisplayName(
-      "Should keep the stored initialization segment when a dead fMP4 producer is replaced")
-  void shouldKeepStoredInitializationSegmentWhenDeadFmp4ProducerIsReplaced() throws Exception {
-    var session = startedSession(remuxFmp4Decision());
+  @DisplayName("Should keep the stored initialization segment when a dead producer is replaced")
+  void shouldKeepStoredInitializationSegmentWhenDeadProducerIsReplaced() throws Exception {
+    var session = startedSession(remuxDecision());
     var sessionId = session.getSessionId();
     await()
         .atMost(30, TimeUnit.SECONDS)
@@ -174,7 +168,7 @@ class HlsRecoveryContinuitySmokeTest {
                     && segmentStore.segmentExists(sessionId, "segment0.m4s"));
     var storedInitialization = segmentStore.readSegment(sessionId, "init.mp4");
 
-    killProducerAndDropSegmentsFrom(session, 1, ".m4s");
+    killProducerAndDropSegmentsFrom(session, 1);
 
     var delivery = coordinator.deliver(sessionId, StreamSession.defaultVariant(), "segment1.m4s");
 
@@ -182,12 +176,7 @@ class HlsRecoveryContinuitySmokeTest {
         .as("the replacement attempt's initialization segment matched the stored one")
         .isInstanceOf(SegmentDelivery.Ready.class);
     assertThat(segmentStore.readSegment(sessionId, "init.mp4")).isEqualTo(storedInitialization);
-    var outputDir = segmentStore.getOutputDirectory(sessionId);
-    var recoveredMedia = outputDir.resolve("recovered.mp4");
-    try (var output = Files.newOutputStream(recoveredMedia)) {
-      Files.copy(outputDir.resolve("init.mp4"), output);
-      Files.copy(outputDir.resolve("segment1.m4s"), output);
-    }
+    var recoveredMedia = decodableMediaFile(sessionId, "segment1.m4s");
 
     assertThat(workerFixture.worker().decodedVideoFrameCount(recoveredMedia))
         .as("recovered initialization and media fragment must decode together")
@@ -211,8 +200,8 @@ class HlsRecoveryContinuitySmokeTest {
    * alive, completed otherwise) and the advertised segments from {@code firstMissingIndex} on are
    * absent — the same observable state as a mid-stream crash.
    */
-  private void killProducerAndDropSegmentsFrom(
-      StreamSession session, int firstMissingIndex, String extension) throws Exception {
+  private void killProducerAndDropSegmentsFrom(StreamSession session, int firstMissingIndex)
+      throws Exception {
     workerFixture.worker().killProducer(session.getHandle().orElseThrow().attemptId());
     await()
         .atMost(10, TimeUnit.SECONDS)
@@ -223,18 +212,17 @@ class HlsRecoveryContinuitySmokeTest {
 
     var outputDir = segmentStore.getOutputDirectory(session.getSessionId());
     for (var index = firstMissingIndex; index < 16; index++) {
-      Files.deleteIfExists(outputDir.resolve("segment" + index + extension));
+      Files.deleteIfExists(outputDir.resolve(SegmentNames.mediaSegmentName(index)));
     }
   }
 
-  private static TranscodeDecision remuxFmp4Decision() {
-    return TranscodeDecision.builder()
-        .transcodeMode(TranscodeMode.REMUX)
-        .videoCodecFamily("h264")
-        .audioDecision(AudioDecision.copy("aac", 2, 0))
-        .subtitleDecision(SubtitleDecision.exclude())
-        .containerFormat(ContainerFormat.FMP4)
-        .needsKeyframeAlignment(true)
-        .build();
+  private List<Double> packetTimestamps(UUID sessionId, String segmentName) throws Exception {
+    return workerFixture.worker().packetTimestamps(decodableMediaFile(sessionId, segmentName));
+  }
+
+  private Path decodableMediaFile(UUID sessionId, String segmentName) throws Exception {
+    var media = temporaryDirectory.resolve("decodable-" + segmentName + ".mp4");
+    return Files.write(
+        media, Fmp4Fixture.withInitializationSegment(segmentStore, sessionId, segmentName));
   }
 }

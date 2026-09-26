@@ -75,7 +75,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should return multivariant playlist with correct content type when session exists")
   void shouldReturnMultivariantPlaylistWithCorrectContentTypeWhenSessionExists() throws Exception {
-    var session = StreamSessionFixture.buildMpegtsSession();
+    var session = StreamSessionFixture.buildActiveSession();
     STUB_SERVICE.addSession(session);
 
     var result =
@@ -93,7 +93,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should return 404 for the retired master playlist alias when requested over HTTP")
   void shouldReturn404ForTheRetiredMasterPlaylistAliasWhenRequestedOverHttp() throws Exception {
-    var session = StreamSessionFixture.buildMpegtsSession();
+    var session = StreamSessionFixture.buildActiveSession();
     STUB_SERVICE.addSession(session);
 
     // The pre-release master.m3u8 alias was removed deliberately: sessions are in-memory and
@@ -117,34 +117,29 @@ class StreamControllerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should serve TS segment with correct content type when segment is available")
-  void shouldServeTsSegmentWithCorrectContentTypeWhenSegmentIsAvailable() throws Exception {
-    var session = StreamSessionFixture.buildMpegtsSession();
-    var segmentData = new byte[] {0x47, 0x00, 0x11, 0x10};
+  @DisplayName("Should return 404 when a segment is requested as MPEG-TS")
+  void shouldReturn404WhenSegmentIsRequestedAsMpegTs() throws Exception {
+    var session = StreamSessionFixture.buildActiveSession();
     STUB_SERVICE.addSession(session);
-    FAKE_SEGMENT_STORE.addSegment(session.getSessionId(), "segment0.ts", segmentData);
+    FAKE_SEGMENT_STORE.addSegment(
+        session.getSessionId(), "segment0.ts", new byte[] {0x47, 0x00, 0x11, 0x10});
 
-    var result =
-        mockMvc
-            .perform(
-                get("/api/stream/{id}/segment0.ts", session.getSessionId())
-                    .param("t", playbackToken(session.getSessionId())))
-            .andExpect(status().isOk())
-            .andReturn();
-
-    assertThat(result.getResponse().getContentType()).isEqualTo("video/mp2t");
-    assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(segmentData);
+    mockMvc
+        .perform(
+            get("/api/stream/{id}/segment0.ts", session.getSessionId())
+                .param("t", playbackToken(session.getSessionId())))
+        .andExpect(status().isNotFound());
   }
 
   @Test
   @DisplayName("Should return 404 when segment unavailable")
   void shouldReturn404WhenSegmentUnavailable() throws Exception {
-    var session = StreamSessionFixture.buildMpegtsSession();
+    var session = StreamSessionFixture.buildActiveSession();
     STUB_SERVICE.addSession(session);
 
     mockMvc
         .perform(
-            get("/api/stream/{id}/segment99.ts", session.getSessionId())
+            get("/api/stream/{id}/segment99.m4s", session.getSessionId())
                 .param("t", playbackToken(session.getSessionId())))
         .andExpect(status().isNotFound());
   }
@@ -154,28 +149,28 @@ class StreamControllerIT extends AbstractIntegrationTest {
       "Should return 404 for a produced segment after its media is deleted when requested over HTTP")
   void shouldReturn404ForProducedSegmentAfterItsMediaIsDeletedWhenRequestedOverHttp()
       throws Exception {
-    var session = StreamSessionFixture.buildMpegtsSession();
+    var session = StreamSessionFixture.buildActiveSession();
     var segmentData = new byte[] {0x47, 0x00, 0x11, 0x10};
     STUB_SERVICE.addSession(session);
-    FAKE_SEGMENT_STORE.addSegment(session.getSessionId(), "segment0.ts", segmentData);
+    FAKE_SEGMENT_STORE.addSegment(session.getSessionId(), "segment0.m4s", segmentData);
     var token = playbackToken(session.getSessionId());
 
     mockMvc
-        .perform(get("/api/stream/{id}/segment0.ts", session.getSessionId()).param("t", token))
+        .perform(get("/api/stream/{id}/segment0.m4s", session.getSessionId()).param("t", token))
         .andExpect(status().isOk());
 
     streamingSessionCleanupListener.onLibraryRemoved(
         new LibraryRemovedEvent("/media", Set.of(session.getMediaFileId())));
 
     mockMvc
-        .perform(get("/api/stream/{id}/segment0.ts", session.getSessionId()).param("t", token))
+        .perform(get("/api/stream/{id}/segment0.m4s", session.getSessionId()).param("t", token))
         .andExpect(status().isNotFound());
   }
 
   @Test
   @DisplayName("Should reject segment request when token missing")
   void shouldRejectSegmentRequestWhenTokenMissing() throws Exception {
-    var session = StreamSessionFixture.buildMpegtsSession();
+    var session = StreamSessionFixture.buildActiveSession();
     STUB_SERVICE.addSession(session);
 
     mockMvc
@@ -186,7 +181,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should reject segment request when token blank")
   void shouldRejectSegmentRequestWhenTokenBlank() throws Exception {
-    var session = StreamSessionFixture.buildMpegtsSession();
+    var session = StreamSessionFixture.buildActiveSession();
     STUB_SERVICE.addSession(session);
 
     // An empty ?t= is no credential at all — it must not reach the decoder as one.
@@ -198,8 +193,8 @@ class StreamControllerIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should reject playback when token session mismatches path")
   void shouldRejectPlaybackWhenTokenSessionMismatchesPath() throws Exception {
-    var sessionA = StreamSessionFixture.buildMpegtsSession();
-    var sessionB = StreamSessionFixture.buildMpegtsSession();
+    var sessionA = StreamSessionFixture.buildActiveSession();
+    var sessionB = StreamSessionFixture.buildActiveSession();
     STUB_SERVICE.addSession(sessionA);
     STUB_SERVICE.addSession(sessionB);
 
@@ -214,16 +209,16 @@ class StreamControllerIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should serve segment when access cookie expired but playback token valid")
   void shouldServeSegmentWhenAccessCookieExpiredButPlaybackTokenValid() throws Exception {
-    var session = StreamSessionFixture.buildMpegtsSession();
+    var session = StreamSessionFixture.buildActiveSession();
     var segmentData = new byte[] {0x47, 0x00, 0x11, 0x10};
     STUB_SERVICE.addSession(session);
-    FAKE_SEGMENT_STORE.addSegment(session.getSessionId(), "segment0.ts", segmentData);
+    FAKE_SEGMENT_STORE.addSegment(session.getSessionId(), "segment0.m4s", segmentData);
 
     // Browsers attach the stale Path=/ access cookie to every segment fetch; stream paths must
     // ignore headers and cookies entirely or playback dies mid-movie.
     mockMvc
         .perform(
-            get("/api/stream/{id}/segment0.ts", session.getSessionId())
+            get("/api/stream/{id}/segment0.m4s", session.getSessionId())
                 .param("t", playbackToken(session.getSessionId()))
                 .cookie(
                     new Cookie("streamarr_access", authTestSupport.expiredProfileBearer(identity))))
@@ -237,7 +232,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
     var sessionId = UUID.randomUUID();
     mockMvc
         .perform(
-            get("/api/stream/{id}/{segment}", sessionId, "..secret.ts")
+            get("/api/stream/{id}/{segment}", sessionId, "..secret.m4s")
                 .param("t", playbackToken(sessionId)))
         .andExpect(status().isBadRequest());
   }
@@ -246,7 +241,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
   @DisplayName("Should return 400 when segment name contains backslash")
   void shouldReturn400WhenSegmentNameContainsBackslash() throws Exception {
     mockMvc
-        .perform(get("/api/stream/{id}/{segment}", UUID.randomUUID(), "evil\\name.ts"))
+        .perform(get("/api/stream/{id}/{segment}", UUID.randomUUID(), "evil\\name.m4s"))
         .andExpect(status().isBadRequest());
   }
 

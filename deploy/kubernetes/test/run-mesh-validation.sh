@@ -118,12 +118,12 @@ verify_existing_mtls_policy() {
 }
 
 verify_uploaded_segment() {
-  kubectl -n streamarr exec authorized-worker -c client -- cat /tmp/mesh-segment.ts \
-    > "$runtime/mesh-segment.ts"
-  kubectl -n streamarr exec -i "$worker_pod" -c worker -- sh -c 'cat > /tmp/mesh-segment.ts' \
-    < "$runtime/mesh-segment.ts"
+  kubectl -n streamarr exec authorized-worker -c client -- cat /tmp/mesh-segment.mp4 \
+    > "$runtime/mesh-segment.mp4"
+  kubectl -n streamarr exec -i "$worker_pod" -c worker -- sh -c 'cat > /tmp/mesh-segment.mp4' \
+    < "$runtime/mesh-segment.mp4"
   kubectl -n streamarr exec "$worker_pod" -c worker -- /cnb/lifecycle/launcher \
-    ffprobe -v error -show_streams -of json -o /tmp/mesh-segment.json /tmp/mesh-segment.ts \
+    ffprobe -v error -show_streams -of json -o /tmp/mesh-segment.json /tmp/mesh-segment.mp4 \
     > "$runtime/decode.log" 2>&1
   kubectl -n streamarr exec "$worker_pod" -c worker -- cat /tmp/mesh-segment.json \
     > "$runtime/mesh-segment.json"
@@ -136,7 +136,7 @@ assert any(s.get("codec_type") == "video" and s.get("codec_name") == "h264"
 assert any(s.get("codec_type") == "audio" and s.get("codec_name") == "aac" for s in streams), streams
 PY
   kubectl -n streamarr exec "$worker_pod" -c worker -- /cnb/lifecycle/launcher \
-    ffmpeg -v error -xerror -i /tmp/mesh-segment.ts -f null - >> "$runtime/decode.log" 2>&1
+    ffmpeg -v error -xerror -i /tmp/mesh-segment.mp4 -f null - >> "$runtime/decode.log" 2>&1
 }
 
 verify_real_worker() {

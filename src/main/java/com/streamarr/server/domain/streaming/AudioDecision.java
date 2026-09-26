@@ -1,9 +1,25 @@
 package com.streamarr.server.domain.streaming;
 
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import lombok.Builder;
 
 @Builder
 public record AudioDecision(AudioMode mode, String codec, int channels, long bitrate) {
+
+  // Every HLS variant is multiplexed fragmented MP4, which carries exactly these audio codecs. Each
+  // maps to the RFC 6381 form of what FFmpeg's mp4 muxer writes into the initialization segment.
+  // MP3 is transcoded rather than copied: the muxer refuses it below 16 kHz and writes a different
+  // esds objectTypeIndication at or below 24 kHz than above, and the probe reports no sample rate.
+  private static final Map<String, String> HLS_CODEC_STRINGS =
+      Map.of(
+          "aac", "mp4a.40.2",
+          "ac3", "ac-3",
+          "eac3", "ec-3",
+          "flac", "fLaC",
+          "opus", "Opus",
+          "alac", "alac");
 
   public static AudioDecision stereoAac() {
     return new AudioDecision(AudioMode.TRANSCODE, "aac", 2, 128_000L);
@@ -17,15 +33,19 @@ public record AudioDecision(AudioMode mode, String codec, int channels, long bit
     return new AudioDecision(AudioMode.NONE, null, 0, 0L);
   }
 
+  /** The audio codecs that HLS delivery carries, by their probed codec names. */
+  public static Set<String> deliverableCodecs() {
+    return HLS_CODEC_STRINGS.keySet();
+  }
+
   public String hlsCodecString() {
     if (codec == null) {
       return "";
     }
-    return switch (codec) {
-      case "ac3" -> "ac-3";
-      case "eac3" -> "ec-3";
-      default -> "mp4a.40.2";
-    };
+
+    return Optional.ofNullable(HLS_CODEC_STRINGS.get(codec))
+        .orElseThrow(
+            () -> new IllegalStateException("HLS delivery cannot carry audio codec " + codec));
   }
 
   public static int normalizeChannels(int sourceChannels) {

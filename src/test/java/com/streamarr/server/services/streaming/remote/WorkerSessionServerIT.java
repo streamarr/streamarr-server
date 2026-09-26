@@ -11,7 +11,6 @@ import static org.awaitility.Awaitility.await;
 
 import com.google.protobuf.ByteString;
 import com.streamarr.server.domain.streaming.AudioDecision;
-import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.SubtitleMode;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
@@ -530,7 +529,6 @@ class WorkerSessionServerIT {
         .transcodeMode(TranscodeMode.FULL_TRANSCODE)
         .videoCodecFamily("h264")
         .audioDecision(AudioDecision.stereoAac())
-        .containerFormat(ContainerFormat.FMP4)
         .subtitleDecision(SubtitleDecision.exclude());
   }
 
@@ -708,7 +706,8 @@ class WorkerSessionServerIT {
                 assertUploadRejected(
                     upload(channel, unowned, new byte[] {1}), Status.Code.PERMISSION_DENIED));
         assertThat(
-                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
+                segmentStore.segmentExists(
+                    fromProto(job.getStreamSessionId()), "720p/segment0.m4s"))
             .isFalse();
       } finally {
         shutdown(channel);
@@ -745,7 +744,8 @@ class WorkerSessionServerIT {
 
         assertUploadRejected(upload(channel, metadata, segmentData), Status.Code.PERMISSION_DENIED);
         assertThat(
-                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
+                segmentStore.segmentExists(
+                    fromProto(job.getStreamSessionId()), "720p/segment0.m4s"))
             .isFalse();
         replacement.close();
       } finally {
@@ -778,12 +778,12 @@ class WorkerSessionServerIT {
         var initialUpload = segmentMetadata(workerSession, identity, initial);
         upload(
                 channel,
-                fmp4Metadata(initialUpload, "init.mp4", storedInitialization),
+                namedUploadMetadata(initialUpload, "init.mp4", storedInitialization),
                 storedInitialization)
             .get(5, TimeUnit.SECONDS);
         upload(
                 channel,
-                fmp4Metadata(initialUpload, "segment0.m4s", firstMediaSegment),
+                namedUploadMetadata(initialUpload, "segment0.m4s", firstMediaSegment),
                 firstMediaSegment)
             .get(5, TimeUnit.SECONDS);
         worker.send(
@@ -801,7 +801,7 @@ class WorkerSessionServerIT {
         var refused =
             upload(
                 channel,
-                fmp4Metadata(
+                namedUploadMetadata(
                     segmentMetadata(workerSession, identity, replacement),
                     "init.mp4",
                     differingInitialization),
@@ -817,7 +817,7 @@ class WorkerSessionServerIT {
         assertUploadRejected(
             upload(
                 channel,
-                fmp4Metadata(
+                namedUploadMetadata(
                     segmentMetadata(workerSession, identity, replacement),
                     "segment1.m4s",
                     laterMediaSegment),
@@ -857,7 +857,8 @@ class WorkerSessionServerIT {
 
         assertUploadRejected(upload(channel, metadata, segmentData), Status.Code.INVALID_ARGUMENT);
         assertThat(
-                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
+                segmentStore.segmentExists(
+                    fromProto(job.getStreamSessionId()), "720p/segment0.m4s"))
             .isFalse();
         worker.close();
       } finally {
@@ -933,7 +934,8 @@ class WorkerSessionServerIT {
                         .build())),
             Status.Code.INVALID_ARGUMENT);
         assertThat(
-                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
+                segmentStore.segmentExists(
+                    fromProto(job.getStreamSessionId()), "720p/segment0.m4s"))
             .isFalse();
       } finally {
         shutdown(channel);
@@ -966,7 +968,8 @@ class WorkerSessionServerIT {
         assertUploadRejected(
             upload(channel, metadata, segmentData), Status.Code.RESOURCE_EXHAUSTED);
         assertThat(
-                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
+                segmentStore.segmentExists(
+                    fromProto(job.getStreamSessionId()), "720p/segment0.m4s"))
             .isFalse();
 
         var validSegment = "complete segment".getBytes();
@@ -1007,11 +1010,15 @@ class WorkerSessionServerIT {
                 metadata.toBuilder().setContentLengthBytes(-1).build(),
                 metadata.toBuilder().setContentLengthBytes(16L * 1024 * 1024 + 1).build(),
                 metadata.toBuilder().setSegmentName(" ").build(),
-                metadata.toBuilder().setSegmentName("../segment0.ts").build(),
-                metadata.toBuilder().setSegmentName("nested/segment0.ts").build(),
-                metadata.toBuilder().setSegmentName("nested\\segment0.ts").build(),
+                metadata.toBuilder().setSegmentName("../segment0.m4s").build(),
+                metadata.toBuilder().setSegmentName("nested/segment0.m4s").build(),
+                metadata.toBuilder().setSegmentName("nested\\segment0.m4s").build(),
                 metadata.toBuilder()
                     .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_UNSPECIFIED)
+                    .build(),
+                metadata.toBuilder()
+                    .setSegmentName("segment0.ts")
+                    .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP2T)
                     .build(),
                 metadata.toBuilder().setContentTypeValue(999).build());
 
@@ -1042,6 +1049,10 @@ class WorkerSessionServerIT {
               .isTrue();
           assertThat(worker.nextResponse().hasStopVariant()).isTrue();
         }
+        assertThat(
+                segmentStore.segmentExists(
+                    fromProto(job.getStreamSessionId()), "720p/segment0.m4s"))
+            .isFalse();
         assertThat(
                 segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
             .isFalse();
@@ -1115,7 +1126,8 @@ class WorkerSessionServerIT {
 
         assertUploadRejected(upload.response(), Status.Code.PERMISSION_DENIED);
         assertThat(
-                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
+                segmentStore.segmentExists(
+                    fromProto(job.getStreamSessionId()), "720p/segment0.m4s"))
             .isFalse();
         replacement.close();
       } finally {
@@ -1157,7 +1169,8 @@ class WorkerSessionServerIT {
 
         assertUploadRejected(upload, Status.Code.PERMISSION_DENIED);
         assertThat(
-                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
+                segmentStore.segmentExists(
+                    fromProto(job.getStreamSessionId()), "720p/segment0.m4s"))
             .isFalse();
       } finally {
         segmentStore.continuePreparation();
@@ -1207,7 +1220,7 @@ class WorkerSessionServerIT {
             .sourcePath(Path.of("/media/movie.mkv"))
             .targetSegmentDuration(6)
             .framerate(OptionalDouble.of(23.976))
-            .transcodeDecision(StreamSessionFixture.remuxMpegtsDecision())
+            .transcodeDecision(StreamSessionFixture.remuxDecision())
             .width(1920)
             .height(1080)
             .bitrate(5_000_000)
@@ -1256,7 +1269,7 @@ class WorkerSessionServerIT {
                 .setContentLengthBytes(stale.length)
                 .build();
         assertUploadRejected(upload(channel, metadata, stale), Status.Code.PERMISSION_DENIED);
-        assertThat(segmentStore.segmentExists(streamSessionId, "720p/segment0.ts")).isFalse();
+        assertThat(segmentStore.segmentExists(streamSessionId, "720p/segment0.m4s")).isFalse();
       } finally {
         shutdown(channel);
       }
@@ -1446,17 +1459,13 @@ class WorkerSessionServerIT {
         .setJobId(job.getJobId())
         .setJobAttemptId(job.getJobAttemptId())
         .setVariantLabel(job.getVariant().getVariantLabel())
-        .setSegmentName("segment0.ts")
-        .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP2T);
+        .setSegmentName("segment0.m4s")
+        .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP4);
   }
 
-  private static SegmentUploadMetadata fmp4Metadata(
+  private static SegmentUploadMetadata namedUploadMetadata(
       SegmentUploadMetadata.Builder metadata, String segmentName, byte[] data) {
-    return metadata
-        .setSegmentName(segmentName)
-        .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP4)
-        .setContentLengthBytes(data.length)
-        .build();
+    return metadata.setSegmentName(segmentName).setContentLengthBytes(data.length).build();
   }
 
   private CompletableFuture<UploadSegmentResponse> upload(

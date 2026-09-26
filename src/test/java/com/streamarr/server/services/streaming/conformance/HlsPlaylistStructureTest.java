@@ -3,7 +3,6 @@ package com.streamarr.server.services.streaming.conformance;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.StreamingProperties;
-import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
@@ -19,8 +18,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
 
 /**
  * Spec-cited HLS playlist structure suite. Each case parses a playlist actually produced by {@link
@@ -52,11 +49,9 @@ class HlsPlaylistStructureTest {
     service = new HlsPlaylistService(properties);
   }
 
-  private StreamSession mediaSession(ContainerFormat container, int durationSeconds) {
+  private StreamSession mediaSession(int durationSeconds) {
     return StreamSessionFixture.sessionWithDurationBuilder(durationSeconds)
-        .transcodeDecision(
-            StreamSessionFixture.fullTranscodeDecision(
-                container == ContainerFormat.FMP4 ? "av1" : "h264", container))
+        .transcodeDecision(StreamSessionFixture.fullTranscodeDecision("h264"))
         .build();
   }
 
@@ -83,8 +78,7 @@ class HlsPlaylistStructureTest {
                 .build());
 
     return StreamSessionFixture.sessionWithDurationBuilder(120)
-        .transcodeDecision(
-            StreamSessionFixture.fullTranscodeDecision("h264", ContainerFormat.MPEGTS))
+        .transcodeDecision(StreamSessionFixture.fullTranscodeDecision("h264"))
         .variants(variants)
         .build();
   }
@@ -98,7 +92,7 @@ class HlsPlaylistStructureTest {
     @Test
     @DisplayName("Should start with EXTM3U first line when generating media playlist (§4.3.1.1)")
     void shouldStartWithExtm3uFirstLineWhenGeneratingMediaPlaylist() {
-      var playlist = MediaPlaylist.parse(generateMpegtsMediaPlaylist());
+      var playlist = MediaPlaylist.parse(generateMediaPlaylist());
 
       assertThat(playlist.firstLine()).isEqualTo("#EXTM3U");
     }
@@ -106,14 +100,11 @@ class HlsPlaylistStructureTest {
     // RFC 8216 §7 (Protocol Version Compatibility): a playlist MUST declare an EXT-X-VERSION no
     // lower than the highest version its tags require — floating-point EXTINF requires >= 3, and
     // EXT-X-MAP in a Media Playlist without EXT-X-I-FRAMES-ONLY requires >= 6.
-    @ParameterizedTest(name = "{0}")
-    @EnumSource(ContainerFormat.class)
+    @Test
     @DisplayName(
         "Should declare version at least what its tags require when generating media playlist (§7)")
-    void shouldDeclareVersionAtLeastWhatTagsRequireWhenGeneratingMediaPlaylist(
-        ContainerFormat container) {
-      var playlist =
-          MediaPlaylist.parse(service.generateMediaPlaylist(mediaSession(container, 30), TOKEN));
+    void shouldDeclareVersionAtLeastWhatTagsRequireWhenGeneratingMediaPlaylist() {
+      var playlist = MediaPlaylist.parse(generateMediaPlaylist());
 
       assertThat(playlist.version()).isPresent();
       assertThat(playlist.version().getAsInt())
@@ -127,7 +118,7 @@ class HlsPlaylistStructureTest {
     @DisplayName("Should keep every EXTINF within TARGETDURATION when rounded (§4.3.3.1)")
     void shouldKeepEveryExtinfWithinTargetDurationWhenRounded() {
       // 16s / 6s target yields two full 6s segments and a short 4s tail — exercises both.
-      var playlist = MediaPlaylist.parse(generateMpegtsMediaPlaylist(16));
+      var playlist = MediaPlaylist.parse(generateMediaPlaylist(16));
 
       assertThat(playlist.targetDuration()).isPresent();
       var targetDuration = playlist.targetDuration().getAsInt();
@@ -144,7 +135,7 @@ class HlsPlaylistStructureTest {
     @Test
     @DisplayName("Should declare EXT-X-MEDIA-SEQUENCE when generating media playlist (§4.3.3.2)")
     void shouldDeclareMediaSequenceWhenGeneratingMediaPlaylist() {
-      var playlist = MediaPlaylist.parse(generateMpegtsMediaPlaylist());
+      var playlist = MediaPlaylist.parse(generateMediaPlaylist());
 
       assertThat(playlist.hasMediaSequence()).isTrue();
     }
@@ -156,7 +147,7 @@ class HlsPlaylistStructureTest {
     @DisplayName(
         "Should be an immutable VOD playlist ending in ENDLIST when generating media playlist (§4.3.3.5)")
     void shouldBeImmutableVodPlaylistEndingInEndListWhenGeneratingMediaPlaylist() {
-      var session = mediaSession(ContainerFormat.MPEGTS, 30);
+      var session = mediaSession(30);
 
       var first = service.generateMediaPlaylist(session, TOKEN);
       var second = service.generateMediaPlaylist(session, TOKEN);
@@ -172,24 +163,22 @@ class HlsPlaylistStructureTest {
     // RFC 8216 §4.3.2.5: EXT-X-MAP specifies the Media Initialization Section required to parse the
     // fMP4 Media Segments that follow it; an fMP4 media playlist MUST declare one.
     @Test
-    @DisplayName("Should declare EXT-X-MAP init segment when container is fMP4 (§4.3.2.5)")
-    void shouldDeclareExtXMapInitSegmentWhenContainerIsFmp4() {
-      var playlist =
-          MediaPlaylist.parse(
-              service.generateMediaPlaylist(mediaSession(ContainerFormat.FMP4, 30), TOKEN));
+    @DisplayName(
+        "Should declare the EXT-X-MAP initialization segment when generating the media playlist (§4.3.2.5)")
+    void shouldDeclareExtXMapInitializationSegmentWhenGeneratingMediaPlaylist() {
+      var playlist = MediaPlaylist.parse(generateMediaPlaylist());
 
       assertThat(playlist.hasMap()).isTrue();
       assertThat(playlist.mapUri()).isPresent();
       assertThat(playlist.mapUri().get()).startsWith("init.mp4");
     }
 
-    private String generateMpegtsMediaPlaylist() {
-      return generateMpegtsMediaPlaylist(30);
+    private String generateMediaPlaylist() {
+      return generateMediaPlaylist(30);
     }
 
-    private String generateMpegtsMediaPlaylist(int durationSeconds) {
-      return service.generateMediaPlaylist(
-          mediaSession(ContainerFormat.MPEGTS, durationSeconds), TOKEN);
+    private String generateMediaPlaylist(int durationSeconds) {
+      return service.generateMediaPlaylist(mediaSession(durationSeconds), TOKEN);
     }
   }
 
