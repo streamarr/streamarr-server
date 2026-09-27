@@ -4,12 +4,14 @@ import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MatchingFailure;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.metadata.MetadataFetchOutcome;
+import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
@@ -49,18 +51,125 @@ public class MovieFileProcessor {
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
 
+  /**
+   * Result of the remote stage for one file. {@link Matched#details()} fetches the provider's
+   * details: lazily from {@link #identify} (called under the provider-id mutex only when the movie
+   * does not exist yet, the original behavior) or replaying a result fetched eagerly by {@link
+   * #identifyWithDetails}.
+   */
+  public sealed interface MovieIdentification {
+
+    record ParseFailed() implements MovieIdentification {}
+
+    record NotFound() implements MovieIdentification {}
+
+    record Unavailable(TemporarilyUnavailable outcome) implements MovieIdentification {}
+
+    record Matched(RemoteSearchResult match, DetailsSource details)
+        implements MovieIdentification {}
+  }
+
+  /** Provider details for a matched file. May throw, exactly as the provider call can. */
+  @FunctionalInterface
+  public interface DetailsSource {
+    MetadataFetchOutcome<MetadataResult<Movie>> fetch() throws Exception;
+  }
+
+  /** All stages back to back: the original per-file behavior. */
   public void process(FileDiscovery discovery, MediaFile mediaFile) {
+    persist(discovery, mediaFile, identify(discovery, mediaFile));
+  }
+
+  /**
+   * Remote stage: parse the filename and search the provider. Holds no database connection.
+   * Details are left to {@link #persist}, which fetches them under the provider-id mutex only when
+   * the movie does not exist yet.
+   */
+  public MovieIdentification identify(FileDiscovery discovery, MediaFile mediaFile) {
+    return search(discovery, mediaFile, this::lazyDetails);
+  }
+
+  /**
+   * Remote stage for a pipeline: parse, search, and fetch details unconditionally, outside any
+   * mutex. Holds no database connection. A duplicate file of an existing movie therefore costs a
+   * details request the original path would have skipped.
+   */
+  public MovieIdentification identifyWithDetails(FileDiscovery discovery, MediaFile mediaFile) {
+    return search(discovery, mediaFile, this::eagerDetails);
+  }
+
+  /**
+   * Database stage: marks a failed identification, or under the provider-id mutex attaches the file
+   * to the existing movie or creates the movie from the details, then marks the file matched.
+   */
+  public void persist(
+      FileDiscovery discovery, MediaFile mediaFile, MovieIdentification identification) {
+    switch (identification) {
+      case MovieIdentification.ParseFailed _ -> {
+        markMatchingFailed(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_PARSING_FAILED));
+
+        log.error(
+            "Failed to parse MediaFile id: {} at path: '{}'",
+            mediaFile.getId(),
+            mediaFile.getFilepathUri());
+      }
+      case MovieIdentification.NotFound _ -> {
+        markMatchingFailed(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_NOT_FOUND));
+
+        log.error(
+            "Failed to find matching search result for MediaFile id: {} at path: '{}'",
+            mediaFile.getId(),
+            mediaFile.getFilepathUri());
+      }
+      case MovieIdentification.Unavailable(var unavailable) -> {
+        markMatchingFailed(
+            mediaFile,
+            new MatchingFailure(MediaFileStatus.METADATA_UNAVAILABLE, unavailable.reason()));
+
+        log.error(
+            "Metadata provider unavailable for MediaFile id: {} at path: '{}'",
+            mediaFile.getId(),
+            mediaFile.getFilepathUri(),
+            unavailable.cause());
+      }
+      case MovieIdentification.Matched(var movieSearchResult, var details) -> {
+        log.info(
+            "Found metadata search result during enrichment for MediaFile id: {}. Metadata provider: {} and External id: {}",
+            mediaFile.getId(),
+            movieSearchResult.externalSourceType(),
+            movieSearchResult.externalId());
+
+        enrichMovieMetadata(discovery, mediaFile, movieSearchResult, details)
+            .ifPresent(failure -> markMatchingFailed(mediaFile, failure));
+      }
+    }
+  }
+
+  private interface DetailsPolicy {
+    DetailsSource detailsFor(FileDiscovery discovery, RemoteSearchResult match);
+  }
+
+  private DetailsSource lazyDetails(FileDiscovery discovery, RemoteSearchResult match) {
+    return () -> movieMetadataProviderResolver.getMetadata(match, discovery.library());
+  }
+
+  private DetailsSource eagerDetails(FileDiscovery discovery, RemoteSearchResult match) {
+    try {
+      var fetched = movieMetadataProviderResolver.getMetadata(match, discovery.library());
+      return () -> fetched;
+    } catch (Exception thrown) {
+      return () -> {
+        throw thrown;
+      };
+    }
+  }
+
+  private MovieIdentification search(
+      FileDiscovery discovery, MediaFile mediaFile, DetailsPolicy detailsPolicy) {
     var mediaInformationResult = parseMediaFileForMovieInfo(mediaFile);
 
     if (mediaInformationResult.isEmpty()) {
-      markMatchingFailed(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_PARSING_FAILED));
-
-      log.error(
-          "Failed to parse MediaFile id: {} at path: '{}'",
-          mediaFile.getId(),
-          mediaFile.getFilepathUri());
-
-      return;
+      return new MovieIdentification.ParseFailed();
     }
 
     log.info(
@@ -72,37 +181,13 @@ public class MovieFileProcessor {
     var searchOutcome =
         movieMetadataProviderResolver.search(discovery.library(), mediaInformationResult.get());
 
-    switch (searchOutcome) {
-      case NotFound _ -> {
-        markMatchingFailed(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_NOT_FOUND));
-
-        log.error(
-            "Failed to find matching search result for MediaFile id: {} at path: '{}'",
-            mediaFile.getId(),
-            mediaFile.getFilepathUri());
-      }
-      case TemporarilyUnavailable unavailable -> {
-        markMatchingFailed(
-            mediaFile,
-            new MatchingFailure(MediaFileStatus.METADATA_UNAVAILABLE, unavailable.reason()));
-
-        log.error(
-            "Metadata provider unavailable for MediaFile id: {} at path: '{}'",
-            mediaFile.getId(),
-            mediaFile.getFilepathUri(),
-            unavailable.cause());
-      }
-      case Found(var movieSearchResult) -> {
-        log.info(
-            "Found metadata search result during enrichment for MediaFile id: {}. Metadata provider: {} and External id: {}",
-            mediaFile.getId(),
-            movieSearchResult.externalSourceType(),
-            movieSearchResult.externalId());
-
-        enrichMovieMetadata(discovery, mediaFile, movieSearchResult)
-            .ifPresent(failure -> markMatchingFailed(mediaFile, failure));
-      }
-    }
+    return switch (searchOutcome) {
+      case NotFound _ -> new MovieIdentification.NotFound();
+      case TemporarilyUnavailable unavailable -> new MovieIdentification.Unavailable(unavailable);
+      case Found(var movieSearchResult) ->
+          new MovieIdentification.Matched(
+              movieSearchResult, detailsPolicy.detailsFor(discovery, movieSearchResult));
+    };
   }
 
   private Optional<VideoFileParserResult> parseMediaFileForMovieInfo(MediaFile mediaFile) {
@@ -138,14 +223,17 @@ public class MovieFileProcessor {
   }
 
   private Optional<MatchingFailure> enrichMovieMetadata(
-      FileDiscovery discovery, MediaFile mediaFile, RemoteSearchResult remoteSearchResult) {
+      FileDiscovery discovery,
+      MediaFile mediaFile,
+      RemoteSearchResult remoteSearchResult,
+      DetailsSource details) {
 
     var externalIdMutex = mutexFactory.getMutex(remoteSearchResult.externalId());
 
     try {
       externalIdMutex.lockInterruptibly();
 
-      return updateOrSaveEnrichedMovie(discovery, mediaFile, remoteSearchResult);
+      return updateOrSaveEnrichedMovie(discovery, mediaFile, remoteSearchResult, details);
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
       log.error("Enrichment interrupted for MediaFile id: {}", mediaFile.getId(), ex);
@@ -162,7 +250,11 @@ public class MovieFileProcessor {
   }
 
   private Optional<MatchingFailure> updateOrSaveEnrichedMovie(
-      FileDiscovery discovery, MediaFile mediaFile, RemoteSearchResult remoteSearchResult) {
+      FileDiscovery discovery,
+      MediaFile mediaFile,
+      RemoteSearchResult remoteSearchResult,
+      DetailsSource details)
+      throws Exception {
     var optionalMovie =
         movieService.addMediaFileToMovieByTmdbId(remoteSearchResult.externalId(), mediaFile);
 
@@ -171,8 +263,7 @@ public class MovieFileProcessor {
       return Optional.empty();
     }
 
-    return switch (movieMetadataProviderResolver.getMetadata(
-        remoteSearchResult, discovery.library())) {
+    return switch (details.fetch()) {
       case MetadataFetchOutcome.Found(var metadataResult) -> {
         movieService.createMovieWithAssociations(metadataResult, mediaFile, discovery.artworkRun());
         markMediaFileAsMatched(mediaFile);

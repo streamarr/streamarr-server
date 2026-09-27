@@ -28,6 +28,15 @@ import com.streamarr.server.services.events.library.RefreshEndedEvent;
 import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.library.admission.AdmissionRuntime;
+import com.streamarr.server.services.library.admission.FileAdmission;
+import com.streamarr.server.services.library.admission.StagedTask;
+import com.streamarr.server.services.library.admission.TaskOutcome;
+import com.streamarr.server.services.library.admission.UnboundedFileAdmission;
+import com.streamarr.server.services.library.admission.Workload;
+import com.streamarr.server.services.library.walk.LibraryWalk;
+import com.streamarr.server.services.library.walk.SerialLibraryWalk;
+import com.streamarr.server.services.library.walk.WalkPrefetch;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
@@ -47,13 +56,12 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
@@ -83,6 +91,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
   private final MutationTransactions mutationTransactions;
   private final ArtworkService artworkService;
   private final Set<UUID> activeScans = ConcurrentHashMap.newKeySet();
+  private FileAdmission fileAdmission = new UnboundedFileAdmission(new AdmissionRuntime());
   private final Set<UUID> activeRefreshes = ConcurrentHashMap.newKeySet();
 
   public LibraryManagementService(
@@ -119,6 +128,13 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     this.artworkService = artworkService;
 
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
+  }
+
+  /** Throwaway benchmark seam: the strategy bean selected by {@code poc.admission}. */
+  @Autowired
+  void useFileAdmission(FileAdmission fileAdmission) {
+    this.fileAdmission = fileAdmission;
+    log.info("POC scan admission strategy: {}", fileAdmission.name());
   }
 
   @Override
@@ -395,39 +411,43 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     }
   }
 
+  // Throwaway benchmark lever: the walk selected by poc.walk; the default is the original walk.
+  private LibraryWalk libraryWalk = new SerialLibraryWalk();
+
+  @Autowired
+  void useLibraryWalk(LibraryWalk libraryWalk) {
+    this.libraryWalk = libraryWalk;
+    log.info("POC library walk: {}", libraryWalk.name());
+  }
+
   private void walkAndProcessFiles(Library library) {
     try (var artworkRun = openArtworkRun("scan of", library);
-        var executor = Executors.newVirtualThreadPerTaskExecutor();
-        var stream = Files.walk(FilepathCodec.decode(fileSystem, library.getFilepathUri()))) {
+        var stream = libraryWalk.walk(FilepathCodec.decode(fileSystem, library.getFilepathUri()));
+        var files = admittedFiles(stream)) {
 
       var discovery = new FileDiscovery(library, artworkRun);
-      var tasks =
-          stream
-              .filter(Files::isRegularFile)
-              .filter(file -> !ignoredFileValidator.shouldIgnore(file))
-              .map(file -> executor.submit(() -> processFile(discovery, file)))
-              .toList();
-      awaitFileProcessing(library, tasks);
+      var failures = fileAdmission.processAll(Workload.SCAN, files, new ScanFileTask(discovery));
+      throwIfAnyFileFailed(library, failures);
 
+    } catch (InterruptedException exception) {
+      Thread.currentThread().interrupt();
+      throw new LibraryScanFailedException(library.getName(), exception);
     } catch (IOException | UncheckedIOException | SecurityException | InvalidPathException e) {
       throw new LibraryScanFailedException(library.getName(), e);
     }
   }
 
-  private static void awaitFileProcessing(Library library, List<? extends Future<?>> tasks) {
-    var failures = new ArrayList<Throwable>();
+  /**
+   * The walk's scan candidates. A strategy that waits between pulls gets them through {@link
+   * WalkPrefetch}, so its waiting never pauses the walk part-way through a directory listing.
+   */
+  private Stream<Path> admittedFiles(Stream<Path> walk) {
+    var files =
+        walk.filter(Files::isRegularFile).filter(file -> !ignoredFileValidator.shouldIgnore(file));
+    return fileAdmission.waitsBetweenPulls() ? WalkPrefetch.drainAhead(files) : files;
+  }
 
-    for (var task : tasks) {
-      try {
-        task.get();
-      } catch (InterruptedException exception) {
-        Thread.currentThread().interrupt();
-        throw new LibraryScanFailedException(library.getName(), exception);
-      } catch (ExecutionException exception) {
-        failures.add(exception.getCause());
-      }
-    }
-
+  private static void throwIfAnyFileFailed(Library library, List<Throwable> failures) {
     if (failures.isEmpty()) {
       return;
     }
@@ -437,6 +457,56 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     failures.stream().skip(1).forEach(scanFailure::addSuppressed);
     throw scanFailure;
   }
+
+  /**
+   * One walked file. {@link #run} is the original per-file path; the stages let a pipeline hand the
+   * file between a database stage, a remote stage and a database stage.
+   */
+  private final class ScanFileTask implements StagedTask<Path, MediaFile, IdentifiedFile> {
+
+    private final FileDiscovery discovery;
+
+    private ScanFileTask(FileDiscovery discovery) {
+      this.discovery = discovery;
+    }
+
+    @Override
+    public TaskOutcome run(Path path) {
+      return TaskOutcome.of(processFile(discovery, path));
+    }
+
+    @Override
+    public Optional<MediaFile> register(Path path) {
+      return registerFile(discovery.library(), path);
+    }
+
+    @Override
+    public IdentifiedFile identify(MediaFile mediaFile) {
+      return switch (discovery.library().getType()) {
+        case MOVIE ->
+            new IdentifiedFile(
+                mediaFile, movieFileProcessor.identifyWithDetails(discovery, mediaFile));
+        default -> new IdentifiedFile(mediaFile, null);
+      };
+    }
+
+    @Override
+    public void persist(IdentifiedFile identified) {
+      if (identified.movie() == null) {
+        processRegisteredFile(discovery, identified.mediaFile());
+        return;
+      }
+
+      movieFileProcessor.persist(discovery, identified.mediaFile(), identified.movie());
+    }
+  }
+
+  /**
+   * A registered file after the remote stage. {@code movie} is null for libraries whose processor
+   * is not split into stages; their persist stage runs the whole processor.
+   */
+  private record IdentifiedFile(
+      MediaFile mediaFile, MovieFileProcessor.MovieIdentification movie) {}
 
   private void completeScanSuccessfully(Library library, Instant startTime) {
     eventPublisher.publishEvent(new ScanCompletedEvent(library.getId()));
@@ -494,30 +564,48 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
   }
 
   private boolean processFile(FileDiscovery discovery, Path path) {
-    var library = discovery.library();
+    var registered = registerFile(discovery.library(), path);
 
+    if (registered.isEmpty()) {
+      return false;
+    }
+
+    processRegisteredFile(discovery, registered.get());
+    return true;
+  }
+
+  /**
+   * Database stage of one file: rejects unsupported extensions, finds or creates the media file,
+   * requests its probe, and short-circuits an already-matched file. Empty when nothing is left to
+   * do.
+   */
+  private Optional<MediaFile> registerFile(Library library, Path path) {
     if (!hasSupportedExtension(path)) {
       log.warn(
           "Unsupported file extension: {} for filepath {}.",
           getExtension(path),
           path.toAbsolutePath());
-      return false;
+      return Optional.empty();
     }
 
     var mediaFile = findOrCreateMediaFile(library, path);
     eventPublisher.publishEvent(new MediaFileProbeTaskRequested(mediaFile.getId()));
 
     if (isAlreadyMatched(mediaFile)) {
-      return false;
+      return Optional.empty();
     }
+
+    return Optional.of(mediaFile);
+  }
+
+  private void processRegisteredFile(FileDiscovery discovery, MediaFile mediaFile) {
+    var library = discovery.library();
 
     switch (library.getType()) {
       case MOVIE -> movieFileProcessor.process(discovery, mediaFile);
       case SERIES -> seriesFileProcessor.process(discovery, mediaFile);
       default -> throw new IllegalStateException("Unsupported media type: " + library.getType());
     }
-
-    return true;
   }
 
   private boolean hasSupportedExtension(Path path) {

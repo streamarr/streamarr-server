@@ -149,6 +149,21 @@ class LibraryManagementServiceTest {
       new FakeLibraryMutationTransaction();
 
   private final PersonService personService = mock(PersonService.class);
+
+  {
+    when(personService.getOrCreateCredits(any(), any(), any(), any()))
+        .thenAnswer(
+            invocation ->
+                new PersonService.Credits(
+                    personService.getOrCreatePersons(
+                        invocation.getArgument(0),
+                        invocation.getArgument(2),
+                        invocation.getArgument(3)),
+                    personService.getOrCreatePersons(
+                        invocation.getArgument(1),
+                        invocation.getArgument(2),
+                        invocation.getArgument(3))));
+  }
   private final GenreService genreService = mock(GenreService.class);
   private final CompanyService companyService = mock(CompanyService.class);
   private final MetadataProvider<Movie> tmdbMovieProvider = mock(TMDBMovieProvider.class);

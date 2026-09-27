@@ -6,6 +6,7 @@ import com.streamarr.server.repositories.CompanyRepository;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -47,7 +48,11 @@ public class CompanyService {
       return Set.of();
     }
 
+    companies.forEach(CompanyService::requireSourceId);
+
+    // Source-id order: every transaction inserts company keys in the same order (no deadlock cycle).
     return companies.stream()
+        .sorted(Comparator.comparing(Company::getSourceId))
         .map(c -> findOrCreateCompany(c, imageSourcesBySourceId, imageRefreshMode))
         .collect(Collectors.toSet());
   }
@@ -56,10 +61,6 @@ public class CompanyService {
       Company company,
       Map<String, List<ImageSource>> imageSourcesBySourceId,
       ImageRefreshMode imageRefreshMode) {
-    if (company.getSourceId() == null) {
-      throw new IllegalArgumentException("Company sourceId must not be null");
-    }
-
     var imageSources = imageSourcesBySourceId.getOrDefault(company.getSourceId(), List.of());
 
     companyRepository.insertIfAbsent(company.getSourceId(), company.getName());
@@ -75,6 +76,12 @@ public class CompanyService {
 
     publishImageEvent(saved, imageSources, imageRefreshMode);
     return saved;
+  }
+
+  private static void requireSourceId(Company company) {
+    if (company.getSourceId() == null) {
+      throw new IllegalArgumentException("Company sourceId must not be null");
+    }
   }
 
   private void publishImageEvent(

@@ -1,5 +1,6 @@
 package com.streamarr.server.services;
 
+import com.streamarr.server.services.library.admission.TmdbTaskSignals;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import jakarta.annotation.PreDestroy;
 import java.time.Clock;
@@ -92,7 +93,9 @@ public class ArtworkService {
     try {
       results =
           CompletableFuture.supplyAsync(
-              () -> artworkFetcher.fetch(artwork, refreshMode, attemptedAt),
+              () ->
+                  TmdbTaskSignals.callAsSecondaryArtwork(
+                      () -> artworkFetcher.fetch(artwork, refreshMode, attemptedAt)),
               secondaryArtworkExecutor);
     } catch (RejectedExecutionException e) {
       results = CompletableFuture.completedFuture(artwork.failures(e));

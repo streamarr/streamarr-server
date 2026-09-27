@@ -83,6 +83,18 @@ class MovieServiceTest {
             .build();
     artworkRun = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
     personService = mock(PersonService.class);
+    when(personService.getOrCreateCredits(any(), any(), any(), any()))
+        .thenAnswer(
+            invocation ->
+                new PersonService.Credits(
+                    personService.getOrCreatePersons(
+                        invocation.getArgument(0),
+                        invocation.getArgument(2),
+                        invocation.getArgument(3)),
+                    personService.getOrCreatePersons(
+                        invocation.getArgument(1),
+                        invocation.getArgument(2),
+                        invocation.getArgument(3))));
     genreService = mock(GenreService.class);
     companyService = mock(CompanyService.class);
     var paginationService = new PaginationService();

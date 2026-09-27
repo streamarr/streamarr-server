@@ -22,11 +22,19 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeasonWithEpisodesRequest;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.services.library.admission.AdmissionRuntime;
+import com.streamarr.server.services.library.admission.FileAdmission;
+import com.streamarr.server.services.library.admission.StagedTask;
+import com.streamarr.server.services.library.admission.TaskOutcome;
+import com.streamarr.server.services.library.admission.UnboundedFileAdmission;
+import com.streamarr.server.services.library.admission.Workload;
 import com.streamarr.server.services.metadata.MetadataFetchOutcome;
+import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -35,6 +43,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -55,6 +64,13 @@ public class LibraryRefreshService {
   private final ArtworkService artworkService;
   private final ItemResultRepository itemResults;
   private final Clock clock;
+  private FileAdmission fileAdmission = new UnboundedFileAdmission(new AdmissionRuntime());
+
+  /** Throwaway benchmark seam: the strategy bean selected by {@code poc.admission}. */
+  @Autowired
+  void useFileAdmission(FileAdmission fileAdmission) {
+    this.fileAdmission = fileAdmission;
+  }
 
   public void refreshLibrary(Library library) {
     refreshLibrary(library, ImageRefreshMode.PRESERVE);
@@ -188,21 +204,97 @@ public class LibraryRefreshService {
 
   private void refreshMovieLibrary(Library library, ArtworkRun artworkRun) {
     var movies = movieRepository.findWithExternalIdsByLibrary_Id(library.getId());
-    var tasks = new ArrayList<Future<?>>();
+    var targets =
+        movies.stream()
+            .<MovieRefresh>mapMulti(
+                (movie, admit) -> {
+                  var tmdbId = findTmdbId(movie);
+                  if (tmdbId.isEmpty()) {
+                    log.warn("No TMDB ID for movie '{}', skipping refresh", movie.getTitle());
+                    return;
+                  }
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      for (var movie : movies) {
-        var tmdbId = findTmdbId(movie);
-        if (tmdbId.isEmpty()) {
-          log.warn("No TMDB ID for movie '{}', skipping refresh", movie.getTitle());
-          continue;
-        }
-        var id = tmdbId.get();
-        tasks.add(executor.submit(() -> refreshMovie(movie, id, library, artworkRun)));
+                  admit.accept(new MovieRefresh(movie, tmdbId.get()));
+                });
+
+    List<Throwable> failures;
+    try {
+      failures =
+          fileAdmission.processAll(
+              Workload.REFRESH, targets, new MovieRefreshTask(library, artworkRun));
+    } catch (InterruptedException exception) {
+      Thread.currentThread().interrupt();
+      throw new LibraryRefreshFailedException(library.getName(), exception);
+    }
+
+    throwIfAnyRefreshFailed(library, failures);
+  }
+
+  private record MovieRefresh(Movie movie, String tmdbId) {}
+
+  /** A refresh target after the remote stage: the provider outcome, or what the call threw. */
+  private record FetchedMovie(
+      MovieRefresh target,
+      Instant attemptedAt,
+      MetadataFetchOutcome<MetadataResult<Movie>> details,
+      RuntimeException thrown) {}
+
+  /**
+   * One movie of a refresh. {@link #run} is the original per-movie path; the stages split it into
+   * the remote details fetch and the database refresh. There is no database stage before the fetch:
+   * the targets were loaded up front.
+   */
+  private final class MovieRefreshTask
+      implements StagedTask<MovieRefresh, MovieRefresh, FetchedMovie> {
+
+    private final Library library;
+    private final ArtworkRun artworkRun;
+
+    private MovieRefreshTask(Library library, ArtworkRun artworkRun) {
+      this.library = library;
+      this.artworkRun = artworkRun;
+    }
+
+    @Override
+    public TaskOutcome run(MovieRefresh target) {
+      refreshMovie(target.movie(), target.tmdbId(), library, artworkRun);
+      return TaskOutcome.WORKED;
+    }
+
+    @Override
+    public Optional<MovieRefresh> register(MovieRefresh target) {
+      return Optional.of(target);
+    }
+
+    @Override
+    public FetchedMovie identify(MovieRefresh target) {
+      var attemptedAt = clock.instant();
+      try {
+        return new FetchedMovie(
+            target,
+            attemptedAt,
+            movieMetadataProviderResolver.getMetadata(
+                searchResult(target.tmdbId(), target.movie().getTitle()), library),
+            null);
+      } catch (RuntimeException ex) {
+        return new FetchedMovie(target, attemptedAt, null, ex);
       }
     }
 
-    throwIfAnyRefreshTaskFailed(library, tasks);
+    @Override
+    public void persist(FetchedMovie fetched) {
+      var target = fetched.target();
+      var outcome =
+          fetched.thrown() == null
+              ? applyMovieMetadata(target.movie(), target.tmdbId(), fetched.details(), artworkRun)
+              : refreshFailed(target.movie(), target.tmdbId(), fetched.thrown());
+
+      itemResults.trySave(
+          metadataResult(target.movie().getId(), ImageEntityType.MOVIE)
+              .outcome(outcome)
+              .attemptedAt(fetched.attemptedAt())
+              .build());
+    }
   }
 
   private void refreshMovie(Movie movie, String tmdbId, Library library, ArtworkRun artworkRun) {
@@ -219,8 +311,24 @@ public class LibraryRefreshService {
   private ItemOutcome refreshMovieMetadata(
       Movie movie, String tmdbId, Library library, ArtworkRun artworkRun) {
     try {
-      return switch (movieMetadataProviderResolver.getMetadata(
-          searchResult(tmdbId, movie.getTitle()), library)) {
+      return applyMovieMetadata(
+          movie,
+          tmdbId,
+          movieMetadataProviderResolver.getMetadata(
+              searchResult(tmdbId, movie.getTitle()), library),
+          artworkRun);
+    } catch (RuntimeException ex) {
+      return refreshFailed(movie, tmdbId, ex);
+    }
+  }
+
+  private ItemOutcome applyMovieMetadata(
+      Movie movie,
+      String tmdbId,
+      MetadataFetchOutcome<MetadataResult<Movie>> details,
+      ArtworkRun artworkRun) {
+    try {
+      return switch (details) {
         case MetadataFetchOutcome.Found(var metadataResult) -> {
           movieService.refreshMovieMetadata(movie, metadataResult, artworkRun);
           yield new ItemOutcome.Succeeded();
@@ -236,9 +344,13 @@ public class LibraryRefreshService {
         }
       };
     } catch (RuntimeException ex) {
-      log.error("Failed to refresh movie '{}' TMDB id '{}'", movie.getTitle(), tmdbId, ex);
-      return ItemOutcome.Failed.of(ItemFailureReason.TEMPORARY, ex);
+      return refreshFailed(movie, tmdbId, ex);
     }
+  }
+
+  private static ItemOutcome refreshFailed(Movie movie, String tmdbId, RuntimeException ex) {
+    log.error("Failed to refresh movie '{}' TMDB id '{}'", movie.getTitle(), tmdbId, ex);
+    return ItemOutcome.Failed.of(ItemFailureReason.TEMPORARY, ex);
   }
 
   private static RemoteSearchResult searchResult(String tmdbId, String title) {
@@ -255,11 +367,15 @@ public class LibraryRefreshService {
   }
 
   private static void throwIfAnyRefreshTaskFailed(Library library, List<Future<?>> tasks) {
-    var failures =
+    throwIfAnyRefreshFailed(
+        library,
         tasks.stream()
             .filter(task -> task.state() == Future.State.FAILED)
             .map(Future::exceptionNow)
-            .toList();
+            .toList());
+  }
+
+  private static void throwIfAnyRefreshFailed(Library library, List<Throwable> failures) {
     if (failures.isEmpty()) {
       return;
     }

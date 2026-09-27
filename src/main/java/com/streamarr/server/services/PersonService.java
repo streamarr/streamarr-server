@@ -8,8 +8,10 @@ import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -34,6 +36,71 @@ public class PersonService {
       Map<String, List<ImageSource>> imageSourcesBySourceId,
       ImageRefreshMode imageRefreshMode) {
     return getOrCreatePersonsInternal(persons, imageSourcesBySourceId, imageRefreshMode);
+  }
+
+  /** A movie's cast and directors after one upsert pass. */
+  public record Credits(List<Person> cast, List<Person> directors) {}
+
+  /**
+   * Upserts cast and directors together in one pass ordered by source id, so every transaction
+   * that creates people inserts their keys in the same global order. Two separately sorted passes
+   * (cast, then directors) do not give that order, and concurrent inserts of the same new keys in
+   * different orders deadlock in PostgreSQL. Each list keeps its order and its per-entry name and
+   * image event, as {@link #getOrCreatePersons} does.
+   */
+  @Transactional
+  public Credits getOrCreateCredits(
+      List<Person> cast,
+      List<Person> directors,
+      Map<String, List<ImageSource>> imageSourcesBySourceId,
+      ImageRefreshMode imageRefreshMode) {
+    var castList = cast == null ? List.<Person>of() : cast;
+    var directorList = directors == null ? List.<Person>of() : directors;
+    castList.forEach(PersonService::requireSourceId);
+    directorList.forEach(PersonService::requireSourceId);
+
+    var firstBySourceId = new LinkedHashMap<String, Person>();
+    Stream.concat(castList.stream(), directorList.stream())
+        .forEach(person -> firstBySourceId.putIfAbsent(person.getSourceId(), person));
+
+    var savedBySourceId = new HashMap<String, Person>();
+    firstBySourceId.values().stream()
+        .sorted(Comparator.comparing(Person::getSourceId))
+        .forEach(person -> savedBySourceId.put(person.getSourceId(), upsert(person)));
+
+    return new Credits(
+        applyCredits(castList, savedBySourceId, imageSourcesBySourceId, imageRefreshMode),
+        applyCredits(directorList, savedBySourceId, imageSourcesBySourceId, imageRefreshMode));
+  }
+
+  private List<Person> applyCredits(
+      List<Person> persons,
+      Map<String, Person> savedBySourceId,
+      Map<String, List<ImageSource>> imageSourcesBySourceId,
+      ImageRefreshMode imageRefreshMode) {
+    persons.stream()
+        .sorted(Comparator.comparing(Person::getSourceId))
+        .forEach(
+            person -> {
+              var saved = savedBySourceId.get(person.getSourceId());
+              saved.setName(person.getName());
+              publishImageEvent(
+                  saved,
+                  imageSourcesBySourceId.getOrDefault(person.getSourceId(), List.of()),
+                  imageRefreshMode);
+            });
+
+    return persons.stream().map(person -> savedBySourceId.get(person.getSourceId())).toList();
+  }
+
+  private Person upsert(Person person) {
+    personRepository.insertIfAbsent(person.getSourceId(), person.getName());
+    return personRepository
+        .findPersonBySourceId(person.getSourceId())
+        .orElseThrow(
+            () ->
+                new IllegalStateException(
+                    "Person not found after upsert for sourceId: " + person.getSourceId()));
   }
 
   private List<Person> getOrCreatePersonsInternal(

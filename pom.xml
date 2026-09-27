@@ -192,6 +192,13 @@
             <version>${guava.version}</version>
         </dependency>
 
+        <!-- Throwaway benchmark: adaptive admission limits (variant C). -->
+        <dependency>
+            <groupId>com.netflix.concurrency-limits</groupId>
+            <artifactId>concurrency-limits-core</artifactId>
+            <version>0.5.4</version>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>

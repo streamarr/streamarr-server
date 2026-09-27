@@ -16,6 +16,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.InitializingBean;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.event.TransactionPhase;
@@ -31,6 +32,10 @@ public class DirectoryWatchingService implements InitializingBean, LibraryWatchT
 
   private final Set<Path> directoriesToWatch = new HashSet<>();
   private DirectoryWatcher watcher;
+
+  // Throwaway benchmark toggle; field injection leaves the constructor and its tests unchanged.
+  @Value("${library.watcher.enabled:true}")
+  private boolean enabled = true;
 
   public DirectoryWatchingService(
       LibraryRepository libraryRepository,
@@ -110,6 +115,11 @@ public class DirectoryWatchingService implements InitializingBean, LibraryWatchT
 
   @Override
   public void afterPropertiesSet() {
+    if (!enabled) {
+      log.info("Library watcher disabled (library.watcher.enabled=false).");
+      return;
+    }
+
     var libraries = libraryRepository.findAll();
 
     libraries.forEach(lib -> directoriesToWatch.add(FilepathCodec.decode(lib.getFilepathUri())));
@@ -128,6 +138,10 @@ public class DirectoryWatchingService implements InitializingBean, LibraryWatchT
   // watcher behind.
   @Override
   public void triggerAsyncWatch(String filepathUri) {
+    if (!enabled) {
+      return;
+    }
+
     Thread.startVirtualThread(
         () -> {
           try {

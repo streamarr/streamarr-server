@@ -15,6 +15,7 @@ import com.streamarr.server.repositories.RatingRepository;
 import com.streamarr.server.repositories.ReviewRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.pagination.LetterJumpResolver;
@@ -99,11 +100,16 @@ public class MovieService {
       MetadataResult<Movie> metadataResult, MediaFile mediaFile, ArtworkRun artworkRun) {
     var movie = metadataResult.entity();
 
-    movie.setCast(
-        personService.getOrCreatePersons(movie.getCast(), metadataResult.personImageSources()));
-    movie.setDirectors(
-        personService.getOrCreatePersons(
-            movie.getDirectors(), metadataResult.personImageSources()));
+    // Key order across the whole transaction: people (cast and directors, one source-id-ordered
+    // pass), then genres, then companies, each in source-id order.
+    var credits =
+        personService.getOrCreateCredits(
+            movie.getCast(),
+            movie.getDirectors(),
+            metadataResult.personImageSources(),
+            ImageRefreshMode.PRESERVE);
+    movie.setCast(credits.cast());
+    movie.setDirectors(credits.directors());
     movie.setGenres(genreService.getOrCreateGenres(movie.getGenres()));
     movie.setStudios(
         companyService.getOrCreateCompanies(
@@ -131,12 +137,14 @@ public class MovieService {
     existing.setContentRating(fresh.getContentRating());
     existing.setReleaseDate(fresh.getReleaseDate());
 
-    existing.setCast(
-        personService.getOrCreatePersons(
-            fresh.getCast(), metadataResult.personImageSources(), imageRefreshMode));
-    existing.setDirectors(
-        personService.getOrCreatePersons(
-            fresh.getDirectors(), metadataResult.personImageSources(), imageRefreshMode));
+    var credits =
+        personService.getOrCreateCredits(
+            fresh.getCast(),
+            fresh.getDirectors(),
+            metadataResult.personImageSources(),
+            imageRefreshMode);
+    existing.setCast(credits.cast());
+    existing.setDirectors(credits.directors());
     existing.setGenres(genreService.getOrCreateGenres(fresh.getGenres()));
     existing.setStudios(
         companyService.getOrCreateCompanies(
