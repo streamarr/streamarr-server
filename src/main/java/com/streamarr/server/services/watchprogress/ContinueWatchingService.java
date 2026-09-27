@@ -35,6 +35,6 @@ public class ContinueWatchingService {
         .findAllById(collectableIds)
         .forEach(episode -> byId.put(episode.getId(), episode));
 
-    return collectableIds.stream().map(byId::get).filter(Objects::nonNull).toList();
+    return collectableIds.stream().<BaseCollectable<?>>map(byId::get).filter(Objects::nonNull).toList();
   }
 }

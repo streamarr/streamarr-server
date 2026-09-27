@@ -15,12 +15,12 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.function.BooleanSupplier;
 import java.util.stream.Stream;
 import lombok.extern.slf4j.Slf4j;
 
@@ -92,51 +92,84 @@ public class AdaptiveFileAdmission implements FileAdmission {
   @Override
   public <T> List<Throwable> processAll(Workload workload, Stream<T> items, AdmittedTask<T> task)
       throws InterruptedException {
-    var limiter = limiters.get(workload);
-    lastStarted = limiter;
-    limiter.resetTrace();
-    var tally = new ReleaseTally();
+    var run = startRun(workload, () -> false);
     var tasks = new ArrayList<Future<TaskOutcome>>();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var admissionFailure = admitAll(workload, items, task, limiter, executor, tasks, tally);
+      var admissionFailure =
+          admitAll(run, items, task, admitted -> tasks.add(executor.submit(admitted.work())));
       var failures = new ArrayList<>(AdmissionFutures.awaitInOrder(tasks));
       admissionFailure.ifPresent(failures::add);
       return failures;
     } finally {
-      log.info(
-          "POC {} admission of {} finished: {} admitted, {}; {}",
-          algorithm.admissionName(),
-          workload,
-          tasks.size(),
-          tally,
-          limiter.trace());
+      logFinished(run, tasks.size());
     }
   }
 
-  private <T> Optional<Throwable> admitAll(
-      Workload workload,
-      Stream<T> items,
-      AdmittedTask<T> task,
-      WorkloadLimiter limiter,
-      ExecutorService executor,
-      List<Future<TaskOutcome>> tasks,
-      ReleaseTally tally)
+  /**
+   * Starts one scan or refresh on its workload's limiter. {@code stop} is polled by {@link
+   * #admitAll} before each item is pulled and after each granted permit.
+   */
+  final AdmissionRun startRun(Workload workload, BooleanSupplier stop) {
+    var limiter = limiters.get(workload);
+    lastStarted = limiter;
+    limiter.resetTrace();
+    return new AdmissionRun(workload, limiter, new ReleaseTally(), stop);
+  }
+
+  final void logFinished(AdmissionRun run, int admitted) {
+    log.info(
+        "POC {} admission of {} finished: {} admitted, {}; {}",
+        name(),
+        run.workload(),
+        admitted,
+        run.tally(),
+        run.limiter().trace());
+  }
+
+  /** The limiter behind {@code workload}; kept for the life of the bean. */
+  final WorkloadLimiter limiter(Workload workload) {
+    return limiters.get(workload);
+  }
+
+  /**
+   * Pulls each item, blocks for its permit, then hands the admitted item to {@code fork}. Returns
+   * the admission failure to append after the items' own failures: the acquire timeout, or {@link
+   * AdmissionStoppedException} when {@code run}'s stop kept an item from running. A stop seen only
+   * after the last item was admitted is not reported: every item ran.
+   */
+  final <T> Optional<Throwable> admitAll(
+      AdmissionRun run, Stream<T> items, AdmittedTask<T> task, Fork fork)
       throws InterruptedException {
     var iterator = items.iterator();
 
     while (iterator.hasNext()) {
-      var item = iterator.next();
-      var permit = limiter.acquire();
-
-      if (permit.isEmpty()) {
-        return Optional.of(stoppedAdmitting(workload, limiter));
+      if (run.stopRequested()) {
+        return stopped(run);
       }
 
-      tasks.add(submit(executor, new PermitRelease(permit.get(), tally), task, item));
+      var item = iterator.next();
+      var permit = run.limiter().acquire();
+
+      if (permit.isEmpty()) {
+        return Optional.of(stoppedAdmitting(run.workload(), run.limiter()));
+      }
+
+      var release = new PermitRelease(permit.get(), run.tally());
+
+      if (run.stopRequested()) {
+        release.release(Release.IGNORED);
+        return stopped(run);
+      }
+
+      forkAdmitted(fork, release, task, item);
     }
 
     return Optional.empty();
+  }
+
+  private static Optional<Throwable> stopped(AdmissionRun run) {
+    return Optional.of(new AdmissionStoppedException(run.workload()));
   }
 
   private static Throwable stoppedAdmitting(Workload workload, WorkloadLimiter limiter)
@@ -148,16 +181,43 @@ public class AdaptiveFileAdmission implements FileAdmission {
     return new AdaptiveAdmissionTimeoutException(workload, limiter.acquireTimeout());
   }
 
-  private <T> Future<TaskOutcome> submit(
-      ExecutorService executor, PermitRelease release, AdmittedTask<T> task, T item) {
+  private <T> void forkAdmitted(Fork fork, PermitRelease release, AdmittedTask<T> task, T item) {
     var ticket = runtime.admit();
+    var admitted = new Admitted(ticket, release, () -> runAndRelease(ticket, release, task, item));
 
     try {
-      return executor.submit(() -> runAndRelease(ticket, release, task, item));
+      fork.fork(admitted);
     } catch (RuntimeException rejected) {
+      admitted.abandon();
+      throw rejected;
+    }
+  }
+
+  /** Starts an admitted item's work: the executor for C1, the structured task scope for C1S. */
+  @FunctionalInterface
+  interface Fork {
+    void fork(Admitted admitted);
+  }
+
+  /** One scan or refresh: its workload's limiter, its release counts and its stop request. */
+  record AdmissionRun(
+      Workload workload, WorkloadLimiter limiter, ReleaseTally tally, BooleanSupplier stop) {
+
+    boolean stopRequested() {
+      return stop.getAsBoolean();
+    }
+  }
+
+  /** An item holding a permit and a ticket, and the work that releases both when it runs. */
+  record Admitted(AdmissionTicket ticket, PermitRelease release, Callable<TaskOutcome> work) {
+
+    /**
+     * Ends an item whose work never ran: fails its ticket and releases its permit as ignored. A
+     * no-op for an item whose work ran, because both ends are exactly-once.
+     */
+    void abandon() {
       ticket.fail();
       release.release(Release.IGNORED);
-      throw rejected;
     }
   }
 
@@ -207,7 +267,7 @@ public class AdaptiveFileAdmission implements FileAdmission {
   }
 
   /** Releases one permit exactly once, however often {@link #release} is reached. */
-  private static final class PermitRelease {
+  static final class PermitRelease {
 
     private final Limiter.Listener permit;
     private final ReleaseTally tally;
@@ -247,7 +307,7 @@ public class AdaptiveFileAdmission implements FileAdmission {
   }
 
   /** Per-run release counts for the run summary. */
-  private static final class ReleaseTally {
+  static final class ReleaseTally {
 
     private final Map<Release, LongAdder> counts = new EnumMap<>(Release.class);
 

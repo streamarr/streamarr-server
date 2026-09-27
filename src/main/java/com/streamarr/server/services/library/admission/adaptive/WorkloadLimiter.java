@@ -92,6 +92,8 @@ final class WorkloadLimiter {
         + limitChanges.get()
         + "), peak inflight "
         + peakInflight.get()
+        + ", inflight at end "
+        + limiter.getInflight()
         + ", zero-rtt samples skipped "
         + limit.skippedSamples();
   }

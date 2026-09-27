@@ -13,7 +13,7 @@
     <name>Streamarr-Server</name>
     <description>Streamarr, the open source media server system.</description>
     <properties>
-        <java.version>25</java.version>
+        <java.version>27</java.version>
         <sonar.projectKey>streamarr_streamarr-server</sonar.projectKey>
         <sonar.organization>streamarr</sonar.organization>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
@@ -82,7 +82,7 @@
         <cedar-java.version>4.10.0</cedar-java.version>
         <!-- cedar-java calls into its Rust engine through JNI; Java 25 warns (and a future release
              refuses) without this flag, so every JVM that loads it gets it. -->
-        <native.access.args>--enable-native-access=ALL-UNNAMED</native.access.args>
+        <native.access.args>--enable-native-access=ALL-UNNAMED --enable-preview</native.access.args>
         <grpc.version>1.84.0</grpc.version>
         <db-scheduler.version>16.12.0</db-scheduler.version>
         <protobuf-maven-plugin.version>5.1.9</protobuf-maven-plugin.version>
@@ -409,8 +409,10 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
-                    <source>${java.version}</source>
-                    <target>${java.version}</target>
+                    <release>${java.version}</release>
+                    <compilerArgs>
+                        <arg>--enable-preview</arg>
+                    </compilerArgs>
                     <annotationProcessorPaths>
                         <path>
                             <groupId>org.projectlombok</groupId>

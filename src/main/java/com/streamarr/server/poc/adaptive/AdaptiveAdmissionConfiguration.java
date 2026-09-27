@@ -4,6 +4,7 @@ import com.streamarr.server.services.library.admission.AdmissionRuntime;
 import com.streamarr.server.services.library.admission.FileAdmission;
 import com.streamarr.server.services.library.admission.adaptive.AdaptiveFileAdmission;
 import com.streamarr.server.services.library.admission.adaptive.AdaptiveLimitAlgorithm;
+import com.streamarr.server.services.library.admission.adaptive.ScopedAdaptiveFileAdmission;
 import com.zaxxer.hikari.HikariDataSource;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.net.http.HttpClient;
@@ -17,8 +18,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Throwaway benchmark wiring for variants C1 ({@code poc.admission=adaptive-gradient2}) and C2
- * ({@code adaptive-vegas}). Nothing here is active for any other {@code poc.admission} value.
+ * Throwaway benchmark wiring for variants C1 ({@code poc.admission=adaptive-gradient2}), C1S
+ * ({@code adaptive-gradient2-scope}) and C2 ({@code adaptive-vegas}). Nothing here is active for
+ * any other {@code poc.admission} value.
  */
 @Slf4j
 @Configuration(proxyBeanMethods = false)
@@ -36,6 +38,29 @@ public class AdaptiveAdmissionConfiguration {
       @Value("${poc.adaptive.acquire-timeout:30m}") Duration acquireTimeout) {
     return new AdaptiveFileAdmission(
         AdaptiveLimitAlgorithm.GRADIENT2, runtime, acquireTimeout, registry);
+  }
+
+  /**
+   * Variant C1S: C1 with its items forked into a structured task scope. {@code
+   * poc.adaptive.stop-after-items} above 0 stops each run once that many of its items ended, so a
+   * harness cell can exercise the stop under load; 0 (the default) never stops.
+   */
+  @Bean
+  @ConditionalOnProperty(name = "poc.admission", havingValue = "adaptive-gradient2-scope")
+  FileAdmission gradient2ScopeFileAdmission(
+      AdmissionRuntime runtime,
+      MeterRegistry registry,
+      @Value("${poc.adaptive.acquire-timeout:30m}") Duration acquireTimeout,
+      @Value("${poc.adaptive.stop-after-items:0}") int stopAfterItems) {
+    var admission =
+        new ScopedAdaptiveFileAdmission(
+            AdaptiveLimitAlgorithm.GRADIENT2, runtime, acquireTimeout, registry);
+    if (stopAfterItems <= 0) {
+      return admission;
+    }
+
+    log.info("POC adaptive-gradient2-scope stops each run after {} items ended", stopAfterItems);
+    return new StopAfterItemsFileAdmission(admission, stopAfterItems);
   }
 
   @Bean
