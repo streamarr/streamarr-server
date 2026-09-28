@@ -22,7 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 @Builder
 final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest> {
 
-  private static final int MAXIMUM_SEGMENT_BYTES = 16 * 1024 * 1024;
+  private static final int MAXIMUM_SEGMENT_BYTES = 128 * 1024 * 1024;
   private static final String DEFAULT_VARIANT_LABEL = "default";
 
   private final UUID authenticatedWorkerId;

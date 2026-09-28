@@ -23,7 +23,7 @@ final class WorkerSessionGrpcService
     extends TranscodeWorkerServiceGrpc.TranscodeWorkerServiceImplBase {
 
   private static final int MAXIMUM_CONCURRENT_SEGMENT_UPLOADS = 32;
-  private static final long MAXIMUM_BUFFERED_SEGMENT_BYTES = 64L * 1024 * 1024;
+  private static final long MAXIMUM_BUFFERED_SEGMENT_BYTES = 512L * 1024 * 1024;
 
   /** Receives frames after the service has already rejected an upload call. */
   private static final StreamObserver<UploadSegmentRequest> IGNORED_UPLOAD_OBSERVER =
