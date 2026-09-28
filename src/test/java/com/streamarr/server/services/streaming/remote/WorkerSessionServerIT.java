@@ -904,7 +904,7 @@ class WorkerSessionServerIT {
                 List.of(
                     UploadSegmentRequest.newBuilder()
                         .setMetadata(
-                            metadata.toBuilder().setContentLengthBytes(16L * 1024 * 1024 + 1))
+                            metadata.toBuilder().setContentLengthBytes(128L * 1024 * 1024 + 1))
                         .build())),
             Status.Code.INVALID_ARGUMENT);
         assertUploadRejected(
@@ -1008,7 +1008,7 @@ class WorkerSessionServerIT {
             List.of(
                 metadata.toBuilder().setContentLengthBytes(0).build(),
                 metadata.toBuilder().setContentLengthBytes(-1).build(),
-                metadata.toBuilder().setContentLengthBytes(16L * 1024 * 1024 + 1).build(),
+                metadata.toBuilder().setContentLengthBytes(128L * 1024 * 1024 + 1).build(),
                 metadata.toBuilder().setSegmentName(" ").build(),
                 metadata.toBuilder().setSegmentName("../segment0.m4s").build(),
                 metadata.toBuilder().setSegmentName("nested/segment0.m4s").build(),

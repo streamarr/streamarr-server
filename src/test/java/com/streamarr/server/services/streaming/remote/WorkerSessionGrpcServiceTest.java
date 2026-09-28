@@ -41,6 +41,8 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Worker Session gRPC Service Tests")
@@ -268,7 +270,7 @@ class WorkerSessionGrpcServiceTest {
     var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
     var metadata =
         metadataBuilder(workerSessionId, worker, job)
-            .setContentLengthBytes(16L * 1024 * 1024)
+            .setContentLengthBytes(128L * 1024 * 1024)
             .build();
     var uploads = new ArrayList<StreamObserver<UploadSegmentRequest>>();
     for (var index = 0; index < 4; index++) {
@@ -297,9 +299,11 @@ class WorkerSessionGrpcServiceTest {
     uploads.forEach(upload -> upload.onError(Status.CANCELLED.asRuntimeException()));
   }
 
-  @Test
+  @ParameterizedTest
+  @ValueSource(ints = {64 * 1024 + 4096, 16 * 1024 * 1024 + 1, 128 * 1024 * 1024})
   @DisplayName("Should preserve every byte when a segment arrives in multiple frames")
-  void shouldPreserveEveryByteWhenSegmentArrivesInMultipleFrames() throws Exception {
+  void shouldPreserveEveryByteWhenSegmentArrivesInMultipleFrames(int segmentBytes)
+      throws Exception {
     var workerId = UUID.randomUUID();
     var sourceNamespaceId = UUID.randomUUID();
     var worker = worker(workerId);
@@ -312,33 +316,35 @@ class WorkerSessionGrpcServiceTest {
     var segmentStore = new FakeSegmentStore();
     var service = new WorkerSessionGrpcService(registry, segmentStore);
     var response = new SuccessfulUploadResponseObserver();
-    var firstFrame = new byte[64 * 1024];
-    Arrays.fill(firstFrame, (byte) 1);
-    var secondFrame = new byte[4096];
-    Arrays.fill(secondFrame, (byte) 2);
-    var segmentData = ByteString.copyFrom(firstFrame).concat(ByteString.copyFrom(secondFrame));
+    var segmentData = new byte[segmentBytes];
+    Arrays.fill(segmentData, (byte) 1);
+    Arrays.fill(segmentData, segmentBytes - 4096, segmentBytes, (byte) 2);
     var upload = upload(service, workerId, response);
 
     upload.onNext(
         UploadSegmentRequest.newBuilder()
             .setMetadata(
                 metadataBuilder(workerSessionId, worker, job)
-                    .setContentLengthBytes(segmentData.size()))
+                    .setContentLengthBytes(segmentData.length))
             .build());
-    upload.onNext(
-        UploadSegmentRequest.newBuilder().setData(ByteString.copyFrom(firstFrame)).build());
-    upload.onNext(
-        UploadSegmentRequest.newBuilder().setData(ByteString.copyFrom(secondFrame)).build());
+    for (var offset = 0; offset < segmentBytes; offset += 64 * 1024) {
+      var length = Math.min(64 * 1024, segmentBytes - offset);
+      upload.onNext(
+          UploadSegmentRequest.newBuilder()
+              .setData(ByteString.copyFrom(segmentData, offset, length))
+              .build());
+    }
+
     upload.onCompleted();
 
     assertThat(response.error()).isNull();
     assertThat(response.completed()).isTrue();
-    assertThat(response.response().getAcceptedLengthBytes()).isEqualTo(segmentData.size());
+    assertThat(response.response().getAcceptedLengthBytes()).isEqualTo(segmentData.length);
     assertThat(
             segmentStore.readSegment(
                 fromProto(job.getStreamSessionId()),
                 job.getVariant().getVariantLabel() + "/segment0.m4s"))
-        .isEqualTo(segmentData.toByteArray());
+        .isEqualTo(segmentData);
   }
 
   @Test
