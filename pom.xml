@@ -74,7 +74,7 @@
         <surefire.excludedGroups>SmokeTest</surefire.excludedGroups>
         <failsafe.excludedGroups>SmokeTest</failsafe.excludedGroups>
         <spotless.version>3.10.4</spotless.version>
-        <checkstyle.version>13.11.0</checkstyle.version>
+        <checkstyle.version>14.3.0</checkstyle.version>
         <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
         <archunit.version>1.5.1</archunit.version>
         <!-- Cedar ships a native library; upgrades re-run the multi-arch image self-check and
