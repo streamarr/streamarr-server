@@ -349,7 +349,6 @@ class StreamingResolverTest {
                 .videoCodecFamily("h264")
                 .audioDecision(AudioDecision.copy("aac", 2, 0))
                 .subtitleDecision(SubtitleDecision.exclude())
-                .needsKeyframeAlignment(true)
                 .build())
         .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
         .createdAt(Instant.now())

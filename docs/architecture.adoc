@@ -155,7 +155,7 @@ StreamingOptions (client)  +  MediaProbe (persisted probe rows)
             └── SubtitleDecision: EXCLUDE / BURN_IN / SIDECAR / HLS / EMBED
                     |
             TranscodeDecision (composite)
-            → TranscodeMode, needsKeyframeAlignment
+            → TranscodeMode
                     |
             RemoteTranscodeExecutor → WorkerSession
                     |

@@ -111,7 +111,6 @@ public final class StreamSessionFixture {
         .videoCodecFamily("h264")
         .audioDecision(AudioDecision.copy("aac", 2, 0))
         .subtitleDecision(SubtitleDecision.exclude())
-        .needsKeyframeAlignment(true)
         .build();
   }
 
@@ -121,7 +120,6 @@ public final class StreamSessionFixture {
         .videoCodecFamily(videoCodecFamily)
         .audioDecision(AudioDecision.stereoAac())
         .subtitleDecision(SubtitleDecision.exclude())
-        .needsKeyframeAlignment(false)
         .build();
   }
 

@@ -106,7 +106,6 @@ class RemoteVariantJobMapperTest {
                     .videoCodecFamily("h264")
                     .audioDecision(AudioDecision.stereoAac())
                     .subtitleDecision(SubtitleDecision.exclude())
-                    .needsKeyframeAlignment(true)
                     .build())
             .encoderPreset(EncoderPreset.FASTER)
             .build();

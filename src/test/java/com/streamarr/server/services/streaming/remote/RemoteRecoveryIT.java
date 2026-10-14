@@ -399,7 +399,6 @@ class RemoteRecoveryIT {
         .videoCodecFamily("h264")
         .audioDecision(AudioDecision.copy("aac", 2, 128_000))
         .subtitleDecision(SubtitleDecision.exclude())
-        .needsKeyframeAlignment(true)
         .build();
   }
 }
