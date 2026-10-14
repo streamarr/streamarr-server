@@ -13,6 +13,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -24,7 +26,9 @@ public class LibraryCrashRecoveryService {
   private final ActiveScanChecker activeScanChecker;
   private final ApplicationEventPublisher eventPublisher;
 
+  // Runs before other startup listeners, so a scan they start finds no library left busy.
   @EventListener(ApplicationReadyEvent.class)
+  @Order(Ordered.HIGHEST_PRECEDENCE)
   public void onStartup() {
     SystemWork.runAsSystemActor(this::resetOrphanedLibraries);
   }

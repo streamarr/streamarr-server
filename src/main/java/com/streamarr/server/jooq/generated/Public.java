@@ -36,7 +36,6 @@ import com.streamarr.server.jooq.generated.tables.MovieGenre;
 import com.streamarr.server.jooq.generated.tables.MoviePerson;
 import com.streamarr.server.jooq.generated.tables.PasswordResetCode;
 import com.streamarr.server.jooq.generated.tables.Person;
-import com.streamarr.server.jooq.generated.tables.ProbeVersionRescan;
 import com.streamarr.server.jooq.generated.tables.Profile;
 import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare;
 import com.streamarr.server.jooq.generated.tables.ProfileManager;
@@ -241,11 +240,6 @@ public class Public extends SchemaImpl {
     public final Person PERSON = Person.PERSON;
 
     /**
-     * The table <code>public.probe_version_rescan</code>.
-     */
-    public final ProbeVersionRescan PROBE_VERSION_RESCAN = ProbeVersionRescan.PROBE_VERSION_RESCAN;
-
-    /**
      * The table <code>public.profile</code>.
      */
     public final Profile PROFILE = Profile.PROFILE;
@@ -395,7 +389,6 @@ public class Public extends SchemaImpl {
             MoviePerson.MOVIE_PERSON,
             PasswordResetCode.PASSWORD_RESET_CODE,
             Person.PERSON,
-            ProbeVersionRescan.PROBE_VERSION_RESCAN,
             Profile.PROFILE,
             ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE,
             ProfileManager.PROFILE_MANAGER,

@@ -1,12 +1,14 @@
 package com.streamarr.server.repositories.media;
 
-import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
 
+@FunctionalInterface
 public interface ProbeVersionRescanRepository {
 
   /**
-   * Records that the server queued the re-scan for this probe version. Returns {@code false}
-   * without writing when a server already queued it.
+   * Returns each library that holds a media file whose latest probe inputs, requested or stored,
+   * come from a version before {@code probeVersion}. A file with neither does not count.
    */
-  boolean tryMarkQueued(int probeVersion, Instant queuedOn);
+  List<UUID> findLibraryIdsProbedBefore(int probeVersion);
 }
