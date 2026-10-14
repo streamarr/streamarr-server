@@ -1,5 +1,7 @@
 package com.streamarr.server.services;
 
+import static com.streamarr.server.domain.media.ItemResult.LEGACY_ARTWORK_GENERATION;
+
 import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
@@ -170,6 +172,7 @@ public class ImageService {
         .outcome(new ItemOutcome.Succeeded())
         .sourceKey(image.getKey())
         .attemptedAt(attemptedAt)
+        .artworkGeneration(LEGACY_ARTWORK_GENERATION)
         .build();
   }
 

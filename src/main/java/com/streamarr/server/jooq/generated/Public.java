@@ -6,6 +6,7 @@ package com.streamarr.server.jooq.generated;
 
 import com.streamarr.server.jooq.generated.tables.AccountInvitation;
 import com.streamarr.server.jooq.generated.tables.AccountInvitationReoffer;
+import com.streamarr.server.jooq.generated.tables.ArtworkRequest;
 import com.streamarr.server.jooq.generated.tables.AuthSession;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
@@ -58,6 +59,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import org.jooq.Catalog;
+import org.jooq.Sequence;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
 import org.jooq.impl.SchemaImpl;
@@ -85,6 +87,11 @@ public class Public extends SchemaImpl {
      * The table <code>public.account_invitation_reoffer</code>.
      */
     public final AccountInvitationReoffer ACCOUNT_INVITATION_REOFFER = AccountInvitationReoffer.ACCOUNT_INVITATION_REOFFER;
+
+    /**
+     * The table <code>public.artwork_request</code>.
+     */
+    public final ArtworkRequest ARTWORK_REQUEST = ArtworkRequest.ARTWORK_REQUEST;
 
     /**
      * The table <code>public.auth_session</code>.
@@ -335,10 +342,18 @@ public class Public extends SchemaImpl {
     }
 
     @Override
+    public final List<Sequence<?>> getSequences() {
+        return Arrays.asList(
+            Sequences.ARTWORK_REQUEST_GENERATION
+        );
+    }
+
+    @Override
     public final List<Table<?>> getTables() {
         return Arrays.asList(
             AccountInvitation.ACCOUNT_INVITATION,
             AccountInvitationReoffer.ACCOUNT_INVITATION_REOFFER,
+            ArtworkRequest.ARTWORK_REQUEST,
             AuthSession.AUTH_SESSION,
             BaseCollectable.BASE_COLLECTABLE,
             Company.COMPANY,

@@ -7,6 +7,7 @@ package com.streamarr.server.jooq.generated.tables;
 import com.streamarr.server.jooq.generated.Indexes;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
+import com.streamarr.server.jooq.generated.tables.ArtworkRequest.ArtworkRequestPath;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable.BaseCollectablePath;
 import com.streamarr.server.jooq.generated.tables.Image.ImagePath;
 import com.streamarr.server.jooq.generated.tables.ItemResult.ItemResultPath;
@@ -204,6 +205,19 @@ public class Episode extends TableImpl<EpisodeRecord> {
             _season = new SeasonPath(this, Keys.EPISODE__FK_SEASON, null);
 
         return _season;
+    }
+
+    private transient ArtworkRequestPath _artworkRequest;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.artwork_request</code> table
+     */
+    public ArtworkRequestPath artworkRequest() {
+        if (_artworkRequest == null)
+            _artworkRequest = new ArtworkRequestPath(this, null, Keys.ARTWORK_REQUEST__ARTWORK_REQUEST_EPISODE_ID_FKEY.getInverseKey());
+
+        return _artworkRequest;
     }
 
     private transient ImagePath _image;

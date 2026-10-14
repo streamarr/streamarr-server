@@ -249,6 +249,20 @@ public class ItemResultRecord extends TableRecordImpl<ItemResultRecord> {
         return (UUID) get(15);
     }
 
+    /**
+     * Setter for <code>public.item_result.artwork_generation</code>.
+     */
+    public void setArtworkGeneration(Long value) {
+        set(16, value);
+    }
+
+    /**
+     * Getter for <code>public.item_result.artwork_generation</code>.
+     */
+    public Long getArtworkGeneration() {
+        return (Long) get(16);
+    }
+
     // -------------------------------------------------------------------------
     // Constructors
     // -------------------------------------------------------------------------
@@ -263,7 +277,7 @@ public class ItemResultRecord extends TableRecordImpl<ItemResultRecord> {
     /**
      * Create a detached, initialised ItemResultRecord
      */
-    public ItemResultRecord(UUID itemId, ImageEntityType itemType, ItemResultStep step, ImageType imageType, ItemResultOutcome outcome, ItemResultFailureReason failureReason, String detail, String sourceKey, OffsetDateTime attemptedAt, OffsetDateTime recordedAt, UUID movieId, UUID seriesId, UUID seasonId, UUID episodeId, UUID personId, UUID companyId) {
+    public ItemResultRecord(UUID itemId, ImageEntityType itemType, ItemResultStep step, ImageType imageType, ItemResultOutcome outcome, ItemResultFailureReason failureReason, String detail, String sourceKey, OffsetDateTime attemptedAt, OffsetDateTime recordedAt, UUID movieId, UUID seriesId, UUID seasonId, UUID episodeId, UUID personId, UUID companyId, Long artworkGeneration) {
         super(ItemResult.ITEM_RESULT);
 
         setItemId(itemId);
@@ -282,6 +296,7 @@ public class ItemResultRecord extends TableRecordImpl<ItemResultRecord> {
         setEpisodeId(episodeId);
         setPersonId(personId);
         setCompanyId(companyId);
+        setArtworkGeneration(artworkGeneration);
         resetTouchedOnNotNull();
     }
 }

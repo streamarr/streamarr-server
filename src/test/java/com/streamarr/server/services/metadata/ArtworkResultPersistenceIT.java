@@ -187,6 +187,7 @@ class ArtworkResultPersistenceIT extends AbstractWireMockIntegrationTest {
             .imageType(ImageType.POSTER)
             .outcome(new ItemOutcome.Unavailable())
             .attemptedAt(FIRST_ATTEMPT)
+            .artworkGeneration(ItemResult.LEGACY_ARTWORK_GENERATION)
             .build());
     var posterResult =
         RowLockTarget.builder()

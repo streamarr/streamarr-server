@@ -58,6 +58,7 @@ public class JooqItemResultRepository implements ItemResultRepository {
         .set(ITEM_RESULT.FAILURE_REASON, DSL.excluded(ITEM_RESULT.FAILURE_REASON))
         .set(ITEM_RESULT.DETAIL, DSL.excluded(ITEM_RESULT.DETAIL))
         .set(ITEM_RESULT.SOURCE_KEY, DSL.excluded(ITEM_RESULT.SOURCE_KEY))
+        .set(ITEM_RESULT.ARTWORK_GENERATION, DSL.excluded(ITEM_RESULT.ARTWORK_GENERATION))
         .set(ITEM_RESULT.ATTEMPTED_AT, DSL.excluded(ITEM_RESULT.ATTEMPTED_AT))
         .set(ITEM_RESULT.RECORDED_AT, DSL.currentOffsetDateTime());
   }
@@ -81,6 +82,7 @@ public class JooqItemResultRepository implements ItemResultRepository {
     }
 
     row.setSourceKey(result.sourceKey());
+    row.setArtworkGeneration(result.artworkGeneration());
     row.setAttemptedAt(result.attemptedAt().atOffset(ZoneOffset.UTC));
     switch (result.outcome()) {
       case ItemOutcome.Succeeded _ -> row.setOutcome(ItemResultOutcome.SUCCEEDED);
@@ -107,7 +109,7 @@ public class JooqItemResultRepository implements ItemResultRepository {
     return com.streamarr.server.jooq.generated.enums.ImageType.lookupLiteral(imageType.name());
   }
 
-  private static ItemResult toDomain(ItemResultRecord row) {
+  static ItemResult toDomain(ItemResultRecord row) {
     var result =
         ItemResult.builder()
             .itemId(row.getItemId())
@@ -115,7 +117,8 @@ public class JooqItemResultRepository implements ItemResultRepository {
             .step(ItemStep.valueOf(row.getStep().getLiteral()))
             .outcome(toOutcome(row))
             .sourceKey(row.getSourceKey())
-            .attemptedAt(row.getAttemptedAt().toInstant());
+            .attemptedAt(row.getAttemptedAt().toInstant())
+            .artworkGeneration(row.getArtworkGeneration());
     if (row.getImageType() != null) {
       result.imageType(ImageType.valueOf(row.getImageType().getLiteral()));
     }

@@ -1,5 +1,7 @@
 package com.streamarr.server.services;
 
+import static com.streamarr.server.domain.media.ItemResult.LEGACY_ARTWORK_GENERATION;
+
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemOutcome;
@@ -201,6 +203,7 @@ public class ArtworkFetcher {
                           .outcome(outcome)
                           .sourceKey(sourceKeyOf(artwork, result.imageType()))
                           .attemptedAt(attemptedAt)
+                          .artworkGeneration(LEGACY_ARTWORK_GENERATION)
                           .build()));
     }
   }

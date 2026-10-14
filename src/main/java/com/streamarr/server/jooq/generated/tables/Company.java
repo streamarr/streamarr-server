@@ -6,6 +6,7 @@ package com.streamarr.server.jooq.generated.tables;
 
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
+import com.streamarr.server.jooq.generated.tables.ArtworkRequest.ArtworkRequestPath;
 import com.streamarr.server.jooq.generated.tables.Image.ImagePath;
 import com.streamarr.server.jooq.generated.tables.ItemResult.ItemResultPath;
 import com.streamarr.server.jooq.generated.tables.MovieCompany.MovieCompanyPath;
@@ -173,6 +174,19 @@ public class Company extends TableImpl<CompanyRecord> {
     @Override
     public List<UniqueKey<CompanyRecord>> getUniqueKeys() {
         return Arrays.asList(Keys.COMPANY_SOURCE_ID_UNIQUE);
+    }
+
+    private transient ArtworkRequestPath _artworkRequest;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.artwork_request</code> table
+     */
+    public ArtworkRequestPath artworkRequest() {
+        if (_artworkRequest == null)
+            _artworkRequest = new ArtworkRequestPath(this, null, Keys.ARTWORK_REQUEST__ARTWORK_REQUEST_COMPANY_ID_FKEY.getInverseKey());
+
+        return _artworkRequest;
     }
 
     private transient ImagePath _image;

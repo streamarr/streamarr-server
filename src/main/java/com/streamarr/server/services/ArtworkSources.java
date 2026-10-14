@@ -1,5 +1,6 @@
 package com.streamarr.server.services;
 
+import com.streamarr.server.domain.media.ArtworkItem;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.services.ArtworkResult.Failed;
@@ -13,11 +14,15 @@ import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.NonNull;
 
-@Builder
+@Builder(toBuilder = true)
 public record ArtworkSources(
     @NonNull UUID entityId,
     @NonNull ImageEntityType entityType,
     @NonNull List<ImageSource> sources) {
+
+  public ArtworkItem item() {
+    return new ArtworkItem(entityId, entityType);
+  }
 
   /** Image types the entity needs but the provider supplied no source for. */
   public List<ImageType> missingImageTypes() {

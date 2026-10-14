@@ -232,7 +232,8 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest {
         .itemType(ImageEntityType.MOVIE)
         .step(ItemStep.ARTWORK)
         .imageType(imageType)
-        .attemptedAt(EARLIER);
+        .attemptedAt(EARLIER)
+        .artworkGeneration(1L);
   }
 
   private boolean hasWriterWaitingOnAnotherTransaction() {

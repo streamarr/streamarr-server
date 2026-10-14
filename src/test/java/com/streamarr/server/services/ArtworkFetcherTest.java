@@ -210,6 +210,7 @@ class ArtworkFetcherTest {
         .contains(
             artwork(ImageType.POSTER, new ItemOutcome.Succeeded(), "/poster.jpg").toBuilder()
                 .attemptedAt(SECOND_ATTEMPT)
+                .artworkGeneration(ItemResult.LEGACY_ARTWORK_GENERATION)
                 .build());
   }
 
@@ -288,6 +289,7 @@ class ArtworkFetcherTest {
         .outcome(outcome)
         .sourceKey(sourceKey)
         .attemptedAt(FIRST_ATTEMPT)
+        .artworkGeneration(ItemResult.LEGACY_ARTWORK_GENERATION)
         .build();
   }
 

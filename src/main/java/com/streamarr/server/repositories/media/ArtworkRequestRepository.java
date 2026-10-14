@@ -1,0 +1,67 @@
+package com.streamarr.server.repositories.media;
+
+import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ArtworkState;
+import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.services.ArtworkSources;
+import com.streamarr.server.services.PendingArtworkRequest;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
+import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+/**
+ * Stores at most one artwork request per item. A request with changed sources or a stronger refresh
+ * mode starts a new generation; a request that changes neither keeps the pending generation.
+ */
+public interface ArtworkRequestRepository {
+
+  /** How {@link #saveRequest} left the item's request. */
+  sealed interface SavedArtworkRequest {
+
+    long generation();
+
+    /** The pending request already covered the new one; nothing was written. */
+    record Unchanged(long generation) implements SavedArtworkRequest {}
+
+    /**
+     * The request was inserted, or replaced a pending one, under a new generation. The caller's
+     * transaction holds the request's row lock until it ends.
+     */
+    record NewGeneration(long generation) implements SavedArtworkRequest {}
+  }
+
+  /**
+   * Saves the item's artwork request in the caller's transaction. A changed request keeps the
+   * stronger of the pending and the requested refresh mode. A request that changes nothing takes no
+   * row lock.
+   */
+  SavedArtworkRequest saveRequest(
+      ArtworkSources artwork, ImageRefreshMode refreshMode, Instant requestedAt);
+
+  Optional<PendingArtworkRequest> findRequest(ArtworkItem item);
+
+  /**
+   * Locks the item's request until the caller's transaction ends and returns its generation, or
+   * nothing when no request is pending.
+   */
+  Optional<Long> lockPendingGeneration(ArtworkItem item);
+
+  /**
+   * Deletes the item's request in the caller's transaction when {@code generation} is still the
+   * pending one. Returns {@code false} without deleting when a newer generation replaced it, and
+   * {@code true} when no request remains.
+   */
+  boolean tryCompleteGeneration(ArtworkItem item, long generation);
+
+  /**
+   * Returns one state per item: its pending generation and its artwork results. A deleted item has
+   * neither.
+   */
+  List<ArtworkState> findArtworkStates(Collection<ArtworkItem> items);
+
+  /** Counts the images that pending requests ask for, by item type. */
+  Map<ImageEntityType, Long> countPendingImagesByItemType();
+}
