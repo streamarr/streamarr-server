@@ -99,6 +99,40 @@ class RemoteFfprobeServiceIT {
   }
 
   @Test
+  @DisplayName("Should cancel the packet scan on the worker when the keyframe scan timeout elapses")
+  void shouldCancelThePacketScanOnTheWorkerWhenTheKeyframeScanTimeoutElapses() throws Exception {
+    var configuration =
+        serverConfigurationBuilder()
+            .probeTimeout(Duration.ofMinutes(10))
+            .keyframeScanTimeout(Duration.ofMillis(100))
+            .build();
+    try (var server =
+            new WorkerSessionServer(
+                configuration, new FakeSegmentStore(), new SimpleMeterRegistry());
+        var calls = Executors.newVirtualThreadPerTaskExecutor()) {
+      server.start();
+      try (var worker = worker(server.port(), 1)) {
+        var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
+        var request = request().build();
+        var result = calls.submit(() -> service.scanKeyframePackets(request));
+        try {
+          var dispatched = worker.nextResponse().getStartProbe().getRequest();
+          assertThat(dispatched.getScanKeyframePackets()).isTrue();
+          assertThatThrownBy(() -> result.get(5, TimeUnit.SECONDS))
+              .as("The keyframe scan deadline must fail the scan")
+              .hasCauseInstanceOf(ProbeExecutionException.class)
+              .hasRootCauseInstanceOf(TimeoutException.class);
+          assertThat(worker.nextResponse().getCancelProbe().getProbeAttemptId())
+              .as("The deadline must ask the worker to cancel the scan")
+              .isEqualTo(toProto(request.attemptId()));
+        } finally {
+          result.cancel(true);
+        }
+      }
+    }
+  }
+
+  @Test
   @DisplayName("Should fail for persisted retry when the worker disconnects during probing")
   void shouldFailForPersistedRetryWhenTheWorkerDisconnectsDuringProbing() throws Exception {
     try (var server = server();
@@ -231,6 +265,7 @@ class RemoteFfprobeServiceIT {
         var dispatched = worker.nextResponse().getStartProbe().getRequest();
         assertThat(dispatched.getProbeAttemptId()).isEqualTo(toProto(request.attemptId()));
         assertThat(dispatched.getProbeVersion()).isEqualTo(7);
+        assertThat(dispatched.getScanKeyframePackets()).isFalse();
         assertThat(dispatched.getSource().getSourceNamespaceId())
             .isEqualTo(toProto(SOURCE_NAMESPACE_ID));
         assertThat(dispatched.getSource().getRelativeKey()).isEqualTo("movie.mkv");

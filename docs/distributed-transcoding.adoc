@@ -47,6 +47,8 @@ Deploy the server with the larger cap before deploying workers that produce larg
 
 Set `TRANSCODE_WORKER_FFPROBE_PATH` to the worker's ffprobe binary. It defaults to `ffprobe` on `PATH`.
 `STREAMING_WORKER_SESSION_PROBE_TIMEOUT` bounds each probe on the server. It defaults to `1m`.
+`STREAMING_WORKER_SESSION_KEYFRAME_SCAN_TIMEOUT` bounds each keyframe packet scan on the server. It defaults to `30m`.
+A packet scan reads every packet of the source's video stream, which takes longer than a probe on network storage.
 A timeout requests worker cancellation and lets the scheduler retry.
 `STREAMING_WORKER_SESSION_PROBE_CANCELLATION_TIMEOUT` allows `5s` for the worker to acknowledge termination.
 Until then, the probe retains its execution slot.

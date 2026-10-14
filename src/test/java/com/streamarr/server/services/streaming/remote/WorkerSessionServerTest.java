@@ -27,11 +27,13 @@ class WorkerSessionServerTest {
   void shouldRejectListenerConfigurationWhenItsAddressIsMissing(String address) {
     var defaults = WorkerSessionServerConfiguration.builder().port(0).build();
     var probeTimeout = defaults.probeTimeout();
+    var keyframeScanTimeout = defaults.keyframeScanTimeout();
     var cancellationTimeout = defaults.probeCancellationTimeout();
 
     assertThatThrownBy(
             () ->
-                new WorkerSessionServerConfiguration(address, 0, probeTimeout, cancellationTimeout))
+                new WorkerSessionServerConfiguration(
+                    address, 0, probeTimeout, keyframeScanTimeout, cancellationTimeout))
         .hasMessageContaining("address");
   }
 

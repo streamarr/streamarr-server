@@ -7,6 +7,7 @@ import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.services.streaming.FfprobeService;
+import com.streamarr.server.services.streaming.KeyframePacketScanner;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -37,7 +38,10 @@ class FfprobeConfigurationTest {
   void shouldUseWorkerProbingWhenTheServerStarts() {
     contextRunner.run(
         context -> {
-          assertThat(context).hasNotFailed().hasSingleBean(FfprobeService.class);
+          assertThat(context)
+              .hasNotFailed()
+              .hasSingleBean(FfprobeService.class)
+              .hasSingleBean(KeyframePacketScanner.class);
           var service = context.getBean(FfprobeService.class);
           assertThat(service).isInstanceOf(RemoteFfprobeService.class);
           var request =
@@ -48,6 +52,10 @@ class FfprobeConfigurationTest {
                   .build();
 
           assertThatThrownBy(() -> service.probe(request))
+              .isInstanceOf(ProbeExecutionException.class);
+          var scanner = context.getBean(KeyframePacketScanner.class);
+          assertThatThrownBy(() -> scanner.scanKeyframePackets(request))
+              .as("No worker is connected to scan the source")
               .isInstanceOf(ProbeExecutionException.class);
         });
   }

@@ -30,6 +30,11 @@ public final class RemoteFfprobeService implements FfprobeService {
     return dispatch(probeRequest(request).build());
   }
 
+  /** Serves {@link com.streamarr.server.services.streaming.KeyframePacketScanner}. */
+  public ProbeOutcome scanKeyframePackets(ProbeExecutionRequest request) {
+    return dispatch(probeRequest(request).setScanKeyframePackets(true).build());
+  }
+
   private ProbeRequest.Builder probeRequest(ProbeExecutionRequest request) {
     return ProbeRequest.newBuilder()
         .setProbeAttemptId(toProto(request.attemptId()))

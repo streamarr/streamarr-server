@@ -9,4 +9,5 @@ public record WorkerSessionProperties(
     @DefaultValue("127.0.0.1") String address,
     @DefaultValue("9090") int port,
     @DefaultValue("1m") Duration probeTimeout,
+    @DefaultValue("30m") Duration keyframeScanTimeout,
     @DefaultValue("5s") Duration probeCancellationTimeout) {}
