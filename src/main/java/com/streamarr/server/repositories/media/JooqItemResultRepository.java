@@ -61,7 +61,17 @@ public class JooqItemResultRepository implements ItemResultRepository {
       return false;
     }
 
-    results.forEach(result -> upsert(result).execute());
+    // A later attempt of the same generation may already have stored its result, for example
+    // an image saved together with its result; an earlier attempt never replaces it.
+    results.forEach(
+        result ->
+            upsert(result)
+                .where(
+                    ITEM_RESULT
+                        .ARTWORK_GENERATION
+                        .lt(DSL.excluded(ITEM_RESULT.ARTWORK_GENERATION))
+                        .or(ITEM_RESULT.ATTEMPTED_AT.le(DSL.excluded(ITEM_RESULT.ATTEMPTED_AT))))
+                .execute());
     return true;
   }
 

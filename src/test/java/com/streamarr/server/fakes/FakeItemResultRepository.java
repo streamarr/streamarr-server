@@ -103,8 +103,17 @@ public class FakeItemResultRepository implements ItemResultRepository {
       return false;
     }
 
-    results.forEach(this::overwrite);
+    results.stream().filter(this::isNotSupersededByALaterAttempt).forEach(this::overwrite);
     return true;
+  }
+
+  private boolean isNotSupersededByALaterAttempt(ItemResult result) {
+    var stored = results.get(keyOf(result));
+    if (stored == null || stored.artworkGeneration() < result.artworkGeneration()) {
+      return true;
+    }
+
+    return !stored.attemptedAt().isAfter(result.attemptedAt());
   }
 
   @Override

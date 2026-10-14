@@ -4,9 +4,12 @@ import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
 import static com.streamarr.server.support.PostgresLockTestSupport.awaitWaitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.media.ArtworkAttempt;
+import com.streamarr.server.domain.media.ArtworkItem;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemFailureReason;
@@ -15,9 +18,12 @@ import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.services.ArtworkSources;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -43,6 +49,7 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest {
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MovieRepository movieRepository;
+  @Autowired private ArtworkRequestRepository artworkRequests;
 
   @Test
   @DisplayName("Should store failed artwork with its reason and source when an attempt fails")
@@ -212,6 +219,87 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest {
     assertThatThrownBy(() -> itemResults.overwrite(success))
         .isInstanceOf(DataIntegrityViolationException.class);
     assertThat(itemResults.findByItem(missingItemId, ImageEntityType.MOVIE)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a later attempt's saved image result when an earlier attempt of the same"
+          + " generation stores its failure afterwards")
+  void shouldKeepALaterAttemptsSavedImageResultWhenAnEarlierAttemptStoresItsFailureAfterwards() {
+    var itemId = savedMovieId();
+    var generation = requestArtwork(itemId);
+    itemResults.overwrite(
+        artwork(itemId, ImageType.POSTER)
+            .outcome(new ItemOutcome.Succeeded())
+            .attemptedAt(LATER)
+            .artworkGeneration(generation)
+            .build());
+    var earlierAttempt =
+        ArtworkAttempt.builder()
+            .item(new ArtworkItem(itemId, ImageEntityType.MOVIE))
+            .generation(generation)
+            .attemptedAt(EARLIER)
+            .build();
+
+    itemResults.trySaveArtworkResults(
+        earlierAttempt,
+        List.of(
+            artwork(itemId, ImageType.POSTER)
+                .outcome(new ItemOutcome.Failed(ItemFailureReason.DOWNLOAD_FAILED, "404"))
+                .artworkGeneration(generation)
+                .build(),
+            artwork(itemId, ImageType.BACKDROP)
+                .outcome(new ItemOutcome.Unavailable())
+                .artworkGeneration(generation)
+                .build()));
+
+    assertThat(itemResults.findByItem(itemId, ImageEntityType.MOVIE))
+        .extracting(ItemResult::imageType, ItemResult::outcome)
+        .containsExactlyInAnyOrder(
+            tuple(ImageType.POSTER, new ItemOutcome.Succeeded()),
+            tuple(ImageType.BACKDROP, new ItemOutcome.Unavailable()));
+  }
+
+  @Test
+  @DisplayName("Should replace a result of an older generation whatever its attempt time")
+  void shouldReplaceAResultOfAnOlderGenerationWhateverItsAttemptTime() {
+    var itemId = savedMovieId();
+    itemResults.overwrite(
+        artwork(itemId, ImageType.POSTER)
+            .outcome(new ItemOutcome.Succeeded())
+            .attemptedAt(LATER)
+            .artworkGeneration(0L)
+            .build());
+    var generation = requestArtwork(itemId);
+    var attempt =
+        ArtworkAttempt.builder()
+            .item(new ArtworkItem(itemId, ImageEntityType.MOVIE))
+            .generation(generation)
+            .attemptedAt(EARLIER)
+            .build();
+
+    itemResults.trySaveArtworkResults(
+        attempt,
+        List.of(
+            artwork(itemId, ImageType.POSTER)
+                .outcome(new ItemOutcome.Unavailable())
+                .artworkGeneration(generation)
+                .build()));
+
+    assertThat(itemResults.findByItem(itemId, ImageEntityType.MOVIE))
+        .extracting(ItemResult::outcome, ItemResult::artworkGeneration)
+        .containsExactly(tuple(new ItemOutcome.Unavailable(), generation));
+  }
+
+  private long requestArtwork(UUID itemId) {
+    var artwork =
+        ArtworkSources.builder()
+            .entityId(itemId)
+            .entityType(ImageEntityType.MOVIE)
+            .sources(List.of())
+            .build();
+    return transactionTemplate.execute(
+        _ -> artworkRequests.saveRequest(artwork, ImageRefreshMode.PRESERVE, EARLIER).generation());
   }
 
   private UUID savedMovieId() {
