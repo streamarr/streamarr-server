@@ -8,6 +8,9 @@ import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.exceptions.ImageProcessingException;
 import com.streamarr.server.repositories.media.ItemResultRepository;
+import com.streamarr.server.services.ArtworkPlan.PlannedImage.DownloadImage;
+import com.streamarr.server.services.ArtworkPlan.PlannedImage.KeepStoredImage;
+import com.streamarr.server.services.ArtworkPlan.PlannedImage.ReportUnavailable;
 import com.streamarr.server.services.ArtworkResult.Failed;
 import com.streamarr.server.services.ArtworkResult.Saved;
 import com.streamarr.server.services.ArtworkResult.Skipped;
@@ -24,7 +27,6 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
@@ -100,24 +102,18 @@ public class ArtworkFetcher {
 
   private List<ArtworkResult> fetchWhileLocked(
       ArtworkSources artwork, ImageRefreshMode refreshMode, Instant attemptedAt) {
-    var existingImagesByType =
+    var storedImagesByType =
         imageService.findByEntity(artwork.entityId(), artwork.entityType()).stream()
             .collect(Collectors.groupingBy(Image::getImageType));
     var results = new ArrayList<ArtworkResult>();
-    for (var imageType : artwork.missingImageTypes()) {
-      results.add(
-          resultWithoutSource(imageType, existingImagesByType.containsKey(imageType), refreshMode));
-    }
-
     var pendingSources = new ArrayList<PendingImageSource>();
-    for (var source : artwork.sources()) {
-      var existingForType = existingImagesByType.getOrDefault(source.imageType(), List.of());
-      if (!requiresDownload(source, existingForType, refreshMode)) {
-        results.add(new Skipped(source.imageType()));
-        continue;
+    for (var planned : ArtworkPlan.of(artwork, storedImagesByType, refreshMode).images()) {
+      switch (planned) {
+        case KeepStoredImage(var imageType) -> results.add(new Skipped(imageType));
+        case ReportUnavailable(var imageType) -> results.add(new Unavailable(imageType));
+        case DownloadImage(var source, var replacement) ->
+            pendingSources.add(new PendingImageSource(source, replacement));
       }
-
-      pendingSources.add(new PendingImageSource(source, !existingForType.isEmpty()));
     }
 
     if (pendingSources.isEmpty()) {
@@ -130,29 +126,6 @@ public class ArtworkFetcher {
 
     results.addAll(downloadAllImages(artwork, pendingSources, attemptedAt));
     return results;
-  }
-
-  private static ArtworkResult resultWithoutSource(
-      ImageType imageType, boolean stored, ImageRefreshMode refreshMode) {
-    if (stored && refreshMode == ImageRefreshMode.PRESERVE) {
-      return new Skipped(imageType);
-    }
-
-    return new Unavailable(imageType);
-  }
-
-  private boolean requiresDownload(
-      ImageSource source, List<Image> existingImages, ImageRefreshMode refreshMode) {
-    if (existingImages.isEmpty()) {
-      return true;
-    }
-
-    return switch (refreshMode) {
-      case PRESERVE -> false;
-      case REFRESH_IF_CHANGED ->
-          existingImages.stream().anyMatch(image -> !Objects.equals(image.getKey(), source.key()));
-      case FORCE_REFRESH -> true;
-    };
   }
 
   private List<ArtworkResult> downloadAllImages(
