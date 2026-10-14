@@ -85,8 +85,8 @@ Item failures never change the library's status.
 |The next refresh
 
 |Artwork
-|`item_result` with step `ARTWORK`, one row per image type, with the attempted source key
-|The next refresh; preserve mode fetches any image type the item lacks
+|`item_result` with step `ARTWORK`, one row per image type, with the attempted source key and the generation of the artwork request it answers
+|The item's artwork steps, a db-scheduler task, with backoff capped at five minutes, until every image has a final result
 
 |Probe
 |Terminal errors in `media_file_container_info.probe_error` with the source snapshot and probe version; the reason of the latest failed attempt at the requested inputs in `media_file_probe_task_request`
@@ -97,30 +97,53 @@ An `item_result` row holds the latest attempt's outcome: `SUCCEEDED`, `UNAVAILAB
 The reasons are `DOWNLOAD_FAILED`, `INVALID_MEDIA`, `TEMPORARY`, and `MISCONFIGURED` (a missing provider or rejected provider credentials).
 A probe attempt records `SOURCE_INACCESSIBLE` when the worker or the server cannot read the source, `MISCONFIGURED` when no connected worker supports the source namespace or probe version, and `TEMPORARY` otherwise.
 A probe that waits for a busy worker, or whose attempt was cancelled, records nothing and stays pending.
-Artwork results follow `ArtworkResult`: a saved image is `SUCCEEDED`, an image type the provider does not offer is `UNAVAILABLE`, and a failed image is `FAILED`.
-An image that preserve mode keeps is skipped and records nothing, so `UNAVAILABLE` is never mistaken for work that never ran.
+An artwork step records a saved image, or a stored image that the refresh mode keeps, as `SUCCEEDED`, an image type the provider does not offer as `UNAVAILABLE`, and a failed image as `FAILED`.
+A network error, a `5xx`, `408` or `429` answer, and a storage or lock timeout are `TEMPORARY`; other `4xx` answers are `DOWNLOAD_FAILED`, and an undecodable image is `INVALID_MEDIA`.
+A run that keeps every stored image of an item requests nothing for it and counts those images as skipped.
 
 Each row stores when its attempt started.
 A failure or unavailable result never replaces a result from a later attempt, so a stale failure cannot overwrite a successful retry.
 A saved image's result is written in the same transaction as the image, so it always describes the stored artwork; concurrent replacements still follow the last-committer-wins rule in https://github.com/streamarr/streamarr-adr/blob/main/adr/0031-transaction-scoped-artwork-replacement-locking.adoc[ADR 0031].
+An artwork step's failed, unavailable, and kept results are written together in one transaction, so a failed write leaves all of them pending rather than some written and some lost.
 Matching failures are written only while the file is not `MATCHED`.
 A failed image replacement keeps the existing image.
-When a result cannot be written, the database error reaches the caller: matching fails the scan, a refresh fails, and a required artwork request fails its future and then its run, which fails the waiting scan or refresh.
-The exception is a saved image's result: because it is written in the image's transaction, a failed write rolls back the image, and the attempt is recorded as `FAILED` instead.
+When a matching or metadata result cannot be written, the database error reaches the caller: matching fails the scan, and a refresh fails.
+When an artwork result cannot be written, the step stays pending and its scheduled task retries it; a scan or refresh that waits for the image waits for the retried result.
+A saved image whose result cannot be written rolls back with it, its files are deleted, and the attempt records a `TEMPORARY` failure instead.
 
 A terminal probe error is reused while the source snapshot and probe version are unchanged; scans and refreshes do not force a new probe for it.
-Recorded results survive a restart, but artwork work that stopped before recording a result is not resumed yet; https://github.com/streamarr/streamarr-server/issues/412[#412] adds that.
+
+=== Artwork Steps
+
+The transaction that records an item's metadata also stores its artwork request in `artwork_request` and schedules the item's artwork steps, so a committed request is never lost before its steps run.
+Each item has at most one request, with its sources and refresh mode.
+A request with changed sources or a stronger refresh mode replaces a pending one under a new generation and keeps the stronger mode; an identical request changes nothing.
+
+Movie, series, season, and episode artwork is primary artwork; person and company artwork is background artwork.
+Each priority runs on its own db-scheduler with its own table (`primary_artwork_scheduled_tasks`, `background_artwork_scheduled_tasks`) and thread cap (`artwork.primary-threads`, `artwork.background-threads`), so a backlog of background artwork never takes the threads of primary artwork, and neither takes the threads that run probes.
+Image decoding, resizing, and BlurHash encoding hold one of a bounded set of CPU permits (`cpu.permits`); a freed permit goes to primary work first.
+
+An attempt runs the steps of the request's current generation that have no final result yet, so repeating an attempt is safe.
+A step saves images and records results only while its generation is still the item's pending request: it locks the item row and then the request row of that generation first.
+An attempt that a newer request or a deletion made obsolete saves nothing, records nothing, and deletes the files it wrote.
+The scheduled task is removed only together with the request of the attempted generation; a newer generation runs at once.
+A step left to retry waits for the longer of the image host's `Retry-After` and the capped exponential backoff.
+A restart resumes pending steps, and db-scheduler revives the execution of a crashed server as a dead execution.
+
+A scan or refresh waits for primary artwork by reading recorded results, never an in-process signal, so a result recorded after a restart counts.
+A wait is satisfied only by a result of the awaited generation or a newer one; a failed result counts, and its retry continues in the background.
+Server-wide progress reads pending requests and recorded results, so it is correct across restarts.
 
 === Deleting Items
 
-`item_result` and `image` rows reference their movie, series, season, episode, person, or company through generated columns with `ON DELETE CASCADE` foreign keys.
+`item_result`, `image`, and `artwork_request` rows reference their movie, series, season, episode, person, or company through generated columns with `ON DELETE CASCADE` foreign keys.
 Every delete path therefore removes an item's results and image rows, and the database rejects a result or image for an item that does not exist.
 A delete locks its items, including a series' seasons and episodes, before it reads their artwork paths, and it deletes those files only after it commits; a rolled-back delete keeps every file.
 
-Writers of results and images lock the item row with `FOR KEY SHARE` before any result or image row, so the full order for a replacement is advisory lock, item row, image rows.
-Result writes and replacements take that lock explicitly; saving new artwork locks no existing row and takes it through the foreign-key check of its first image insert.
+Writers of results and images lock the item row with `FOR KEY SHARE` before any result or image row.
+Artwork steps then lock the item's artwork request row of their generation with `FOR SHARE`, so the full order for a replacement is advisory lock, item row, artwork request row, image rows.
 A delete then waits for a writer holding the item and removes what it wrote, or finishes first and leaves the writer nothing to write for.
-A guarded result for a deleted item records nothing, as a stale attempt does; saving or replacing artwork for a deleted item fails, and the artwork fetcher deletes the files it wrote.
+A guarded result for a deleted item records nothing, as a stale attempt does; an artwork step for a deleted item saves nothing and deletes the files it wrote.
 
 == Service Communication
 
@@ -179,7 +202,7 @@ https://github.com/streamarr/streamarr-adr/blob/main/adr/0037-worker-delivers-fm
 
 https://github.com/streamarr/streamarr-adr/blob/main/adr/0032-media-file-probe-results-are-persisted.adoc[ADR 0032] persists container and stream data separately from title metadata.
 Scans and watcher events schedule missing or outdated probes before skipping already matched files.
-A scan finishes after matching and enrichment, and after every required artwork request and probe it made has a saved result or a recorded error.
+A scan finishes after matching and enrichment, and after every primary artwork request and probe it made has a recorded result.
 A probe no longer belongs to the scan once a later change replaced its inputs, a newer probe version stored an outcome for the same source, or its file was removed.
 A scan retries a failed probe at once and counts only a failure recorded after its own request, so a rescan after a share comes back waits for fresh attempts; playback requests keep the backoff.
 Person and company artwork and the later retries of failed probes continue after the scan.
