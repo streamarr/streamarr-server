@@ -49,7 +49,8 @@ public class ArtworkService {
     this.clock = clock;
     this.secondaryArtworkExecutor =
         Executors.newFixedThreadPool(
-            secondaryConcurrency, SystemWork.threadsRunningAsSystemActor("secondary-artwork-"));
+            secondaryConcurrency,
+            SystemWork.newThreadFactoryRunningAsSystemActor("secondary-artwork-"));
   }
 
   /** Opens a run that collects the required artwork of one scan, refresh, or file discovery. */

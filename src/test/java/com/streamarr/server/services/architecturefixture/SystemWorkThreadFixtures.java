@@ -56,7 +56,8 @@ public final class SystemWorkThreadFixtures {
   public static final class SystemWorkThreads {
 
     public ExecutorService fixedPool() {
-      return Executors.newFixedThreadPool(2, SystemWork.threadsRunningAsSystemActor("fixture-"));
+      return Executors.newFixedThreadPool(
+          2, SystemWork.newThreadFactoryRunningAsSystemActor("fixture-"));
     }
 
     public ExecutorService threadPerTask() {

@@ -49,7 +49,8 @@ class SystemWorkTest {
   @DisplayName("Should run tasks as the System actor when a fixed pool uses System actor threads")
   void shouldRunTasksAsSystemActorWhenFixedPoolUsesSystemActorThreads() throws Exception {
     try (var executor =
-        Executors.newFixedThreadPool(1, SystemWork.threadsRunningAsSystemActor("pooled-"))) {
+        Executors.newFixedThreadPool(
+            1, SystemWork.newThreadFactoryRunningAsSystemActor("pooled-"))) {
       var first = executor.submit(SystemWork::isRunningAsSystemActor);
       var second = executor.submit(SystemWork::isRunningAsSystemActor);
 
