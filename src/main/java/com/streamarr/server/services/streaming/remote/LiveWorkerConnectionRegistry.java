@@ -229,8 +229,7 @@ final class LiveWorkerConnectionRegistry {
       connection.releaseJobAttempt(fromProto(job.getJobAttemptId()));
       return Optional.empty();
     }
-    return Optional.of(
-        new VariantDispatch(connection.executionTargetId(), connection.encoderFor(job)));
+    return Optional.of(new VariantDispatch(connection.encoderFor(job)));
   }
 
   Set<ExecutionTargetId> eligibleWorkers(UUID sourceNamespaceId, TranscodeDecision decision) {
