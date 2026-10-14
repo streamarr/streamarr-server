@@ -1,6 +1,7 @@
 package com.streamarr.server.graphql.transport;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.fakes.FakeTaskScheduler;
 import com.streamarr.server.fakes.FakeWebSocketSession;
@@ -110,14 +111,14 @@ class AccessBoundWebSocketHandlerTest {
   }
 
   @Test
-  @DisplayName("Should close at once when the handshake recorded no access expiry")
-  void shouldCloseAtOnceWhenHandshakeRecordedNoAccessExpiry() throws Exception {
+  @DisplayName("Should fail the connection when the handshake recorded no access expiry")
+  void shouldFailConnectionWhenHandshakeRecordedNoAccessExpiry() {
     var unbounded = new FakeWebSocketSession(Map.of());
 
-    handler.afterConnectionEstablished(unbounded);
-
-    assertThat(unbounded.closeStatus()).contains(AccessBoundWebSocketHandler.ACCESS_EXPIRED);
+    assertThatThrownBy(() -> handler.afterConnectionEstablished(unbounded))
+        .isInstanceOf(IllegalStateException.class);
     assertThat(graphQlHandler.establishedSession()).isNull();
+    assertThat(taskScheduler.pendingTaskCount()).isZero();
   }
 
   @Test

@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -47,14 +46,7 @@ class AccessBoundWebSocketHandler extends WebSocketHandlerDecorator {
 
   @Override
   public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-    var accessExpiresAt = accessExpiresAt(session);
-    if (accessExpiresAt.isEmpty()) {
-      // The handshake interceptor records the expiry for every accepted handshake.
-      session.close(ACCESS_EXPIRED);
-      return;
-    }
-
-    var bound = new AccessBoundSession(session, accessExpiresAt.get(), clock);
+    var bound = new AccessBoundSession(session, accessExpiresAt(session), clock);
     sessions.put(session.getId(), bound);
     bound.startExpiryTimer(taskScheduler);
     super.afterConnectionEstablished(bound);
@@ -98,12 +90,13 @@ class AccessBoundWebSocketHandler extends WebSocketHandlerDecorator {
     super.afterConnectionClosed(bound, closeStatus);
   }
 
-  private static Optional<Instant> accessExpiresAt(WebSocketSession session) {
+  // WebSocketAuthorityHandshakeInterceptor accepts no handshake without recording the expiry.
+  private static Instant accessExpiresAt(WebSocketSession session) {
     if (session.getAttributes().get(ACCESS_EXPIRES_AT) instanceof Instant expiresAt) {
-      return Optional.of(expiresAt);
+      return expiresAt;
     }
 
-    return Optional.empty();
+    throw new IllegalStateException("The WebSocket handshake recorded no access-token expiry.");
   }
 
   // The one session object the GraphQL handler sees; it refuses to send after expiry.
