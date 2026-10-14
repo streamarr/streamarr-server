@@ -3,7 +3,6 @@ package com.streamarr.server.services.library;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
-import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
@@ -129,7 +128,7 @@ public class ProbeExecution {
     new TransactionTemplate(transactionManager)
         .executeWithoutResult(
             _ -> {
-              if (outcomes.publish(publication) && needsPacketScan(outcome)) {
+              if (outcomes.publish(publication) && outcome.needsKeyframePacketScan()) {
                 packetScans.request(
                     KeyframePacketScanTaskRequest.builder()
                         .mediaFileId(request.mediaFileId())
@@ -139,11 +138,6 @@ public class ProbeExecution {
                         .build());
               }
             });
-  }
-
-  private static boolean needsPacketScan(ProbeOutcome outcome) {
-    return outcome instanceof ProbeOutcome.Success success
-        && success.keyframes() instanceof KeyframeKnowledge.PacketScanRequired;
   }
 
   private static Optional<SourceFileSnapshot> snapshot(Path path) {

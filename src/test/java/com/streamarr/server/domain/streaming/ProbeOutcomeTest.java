@@ -8,9 +8,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Probe outcome contracts")
@@ -111,5 +115,31 @@ class ProbeOutcomeTest {
 
   private StreamInfo.StreamInfoBuilder streamBuilder(String codecType, String codec) {
     return StreamInfo.builder().codecType(codecType).codec(Optional.of(codec));
+  }
+
+  @ParameterizedTest
+  @MethodSource("outcomesAndTheirPacketScanNeed")
+  @DisplayName("Should need a packet scan only when a successful outcome's keyframes require one")
+  void shouldNeedAPacketScanOnlyWhenASuccessfulOutcomesKeyframesRequireOne(
+      ProbeOutcome outcome, boolean needsScan) {
+    assertThat(outcome.needsKeyframePacketScan()).isEqualTo(needsScan);
+  }
+
+  private static Stream<Arguments> outcomesAndTheirPacketScanNeed() {
+    return Stream.of(
+        Arguments.of(
+            successWith(
+                new KeyframeKnowledge.PacketScanRequired(
+                    KeyframePacketScanReason.NO_CONTAINER_INDEX)),
+            true),
+        Arguments.of(successWith(new KeyframeKnowledge.NotReported()), false),
+        Arguments.of(new ProbeOutcome.Failure(ProbeError.INVALID_MEDIA), false));
+  }
+
+  private static ProbeOutcome successWith(KeyframeKnowledge keyframes) {
+    return new ProbeOutcome.Success(
+        ProbeContainer.builder().build(),
+        List.of(StreamInfo.builder().index(0).codecType("video").build()),
+        keyframes);
   }
 }

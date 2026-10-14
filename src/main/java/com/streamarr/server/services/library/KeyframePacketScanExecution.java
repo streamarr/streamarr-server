@@ -104,10 +104,7 @@ public class KeyframePacketScanExecution {
     return reader
         .find(request.mediaFileId())
         .filter(stored -> stored.matches(request.snapshot(), request.probeVersion()))
-        .filter(
-            stored ->
-                stored.outcome() instanceof ProbeOutcome.Success success
-                    && success.keyframes() instanceof KeyframeKnowledge.PacketScanRequired)
+        .filter(stored -> stored.outcome().needsKeyframePacketScan())
         .isPresent();
   }
 
