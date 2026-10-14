@@ -25,6 +25,7 @@ import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.MetadataFixture;
+import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.services.ArtworkService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
@@ -59,33 +60,12 @@ class MovieFileProcessorTest {
   private final MetadataProvider<Movie> tmdbMovieProvider = mock(TMDBMovieProvider.class);
   private final MovieMetadataProviderResolver movieMetadataProviderResolver =
       new MovieMetadataProviderResolver(List.of(tmdbMovieProvider));
-  private final UnavailablePersonRepository personRepository = new UnavailablePersonRepository();
   private final FakeMediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
   private final FakeMovieRepository fakeMovieRepository = new FakeMovieRepository();
   private final ArtworkService artworkService =
       ArtworkServiceFixture.artworkServiceBuilder().build();
-  private final MovieService movieService =
-      new MovieService(
-          fakeMovieRepository,
-          CreditServiceFixture.creditServiceBuilder().personRepository(personRepository).build(),
-          null,
-          artworkService,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null);
-
   private final MovieFileProcessor movieFileProcessor =
-      new MovieFileProcessor(
-          new DefaultVideoFileMetadataParser(),
-          new ExternalIdVideoFileMetadataParser(),
-          movieMetadataProviderResolver,
-          movieService,
-          fakeMediaFileRepository,
-          new MutexFactoryProvider());
+      movieFileProcessorSavingPeopleIn(new FakePersonRepository());
 
   @Test
   @DisplayName("Should restore interrupt flag when enrichment throws InterruptedException")
@@ -237,9 +217,11 @@ class MovieFileProcessorTest {
                             .cast(List.of(Person.builder().name("Lead").sourceId("1").build()))
                             .build())
                     .build()));
-    personRepository.failInsertsWith(new IllegalStateException("db hiccup"));
+    var failingMovieFileProcessor =
+        movieFileProcessorSavingPeopleIn(
+            new FailingInsertPersonRepository(new IllegalStateException("db hiccup")));
 
-    movieFileProcessor.process(discoveryOf(library), mediaFile);
+    failingMovieFileProcessor.process(discoveryOf(library), mediaFile);
 
     assertMatchingFailure(
         mediaFile, MediaFileStatus.ENRICHMENT_FAILED, ItemFailureReason.TEMPORARY);
@@ -354,21 +336,41 @@ class MovieFileProcessorTest {
         .open("scan", library);
   }
 
-  private static final class UnavailablePersonRepository extends FakePersonRepository {
+  private MovieFileProcessor movieFileProcessorSavingPeopleIn(PersonRepository personRepository) {
+    var movieService =
+        new MovieService(
+            fakeMovieRepository,
+            CreditServiceFixture.creditServiceBuilder().personRepository(personRepository).build(),
+            null,
+            artworkService,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null);
 
-    private RuntimeException insertFailure;
+    return new MovieFileProcessor(
+        new DefaultVideoFileMetadataParser(),
+        new ExternalIdVideoFileMetadataParser(),
+        movieMetadataProviderResolver,
+        movieService,
+        fakeMediaFileRepository,
+        new MutexFactoryProvider());
+  }
 
-    void failInsertsWith(RuntimeException failure) {
-      insertFailure = failure;
+  private static final class FailingInsertPersonRepository extends FakePersonRepository {
+
+    private final RuntimeException insertFailure;
+
+    FailingInsertPersonRepository(RuntimeException insertFailure) {
+      this.insertFailure = insertFailure;
     }
 
     @Override
     public boolean insertIfAbsent(String sourceId, String name) {
-      if (insertFailure != null) {
-        throw insertFailure;
-      }
-
-      return super.insertIfAbsent(sourceId, name);
+      throw insertFailure;
     }
   }
 }

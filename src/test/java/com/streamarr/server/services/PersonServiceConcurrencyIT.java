@@ -9,16 +9,14 @@ import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.support.HeldCreditInsert;
+import com.streamarr.server.support.OrderedSourceIds;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import javax.sql.DataSource;
-import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -78,33 +76,25 @@ class PersonServiceConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should create all persons when another title inserts them in opposite order")
-  void shouldCreateAllPersonsWhenAnotherTitleInsertsThemInOppositeOrder() throws Exception {
-    var suffix = UUID.randomUUID();
-    var lowerSourceId = "100-" + suffix;
-    var higherSourceId = "200-" + suffix;
+  @DisplayName("Should create all persons when another media title inserts them in opposite order")
+  void shouldCreateAllPersonsWhenAnotherMediaTitleInsertsThemInOppositeOrder() throws Exception {
+    var sourceIds = OrderedSourceIds.unique();
     var persons =
         List.of(
-            Person.builder().name("Actor B").sourceId(higherSourceId).build(),
-            Person.builder().name("Actor A").sourceId(lowerSourceId).build());
+            Person.builder().name("Actor B").sourceId(sourceIds.higher()).build(),
+            Person.builder().name("Actor A").sourceId(sourceIds.lower()).build());
 
-    try (var otherTitle = HeldCreditInsert.open(dataSource);
-        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      otherTitle.insert(PERSON, lowerSourceId);
-      var save =
-          CompletableFuture.supplyAsync(
+    try (var otherMediaTitle = HeldCreditInsert.open(dataSource)) {
+      otherMediaTitle.insert(PERSON, sourceIds.lower());
+
+      var saved =
+          otherMediaTitle.commitAfterSaveWaits(
               () -> personService.getOrCreatePersons(persons, Map.of(), ImageRefreshMode.PRESERVE),
-              executor);
+              held -> held.insert(PERSON, sourceIds.higher()));
 
-      otherTitle.awaitWaitingTransaction();
-      otherTitle.insert(PERSON, higherSourceId);
-      otherTitle.commit();
-
-      assertThat(save)
-          .succeedsWithin(Duration.ofSeconds(15))
-          .asInstanceOf(InstanceOfAssertFactories.list(Person.class))
+      assertThat(saved)
           .extracting(Person::getSourceId)
-          .containsExactly(higherSourceId, lowerSourceId);
+          .containsExactly(sourceIds.higher(), sourceIds.lower());
     }
   }
 }

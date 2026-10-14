@@ -12,13 +12,10 @@ import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.support.HeldCreditInsert;
 import com.streamarr.server.support.HeldCreditInsert.CreditTable;
+import com.streamarr.server.support.OrderedSourceIds;
 import java.sql.SQLException;
-import java.time.Duration;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -27,81 +24,86 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
- * Saves one media title's credits while another title's open transaction inserts the same new
- * credits in a conflicting order. The other title inserts its first credit, waits until this save
- * waits on it, then inserts its second credit and commits.
+ * Saves one media title's credits while another media title's open transaction inserts the same new
+ * credits in a conflicting order. The other media title inserts its first credit, waits until this
+ * save waits on it, then inserts its second credit and commits.
  */
 @Tag("IntegrationTest")
 @DisplayName("Credit Service Concurrency Integration Tests")
 class CreditServiceConcurrencyIT extends AbstractIntegrationTest {
 
-  private static final Duration SAVE_TIMEOUT = Duration.ofSeconds(15);
-
   @Autowired private CreditService creditService;
   @Autowired private DataSource dataSource;
 
-  private String lowerSourceId;
-  private String higherSourceId;
+  private OrderedSourceIds sourceIds;
 
   @BeforeEach
   void setUp() {
-    var suffix = UUID.randomUUID();
-    lowerSourceId = "100-" + suffix;
-    higherSourceId = "200-" + suffix;
+    sourceIds = OrderedSourceIds.unique();
   }
 
   @Test
   @DisplayName(
-      "Should save genres when another title is inserting the same new genres in opposite order")
-  void shouldSaveGenresWhenAnotherTitleIsInsertingTheSameNewGenresInOppositeOrder()
+      "Should save genres when another media title is inserting the same new genres in opposite"
+          + " order")
+  void shouldSaveGenresWhenAnotherMediaTitleIsInsertingTheSameNewGenresInOppositeOrder()
       throws Exception {
     var genres = new LinkedHashSet<Genre>();
-    genres.add(Genre.builder().sourceId(higherSourceId).name("Higher Genre").build());
-    genres.add(Genre.builder().sourceId(lowerSourceId).name("Lower Genre").build());
+    genres.add(Genre.builder().sourceId(sourceIds.higher()).name("Higher Genre").build());
+    genres.add(Genre.builder().sourceId(sourceIds.lower()).name("Lower Genre").build());
 
     var saved =
-        saveWhileAnotherTitleInserts(GENRE, MediaTitleCredits.builder().genres(genres).build());
+        saveWhileAnotherMediaTitleInserts(
+            GENRE, MediaTitleCredits.builder().genres(genres).build());
 
     assertThat(saved.genres())
         .extracting(Genre::getSourceId)
-        .containsExactlyInAnyOrder(lowerSourceId, higherSourceId);
+        .containsExactlyInAnyOrder(sourceIds.lower(), sourceIds.higher());
   }
 
   @Test
   @DisplayName(
-      "Should save studios when another title is inserting the same new studios in opposite order")
-  void shouldSaveStudiosWhenAnotherTitleIsInsertingTheSameNewStudiosInOppositeOrder()
+      "Should save studios when another media title is inserting the same new studios in opposite"
+          + " order")
+  void shouldSaveStudiosWhenAnotherMediaTitleIsInsertingTheSameNewStudiosInOppositeOrder()
       throws Exception {
     var studios = new LinkedHashSet<Company>();
-    studios.add(Company.builder().sourceId(higherSourceId).name("Higher Studio").build());
-    studios.add(Company.builder().sourceId(lowerSourceId).name("Lower Studio").build());
+    studios.add(Company.builder().sourceId(sourceIds.higher()).name("Higher Studio").build());
+    studios.add(Company.builder().sourceId(sourceIds.lower()).name("Lower Studio").build());
 
     var saved =
-        saveWhileAnotherTitleInserts(COMPANY, MediaTitleCredits.builder().studios(studios).build());
+        saveWhileAnotherMediaTitleInserts(
+            COMPANY, MediaTitleCredits.builder().studios(studios).build());
 
     assertThat(saved.studios())
         .extracting(Company::getSourceId)
-        .containsExactlyInAnyOrder(lowerSourceId, higherSourceId);
+        .containsExactlyInAnyOrder(sourceIds.lower(), sourceIds.higher());
   }
 
   @Test
   @DisplayName(
-      "Should save people when a person is cast on one title and director of the other title")
-  void shouldSavePeopleWhenAPersonIsCastOnOneTitleAndDirectorOfTheOtherTitle() throws Exception {
+      "Should save people when a person is cast on one media title and director of the other media"
+          + " title")
+  void shouldSavePeopleWhenAPersonIsCastOnOneMediaTitleAndDirectorOfTheOtherMediaTitle()
+      throws Exception {
     var credits =
         MediaTitleCredits.builder()
-            .cast(List.of(Person.builder().sourceId(higherSourceId).name("Higher Actor").build()))
+            .cast(
+                List.of(Person.builder().sourceId(sourceIds.higher()).name("Higher Actor").build()))
             .directors(
-                List.of(Person.builder().sourceId(lowerSourceId).name("Lower Director").build()))
+                List.of(
+                    Person.builder().sourceId(sourceIds.lower()).name("Lower Director").build()))
             .build();
 
-    var saved = saveWhileAnotherTitleInserts(PERSON, credits);
+    var saved = saveWhileAnotherMediaTitleInserts(PERSON, credits);
 
-    assertThat(saved.cast()).extracting(Person::getSourceId).containsExactly(higherSourceId);
-    assertThat(saved.directors()).extracting(Person::getSourceId).containsExactly(lowerSourceId);
+    assertThat(saved.cast()).extracting(Person::getSourceId).containsExactly(sourceIds.higher());
+    assertThat(saved.directors())
+        .extracting(Person::getSourceId)
+        .containsExactly(sourceIds.lower());
   }
 
-  private MediaTitleCredits saveWhileAnotherTitleInserts(
+  private MediaTitleCredits saveWhileAnotherMediaTitleInserts(
       CreditTable table, MediaTitleCredits credits) throws SQLException {
     var request =
         MediaTitleCreditsRequest.builder()
@@ -109,18 +111,12 @@ class CreditServiceConcurrencyIT extends AbstractIntegrationTest {
             .imageRefreshMode(ImageRefreshMode.PRESERVE)
             .build();
 
-    try (var otherTitle = HeldCreditInsert.open(dataSource);
-        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      otherTitle.insert(table, lowerSourceId);
-      var save =
-          CompletableFuture.supplyAsync(() -> creditService.getOrCreateCredits(request), executor);
+    try (var otherMediaTitle = HeldCreditInsert.open(dataSource)) {
+      otherMediaTitle.insert(table, sourceIds.lower());
 
-      otherTitle.awaitWaitingTransaction();
-      otherTitle.insert(table, higherSourceId);
-      otherTitle.commit();
-
-      assertThat(save).succeedsWithin(SAVE_TIMEOUT);
-      return save.join();
+      return otherMediaTitle.commitAfterSaveWaits(
+          () -> creditService.getOrCreateCredits(request),
+          held -> held.insert(table, sourceIds.higher()));
     }
   }
 }

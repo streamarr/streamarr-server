@@ -58,16 +58,15 @@ class CreditServiceTest {
   void shouldReturnCastAndDirectorsInTheirListedOrderWhenSavingCredits() {
     var credits =
         MediaTitleCredits.builder()
-            .cast(List.of(person("300", "Third Source Actor"), person("100", "First Source Actor")))
-            .directors(
-                List.of(person("400", "Fourth Source Director"), person("200", "Second Director")))
+            .cast(List.of(person("300", "Actor 300"), person("100", "Actor 100")))
+            .directors(List.of(person("400", "Director 400"), person("200", "Director 200")))
             .build();
 
     var saved = creditService.getOrCreateCredits(requestFor(credits).build());
 
     assertThat(saved.cast())
         .extracting(Person::getSourceId, Person::getName)
-        .containsExactly(tuple("300", "Third Source Actor"), tuple("100", "First Source Actor"));
+        .containsExactly(tuple("300", "Actor 300"), tuple("100", "Actor 100"));
     assertThat(saved.directors()).extracting(Person::getSourceId).containsExactly("400", "200");
     assertThat(saved.cast()).allSatisfy(person -> assertThat(person.getId()).isNotNull());
     assertThat(personRepository.count()).isEqualTo(4);
