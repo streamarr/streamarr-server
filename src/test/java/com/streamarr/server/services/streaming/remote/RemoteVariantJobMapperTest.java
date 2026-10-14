@@ -94,6 +94,7 @@ class RemoteVariantJobMapperTest {
       value = TranscodeMode.class,
       names = {"REMUX", "AUDIO_TRANSCODE"})
   @DisplayName("Should leave align_keyframes_to_segments unset when the job copies video")
+  @SuppressWarnings("deprecation")
   void shouldLeaveAlignKeyframesToSegmentsUnsetWhenJobCopiesVideo(TranscodeMode mode) {
     var request =
         TranscodeRequest.builder()
@@ -112,8 +113,6 @@ class RemoteVariantJobMapperTest {
 
     var decision = mapper.map(request).getDecision();
 
-    var alignKeyframesToSegments =
-        decision.getDescriptorForType().findFieldByName("align_keyframes_to_segments");
-    assertThat(decision.hasField(alignKeyframesToSegments)).isFalse();
+    assertThat(decision.getAlignKeyframesToSegments()).isFalse();
   }
 }
