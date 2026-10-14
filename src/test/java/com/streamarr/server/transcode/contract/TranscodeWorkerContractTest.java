@@ -3,7 +3,9 @@ package com.streamarr.server.transcode.contract;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.protobuf.Descriptors.Descriptor;
+import com.streamarr.transcode.v1.EncoderKind;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
+import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
@@ -14,10 +16,12 @@ import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.VideoDecision;
+import com.streamarr.transcode.v1.VideoEncoderBackend;
 import com.streamarr.transcode.v1.VideoMode;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
+import com.streamarr.transcode.v1.WorkerVerifiedVideoEncoder;
 import io.grpc.MethodDescriptor.MethodType;
 import java.util.HashSet;
 import java.util.Set;
@@ -88,6 +92,58 @@ class TranscodeWorkerContractTest {
     assertThat(parsedStart.getJob().getStreamSessionId()).isEqualTo(uuid(streamSessionId));
     assertThat(parsedStart.getJob().getJobId()).isEqualTo(uuid(jobId));
     assertThat(parsedStart.getJob().getJobAttemptId()).isEqualTo(uuid(jobAttemptId));
+  }
+
+  @Test
+  @DisplayName(
+      "Should advertise each worker-verified video encoder with its encoder backend when a worker registers")
+  void shouldAdvertiseEachWorkerVerifiedVideoEncoderWithItsEncoderBackendWhenWorkerRegisters()
+      throws Exception {
+    var software =
+        WorkerVerifiedVideoEncoder.newBuilder()
+            .setBackend(
+                encoderBackend(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264")
+                    .setKind(EncoderKind.ENCODER_KIND_SOFTWARE))
+            .setKeyframeVerified(true)
+            .build();
+    var hardware =
+        WorkerVerifiedVideoEncoder.newBuilder()
+            .setBackend(
+                encoderBackend(VideoCodecFamily.VIDEO_CODEC_FAMILY_HEVC, "hevc_nvenc")
+                    .setKind(EncoderKind.ENCODER_KIND_HARDWARE))
+            .build();
+    var capabilities =
+        WorkerCapabilities.newBuilder()
+            .addVideoEncoders(software)
+            .addVideoEncoders(hardware)
+            .build();
+
+    var parsed = WorkerCapabilities.parseFrom(capabilities.toByteArray());
+
+    assertThat(parsed.getVideoEncodersList()).containsExactly(software, hardware);
+    assertThat(parsed.getVideoEncoders(1).getKeyframeVerified()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should leave the encoder backend absent when a job attempt omits it")
+  void shouldLeaveTheEncoderBackendAbsentWhenJobAttemptOmitsIt() throws Exception {
+    var attemptId = uuid(UUID.randomUUID());
+    var backend =
+        encoderBackend(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "libsvtav1")
+            .setKind(EncoderKind.ENCODER_KIND_SOFTWARE)
+            .build();
+    var encoding =
+        JobAttemptStarted.newBuilder()
+            .setJobAttemptId(attemptId)
+            .setEncoderBackend(backend)
+            .build();
+    var copying = JobAttemptStarted.newBuilder().setJobAttemptId(attemptId).build();
+
+    var parsedEncoding = JobAttemptStarted.parseFrom(encoding.toByteArray());
+    var parsedCopying = JobAttemptStarted.parseFrom(copying.toByteArray());
+
+    assertThat(parsedEncoding.getEncoderBackend()).isEqualTo(backend);
+    assertThat(parsedCopying.hasEncoderBackend()).isFalse();
   }
 
   @Test
@@ -207,6 +263,10 @@ class TranscodeWorkerContractTest {
         .setWorkerId(uuid(UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")))
         .setBootId(uuid(UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")))
         .build();
+  }
+
+  private VideoEncoderBackend.Builder encoderBackend(VideoCodecFamily codecFamily, String encoder) {
+    return VideoEncoderBackend.newBuilder().setCodecFamily(codecFamily).setEncoder(encoder);
   }
 
   private Uuid uuid(UUID value) {
