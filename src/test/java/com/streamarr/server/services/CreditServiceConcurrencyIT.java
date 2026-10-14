@@ -16,6 +16,7 @@ import com.streamarr.server.support.OrderedSourceIds;
 import java.sql.SQLException;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -103,20 +104,65 @@ class CreditServiceConcurrencyIT extends AbstractIntegrationTest {
         .containsExactly(sourceIds.lower());
   }
 
-  private MediaTitleCredits saveWhileAnotherMediaTitleInserts(
-      CreditTable table, MediaTitleCredits credits) throws SQLException {
-    var request =
-        MediaTitleCreditsRequest.builder()
-            .credits(credits)
-            .imageRefreshMode(ImageRefreshMode.PRESERVE)
+  @Test
+  @DisplayName(
+      "Should save credits when another media title inserts a new person and then a new genre")
+  void shouldSaveCreditsWhenAnotherMediaTitleInsertsANewPersonAndThenANewGenre() throws Exception {
+    var credits =
+        MediaTitleCredits.builder()
+            .cast(List.of(Person.builder().sourceId(sourceIds.lower()).name("Actor").build()))
+            .genres(Set.of(Genre.builder().sourceId(sourceIds.lower()).name("Genre").build()))
             .build();
 
+    var saved = saveWhileAnotherMediaTitleInserts(PERSON, GENRE, credits);
+
+    assertThat(saved.cast()).extracting(Person::getSourceId).containsExactly(sourceIds.lower());
+    assertThat(saved.genres()).extracting(Genre::getSourceId).containsExactly(sourceIds.lower());
+  }
+
+  @Test
+  @DisplayName(
+      "Should save credits when another media title inserts a new genre and then a new studio")
+  void shouldSaveCreditsWhenAnotherMediaTitleInsertsANewGenreAndThenANewStudio() throws Exception {
+    var credits =
+        MediaTitleCredits.builder()
+            .genres(Set.of(Genre.builder().sourceId(sourceIds.lower()).name("Genre").build()))
+            .studios(Set.of(Company.builder().sourceId(sourceIds.lower()).name("Studio").build()))
+            .build();
+
+    var saved = saveWhileAnotherMediaTitleInserts(GENRE, COMPANY, credits);
+
+    assertThat(saved.genres()).extracting(Genre::getSourceId).containsExactly(sourceIds.lower());
+    assertThat(saved.studios()).extracting(Company::getSourceId).containsExactly(sourceIds.lower());
+  }
+
+  private MediaTitleCredits saveWhileAnotherMediaTitleInserts(
+      CreditTable firstTable, CreditTable secondTable, MediaTitleCredits credits)
+      throws SQLException {
+    try (var otherMediaTitle = HeldCreditInsert.open(dataSource)) {
+      otherMediaTitle.insert(firstTable, sourceIds.lower());
+
+      return otherMediaTitle.commitAfterSaveWaits(
+          () -> creditService.getOrCreateCredits(requestFor(credits)),
+          held -> held.insert(secondTable, sourceIds.lower()));
+    }
+  }
+
+  private MediaTitleCredits saveWhileAnotherMediaTitleInserts(
+      CreditTable table, MediaTitleCredits credits) throws SQLException {
     try (var otherMediaTitle = HeldCreditInsert.open(dataSource)) {
       otherMediaTitle.insert(table, sourceIds.lower());
 
       return otherMediaTitle.commitAfterSaveWaits(
-          () -> creditService.getOrCreateCredits(request),
+          () -> creditService.getOrCreateCredits(requestFor(credits)),
           held -> held.insert(table, sourceIds.higher()));
     }
+  }
+
+  private static MediaTitleCreditsRequest requestFor(MediaTitleCredits credits) {
+    return MediaTitleCreditsRequest.builder()
+        .credits(credits)
+        .imageRefreshMode(ImageRefreshMode.PRESERVE)
+        .build();
   }
 }
