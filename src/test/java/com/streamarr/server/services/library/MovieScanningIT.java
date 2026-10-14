@@ -27,7 +27,6 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,6 +44,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class MovieScanningIT extends AbstractScanningIntegrationTest {
 
   private static final Duration SCAN_BOUND = Duration.ofSeconds(20);
+
+  // Genres are shared across test classes, and no other test uses this TMDB genre id.
+  private static final int UNSHARED_GENRE_ID = 9_000_001;
 
   @Autowired private LibraryManagementService libraryManagementService;
   @Autowired private LibraryRepository libraryRepository;
@@ -76,11 +78,9 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   @Test
   @DisplayName("Should name the System actor as creator when a scan creates a movie and media file")
   void shouldNameSystemActorAsCreatorWhenScanCreatesMovieAndMediaFile() throws Exception {
-    var library = createMovieLibrary();
-    createMovieFile("Inception (2010)", "Inception (2010).mkv");
-    var genreId = uniqueGenreId();
-    stubTmdbMovieSearch("Inception", "27205", "Inception", "2010-07-16");
-    stubTmdbMovieMetadata("27205", "Inception", genreId);
+    var library = createLibraryWithMatchingMovieFile().library();
+    deleteUnsharedGenre();
+    stubTmdbMovieMetadata("27205", "Inception", UNSHARED_GENRE_ID);
     startProbeScheduler();
 
     BoundedTask.runWithin(SCAN_BOUND, () -> libraryManagementService.scanLibrary(library.getId()));
@@ -96,24 +96,22 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
         .singleElement()
         .extracting(MediaFile::getCreatedBy, MediaFile::getLastModifiedBy)
         .containsOnly(SystemActor.ID);
-    assertThat(genreCreator(genreId)).isEqualTo(SystemActor.ID);
+    assertThat(unsharedGenreCreator()).isEqualTo(SystemActor.ID);
   }
 
   @Test
   @DisplayName("Should name the System actor when file discovery creates a movie")
   void shouldNameSystemActorWhenFileDiscoveryCreatesMovie() throws IOException {
-    var library = createMovieLibrary();
-    var file = createMovieFile("Inception (2010)", "Inception (2010).mkv");
-    stubTmdbMovieSearch("Inception", "27205", "Inception", "2010-07-16");
+    var library = createLibraryWithMatchingMovieFile();
     stubTmdbMovieMetadata("27205", "Inception");
 
-    libraryManagementService.processDiscoveredFile(library.getId(), file);
+    libraryManagementService.processDiscoveredFile(library.id(), library.movieFile());
 
     assertThat(movieRepository.findAll())
         .singleElement()
         .extracting(Movie::getCreatedBy, Movie::getLastModifiedBy)
         .containsOnly(SystemActor.ID);
-    assertThat(mediaFileRepository.findByLibraryId(library.getId()))
+    assertThat(mediaFileRepository.findByLibraryId(library.id()))
         .singleElement()
         .extracting(MediaFile::getCreatedBy)
         .isEqualTo(SystemActor.ID);
@@ -125,21 +123,23 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
           + " a movie")
   void shouldNameSystemActorAsModifierAndKeepEmptyCreatorWhenRefreshUpdatesMovie()
       throws IOException {
-    var library = createMovieLibrary();
-    var file = createMovieFile("Inception (2010)", "Inception (2010).mkv");
-    stubTmdbMovieSearch("Inception", "27205", "Inception", "2010-07-16");
+    var library = createLibraryWithMatchingMovieFile();
     stubTmdbMovieMetadata("27205", "Inception");
-    libraryManagementService.processDiscoveredFile(library.getId(), file);
-    clearMovieAuditors();
+    libraryManagementService.processDiscoveredFile(library.id(), library.movieFile());
+    clearAuditors();
     stubTmdbMovieMetadata("27205", "Inception Remastered");
 
-    libraryManagementService.refreshLibrary(library.getId());
+    libraryManagementService.refreshLibrary(library.id());
 
-    var movie = movieRepository.findAll().getFirst();
-    assertThat(movie.getTitle()).isEqualTo("Inception Remastered");
-    assertThat(movie.getCreatedBy()).isNull();
-    assertThat(movie.getLastModifiedBy()).isEqualTo(SystemActor.ID);
-    assertThat(libraryRepository.findById(library.getId()).orElseThrow().getLastModifiedBy())
+    assertThat(movieRepository.findAll())
+        .singleElement()
+        .satisfies(
+            movie -> {
+              assertThat(movie.getTitle()).isEqualTo("Inception Remastered");
+              assertThat(movie.getCreatedBy()).isNull();
+              assertThat(movie.getLastModifiedBy()).isEqualTo(SystemActor.ID);
+            });
+    assertThat(libraryRepository.findById(library.id()).orElseThrow().getLastModifiedBy())
         .isEqualTo(SystemActor.ID);
   }
 
@@ -194,9 +194,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   @Test
   @DisplayName("Should become unhealthy when the database cannot save an item error during a scan")
   void shouldBecomeUnhealthyWhenTheDatabaseCannotSaveAnItemErrorDuringAScan() throws Exception {
-    var library = createMovieLibrary();
-    createMovieFile("Inception (2010)", "Inception (2010).mkv");
-    stubTmdbMovieSearch("Inception", "27205", "Inception", "2010-07-16");
+    var library = createLibraryWithMatchingMovieFile().library();
     stubTmdbMovieMetadata("27205", "Inception");
 
     rejectItemErrorsWhile(
@@ -218,21 +216,24 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
             .start(probeExecution, new AbstractSchedulerListener() {}, Clock.systemUTC());
   }
 
-  // Genres are shared across test classes, so each test inserts a genre no other test uses.
-  private static int uniqueGenreId() {
-    return ThreadLocalRandom.current().nextInt(1_000_000, Integer.MAX_VALUE);
+  // The scan must insert the genre, so a row left by an earlier run cannot answer for it.
+  private void deleteUnsharedGenre() {
+    jdbcTemplate.update("DELETE FROM genre WHERE source_id = ?", String.valueOf(UNSHARED_GENRE_ID));
+  }
+
+  private UUID unsharedGenreCreator() {
+    return jdbcTemplate.queryForObject(
+        "SELECT created_by FROM genre WHERE source_id = ?",
+        UUID.class,
+        String.valueOf(UNSHARED_GENRE_ID));
   }
 
   // Rows written before the System actor existed have empty audit columns.
-  private void clearMovieAuditors() {
+  private void clearAuditors() {
     jdbcTemplate.update(
         "UPDATE base_collectable SET created_by = NULL, last_modified_by = NULL"
             + " WHERE id IN (SELECT id FROM movie)");
-  }
-
-  private UUID genreCreator(int genreId) {
-    return jdbcTemplate.queryForObject(
-        "SELECT created_by FROM genre WHERE source_id = ?", UUID.class, String.valueOf(genreId));
+    jdbcTemplate.update("UPDATE library SET created_by = NULL, last_modified_by = NULL");
   }
 
   // The movie has no poster or backdrop, so the scan must record them as unavailable.
@@ -256,6 +257,21 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
       jdbcTemplate.execute("DROP TRIGGER reject_item_error ON item_result");
       jdbcTemplate.execute("DROP FUNCTION reject_item_error()");
     }
+  }
+
+  private record LibraryWithMovieFile(Library library, Path movieFile) {
+
+    UUID id() {
+      return library.getId();
+    }
+  }
+
+  // TMDB search matches the file. Each test stubs the movie's metadata itself.
+  private LibraryWithMovieFile createLibraryWithMatchingMovieFile() throws IOException {
+    var library = createMovieLibrary();
+    var movieFile = createMovieFile("Inception (2010)", "Inception (2010).mkv");
+    stubTmdbMovieSearch("Inception", "27205", "Inception", "2010-07-16");
+    return new LibraryWithMovieFile(library, movieFile);
   }
 
   private Library createMovieLibrary() {
