@@ -342,9 +342,9 @@ message KeyframePositions {
   uint32 time_base_denominator = 3;
   KeyframePositionSource source = 4;
   // The number of entries in each list across every part of the attempt. The count is at least
-  // one; a stream without keyframes reports KEYFRAMES_UNAVAILABLE_REASON_NO_KEYFRAMES instead. The
-  // server discards the parts and the positions when the count differs from the entries it
-  // received.
+  // one; a stream without keyframes reports KEYFRAMES_UNAVAILABLE_REASON_NO_KEYFRAMES instead. When
+  // the count differs from the entries the server received, the server fails the probe attempt as
+  // a contract violation and retries the probe.
   uint32 keyframe_count = 5;
 }
 
