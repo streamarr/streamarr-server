@@ -34,11 +34,11 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.CountingSleeper;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
@@ -106,6 +106,7 @@ import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataPa
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
+import com.streamarr.server.support.BoundedTask;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
@@ -122,11 +123,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -147,6 +145,8 @@ import org.springframework.dao.DataAccessResourceFailureException;
 @ExtendWith(MockitoExtension.class)
 @DisplayName("Library Management Service Tests")
 class LibraryManagementServiceTest {
+
+  private static final Duration SCAN_BOUND = Duration.ofSeconds(5);
 
   private final AuthenticatedIdentity identity = defaultIdentityBuilder().build();
   private final FakeLibraryMutationTransaction libraryMutationTransaction =
@@ -216,26 +216,10 @@ class LibraryManagementServiceTest {
   private final FakeMediaFileContainerInfoRepository probeOutcomes =
       new FakeMediaFileContainerInfoRepository();
   private final FakeProbeTaskRequests probeTaskRequests = succeedingProbeRequests(probeOutcomes);
+  private final CountingSleeper probeCheckSleeper = new CountingSleeper();
   private final FileDiscoveryRuns fileDiscoveryRuns = fileDiscoveryRunsWith(artworkService);
 
-  private final LibraryManagementService libraryManagementService =
-      new LibraryManagementService(
-          new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
-          new VideoExtensionValidator(),
-          movieFileProcessor,
-          seriesFileProcessor,
-          fakeLibraryRepository,
-          new FakeLibraryMetadataRepository(),
-          fakeMediaFileRepository,
-          movieService,
-          seriesService,
-          capturingEventPublisher,
-          new MutexFactoryProvider(),
-          libraryRefreshService,
-          fileSystem,
-          libraryMutationTransaction,
-          mutationTransactions,
-          fileDiscoveryRuns);
+  private final LibraryManagementService libraryManagementService = serviceBuilder().build();
 
   private UUID savedLibraryId;
 
@@ -724,17 +708,16 @@ class LibraryManagementServiceTest {
           probeTaskRequests.succeed(request);
         });
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var scan = executor.submit(() -> libraryManagementService.scanLibrary(savedLibraryId));
+    try (var scan = BoundedTask.start(() -> libraryManagementService.scanLibrary(savedLibraryId))) {
       try {
         assertThat(enqueueStarted.await(5, TimeUnit.SECONDS)).isTrue();
-        assertThat(scan).isNotDone();
+        assertThat(libraryStatus()).isEqualTo(LibraryStatus.SCANNING);
         assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
       } finally {
         enqueueReleased.countDown();
       }
 
-      scan.get(5, TimeUnit.SECONDS);
+      scan.await(SCAN_BOUND);
     }
 
     assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).hasSize(1);
@@ -826,16 +809,16 @@ class LibraryManagementServiceTest {
     void shouldStayScanningWhenTheRequestedProbeHasNoOutcome() throws Exception {
       saveMatchedMediaFile(createMovieFile(createRootLibraryDirectory(), "Held", "Held.mkv"));
       probeTaskRequests.dispatchWith(_ -> {});
+      var whileWaiting = new AtomicReference<ScanState>();
+      probeCheckSleeper.onSleep(
+          _ -> {
+            whileWaiting.compareAndSet(null, scanState());
+            probeTaskRequests.succeed(probeTaskRequests.requests().getFirst());
+          });
 
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-        var scan = executor.submit(() -> libraryManagementService.scanLibrary(savedLibraryId));
-        var request = awaitOnlyProbeRequest();
-        assertStillScanning(scan);
+      scan(libraryManagementService);
 
-        probeTaskRequests.succeed(request);
-        scan.get(5, TimeUnit.SECONDS);
-      }
-
+      assertThat(whileWaiting).hasValue(new ScanState(LibraryStatus.SCANNING, 0));
       assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
       assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).hasSize(1);
     }
@@ -845,16 +828,19 @@ class LibraryManagementServiceTest {
     void shouldFinishTheScanWhenAProbeAttemptFailureIsRecorded() throws Exception {
       saveMatchedMediaFile(createMovieFile(createRootLibraryDirectory(), "Share", "Share.mkv"));
       probeTaskRequests.dispatchWith(_ -> {});
+      var whileWaiting = new AtomicReference<ScanState>();
+      probeCheckSleeper.onSleep(
+          _ -> {
+            whileWaiting.compareAndSet(null, scanState());
+            probeTaskRequests.fail(
+                probeTaskRequests.requests().getFirst(),
+                ItemFailureReason.SOURCE_INACCESSIBLE,
+                Instant.now());
+          });
 
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-        var scan = executor.submit(() -> libraryManagementService.scanLibrary(savedLibraryId));
-        var request = awaitOnlyProbeRequest();
-        assertStillScanning(scan);
+      scan(libraryManagementService);
 
-        probeTaskRequests.fail(request, ItemFailureReason.SOURCE_INACCESSIBLE, Instant.now());
-        scan.get(5, TimeUnit.SECONDS);
-      }
-
+      assertThat(whileWaiting).hasValue(new ScanState(LibraryStatus.SCANNING, 0));
       assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
     }
 
@@ -873,19 +859,21 @@ class LibraryManagementServiceTest {
                   .build());
       matchMovieWithPoster("About Time");
 
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-        var scan = executor.submit(() -> service.scanLibrary(savedLibraryId));
-        await().atMost(Duration.ofSeconds(5)).until(() -> downloader.heldDownloads() == 1);
-        assertStillScanning(scan);
-
+      try (var scan =
+          BoundedTask.start(
+              () -> {
+                service.scanLibrary(savedLibraryId);
+                return !imageRepository.findAll().isEmpty();
+              })) {
+        downloader.awaitHeldDownloads(1, Duration.ofSeconds(5));
         downloader.releaseHeldDownloads();
-        scan.get(5, TimeUnit.SECONDS);
+
+        assertThat(scan.await(SCAN_BOUND)).as("poster saved when the scan returned").isTrue();
       } finally {
         downloader.releaseHeldDownloads();
       }
 
       assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
-      assertThat(imageRepository.findAll()).isNotEmpty();
     }
 
     @Test
@@ -922,18 +910,14 @@ class LibraryManagementServiceTest {
       assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
     }
 
-    private ProbeTaskRequest awaitOnlyProbeRequest() {
-      await().atMost(Duration.ofSeconds(5)).until(() -> probeTaskRequests.requests().size() == 1);
-      return probeTaskRequests.requests().getFirst();
+    private void scan(LibraryManagementService service) throws Exception {
+      BoundedTask.runWithin(SCAN_BOUND, () -> service.scanLibrary(savedLibraryId));
     }
 
-    private void assertStillScanning(Future<?> scan) {
-      await()
-          .during(Duration.ofMillis(200))
-          .atMost(Duration.ofSeconds(2))
-          .until(() -> !scan.isDone());
-      assertThat(libraryStatus()).isEqualTo(LibraryStatus.SCANNING);
-      assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
+    private ScanState scanState() {
+      return new ScanState(
+          libraryStatus(),
+          capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class).size());
     }
 
     private void matchMovieWithPoster(String title) {
@@ -956,6 +940,8 @@ class LibraryManagementServiceTest {
     }
   }
 
+  private record ScanState(LibraryStatus status, int completedEvents) {}
+
   private LibraryStatus libraryStatus() {
     return fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus();
   }
@@ -976,29 +962,18 @@ class LibraryManagementServiceTest {
             null,
             null,
             null);
-    return new LibraryManagementService(
-        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
-        new VideoExtensionValidator(),
-        new MovieFileProcessor(
-            new DefaultVideoFileMetadataParser(),
-            new ExternalIdVideoFileMetadataParser(),
-            fakeMovieMetadataProviderResolver,
-            artworkMovieService,
-            fakeMediaFileRepository,
-            new MutexFactoryProvider()),
-        seriesFileProcessor,
-        fakeLibraryRepository,
-        new FakeLibraryMetadataRepository(),
-        fakeMediaFileRepository,
-        artworkMovieService,
-        seriesService,
-        capturingEventPublisher,
-        new MutexFactoryProvider(),
-        libraryRefreshService,
-        fileSystem,
-        libraryMutationTransaction,
-        mutationTransactions,
-        fileDiscoveryRunsWith(artwork));
+    return serviceBuilder()
+        .movieFileProcessor(
+            new MovieFileProcessor(
+                new DefaultVideoFileMetadataParser(),
+                new ExternalIdVideoFileMetadataParser(),
+                fakeMovieMetadataProviderResolver,
+                artworkMovieService,
+                fakeMediaFileRepository,
+                new MutexFactoryProvider()))
+        .movieService(artworkMovieService)
+        .fileDiscoveryRuns(fileDiscoveryRunsWith(artwork))
+        .build();
   }
 
   private void saveMatchedMediaFile(Path path) {
@@ -1417,33 +1392,21 @@ class LibraryManagementServiceTest {
     var rootPath = createRootLibraryDirectory();
     var path = createMovieFile(rootPath, "Concurrent Test", "Concurrent Test (2024).mkv");
     var barrier = new CyclicBarrier(2);
-    var exceptions = new CopyOnWriteArrayList<Exception>();
-
-    Runnable task =
+    BoundedTask.Action discover =
         () -> {
-          try {
-            barrier.await();
-            libraryManagementService.processDiscoveredFile(savedLibraryId, path);
-          } catch (Exception e) {
-            exceptions.add(e);
-          }
+          barrier.await(5, TimeUnit.SECONDS);
+          libraryManagementService.processDiscoveredFile(savedLibraryId, path);
         };
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      executor.submit(task);
-      executor.submit(task);
+    try (var first = BoundedTask.start(discover);
+        var second = BoundedTask.start(discover)) {
+      first.await(SCAN_BOUND);
+      second.await(SCAN_BOUND);
     }
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> {
-              assertThat(exceptions).isEmpty();
-              var mediaFiles = fakeMediaFileRepository.findByLibraryId(savedLibraryId);
-              assertThat(mediaFiles)
-                  .as("Expected exactly one MediaFile for the same filepath")
-                  .hasSize(1);
-            });
+    assertThat(fakeMediaFileRepository.findByLibraryId(savedLibraryId))
+        .as("Expected exactly one MediaFile for the same filepath")
+        .hasSize(1);
   }
 
   @Test
@@ -2189,6 +2152,7 @@ class LibraryManagementServiceTest {
         .outcomes(probeOutcomes)
         .probeTaskRequests(probeTaskRequests)
         .fileSystem(fileSystem)
+        .sleeper(probeCheckSleeper)
         .build();
   }
 
@@ -2226,66 +2190,41 @@ class LibraryManagementServiceTest {
         new MutexFactoryProvider());
   }
 
+  private LibraryManagementService.LibraryManagementServiceBuilder serviceBuilder() {
+    return LibraryManagementService.builder()
+        .ignoredFileValidator(new IgnoredFileValidator(new LibraryScanProperties(null, null, null)))
+        .videoExtensionValidator(new VideoExtensionValidator())
+        .movieFileProcessor(movieFileProcessor)
+        .seriesFileProcessor(seriesFileProcessor)
+        .libraryRepository(fakeLibraryRepository)
+        .libraryMetadataRepository(new FakeLibraryMetadataRepository())
+        .mediaFileRepository(fakeMediaFileRepository)
+        .movieService(movieService)
+        .seriesService(seriesService)
+        .eventPublisher(capturingEventPublisher)
+        .mutexFactoryProvider(new MutexFactoryProvider())
+        .libraryRefreshService(libraryRefreshService)
+        .fileSystem(fileSystem)
+        .libraryMutationTransaction(libraryMutationTransaction)
+        .mutationTransactions(mutationTransactions)
+        .fileDiscoveryRuns(fileDiscoveryRuns);
+  }
+
   private LibraryManagementService serviceWith(FileSystem alternateFileSystem) {
-    return new LibraryManagementService(
-        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
-        new VideoExtensionValidator(),
-        movieFileProcessor,
-        seriesFileProcessor,
-        fakeLibraryRepository,
-        new FakeLibraryMetadataRepository(),
-        fakeMediaFileRepository,
-        movieService,
-        seriesService,
-        capturingEventPublisher,
-        new MutexFactoryProvider(),
-        libraryRefreshService,
-        alternateFileSystem,
-        libraryMutationTransaction,
-        mutationTransactions,
-        fileDiscoveryRuns);
+    return serviceBuilder().fileSystem(alternateFileSystem).build();
   }
 
   private LibraryManagementService libraryManagementServiceWith(
       MovieFileProcessor movieProcessor, SeriesFileProcessor seriesProcessor) {
-    return new LibraryManagementService(
-        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
-        new VideoExtensionValidator(),
-        movieProcessor,
-        seriesProcessor,
-        fakeLibraryRepository,
-        new FakeLibraryMetadataRepository(),
-        fakeMediaFileRepository,
-        movieService,
-        seriesService,
-        capturingEventPublisher,
-        new MutexFactoryProvider(),
-        libraryRefreshService,
-        fileSystem,
-        libraryMutationTransaction,
-        mutationTransactions,
-        fileDiscoveryRuns);
+    return serviceBuilder()
+        .movieFileProcessor(movieProcessor)
+        .seriesFileProcessor(seriesProcessor)
+        .build();
   }
 
   private LibraryManagementService libraryManagementServiceWithRefreshService(
       LibraryRefreshService refreshService) {
-    return new LibraryManagementService(
-        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
-        new VideoExtensionValidator(),
-        movieFileProcessor,
-        seriesFileProcessor,
-        fakeLibraryRepository,
-        new FakeLibraryMetadataRepository(),
-        fakeMediaFileRepository,
-        movieService,
-        seriesService,
-        capturingEventPublisher,
-        new MutexFactoryProvider(),
-        refreshService,
-        fileSystem,
-        libraryMutationTransaction,
-        mutationTransactions,
-        fileDiscoveryRuns);
+    return serviceBuilder().libraryRefreshService(refreshService).build();
   }
 
   private Path pathWithDisplayName(String filepathUri, String displayName) throws IOException {

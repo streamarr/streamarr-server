@@ -23,12 +23,13 @@ public record ProbeRunSummary(
   }
 
   public String describe() {
-    return "%d ready, %d media errors, %d failed, %d superseded, %d removed"
-        .formatted(
-            count(RequestedProbeResult.READY),
-            count(RequestedProbeResult.MEDIA_ERROR),
-            count(RequestedProbeResult.FAILED),
-            count(RequestedProbeResult.SUPERSEDED),
-            count(RequestedProbeResult.REMOVED));
+    return String.join(
+        ", ",
+        count(RequestedProbeResult.READY) + " ready",
+        SummaryText.counted(count(RequestedProbeResult.MEDIA_ERROR), "media error", "media errors"),
+        count(RequestedProbeResult.FAILED) + " failed",
+        count(RequestedProbeResult.SUPERSEDED) + " superseded",
+        count(RequestedProbeResult.PROBED_BY_NEWER_VERSION) + " probed by a newer version",
+        count(RequestedProbeResult.REMOVED) + " removed");
   }
 }

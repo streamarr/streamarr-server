@@ -1,6 +1,5 @@
 package com.streamarr.server.config;
 
-import com.github.kagkarlsson.scheduler.SchedulerClient;
 import com.github.kagkarlsson.scheduler.SchedulerName;
 import com.github.kagkarlsson.scheduler.SystemClock;
 import com.github.kagkarlsson.scheduler.TaskRepository;
@@ -26,7 +25,6 @@ import javax.sql.DataSource;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.jdbc.datasource.TransactionAwareDataSourceProxy;
 
 @Configuration(proxyBeanMethods = false)
 public class ProbeSchedulingConfiguration {
@@ -46,21 +44,6 @@ public class ProbeSchedulingConfiguration {
   public Task<ProbeTaskRequest> mediaProbeTask(
       ProbeExecution execution, ProbeTaskCompletion completion, Clock clock) {
     return MediaProbeTask.create(execution, completion, clock);
-  }
-
-  /**
-   * Requests are recorded through a client that exists even when the scheduler runtime is disabled,
-   * so the transactional request path never depends on the poller.
-   */
-  @Bean
-  public SchedulerClient probeSchedulerClient(
-      DataSource dataSource,
-      Task<ProbeTaskRequest> mediaProbeTask,
-      Serializer probeTaskSerializer) {
-    return SchedulerClient.Builder.create(
-            new TransactionAwareDataSourceProxy(dataSource), mediaProbeTask)
-        .serializer(probeTaskSerializer)
-        .build();
   }
 
   /**

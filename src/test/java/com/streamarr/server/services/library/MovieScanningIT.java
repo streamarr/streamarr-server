@@ -16,9 +16,11 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.support.BoundedTask;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -32,6 +34,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @Tag("IntegrationTest")
 @DisplayName("Movie Scanning Integration Tests")
 class MovieScanningIT extends AbstractScanningIntegrationTest {
+
+  private static final Duration SCAN_BOUND = Duration.ofSeconds(20);
 
   @Autowired private LibraryManagementService libraryManagementService;
   @Autowired private LibraryRepository libraryRepository;
@@ -99,13 +103,16 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
 
   @Test
   @DisplayName("Should become unhealthy when the database cannot save an item error during a scan")
-  void shouldBecomeUnhealthyWhenTheDatabaseCannotSaveAnItemErrorDuringAScan() throws IOException {
+  void shouldBecomeUnhealthyWhenTheDatabaseCannotSaveAnItemErrorDuringAScan() throws Exception {
     var library = createMovieLibrary();
     createMovieFile("Inception (2010)", "Inception (2010).mkv");
     stubTmdbMovieSearch("Inception", "27205", "Inception", "2010-07-16");
     stubTmdbMovieMetadata("27205", "Inception");
 
-    rejectItemErrorsWhile(() -> libraryManagementService.scanLibrary(library.getId()));
+    rejectItemErrorsWhile(
+        () ->
+            BoundedTask.runWithin(
+                SCAN_BOUND, () -> libraryManagementService.scanLibrary(library.getId())));
 
     assertThat(libraryRepository.findById(library.getId()).orElseThrow().getStatus())
         .isEqualTo(LibraryStatus.UNHEALTHY);
@@ -114,7 +121,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   // --- Helpers ---
 
   // The movie has no poster or backdrop, so the scan must record them as unavailable.
-  private void rejectItemErrorsWhile(Runnable action) {
+  private void rejectItemErrorsWhile(BoundedTask.Action action) throws Exception {
     jdbcTemplate.execute(
         """
         CREATE FUNCTION reject_item_error() RETURNS trigger AS $$

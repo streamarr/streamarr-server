@@ -1,11 +1,11 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.fixtures.ProbeTaskRequestFixture.requestFor;
+import static com.streamarr.server.fixtures.ProbeTaskRequestFixture.snapshotOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
-import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
-import com.github.kagkarlsson.scheduler.task.TaskInstanceId;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.ItemFailureReason;
@@ -16,7 +16,6 @@ import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.task.ProbePublication;
-import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.FakeFfprobeService;
@@ -27,17 +26,15 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import com.streamarr.server.services.streaming.FfprobeService;
+import com.streamarr.server.support.BoundedTask;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
@@ -50,6 +47,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 @Tag("IntegrationTest")
 @DisplayName("Library scan completion")
 class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
+
+  private static final Duration SCAN_BOUND = Duration.ofSeconds(20);
 
   @Autowired private LibraryManagementService libraryManagementService;
   @Autowired private LibraryRepository libraries;
@@ -89,26 +88,27 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
           return producer.probe(request);
         };
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var scan = executor.submit(() -> libraryManagementService.scanLibrary(library.getId()));
-      await().atMost(Duration.ofSeconds(10)).until(() -> isScheduled(mediaFile));
-      startScheduler(
-          probeExecution.toBuilder().producer(busyUntilReleased).build(), countingOk(deferred));
+    startScheduler(
+        probeExecution.toBuilder().producer(busyUntilReleased).build(), countingOk(deferred));
 
+    try (var scan =
+        BoundedTask.start(
+            () -> {
+              libraryManagementService.scanLibrary(library.getId());
+              return reader.find(mediaFile.getId()).isPresent();
+            })) {
       assertThat(deferred.await(10, TimeUnit.SECONDS)).isTrue();
-      assertStillScanning(scan);
-
       busy.set(false);
-      scan.get(20, TimeUnit.SECONDS);
+
+      assertThat(scan.await(SCAN_BOUND)).as("probe outcome stored when the scan returned").isTrue();
     }
 
     assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
-    assertThat(reader.find(mediaFile.getId())).isPresent();
   }
 
   @Test
   @DisplayName("Should finish the scan and keep retrying when a probe failure is recorded")
-  void shouldFinishTheScanAndKeepRetryingWhenAProbeFailureIsRecorded() {
+  void shouldFinishTheScanAndKeepRetryingWhenAProbeFailureIsRecorded() throws Exception {
     var client =
         startScheduler(
             probeExecution.toBuilder()
@@ -121,7 +121,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
                 .build(),
             new AbstractSchedulerListener() {});
 
-    libraryManagementService.scanLibrary(library.getId());
+    scan(library);
 
     assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
     assertThat(outcomes.findProbeStates(List.of(mediaFile.getId())))
@@ -144,7 +144,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
       throws Exception {
     var probing = new CountDownLatch(1);
     var release = new CompletableFuture<Void>();
-    probeTaskRequests.request(request(mediaFile));
+    probeTaskRequests.request(requestFor(mediaFile));
     startScheduler(
         probeExecution.toBuilder().producer(workerFailingAfter(probing, release)).build(),
         new AbstractSchedulerListener() {});
@@ -152,14 +152,14 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
     var source = FilepathCodec.decode(mediaFile.getFilepathUri());
     Files.writeString(source, "changed media");
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var scan = executor.submit(() -> libraryManagementService.scanLibrary(library.getId()));
+    try (var scan =
+        BoundedTask.start(() -> libraryManagementService.scanLibrary(library.getId()))) {
       var changed = snapshotOf(mediaFile);
       await().atMost(Duration.ofSeconds(10)).until(() -> isRequestedAt(mediaFile, changed));
       makeUnreadable(source);
       release.complete(null);
 
-      scan.get(20, TimeUnit.SECONDS);
+      scan.await(SCAN_BOUND);
     }
 
     assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
@@ -185,6 +185,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
         new AbstractSchedulerListener() {});
     scan(library);
     assertThat(reader.find(mediaFile.getId())).isEmpty();
+    delayExecution(mediaFile.getId(), 1);
 
     readable.set(true);
     scan(library);
@@ -196,13 +197,13 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
   @Test
   @DisplayName("Should finish the scan when a requested source is removed before it is probed")
   void shouldFinishTheScanWhenARequestedSourceIsRemovedBeforeItIsProbed() throws Exception {
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var scan = executor.submit(() -> libraryManagementService.scanLibrary(library.getId()));
+    try (var scan =
+        BoundedTask.start(() -> libraryManagementService.scanLibrary(library.getId()))) {
       await().atMost(Duration.ofSeconds(10)).until(() -> isScheduled(mediaFile));
       Files.delete(FilepathCodec.decode(mediaFile.getFilepathUri()));
 
       startScheduler(probeExecution, new AbstractSchedulerListener() {});
-      scan.get(20, TimeUnit.SECONDS);
+      scan.await(SCAN_BOUND);
     }
 
     assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
@@ -215,7 +216,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
     var probing = new CountDownLatch(1);
     var release = new CompletableFuture<Void>();
     var producer = new FakeFfprobeService();
-    probeTaskRequests.request(request(mediaFile));
+    probeTaskRequests.request(requestFor(mediaFile));
     startScheduler(
         probeExecution.toBuilder()
             .producer(
@@ -230,14 +231,14 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
     var source = FilepathCodec.decode(mediaFile.getFilepathUri());
     Files.writeString(source, "changed media");
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var scan = executor.submit(() -> libraryManagementService.scanLibrary(library.getId()));
+    try (var scan =
+        BoundedTask.start(() -> libraryManagementService.scanLibrary(library.getId()))) {
       var changed = snapshotOf(mediaFile);
       await().atMost(Duration.ofSeconds(10)).until(() -> isRequestedAt(mediaFile, changed));
       Files.delete(source);
       release.complete(null);
 
-      scan.get(20, TimeUnit.SECONDS);
+      scan.await(SCAN_BOUND);
     }
 
     assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
@@ -247,7 +248,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
   @DisplayName("Should finish the scan when another library has pending probes")
   void shouldFinishTheScanWhenAnotherLibraryHasPendingProbes() throws Exception {
     var otherLibrary = scannedLibrary(Files.createDirectories(tempDir.resolve("other")));
-    probeTaskRequests.request(request(matchedFile(otherLibrary, "Other (2024).mkv")));
+    probeTaskRequests.request(requestFor(matchedFile(otherLibrary, "Other (2024).mkv")));
     outcomes.publish(
         ProbePublication.builder()
             .mediaFileId(mediaFile.getId())
@@ -256,7 +257,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
             .outcome(new ProbeOutcome.Failure(ProbeError.INVALID_MEDIA))
             .build());
 
-    libraryManagementService.scanLibrary(library.getId());
+    scan(library);
 
     assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
   }
@@ -272,29 +273,13 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
             .outcome(new ProbeOutcome.Failure(ProbeError.INVALID_MEDIA))
             .build());
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      executor
-          .submit(() -> libraryManagementService.scanLibrary(library.getId()))
-          .get(20, TimeUnit.SECONDS);
-    }
+    scan(library);
 
     assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
   }
 
   private void scan(Library scanned) throws Exception {
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      executor
-          .submit(() -> libraryManagementService.scanLibrary(scanned.getId()))
-          .get(20, TimeUnit.SECONDS);
-    }
-  }
-
-  private void assertStillScanning(Future<?> scan) {
-    await()
-        .during(Duration.ofMillis(300))
-        .atMost(Duration.ofSeconds(2))
-        .until(() -> !scan.isDone());
-    assertThat(statusOf(library)).isEqualTo(LibraryStatus.SCANNING);
+    BoundedTask.runWithin(SCAN_BOUND, () -> libraryManagementService.scanLibrary(scanned.getId()));
   }
 
   private Library scannedLibrary(Path root) {
@@ -325,6 +310,8 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
     return saved;
   }
 
+  // Polled because a scan saves its probe requests inside the service, which gives a test no hook
+  // to wait on.
   private boolean isScheduled(MediaFile file) {
     return outcomes.findProbeStates(List.of(file.getId())).stream()
         .anyMatch(state -> state.requested().isPresent());
@@ -339,37 +326,5 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
 
   private LibraryStatus statusOf(Library scanned) {
     return libraries.findById(scanned.getId()).orElseThrow().getStatus();
-  }
-
-  private static AbstractSchedulerListener countingOk(CountDownLatch completions) {
-    return new AbstractSchedulerListener() {
-      @Override
-      public void onExecutionComplete(ExecutionComplete executionComplete) {
-        if (executionComplete.getResult() == ExecutionComplete.Result.OK) {
-          completions.countDown();
-        }
-      }
-    };
-  }
-
-  private static TaskInstanceId instanceOf(MediaFile file) {
-    return TaskInstanceId.of(MediaProbeTask.NAME, file.getId().toString());
-  }
-
-  private static ProbeTaskRequest request(MediaFile file) throws IOException {
-    return ProbeTaskRequest.builder()
-        .mediaFileId(file.getId())
-        .libraryId(file.getLibraryId())
-        .filepathUri(file.getFilepathUri())
-        .snapshot(snapshotOf(file))
-        .probeVersion(ProbeVersion.CURRENT)
-        .build();
-  }
-
-  private static SourceFileSnapshot snapshotOf(MediaFile file) throws IOException {
-    var attributes =
-        Files.readAttributes(
-            FilepathCodec.decode(file.getFilepathUri()), BasicFileAttributes.class);
-    return new SourceFileSnapshot(attributes.size(), attributes.lastModifiedTime().toInstant());
   }
 }

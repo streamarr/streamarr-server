@@ -30,7 +30,7 @@ public record ProbeState(
 
     // The requested probe cannot publish over a newer version's outcome for the same source.
     if (stored.filter(newer -> isNewerProbeOfSameSource(newer.inputs(), inputs)).isPresent()) {
-      return RequestedProbeResult.SUPERSEDED;
+      return RequestedProbeResult.PROBED_BY_NEWER_VERSION;
     }
 
     if (requested.isEmpty()) {

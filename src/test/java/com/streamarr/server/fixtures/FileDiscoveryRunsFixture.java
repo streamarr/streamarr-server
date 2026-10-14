@@ -8,6 +8,7 @@ import com.streamarr.server.services.ArtworkService;
 import com.streamarr.server.services.library.FileDiscoveryRuns;
 import com.streamarr.server.services.library.MediaFileProbeTaskScheduler;
 import com.streamarr.server.services.library.ProbeRuns;
+import com.streamarr.server.services.library.Sleeper;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import java.nio.file.FileSystem;
 import java.time.Clock;
@@ -22,8 +23,9 @@ public final class FileDiscoveryRunsFixture {
   private FileDiscoveryRunsFixture() {}
 
   /**
-   * Probe results are checked again without waiting in real time. A check yields to other virtual
-   * threads, and a cancelled wait stops at its next check.
+   * Unless a test sets a sleeper, probe results are checked again without waiting in real time: a
+   * check yields to other virtual threads, and a cancelled wait stops at its next check. The clock
+   * defaults to the system clock.
    */
   @Builder(builderMethodName = "fileDiscoveryRunsBuilder")
   private static FileDiscoveryRuns fileDiscoveryRuns(
@@ -31,7 +33,19 @@ public final class FileDiscoveryRunsFixture {
       @NonNull MediaFileRepository mediaFiles,
       @NonNull FakeMediaFileContainerInfoRepository outcomes,
       @NonNull FakeProbeTaskRequests probeTaskRequests,
-      @NonNull FileSystem fileSystem) {
+      @NonNull FileSystem fileSystem,
+      Sleeper sleeper,
+      Clock clock) {
+    var probeSleeper = sleeper;
+    if (probeSleeper == null) {
+      probeSleeper = FileDiscoveryRunsFixture::yieldUntilInterrupted;
+    }
+
+    var probeClock = clock;
+    if (probeClock == null) {
+      probeClock = Clock.systemUTC();
+    }
+
     return FileDiscoveryRuns.builder()
         .artworkService(artworkService)
         .probeRuns(
@@ -44,18 +58,19 @@ public final class FileDiscoveryRunsFixture {
                         .fileSystem(fileSystem)
                         .build())
                 .outcomes(outcomes)
-                .sleeper(
-                    _ -> {
-                      if (Thread.interrupted()) {
-                        throw new InterruptedException();
-                      }
-
-                      Thread.yield();
-                    })
-                .clock(Clock.systemUTC())
+                .sleeper(probeSleeper)
+                .clock(probeClock)
                 .properties(new ProbeSchedulingProperties(null, CHECK_INTERVAL))
                 .build())
         .mediaFiles(mediaFiles)
         .build();
+  }
+
+  private static void yieldUntilInterrupted(Duration ignored) throws InterruptedException {
+    if (Thread.interrupted()) {
+      throw new InterruptedException();
+    }
+
+    Thread.yield();
   }
 }

@@ -14,10 +14,11 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Supplier;
+import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.springframework.util.backoff.ExponentialBackOff;
@@ -33,20 +34,26 @@ class FileEventProcessor {
   private final FileStabilityChecker fileStabilityChecker;
   private final LibraryManagementService libraryManagementService;
   private final IgnoredFileValidator ignoredFileValidator;
+  private final Supplier<ExecutorService> executors;
 
   private final ConcurrentHashMap<Path, InFlightTask> inFlightChecks = new ConcurrentHashMap<>();
   private final ReentrantReadWriteLock stateLock = new ReentrantReadWriteLock();
 
-  private ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+  private ExecutorService executor;
   private List<Library> cachedLibraries = List.of();
 
+  /** Takes a new executor from {@code executors} when built and on each reset. */
+  @Builder
   FileEventProcessor(
       FileStabilityChecker fileStabilityChecker,
       LibraryManagementService libraryManagementService,
-      IgnoredFileValidator ignoredFileValidator) {
+      IgnoredFileValidator ignoredFileValidator,
+      Supplier<ExecutorService> executors) {
     this.fileStabilityChecker = fileStabilityChecker;
     this.libraryManagementService = libraryManagementService;
     this.ignoredFileValidator = ignoredFileValidator;
+    this.executors = executors;
+    this.executor = executors.get();
   }
 
   void handleFileEvent(DirectoryChangeEvent.EventType eventType, Path path) {
@@ -63,7 +70,7 @@ class FileEventProcessor {
     try {
       executor.shutdownNow();
       inFlightChecks.clear();
-      executor = Executors.newVirtualThreadPerTaskExecutor();
+      executor = executors.get();
       cachedLibraries = List.copyOf(libraries);
     } finally {
       stateLock.writeLock().unlock();
