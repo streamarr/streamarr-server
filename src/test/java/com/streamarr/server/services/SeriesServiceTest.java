@@ -26,7 +26,7 @@ import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
-import com.streamarr.server.fixtures.ArtworkServiceFixture;
+import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
@@ -44,7 +44,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 import org.jooq.SortOrder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -62,6 +61,7 @@ class SeriesServiceTest {
   private FakeEpisodeRepository episodeRepository;
   private FakeImageRepository imageRepository;
   private FakeTmdbHttpService imageDownloader;
+  private ArtworkFixture artwork;
   private ArtworkService artworkService;
   private ArtworkRun artworkRun;
   private SeriesService seriesService;
@@ -74,11 +74,12 @@ class SeriesServiceTest {
     imageRepository = new FakeImageRepository();
     imageDownloader = new FakeTmdbHttpService();
     imageDownloader.setImageData(createTestImage(600, 900));
-    artworkService =
-        ArtworkServiceFixture.artworkServiceBuilder()
+    artwork =
+        ArtworkFixture.builder()
             .imageRepository(imageRepository)
             .imageDownloader(imageDownloader)
             .build();
+    artworkService = artwork.artworkService();
     artworkRun = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
     var paginationService = new PaginationService();
     var fileSystem = Jimfs.newFileSystem(Configuration.unix());
@@ -107,7 +108,6 @@ class SeriesServiceTest {
   @AfterEach
   void tearDown() {
     artworkRun.close();
-    artworkService.shutdown();
   }
 
   @Nested
@@ -820,8 +820,7 @@ class SeriesServiceTest {
   }
 
   private ArtworkRunSummary awaitArtwork() {
-    artworkRun.close();
-    return artworkRun.completion().orTimeout(5, TimeUnit.SECONDS).join();
+    return artwork.closeAndAwait(artworkRun);
   }
 
   private List<ImageType> imageTypesOf(UUID entityId, ImageEntityType entityType) {

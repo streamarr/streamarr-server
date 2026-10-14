@@ -10,7 +10,9 @@ import static org.mockito.Mockito.mock;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.media.ArtworkAttempt;
 import com.streamarr.server.domain.media.Episode;
+import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.MediaFile;
@@ -29,6 +31,7 @@ import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
+import com.streamarr.server.fixtures.ArtworkAttemptFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.PersistedProbeFixture;
 import com.streamarr.server.fixtures.ProbeFixture;
@@ -37,6 +40,7 @@ import com.streamarr.server.repositories.CompanyRepository;
 import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.PersonRepository;
+import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
@@ -56,7 +60,6 @@ import jakarta.persistence.EntityManager;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -82,8 +85,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
   private static final AuthenticatedIdentity IDENTITY = defaultIdentityBuilder().build();
-  private static final Instant ATTEMPTED_AT = Instant.parse("2026-09-23T10:00:00Z");
-
+  @Autowired private TransactionTemplate transactionTemplate;
+  @Autowired private ArtworkRequestRepository artworkRequests;
   @Autowired private LibraryManagementService libraryManagementService;
 
   @Autowired private LibraryRepository libraryRepository;
@@ -600,7 +603,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
     var poster =
         imageService.processImage(
             createTestImage(600, 900), ImageType.POSTER, itemId, itemType, "/" + itemId + ".jpg");
-    imageService.saveImages(poster.images(), ATTEMPTED_AT);
+    imageService.saveImages(poster.images(), requestedAttempt(poster.images()));
     assertThat(itemResults.findByItem(itemId, itemType)).isNotEmpty();
     return poster.writtenFiles();
   }
@@ -608,5 +611,9 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
   private void assertNothingStoredFor(UUID itemId, ImageEntityType itemType) {
     assertThat(itemResults.findByItem(itemId, itemType)).isEmpty();
     assertThat(imageRepository.findByEntityIdAndEntityType(itemId, itemType)).isEmpty();
+  }
+
+  private ArtworkAttempt requestedAttempt(List<Image> images) {
+    return ArtworkAttemptFixture.requestedAttemptFor(transactionTemplate, artworkRequests, images);
   }
 }

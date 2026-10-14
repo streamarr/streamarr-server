@@ -11,6 +11,7 @@ import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.jooq.generated.enums.ItemResultStep;
 import com.streamarr.server.jooq.generated.tables.records.ArtworkRequestRecord;
+import com.streamarr.server.repositories.PostgresTransactionLocks;
 import com.streamarr.server.services.ArtworkSources;
 import com.streamarr.server.services.PendingArtworkRequest;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
@@ -26,6 +27,7 @@ import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
@@ -49,13 +51,24 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
 
   private record StoredSources(List<ImageType> imageTypes, List<String> keys) {}
 
+  // Writers of an item's request and the completion of its scheduled task take this lock before
+  // the request row, so a completion that finds no request cannot miss a request being inserted.
+  private static final int REQUEST_LOCK_NAMESPACE = 0x41525452;
+
   private final DSLContext dsl;
+  private final PostgresTransactionLocks transactionLocks;
 
   @Override
   @Transactional(propagation = Propagation.MANDATORY)
   public SavedArtworkRequest saveRequest(
       ArtworkSources artwork, ImageRefreshMode refreshMode, Instant requestedAt) {
     var sources = storedSources(artwork);
+    var unlocked = findRow(artwork.item());
+    if (unlocked.isPresent() && coversRequest(unlocked.get(), sources, refreshMode)) {
+      return new SavedArtworkRequest.Unchanged(unlocked.get().getGeneration());
+    }
+
+    lockRequest(artwork.item());
     for (var attempt = 0; attempt < MAX_SAVE_ATTEMPTS; attempt++) {
       var inserted = tryInsert(artwork, sources, refreshMode, requestedAt);
       if (inserted.isPresent()) {
@@ -98,6 +111,7 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
   @Override
   @Transactional(propagation = Propagation.MANDATORY)
   public Optional<Long> lockPendingGeneration(ArtworkItem item) {
+    lockRequest(item);
     return dsl.select(ARTWORK_REQUEST.GENERATION)
         .from(ARTWORK_REQUEST)
         .where(identifies(item))
@@ -108,6 +122,7 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
   @Override
   @Transactional(propagation = Propagation.MANDATORY)
   public boolean tryCompleteGeneration(ArtworkItem item, long generation) {
+    lockRequest(item);
     var pending =
         dsl.select(ARTWORK_REQUEST.GENERATION)
             .from(ARTWORK_REQUEST)
@@ -214,6 +229,11 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
         .and(ARTWORK_REQUEST.GENERATION.eq(pending.getGeneration()))
         .returning(ARTWORK_REQUEST.GENERATION)
         .fetchOptional(ARTWORK_REQUEST.GENERATION);
+  }
+
+  private void lockRequest(ArtworkItem item) {
+    transactionLocks.lock(
+        REQUEST_LOCK_NAMESPACE, Objects.hash(item.itemId(), item.itemType().name()));
   }
 
   private Optional<ArtworkRequestRecord> findRow(ArtworkItem item) {

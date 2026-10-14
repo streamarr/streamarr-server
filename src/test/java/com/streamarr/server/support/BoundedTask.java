@@ -53,6 +53,11 @@ public final class BoundedTask<T> implements AutoCloseable {
     }
   }
 
+  /** Interrupts the task's thread, as a stopping server interrupts its workers. */
+  public void interrupt() {
+    thread.interrupt();
+  }
+
   /**
    * Returns the task's result or rethrows its own failure. The task gets the same bound again to
    * stop after its interrupt.

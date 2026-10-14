@@ -11,15 +11,15 @@ import lombok.Builder;
 import lombok.NonNull;
 
 /**
- * The required results of one scan, and the secondary work that continues after it. Secondary image
- * counts cover the whole server.
+ * The required results of one scan, and the background work that continues after it. Background
+ * image counts cover the whole server.
  */
 @Builder
 public record ScanResults(
     @NonNull Map<MediaFileStatus, Long> files,
     @NonNull ArtworkRunSummary artwork,
     @NonNull ProbeRunSummary probes,
-    int backgroundImagesPending) {
+    long backgroundImagesPending) {
 
   public ScanResults {
     files = Map.copyOf(files);
@@ -29,12 +29,13 @@ public record ScanResults(
     return String.join(
         "; ",
         describeFiles(),
-        "required artwork in %s seconds (%s)"
+        "primary artwork in %s seconds (%s)"
             .formatted(seconds(artwork.elapsed()), artwork.counts().describe()),
         "probes in %s seconds (%s)".formatted(seconds(probes.elapsed()), probes.describe()),
         "in the background: %s pending across all libraries, %s retrying, %s to probe"
             .formatted(
-                SummaryText.counted(backgroundImagesPending, "secondary image", "secondary images"),
+                SummaryText.counted(
+                    backgroundImagesPending, "background image", "background images"),
                 SummaryText.counted(
                     probes.count(RequestedProbeResult.FAILED), "failed probe", "failed probes"),
                 SummaryText.counted(

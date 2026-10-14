@@ -8,13 +8,12 @@ import static org.mockito.Mockito.when;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.metadata.Person;
-import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakePersonRepository;
+import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
-import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -29,14 +28,15 @@ import org.junit.jupiter.api.Test;
 class PersonServiceTest {
 
   private FakePersonRepository personRepository;
-  private CapturingEventPublisher eventPublisher;
+  private ArtworkFixture artwork;
   private PersonService personService;
 
   @BeforeEach
   void setUp() {
     personRepository = new FakePersonRepository();
-    eventPublisher = new CapturingEventPublisher();
-    personService = new PersonService(personRepository, eventPublisher);
+    artwork = ArtworkFixture.builder().build();
+    artwork.scheduling().holdScheduledSteps();
+    personService = new PersonService(personRepository, artwork.artworkService());
   }
 
   @Test
@@ -113,8 +113,8 @@ class PersonServiceTest {
   }
 
   @Test
-  @DisplayName("Should publish MetadataEnrichedEvent when creating new person with image sources")
-  void shouldPublishMetadataEnrichedEventWhenCreatingNewPersonWithImageSources() {
+  @DisplayName("Should request background artwork when creating new person with image sources")
+  void shouldRequestBackgroundArtworkWhenCreatingNewPersonWithImageSources() {
     var person = Person.builder().name("Tom Hanks").sourceId("actor-1").build();
     var imageSources =
         Map.<String, List<ImageSource>>of(
@@ -122,14 +122,14 @@ class PersonServiceTest {
 
     personService.getOrCreatePersons(List.of(person), imageSources, ImageRefreshMode.PRESERVE);
 
-    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-    assertThat(events).hasSize(1);
-    assertThat(events.getFirst().entityType()).isEqualTo(ImageEntityType.PERSON);
+    var requests = artwork.requests().requests();
+    assertThat(requests).hasSize(1);
+    assertThat(requests.getFirst().artwork().entityType()).isEqualTo(ImageEntityType.PERSON);
   }
 
   @Test
-  @DisplayName("Should publish image event when existing person has image sources")
-  void shouldPublishImageEventWhenExistingPersonHasImageSources() {
+  @DisplayName("Should request artwork when existing person has image sources")
+  void shouldRequestArtworkWhenExistingPersonHasImageSources() {
     var existing =
         personRepository.save(Person.builder().name("Tom Hanks").sourceId("actor-1").build());
 
@@ -139,21 +139,21 @@ class PersonServiceTest {
 
     personService.getOrCreatePersons(List.of(updated), imageSources, ImageRefreshMode.PRESERVE);
 
-    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-    assertThat(events)
+    var requests = artwork.requests().requests();
+    assertThat(requests)
         .singleElement()
         .satisfies(
-            event -> {
-              assertThat(event.entityId()).isEqualTo(existing.getId());
-              assertThat(event.entityType()).isEqualTo(ImageEntityType.PERSON);
-              assertThat(event.imageSources()).containsExactly(expectedImageSource);
-              assertThat(event.imageRefreshMode()).isEqualTo(ImageRefreshMode.PRESERVE);
+            request -> {
+              assertThat(request.artwork().entityId()).isEqualTo(existing.getId());
+              assertThat(request.artwork().entityType()).isEqualTo(ImageEntityType.PERSON);
+              assertThat(request.artwork().sources()).containsExactly(expectedImageSource);
+              assertThat(request.refreshMode()).isEqualTo(ImageRefreshMode.PRESERVE);
             });
   }
 
   @Test
-  @DisplayName("Should propagate image refresh mode when publishing person image event")
-  void shouldPropagateImageRefreshModeWhenPublishingPersonImageEvent() {
+  @DisplayName("Should propagate image refresh mode when requesting person artwork")
+  void shouldPropagateImageRefreshModeWhenRequestingPersonArtwork() {
     var person = Person.builder().name("Tom Hanks").sourceId("actor-1").build();
     var imageSources =
         Map.<String, List<ImageSource>>of(
@@ -162,21 +162,21 @@ class PersonServiceTest {
     personService.getOrCreatePersons(
         List.of(person), imageSources, ImageRefreshMode.REFRESH_IF_CHANGED);
 
-    assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class))
+    assertThat(artwork.requests().requests())
         .singleElement()
-        .extracting(MetadataEnrichedEvent::imageRefreshMode)
+        .extracting(PendingArtworkRequest::refreshMode)
         .isEqualTo(ImageRefreshMode.REFRESH_IF_CHANGED);
   }
 
   @Test
-  @DisplayName("Should not publish image event when existing person has no image sources")
-  void shouldNotPublishImageEventWhenExistingPersonHasNoImageSources() {
+  @DisplayName("Should not request artwork when existing person has no image sources")
+  void shouldNotRequestArtworkWhenExistingPersonHasNoImageSources() {
     personRepository.save(Person.builder().name("Tom Hanks").sourceId("actor-1").build());
     var updated = Person.builder().name("Tom Hanks").sourceId("actor-1").build();
 
     personService.getOrCreatePersons(List.of(updated), Map.of(), ImageRefreshMode.PRESERVE);
 
-    assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class)).isEmpty();
+    assertThat(artwork.requests().requests()).isEmpty();
   }
 
   @Test
@@ -210,7 +210,7 @@ class PersonServiceTest {
                 personService.getOrCreatePersons(persons, imageSources, ImageRefreshMode.PRESERVE))
         .isInstanceOf(IllegalArgumentException.class);
     assertThat(personRepository.count()).isZero();
-    assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class)).isEmpty();
+    assertThat(artwork.requests().requests()).isEmpty();
   }
 
   @Test
@@ -259,9 +259,9 @@ class PersonServiceTest {
     var ascendingRepository = new RecordingPersonRepository();
     var descendingRepository = new RecordingPersonRepository();
 
-    new PersonService(ascendingRepository, new CapturingEventPublisher())
+    new PersonService(ascendingRepository, ArtworkFixture.builder().build().artworkService())
         .getOrCreatePersons(ascending, Map.of(), ImageRefreshMode.PRESERVE);
-    new PersonService(descendingRepository, new CapturingEventPublisher())
+    new PersonService(descendingRepository, ArtworkFixture.builder().build().artworkService())
         .getOrCreatePersons(ascending.reversed(), Map.of(), ImageRefreshMode.PRESERVE);
 
     assertThat(descendingRepository.processedSourceIds())
@@ -273,7 +273,8 @@ class PersonServiceTest {
   void shouldThrowWhenPersonNotFoundAfterUpsert() {
     var stubRepository = mock(PersonRepository.class);
     when(stubRepository.findPersonBySourceId("actor-1")).thenReturn(Optional.empty());
-    var service = new PersonService(stubRepository, new CapturingEventPublisher());
+    var service =
+        new PersonService(stubRepository, ArtworkFixture.builder().build().artworkService());
 
     var person = Person.builder().name("Tom Hanks").sourceId("actor-1").build();
     var persons = List.of(person);

@@ -21,9 +21,6 @@ public record ItemResult(
     @NonNull Instant attemptedAt,
     Long artworkGeneration) {
 
-  /** The generation of artwork results recorded before artwork requests existed. */
-  public static final long LEGACY_ARTWORK_GENERATION = 0;
-
   public ItemResult {
     var artwork = step == ItemStep.ARTWORK;
     if (artwork != (imageType != null)) {

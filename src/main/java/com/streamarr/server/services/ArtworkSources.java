@@ -3,7 +3,6 @@ package com.streamarr.server.services;
 import com.streamarr.server.domain.media.ArtworkItem;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
-import com.streamarr.server.services.ArtworkResult.Failed;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import java.util.EnumSet;
 import java.util.List;
@@ -33,12 +32,6 @@ public record ArtworkSources(
   /** One image type per requested source image: each source plus each missing image type. */
   public List<ImageType> requestedImageTypes() {
     return Stream.concat(sources.stream().map(ImageSource::imageType), missingImageTypes().stream())
-        .toList();
-  }
-
-  List<ArtworkResult> failures(Throwable cause) {
-    return requestedImageTypes().stream()
-        .<ArtworkResult>map(imageType -> new Failed(imageType, cause))
         .toList();
   }
 

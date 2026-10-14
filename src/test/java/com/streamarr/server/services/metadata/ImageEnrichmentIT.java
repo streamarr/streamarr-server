@@ -11,27 +11,29 @@ import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockArtworkRows;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractWireMockIntegrationTest;
+import com.streamarr.server.domain.media.ArtworkAttempt;
+import com.streamarr.server.domain.media.ArtworkItem;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.ArtworkSources;
+import com.streamarr.server.services.ArtworkSteps;
 import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
-import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import com.streamarr.server.support.TestFixtureWork;
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.SQLException;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
@@ -44,7 +46,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -55,7 +56,8 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
 
   private static final Instant ATTEMPTED_AT = Instant.parse("2026-09-23T10:00:00Z");
 
-  @Autowired private ApplicationEventPublisher eventPublisher;
+  @Autowired private ArtworkSteps artworkSteps;
+  @Autowired private ArtworkRequestRepository requests;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private ImageRepository imageRepository;
   @Autowired private ImageService imageService;
@@ -70,27 +72,17 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should persist images with correct type when event published within a transaction")
-  void shouldPersistImagesWithCorrectTypeWhenEventPublishedWithinTransaction() {
+  @DisplayName("Should persist images with correct type when artwork steps run for a request")
+  void shouldPersistImagesWithCorrectTypeWhenArtworkStepsRunForARequest() {
     var entityId = savedMovieId();
     stubImageDownload("/poster.jpg");
+    request(entityId, "/poster.jpg");
 
-    transactionTemplate.executeWithoutResult(
-        status ->
-            eventPublisher.publishEvent(
-                new MetadataEnrichedEvent(
-                    entityId,
-                    ImageEntityType.MOVIE,
-                    List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))));
+    artworkSteps.runSteps(new ArtworkItem(entityId, ImageEntityType.MOVIE));
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> {
-              var images =
-                  imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-              assertThat(images).extracting(Image::getImageType).containsOnly(ImageType.POSTER);
-            });
+    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+        .extracting(Image::getImageType)
+        .containsOnly(ImageType.POSTER);
   }
 
   @Test
@@ -98,26 +90,14 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
   void shouldPersistNullAmbientColorsWhenArtworkHasInsufficientOpaqueCoverage() {
     var entityId = savedMovieId();
     stubImageDownload("/transparent.png", createTransparentPngImage());
+    request(entityId, "/transparent.png");
 
-    transactionTemplate.executeWithoutResult(
-        status ->
-            eventPublisher.publishEvent(
-                new MetadataEnrichedEvent(
-                    entityId,
-                    ImageEntityType.MOVIE,
-                    List.of(new TmdbImageSource(ImageType.POSTER, "/transparent.png")))));
+    artworkSteps.runSteps(new ArtworkItem(entityId, ImageEntityType.MOVIE));
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> {
-              var images =
-                  imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-              assertThat(images)
-                  .filteredOn(image -> image.getVariant() == ImageSize.SMALL)
-                  .singleElement()
-                  .satisfies(image -> assertThat(image.getAmbientColors()).isEmpty());
-            });
+    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+        .filteredOn(image -> image.getVariant() == ImageSize.SMALL)
+        .singleElement()
+        .satisfies(image -> assertThat(image.getAmbientColors()).isEmpty());
   }
 
   @Test
@@ -132,7 +112,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
             imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE, sourceKey);
 
     try {
-      imageService.saveImages(processed.images(), ATTEMPTED_AT);
+      imageService.saveImages(processed.images(), attemptFor(entityId));
 
       var expectedContentSha256 =
           HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(imageData));
@@ -170,7 +150,8 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
             newImageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE, newKey);
 
     try {
-      imageService.saveImages(original.images(), ATTEMPTED_AT);
+      var attempt = attemptFor(entityId);
+      imageService.saveImages(original.images(), attempt);
       var originalImages =
           imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
       var originalIds = originalImages.stream().map(Image::getId).toList();
@@ -180,7 +161,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
               .findFirst()
               .orElseThrow();
 
-      imageService.replaceImages(replacement, ATTEMPTED_AT);
+      imageService.replaceImages(replacement, attempt);
 
       var expectedContentSha256 =
           HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(newImageData));
@@ -221,7 +202,8 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
     var original =
         imageService.processImage(
             createTestImage(600, 900), ImageType.POSTER, entityId, ImageEntityType.MOVIE, oldKey);
-    imageService.saveImages(original.images(), ATTEMPTED_AT);
+    var attempt = attemptFor(entityId);
+    imageService.saveImages(original.images(), attempt);
     var originalImages =
         imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
     var originalIds = originalImages.stream().map(Image::getId).toList();
@@ -235,7 +217,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
     replacement.images().getLast().setPath(null);
 
     try {
-      assertThatThrownBy(() -> imageService.replaceImages(replacement, ATTEMPTED_AT))
+      assertThatThrownBy(() -> imageService.replaceImages(replacement, attempt))
           .isInstanceOf(RuntimeException.class);
 
       var preserved = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
@@ -256,22 +238,24 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
   @Test
   @DisplayName("Should reject malformed content SHA-256 when persisted at database boundary")
   void shouldRejectMalformedContentSha256WhenPersistedAtDatabaseBoundary() {
+    var entityId = savedMovieId();
     var processed =
         imageService.processImage(
             createTestImage(600, 900),
             ImageType.POSTER,
-            UUID.randomUUID(),
+            entityId,
             ImageEntityType.MOVIE,
             "/poster.jpg");
     var invalidImage = processed.images().getFirst();
     invalidImage.setContentSha256("not-a-sha256");
     var invalidImages = List.of(invalidImage);
+    var attempt = attemptFor(entityId);
 
     try {
       assertThatThrownBy(
               () ->
-                  transactionTemplate.execute(
-                      _ -> imageRepository.insertAllIfAbsent(invalidImages)))
+                  transactionTemplate.executeWithoutResult(
+                      _ -> imageRepository.insertAllIfAbsent(invalidImages, attempt)))
           .isInstanceOf(DataIntegrityViolationException.class)
           .hasMessageContaining("image_content_sha256_format_check");
     } finally {
@@ -320,7 +304,8 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
             entityId,
             ImageEntityType.MOVIE,
             "/magenta.jpg");
-    imageService.saveImages(original.images(), ATTEMPTED_AT);
+    var attempt = attemptFor(entityId);
+    imageService.saveImages(original.images(), attempt);
 
     try {
       try (var rowLockConnection = dataSource.getConnection()) {
@@ -333,7 +318,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
             var cyan =
                 executor.submit(
                     () -> {
-                      imageService.replaceImages(cyanReplacement, ATTEMPTED_AT);
+                      imageService.replaceImages(cyanReplacement, attempt);
                       return null;
                     });
             var cyanPid = awaitBlockedBackendPid(rowLockConnection, rowLockerPid, null);
@@ -342,7 +327,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
             var magenta =
                 executor.submit(
                     () -> {
-                      imageService.replaceImages(magentaReplacement, ATTEMPTED_AT);
+                      imageService.replaceImages(magentaReplacement, attempt);
                       return null;
                     });
             var magentaPid = awaitBlockedBackendPid(rowLockConnection, cyanPid, "advisory");
@@ -375,6 +360,25 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
       imageService.deleteFiles(cyanReplacement.writtenFiles());
       imageService.deleteFiles(magentaReplacement.writtenFiles());
     }
+  }
+
+  private long request(UUID entityId, String posterKey) {
+    var artwork =
+        ArtworkSources.builder()
+            .entityId(entityId)
+            .entityType(ImageEntityType.MOVIE)
+            .sources(List.of(new TmdbImageSource(ImageType.POSTER, posterKey)))
+            .build();
+    return transactionTemplate.execute(
+        _ -> requests.saveRequest(artwork, ImageRefreshMode.PRESERVE, ATTEMPTED_AT).generation());
+  }
+
+  private ArtworkAttempt attemptFor(UUID entityId) {
+    return ArtworkAttempt.builder()
+        .item(new ArtworkItem(entityId, ImageEntityType.MOVIE))
+        .generation(request(entityId, "/requested.jpg"))
+        .attemptedAt(ATTEMPTED_AT)
+        .build();
   }
 
   private UUID savedMovieId() {

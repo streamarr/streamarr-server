@@ -1,164 +1,115 @@
 package com.streamarr.server.services;
 
-import com.streamarr.server.services.audit.SystemWork;
+import com.streamarr.server.domain.media.Image;
+import com.streamarr.server.repositories.media.ArtworkRequestRepository;
+import com.streamarr.server.repositories.media.ArtworkRequestRepository.SavedArtworkRequest;
+import com.streamarr.server.services.ArtworkPlan.PlannedImage;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
-import jakarta.annotation.PreDestroy;
 import java.time.Clock;
-import java.time.Instant;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.RejectedExecutionException;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
+import java.util.Map;
+import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-@Slf4j
+/**
+ * Requests artwork for catalog items. A request is stored in the transaction that records the
+ * item's metadata, and scheduled artwork steps carry it out, so a committed request survives a
+ * restart and its steps retry until each image has a result.
+ */
 @Service
+@RequiredArgsConstructor
 public class ArtworkService {
 
-  private record RequiredFetch(
-      ArtworkRun run, ArtworkSources artwork, CompletableFuture<List<ArtworkResult>> request) {
-
-    private int sourceImages() {
-      return artwork.requestedImageTypes().size();
-    }
-  }
-
-  private final ArtworkFetcher artworkFetcher;
-  private final ArtworkProgress progress;
+  private final ArtworkRequestRepository requests;
+  private final ArtworkScheduling scheduling;
+  private final ImageService imageService;
   private final Clock clock;
-  private final ExecutorService requiredArtworkExecutor =
-      SystemWork.newExecutorRunningAsSystemActor("required-artwork-");
 
-  // The image client's rate limiter grants permits in arrival order, so an unbounded backlog of
-  // person and company images would take permits ahead of required artwork. Bounding concurrent
-  // secondary fetches keeps that backlog in this executor's queue instead.
-  private final ExecutorService secondaryArtworkExecutor;
-
-  public ArtworkService(
-      ArtworkFetcher artworkFetcher,
-      ArtworkProgress progress,
-      Clock clock,
-      @Value("${artwork.secondary-concurrency:4}") int secondaryConcurrency) {
-    this.artworkFetcher = artworkFetcher;
-    this.progress = progress;
-    this.clock = clock;
-    this.secondaryArtworkExecutor =
-        Executors.newFixedThreadPool(
-            secondaryConcurrency,
-            SystemWork.newThreadFactoryRunningAsSystemActor("secondary-artwork-"));
-  }
-
-  /** Opens a run that collects the required artwork of one scan, refresh, or file discovery. */
+  /** Opens a run that collects the primary artwork of one scan, refresh, or file discovery. */
   public ArtworkRun openRun(String description, ImageRefreshMode imageRefreshMode) {
-    var run = new ArtworkRun(description, imageRefreshMode, clock);
-    run.completion().thenAccept(progress::runCompleted);
-    return run;
+    return new ArtworkRun(description, imageRefreshMode, clock);
   }
 
   /**
-   * Fetches an entity's required artwork for the run. The request is registered with the run before
-   * this method returns. Inside a transaction the fetch starts after commit, and a rollback
-   * withdraws the request and completes the future with no results. Otherwise the future completes
-   * once every requested source image is saved, skipped, unavailable, or failed, and its result is
-   * stored. If an unavailable or failed result cannot be stored, the future completes exceptionally
-   * with the database error and the run fails once its other requests finish.
+   * Requests an item's primary artwork for the run, in the caller's transaction. Stored images that
+   * the run's refresh mode keeps count as skipped and need no request; the run waits for a result
+   * of every other image. A rollback withdraws the request from the run.
    *
    * @throws IllegalStateException if the run is closed to new requests
    */
-  public CompletableFuture<List<ArtworkResult>> requestPrimaryArtwork(
-      ArtworkRun run, ArtworkSources artwork) {
-    run.register();
-    var request = new CompletableFuture<List<ArtworkResult>>();
-    var fetch = new RequiredFetch(run, artwork, request);
-    progress.requested(ArtworkPriority.PRIMARY, fetch.sourceImages());
-    afterOwningTransaction(() -> startRequiredFetch(fetch), () -> finish(fetch, List.of()));
-    return request;
-  }
-
-  /**
-   * Fetches person and company artwork in the background. At most {@code
-   * artwork.secondary-concurrency} secondary fetches run at once, and the rest wait in a queue so
-   * they cannot delay required artwork.
-   */
-  public CompletableFuture<List<ArtworkResult>> requestBackgroundArtwork(
-      ArtworkSources artwork, ImageRefreshMode refreshMode) {
-    var sourceImages = artwork.requestedImageTypes().size();
-    progress.requested(ArtworkPriority.BACKGROUND, sourceImages);
-    var attemptedAt = clock.instant();
-    CompletableFuture<List<ArtworkResult>> results;
-    try {
-      results =
-          CompletableFuture.supplyAsync(
-              () -> artworkFetcher.fetch(artwork, refreshMode, attemptedAt),
-              secondaryArtworkExecutor);
-    } catch (RejectedExecutionException e) {
-      results = CompletableFuture.completedFuture(artwork.failures(e));
-    }
-
-    return results.whenComplete(
-        (finished, failure) -> {
-          var counted = finished;
-          if (failure != null) {
-            log.error(
-                "Failed to record artwork results for entity {}", artwork.entityId(), failure);
-            counted = artwork.failures(failure);
-          }
-
-          progress.finished(ArtworkPriority.BACKGROUND, sourceImages, counted);
-        });
-  }
-
-  /** Returns how many secondary source images are requested but not finished, server-wide. */
-  public int pendingBackgroundImages() {
-    return progress.pending(ArtworkPriority.BACKGROUND);
-  }
-
-  @PreDestroy
-  public void shutdown() {
-    requiredArtworkExecutor.shutdownNow();
-    secondaryArtworkExecutor.shutdownNow();
-  }
-
-  private void startRequiredFetch(RequiredFetch fetch) {
-    // Stamped when the owning transaction commits, so attempts order like the metadata they follow.
-    var attemptedAt = clock.instant();
-    try {
-      requiredArtworkExecutor.execute(() -> fetchRequiredArtwork(fetch, attemptedAt));
-    } catch (RejectedExecutionException e) {
-      finish(fetch, fetch.artwork().failures(e));
-    }
-  }
-
-  private void fetchRequiredArtwork(RequiredFetch fetch, Instant attemptedAt) {
-    List<ArtworkResult> results;
-    try {
-      results = artworkFetcher.fetch(fetch.artwork(), fetch.run().imageRefreshMode(), attemptedAt);
-    } catch (RuntimeException e) {
-      log.error("Failed to record artwork results for entity {}", fetch.artwork().entityId(), e);
-      var failures = fetch.artwork().failures(e);
-      fetch.run().finishUnsaved(failures, e);
-      progress.finished(ArtworkPriority.PRIMARY, fetch.sourceImages(), failures);
-      fetch.request().completeExceptionally(e);
+  @Transactional
+  public void requestPrimaryArtwork(ArtworkRun run, ArtworkSources artwork) {
+    var plan = plan(artwork, run.imageRefreshMode());
+    var awaited =
+        plan.images().stream()
+            .filter(image -> !(image instanceof PlannedImage.KeepStoredImage))
+            .map(PlannedImage::imageType)
+            .collect(Collectors.toSet());
+    var kept = plan.images().size() - awaited.size();
+    run.countKeptImages(kept);
+    afterRollback(() -> run.withdrawKeptImages(kept));
+    if (awaited.isEmpty()) {
       return;
     }
 
-    finish(fetch, results);
+    var saved = request(artwork, run.imageRefreshMode());
+    var requested =
+        RequestedArtwork.builder()
+            .item(artwork.item())
+            .generation(saved.generation())
+            .awaitedImageTypes(awaited)
+            .build();
+    run.register(requested);
+    afterRollback(() -> run.withdraw(requested));
   }
 
-  private void finish(RequiredFetch fetch, List<ArtworkResult> results) {
-    fetch.run().finish(results);
-    progress.finished(ArtworkPriority.PRIMARY, fetch.sourceImages(), results);
-    fetch.request().complete(results);
+  /**
+   * Requests a person's or company's artwork in the caller's transaction. Nothing waits for it, and
+   * nothing is requested when the refresh mode keeps every stored image.
+   */
+  @Transactional
+  public void requestBackgroundArtwork(ArtworkSources artwork, ImageRefreshMode refreshMode) {
+    var keepsEveryImage =
+        plan(artwork, refreshMode).images().stream()
+            .allMatch(PlannedImage.KeepStoredImage.class::isInstance);
+    if (keepsEveryImage) {
+      return;
+    }
+
+    request(artwork, refreshMode);
   }
 
-  private static void afterOwningTransaction(Runnable onCommit, Runnable onRollback) {
+  /** Returns how many background images are requested but not finished, server-wide. */
+  public long pendingBackgroundImages() {
+    return requests.countPendingImagesByItemType().entrySet().stream()
+        .filter(entry -> ArtworkPriority.of(entry.getKey()) == ArtworkPriority.BACKGROUND)
+        .mapToLong(Map.Entry::getValue)
+        .sum();
+  }
+
+  private ArtworkPlan plan(ArtworkSources artwork, ImageRefreshMode refreshMode) {
+    var storedImagesByType =
+        imageService.findByEntity(artwork.entityId(), artwork.entityType()).stream()
+            .collect(Collectors.groupingBy(Image::getImageType));
+    return ArtworkPlan.of(artwork, storedImagesByType, refreshMode);
+  }
+
+  // A new generation is scheduled while this transaction holds the request's lock, so the request
+  // and its scheduled task commit or roll back together.
+  private SavedArtworkRequest request(ArtworkSources artwork, ImageRefreshMode refreshMode) {
+    var saved = requests.saveRequest(artwork, refreshMode, clock.instant());
+    if (saved instanceof SavedArtworkRequest.NewGeneration) {
+      scheduling.scheduleSteps(artwork.item());
+    }
+
+    return saved;
+  }
+
+  private static void afterRollback(Runnable onRollback) {
     if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-      onCommit.run();
       return;
     }
 
@@ -166,12 +117,9 @@ public class ArtworkService {
         new TransactionSynchronization() {
           @Override
           public void afterCompletion(int status) {
-            if (status == STATUS_COMMITTED) {
-              onCommit.run();
-              return;
+            if (status != STATUS_COMMITTED) {
+              onRollback.run();
             }
-
-            onRollback.run();
           }
         });
   }

@@ -20,7 +20,7 @@ import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakePersonRepository;
 import com.streamarr.server.fakes.FakeProbeTaskRequests;
-import com.streamarr.server.fixtures.ArtworkServiceFixture;
+import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
@@ -62,8 +62,8 @@ class MovieFileProcessorTest {
       new MovieMetadataProviderResolver(List.of(tmdbMovieProvider));
   private final FakeMediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
   private final FakeMovieRepository fakeMovieRepository = new FakeMovieRepository();
-  private final ArtworkService artworkService =
-      ArtworkServiceFixture.artworkServiceBuilder().build();
+  private final ArtworkFixture artwork = ArtworkFixture.builder().build();
+  private final ArtworkService artworkService = artwork.artworkService();
   private final MovieFileProcessor movieFileProcessor =
       movieFileProcessorSavingPeopleIn(new FakePersonRepository());
 
@@ -327,7 +327,7 @@ class MovieFileProcessorTest {
   private FileDiscovery discoveryOf(Library library) {
     var outcomes = new FakeMediaFileContainerInfoRepository();
     return FileDiscoveryRunsFixture.fileDiscoveryRunsBuilder()
-        .artworkService(artworkService)
+        .artwork(artwork)
         .mediaFiles(fakeMediaFileRepository)
         .outcomes(outcomes)
         .probeTaskRequests(new FakeProbeTaskRequests(outcomes))

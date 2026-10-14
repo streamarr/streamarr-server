@@ -8,7 +8,9 @@ import static com.streamarr.server.jooq.generated.tables.Series.SERIES;
 
 import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.media.AmbientColors;
+import com.streamarr.server.domain.media.ArtworkAttempt;
 import com.streamarr.server.domain.media.Image;
+import com.streamarr.server.exceptions.ObsoleteArtworkAttemptException;
 import com.streamarr.server.jooq.generated.enums.ImageEntityType;
 import com.streamarr.server.jooq.generated.enums.ImageSize;
 import com.streamarr.server.jooq.generated.enums.ImageType;
@@ -25,7 +27,6 @@ import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
-import org.springframework.dao.DataIntegrityViolationException;
 
 @RequiredArgsConstructor
 public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
@@ -36,10 +37,12 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
   private final ItemLocks itemLocks;
 
   @Override
-  public Set<UUID> insertAllIfAbsent(List<Image> images) {
+  public Set<UUID> insertAllIfAbsent(List<Image> images, ArtworkAttempt attempt) {
     if (images.isEmpty()) {
       return Set.of();
     }
+
+    lockArtworkGeneration(attempt);
 
     return images.stream()
         .filter(this::insertIfAbsent)
@@ -48,7 +51,7 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
   }
 
   @Override
-  public List<String> replaceLogicalArtwork(List<Image> images) {
+  public List<String> replaceLogicalArtwork(List<Image> images, ArtworkAttempt attempt) {
     if (images.isEmpty()) {
       return List.of();
     }
@@ -62,11 +65,7 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
             .getMostSignificantBits();
     transactionLocks.limitLockWait(imageProperties.replacementLockTimeout());
     transactionLocks.lock(lockKey);
-    if (!itemLocks.tryLockAgainstDeletion(first.getEntityId(), first.getEntityType())) {
-      throw new DataIntegrityViolationException(
-          "Cannot replace artwork of deleted %s %s"
-              .formatted(first.getEntityType(), first.getEntityId()));
-    }
+    lockArtworkGeneration(attempt);
 
     var condition =
         IMAGE
@@ -100,6 +99,12 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
             .in(series)
             .or(IMAGE.SEASON_ID.in(seasons))
             .or(IMAGE.EPISODE_ID.in(episodes)));
+  }
+
+  private void lockArtworkGeneration(ArtworkAttempt attempt) {
+    if (!itemLocks.tryLockArtworkGeneration(attempt.item(), attempt.generation())) {
+      throw new ObsoleteArtworkAttemptException(attempt);
+    }
   }
 
   private List<String> artworkPaths(Condition owners) {

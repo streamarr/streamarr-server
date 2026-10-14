@@ -30,8 +30,21 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
   private final FakeItemResultRepository itemResults;
   private long lastGeneration;
 
+  /** Holds the fake item results to this repository's generations, as the database does. */
   public FakeArtworkRequestRepository(FakeItemResultRepository itemResults) {
     this.itemResults = itemResults;
+    itemResults.checkArtworkGenerationsWith(this::isPendingGeneration);
+  }
+
+  /** Returns every stored artwork request. */
+  public synchronized List<PendingArtworkRequest> requests() {
+    return List.copyOf(requests.values());
+  }
+
+  /** Returns whether {@code generation} is the item's pending artwork request. */
+  public synchronized boolean isPendingGeneration(ArtworkItem item, long generation) {
+    var pending = requests.get(item);
+    return pending != null && pending.generation() == generation;
   }
 
   @Override

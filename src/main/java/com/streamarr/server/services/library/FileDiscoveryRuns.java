@@ -3,6 +3,7 @@ package com.streamarr.server.services.library;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.exceptions.LibraryScanFailedException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.services.ArtworkRuns;
 import com.streamarr.server.services.ArtworkService;
 import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
@@ -12,7 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
- * Opens the runs that collect the required artwork and probes of one scan or file discovery, and
+ * Opens the runs that collect the primary artwork and probes of one scan or file discovery, and
  * waits until each has a saved result.
  */
 @Service
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Service;
 public class FileDiscoveryRuns {
 
   private final ArtworkService artworkService;
+  private final ArtworkRuns artworkRuns;
   private final ProbeRuns probeRuns;
   private final MediaFileRepository mediaFiles;
 
@@ -32,11 +34,12 @@ public class FileDiscoveryRuns {
   }
 
   /**
-   * Waits for the required artwork and probes of a closed discovery. Secondary artwork and the
-   * retries of failed probes continue in the background.
+   * Waits for the recorded primary artwork results and probe results of a closed discovery.
+   * Background artwork and the retries of failed artwork steps and probes continue in the
+   * background.
    *
-   * @throws LibraryScanFailedException if a required result was not recorded, the stored results
-   *     cannot be read, the wait fails unexpectedly, or the wait is interrupted
+   * @throws LibraryScanFailedException if the stored results cannot be read, the wait fails
+   *     unexpectedly, or the wait is interrupted
    */
   public ScanResults awaitResults(FileDiscovery discovery) {
     var libraryName = discovery.library().getName();
@@ -58,7 +61,7 @@ public class FileDiscoveryRuns {
     try (var executor = SystemWork.newExecutorRunningAsSystemActor("library-scan-probes-")) {
       var probes = executor.submit(() -> probeRuns.awaitResults(discovery.probeRun()));
       try {
-        var artwork = discovery.artworkRun().completion().get();
+        var artwork = artworkRuns.awaitResults(discovery.artworkRun());
         return ScanResults.builder()
             .files(mediaFiles.countStatuses(discovery.probeRun().mediaFileIds()))
             .artwork(artwork)

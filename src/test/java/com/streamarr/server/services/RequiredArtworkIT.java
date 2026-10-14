@@ -6,6 +6,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractWireMockIntegrationTest;
 import com.streamarr.server.domain.Library;
@@ -20,14 +21,16 @@ import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.PersonRepository;
+import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
+import com.streamarr.server.support.BoundedTask;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -43,6 +46,8 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
   private static final long BOUND_SECONDS = 10;
 
   @Autowired private ArtworkService artworkService;
+  @Autowired private ArtworkRuns artworkRuns;
+  @Autowired private ItemResultRepository itemResults;
   @Autowired private MovieService movieService;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
@@ -71,8 +76,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
     var artworkRun = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
 
     var movie = movieService.createMovieWithAssociations(movieMetadata(), mediaFile(), artworkRun);
-    artworkRun.close();
-    var summary = artworkRun.completion().get(BOUND_SECONDS, TimeUnit.SECONDS);
+    var summary = closeAndAwait(artworkRun);
 
     assertThat(summary.counts()).isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
     assertThat(committedImageRows(movie.getId())).isEqualTo(ImageSize.values().length);
@@ -91,8 +95,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
               return movieService.createMovieWithAssociations(
                   movieMetadata(), mediaFile, artworkRun);
             });
-    artworkRun.close();
-    var summary = artworkRun.completion().get(BOUND_SECONDS, TimeUnit.SECONDS);
+    var summary = closeAndAwait(artworkRun);
 
     assertThat(summary.counts()).isEqualTo(ArtworkCounts.builder().build());
     assertThat(committedImageRows(movie.getId())).isZero();
@@ -105,8 +108,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
     var artworkRun = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
 
     var movie = movieService.createMovieWithAssociations(movieMetadata(), mediaFile(), artworkRun);
-    artworkRun.close();
-    artworkRun.completion().get(BOUND_SECONDS, TimeUnit.SECONDS);
+    closeAndAwait(artworkRun);
 
     assertThat(imageCreators(movie.getId()))
         .hasSize(ImageSize.values().length)
@@ -126,13 +128,23 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
             .sources(List.of(new TmdbImageSource(ImageType.PROFILE, "/poster.jpg")))
             .build();
 
-    artworkService
-        .requestBackgroundArtwork(artwork, ImageRefreshMode.PRESERVE)
-        .get(BOUND_SECONDS, TimeUnit.SECONDS);
+    transactionTemplate.executeWithoutResult(
+        _ -> artworkService.requestBackgroundArtwork(artwork, ImageRefreshMode.PRESERVE));
 
+    // Nothing waits for background artwork, so its recorded result is the only signal to wait on.
+    await()
+        .atMost(Duration.ofSeconds(BOUND_SECONDS))
+        .until(() -> !itemResults.findByItem(person.getId(), ImageEntityType.PERSON).isEmpty());
     assertThat(imageCreators(person.getId()))
         .hasSize(ImageSize.values().length)
         .containsOnly(SystemActor.ID);
+  }
+
+  private ArtworkRunSummary closeAndAwait(ArtworkRun artworkRun) throws Exception {
+    artworkRun.close();
+    try (var wait = BoundedTask.start(() -> artworkRuns.awaitResults(artworkRun))) {
+      return wait.await(Duration.ofSeconds(BOUND_SECONDS));
+    }
   }
 
   private MetadataResult<Movie> movieMetadata() {

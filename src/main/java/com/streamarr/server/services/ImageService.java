@@ -1,8 +1,7 @@
 package com.streamarr.server.services;
 
-import static com.streamarr.server.domain.media.ItemResult.LEGACY_ARTWORK_GENERATION;
-
 import com.streamarr.server.config.ImageProperties;
+import com.streamarr.server.domain.media.ArtworkAttempt;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
@@ -20,7 +19,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumSet;
@@ -116,15 +114,23 @@ public class ImageService {
   }
 
   /**
-   * Inserts artwork that does not exist yet and, when any of it was stored, records its success in
-   * the same transaction, so the stored image and its result commit or roll back together.
+   * Inserts artwork that does not exist yet and records the attempt's success in the same
+   * transaction, so the stored image and its result commit or roll back together. When another
+   * attempt already stored artwork of the type, that artwork stays and the result names its key.
+   *
+   * @throws com.streamarr.server.exceptions.ObsoleteArtworkAttemptException if a newer artwork
+   *     request replaced the attempt's generation or the item was deleted
    */
   @Transactional(propagation = Propagation.REQUIRES_NEW)
-  public void saveImages(List<Image> images, Instant attemptedAt) {
-    var insertedImageIds = imageRepository.insertAllIfAbsent(images);
-    if (!insertedImageIds.isEmpty()) {
-      itemResults.overwrite(savedArtwork(images.getFirst(), attemptedAt));
+  public void saveImages(List<Image> images, ArtworkAttempt attempt) {
+    var insertedImageIds = imageRepository.insertAllIfAbsent(images, attempt);
+    var first = images.getFirst();
+    var storedKey = first.getKey();
+    if (insertedImageIds.isEmpty()) {
+      storedKey = storedKeyOf(first);
     }
+
+    itemResults.overwrite(savedArtwork(first, attempt, storedKey));
 
     for (var image : images) {
       if (insertedImageIds.contains(image.getId()) || imageRepository.existsById(image.getId())) {
@@ -138,9 +144,12 @@ public class ImageService {
   /**
    * Replaces one logical artwork and records its success in the same transaction. The last
    * replacement to commit wins (ADR 0031), and its result is the one stored.
+   *
+   * @throws com.streamarr.server.exceptions.ObsoleteArtworkAttemptException if a newer artwork
+   *     request replaced the attempt's generation or the item was deleted
    */
   @Transactional(propagation = Propagation.REQUIRES_NEW)
-  public void replaceImages(ProcessedImage replacement, Instant attemptedAt) {
+  public void replaceImages(ProcessedImage replacement, ArtworkAttempt attempt) {
     if (replacement.images().isEmpty()) {
       deleteFiles(replacement.writtenFiles());
       return;
@@ -152,8 +161,9 @@ public class ImageService {
       validateContentSha256(replacement.images());
       validateArtworkIdentity(replacement.images());
       validateVariantSet(replacement.images());
-      var replacedPaths = imageRepository.replaceLogicalArtwork(replacement.images());
-      itemResults.overwrite(savedArtwork(replacement.images().getFirst(), attemptedAt));
+      var replacedPaths = imageRepository.replaceLogicalArtwork(replacement.images(), attempt);
+      var first = replacement.images().getFirst();
+      itemResults.overwrite(savedArtwork(first, attempt, first.getKey()));
       deleteFilesAfterCommit(resolveAbsolutePaths(replacedPaths));
     } catch (RuntimeException e) {
       if (!cleanupDeferred) {
@@ -163,16 +173,30 @@ public class ImageService {
     }
   }
 
-  private static ItemResult savedArtwork(Image image, Instant attemptedAt) {
+  private String storedKeyOf(Image image) {
+    var stored =
+        imageRepository
+            .findByEntityIdAndEntityTypeAndImageType(
+                image.getEntityId(), image.getEntityType(), image.getImageType())
+            .stream()
+            .findFirst();
+    if (stored.isEmpty()) {
+      return image.getKey();
+    }
+
+    return stored.get().getKey();
+  }
+
+  private static ItemResult savedArtwork(Image image, ArtworkAttempt attempt, String sourceKey) {
     return ItemResult.builder()
         .itemId(image.getEntityId())
         .itemType(image.getEntityType())
         .step(ItemStep.ARTWORK)
         .imageType(image.getImageType())
         .outcome(new ItemOutcome.Succeeded())
-        .sourceKey(image.getKey())
-        .attemptedAt(attemptedAt)
-        .artworkGeneration(LEGACY_ARTWORK_GENERATION)
+        .sourceKey(sourceKey)
+        .attemptedAt(attempt.attemptedAt())
+        .artworkGeneration(attempt.generation())
         .build();
   }
 

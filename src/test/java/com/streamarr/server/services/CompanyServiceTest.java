@@ -8,13 +8,12 @@ import static org.mockito.Mockito.when;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.metadata.Company;
-import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeCompanyRepository;
+import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.repositories.CompanyRepository;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
-import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -31,14 +30,15 @@ import org.junit.jupiter.api.Test;
 class CompanyServiceTest {
 
   private FakeCompanyRepository companyRepository;
-  private CapturingEventPublisher eventPublisher;
+  private ArtworkFixture artwork;
   private CompanyService companyService;
 
   @BeforeEach
   void setUp() {
     companyRepository = new FakeCompanyRepository();
-    eventPublisher = new CapturingEventPublisher();
-    companyService = new CompanyService(companyRepository, eventPublisher);
+    artwork = ArtworkFixture.builder().build();
+    artwork.scheduling().holdScheduledSteps();
+    companyService = new CompanyService(companyRepository, artwork.artworkService());
   }
 
   @Test
@@ -51,7 +51,7 @@ class CompanyServiceTest {
     companies.add(Company.builder().name("Company 100").sourceId("100").build());
     companies.add(Company.builder().name("Company 200").sourceId("200").build());
 
-    new CompanyService(insertOrderRepository, new CapturingEventPublisher())
+    new CompanyService(insertOrderRepository, ArtworkFixture.builder().build().artworkService())
         .getOrCreateCompanies(companies, Map.of(), ImageRefreshMode.PRESERVE);
 
     assertThat(insertOrderRepository.insertedSourceIds()).containsExactly("100", "200", "300");
@@ -132,8 +132,8 @@ class CompanyServiceTest {
   }
 
   @Test
-  @DisplayName("Should publish MetadataEnrichedEvent when creating new company with image sources")
-  void shouldPublishMetadataEnrichedEventWhenCreatingNewCompanyWithImageSources() {
+  @DisplayName("Should request background artwork when creating new company with image sources")
+  void shouldRequestBackgroundArtworkWhenCreatingNewCompanyWithImageSources() {
     var company = Company.builder().name("Warner Bros.").sourceId("wb-123").build();
     var imageSources =
         Map.<String, List<ImageSource>>of(
@@ -141,14 +141,14 @@ class CompanyServiceTest {
 
     companyService.getOrCreateCompanies(Set.of(company), imageSources, ImageRefreshMode.PRESERVE);
 
-    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-    assertThat(events).hasSize(1);
-    assertThat(events.getFirst().entityType()).isEqualTo(ImageEntityType.COMPANY);
+    var requests = artwork.requests().requests();
+    assertThat(requests).hasSize(1);
+    assertThat(requests.getFirst().artwork().entityType()).isEqualTo(ImageEntityType.COMPANY);
   }
 
   @Test
-  @DisplayName("Should publish image event when existing company has image sources")
-  void shouldPublishImageEventWhenExistingCompanyHasImageSources() {
+  @DisplayName("Should request artwork when existing company has image sources")
+  void shouldRequestArtworkWhenExistingCompanyHasImageSources() {
     var existing =
         companyRepository.save(Company.builder().name("Existing").sourceId("wb-123").build());
 
@@ -158,21 +158,21 @@ class CompanyServiceTest {
 
     companyService.getOrCreateCompanies(Set.of(updated), imageSources, ImageRefreshMode.PRESERVE);
 
-    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-    assertThat(events)
+    var requests = artwork.requests().requests();
+    assertThat(requests)
         .singleElement()
         .satisfies(
-            event -> {
-              assertThat(event.entityId()).isEqualTo(existing.getId());
-              assertThat(event.entityType()).isEqualTo(ImageEntityType.COMPANY);
-              assertThat(event.imageSources()).containsExactly(expectedImageSource);
-              assertThat(event.imageRefreshMode()).isEqualTo(ImageRefreshMode.PRESERVE);
+            request -> {
+              assertThat(request.artwork().entityId()).isEqualTo(existing.getId());
+              assertThat(request.artwork().entityType()).isEqualTo(ImageEntityType.COMPANY);
+              assertThat(request.artwork().sources()).containsExactly(expectedImageSource);
+              assertThat(request.refreshMode()).isEqualTo(ImageRefreshMode.PRESERVE);
             });
   }
 
   @Test
-  @DisplayName("Should propagate image refresh mode when publishing company image event")
-  void shouldPropagateImageRefreshModeWhenPublishingCompanyImageEvent() {
+  @DisplayName("Should propagate image refresh mode when requesting company artwork")
+  void shouldPropagateImageRefreshModeWhenRequestingCompanyArtwork() {
     var company = Company.builder().name("Warner Bros.").sourceId("wb-123").build();
     var imageSources =
         Map.<String, List<ImageSource>>of(
@@ -181,21 +181,21 @@ class CompanyServiceTest {
     companyService.getOrCreateCompanies(
         Set.of(company), imageSources, ImageRefreshMode.FORCE_REFRESH);
 
-    assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class))
+    assertThat(artwork.requests().requests())
         .singleElement()
-        .extracting(MetadataEnrichedEvent::imageRefreshMode)
+        .extracting(PendingArtworkRequest::refreshMode)
         .isEqualTo(ImageRefreshMode.FORCE_REFRESH);
   }
 
   @Test
-  @DisplayName("Should not publish image event when existing company has no image sources")
-  void shouldNotPublishImageEventWhenExistingCompanyHasNoImageSources() {
+  @DisplayName("Should not request artwork when existing company has no image sources")
+  void shouldNotRequestArtworkWhenExistingCompanyHasNoImageSources() {
     companyRepository.save(Company.builder().name("Existing").sourceId("wb-123").build());
     var updated = Company.builder().name("Updated").sourceId("wb-123").build();
 
     companyService.getOrCreateCompanies(Set.of(updated), Map.of(), ImageRefreshMode.PRESERVE);
 
-    assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class)).isEmpty();
+    assertThat(artwork.requests().requests()).isEmpty();
   }
 
   @Test
@@ -226,7 +226,8 @@ class CompanyServiceTest {
   void shouldThrowWhenCompanyNotFoundAfterUpsert() {
     var stubRepository = mock(CompanyRepository.class);
     when(stubRepository.findBySourceId("wb-123")).thenReturn(Optional.empty());
-    var service = new CompanyService(stubRepository, new CapturingEventPublisher());
+    var service =
+        new CompanyService(stubRepository, ArtworkFixture.builder().build().artworkService());
 
     var company = Company.builder().name("Warner Bros.").sourceId("wb-123").build();
     var companies = Set.of(company);

@@ -43,3 +43,8 @@ db-scheduler:
 # Scans that wait for their probes check stored results often, so tests finish soon after a result.
 probe:
   result-check-interval: 50ms
+
+# Scans and refreshes that wait for primary artwork check its recorded results often, so tests
+# finish soon after a result.
+artwork:
+  result-check-interval: 50ms

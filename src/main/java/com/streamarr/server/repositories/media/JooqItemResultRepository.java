@@ -2,6 +2,8 @@ package com.streamarr.server.repositories.media;
 
 import static com.streamarr.server.jooq.generated.tables.ItemResult.ITEM_RESULT;
 
+import com.streamarr.server.domain.media.ArtworkAttempt;
+import com.streamarr.server.domain.media.ArtworkOutcomeTally;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemFailureReason;
@@ -13,8 +15,11 @@ import com.streamarr.server.jooq.generated.enums.ItemResultFailureReason;
 import com.streamarr.server.jooq.generated.enums.ItemResultOutcome;
 import com.streamarr.server.jooq.generated.enums.ItemResultStep;
 import com.streamarr.server.jooq.generated.tables.records.ItemResultRecord;
+import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
@@ -47,6 +52,46 @@ public class JooqItemResultRepository implements ItemResultRepository {
   @Transactional
   public void overwrite(ItemResult result) {
     upsert(result).execute();
+  }
+
+  @Override
+  @Transactional
+  public boolean trySaveArtworkResults(ArtworkAttempt attempt, List<ItemResult> results) {
+    if (!itemLocks.tryLockArtworkGeneration(attempt.item(), attempt.generation())) {
+      return false;
+    }
+
+    results.forEach(result -> upsert(result).execute());
+    return true;
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Map<ImageEntityType, ArtworkOutcomeTally> countArtworkOutcomesRecordedSince(
+      Instant since) {
+    var counts = new EnumMap<ImageEntityType, Map<ItemResultOutcome, Long>>(ImageEntityType.class);
+    dsl.select(ITEM_RESULT.ITEM_TYPE, ITEM_RESULT.OUTCOME, DSL.count())
+        .from(ITEM_RESULT)
+        .where(ITEM_RESULT.STEP.eq(ItemResultStep.ARTWORK))
+        .and(ITEM_RESULT.RECORDED_AT.ge(since.atOffset(ZoneOffset.UTC)))
+        .groupBy(ITEM_RESULT.ITEM_TYPE, ITEM_RESULT.OUTCOME)
+        .forEach(
+            row ->
+                counts
+                    .computeIfAbsent(
+                        ImageEntityType.valueOf(row.value1().getLiteral()),
+                        _ -> new EnumMap<>(ItemResultOutcome.class))
+                    .put(row.value2(), row.value3().longValue()));
+    var tallies = new EnumMap<ImageEntityType, ArtworkOutcomeTally>(ImageEntityType.class);
+    counts.forEach(
+        (itemType, byOutcome) ->
+            tallies.put(
+                itemType,
+                new ArtworkOutcomeTally(
+                    byOutcome.getOrDefault(ItemResultOutcome.SUCCEEDED, 0L),
+                    byOutcome.getOrDefault(ItemResultOutcome.UNAVAILABLE, 0L),
+                    byOutcome.getOrDefault(ItemResultOutcome.FAILED, 0L))));
+    return tallies;
   }
 
   private InsertOnDuplicateSetMoreStep<ItemResultRecord> upsert(ItemResult result) {

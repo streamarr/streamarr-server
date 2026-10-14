@@ -8,6 +8,7 @@ import static com.streamarr.server.jooq.generated.tables.BaseCollectable.BASE_CO
 import static com.streamarr.server.jooq.generated.tables.Library.LIBRARY;
 import static com.streamarr.server.jooq.generated.tables.Movie.MOVIE;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.streamarr.server.domain.ExternalAgentStrategy;
@@ -70,6 +71,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   @BeforeEach
   void cleanupDatabase() {
     wireMock.resetAll();
+    jdbcTemplate.update("DELETE FROM primary_artwork_scheduled_tasks");
     mediaFileRepository.deleteAll();
     movieRepository.deleteAll();
     libraryRepository.deleteAll();
@@ -219,18 +221,39 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should become unhealthy when the database cannot save an item error during a scan")
-  void shouldBecomeUnhealthyWhenTheDatabaseCannotSaveAnItemErrorDuringAScan() throws Exception {
+  @DisplayName(
+      "Should finish the scan healthy after a retried artwork step stores the results the database"
+          + " rejected")
+  void shouldFinishTheScanHealthyAfterARetriedArtworkStepStoresTheResultsTheDatabaseRejected()
+      throws Exception {
     var library = createLibraryWithMatchingMovieFile().library();
     stubTmdbMovieMetadata("27205", "Inception");
+    startProbeScheduler();
+    rejectItemErrors();
 
-    rejectItemErrorsWhile(
-        () ->
-            BoundedTask.runWithin(
-                SCAN_BOUND, () -> libraryManagementService.scanLibrary(library.getId())));
+    try (var scan =
+        BoundedTask.start(() -> libraryManagementService.scanLibrary(library.getId()))) {
+      // The rejected attempt runs on an artwork scheduler thread; its failure count is the
+      // stored trace that it ran.
+      await().atMost(SCAN_BOUND).until(() -> failedArtworkAttempts() > 0);
+      assertThat(libraryRepository.findById(library.getId()).orElseThrow().getStatus())
+          .isEqualTo(LibraryStatus.SCANNING);
+      acceptItemErrors();
+
+      scan.await(SCAN_BOUND);
+    } finally {
+      acceptItemErrors();
+    }
 
     assertThat(libraryRepository.findById(library.getId()).orElseThrow().getStatus())
-        .isEqualTo(LibraryStatus.UNHEALTHY);
+        .isEqualTo(LibraryStatus.HEALTHY);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM item_result WHERE step = 'ARTWORK' AND outcome ="
+                    + " 'UNAVAILABLE' AND item_id = ?",
+                Integer.class,
+                movieRepository.findAll().getFirst().getId()))
+        .isEqualTo(2);
   }
 
   // --- Helpers ---
@@ -262,11 +285,11 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     auditColumns.clearActors(LIBRARY, DSL.trueCondition());
   }
 
-  // The movie has no poster or backdrop, so the scan must record them as unavailable.
-  private void rejectItemErrorsWhile(BoundedTask.Action action) throws Exception {
+  // The movie has no poster or backdrop, so its artwork steps must store them as unavailable.
+  private void rejectItemErrors() {
     jdbcTemplate.execute(
         """
-        CREATE FUNCTION reject_item_error() RETURNS trigger AS $$
+        CREATE OR REPLACE FUNCTION reject_item_error() RETURNS trigger AS $$
         BEGIN
           RAISE EXCEPTION 'simulated item error write failure';
         END
@@ -277,12 +300,17 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
         CREATE TRIGGER reject_item_error BEFORE INSERT OR UPDATE ON item_result
         FOR EACH ROW WHEN (NEW.outcome <> 'SUCCEEDED') EXECUTE FUNCTION reject_item_error()
         """);
-    try {
-      action.run();
-    } finally {
-      jdbcTemplate.execute("DROP TRIGGER reject_item_error ON item_result");
-      jdbcTemplate.execute("DROP FUNCTION reject_item_error()");
-    }
+  }
+
+  private void acceptItemErrors() {
+    jdbcTemplate.execute("DROP TRIGGER IF EXISTS reject_item_error ON item_result");
+    jdbcTemplate.execute("DROP FUNCTION IF EXISTS reject_item_error()");
+  }
+
+  private int failedArtworkAttempts() {
+    return jdbcTemplate.queryForObject(
+        "SELECT coalesce(max(consecutive_failures), 0) FROM primary_artwork_scheduled_tasks",
+        Integer.class);
   }
 
   private record LibraryWithMovieFile(Library library, Path movieFile) {

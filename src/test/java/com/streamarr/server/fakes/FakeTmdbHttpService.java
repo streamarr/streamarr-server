@@ -132,6 +132,7 @@ public class FakeTmdbHttpService extends TheMovieDatabaseHttpService
     if (failure != null) {
       throw failure;
     }
+
     if (pathFragment.equals(interruptOnPath)) {
       throw new InterruptedException("Simulated interrupt for " + pathFragment);
     }

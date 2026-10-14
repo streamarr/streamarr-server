@@ -1,8 +1,12 @@
 package com.streamarr.server.repositories.media;
 
+import com.streamarr.server.domain.media.ArtworkAttempt;
+import com.streamarr.server.domain.media.ArtworkOutcomeTally;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ItemResult;
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public interface ItemResultRepository {
@@ -20,5 +24,15 @@ public interface ItemResultRepository {
    */
   void overwrite(ItemResult result);
 
+  /**
+   * Stores the artwork results of one attempt together, so they commit all or none. Returns {@code
+   * false} without writing when the attempt's generation is no longer the item's pending artwork
+   * request or the item no longer exists.
+   */
+  boolean trySaveArtworkResults(ArtworkAttempt attempt, List<ItemResult> results);
+
   List<ItemResult> findByItem(UUID itemId, ImageEntityType itemType);
+
+  /** Counts the artwork results recorded since {@code since} by item type and outcome. */
+  Map<ImageEntityType, ArtworkOutcomeTally> countArtworkOutcomesRecordedSince(Instant since);
 }

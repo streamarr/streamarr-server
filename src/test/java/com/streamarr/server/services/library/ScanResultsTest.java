@@ -44,10 +44,10 @@ class ScanResultsTest {
 
     assertThat(results.describe())
         .isEqualTo(
-            "5 files (2 unmatched, 3 matched); required artwork in 2.5 seconds (4 saved, 5 skipped,"
+            "5 files (2 unmatched, 3 matched); primary artwork in 2.5 seconds (4 saved, 5 skipped,"
                 + " 6 unavailable, 7 failed); probes in 1.2 seconds (8 ready, 9 media errors, 10"
                 + " failed, 11 superseded, 12 probed by a newer version, 13 removed); in the"
-                + " background: 14 secondary images pending across all libraries, 10 failed probes"
+                + " background: 14 background images pending across all libraries, 10 failed probes"
                 + " retrying, 11 changed files to probe");
   }
 
@@ -72,10 +72,10 @@ class ScanResultsTest {
 
     assertThat(results.describe())
         .isEqualTo(
-            "1 file (1 matched); required artwork in 1.0 seconds (1 saved, 1 skipped, 1"
+            "1 file (1 matched); primary artwork in 1.0 seconds (1 saved, 1 skipped, 1"
                 + " unavailable, 1 failed); probes in 1.0 seconds (1 ready, 1 media error, 1"
                 + " failed, 1 superseded, 1 probed by a newer version, 1 removed); in the"
-                + " background: 1 secondary image pending across all libraries, 1 failed probe"
+                + " background: 1 background image pending across all libraries, 1 failed probe"
                 + " retrying, 1 changed file to probe");
   }
 
@@ -92,10 +92,10 @@ class ScanResultsTest {
 
     assertThat(results.describe())
         .isEqualTo(
-            "0 files; required artwork in 0.0 seconds (0 saved, 0 skipped, 0 unavailable, 0"
+            "0 files; primary artwork in 0.0 seconds (0 saved, 0 skipped, 0 unavailable, 0"
                 + " failed); probes in 0.0 seconds (0 ready, 0 media errors, 0 failed, 0"
                 + " superseded, 0 probed by a newer version, 0 removed); in the background: 0"
-                + " secondary images pending across all libraries, 0 failed probes retrying, 0"
+                + " background images pending across all libraries, 0 failed probes retrying, 0"
                 + " changed files to probe");
   }
 

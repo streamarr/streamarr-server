@@ -104,7 +104,7 @@ public class MovieService {
 
     var savedMovie = saveMovieWithMediaFile(movie, mediaFile);
 
-    fetchRequiredArtwork(savedMovie.getId(), metadataResult.imageSources(), artworkRun);
+    requestPrimaryArtwork(savedMovie.getId(), metadataResult.imageSources(), artworkRun);
 
     return savedMovie;
   }
@@ -129,11 +129,11 @@ public class MovieService {
         .copyTo(existing);
 
     var saved = movieRepository.saveAndFlush(existing);
-    fetchRequiredArtwork(saved.getId(), metadataResult.imageSources(), artworkRun);
+    requestPrimaryArtwork(saved.getId(), metadataResult.imageSources(), artworkRun);
     return saved;
   }
 
-  private void fetchRequiredArtwork(
+  private void requestPrimaryArtwork(
       UUID movieId, List<ImageSource> sources, ArtworkRun artworkRun) {
     artworkService.requestPrimaryArtwork(
         artworkRun,

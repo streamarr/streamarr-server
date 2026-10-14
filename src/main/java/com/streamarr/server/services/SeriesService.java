@@ -129,8 +129,8 @@ public class SeriesService {
                         .build())
             .toList();
 
-    var savedEpisodes = episodeRepository.saveAll(episodes);
-    fetchEpisodeArtwork(savedEpisodes, request);
+    var savedEpisodes = episodeRepository.saveAllAndFlush(episodes);
+    requestEpisodeArtwork(savedEpisodes, request);
 
     return season;
   }
@@ -211,12 +211,12 @@ public class SeriesService {
             .toList();
 
     var savedEpisodes = episodeRepository.saveAllAndFlush(episodes);
-    fetchEpisodeArtwork(savedEpisodes, request);
+    requestEpisodeArtwork(savedEpisodes, request);
 
     return savedSeason;
   }
 
-  private void fetchEpisodeArtwork(
+  private void requestEpisodeArtwork(
       List<? extends Episode> episodes, SeasonWithEpisodesRequest request) {
     for (var episode : episodes) {
       request.details().episodes().stream()

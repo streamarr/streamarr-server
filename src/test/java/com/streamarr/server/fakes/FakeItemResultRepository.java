@@ -1,27 +1,55 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.media.ArtworkAttempt;
+import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ArtworkOutcomeTally;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.repositories.media.ItemResultRepository;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiPredicate;
 
 public class FakeItemResultRepository implements ItemResultRepository {
 
   private record Key(UUID itemId, ImageEntityType itemType, ItemStep step, ImageType imageType) {}
 
   private final Map<Key, ItemResult> results = new ConcurrentHashMap<>();
+  private final Map<Key, Instant> recordedAt = new ConcurrentHashMap<>();
+  private volatile Clock recordingClock = Clock.systemUTC();
   private final AtomicReference<RuntimeException> writeFailure = new AtomicReference<>();
+  private final AtomicReference<RuntimeException> artworkResultsFailure = new AtomicReference<>();
+  private final AtomicInteger remainingArtworkResultsFailures = new AtomicInteger();
+  private volatile BiPredicate<ArtworkItem, Long> currentArtworkGeneration = (_, _) -> true;
 
   public void failWritesWith(RuntimeException failure) {
     writeFailure.set(failure);
+  }
+
+  /**
+   * Fails the next {@code times} grouped artwork result writes with {@code failure}, while a saved
+   * image's result, which {@link #overwrite} stores, still commits.
+   */
+  public void failArtworkResultWritesWith(RuntimeException failure, int times) {
+    artworkResultsFailure.set(failure);
+    remainingArtworkResultsFailures.set(times);
+  }
+
+  /** Decides whether an attempt's generation is still the item's pending artwork request. */
+  public void checkArtworkGenerationsWith(BiPredicate<ArtworkItem, Long> currentArtworkGeneration) {
+    this.currentArtworkGeneration = currentArtworkGeneration;
   }
 
   @Override
@@ -42,6 +70,10 @@ public class FakeItemResultRepository implements ItemResultRepository {
           recorded.set(true);
           return result;
         });
+    if (recorded.get()) {
+      recordedAt.put(keyOf(result), recordingClock.instant());
+    }
+
     return recorded.get();
   }
 
@@ -52,8 +84,69 @@ public class FakeItemResultRepository implements ItemResultRepository {
       throw failure;
     }
 
-    results.put(
-        new Key(result.itemId(), result.itemType(), result.step(), result.imageType()), result);
+    results.put(keyOf(result), result);
+    recordedAt.put(keyOf(result), recordingClock.instant());
+  }
+
+  @Override
+  public boolean trySaveArtworkResults(ArtworkAttempt attempt, List<ItemResult> results) {
+    if (remainingArtworkResultsFailures.getAndUpdate(remaining -> Math.max(0, remaining - 1)) > 0) {
+      throw artworkResultsFailure.get();
+    }
+
+    var failure = writeFailure.get();
+    if (failure != null) {
+      throw failure;
+    }
+
+    if (!currentArtworkGeneration.test(attempt.item(), attempt.generation())) {
+      return false;
+    }
+
+    results.forEach(this::overwrite);
+    return true;
+  }
+
+  @Override
+  public Map<ImageEntityType, ArtworkOutcomeTally> countArtworkOutcomesRecordedSince(
+      Instant since) {
+    var tallies = new EnumMap<ImageEntityType, ArtworkOutcomeTally>(ImageEntityType.class);
+    results.values().stream()
+        .filter(result -> result.step() == ItemStep.ARTWORK)
+        .filter(result -> !recordedAt.getOrDefault(keyOf(result), Instant.MIN).isBefore(since))
+        .forEach(
+            result ->
+                tallies.merge(
+                    result.itemType(), tallyOf(result.outcome()), FakeItemResultRepository::add));
+    return tallies;
+  }
+
+  /** Records when each result was stored, as the database's {@code recorded_at} does. */
+  public void recordResultsAt(Clock clock) {
+    this.recordingClock = clock;
+  }
+
+  private static ArtworkOutcomeTally tallyOf(ItemOutcome outcome) {
+    return switch (outcome) {
+      case ItemOutcome.Succeeded _ -> new ArtworkOutcomeTally(1, 0, 0);
+      case ItemOutcome.Unavailable _ -> new ArtworkOutcomeTally(0, 1, 0);
+      case ItemOutcome.Failed _ -> new ArtworkOutcomeTally(0, 0, 1);
+    };
+  }
+
+  private static ArtworkOutcomeTally add(ArtworkOutcomeTally left, ArtworkOutcomeTally right) {
+    return new ArtworkOutcomeTally(
+        left.succeeded() + right.succeeded(),
+        left.unavailable() + right.unavailable(),
+        left.failed() + right.failed());
+  }
+
+  private static Key keyOf(ItemResult result) {
+    return new Key(result.itemId(), result.itemType(), result.step(), result.imageType());
+  }
+
+  public List<ItemResult> findAll() {
+    return List.copyOf(results.values());
   }
 
   @Override

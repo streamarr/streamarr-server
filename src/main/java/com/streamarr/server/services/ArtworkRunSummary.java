@@ -5,8 +5,8 @@ import lombok.Builder;
 import lombok.NonNull;
 
 /**
- * The required artwork of one finished run. {@code elapsed} runs from the first required request
- * until the last request finished and the run closed to new requests.
+ * The primary artwork of one finished run. {@code elapsed} runs from the run's first request until
+ * the wait found every awaited result recorded.
  */
 @Builder
 public record ArtworkRunSummary(

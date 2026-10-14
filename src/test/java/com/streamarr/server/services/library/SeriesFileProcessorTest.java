@@ -21,7 +21,7 @@ import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeProbeTaskRequests;
 import com.streamarr.server.fakes.FakeSeasonRepository;
-import com.streamarr.server.fixtures.ArtworkServiceFixture;
+import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.services.ArtworkService;
@@ -61,8 +61,8 @@ class SeriesFileProcessorTest {
   private final SeriesMetadataProviderResolver seriesMetadataProviderResolver =
       new SeriesMetadataProviderResolver(List.of(seriesMetadataProvider));
   private final SeriesService seriesService = mock(SeriesService.class);
-  private final ArtworkService artworkService =
-      ArtworkServiceFixture.artworkServiceBuilder().build();
+  private final ArtworkFixture artwork = ArtworkFixture.builder().build();
+  private final ArtworkService artworkService = artwork.artworkService();
   private final FakeMediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
   private final FakeSeasonRepository fakeSeasonRepository = new FakeSeasonRepository();
   private final FakeEpisodeRepository fakeEpisodeRepository = new FakeEpisodeRepository();
@@ -452,7 +452,7 @@ class SeriesFileProcessorTest {
   private FileDiscovery discoveryOf(Library library) {
     var outcomes = new FakeMediaFileContainerInfoRepository();
     return FileDiscoveryRunsFixture.fileDiscoveryRunsBuilder()
-        .artworkService(artworkService)
+        .artwork(artwork)
         .mediaFiles(fakeMediaFileRepository)
         .outcomes(outcomes)
         .probeTaskRequests(new FakeProbeTaskRequests(outcomes))

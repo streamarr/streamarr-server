@@ -6,34 +6,37 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
+import com.streamarr.server.domain.media.ArtworkItem;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
-import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
-import com.streamarr.server.exceptions.ArtworkResultNotSavedException;
+import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.domain.media.ItemOutcome;
+import com.streamarr.server.domain.media.ItemResult;
+import com.streamarr.server.domain.media.ItemStep;
+import com.streamarr.server.exceptions.ImageDownloadException;
+import com.streamarr.server.fakes.CountingSleeper;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.GatedImageDownloader;
 import com.streamarr.server.fakes.MutableClock;
-import com.streamarr.server.fixtures.ArtworkServiceFixture;
-import com.streamarr.server.services.ArtworkResult.Failed;
-import com.streamarr.server.services.ArtworkResult.Saved;
-import com.streamarr.server.services.ArtworkResult.Skipped;
-import com.streamarr.server.services.ArtworkResult.Unavailable;
+import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.TmdbImageDownloader;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
+import com.streamarr.server.support.BoundedTask;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.IntStream;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -50,7 +53,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @DisplayName("Artwork Service Tests")
 class ArtworkServiceTest {
 
-  private static final Duration HELD_DOWNLOAD_BOUND = Duration.ofSeconds(5);
+  private static final Duration BOUND = Duration.ofSeconds(5);
   private static final ImageSource POSTER = new TmdbImageSource(ImageType.POSTER, "/poster.jpg");
   private static final ImageSource BACKDROP =
       new TmdbImageSource(ImageType.BACKDROP, "/backdrop.jpg");
@@ -59,20 +62,21 @@ class ArtworkServiceTest {
   private final FakeItemResultRepository itemResults = new FakeItemResultRepository();
   private final FakeTmdbHttpService imageDownloader = new FakeTmdbHttpService();
   private final MutableClock clock = new MutableClock();
-  private final ArtworkProgress progress = new ArtworkProgress(clock);
+  private ArtworkFixture artwork;
   private ArtworkService artworkService;
 
   @BeforeEach
   void setUp() {
     imageDownloader.setImageData(createTestImage(600, 900));
-    artworkService = artworkServiceWith(imageDownloader);
+    artwork = artworkWith(imageDownloader);
+    artworkService = artwork.artworkService();
   }
 
   @Nested
-  @DisplayName("Required artwork results")
-  class RequiredArtworkResults {
+  @DisplayName("Primary artwork steps")
+  class PrimaryArtworkSteps {
 
-    static Stream<Arguments> requiredImageTypes() {
+    static Stream<Arguments> primaryImageTypes() {
       return Stream.of(
           Arguments.of(ImageEntityType.MOVIE, List.of(ImageType.POSTER, ImageType.BACKDROP)),
           Arguments.of(ImageEntityType.SERIES, List.of(ImageType.POSTER, ImageType.BACKDROP)),
@@ -81,125 +85,164 @@ class ArtworkServiceTest {
     }
 
     @Test
-    @DisplayName("Should save each source image when required artwork is fetched")
-    void shouldSaveEachSourceImageWhenRequiredArtworkIsFetched() {
+    @DisplayName("Should save each source image and its result when primary artwork is requested")
+    void shouldSaveEachSourceImageAndItsResultWhenPrimaryArtworkIsRequested() {
       var movieId = UUID.randomUUID();
 
-      var results = requestPrimaryArtwork(movieArtwork(movieId, POSTER, BACKDROP));
+      requestPrimaryArtwork(movieArtwork(movieId, POSTER, BACKDROP));
 
-      assertThat(results)
-          .containsExactlyInAnyOrder(new Saved(ImageType.POSTER), new Saved(ImageType.BACKDROP));
+      assertThat(outcomesOf(movieId))
+          .containsOnly(
+              Map.entry(ImageType.POSTER, new ItemOutcome.Succeeded()),
+              Map.entry(ImageType.BACKDROP, new ItemOutcome.Succeeded()));
       assertThat(imageRepository.findByEntityIdAndEntityType(movieId, ImageEntityType.MOVIE))
           .extracting(Image::getImageType)
           .containsOnly(ImageType.POSTER, ImageType.BACKDROP);
+      assertThat(artwork.requests().requests()).isEmpty();
     }
 
     @ParameterizedTest(name = "{0}")
-    @MethodSource("requiredImageTypes")
-    @DisplayName("Should report unavailable when provider has no required image")
-    void shouldReportUnavailableWhenProviderHasNoRequiredImage(
-        ImageEntityType entityType, List<ImageType> requiredImageTypes) {
-      var artwork =
+    @MethodSource("primaryImageTypes")
+    @DisplayName("Should record unavailable when the provider has no primary image")
+    void shouldRecordUnavailableWhenTheProviderHasNoPrimaryImage(
+        ImageEntityType entityType, List<ImageType> primaryImageTypes) {
+      var entityId = UUID.randomUUID();
+      var sources =
           ArtworkSources.builder()
-              .entityId(UUID.randomUUID())
+              .entityId(entityId)
               .entityType(entityType)
               .sources(List.of())
               .build();
 
-      var results = requestPrimaryArtwork(artwork);
+      var summary = requestPrimaryArtwork(sources);
 
-      assertThat(results)
-          .extracting(ArtworkResult::imageType)
-          .containsExactlyInAnyOrderElementsOf(requiredImageTypes);
-      assertThat(results).allMatch(Unavailable.class::isInstance);
+      assertThat(summary.counts())
+          .isEqualTo(ArtworkCounts.builder().unavailable(primaryImageTypes.size()).build());
+      assertThat(itemResults.findByItem(entityId, entityType))
+          .extracting(ItemResult::imageType)
+          .containsExactlyInAnyOrderElementsOf(primaryImageTypes);
       assertThat(imageDownloader.getDownloadCount()).isZero();
     }
 
     @Test
-    @DisplayName("Should report failure with cause when a download fails")
-    void shouldReportFailureWithCauseWhenDownloadFails() {
-      imageDownloader.setFailOnPath("/poster.jpg");
+    @DisplayName("Should finish the step with a download failure when the host answers not found")
+    void shouldFinishTheStepWithADownloadFailureWhenTheHostAnswersNotFound() {
+      var movieId = UUID.randomUUID();
+      imageDownloader.failDownloadWith(
+          "/poster.jpg", new ImageDownloadException(404, "/poster.jpg", Optional.empty()));
 
-      var results = requestPrimaryArtwork(movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
+      var summary = requestPrimaryArtwork(movieArtwork(movieId, POSTER, BACKDROP));
 
-      assertThat(results).contains(new Saved(ImageType.BACKDROP));
-      assertThat(results)
-          .filteredOn(Failed.class::isInstance)
-          .singleElement()
-          .isInstanceOfSatisfying(
-              Failed.class,
-              failed -> {
-                assertThat(failed.imageType()).isEqualTo(ImageType.POSTER);
-                assertThat(failed.cause()).isInstanceOf(IOException.class);
-              });
+      assertThat(summary.counts()).isEqualTo(ArtworkCounts.builder().saved(1).failed(1).build());
+      assertThat(failureReasonOf(movieId, ImageType.POSTER))
+          .isEqualTo(ItemFailureReason.DOWNLOAD_FAILED);
+      assertThat(artwork.scheduling().pendingItems()).isEmpty();
     }
 
     @Test
-    @DisplayName("Should report failure when processed images cannot be saved")
-    void shouldReportFailureWhenProcessedImagesCannotBeSaved() {
+    @DisplayName(
+        "Should keep the step pending with a temporary failure when the download cannot connect")
+    void shouldKeepTheStepPendingWithATemporaryFailureWhenTheDownloadCannotConnect() {
+      var movieId = UUID.randomUUID();
+      imageDownloader.setFailOnPath("/poster.jpg");
+
+      var summary = requestPrimaryArtwork(movieArtwork(movieId, POSTER, BACKDROP));
+
+      assertThat(summary.counts()).isEqualTo(ArtworkCounts.builder().saved(1).failed(1).build());
+      assertThat(failureReasonOf(movieId, ImageType.POSTER)).isEqualTo(ItemFailureReason.TEMPORARY);
+      assertThat(artwork.scheduling().pendingItems())
+          .containsExactly(new ArtworkItem(movieId, ImageEntityType.MOVIE));
+    }
+
+    @Test
+    @DisplayName("Should save the image on a later attempt when a temporary failure passes")
+    void shouldSaveTheImageOnALaterAttemptWhenATemporaryFailurePasses() {
+      var movieId = UUID.randomUUID();
+      imageDownloader.setFailOnPath("/poster.jpg");
+      requestPrimaryArtwork(movieArtwork(movieId, POSTER, BACKDROP));
+      var downloadsBeforeRetry = imageDownloader.getDownloadCount();
+
+      imageDownloader.setFailOnPath(null);
+      artwork.scheduling().runPendingSteps();
+
+      assertThat(outcomesOf(movieId))
+          .containsOnly(
+              Map.entry(ImageType.POSTER, new ItemOutcome.Succeeded()),
+              Map.entry(ImageType.BACKDROP, new ItemOutcome.Succeeded()));
+      assertThat(imageDownloader.getDownloadCount()).isEqualTo(downloadsBeforeRetry + 1);
+      assertThat(artwork.scheduling().pendingItems()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should keep the step pending when processed images cannot be saved")
+    void shouldKeepTheStepPendingWhenProcessedImagesCannotBeSaved() throws IOException {
       imageRepository.setFailOnInsertAllIfAbsent(true);
       var movieId = UUID.randomUUID();
 
-      var results = requestPrimaryArtwork(movieArtwork(movieId, POSTER));
+      requestPrimaryArtwork(movieArtwork(movieId, POSTER));
 
-      assertThat(results)
-          .filteredOn(Failed.class::isInstance)
-          .extracting(ArtworkResult::imageType)
-          .containsExactly(ImageType.POSTER);
+      assertThat(failureReasonOf(movieId, ImageType.POSTER)).isEqualTo(ItemFailureReason.TEMPORARY);
       assertThat(imageRepository.findByEntityIdAndEntityType(movieId, ImageEntityType.MOVIE))
           .isEmpty();
+      assertThat(storedFiles()).isEmpty();
     }
 
     @Test
-    @DisplayName("Should report skipped when stored artwork is preserved")
-    void shouldReportSkippedWhenStoredArtworkIsPreserved() {
+    @DisplayName(
+        "Should count stored artwork as skipped and request nothing when preserve keeps it")
+    void shouldCountStoredArtworkAsSkippedAndRequestNothingWhenPreserveKeepsIt() {
+      var movieId = UUID.randomUUID();
+      imageRepository.save(imageBuilder(movieId).key("/poster.jpg").path("movie/poster").build());
+      imageRepository.save(
+          imageBuilder(movieId)
+              .imageType(ImageType.BACKDROP)
+              .key("/backdrop.jpg")
+              .path("movie/backdrop")
+              .build());
+
+      var summary = requestPrimaryArtwork(movieArtwork(movieId, POSTER, BACKDROP));
+
+      assertThat(summary.counts()).isEqualTo(ArtworkCounts.builder().skipped(2).build());
+      assertThat(artwork.requests().requests()).isEmpty();
+      assertThat(imageDownloader.getDownloadCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("Should count stored artwork as skipped when a missing source keeps it")
+    void shouldCountStoredArtworkAsSkippedWhenAMissingSourceKeepsIt() {
       var movieId = UUID.randomUUID();
       imageRepository.save(imageBuilder(movieId).key("/poster.jpg").path("movie/poster").build());
 
-      var results = requestPrimaryArtwork(movieArtwork(movieId, POSTER, BACKDROP));
+      var summary = requestPrimaryArtwork(movieArtwork(movieId, BACKDROP));
 
-      assertThat(results)
-          .containsExactlyInAnyOrder(new Skipped(ImageType.POSTER), new Saved(ImageType.BACKDROP));
-      assertThat(imageDownloader.getDownloadCount()).isOne();
+      assertThat(summary.counts()).isEqualTo(ArtworkCounts.builder().saved(1).skipped(1).build());
+      assertThat(outcomesOf(movieId))
+          .containsOnly(
+              Map.entry(ImageType.POSTER, new ItemOutcome.Succeeded()),
+              Map.entry(ImageType.BACKDROP, new ItemOutcome.Succeeded()));
     }
 
     @Test
-    @DisplayName("Should report skipped when missing source has stored artwork that is preserved")
-    void shouldReportSkippedWhenMissingSourceHasStoredArtworkThatIsPreserved() {
-      var movieId = UUID.randomUUID();
-      imageRepository.save(imageBuilder(movieId).key("/poster.jpg").path("movie/poster").build());
-
-      var results = requestPrimaryArtwork(movieArtwork(movieId, BACKDROP));
-
-      assertThat(results)
-          .containsExactlyInAnyOrder(new Skipped(ImageType.POSTER), new Saved(ImageType.BACKDROP));
-    }
-
-    @Test
-    @DisplayName("Should keep stored artwork when forced refresh finds no provider image")
-    void shouldKeepStoredArtworkWhenForcedRefreshFindsNoProviderImage() {
+    @DisplayName("Should keep stored artwork when a forced refresh finds no provider image")
+    void shouldKeepStoredArtworkWhenAForcedRefreshFindsNoProviderImage() {
       var movieId = UUID.randomUUID();
       var stored =
           imageRepository.save(
               imageBuilder(movieId).key("/poster.jpg").path("movie/poster").build());
 
-      List<ArtworkResult> results;
-      try (var run = artworkService.openRun("refresh", ImageRefreshMode.FORCE_REFRESH)) {
-        results = awaitResult(artworkService.requestPrimaryArtwork(run, movieArtwork(movieId)));
-      }
+      var run = artworkService.openRun("refresh", ImageRefreshMode.FORCE_REFRESH);
+      artworkService.requestPrimaryArtwork(run, movieArtwork(movieId));
 
-      assertThat(results)
-          .containsExactlyInAnyOrder(
-              new Unavailable(ImageType.POSTER), new Unavailable(ImageType.BACKDROP));
+      assertThat(artwork.closeAndAwait(run).counts())
+          .isEqualTo(ArtworkCounts.builder().unavailable(2).build());
       assertThat(imageRepository.findByEntityIdAndEntityType(movieId, ImageEntityType.MOVIE))
           .extracting(Image::getId)
           .containsExactly(stored.getId());
     }
 
     @Test
-    @DisplayName(
-        "Should report failure for every requested image when stored artwork is unreadable")
-    void shouldReportFailureForEveryRequestedImageWhenStoredArtworkIsUnreadable() {
+    @DisplayName("Should fail the request when stored artwork cannot be read")
+    void shouldFailTheRequestWhenStoredArtworkCannotBeRead() {
       var unreadableRepository =
           new FakeImageRepository() {
             @Override
@@ -208,58 +251,129 @@ class ArtworkServiceTest {
               throw new IllegalStateException("Simulated artwork lookup failure");
             }
           };
-      var service =
-          ArtworkServiceFixture.artworkServiceBuilder()
+      var unreadable =
+          ArtworkFixture.builder()
               .imageRepository(unreadableRepository)
               .imageDownloader(imageDownloader)
               .build();
-      List<ArtworkResult> results;
-      try (var run = service.openRun("scan", ImageRefreshMode.PRESERVE)) {
-        results =
-            awaitResult(
-                service.requestPrimaryArtwork(run, movieArtwork(UUID.randomUUID(), POSTER)));
-      }
+      var run = unreadable.artworkService().openRun("scan", ImageRefreshMode.PRESERVE);
+      var sources = movieArtwork(UUID.randomUUID(), POSTER);
 
-      assertThat(results)
-          .allMatch(Failed.class::isInstance)
-          .extracting(ArtworkResult::imageType)
-          .containsExactlyInAnyOrder(ImageType.POSTER, ImageType.BACKDROP);
-      assertThat(imageDownloader.getDownloadCount()).isZero();
+      assertThatThrownBy(() -> unreadable.artworkService().requestPrimaryArtwork(run, sources))
+          .isInstanceOf(IllegalStateException.class);
+      assertThat(unreadable.requests().requests()).isEmpty();
     }
 
     @Test
-    @DisplayName("Should report failure when the service stops during a download")
-    void shouldReportFailureWhenServiceStopsDuringDownload() throws Exception {
+    @DisplayName(
+        "Should store no result for the interrupted download and keep the step pending when an"
+            + " attempt is interrupted")
+    void shouldStoreNoResultForTheInterruptedDownloadAndKeepTheStepPendingWhenInterrupted()
+        throws Exception {
       var downloader = new GatedImageDownloader(createTestImage(600, 900));
       downloader.holdPathsStartingWith("/");
-      var service = artworkServiceWith(downloader);
-      var run = service.openRun("scan", ImageRefreshMode.PRESERVE);
-      var request =
-          service.requestPrimaryArtwork(run, movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
-      downloader.awaitHeldDownloads(2, HELD_DOWNLOAD_BOUND);
+      var interrupted = artworkWith(downloader);
+      interrupted.scheduling().holdScheduledSteps();
+      var movieId = UUID.randomUUID();
+      var run = interrupted.artworkService().openRun("scan", ImageRefreshMode.PRESERVE);
+      interrupted.artworkService().requestPrimaryArtwork(run, movieArtwork(movieId, POSTER));
 
-      service.shutdown();
-      run.close();
+      try (var attempt = BoundedTask.start(() -> interrupted.scheduling().runPendingSteps())) {
+        downloader.awaitHeldDownloads(1, BOUND);
+        attempt.interrupt();
 
-      assertThat(awaitResult(request))
-          .allMatch(Failed.class::isInstance)
-          .extracting(ArtworkResult::imageType)
-          .containsExactlyInAnyOrder(ImageType.POSTER, ImageType.BACKDROP);
-      assertThat(awaitResult(run.completion()).counts())
-          .isEqualTo(ArtworkCounts.builder().failed(2).build());
+        assertThat(attempt.await(BOUND))
+            .singleElement()
+            .isInstanceOf(ArtworkStepsOutcome.Interrupted.class);
+      } finally {
+        downloader.releaseHeldDownloads();
+      }
+
+      assertThat(itemResults.findByItem(movieId, ImageEntityType.MOVIE))
+          .extracting(ItemResult::imageType)
+          .containsExactly(ImageType.BACKDROP);
+      assertThat(interrupted.scheduling().pendingItems())
+          .containsExactly(new ArtworkItem(movieId, ImageEntityType.MOVIE));
+    }
+  }
+
+  @Nested
+  @DisplayName("Artwork generations")
+  class ArtworkGenerations {
+
+    @Test
+    @DisplayName(
+        "Should save nothing from an attempt whose generation a forced refresh replaced while it"
+            + " downloaded")
+    void shouldSaveNothingFromAnAttemptWhoseGenerationAForcedRefreshReplacedWhileItDownloaded()
+        throws Exception {
+      var downloader = new GatedImageDownloader(createTestImage(600, 900));
+      downloader.holdPathsStartingWith("/poster");
+      var raced = artworkWith(downloader);
+      raced.scheduling().holdScheduledSteps();
+      var movieId = UUID.randomUUID();
+      var preserveRun = raced.artworkService().openRun("scan", ImageRefreshMode.PRESERVE);
+      raced.artworkService().requestPrimaryArtwork(preserveRun, movieArtwork(movieId, POSTER));
+      var preserveGeneration = raced.requests().requests().getFirst().generation();
+
+      try (var attempt = BoundedTask.start(() -> raced.scheduling().runPendingSteps())) {
+        downloader.awaitHeldDownloads(1, BOUND);
+        var forcedRun = raced.artworkService().openRun("refresh", ImageRefreshMode.FORCE_REFRESH);
+        raced.artworkService().requestPrimaryArtwork(forcedRun, movieArtwork(movieId, POSTER));
+        downloader.releaseHeldDownloads();
+
+        attempt.await(BOUND);
+      } finally {
+        downloader.releaseHeldDownloads();
+      }
+
+      assertThat(itemResults.findByItem(movieId, ImageEntityType.MOVIE))
+          .isNotEmpty()
+          .allSatisfy(
+              result -> assertThat(result.artworkGeneration()).isGreaterThan(preserveGeneration));
+      assertThat(imageRepository.findByEntityIdAndEntityType(movieId, ImageEntityType.MOVIE))
+          .extracting(Image::getImageType)
+          .containsOnly(ImageType.POSTER);
+      assertThat(raced.requests().requests()).isEmpty();
     }
 
     @Test
-    @DisplayName("Should report failure when required artwork is requested after the service stops")
-    void shouldReportFailureWhenRequiredArtworkIsRequestedAfterServiceStops() {
-      artworkService.shutdown();
+    @DisplayName("Should keep waiting when only a result of an older generation is stored")
+    void shouldKeepWaitingWhenOnlyAResultOfAnOlderGenerationIsStored() {
+      var movieId = UUID.randomUUID();
+      var sleeper = new CountingSleeper();
+      var waiting =
+          ArtworkFixture.builder()
+              .imageRepository(imageRepository)
+              .imageDownloader(imageDownloader)
+              .itemResults(itemResults)
+              .clock(clock)
+              .sleeper(sleeper)
+              .build();
+      waiting.scheduling().holdScheduledSteps();
+      Stream.of(ImageType.POSTER, ImageType.BACKDROP)
+          .forEach(type -> itemResults.overwrite(succeeded(movieId, type, 0)));
+      sleeper.onSleep(_ -> waiting.scheduling().runPendingSteps());
+      var run = waiting.artworkService().openRun("scan", ImageRefreshMode.PRESERVE);
+      waiting.artworkService().requestPrimaryArtwork(run, movieArtwork(movieId, POSTER, BACKDROP));
 
-      var results = requestPrimaryArtwork(movieArtwork(UUID.randomUUID(), POSTER));
+      var summary = waiting.closeAndAwait(run);
 
-      assertThat(results)
-          .allMatch(Failed.class::isInstance)
-          .extracting(ArtworkResult::imageType)
-          .containsExactlyInAnyOrder(ImageType.POSTER, ImageType.BACKDROP);
+      assertThat(sleeper.sleeps()).isNotEmpty();
+      assertThat(summary.counts()).isEqualTo(ArtworkCounts.builder().saved(2).build());
+    }
+
+    @Test
+    @DisplayName("Should stop waiting for an item when the item is deleted")
+    void shouldStopWaitingForAnItemWhenTheItemIsDeleted() {
+      artwork.scheduling().holdScheduledSteps();
+      var movieId = UUID.randomUUID();
+      var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+      artworkService.requestPrimaryArtwork(run, movieArtwork(movieId, POSTER));
+
+      artwork.requests().deleteItem(new ArtworkItem(movieId, ImageEntityType.MOVIE));
+
+      assertThat(artwork.closeAndAwait(run).counts()).isEqualTo(ArtworkCounts.NONE);
     }
   }
 
@@ -268,212 +382,163 @@ class ArtworkServiceTest {
   class ArtworkRuns {
 
     @Test
-    @DisplayName("Should keep run pending when finished requests leave discovery open")
-    void shouldKeepRunPendingWhenFinishedRequestsLeaveDiscoveryOpen() {
-      var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
-
-      awaitResult(
-          artworkService.requestPrimaryArtwork(run, movieArtwork(UUID.randomUUID(), POSTER)));
-
-      assertThat(run.completion()).isNotDone();
-
-      run.close();
-
-      assertThat(awaitResult(run.completion()).counts())
-          .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
-    }
-
-    @Test
-    @DisplayName("Should count each source image once when requests finish")
-    void shouldCountEachSourceImageOnceWhenRequestsFinish() {
+    @DisplayName("Should count each source image once when results are recorded")
+    void shouldCountEachSourceImageOnceWhenResultsAreRecorded() {
       imageDownloader.setFailOnPath("/other-poster.jpg");
       var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
       var skippedMovieId = UUID.randomUUID();
       imageRepository.save(
           imageBuilder(skippedMovieId).key("/poster.jpg").path("movie/poster").build());
 
-      var requests =
-          List.of(
-              artworkService.requestPrimaryArtwork(
-                  run, movieArtwork(UUID.randomUUID(), POSTER, BACKDROP)),
-              artworkService.requestPrimaryArtwork(run, movieArtwork(skippedMovieId, POSTER)),
-              artworkService.requestPrimaryArtwork(
-                  run,
-                  movieArtwork(
-                      UUID.randomUUID(),
-                      new TmdbImageSource(ImageType.POSTER, "/other-poster.jpg"))));
-      requests.forEach(ArtworkServiceTest::awaitResult);
-      run.close();
+      artworkService.requestPrimaryArtwork(run, movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
+      artworkService.requestPrimaryArtwork(run, movieArtwork(skippedMovieId, POSTER));
+      artworkService.requestPrimaryArtwork(
+          run,
+          movieArtwork(
+              UUID.randomUUID(), new TmdbImageSource(ImageType.POSTER, "/other-poster.jpg")));
 
-      assertThat(awaitResult(run.completion()).counts())
+      assertThat(artwork.closeAndAwait(run).counts())
           .isEqualTo(ArtworkCounts.builder().saved(2).skipped(1).unavailable(2).failed(1).build());
     }
 
     @Test
-    @DisplayName("Should complete run with no counts when closed before any request")
-    void shouldCompleteRunWithNoCountsWhenClosedBeforeAnyRequest() {
+    @DisplayName("Should finish a run with no counts when it is closed before any request")
+    void shouldFinishARunWithNoCountsWhenItIsClosedBeforeAnyRequest() {
       var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
 
-      run.close();
+      var summary = artwork.closeAndAwait(run);
 
-      var summary = awaitResult(run.completion());
-      assertThat(summary.counts()).isEqualTo(ArtworkCounts.builder().build());
+      assertThat(summary.counts()).isEqualTo(ArtworkCounts.NONE);
       assertThat(summary.elapsed()).isZero();
+      assertThat(summary.description()).isEqualTo("scan");
     }
 
     @Test
-    @DisplayName("Should time run from first request until discovery closes")
-    void shouldTimeRunFromFirstRequestUntilDiscoveryCloses() {
+    @DisplayName("Should time a run from its first request until its last result is recorded")
+    void shouldTimeARunFromItsFirstRequestUntilItsLastResultIsRecorded() {
+      artwork.scheduling().holdScheduledSteps();
       var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
       clock.advance(Duration.ofSeconds(10));
-
-      awaitResult(
-          artworkService.requestPrimaryArtwork(run, movieArtwork(UUID.randomUUID(), POSTER)));
-      clock.advance(Duration.ofSeconds(3));
-      run.close();
-      clock.advance(Duration.ofSeconds(30));
-
-      assertThat(awaitResult(run.completion()).elapsed()).isEqualTo(Duration.ofSeconds(3));
-    }
-
-    @Test
-    @DisplayName("Should time run until the last request finishes after discovery closes")
-    void shouldTimeRunUntilLastRequestFinishesAfterDiscoveryCloses() throws Exception {
-      var downloader = new GatedImageDownloader(createTestImage(600, 900));
-      downloader.holdPathsStartingWith("/poster");
-      var service = artworkServiceWith(downloader);
-      var run = service.openRun("scan", ImageRefreshMode.PRESERVE);
-      var request = service.requestPrimaryArtwork(run, movieArtwork(UUID.randomUUID(), POSTER));
-      downloader.awaitHeldDownloads(1, HELD_DOWNLOAD_BOUND);
-
+      artworkService.requestPrimaryArtwork(run, movieArtwork(UUID.randomUUID(), POSTER));
       clock.advance(Duration.ofSeconds(4));
-      run.close();
-      clock.advance(Duration.ofSeconds(8));
-      downloader.releaseHeldDownloads();
-      awaitResult(request);
-      clock.advance(Duration.ofSeconds(30));
 
-      assertThat(awaitResult(run.completion()).elapsed()).isEqualTo(Duration.ofSeconds(12));
+      artwork.scheduling().runPendingSteps();
+
+      assertThat(artwork.closeAndAwait(run).elapsed()).isEqualTo(Duration.ofSeconds(4));
     }
 
     @Test
-    @DisplayName("Should reject required artwork when run is closed")
-    void shouldRejectRequiredArtworkWhenRunIsClosed() {
+    @DisplayName("Should reject primary artwork when the run is closed")
+    void shouldRejectPrimaryArtworkWhenTheRunIsClosed() {
       var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
       run.close();
-      var artwork = movieArtwork(UUID.randomUUID(), POSTER);
+      var sources = movieArtwork(UUID.randomUUID(), POSTER);
 
-      assertThatThrownBy(() -> artworkService.requestPrimaryArtwork(run, artwork))
-          .isInstanceOf(IllegalStateException.class);
+      assertThatThrownBy(() -> artworkService.requestPrimaryArtwork(run, sources))
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessageContaining("scan");
+    }
+
+    @Test
+    @DisplayName("Should keep waiting while a result cannot be stored and finish after a retry")
+    void shouldKeepWaitingWhileAResultCannotBeStoredAndFinishAfterARetry() throws Exception {
+      itemResults.failArtworkResultWritesWith(
+          new DataAccessResourceFailureException("database unavailable"), 1);
+      var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+      artworkService.requestPrimaryArtwork(run, movieArtwork(UUID.randomUUID(), POSTER));
+
+      try (var wait = BoundedTask.start(() -> artwork.closeAndAwait(run))) {
+        artwork.scheduling().awaitUnfinishedAttempt(BOUND);
+
+        artwork.scheduling().runPendingSteps();
+
+        assertThat(wait.await(BOUND).counts())
+            .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+      }
     }
   }
 
   @Nested
-  @DisplayName("Secondary artwork")
-  class SecondaryArtwork {
+  @DisplayName("Background artwork")
+  class BackgroundArtwork {
 
-    static Stream<Arguments> secondaryImageTypes() {
+    static Stream<Arguments> backgroundImageTypes() {
       return Stream.of(
           Arguments.of(ImageEntityType.PERSON, ImageType.PROFILE),
           Arguments.of(ImageEntityType.COMPANY, ImageType.LOGO));
     }
 
     @ParameterizedTest(name = "{0}")
-    @MethodSource("secondaryImageTypes")
-    @DisplayName("Should save secondary artwork when provider supplies an image")
-    void shouldSaveSecondaryArtworkWhenProviderSuppliesImage(
+    @MethodSource("backgroundImageTypes")
+    @DisplayName("Should save background artwork and its result when the provider supplies one")
+    void shouldSaveBackgroundArtworkAndItsResultWhenTheProviderSuppliesOne(
         ImageEntityType entityType, ImageType imageType) {
       var entityId = UUID.randomUUID();
-      var artwork =
+      var sources =
           ArtworkSources.builder()
               .entityId(entityId)
               .entityType(entityType)
-              .sources(List.of(new TmdbImageSource(imageType, "/secondary.jpg")))
+              .sources(List.of(new TmdbImageSource(imageType, "/background.jpg")))
               .build();
 
-      var results =
-          awaitResult(artworkService.requestBackgroundArtwork(artwork, ImageRefreshMode.PRESERVE));
+      artworkService.requestBackgroundArtwork(sources, ImageRefreshMode.PRESERVE);
 
-      assertThat(results).containsExactly(new Saved(imageType));
+      assertThat(itemResults.findByItem(entityId, entityType))
+          .extracting(ItemResult::imageType, ItemResult::outcome)
+          .containsExactly(tuple(imageType, new ItemOutcome.Succeeded()));
       assertThat(imageRepository.findByEntityIdAndEntityType(entityId, entityType))
           .extracting(Image::getImageType)
           .containsOnly(imageType);
     }
 
     @ParameterizedTest(name = "{0}")
-    @MethodSource("secondaryImageTypes")
-    @DisplayName("Should report unavailable when provider has no secondary image")
-    void shouldReportUnavailableWhenProviderHasNoSecondaryImage(
+    @MethodSource("backgroundImageTypes")
+    @DisplayName("Should record unavailable when the provider has no background image")
+    void shouldRecordUnavailableWhenTheProviderHasNoBackgroundImage(
         ImageEntityType entityType, ImageType imageType) {
-      var artwork =
+      var entityId = UUID.randomUUID();
+      var sources =
           ArtworkSources.builder()
-              .entityId(UUID.randomUUID())
+              .entityId(entityId)
               .entityType(entityType)
               .sources(List.of())
               .build();
 
-      var results =
-          awaitResult(artworkService.requestBackgroundArtwork(artwork, ImageRefreshMode.PRESERVE));
+      artworkService.requestBackgroundArtwork(sources, ImageRefreshMode.PRESERVE);
 
-      assertThat(results).containsExactly(new Unavailable(imageType));
+      assertThat(itemResults.findByItem(entityId, entityType))
+          .extracting(ItemResult::imageType, ItemResult::outcome)
+          .containsExactly(tuple(imageType, new ItemOutcome.Unavailable()));
     }
 
     @Test
-    @DisplayName("Should finish required artwork while secondary downloads are held open")
-    void shouldFinishRequiredArtworkWhileSecondaryDownloadsAreHeldOpen() throws Exception {
-      var downloader = new GatedImageDownloader(createTestImage(600, 900));
-      downloader.holdPathsStartingWith("/profile");
-      var service =
-          ArtworkServiceFixture.artworkServiceBuilder()
-              .imageRepository(imageRepository)
-              .imageDownloader(downloader)
-              .secondaryConcurrency(2)
-              .build();
-      var secondaryRequests =
-          IntStream.range(0, 20)
-              .mapToObj(
-                  index ->
-                      service.requestBackgroundArtwork(
-                          personArtwork("/profile-" + index + ".jpg"), ImageRefreshMode.PRESERVE))
-              .toList();
-      downloader.awaitHeldDownloads(2, HELD_DOWNLOAD_BOUND);
+    @DisplayName("Should request nothing when preserve keeps every stored background image")
+    void shouldRequestNothingWhenPreserveKeepsEveryStoredBackgroundImage() {
+      var person = personArtwork("/profile.jpg");
+      imageRepository.save(
+          imageBuilder(person.entityId())
+              .entityType(ImageEntityType.PERSON)
+              .imageType(ImageType.PROFILE)
+              .key("/old-profile.jpg")
+              .path("person/profile")
+              .build());
 
-      List<ArtworkResult> requiredResults;
-      try (var run = service.openRun("scan", ImageRefreshMode.PRESERVE)) {
-        requiredResults =
-            awaitResult(
-                service.requestPrimaryArtwork(
-                    run, movieArtwork(UUID.randomUUID(), POSTER, BACKDROP)));
-      }
+      artworkService.requestBackgroundArtwork(person, ImageRefreshMode.PRESERVE);
 
-      assertThat(requiredResults)
-          .containsExactlyInAnyOrder(new Saved(ImageType.POSTER), new Saved(ImageType.BACKDROP));
-      assertThat(downloader.heldDownloads()).isEqualTo(2);
-      assertThat(secondaryRequests).noneMatch(CompletableFuture::isDone);
-
-      downloader.releaseHeldDownloads();
-
-      assertThat(secondaryRequests)
-          .allSatisfy(
-              request ->
-                  assertThat(awaitResult(request)).containsExactly(new Saved(ImageType.PROFILE)));
+      assertThat(artwork.requests().requests()).isEmpty();
+      assertThat(imageDownloader.getDownloadCount()).isZero();
     }
 
     @Test
-    @DisplayName(
-        "Should report failure when secondary artwork is requested after the service stops")
-    void shouldReportFailureWhenSecondaryArtworkIsRequestedAfterServiceStops() {
-      artworkService.shutdown();
+    @DisplayName("Should count pending background images apart from primary images")
+    void shouldCountPendingBackgroundImagesApartFromPrimaryImages() {
+      artwork.scheduling().holdScheduledSteps();
+      artworkService.requestBackgroundArtwork(
+          personArtwork("/profile.jpg"), ImageRefreshMode.PRESERVE);
+      var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+      artworkService.requestPrimaryArtwork(run, movieArtwork(UUID.randomUUID(), POSTER));
 
-      var results =
-          awaitResult(
-              artworkService.requestBackgroundArtwork(
-                  personArtwork("/profile.jpg"), ImageRefreshMode.PRESERVE));
-
-      assertThat(results)
-          .singleElement()
-          .isInstanceOfSatisfying(
-              Failed.class, failed -> assertThat(failed.imageType()).isEqualTo(ImageType.PROFILE));
+      assertThat(artworkService.pendingBackgroundImages()).isOne();
     }
   }
 
@@ -482,56 +547,46 @@ class ArtworkServiceTest {
   class ServerWideProgress {
 
     @Test
-    @DisplayName("Should report nothing when no artwork was requested")
-    void shouldReportNothingWhenNoArtworkWasRequested() {
-      assertThat(progress.reportProgress()).isEmpty();
+    @DisplayName("Should report nothing when no artwork is pending")
+    void shouldReportNothingWhenNoArtworkIsPending() {
+      assertThat(artwork.progress().reportProgress()).isEmpty();
     }
 
     @Test
-    @DisplayName("Should report pending source images when required artwork is in flight")
-    void shouldReportPendingSourceImagesWhenRequiredArtworkIsInFlight() throws Exception {
-      var downloader = new GatedImageDownloader(createTestImage(600, 900));
-      downloader.holdPathsStartingWith("/");
-      var service = artworkServiceWith(downloader);
-      var run = service.openRun("scan", ImageRefreshMode.PRESERVE);
-      service.requestPrimaryArtwork(run, movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
-      downloader.awaitHeldDownloads(2, HELD_DOWNLOAD_BOUND);
+    @DisplayName("Should report pending images from the first report that finds them")
+    void shouldReportPendingImagesFromTheFirstReportThatFindsThem() {
+      artwork.scheduling().holdScheduledSteps();
+      var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+      artworkService.requestPrimaryArtwork(run, movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
+      artwork.progress().reportProgress();
       clock.advance(Duration.ofSeconds(5));
 
-      var reports = progress.reportProgress();
+      var reports = artwork.progress().reportProgress();
 
-      downloader.releaseHeldDownloads();
-      run.close();
       assertThat(reports)
           .containsExactly(
               ArtworkProgressReport.builder()
                   .priority(ArtworkPriority.PRIMARY)
-                  .counts(ArtworkCounts.builder().build())
+                  .counts(ArtworkCounts.NONE)
                   .pending(2)
                   .elapsed(Duration.ofSeconds(5))
                   .build());
     }
 
     @Test
-    @DisplayName("Should stop the lane timer when work finishes rather than when it is reported")
-    void shouldStopLaneTimerWhenWorkFinishesRatherThanWhenReported() throws Exception {
-      var downloader = new GatedImageDownloader(createTestImage(600, 900));
-      downloader.holdPathsStartingWith("/");
-      var service = artworkServiceWith(downloader);
-      List<ArtworkResult> results;
-      try (var run = service.openRun("scan", ImageRefreshMode.PRESERVE)) {
-        var request = service.requestPrimaryArtwork(run, movieArtwork(UUID.randomUUID(), POSTER));
-        downloader.awaitHeldDownloads(1, HELD_DOWNLOAD_BOUND);
-        clock.advance(Duration.ofSeconds(4));
-        downloader.releaseHeldDownloads();
-        results = awaitResult(request);
-      }
+    @DisplayName("Should finish the busy period with the results recorded since it started")
+    void shouldFinishTheBusyPeriodWithTheResultsRecordedSinceItStarted() {
+      itemResults.overwrite(succeeded(UUID.randomUUID(), ImageType.POSTER, 1));
+      clock.advance(Duration.ofSeconds(1));
+      artwork.scheduling().holdScheduledSteps();
+      var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+      artworkService.requestPrimaryArtwork(run, movieArtwork(UUID.randomUUID(), POSTER));
+      artwork.progress().reportProgress();
+      clock.advance(Duration.ofSeconds(4));
+      artwork.scheduling().runPendingSteps();
 
-      clock.advance(Duration.ofSeconds(30));
+      var reports = artwork.progress().reportProgress();
 
-      var reports = progress.reportProgress();
-
-      assertThat(results).hasSize(2);
       assertThat(reports)
           .singleElement()
           .satisfies(
@@ -541,122 +596,27 @@ class ArtworkServiceTest {
                 assertThat(report.counts())
                     .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
               });
-      assertThat(progress.reportProgress()).isEmpty();
+      assertThat(artwork.progress().reportProgress()).isEmpty();
     }
 
     @Test
-    @DisplayName("Should keep one busy period when work resumes before the next report")
-    void shouldKeepOneBusyPeriodWhenWorkResumesBeforeNextReport() {
-      requestPrimaryArtwork(movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
-      clock.advance(Duration.ofSeconds(2));
-      requestPrimaryArtwork(movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
+    @DisplayName("Should report primary and background artwork separately")
+    void shouldReportPrimaryAndBackgroundArtworkSeparately() {
+      artwork.scheduling().holdScheduledSteps();
+      var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+      artworkService.requestPrimaryArtwork(run, movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
+      artworkService.requestBackgroundArtwork(
+          personArtwork("/profile.jpg"), ImageRefreshMode.PRESERVE);
+      artwork.progress().reportProgress();
+      artwork.scheduling().runPendingSteps();
 
-      var reports = progress.reportProgress();
+      var reports = artwork.progress().reportProgress();
 
-      assertThat(reports)
-          .singleElement()
-          .satisfies(
-              report -> {
-                assertThat(report.isFinished()).isTrue();
-                assertThat(report.counts()).isEqualTo(ArtworkCounts.builder().saved(4).build());
-                assertThat(report.elapsed()).isEqualTo(Duration.ofSeconds(2));
-              });
-    }
-
-    @Test
-    @DisplayName("Should count source images and report secondary work separately")
-    void shouldCountSourceImagesAndReportSecondaryWorkSeparately() {
-      var movieId = UUID.randomUUID();
-      requestPrimaryArtwork(movieArtwork(movieId, POSTER, BACKDROP));
-      awaitResult(
-          artworkService.requestBackgroundArtwork(
-              personArtwork("/profile.jpg"), ImageRefreshMode.PRESERVE));
-
-      var reports = progress.reportProgress();
-
-      assertThat(imageRepository.findByEntityIdAndEntityType(movieId, ImageEntityType.MOVIE))
-          .hasSize(2 * ImageSize.values().length);
       assertThat(reports)
           .extracting(ArtworkProgressReport::priority, ArtworkProgressReport::counts)
           .containsExactlyInAnyOrder(
               tuple(ArtworkPriority.PRIMARY, ArtworkCounts.builder().saved(2).build()),
               tuple(ArtworkPriority.BACKGROUND, ArtworkCounts.builder().saved(1).build()));
-    }
-  }
-
-  @Nested
-  @DisplayName("Result recording")
-  class ResultRecording {
-
-    private final DataAccessResourceFailureException recordingFailure =
-        new DataAccessResourceFailureException("database unavailable");
-
-    @Test
-    @DisplayName("Should fail the required request and its run when results cannot be recorded")
-    void shouldFailTheRequiredRequestAndItsRunWhenResultsCannotBeRecorded() {
-      itemResults.failWritesWith(recordingFailure);
-      var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
-
-      var request =
-          artworkService.requestPrimaryArtwork(run, movieArtwork(UUID.randomUUID(), POSTER));
-      run.close();
-
-      assertThat(request)
-          .failsWithin(Duration.ofSeconds(5))
-          .withThrowableOfType(ExecutionException.class)
-          .withCause(recordingFailure);
-      assertThat(run.completion())
-          .failsWithin(Duration.ofSeconds(5))
-          .withThrowableOfType(ExecutionException.class)
-          .havingCause()
-          .isInstanceOf(ArtworkResultNotSavedException.class)
-          .withCause(recordingFailure);
-    }
-
-    @Test
-    @DisplayName(
-        "Should fail the run only after its other requests finish when a result cannot be"
-            + " recorded")
-    void shouldFailTheRunOnlyAfterItsOtherRequestsFinishWhenAResultCannotBeRecorded()
-        throws Exception {
-      var downloader = new GatedImageDownloader(createTestImage(600, 900));
-      downloader.holdPathsStartingWith("/held");
-      var service = artworkServiceWith(downloader);
-      var run = service.openRun("scan", ImageRefreshMode.PRESERVE);
-      service.requestPrimaryArtwork(
-          run, movieArtwork(UUID.randomUUID(), new TmdbImageSource(ImageType.POSTER, "/held.jpg")));
-      downloader.awaitHeldDownloads(1, HELD_DOWNLOAD_BOUND);
-      itemResults.failWritesWith(recordingFailure);
-
-      var failed = service.requestPrimaryArtwork(run, movieArtwork(UUID.randomUUID(), POSTER));
-      run.close();
-
-      assertThat(failed).failsWithin(Duration.ofSeconds(5));
-      assertThat(run.completion()).isNotDone();
-
-      itemResults.failWritesWith(null);
-      downloader.releaseHeldDownloads();
-
-      assertThat(run.completion())
-          .failsWithin(Duration.ofSeconds(5))
-          .withThrowableOfType(ExecutionException.class)
-          .havingCause()
-          .isInstanceOf(ArtworkResultNotSavedException.class);
-    }
-
-    @Test
-    @DisplayName("Should fail the secondary request when its results cannot be recorded")
-    void shouldFailTheSecondaryRequestWhenItsResultsCannotBeRecorded() {
-      itemResults.failWritesWith(recordingFailure);
-
-      var request =
-          artworkService.requestBackgroundArtwork(
-              personArtwork("/profile.jpg"), ImageRefreshMode.PRESERVE);
-
-      assertThat(request)
-          .failsWithin(Duration.ofSeconds(5))
-          .withThrowableOfType(ExecutionException.class)
-          .withCause(recordingFailure);
     }
   }
 
@@ -668,61 +628,96 @@ class ArtworkServiceTest {
         new TransactionTemplate(new FakeTransactionManager());
 
     @Test
-    @DisplayName("Should register required request before owning transaction commits")
-    void shouldRegisterRequiredRequestBeforeOwningTransactionCommits() {
+    @DisplayName("Should keep the request in the run when the owning transaction commits")
+    void shouldKeepTheRequestInTheRunWhenTheOwningTransactionCommits() {
       var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
 
-      var request =
-          transactionTemplate.execute(
-              _ -> {
-                var pending =
-                    artworkService.requestPrimaryArtwork(
-                        run, movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
-                run.close();
-                assertThat(run.completion()).isNotDone();
-                return pending;
-              });
+      transactionTemplate.executeWithoutResult(
+          _ ->
+              artworkService.requestPrimaryArtwork(
+                  run, movieArtwork(UUID.randomUUID(), POSTER, BACKDROP)));
 
-      assertThat(awaitResult(request))
-          .containsExactlyInAnyOrder(new Saved(ImageType.POSTER), new Saved(ImageType.BACKDROP));
-      assertThat(awaitResult(run.completion()).counts().saved()).isEqualTo(2);
+      assertThat(artwork.closeAndAwait(run).counts().saved()).isEqualTo(2);
     }
 
     @Test
-    @DisplayName("Should withdraw required request when owning transaction rolls back")
-    void shouldWithdrawRequiredRequestWhenOwningTransactionRollsBack() {
+    @DisplayName("Should withdraw the request from the run when the owning transaction rolls back")
+    void shouldWithdrawTheRequestFromTheRunWhenTheOwningTransactionRollsBack() {
+      artwork.scheduling().holdScheduledSteps();
       var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
-      var movieId = UUID.randomUUID();
+      var keptMovieId = UUID.randomUUID();
+      imageRepository.save(imageBuilder(keptMovieId).key("/poster.jpg").path("movie/p").build());
 
-      var request =
-          transactionTemplate.execute(
-              status -> {
-                status.setRollbackOnly();
-                return artworkService.requestPrimaryArtwork(run, movieArtwork(movieId, POSTER));
-              });
-      run.close();
+      transactionTemplate.executeWithoutResult(
+          status -> {
+            status.setRollbackOnly();
+            artworkService.requestPrimaryArtwork(run, movieArtwork(UUID.randomUUID(), POSTER));
+            artworkService.requestPrimaryArtwork(run, movieArtwork(keptMovieId, POSTER));
+          });
 
-      assertThat(awaitResult(request)).isEmpty();
-      assertThat(awaitResult(run.completion()).counts()).isEqualTo(ArtworkCounts.builder().build());
+      assertThat(artwork.closeAndAwait(run).counts()).isEqualTo(ArtworkCounts.NONE);
       assertThat(imageDownloader.getDownloadCount()).isZero();
-      assertThat(imageRepository.findByEntityIdAndEntityType(movieId, ImageEntityType.MOVIE))
-          .isEmpty();
     }
   }
 
-  private List<ArtworkResult> requestPrimaryArtwork(ArtworkSources artwork) {
-    try (var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE)) {
-      return awaitResult(artworkService.requestPrimaryArtwork(run, artwork));
+  @Test
+  @DisplayName("Should route each item type to its artwork priority")
+  void shouldRouteEachItemTypeToItsArtworkPriority() {
+    assertThat(
+            Stream.of(ImageEntityType.values())
+                .collect(Collectors.toMap(type -> type, ArtworkPriority::of)))
+        .containsOnly(
+            Map.entry(ImageEntityType.MOVIE, ArtworkPriority.PRIMARY),
+            Map.entry(ImageEntityType.SERIES, ArtworkPriority.PRIMARY),
+            Map.entry(ImageEntityType.SEASON, ArtworkPriority.PRIMARY),
+            Map.entry(ImageEntityType.EPISODE, ArtworkPriority.PRIMARY),
+            Map.entry(ImageEntityType.PERSON, ArtworkPriority.BACKGROUND),
+            Map.entry(ImageEntityType.COMPANY, ArtworkPriority.BACKGROUND));
+  }
+
+  private ArtworkRunSummary requestPrimaryArtwork(ArtworkSources sources) {
+    var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+    artworkService.requestPrimaryArtwork(run, sources);
+    return artwork.closeAndAwait(run);
+  }
+
+  private List<Path> storedFiles() throws IOException {
+    try (var files = Files.walk(artwork.fileSystem().getPath("/data/images"))) {
+      return files.filter(Files::isRegularFile).toList();
     }
   }
 
-  private ArtworkService artworkServiceWith(TmdbImageDownloader downloader) {
-    return ArtworkServiceFixture.artworkServiceBuilder()
+  private Map<ImageType, ItemOutcome> outcomesOf(UUID movieId) {
+    return itemResults.findByItem(movieId, ImageEntityType.MOVIE).stream()
+        .filter(result -> result.step() == ItemStep.ARTWORK)
+        .collect(Collectors.toMap(ItemResult::imageType, ItemResult::outcome));
+  }
+
+  private ItemFailureReason failureReasonOf(UUID movieId, ImageType imageType) {
+    var outcome = outcomesOf(movieId).get(imageType);
+    assertThat(outcome).isInstanceOf(ItemOutcome.Failed.class);
+    return ((ItemOutcome.Failed) outcome).reason();
+  }
+
+  private ItemResult succeeded(UUID movieId, ImageType imageType, long generation) {
+    return ItemResult.builder()
+        .itemId(movieId)
+        .itemType(ImageEntityType.MOVIE)
+        .step(ItemStep.ARTWORK)
+        .imageType(imageType)
+        .outcome(new ItemOutcome.Succeeded())
+        .sourceKey("/stored.jpg")
+        .attemptedAt(clock.instant())
+        .artworkGeneration(generation)
+        .build();
+  }
+
+  private ArtworkFixture artworkWith(TmdbImageDownloader downloader) {
+    return ArtworkFixture.builder()
         .imageRepository(imageRepository)
         .imageDownloader(downloader)
-        .clock(clock)
-        .progress(progress)
         .itemResults(itemResults)
+        .clock(clock)
         .build();
   }
 
@@ -740,9 +735,5 @@ class ArtworkServiceTest {
         .entityType(ImageEntityType.PERSON)
         .sources(List.of(new TmdbImageSource(ImageType.PROFILE, profilePath)))
         .build();
-  }
-
-  private static <T> T awaitResult(CompletableFuture<T> future) {
-    return future.orTimeout(5, TimeUnit.SECONDS).join();
   }
 }

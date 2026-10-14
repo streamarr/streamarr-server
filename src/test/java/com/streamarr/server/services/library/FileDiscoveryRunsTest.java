@@ -9,20 +9,21 @@ import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.task.ProbeState;
 import com.streamarr.server.domain.task.RequestedProbeResult;
-import com.streamarr.server.exceptions.ArtworkResultNotSavedException;
 import com.streamarr.server.exceptions.LibraryScanFailedException;
 import com.streamarr.server.fakes.CountingSleeper;
 import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeProbeTaskRequests;
+import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.fakes.GatedImageDownloader;
 import com.streamarr.server.fakes.MutableClock;
-import com.streamarr.server.fixtures.ArtworkServiceFixture;
+import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.services.ArtworkCounts;
@@ -59,11 +60,9 @@ class FileDiscoveryRunsTest {
   private final FakeItemResultRepository itemResults = new FakeItemResultRepository();
   private final GatedImageDownloader imageDownloader =
       new GatedImageDownloader(createTestImage(600, 900));
-  private final ArtworkService artworkService =
-      ArtworkServiceFixture.artworkServiceBuilder()
-          .imageDownloader(imageDownloader)
-          .itemResults(itemResults)
-          .build();
+  private final ArtworkFixture artwork =
+      ArtworkFixture.builder().imageDownloader(imageDownloader).itemResults(itemResults).build();
+  private final ArtworkService artworkService = artwork.artworkService();
   private final Library library = LibraryFixtureCreator.buildFakeLibrary();
   private FakeMediaFileContainerInfoRepository outcomes =
       new FakeMediaFileContainerInfoRepository();
@@ -84,11 +83,10 @@ class FileDiscoveryRunsTest {
   }
 
   @Test
-  @DisplayName("Should report required results when secondary artwork is still pending")
-  void shouldReportRequiredResultsWhenSecondaryArtworkIsStillPending() throws Exception {
-    imageDownloader.holdPathsStartingWith("/profile");
+  @DisplayName("Should report required results when background artwork is still pending")
+  void shouldReportRequiredResultsWhenBackgroundArtworkIsStillPending() throws Exception {
+    artwork.scheduling().holdBackgroundSteps();
     artworkService.requestBackgroundArtwork(personArtwork(), ImageRefreshMode.PRESERVE);
-    imageDownloader.awaitHeldDownloads(1, Duration.ofSeconds(5));
     var runs = fileDiscoveryRuns();
     var discovery = runs.open("scan of", library);
     try (discovery) {
@@ -106,18 +104,36 @@ class FileDiscoveryRunsTest {
   }
 
   @Test
-  @DisplayName("Should fail the scan when a required artwork result cannot be recorded")
-  void shouldFailTheScanWhenARequiredArtworkResultCannotBeRecorded() {
-    itemResults.failWritesWith(new DataAccessResourceFailureException("database unavailable"));
-    var runs = fileDiscoveryRuns();
+  @DisplayName(
+      "Should finish the scan with one saved and one failed image when a later attempt stores the"
+          + " poster failure that the first attempt could not store")
+  void shouldFinishTheScanWithOneSavedAndOneFailedImageWhenALaterAttemptStoresThePosterFailure()
+      throws Exception {
+    var downloader = new FakeTmdbHttpService();
+    downloader.setImageData(createTestImage(600, 900));
+    downloader.failDownloadWith("/poster.jpg", new IOException("connection reset"));
+    var results = new FakeItemResultRepository();
+    results.failArtworkResultWritesWith(
+        new DataAccessResourceFailureException("database unavailable"), 1);
+    var retried = ArtworkFixture.builder().imageDownloader(downloader).itemResults(results).build();
+    var runs = fileDiscoveryRunsBuilder().artwork(retried).build();
+    var movie = movieArtworkWithBackdrop();
     var discovery = runs.open("scan of", library);
     try (discovery) {
-      artworkService.requestPrimaryArtwork(discovery.artworkRun(), movieArtwork());
+      retried.artworkService().requestPrimaryArtwork(discovery.artworkRun(), movie);
     }
 
-    assertThatThrownBy(() -> runs.awaitResults(discovery))
-        .isInstanceOf(LibraryScanFailedException.class)
-        .hasCauseInstanceOf(ArtworkResultNotSavedException.class);
+    try (var scan = BoundedTask.start(() -> runs.awaitResults(discovery))) {
+      retried.scheduling().awaitUnfinishedAttempt(RESULTS_BOUND);
+      assertThat(results.findByItem(movie.entityId(), ImageEntityType.MOVIE))
+          .extracting(ItemResult::imageType)
+          .containsExactly(ImageType.BACKDROP);
+
+      retried.scheduling().runPendingSteps();
+
+      assertThat(scan.await(RESULTS_BOUND).artwork().counts())
+          .isEqualTo(ArtworkCounts.builder().saved(1).failed(1).build());
+    }
   }
 
   @Test
@@ -144,32 +160,16 @@ class FileDiscoveryRunsTest {
   }
 
   @Test
-  @DisplayName("Should fail the scan when artwork cannot be recorded while a probe is pending")
-  void shouldFailTheScanWhenArtworkCannotBeRecordedWhileAProbeIsPending() throws Exception {
-    probeTaskRequests.dispatchWith(_ -> {});
-    itemResults.failWritesWith(new DataAccessResourceFailureException("database unavailable"));
-    var runs = fileDiscoveryRuns();
-    var discovery = runs.open("scan of", library);
-    try (discovery) {
-      discovery.probeRun().request(mediaFile().getId());
-      artworkService.requestPrimaryArtwork(discovery.artworkRun(), movieArtwork());
-    }
-
-    assertThatThrownBy(
-            () -> BoundedTask.runWithin(RESULTS_BOUND, () -> runs.awaitResults(discovery)))
-        .isInstanceOf(LibraryScanFailedException.class);
-  }
-
-  @Test
-  @DisplayName("Should stop the probe timer when probes finish before required artwork")
-  void shouldStopTheProbeTimerWhenProbesFinishBeforeRequiredArtwork() throws Exception {
+  @DisplayName("Should stop the probe timer when probes finish before primary artwork")
+  void shouldStopTheProbeTimerWhenProbesFinishBeforePrimaryArtwork() throws Exception {
     var clock = new MutableClock();
     var timedArtwork =
-        ArtworkServiceFixture.artworkServiceBuilder()
+        ArtworkFixture.builder()
             .imageDownloader(imageDownloader)
             .itemResults(itemResults)
             .clock(clock)
             .build();
+    timedArtwork.scheduling().holdScheduledSteps();
     var probeWaitThread = new CompletableFuture<Thread>();
     var sleeper = new CountingSleeper();
     probeTaskRequests.dispatchWith(_ -> {});
@@ -178,17 +178,12 @@ class FileDiscoveryRunsTest {
           probeTaskRequests.succeed(probeTaskRequests.requests().getFirst());
           probeWaitThread.complete(Thread.currentThread());
         });
-    imageDownloader.holdPathsStartingWith("/poster");
     var runs =
-        fileDiscoveryRunsBuilder()
-            .artworkService(timedArtwork)
-            .clock(clock)
-            .sleeper(sleeper)
-            .build();
+        fileDiscoveryRunsBuilder().artwork(timedArtwork).clock(clock).sleeper(sleeper).build();
     var discovery = runs.open("scan of", library);
     try (discovery) {
       discovery.probeRun().request(mediaFile().getId());
-      timedArtwork.requestPrimaryArtwork(discovery.artworkRun(), movieArtwork());
+      timedArtwork.artworkService().requestPrimaryArtwork(discovery.artworkRun(), movieArtwork());
     }
 
     try (var results = BoundedTask.start(() -> runs.awaitResults(discovery))) {
@@ -196,7 +191,7 @@ class FileDiscoveryRunsTest {
           .as("probe wait finished")
           .isTrue();
       clock.advance(Duration.ofSeconds(60));
-      imageDownloader.releaseHeldDownloads();
+      timedArtwork.scheduling().runPendingSteps();
 
       var finished = results.await(RESULTS_BOUND);
       assertThat(finished.probes().elapsed()).isZero();
@@ -231,7 +226,7 @@ class FileDiscoveryRunsTest {
 
   private FileDiscoveryRunsFixture.FileDiscoveryRunsBuilder fileDiscoveryRunsBuilder() {
     return FileDiscoveryRunsFixture.fileDiscoveryRunsBuilder()
-        .artworkService(artworkService)
+        .artwork(artwork)
         .mediaFiles(mediaFiles)
         .outcomes(outcomes)
         .probeTaskRequests(probeTaskRequests)
@@ -254,6 +249,17 @@ class FileDiscoveryRunsTest {
         .entityId(UUID.randomUUID())
         .entityType(ImageEntityType.MOVIE)
         .sources(List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))
+        .build();
+  }
+
+  private static ArtworkSources movieArtworkWithBackdrop() {
+    return ArtworkSources.builder()
+        .entityId(UUID.randomUUID())
+        .entityType(ImageEntityType.MOVIE)
+        .sources(
+            List.of(
+                new TmdbImageSource(ImageType.POSTER, "/poster.jpg"),
+                new TmdbImageSource(ImageType.BACKDROP, "/backdrop.jpg")))
         .build();
   }
 
