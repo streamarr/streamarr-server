@@ -1,0 +1,156 @@
+package com.streamarr.server.graphql.transport;
+
+import java.io.IOException;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.TaskScheduler;
+import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.WebSocketHandler;
+import org.springframework.web.socket.WebSocketMessage;
+import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.handler.WebSocketHandlerDecorator;
+import org.springframework.web.socket.handler.WebSocketSessionDecorator;
+
+/**
+ * Bounds a WebSocket connection by the access token that opened it (ADR 0016, ADR 0042). At expiry
+ * the server closes the socket with {@link #ACCESS_EXPIRED} and sends nothing else first: no data
+ * and no {@code complete}, so clients restore their operations on a new socket. A message that
+ * arrives after expiry is refused the same way, and a frame due after expiry is never sent, even
+ * when the expiry timer runs late.
+ */
+@Slf4j
+public class AccessBoundWebSocketHandler extends WebSocketHandlerDecorator {
+
+  /** The session attribute that holds the opening access token's expiry, an {@link Instant}. */
+  public static final String ACCESS_EXPIRES_AT =
+      AccessBoundWebSocketHandler.class.getName() + ".accessExpiresAt";
+
+  /** A private close code outside the graphql-transport-ws codes, which clients treat as fatal. */
+  public static final CloseStatus ACCESS_EXPIRED = new CloseStatus(4100, "Access token expired");
+
+  private final Clock clock;
+  private final TaskScheduler taskScheduler;
+  private final Map<String, AccessBoundSession> sessions = new ConcurrentHashMap<>();
+
+  public AccessBoundWebSocketHandler(
+      WebSocketHandler graphQlHandler, Clock clock, TaskScheduler taskScheduler) {
+    super(graphQlHandler);
+    this.clock = clock;
+    this.taskScheduler = taskScheduler;
+  }
+
+  @Override
+  public void afterConnectionEstablished(WebSocketSession session) throws Exception {
+    var accessExpiresAt = accessExpiresAt(session);
+    if (accessExpiresAt.isEmpty()) {
+      // The handshake interceptor records the expiry for every accepted handshake.
+      session.close(ACCESS_EXPIRED);
+      return;
+    }
+
+    var bound = new AccessBoundSession(session, accessExpiresAt.get(), clock);
+    sessions.put(session.getId(), bound);
+    bound.expiryTimer = taskScheduler.schedule(bound::closeForExpiry, accessExpiresAt.get());
+    super.afterConnectionEstablished(bound);
+  }
+
+  @Override
+  public void handleMessage(WebSocketSession session, WebSocketMessage<?> message)
+      throws Exception {
+    var bound = sessions.get(session.getId());
+    if (bound == null) {
+      return;
+    }
+
+    if (bound.isExpired()) {
+      bound.closeForExpiry();
+      return;
+    }
+
+    super.handleMessage(bound, message);
+  }
+
+  @Override
+  public void handleTransportError(WebSocketSession session, Throwable exception) throws Exception {
+    WebSocketSession target = sessions.get(session.getId());
+    if (target == null) {
+      target = session;
+    }
+
+    super.handleTransportError(target, exception);
+  }
+
+  @Override
+  public void afterConnectionClosed(WebSocketSession session, CloseStatus closeStatus)
+      throws Exception {
+    var bound = sessions.remove(session.getId());
+    if (bound == null) {
+      return;
+    }
+
+    bound.cancelExpiryTimer();
+    super.afterConnectionClosed(bound, closeStatus);
+  }
+
+  private static Optional<Instant> accessExpiresAt(WebSocketSession session) {
+    if (session.getAttributes().get(ACCESS_EXPIRES_AT) instanceof Instant expiresAt) {
+      return Optional.of(expiresAt);
+    }
+
+    return Optional.empty();
+  }
+
+  /** The one session object the GraphQL handler sees; it refuses to send after expiry. */
+  private static final class AccessBoundSession extends WebSocketSessionDecorator {
+
+    private final Instant accessExpiresAt;
+    private final Clock clock;
+    private final AtomicBoolean expiryClosed = new AtomicBoolean();
+    private volatile ScheduledFuture<?> expiryTimer;
+
+    private AccessBoundSession(WebSocketSession session, Instant accessExpiresAt, Clock clock) {
+      super(session);
+      this.accessExpiresAt = accessExpiresAt;
+      this.clock = clock;
+    }
+
+    private boolean isExpired() {
+      return !clock.instant().isBefore(accessExpiresAt);
+    }
+
+    @Override
+    public void sendMessage(WebSocketMessage<?> message) throws IOException {
+      if (isExpired()) {
+        closeForExpiry();
+        return;
+      }
+
+      super.sendMessage(message);
+    }
+
+    private void closeForExpiry() {
+      if (!expiryClosed.compareAndSet(false, true)) {
+        return;
+      }
+
+      try {
+        getDelegate().close(ACCESS_EXPIRED);
+      } catch (IOException e) {
+        log.debug("Could not close an expired WebSocket session cleanly.", e);
+      }
+    }
+
+    private void cancelExpiryTimer() {
+      var timer = expiryTimer;
+      if (timer != null) {
+        timer.cancel(false);
+      }
+    }
+  }
+}
