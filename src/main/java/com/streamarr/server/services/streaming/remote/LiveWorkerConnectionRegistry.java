@@ -233,20 +233,21 @@ final class LiveWorkerConnectionRegistry {
   }
 
   Set<ExecutionTargetId> eligibleWorkers(UUID sourceNamespaceId, TranscodeDecision decision) {
-    var sourceNamespace = toProto(sourceNamespaceId);
-    return connections.values().stream()
-        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
-        .filter(connection -> connection.canEncode(decision))
-        .map(WorkerConnection::executionTargetId)
-        .collect(Collectors.toCollection(LinkedHashSet::new));
+    return eligibleWorkers(sourceNamespaceId, connection -> connection.canEncode(decision));
   }
 
   Set<ExecutionTargetId> eligibleWorkers(
       UUID sourceNamespaceId, EncoderBackend pinnedEncoderBackend) {
+    return eligibleWorkers(
+        sourceNamespaceId, connection -> connection.advertises(pinnedEncoderBackend));
+  }
+
+  private Set<ExecutionTargetId> eligibleWorkers(
+      UUID sourceNamespaceId, Predicate<WorkerConnection> eligible) {
     var sourceNamespace = toProto(sourceNamespaceId);
     return connections.values().stream()
         .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
-        .filter(connection -> connection.advertises(pinnedEncoderBackend))
+        .filter(eligible)
         .map(WorkerConnection::executionTargetId)
         .collect(Collectors.toCollection(LinkedHashSet::new));
   }
