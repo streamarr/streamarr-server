@@ -79,6 +79,42 @@ message SubtitleDecision {
   optional string language = 4;
 }
 
+enum VideoCodecFamily {
+  VIDEO_CODEC_FAMILY_UNSPECIFIED = 0;
+  VIDEO_CODEC_FAMILY_H264 = 1;
+  VIDEO_CODEC_FAMILY_HEVC = 2;
+  VIDEO_CODEC_FAMILY_AV1 = 3;
+}
+
+enum VideoCodecProfile {
+  VIDEO_CODEC_PROFILE_UNSPECIFIED = 0;
+  VIDEO_CODEC_PROFILE_H264_HIGH = 1;
+  VIDEO_CODEC_PROFILE_HEVC_MAIN = 2;
+  VIDEO_CODEC_PROFILE_AV1_MAIN = 3;
+}
+
+// H.264 has no tier, so an H.264 encode carries VIDEO_CODEC_TIER_UNSPECIFIED.
+enum VideoCodecTier {
+  VIDEO_CODEC_TIER_UNSPECIFIED = 0;
+  VIDEO_CODEC_TIER_MAIN = 1;
+  VIDEO_CODEC_TIER_HIGH = 2;
+}
+
+// The server decides the variant's video output, and the worker never works these values out
+// again. An encode forces codec_profile, tier and level. A copy forces nothing: it carries no
+// codec_profile, tier or level, and its codec_string is the one that the probe computed for the
+// source stream. The worker fails the job attempt with JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH when
+// the codec string of an initialization segment that it produces differs from codec_string.
+message VideoDecision {
+  VideoCodecFamily codec_family = 1;
+  VideoCodecProfile codec_profile = 2;
+  VideoCodecTier tier = 3;
+  // The level as major x 10 + minor, for example 41 for level 4.1.
+  optional uint32 level = 4;
+  // The RFC 6381 codec string that the variant's playlist advertises, for example avc1.64002A.
+  string codec_string = 5;
+}
+
 message TranscodeDecision {
   TranscodeMode mode = 1;
   string video_codec_family = 2;
@@ -86,6 +122,7 @@ message TranscodeDecision {
   SubtitleDecision subtitle = 4;
   ContainerFormat container = 5;
   bool align_keyframes_to_segments = 6;
+  VideoDecision video = 7;
 }
 
 // relative_key is an opaque installation-defined key. It is never a host path and must not be
@@ -137,6 +174,8 @@ enum JobAttemptFailure {
   JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION = 2;
   JOB_ATTEMPT_FAILURE_STARTUP_FAILED = 3;
   JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED = 4;
+  // The produced output differs from the job's video decision.
+  JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH = 5;
 }
 
 message JobAttemptFailed {
