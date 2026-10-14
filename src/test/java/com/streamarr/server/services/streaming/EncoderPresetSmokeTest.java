@@ -46,6 +46,7 @@ class EncoderPresetSmokeTest {
   private static final Path TEST_VIDEO =
       Path.of("src/test/resources/BigBuckBunny_320x180_10s.mp4").toAbsolutePath();
   private static final String FIRST_MEDIA_SEGMENT = SegmentNames.mediaSegmentName(0);
+  private static final int SVT_AV1_DEFAULT_PRESET = 8;
 
   // SVT-AV1 produces repeatable bytes only on one thread. The worker's encode gets this suffix from
   // SVT_AV1_ON_ONE_THREAD, and each reference encode gets it in svtAv1Reference, because
@@ -123,9 +124,13 @@ class EncoderPresetSmokeTest {
   }
 
   // Automatic resolves to faster for libx264. The options are x264's own definitions of faster and
-  // medium. medium is also libx264's default.
+  // veryfast. Neither is libx264's default, medium (ref=3 subme=7 rc_lookahead=40), so a worker
+  // that passes no preset fails both rows.
   @ParameterizedTest(name = "{0}")
-  @CsvSource({"AUTOMATIC, ref=2 subme=4 rc_lookahead=20", "MEDIUM, ref=3 subme=7 rc_lookahead=40"})
+  @CsvSource({
+    "AUTOMATIC, ref=2 subme=4 rc_lookahead=20",
+    "VERYFAST, ref=1 subme=2 rc_lookahead=10"
+  })
   @DisplayName("Should reach FFmpeg when an H.264 job carries the server's encoder preset")
   void shouldReachFfmpegWhenH264JobCarriesPreset(
       EncoderPresetChoice choice, String expectedX264Options) throws Exception {
@@ -137,14 +142,14 @@ class EncoderPresetSmokeTest {
         .containsAll(List.of(expectedX264Options.split(" ")));
   }
 
-  // Automatic resolves to SVT-AV1 preset 10, and medium is preset 8, which is also SVT-AV1's
-  // default. SVT-AV1 writes no preset into its sequence header, so only the media bytes show it.
+  // Automatic resolves to SVT-AV1 preset 10, and veryfast is preset 11. SVT-AV1 writes no preset
+  // into its sequence header, so only the media bytes show it. The bytes must also differ from an
+  // encode at SVT-AV1's default preset, which a worker that passes no preset produces.
   @ParameterizedTest(name = "{0}")
-  @CsvSource({"AUTOMATIC, 10, 8", "MEDIUM, 8, 10"})
+  @CsvSource({"AUTOMATIC, 10", "VERYFAST, 11"})
   @DisplayName("Should reach FFmpeg when an AV1 job carries the server's encoder preset")
   void shouldReachFfmpegWhenAv1JobCarriesPreset(
-      EncoderPresetChoice choice, int expectedSvtAv1Preset, int otherSvtAv1Preset)
-      throws Exception {
+      EncoderPresetChoice choice, int expectedSvtAv1Preset) throws Exception {
     chooseEncoderPreset(choice);
 
     var session = startedVideoTranscode("av1");
@@ -156,8 +161,8 @@ class EncoderPresetSmokeTest {
     assertThat(firstDifference(svtAv1Reference(command, expectedSvtAv1Preset), produced))
         .as("the first byte that differs from an encode at SVT-AV1 preset %d", expectedSvtAv1Preset)
         .isEqualTo(-1);
-    assertThat(firstDifference(svtAv1Reference(command, otherSvtAv1Preset), produced))
-        .as("the first byte that differs from an encode at SVT-AV1 preset %d", otherSvtAv1Preset)
+    assertThat(firstDifference(svtAv1Reference(command, SVT_AV1_DEFAULT_PRESET), produced))
+        .as("the first byte that differs from an encode at SVT-AV1's default preset")
         .isNotEqualTo(-1);
   }
 
@@ -212,6 +217,7 @@ class EncoderPresetSmokeTest {
     var start = text.indexOf("options: ");
     assertThat(start).as("the x264 options in the first media segment").isNotNegative();
     var end = text.indexOf('\0', start);
+    assertThat(end).as("the end of the x264 options").isGreaterThan(start);
     return List.of(text.substring(start + "options: ".length(), end).split(" "));
   }
 
