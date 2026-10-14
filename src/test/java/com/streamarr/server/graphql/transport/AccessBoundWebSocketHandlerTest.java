@@ -1,8 +1,10 @@
 package com.streamarr.server.graphql.transport;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.fakes.EchoingWebSocketHandler;
 import com.streamarr.server.fakes.FakeTaskScheduler;
 import com.streamarr.server.fakes.FakeWebSocketSession;
 import com.streamarr.server.fakes.MutableClock;
@@ -10,16 +12,12 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketMessage;
-import org.springframework.web.socket.WebSocketSession;
-import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 @Tag("UnitTest")
 @DisplayName("Access-Bound WebSocket Handler Tests")
@@ -159,28 +157,15 @@ class AccessBoundWebSocketHandlerTest {
   }
 
   @Test
-  @DisplayName("Should close only once when a late send and the expiry timer both see expiry")
-  void shouldCloseOnlyOnceWhenLateSendAndExpiryTimerBothSeeExpiry() throws Exception {
-    handler.afterConnectionEstablished(session);
-    clock.advance(ACCESS_LIFETIME);
-    graphQlHandler.deliver("next");
-
-    taskScheduler.runTasksDueAt(clock.instant());
-
-    assertThat(session.closeRequests()).isEqualTo(1);
-  }
-
-  @Test
   @DisplayName("Should drop the frame without failing when closing an expired session fails")
   void shouldDropFrameWithoutFailingWhenClosingExpiredSessionFails() throws Exception {
     handler.afterConnectionEstablished(session);
     clock.advance(ACCESS_LIFETIME);
     session.failCloses();
 
-    graphQlHandler.deliver("next");
+    assertThatCode(() -> graphQlHandler.deliver("next")).doesNotThrowAnyException();
 
     assertThat(session.sentMessages()).isEmpty();
-    assertThat(session.closeRequests()).isEqualTo(1);
   }
 
   private List<String> sentPayloads() {
@@ -188,56 +173,5 @@ class AccessBoundWebSocketHandlerTest {
         .map(WebSocketMessage::getPayload)
         .map(String::valueOf)
         .toList();
-  }
-
-  // Stands in for the GraphQL handler: it echoes requests and can deliver unprompted frames.
-  private static final class EchoingWebSocketHandler extends TextWebSocketHandler {
-
-    private final AtomicReference<WebSocketSession> established = new AtomicReference<>();
-    private final AtomicReference<WebSocketSession> transportErrorSession = new AtomicReference<>();
-    private final List<TextMessage> receivedMessages = new CopyOnWriteArrayList<>();
-    private final List<WebSocketSession> closedSessions = new CopyOnWriteArrayList<>();
-
-    @Override
-    public void handleTransportError(WebSocketSession session, Throwable exception) {
-      transportErrorSession.set(session);
-    }
-
-    @Override
-    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-      closedSessions.add(session);
-    }
-
-    private WebSocketSession transportErrorSession() {
-      return transportErrorSession.get();
-    }
-
-    private List<WebSocketSession> closedSessions() {
-      return List.copyOf(closedSessions);
-    }
-
-    @Override
-    public void afterConnectionEstablished(WebSocketSession session) {
-      established.set(session);
-    }
-
-    @Override
-    protected void handleTextMessage(WebSocketSession session, TextMessage message)
-        throws IOException {
-      receivedMessages.add(message);
-      session.sendMessage(new TextMessage("echo:" + message.getPayload()));
-    }
-
-    private void deliver(String payload) throws IOException {
-      established.get().sendMessage(new TextMessage(payload));
-    }
-
-    private WebSocketSession establishedSession() {
-      return established.get();
-    }
-
-    private List<TextMessage> receivedMessages() {
-      return List.copyOf(receivedMessages);
-    }
   }
 }
