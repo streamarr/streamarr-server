@@ -30,7 +30,7 @@ class AccessBoundWebSocketHandler extends WebSocketHandlerDecorator {
   static final String ACCESS_EXPIRES_AT =
       AccessBoundWebSocketHandler.class.getName() + ".accessExpiresAt";
 
-  /** A private close code outside the graphql-transport-ws codes, which clients treat as fatal. */
+  /** A private close code outside the graphql-transport-ws codes; clients reconnect after it. */
   static final CloseStatus ACCESS_EXPIRED = new CloseStatus(4100, "Access token expired");
 
   private final Clock clock;

@@ -18,8 +18,10 @@ import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
  * Turns committed library changes into library-administration subscription payloads. Each event
- * loads the current library once, for every subscriber. A write inside a transaction is delivered
- * only after commit; a write without one is delivered at once.
+ * reads the library once, for every subscriber. A status change delivers the library's latest
+ * committed row. An addition delivers the library as its transaction saved it, so a status change
+ * that commits soon after may overtake it. A write inside a transaction is delivered only after
+ * commit; a write without one is delivered at once.
  *
  * <p>Publication never fails the scan, refresh or commit that triggered it. A failure is counted on
  * {@value #PUBLICATION_FAILURES_METRIC} instead, and subscribers recover current state through

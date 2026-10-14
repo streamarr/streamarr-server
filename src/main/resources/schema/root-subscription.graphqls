@@ -7,13 +7,16 @@ nothing missed. To build current state, subscribe first, then query
 `libraries { id name status scanStartedOn scanCompletedOn }`, and apply each later change by
 library id.
 
-Changes to one library arrive in the order they were committed. There is no order across
-libraries or across fields. A subscription never completes normally while the server runs.
+Each field delivers one library's changes in the order they were committed. There is no order
+across libraries or across fields: `libraryAdded` and `libraryStatusChanged` for one library may
+arrive in either order. `libraryStatusChanged` delivers the library as the server reads it after
+the change, so a client may miss an intermediate status, but the last change it receives carries
+the latest status. A subscription never completes normally while the server runs.
 
 Errors end the operation:
 FORBIDDEN when the caller is not a ServerAdmin,
 AUTHORIZATION_UNAVAILABLE when authorization cannot be decided,
-SUBSCRIPTION_OVERFLOW when the client fell too far behind,
+SUBSCRIPTION_OVERFLOW when changes arrived faster than the server could resolve them,
 TOO_MANY_OPERATIONS when the connection already runs its maximum number of operations.
 After SUBSCRIPTION_OVERFLOW, subscribe again and query `libraries` again.
 """
