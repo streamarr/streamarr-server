@@ -15,24 +15,27 @@ public class LibraryAdministrationBroadcasters {
   private final SubscriptionBroadcaster<LibraryRemoval> removals;
 
   public LibraryAdministrationBroadcasters(
-      MeterRegistry meterRegistry, Scheduler deliveryScheduler) {
+      MeterRegistry meterRegistry, Scheduler deliveryScheduler, SubscriptionProperties properties) {
     this.statusChanges =
         SubscriptionBroadcaster.<Library>builder()
             .field("libraryStatusChanged")
             .meterRegistry(meterRegistry)
             .deliveryScheduler(deliveryScheduler)
+            .operationBuffer(properties.operationBuffer())
             .build();
     this.additions =
         SubscriptionBroadcaster.<Library>builder()
             .field("libraryAdded")
             .meterRegistry(meterRegistry)
             .deliveryScheduler(deliveryScheduler)
+            .operationBuffer(properties.operationBuffer())
             .build();
     this.removals =
         SubscriptionBroadcaster.<LibraryRemoval>builder()
             .field("libraryRemoved")
             .meterRegistry(meterRegistry)
             .deliveryScheduler(deliveryScheduler)
+            .operationBuffer(properties.operationBuffer())
             .build();
   }
 

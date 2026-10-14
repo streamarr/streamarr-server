@@ -30,7 +30,8 @@ class LibraryAdministrationEventListenerTest {
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
   private final FakeLibraryRepository libraryRepository = new FakeLibraryRepository();
   private final LibraryAdministrationBroadcasters broadcasters =
-      new LibraryAdministrationBroadcasters(meterRegistry, Schedulers.immediate());
+      new LibraryAdministrationBroadcasters(
+          meterRegistry, Schedulers.immediate(), new SubscriptionProperties(0, 0));
   private final LibraryAdministrationEventListener listener =
       new LibraryAdministrationEventListener(libraryRepository, broadcasters, meterRegistry);
 

@@ -23,6 +23,11 @@ spring:
       # Below the common 60 s reverse-proxy idle timeout.
       keep-alive: ${GRAPHQL_WEBSOCKET_KEEP_ALIVE:20s}
 
+graphql:
+  subscriptions:
+    operation-buffer: ${GRAPHQL_SUBSCRIPTION_OPERATION_BUFFER:64}
+    max-operations-per-connection: ${GRAPHQL_SUBSCRIPTION_MAX_OPERATIONS_PER_CONNECTION:32}
+
 dgs:
   graphql:
     graphiql:
