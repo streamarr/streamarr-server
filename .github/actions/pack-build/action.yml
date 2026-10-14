@@ -14,7 +14,7 @@ runs:
   using: composite
   steps:
     - name: Install pack CLI
-      uses: buildpacks/github-actions/setup-pack@e3b14c6e906f91da358e01dc2849ce068188107f # v5.12.5
+      uses: buildpacks/github-actions/setup-pack@a96fc9720ee9ccf19d4c87c3de9c344a2c404c29 # v6.2.0
 
     - name: Build with pack CLI
       id: build
