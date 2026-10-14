@@ -4,6 +4,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -11,14 +12,17 @@ import static org.awaitility.Awaitility.await;
 import com.streamarr.server.AbstractWireMockIntegrationTest;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.auth.SystemActor;
+import com.streamarr.server.domain.media.ArtworkItem;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.repositories.CompanyRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
@@ -28,6 +32,7 @@ import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.support.BoundedTask;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -54,6 +59,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private PersonRepository personRepository;
+  @Autowired private CompanyRepository companyRepository;
 
   private Library library;
 
@@ -138,6 +144,73 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
     assertThat(imageCreators(person.getId()))
         .hasSize(ImageSize.values().length)
         .containsOnly(SystemActor.ID);
+  }
+
+  @Test
+  @DisplayName(
+      "Should save a poster requested after a backlog of person photos and company logos before"
+          + " any of them")
+  void shouldSaveAPosterRequestedAfterABacklogOfPersonPhotosAndCompanyLogosBeforeAnyOfThem()
+      throws Exception {
+    wireMock.stubFor(
+        get(urlPathMatching("/backlog-.*"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "image/jpeg")
+                    .withFixedDelay(3_000)
+                    .withBody(createTestImage(600, 900))));
+    var backlog = new ArrayList<ArtworkItem>();
+    for (var index = 0; index < 6; index++) {
+      var person =
+          personRepository.saveAndFlush(
+              Person.builder()
+                  .name("Backlog Person")
+                  .sourceId(UUID.randomUUID().toString())
+                  .build());
+      backlog.add(new ArtworkItem(person.getId(), ImageEntityType.PERSON));
+    }
+
+    for (var index = 0; index < 2; index++) {
+      var company =
+          companyRepository.saveAndFlush(
+              Company.builder()
+                  .name("Backlog Studio")
+                  .sourceId(UUID.randomUUID().toString())
+                  .build());
+      backlog.add(new ArtworkItem(company.getId(), ImageEntityType.COMPANY));
+    }
+
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          for (var index = 0; index < backlog.size(); index++) {
+            requestBacklogArtwork(backlog.get(index), index);
+          }
+        });
+    var artworkRun = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+
+    movieService.createMovieWithAssociations(movieMetadata(), mediaFile(), artworkRun);
+    var summary = closeAndAwait(artworkRun);
+
+    assertThat(summary.counts()).isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+    assertThat(backlog)
+        .allSatisfy(
+            item -> assertThat(itemResults.findByItem(item.itemId(), item.itemType())).isEmpty());
+  }
+
+  private void requestBacklogArtwork(ArtworkItem item, int index) {
+    var imageType = ImageType.PROFILE;
+    if (item.itemType() == ImageEntityType.COMPANY) {
+      imageType = ImageType.LOGO;
+    }
+
+    artworkService.requestBackgroundArtwork(
+        ArtworkSources.builder()
+            .entityId(item.itemId())
+            .entityType(item.itemType())
+            .sources(List.of(new TmdbImageSource(imageType, "/backlog-" + index + ".jpg")))
+            .build(),
+        ImageRefreshMode.PRESERVE);
   }
 
   private ArtworkRunSummary closeAndAwait(ArtworkRun artworkRun) throws Exception {

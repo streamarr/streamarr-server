@@ -15,11 +15,13 @@ import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.media.ArtworkItem;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
+import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
@@ -39,6 +41,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
@@ -227,6 +230,49 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
     assertThat(storedPosterKeys()).isEmpty();
     assertThat(itemResults.findByItem(entityId, ImageEntityType.MOVIE)).isEmpty();
     assertThat(storedArtworkFiles()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should store the image once when two attempts run the same steps at once")
+  void shouldStoreTheImageOnceWhenTwoAttemptsRunTheSameStepsAtOnce() throws Exception {
+    stubImage("/poster.jpg");
+    var generation = request("/poster.jpg", ImageRefreshMode.PRESERVE);
+    var start = new CountDownLatch(1);
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var first = executor.submit(() -> runStepsAfter(start));
+      var second = executor.submit(() -> runStepsAfter(start));
+      start.countDown();
+
+      assertThat(List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
+          .containsOnly(new ArtworkStepsOutcome.Finished(generation));
+    }
+
+    assertThat(storedPosterKeys()).hasSize(ImageSize.values().length).containsOnly("/poster.jpg");
+    assertThat(posterResult().outcome()).isEqualTo(new ItemOutcome.Succeeded());
+    assertThat(storedArtworkFiles()).hasSize(ImageSize.values().length);
+  }
+
+  @Test
+  @DisplayName("Should report artwork progress from stored requests and results after a restart")
+  void shouldReportArtworkProgressFromStoredRequestsAndResultsAfterARestart() {
+    stubImage("/poster.jpg");
+    request("/poster.jpg", ImageRefreshMode.PRESERVE);
+    var clock = new MutableClock(new AtomicReference<>(Instant.now()));
+    var progressBeforeRestart = new ArtworkProgress(requests, itemResults, clock);
+    progressBeforeRestart.reportProgress();
+
+    var progressAfterRestart = new ArtworkProgress(requests, itemResults, clock);
+
+    assertThat(progressAfterRestart.reportProgress())
+        .filteredOn(report -> report.priority() == ArtworkPriority.PRIMARY)
+        .singleElement()
+        .satisfies(report -> assertThat(report.pending()).isPositive());
+  }
+
+  private ArtworkStepsOutcome runStepsAfter(CountDownLatch start) throws InterruptedException {
+    start.await();
+    return artworkSteps.runSteps(movie);
   }
 
   private long request(String key, ImageRefreshMode refreshMode) {

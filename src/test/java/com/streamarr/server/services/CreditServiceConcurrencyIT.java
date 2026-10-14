@@ -6,21 +6,32 @@ import static com.streamarr.server.support.HeldCreditInsert.CreditTable.PERSON;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.repositories.CompanyRepository;
 import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.PersonRepository;
+import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.services.metadata.events.ImageSource;
+import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.support.HeldCreditInsert;
 import com.streamarr.server.support.HeldCreditInsert.CreditTable;
 import com.streamarr.server.support.OrderedSourceIds;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,6 +56,7 @@ class CreditServiceConcurrencyIT extends AbstractIntegrationTest {
   @Autowired private PersonRepository personRepository;
   @Autowired private GenreRepository genreRepository;
   @Autowired private CompanyRepository companyRepository;
+  @Autowired private ArtworkRequestRepository artworkRequests;
 
   private OrderedSourceIds sourceIds;
 
@@ -168,6 +180,70 @@ class CreditServiceConcurrencyIT extends AbstractIntegrationTest {
           .containsExactlyInAnyOrderEntriesOf(
               Map.of(sourceIds.lower(), "Renamed", sourceIds.higher(), "New"));
     }
+  }
+
+  @Test
+  @DisplayName(
+      "Should save every media title's credits and one artwork request per credit when many media"
+          + " titles list the same people and studio at once")
+  void shouldSaveEveryMediaTitlesCreditsAndOneArtworkRequestPerCreditWhenListedAtOnce()
+      throws Exception {
+    var credits =
+        MediaTitleCredits.builder()
+            .cast(
+                List.of(
+                    Person.builder().sourceId(sourceIds.higher()).name("Higher Actor").build(),
+                    Person.builder().sourceId(sourceIds.lower()).name("Lower Actor").build()))
+            .studios(Set.of(Company.builder().sourceId(sourceIds.lower()).name("Studio").build()))
+            .build();
+    var request =
+        MediaTitleCreditsRequest.builder()
+            .credits(credits)
+            .personImageSources(
+                Map.of(
+                    sourceIds.higher(), List.of(profile("/higher.jpg")),
+                    sourceIds.lower(), List.of(profile("/lower.jpg"))))
+            .companyImageSources(
+                Map.of(
+                    sourceIds.lower(),
+                    List.<ImageSource>of(new TmdbImageSource(ImageType.LOGO, "/studio.png"))))
+            .imageRefreshMode(ImageRefreshMode.PRESERVE)
+            .build();
+    var mediaTitles = 8;
+    var start = new CountDownLatch(1);
+
+    var saved = new ArrayList<Future<MediaTitleCredits>>();
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (var mediaTitle = 0; mediaTitle < mediaTitles; mediaTitle++) {
+        saved.add(
+            executor.submit(
+                () -> {
+                  start.await();
+                  return creditService.getOrCreateCredits(request);
+                }));
+      }
+
+      start.countDown();
+      for (var credit : saved) {
+        assertThat(credit.get(30, TimeUnit.SECONDS).cast()).hasSize(2);
+      }
+    }
+
+    var people = saved.getFirst().resultNow().cast().stream().map(Person::getId).toList();
+    var studio = saved.getFirst().resultNow().studios().iterator().next().getId();
+    assertThat(
+            artworkRequests.findArtworkStates(
+                List.of(
+                    new ArtworkItem(people.get(0), ImageEntityType.PERSON),
+                    new ArtworkItem(people.get(1), ImageEntityType.PERSON),
+                    new ArtworkItem(studio, ImageEntityType.COMPANY))))
+        .hasSize(3)
+        .allMatch(
+            state -> state.pendingGeneration().isPresent() || !state.artworkResults().isEmpty());
+  }
+
+  private static ImageSource profile(String key) {
+    return new TmdbImageSource(ImageType.PROFILE, key);
   }
 
   private MediaTitleCredits saveWhileAnotherMediaTitleInserts(
