@@ -668,6 +668,40 @@ class LiveWorkerConnectionRegistryTest {
 
   @Test
   @DisplayName(
+      "Should send a pinned encode to a named target only when the target advertises the pinned encoder")
+  void shouldSendPinnedEncodeToNamedTargetOnlyWhenTargetAdvertisesPinnedEncoder() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var nvencResponses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    var libx264WorkerId = UUID.randomUUID();
+    var nvencTarget =
+        new ExecutionTargetId(
+            registry
+                .register(
+                    WORKER_ID,
+                    registration(
+                        WORKER_ID,
+                        hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc")),
+                    collecting(nvencResponses))
+                .toString());
+    var libx264Target =
+        new ExecutionTargetId(
+            registry
+                .register(
+                    libx264WorkerId,
+                    registration(libx264WorkerId, libx264Encoder()),
+                    new CancellableObserver())
+                .toString());
+    var pinned = WorkerVerifiedEncoderFixture.libx264();
+
+    assertThat(registry.dispatchTo(nvencTarget, encodeJob("h264"), pinned)).isEmpty();
+    assertThat(registry.dispatchTo(libx264Target, encodeJob("h264"), pinned))
+        .map(VariantDispatch::encoder)
+        .contains(Optional.of(pinned));
+    assertThat(nvencResponses).noneMatch(EstablishWorkerSessionResponse::hasStartVariant);
+  }
+
+  @Test
+  @DisplayName(
       "Should list only workers that advertise the pinned encoder backend when finding execution targets")
   void shouldListOnlyWorkersThatAdvertisePinnedEncoderBackendWhenFindingExecutionTargets() {
     var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();

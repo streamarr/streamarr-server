@@ -22,8 +22,9 @@ public interface TranscodeExecutor {
 
   /**
    * Starts on one specific execution target. Throws {@code TranscodeException} when the target
-   * refuses or cannot start the producer. The handle carries the worker-verified encoder that the
-   * target advertises for an encode.
+   * refuses or cannot start the producer, or when the request has a pinned encoder that the target
+   * does not advertise. The handle carries the worker-verified encoder that the target advertises
+   * for an encode.
    */
   TranscodeHandle start(TranscodeRequest request, ExecutionTargetId target);
 

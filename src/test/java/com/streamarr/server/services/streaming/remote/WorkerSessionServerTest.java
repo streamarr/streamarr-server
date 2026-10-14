@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
+import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.VariantJob;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -112,6 +113,18 @@ class WorkerSessionServerTest {
 
     assertThatNullPointerException()
         .isThrownBy(() -> server.dispatch(job, null))
+        .withMessageContaining("pinnedEncoder");
+  }
+
+  @Test
+  @DisplayName("Should reject a pinned targeted dispatch when its pinned encoder is missing")
+  void shouldRejectPinnedTargetedDispatchWhenItsPinnedEncoderIsMissing() {
+    var server = unstartedServer();
+    var target = new ExecutionTargetId("worker-session");
+    var job = VariantJob.getDefaultInstance();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> server.dispatchTo(target, job, null))
         .withMessageContaining("pinnedEncoder");
   }
 

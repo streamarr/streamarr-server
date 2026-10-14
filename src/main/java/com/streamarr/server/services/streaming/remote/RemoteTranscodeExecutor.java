@@ -42,8 +42,13 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public TranscodeHandle start(TranscodeRequest request, ExecutionTargetId target) {
-    return workerServer
-        .dispatchTo(target, jobMapper.map(request))
+    var job = jobMapper.map(request);
+    var dispatched =
+        request
+            .pinnedEncoder()
+            .map(pinned -> workerServer.dispatchTo(target, job, pinned))
+            .orElseGet(() -> workerServer.dispatchTo(target, job));
+    return dispatched
         .map(dispatch -> handleFor(request, dispatch))
         .orElseThrow(
             () ->

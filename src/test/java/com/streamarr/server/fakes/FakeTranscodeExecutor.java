@@ -85,7 +85,9 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public TranscodeHandle start(TranscodeRequest request, ExecutionTargetId target) {
-    if (refusingTargets.contains(target) || !canRun(target, request.transcodeDecision())) {
+    if (refusingTargets.contains(target)
+        || !canRun(target, request.transcodeDecision())
+        || !request.pinnedEncoder().map(pinned -> advertises(target, pinned)).orElse(true)) {
       throw new TranscodeException("Target " + target.value() + " refused the transcode");
     }
     startedTargets.add(target);

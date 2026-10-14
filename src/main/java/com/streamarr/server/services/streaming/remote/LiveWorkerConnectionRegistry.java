@@ -207,12 +207,22 @@ final class LiveWorkerConnectionRegistry {
   }
 
   Optional<VariantDispatch> dispatchTo(ExecutionTargetId target, VariantJob job) {
-    for (var connection : connections.values()) {
-      if (connection.workerSessionId().toString().equals(target.value())) {
-        return tryDispatchUnlessDisconnected(connection, job);
-      }
-    }
-    return Optional.empty();
+    return dispatchTo(target, job, _ -> true);
+  }
+
+  // The named target must advertise the pin too, whoever chose it.
+  Optional<VariantDispatch> dispatchTo(
+      ExecutionTargetId target, VariantJob job, WorkerVerifiedEncoder pinnedEncoder) {
+    return dispatchTo(target, job, connection -> connection.advertises(pinnedEncoder));
+  }
+
+  private Optional<VariantDispatch> dispatchTo(
+      ExecutionTargetId target, VariantJob job, Predicate<WorkerConnection> eligible) {
+    return connections.values().stream()
+        .filter(connection -> connection.executionTargetId().equals(target))
+        .filter(eligible)
+        .findFirst()
+        .flatMap(connection -> tryDispatchUnlessDisconnected(connection, job));
   }
 
   /**

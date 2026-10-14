@@ -30,6 +30,7 @@ import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.ProducerLifecycleService;
 import com.streamarr.server.services.streaming.SegmentPublication;
@@ -833,6 +834,47 @@ class WorkerSessionServerIT {
       } finally {
         shutdown(libx264Channel);
         shutdown(nvencChannel);
+      }
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse a targeted start when the target does not advertise the request's pinned encoder")
+  void shouldRefuseTargetedStartWhenTargetDoesNotAdvertiseRequestsPinnedEncoder() throws Exception {
+    var nvencCapabilities =
+        capabilities(SOURCE_NAMESPACE_ID).toBuilder()
+            .addVideoEncoders(
+                hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc"))
+            .build();
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+
+      try (var nvencWorker =
+          connect(
+              channel,
+              workerIdentity(AUTHENTICATED_WORKER_ID, UUID.randomUUID()),
+              nvencCapabilities)) {
+        assertThat(nvencWorker.nextResponse().hasSessionAccepted()).isTrue();
+        var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, Path.of("/media"));
+        var pinnedRequest =
+            TranscodeRequest.builder()
+                .sessionId(UUID.randomUUID())
+                .sourcePath(Path.of("/media/movie.mkv"))
+                .transcodeDecision(fullTranscodeH264Decision().build())
+                .encoderPreset(EncoderPreset.FASTER)
+                .pinnedEncoder(Optional.of(WorkerVerifiedEncoderFixture.libx264()))
+                .build();
+        var nvencTarget =
+            executor.executionTargets(pinnedRequest.transcodeDecision()).iterator().next();
+
+        assertThatThrownBy(() -> executor.start(pinnedRequest, nvencTarget))
+            .isInstanceOf(TranscodeException.class);
+
+        assertThat(nvencWorker.responses()).isEmpty();
+      } finally {
+        shutdown(channel);
       }
     }
   }

@@ -116,6 +116,13 @@ public final class WorkerSessionServer implements AutoCloseable {
     return workerConnections.dispatchTo(target, job);
   }
 
+  /** Dispatches to the target only when it advertises the pinned worker-verified encoder. */
+  public synchronized Optional<VariantDispatch> dispatchTo(
+      ExecutionTargetId target, VariantJob job, @NonNull WorkerVerifiedEncoder pinnedEncoder) {
+    requireStarted();
+    return workerConnections.dispatchTo(target, job, pinnedEncoder);
+  }
+
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   public synchronized Set<ExecutionTargetId> eligibleWorkers(
       UUID sourceNamespaceId, com.streamarr.transcode.v1.TranscodeDecision decision) {
