@@ -51,7 +51,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -477,6 +479,56 @@ class HlsStreamingServiceTest {
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     assertThat(session.getTranscodeDecision()).isNotNull();
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode H.264 and start no AV1 job when the client declares AV1 and no worker-verified encoder encodes AV1")
+  void shouldEncodeH264AndStartNoAv1JobWhenClientDeclaresAv1AndNoWorkerVerifiedEncoderEncodesAv1() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).videoCodec("hevc").build());
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("h264"));
+    var file = seedMediaFile();
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.AUTO)
+            .supportedCodecs(List.of("av1", "h264"))
+            .build();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
+
+    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo("h264");
+    assertThat(transcodeExecutor.getStartedRequests())
+        .isNotEmpty()
+        .extracting(request -> request.transcodeDecision().videoCodecFamily())
+        .containsOnly("h264");
+  }
+
+  @ParameterizedTest(name = "encodable {0} → {1}")
+  @CsvSource(
+      delimiter = '|',
+      value = {"h264,av1 | av1", "h264 | h264", "h264,hevc | h264"})
+  @DisplayName(
+      "Should encode the first declared codec that a worker-verified encoder encodes, ending at H.264, when the client declares only AV1")
+  void shouldEncodeFirstDeclaredCodecThatAWorkerVerifiedEncoderEncodesWhenClientDeclaresOnlyAv1(
+      String encodableFamilies, String expectedFamily) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).videoCodec("hevc").build());
+    transcodeExecutor.setEncodableVideoCodecFamilies(
+        Stream.of(encodableFamilies.split(",")).collect(Collectors.toSet()));
+    var file = seedMediaFile();
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.HIGH_720P)
+            .supportedCodecs(List.of("av1"))
+            .build();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
+
+    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo(expectedFamily);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(request -> request.transcodeDecision().videoCodecFamily())
+        .containsOnly(expectedFamily);
   }
 
   @Test

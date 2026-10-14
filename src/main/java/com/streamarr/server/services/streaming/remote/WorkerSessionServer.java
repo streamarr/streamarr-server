@@ -131,6 +131,11 @@ public final class WorkerSessionServer implements AutoCloseable {
     return workerConnections.hasConnectedWorker(sourceNamespaceId);
   }
 
+  public synchronized Set<String> encodableVideoCodecFamilies(UUID sourceNamespaceId) {
+    requireStarted();
+    return workerConnections.encodableVideoCodecFamilies(sourceNamespaceId);
+  }
+
   public synchronized int availableSlots(UUID sourceNamespaceId) {
     requireStarted();
     return workerConnections.availableSlots(sourceNamespaceId);

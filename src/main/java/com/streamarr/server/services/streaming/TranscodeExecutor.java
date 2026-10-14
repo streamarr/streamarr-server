@@ -30,4 +30,10 @@ public interface TranscodeExecutor {
 
   /** Identities eligible to run a producer right now; iteration order drives failover order. */
   Set<ExecutionTargetId> executionTargets();
+
+  /**
+   * The video codec families, such as {@code h264} or {@code av1}, that a connected worker can
+   * encode with a worker-verified encoder. An encode of any other family has no execution target.
+   */
+  Set<String> encodableVideoCodecFamilies();
 }

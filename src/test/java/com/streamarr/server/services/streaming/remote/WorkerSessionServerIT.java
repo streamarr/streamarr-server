@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming.remote;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChannelBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,6 +20,7 @@ import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamSessionFixture;
@@ -49,6 +51,7 @@ import com.streamarr.transcode.v1.UploadSegmentResponse;
 import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
+import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
@@ -693,6 +696,57 @@ class WorkerSessionServerIT {
         shutdown(channel);
       }
     }
+  }
+
+  @Test
+  @DisplayName(
+      "Should send no AV1 job to a worker that registers without an AV1 encoder when dispatching a remote transcode")
+  void shouldSendNoAv1JobToWorkerThatRegistersWithoutAv1EncoderWhenDispatchingRemoteTranscode()
+      throws Exception {
+    var capabilities =
+        capabilities(SOURCE_NAMESPACE_ID).toBuilder()
+            .addVideoEncoders(softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_HEVC, "libx265"))
+            .build();
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+
+      try (var worker =
+          connect(
+              channel, workerIdentity(AUTHENTICATED_WORKER_ID, UUID.randomUUID()), capabilities)) {
+        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
+        var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, Path.of("/media"));
+        var av1Request = encodeRequest(fullTranscodeH264Decision().videoCodecFamily("av1"));
+        var h264Request = encodeRequest(fullTranscodeH264Decision());
+
+        assertThat(executor.encodableVideoCodecFamilies())
+            .containsExactlyInAnyOrder("h264", "hevc");
+        assertThatThrownBy(() -> executor.start(av1Request)).isInstanceOf(TranscodeException.class);
+        executor.start(h264Request);
+
+        assertThat(
+                worker
+                    .nextResponse()
+                    .getStartVariant()
+                    .getJob()
+                    .getDecision()
+                    .getVideoCodecFamily())
+            .as("the codec family of the first job that reaches the worker")
+            .isEqualTo("h264");
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
+  private static TranscodeRequest encodeRequest(
+      TranscodeDecision.TranscodeDecisionBuilder decision) {
+    return TranscodeRequest.builder()
+        .sessionId(UUID.randomUUID())
+        .sourcePath(Path.of("/media/movie.mkv"))
+        .transcodeDecision(decision.build())
+        .encoderPreset(EncoderPreset.FASTER)
+        .build();
   }
 
   @Test
@@ -1493,12 +1547,17 @@ class WorkerSessionServerIT {
 
   private TestWorkerConnection connect(
       ManagedChannel channel, WorkerIdentity worker, UUID sourceNamespaceId) {
+    return connect(channel, worker, capabilities(sourceNamespaceId));
+  }
+
+  private TestWorkerConnection connect(
+      ManagedChannel channel, WorkerIdentity worker, WorkerCapabilities capabilities) {
     var responses = new LinkedBlockingQueue<EstablishWorkerSessionResponse>();
     var closed = new CompletableFuture<Void>();
     var requestObserver =
         TranscodeWorkerServiceGrpc.newStub(channel)
             .establishWorkerSession(new QueuedResponseObserver(responses, closed));
-    requestObserver.onNext(registration(worker, sourceNamespaceId));
+    requestObserver.onNext(registration(worker, capabilities));
     return new TestWorkerConnection(requestObserver, responses, closed);
   }
 
@@ -1525,14 +1584,24 @@ class WorkerSessionServerIT {
 
   private EstablishWorkerSessionRequest registration(
       WorkerIdentity worker, UUID sourceNamespaceId) {
+    return registration(worker, capabilities(sourceNamespaceId));
+  }
+
+  private EstablishWorkerSessionRequest registration(
+      WorkerIdentity worker, WorkerCapabilities capabilities) {
     return EstablishWorkerSessionRequest.newBuilder()
         .setRegistration(
             WorkerRegistration.newBuilder()
                 .setWorker(worker)
-                .setCapabilities(
-                    WorkerCapabilities.newBuilder()
-                        .addSourceNamespaceIds(toProto(sourceNamespaceId)))
+                .setCapabilities(capabilities)
                 .setAvailableSlots(1))
+        .build();
+  }
+
+  private static WorkerCapabilities capabilities(UUID sourceNamespaceId) {
+    return WorkerCapabilities.newBuilder()
+        .addSourceNamespaceIds(toProto(sourceNamespaceId))
+        .addVideoEncoders(softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264"))
         .build();
   }
 

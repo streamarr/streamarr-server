@@ -39,6 +39,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final AtomicLong livenessChecks = new AtomicLong();
   private final Object observationMonitor = new Object();
   private int availableSlots = TranscodeExecutor.UNBOUNDED_SLOTS;
+  private Set<String> encodableVideoCodecFamilies = Set.of("h264", "hevc", "av1");
   private boolean healthy = true;
   private volatile boolean failUntargetedStarts;
 
@@ -60,6 +61,11 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   }
 
   private TranscodeHandle doStart(TranscodeRequest request) {
+    if (encodesVideo(request)
+        && !encodableVideoCodecFamilies.contains(request.transcodeDecision().videoCodecFamily())) {
+      throw new TranscodeException("No connected transcode worker can encode this variant");
+    }
+
     startedRequests.add(request);
     var key = new ProcessKey(request.sessionId(), request.variantLabel());
     running.add(key);
@@ -184,6 +190,22 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   public void setExecutionTargets(List<ExecutionTargetId> targets) {
     executionTargets = new LinkedHashSet<>(targets);
+  }
+
+  @Override
+  public Set<String> encodableVideoCodecFamilies() {
+    return encodableVideoCodecFamilies;
+  }
+
+  public void setEncodableVideoCodecFamilies(Set<String> families) {
+    encodableVideoCodecFamilies = Set.copyOf(families);
+  }
+
+  private static boolean encodesVideo(TranscodeRequest request) {
+    return switch (request.transcodeDecision().transcodeMode()) {
+      case VIDEO_TRANSCODE, FULL_TRANSCODE -> true;
+      case REMUX, AUDIO_TRANSCODE -> false;
+    };
   }
 
   public void refuseTarget(ExecutionTargetId target) {

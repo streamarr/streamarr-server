@@ -1,5 +1,7 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.hardwareEncoder;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -10,11 +12,15 @@ import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
+import com.streamarr.transcode.v1.TranscodeDecision;
+import com.streamarr.transcode.v1.TranscodeMode;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
+import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
+import com.streamarr.transcode.v1.WorkerVerifiedVideoEncoder;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -220,6 +226,103 @@ class LiveWorkerConnectionRegistryTest {
 
   @Test
   @DisplayName(
+      "Should dispatch an encode only to a worker that advertises an encoder for its codec family")
+  void shouldDispatchAnEncodeOnlyToAWorkerThatAdvertisesAnEncoderForItsCodecFamily() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var h264OnlyResponses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    var av1Responses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    var av1WorkerId = UUID.randomUUID();
+    registry.register(
+        WORKER_ID,
+        registration(
+            WORKER_ID, softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264")),
+        collecting(h264OnlyResponses));
+    var av1Job = encodeJob("av1");
+
+    assertThat(registry.dispatch(av1Job)).isFalse();
+
+    registry.register(
+        av1WorkerId,
+        registration(
+            av1WorkerId, softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "libsvtav1")),
+        collecting(av1Responses));
+
+    assertThat(registry.dispatch(av1Job)).isTrue();
+    assertThat(h264OnlyResponses)
+        .extracting(EstablishWorkerSessionResponse::getCommandCase)
+        .containsExactly(EstablishWorkerSessionResponse.CommandCase.SESSION_ACCEPTED);
+    assertThat(av1Responses)
+        .filteredOn(EstablishWorkerSessionResponse::hasStartVariant)
+        .singleElement()
+        .extracting(response -> response.getStartVariant().getJob())
+        .isEqualTo(av1Job);
+  }
+
+  @Test
+  @DisplayName("Should dispatch a stream copy to a worker that advertises no encoder")
+  void shouldDispatchAStreamCopyToAWorkerThatAdvertisesNoEncoder() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    registry.register(WORKER_ID, registration(), new CancellableObserver());
+    var copyJob =
+        variantJob().toBuilder()
+            .setDecision(
+                TranscodeDecision.newBuilder()
+                    .setMode(TranscodeMode.TRANSCODE_MODE_REMUX)
+                    .setVideoCodecFamily("av1"))
+            .build();
+
+    assertThat(registry.dispatch(copyJob)).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should count software, keyframe-verified and H.264 encoders when reporting the codec families that workers encode")
+  void shouldCountSoftwareKeyframeVerifiedAndH264EncodersWhenReportingEncodableCodecFamilies() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var otherWorkerId = UUID.randomUUID();
+    registry.register(
+        WORKER_ID,
+        registration(
+            WORKER_ID,
+            hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc"),
+            hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "av1_nvenc")),
+        new CancellableObserver());
+    var otherWorker = registration(otherWorkerId).toBuilder();
+    otherWorker
+        .getCapabilitiesBuilder()
+        .addVideoEncoders(softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "libsvtav1"))
+        .addVideoEncoders(
+            softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_UNSPECIFIED, "libvpx-vp9"))
+        .addVideoEncoders(
+            hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_HEVC, "hevc_nvenc").toBuilder()
+                .setKeyframeVerified(true));
+    var unreachableNamespace = UUID.randomUUID();
+
+    assertThat(registry.encodableVideoCodecFamilies(SOURCE_NAMESPACE_ID)).containsOnly("h264");
+
+    registry.register(otherWorkerId, otherWorker.build(), new CancellableObserver());
+
+    assertThat(registry.encodableVideoCodecFamilies(SOURCE_NAMESPACE_ID))
+        .containsExactlyInAnyOrder("h264", "hevc", "av1");
+    assertThat(registry.encodableVideoCodecFamilies(unreachableNamespace)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse an encode for a worker whose only encoder for the codec family is unverified hardware")
+  void shouldRefuseAnEncodeForAWorkerWhoseOnlyEncoderForTheCodecFamilyIsUnverifiedHardware() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    registry.register(
+        WORKER_ID,
+        registration(
+            WORKER_ID, hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "av1_nvenc")),
+        new CancellableObserver());
+
+    assertThat(registry.dispatch(encodeJob("av1"))).isFalse();
+  }
+
+  @Test
+  @DisplayName(
       "Should survive stopping a session whose worker call is cancelled but not yet reaped when managing a connection")
   void
       shouldSurviveStoppingSessionWhoseWorkerCallIsCancelledButNotYetReapedWhenManagingConnection() {
@@ -386,6 +489,22 @@ class LiveWorkerConnectionRegistryTest {
         .setCapabilities(
             WorkerCapabilities.newBuilder().addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID)))
         .setAvailableSlots(availableSlots)
+        .build();
+  }
+
+  private static WorkerRegistration registration(
+      UUID workerId, WorkerVerifiedVideoEncoder... encoders) {
+    var registration = registration(workerId, 1).toBuilder();
+    registration.getCapabilitiesBuilder().addAllVideoEncoders(List.of(encoders));
+    return registration.build();
+  }
+
+  private static VariantJob encodeJob(String videoCodecFamily) {
+    return variantJob().toBuilder()
+        .setDecision(
+            TranscodeDecision.newBuilder()
+                .setMode(TranscodeMode.TRANSCODE_MODE_FULL_TRANSCODE)
+                .setVideoCodecFamily(videoCodecFamily))
         .build();
   }
 

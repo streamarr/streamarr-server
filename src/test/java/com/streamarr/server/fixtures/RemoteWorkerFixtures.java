@@ -4,6 +4,9 @@ import com.streamarr.server.services.streaming.remote.ProbeAttemptReport;
 import com.streamarr.server.services.streaming.remote.ProbeDispatch;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
 import com.streamarr.server.services.streaming.remote.protocol.WorkerIdentityMetadata;
+import com.streamarr.transcode.v1.EncoderKind;
+import com.streamarr.transcode.v1.VideoCodecFamily;
+import com.streamarr.transcode.v1.WorkerVerifiedVideoEncoder;
 import io.grpc.Metadata;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.MetadataUtils;
@@ -16,6 +19,23 @@ public final class RemoteWorkerFixtures {
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
 
   private RemoteWorkerFixtures() {}
+
+  public static WorkerVerifiedVideoEncoder softwareEncoder(
+      VideoCodecFamily codecFamily, String encoder) {
+    return workerVerifiedEncoder(codecFamily, encoder, EncoderKind.ENCODER_KIND_SOFTWARE);
+  }
+
+  public static WorkerVerifiedVideoEncoder hardwareEncoder(
+      VideoCodecFamily codecFamily, String encoder) {
+    return workerVerifiedEncoder(codecFamily, encoder, EncoderKind.ENCODER_KIND_HARDWARE);
+  }
+
+  private static WorkerVerifiedVideoEncoder workerVerifiedEncoder(
+      VideoCodecFamily codecFamily, String encoder, EncoderKind kind) {
+    var verified = WorkerVerifiedVideoEncoder.newBuilder();
+    verified.getBackendBuilder().setCodecFamily(codecFamily).setEncoder(encoder).setKind(kind);
+    return verified.build();
+  }
 
   public static WorkerSessionServerConfiguration.WorkerSessionServerConfigurationBuilder
       serverConfigurationBuilder() {

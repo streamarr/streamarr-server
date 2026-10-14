@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -34,12 +35,21 @@ public class TranscodeDecisionService {
   private final StreamingProperties properties;
   private final MeterRegistry meterRegistry;
 
-  public TranscodeDecision decide(MediaProbe source, StreamingOptions clientOptions) {
+  /**
+   * An encode uses the first codec in the preference that the client declares and that a
+   * worker-verified encoder encodes (ADR 0009), ending at H.264. A copy needs no encoder.
+   */
+  public TranscodeDecision decide(
+      MediaProbe source,
+      StreamingOptions clientOptions,
+      @NonNull Set<String> encodableVideoCodecFamilies) {
     var supportedCodecs = clientOptions.supportedCodecs();
     boolean videoCopyable = decideVideoCopy(source, supportedCodecs);
 
     var videoCodecFamily =
-        videoCopyable ? source.videoCodec() : selectPreferredCodec(supportedCodecs);
+        videoCopyable
+            ? source.videoCodec()
+            : selectPreferredCodec(supportedCodecs, encodableVideoCodecFamilies);
     var audioDecision = decideAudio(source, clientOptions);
     var subtitleDecision = SubtitleDecision.exclude();
 
@@ -198,9 +208,10 @@ public class TranscodeDecisionService {
         AudioMode.TRANSCODE, codec, channels, AudioDecision.bitrateForChannels(channels));
   }
 
-  private String selectPreferredCodec(List<String> supportedCodecs) {
+  private String selectPreferredCodec(
+      List<String> supportedCodecs, Set<String> encodableVideoCodecFamilies) {
     for (var codec : CODEC_PREFERENCE) {
-      if (supportedCodecs.contains(codec)) {
+      if (supportedCodecs.contains(codec) && encodableVideoCodecFamilies.contains(codec)) {
         return codec;
       }
     }
