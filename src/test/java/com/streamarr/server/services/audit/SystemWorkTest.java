@@ -3,9 +3,11 @@ package com.streamarr.server.services.audit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -23,31 +25,39 @@ class SystemWorkTest {
   }
 
   @Test
-  @DisplayName("Should run as the System actor only while system work runs")
-  void shouldRunAsSystemActorOnlyWhileSystemWorkRuns() {
-    var running = new AtomicReference<Boolean>();
+  @DisplayName("Should run as the System actor when system work runs")
+  void shouldRunAsSystemActorWhenSystemWorkRuns() {
+    var running = new AtomicBoolean();
 
     SystemWork.runAsSystemActor(() -> running.set(SystemWork.isRunningAsSystemActor()));
 
-    assertThat(running).hasValue(true);
+    assertThat(running).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should stop running as the System actor when system work returns")
+  void shouldStopRunningAsSystemActorWhenSystemWorkReturns() {
+    SystemWork.runAsSystemActor(() -> {});
+
     assertThat(SystemWork.isRunningAsSystemActor()).isFalse();
   }
 
   @Test
   @DisplayName("Should run tasks as the System actor when the executor comes from system work")
-  void shouldRunTasksAsSystemActorWhenExecutorComesFromSystemWork() throws Exception {
+  void shouldRunTasksAsSystemActorWhenExecutorComesFromSystemWork()
+      throws InterruptedException, ExecutionException, TimeoutException {
     try (var executor = SystemWork.newExecutorRunningAsSystemActor("system-task-")) {
-      var task =
-          executor.submit(
-              () -> Thread.currentThread().getName() + ":" + SystemWork.isRunningAsSystemActor());
+      var observed = executor.submit(ObservedThread::current).get(BOUND_SECONDS, TimeUnit.SECONDS);
 
-      assertThat(task.get(BOUND_SECONDS, TimeUnit.SECONDS)).matches("system-task-\\d+:true");
+      assertThat(observed.name()).matches("system-task-\\d+");
+      assertThat(observed.runningAsSystemActor()).isTrue();
     }
   }
 
   @Test
   @DisplayName("Should run tasks as the System actor when a fixed pool uses System actor threads")
-  void shouldRunTasksAsSystemActorWhenFixedPoolUsesSystemActorThreads() throws Exception {
+  void shouldRunTasksAsSystemActorWhenFixedPoolUsesSystemActorThreads()
+      throws InterruptedException, ExecutionException, TimeoutException {
     try (var executor =
         Executors.newFixedThreadPool(
             1, SystemWork.newThreadFactoryRunningAsSystemActor("pooled-"))) {
@@ -61,21 +71,22 @@ class SystemWorkTest {
 
   @Test
   @DisplayName("Should run as the System actor when a thread starts running as the System actor")
-  void shouldRunAsSystemActorWhenThreadStartsRunningAsSystemActor() throws Exception {
-    var running = new CompletableFuture<String>();
+  void shouldRunAsSystemActorWhenThreadStartsRunningAsSystemActor()
+      throws InterruptedException, ExecutionException, TimeoutException {
+    var started = new CompletableFuture<ObservedThread>();
 
     SystemWork.startThreadRunningAsSystemActor(
-        "system-thread",
-        () ->
-            running.complete(
-                Thread.currentThread().getName() + ":" + SystemWork.isRunningAsSystemActor()));
+        "system-thread", () -> started.complete(ObservedThread.current()));
 
-    assertThat(running.get(BOUND_SECONDS, TimeUnit.SECONDS)).isEqualTo("system-thread:true");
+    var observed = started.get(BOUND_SECONDS, TimeUnit.SECONDS);
+    assertThat(observed.name()).isEqualTo("system-thread");
+    assertThat(observed.runningAsSystemActor()).isTrue();
   }
 
   @Test
   @DisplayName("Should not run as the System actor when system work starts an ordinary thread")
-  void shouldNotRunAsSystemActorWhenSystemWorkStartsAnOrdinaryThread() throws Exception {
+  void shouldNotRunAsSystemActorWhenSystemWorkStartsAnOrdinaryThread()
+      throws InterruptedException, ExecutionException, TimeoutException {
     var running = new CompletableFuture<Boolean>();
 
     SystemWork.runAsSystemActor(
@@ -83,5 +94,13 @@ class SystemWorkTest {
             Thread.ofVirtual().start(() -> running.complete(SystemWork.isRunningAsSystemActor())));
 
     assertThat(running.get(BOUND_SECONDS, TimeUnit.SECONDS)).isFalse();
+  }
+
+  private record ObservedThread(String name, boolean runningAsSystemActor) {
+
+    static ObservedThread current() {
+      return new ObservedThread(
+          Thread.currentThread().getName(), SystemWork.isRunningAsSystemActor());
+    }
   }
 }

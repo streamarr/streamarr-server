@@ -59,6 +59,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Import(LibraryAdministrationIT.LibraryEventListenerConfig.class)
 class LibraryAdministrationIT extends AbstractIntegrationTest {
 
+  private static final long BOUND_SECONDS = 10;
+
   @TestConfiguration(proxyBeanMethods = false)
   static class LibraryEventListenerConfig {
 
@@ -118,7 +120,7 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
 
     private static void await(CountDownLatch latch) {
       try {
-        if (!latch.await(10, TimeUnit.SECONDS)) {
+        if (!latch.await(BOUND_SECONDS, TimeUnit.SECONDS)) {
           throw new IllegalStateException("Library removal gate was never released.");
         }
       } catch (InterruptedException e) {
@@ -284,7 +286,7 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
                         .andExpect(status().isOk())
                         .andExpect(jsonPath("$.errors").doesNotExist())
                         .andExpect(jsonPath("$.data.removeLibrary").value(true)));
-        assertThat(removalGate.reached().await(10, TimeUnit.SECONDS)).isTrue();
+        assertThat(removalGate.reached().await(BOUND_SECONDS, TimeUnit.SECONDS)).isTrue();
 
         var revocationTransactionStarted = new CountDownLatch(1);
         var revocationBackendPid = new AtomicInteger();
@@ -295,18 +297,18 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
                       identity, revocationTransactionStarted, revocationBackendPid, lockProbe);
                   return null;
                 });
-        assertThat(revocationTransactionStarted.await(10, TimeUnit.SECONDS)).isTrue();
+        assertThat(revocationTransactionStarted.await(BOUND_SECONDS, TimeUnit.SECONDS)).isTrue();
 
         await()
-            .atMost(Duration.ofSeconds(10))
+            .atMost(Duration.ofSeconds(BOUND_SECONDS))
             .untilAsserted(
                 () ->
                     assertThat(lockProbe.isUserAccountUpdateWaiting(revocationBackendPid.get()))
                         .isTrue());
 
         blockingLibraryRemovalListener.release();
-        removal.get(10, TimeUnit.SECONDS);
-        revocation.get(10, TimeUnit.SECONDS);
+        removal.get(BOUND_SECONDS, TimeUnit.SECONDS);
+        revocation.get(BOUND_SECONDS, TimeUnit.SECONDS);
       } finally {
         blockingLibraryRemovalListener.release();
       }
@@ -320,8 +322,10 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should name the ServerAdmin on an added library and the System actor on the scan it starts")
-  void shouldNameServerAdminOnAddedLibraryAndSystemActorOnScanItStarts() throws Exception {
+      "Should name the ServerAdmin as creator and the System actor as modifier when a ServerAdmin"
+          + " adds a library")
+  void shouldNameServerAdminAsCreatorAndSystemActorAsModifierWhenServerAdminAddsLibrary()
+      throws Exception {
     identity = authTestSupport.createAdminIdentity();
     var adminToken = authTestSupport.profileBearer(identity);
 
@@ -336,7 +340,7 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
                 response.getResponse().getContentAsString(), "$.data.addLibrary.library.id"));
 
     try {
-      scanEndedListener.scanEnded(libraryId).get(10, TimeUnit.SECONDS);
+      scanEndedListener.scanEnded(libraryId).get(BOUND_SECONDS, TimeUnit.SECONDS);
 
       var library = libraryRepository.findById(libraryId).orElseThrow();
       assertThat(library.getCreatedBy()).isEqualTo(identity.account().getId());

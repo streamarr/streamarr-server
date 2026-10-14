@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -36,7 +37,8 @@ class ProbeSchedulingConfigurationTest {
 
   @Test
   @DisplayName("Should run scheduler executions as the System actor when customizing db-scheduler")
-  void shouldRunSchedulerExecutionsAsSystemActorWhenCustomizingDbScheduler() throws Exception {
+  void shouldRunSchedulerExecutionsAsSystemActorWhenCustomizingDbScheduler()
+      throws InterruptedException, ExecutionException, TimeoutException {
     try (var executor = customizer().executorService().orElseThrow()) {
       var auditor = executor.submit(() -> new SecurityAuditorAware().getCurrentAuditor());
 
@@ -47,18 +49,17 @@ class ProbeSchedulingConfigurationTest {
   // Each scheduler shuts down its executor when it stops, so schedulers must not share one.
   @Test
   @DisplayName(
-      "Should give each scheduler its own System actor executor when schedulers share a"
-          + " customizer")
-  void shouldGiveEachSchedulerItsOwnSystemActorExecutorWhenSchedulersShareACustomizer()
-      throws Exception {
+      "Should keep running scheduler executions when another scheduler's executor shuts down")
+  void shouldKeepRunningSchedulerExecutionsWhenAnotherSchedulersExecutorShutsDown()
+      throws InterruptedException, ExecutionException, TimeoutException {
     var customizer = customizer();
     try (var first = customizer.executorService().orElseThrow();
         var second = customizer.executorService().orElseThrow()) {
       first.shutdown();
 
-      var auditor = second.submit(() -> new SecurityAuditorAware().getCurrentAuditor());
+      var execution = second.submit(() -> true);
 
-      assertThat(auditor.get(BOUND_SECONDS, TimeUnit.SECONDS)).contains(SystemActor.ID);
+      assertThat(execution.get(BOUND_SECONDS, TimeUnit.SECONDS)).isTrue();
     }
   }
 
