@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.EncoderPresetChoice;
+import com.streamarr.server.exceptions.ServerSettingsMissingException;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeServerSettingsRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -26,8 +27,10 @@ class ServerSettingsServiceTest {
   private final AuthenticatedIdentity identity = accountScopedBuilder().build();
   private final FakeAuthorizationService authorizationService =
       new FakeAuthorizationService(identity);
+  private final FakeServerSettingsRepository serverSettingsRepository =
+      new FakeServerSettingsRepository();
   private final ServerSettingsService serverSettingsService =
-      new ServerSettingsService(authorizationService, new FakeServerSettingsRepository());
+      new ServerSettingsService(authorizationService, serverSettingsRepository);
 
   @Test
   @DisplayName("Should resolve Automatic per codec when no ServerAdmin has changed the setting")
@@ -122,5 +125,14 @@ class ServerSettingsServiceTest {
 
     assertThatThrownBy(() -> serverSettingsService.changeEncoderPreset(identity, "PLACEBO"))
         .isInstanceOf(AccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should fail with a missing-settings error when the settings row is absent")
+  void shouldFailWithMissingSettingsErrorWhenSettingsRowIsAbsent() {
+    serverSettingsRepository.deleteAll();
+
+    assertThatThrownBy(() -> serverSettingsService.resolveEncoderPreset("h264"))
+        .isInstanceOf(ServerSettingsMissingException.class);
   }
 }

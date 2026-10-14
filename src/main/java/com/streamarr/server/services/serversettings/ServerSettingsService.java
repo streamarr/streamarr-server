@@ -3,6 +3,7 @@ package com.streamarr.server.services.serversettings;
 import com.streamarr.server.domain.ServerSettings;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.EncoderPresetChoice;
+import com.streamarr.server.exceptions.ServerSettingsMissingException;
 import com.streamarr.server.repositories.ServerSettingsRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
@@ -52,6 +53,6 @@ public class ServerSettingsService {
   private ServerSettings storedSettings() {
     return serverSettingsRepository.findAll().stream()
         .findFirst()
-        .orElseThrow(() -> new IllegalStateException("The server settings row is missing"));
+        .orElseThrow(ServerSettingsMissingException::new);
   }
 }
