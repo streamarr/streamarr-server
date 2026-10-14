@@ -16,10 +16,7 @@ import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.streaming.FfprobeService;
 import java.io.IOException;
 import java.nio.file.FileSystem;
-import java.nio.file.Files;
-import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;
@@ -120,10 +117,7 @@ public class ProbeExecution {
 
   private static Optional<SourceFileSnapshot> snapshot(Path path) {
     try {
-      return Optional.of(
-          SourceFileSnapshot.of(Files.readAttributes(path, BasicFileAttributes.class)));
-    } catch (NoSuchFileException _) {
-      return Optional.empty();
+      return SourceFileSnapshots.read(path);
     } catch (IOException exception) {
       throw new ProbeExecutionException(
           ItemFailureReason.SOURCE_INACCESSIBLE,
