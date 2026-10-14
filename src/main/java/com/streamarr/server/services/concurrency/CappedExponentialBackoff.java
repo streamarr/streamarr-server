@@ -1,4 +1,4 @@
-package com.streamarr.server.services.library;
+package com.streamarr.server.services.concurrency;
 
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.github.kagkarlsson.scheduler.task.ExecutionOperations;
@@ -24,7 +24,7 @@ public class CappedExponentialBackoff<T> implements FailureHandler<T> {
     executionOperations.reschedule(executionComplete, clock.instant().plus(delay));
   }
 
-  static Duration delayAfter(int previousFailures) {
+  public static Duration delayAfter(int previousFailures) {
     var doubled = INITIAL_DELAY.multipliedBy(1L << Math.min(previousFailures, MAX_DOUBLINGS));
     return doubled.compareTo(MAX_DELAY) < 0 ? doubled : MAX_DELAY;
   }

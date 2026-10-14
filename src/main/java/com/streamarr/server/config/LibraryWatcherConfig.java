@@ -1,8 +1,8 @@
 package com.streamarr.server.config;
 
+import com.streamarr.server.services.concurrency.Sleeper;
 import com.streamarr.server.services.library.FileStabilityChecker;
 import com.streamarr.server.services.library.PollingFileStabilityChecker;
-import com.streamarr.server.services.library.Sleeper;
 import java.time.Clock;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
