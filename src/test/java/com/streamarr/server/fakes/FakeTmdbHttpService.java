@@ -9,6 +9,7 @@ import com.streamarr.server.services.metadata.tmdb.TmdbTvSeason;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeries;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.io.IOException;
+import java.time.Clock;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -25,6 +26,7 @@ public class FakeTmdbHttpService extends TheMovieDatabaseHttpService
   private String failOnPath;
   private String interruptOnPath;
   private boolean failAll;
+  private final Map<String, IOException> downloadFailures = new HashMap<>();
   private long delayMillis;
   private final AtomicInteger downloadCount = new AtomicInteger();
 
@@ -47,7 +49,7 @@ public class FakeTmdbHttpService extends TheMovieDatabaseHttpService
   private final Set<String> seasonDetailsFirstCallFailures = new HashSet<>();
 
   public FakeTmdbHttpService() {
-    super("", "", "", null, null);
+    super("", "", "", null, null, Clock.systemUTC());
   }
 
   // --- Image setters ---
@@ -58,6 +60,10 @@ public class FakeTmdbHttpService extends TheMovieDatabaseHttpService
 
   public void setFailOnPath(String path) {
     this.failOnPath = path;
+  }
+
+  public void failDownloadWith(String path, IOException failure) {
+    downloadFailures.put(path, failure);
   }
 
   public void setInterruptOnPath(String path) {
@@ -121,6 +127,10 @@ public class FakeTmdbHttpService extends TheMovieDatabaseHttpService
     }
     if (pathFragment.equals(failOnPath)) {
       throw new IOException("Simulated download failure for " + pathFragment);
+    }
+    var failure = downloadFailures.get(pathFragment);
+    if (failure != null) {
+      throw failure;
     }
     if (pathFragment.equals(interruptOnPath)) {
       throw new InterruptedException("Simulated interrupt for " + pathFragment);

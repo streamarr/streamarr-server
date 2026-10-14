@@ -2,11 +2,9 @@ package com.streamarr.server.services;
 
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageType;
-import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
-import com.streamarr.server.exceptions.ImageProcessingException;
 import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.services.ArtworkPlan.PlannedImage.DownloadImage;
 import com.streamarr.server.services.ArtworkPlan.PlannedImage.KeepStoredImage;
@@ -212,15 +210,8 @@ public class ArtworkFetcher {
     return switch (result) {
       case Saved _, Skipped _ -> Optional.empty();
       case Unavailable _ -> Optional.of(new ItemOutcome.Unavailable());
-      case Failed(var _, var cause) -> Optional.of(ItemOutcome.Failed.of(reasonFor(cause), cause));
-    };
-  }
-
-  private static ItemFailureReason reasonFor(Throwable cause) {
-    return switch (cause) {
-      case IOException _ -> ItemFailureReason.DOWNLOAD_FAILED;
-      case ImageProcessingException _ -> ItemFailureReason.INVALID_MEDIA;
-      default -> ItemFailureReason.TEMPORARY;
+      case Failed(var _, var cause) ->
+          Optional.of(ItemOutcome.Failed.of(ArtworkFailure.classify(cause).reason(), cause));
     };
   }
 

@@ -15,6 +15,7 @@ import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
+import com.streamarr.server.exceptions.ImageDownloadException;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
@@ -28,6 +29,7 @@ import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -118,9 +120,8 @@ class ArtworkFetcherTest {
   }
 
   @Test
-  @DisplayName(
-      "Should record a failed download with its source when the image cannot be downloaded")
-  void shouldRecordAFailedDownloadWithItsSourceWhenTheImageCannotBeDownloaded() {
+  @DisplayName("Should record a temporary failure with its source when the download cannot connect")
+  void shouldRecordATemporaryFailureWithItsSourceWhenTheDownloadCannotConnect() {
     imageDownloader.setFailOnPath("/poster.jpg");
 
     artworkFetcher.fetch(
@@ -130,7 +131,19 @@ class ArtworkFetcherTest {
 
     var poster = itemResults.find(entityId, ItemStep.ARTWORK, ImageType.POSTER).orElseThrow();
     assertThat(poster.sourceKey()).isEqualTo("/poster.jpg");
-    assertThat(failureReason(poster)).isEqualTo(ItemFailureReason.DOWNLOAD_FAILED);
+    assertThat(failureReason(poster)).isEqualTo(ItemFailureReason.TEMPORARY);
+  }
+
+  @Test
+  @DisplayName("Should record a failed download when the image host has no such image")
+  void shouldRecordAFailedDownloadWhenTheImageHostHasNoSuchImage() {
+    imageDownloader.failDownloadWith(
+        "/poster.jpg", new ImageDownloadException(404, "/poster.jpg", Optional.empty()));
+
+    artworkFetcher.fetch(
+        movieArtwork(poster("/poster.jpg")), ImageRefreshMode.PRESERVE, FIRST_ATTEMPT);
+
+    assertThat(posterFailureReason()).isEqualTo(ItemFailureReason.DOWNLOAD_FAILED);
   }
 
   @Test
