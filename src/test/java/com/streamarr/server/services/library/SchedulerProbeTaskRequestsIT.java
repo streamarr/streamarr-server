@@ -14,11 +14,13 @@ import com.github.kagkarlsson.scheduler.task.Task;
 import com.github.kagkarlsson.scheduler.task.TaskInstanceId;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.config.LibraryWatcherProperties;
+import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
+import com.streamarr.server.domain.task.ProbeAttemptFailure;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
@@ -37,6 +39,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -81,6 +84,9 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
 
   @BeforeEach
   void setUp() {
+    // The completion latch counts any execution, so a due execution left by an earlier class
+    // would release it before the test's own probe runs.
+    dsl.deleteFrom(DSL.table("scheduled_tasks")).execute();
     var execution =
         ProbeExecution.builder()
             .mediaFiles(mediaFileRepository)
@@ -190,11 +196,99 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should run a failed probe's retry at once when discovery requests it again")
+  void shouldRunAFailedProbesRetryAtOnceWhenDiscoveryRequestsItAgain() throws IOException {
+    var request = request(createMediaFile());
+    scheduling.request(request);
+    saveFailure(request);
+    delay(request, 2);
+    var requestedAt = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+
+    scheduling.requestRetryingFailure(request);
+
+    assertThat(client.getScheduledExecution(instanceOf(request)))
+        .hasValueSatisfying(
+            pending -> {
+              assertThat(pending.getExecutionTime())
+                  .isAfterOrEqualTo(requestedAt)
+                  .isBeforeOrEqualTo(Instant.now());
+              assertThat(pending.getData()).isEqualTo(request);
+            });
+  }
+
+  @Test
+  @DisplayName("Should run a failed probe at once when discovery requests new inputs for it")
+  void shouldRunAFailedProbeAtOnceWhenDiscoveryRequestsNewInputsForIt() throws IOException {
+    var file = createMediaFile();
+    var request = request(file);
+    scheduling.request(request);
+    saveFailure(request);
+    delay(request, 2);
+    Files.write(FilepathCodec.decode(file.getFilepathUri()), new byte[] {4, 5, 6, 7, 8});
+    var changed = request(file);
+    var requestedAt = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+
+    scheduling.requestRetryingFailure(changed);
+
+    assertThat(client.getScheduledExecution(instanceOf(request)))
+        .hasValueSatisfying(
+            pending -> {
+              assertThat(pending.getExecutionTime())
+                  .isAfterOrEqualTo(requestedAt)
+                  .isBeforeOrEqualTo(Instant.now());
+              assertThat(pending.getData()).isEqualTo(changed);
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the backoff when discovery requests a probe whose last attempt was cancelled")
+  void shouldKeepTheBackoffWhenDiscoveryRequestsAProbeWhoseLastAttemptWasCancelled()
+      throws IOException {
+    var request = request(createMediaFile());
+    scheduling.request(request);
+    var retryAt = delay(request, 1);
+
+    scheduling.requestRetryingFailure(request);
+
+    assertThat(client.getScheduledExecution(instanceOf(request)))
+        .hasValueSatisfying(pending -> assertThat(pending.getExecutionTime()).isEqualTo(retryAt));
+  }
+
+  @Test
+  @DisplayName("Should keep a failed probe's backoff when playback requests it again")
+  void shouldKeepAFailedProbesBackoffWhenPlaybackRequestsItAgain() throws IOException {
+    var request = request(createMediaFile());
+    scheduling.request(request);
+    var retryAt = delay(request, 2);
+
+    scheduling.request(request);
+
+    assertThat(client.getScheduledExecution(instanceOf(request)))
+        .hasValueSatisfying(pending -> assertThat(pending.getExecutionTime()).isEqualTo(retryAt));
+  }
+
+  @Test
+  @DisplayName("Should keep a quiet period when discovery requests the same inputs again")
+  void shouldKeepAQuietPeriodWhenDiscoveryRequestsTheSameInputsAgain() throws IOException {
+    var request = request(createMediaFile());
+    scheduling.request(request);
+    var quietUntil = delay(request, 0);
+
+    scheduling.requestRetryingFailure(request);
+
+    assertThat(client.getScheduledExecution(instanceOf(request)))
+        .hasValueSatisfying(
+            pending -> assertThat(pending.getExecutionTime()).isEqualTo(quietUntil));
+  }
+
+  @Test
   @DisplayName("Should reschedule with backoff when the producer fails transiently")
   void shouldRescheduleWithBackoffWhenTheProducerFailsTransiently() throws IOException {
     var file = createMediaFile();
     var request = request(file);
-    producer.failWith(new ProbeExecutionException("no worker connected"));
+    producer.failWith(
+        new ProbeExecutionException(ItemFailureReason.TEMPORARY, "no worker connected"));
     var requestedAt = Instant.now();
     scheduling.request(request);
 
@@ -279,6 +373,30 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
                 .build());
     createdFiles.add(file);
     return file;
+  }
+
+  // Moves the pending execution five minutes out with the given failure history.
+  private void saveFailure(ProbeTaskRequest request) {
+    assertThat(
+            outcomes.trySaveProbeFailure(
+                request.mediaFileId(),
+                request.inputs(),
+                ProbeAttemptFailure.builder()
+                    .reason(ItemFailureReason.SOURCE_INACCESSIBLE)
+                    .detail("Worker could not read the source")
+                    .failedAt(Instant.now())
+                    .build()))
+        .isTrue();
+  }
+
+  private Instant delay(ProbeTaskRequest request, int consecutiveFailures) {
+    var executionTime = Instant.now().plusSeconds(300).truncatedTo(ChronoUnit.SECONDS);
+    dsl.update(DSL.table("scheduled_tasks"))
+        .set(DSL.field("consecutive_failures", Integer.class), consecutiveFailures)
+        .set(DSL.field("execution_time", Instant.class), executionTime)
+        .where(DSL.field("task_instance", String.class).eq(request.mediaFileId().toString()))
+        .execute();
+    return executionTime;
   }
 
   private static ProbeTaskRequest request(MediaFile file) throws IOException {

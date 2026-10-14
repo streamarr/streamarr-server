@@ -2,8 +2,10 @@ package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 
+import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.services.streaming.FfprobeService;
@@ -42,17 +44,24 @@ public final class RemoteFfprobeService implements FfprobeService {
     } catch (InterruptedException exception) {
       pending.cancel(true);
       Thread.currentThread().interrupt();
-      throw new ProbeExecutionException(exception);
+      throw new ProbeCancelledException("The server stopped waiting for the probe", exception);
     } catch (ExecutionException exception) {
-      throw new ProbeExecutionException(exception);
+      if (exception.getCause() instanceof ProbeExecutionException failure) {
+        throw failure;
+      }
+
+      throw new ProbeExecutionException(
+          ItemFailureReason.TEMPORARY, "The worker returned no probe result", exception);
     }
   }
 
   private static RuntimeException refusal(ProbeRefusal reason) {
-    if (reason == ProbeRefusal.WORKERS_BUSY) {
-      return new ProbeWorkersBusyException();
-    }
-
-    return new ProbeExecutionException(reason.description());
+    return switch (reason) {
+      case WORKERS_BUSY -> new ProbeWorkersBusyException();
+      case NO_COMPATIBLE_WORKER ->
+          new ProbeExecutionException(ItemFailureReason.MISCONFIGURED, reason.description());
+      case INVALID_REQUEST, NO_CONNECTED_WORKER, WORKER_UNREACHABLE, ATTEMPT_IN_PROGRESS ->
+          new ProbeExecutionException(ItemFailureReason.TEMPORARY, reason.description());
+    };
   }
 }

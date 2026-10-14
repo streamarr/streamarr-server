@@ -3,6 +3,7 @@ package com.streamarr.server.services.library;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileContainerInfo;
 import com.streamarr.server.domain.media.MediaFileStatus;
@@ -89,7 +90,7 @@ class ProbeExecutionTest {
     var execution = execution();
     producer.runDuringProbe(
         () -> {
-          throw new ProbeExecutionException("worker disconnected");
+          throw new ProbeExecutionException(ItemFailureReason.TEMPORARY, "worker disconnected");
         });
 
     assertThatThrownBy(() -> execution.execute(request))
@@ -154,15 +155,28 @@ class ProbeExecutionTest {
   }
 
   @Test
-  @DisplayName("Should complete without probing when the source file has vanished")
-  void shouldCompleteWithoutProbingWhenTheSourceFileHasVanished() throws IOException {
+  @DisplayName("Should report the source removed without probing when the source file has vanished")
+  void shouldReportTheSourceRemovedWithoutProbingWhenTheSourceFileHasVanished() throws IOException {
     var request = request(ProbeVersion.CURRENT);
     Files.delete(source);
 
     var result = execution().execute(request);
 
-    assertThat(result).isEqualTo(new ProbeExecutionResult.Completed());
+    assertThat(result).isEqualTo(new ProbeExecutionResult.SourceRemoved());
     assertThat(producer.probeCount()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should report the source removed without publishing when it vanished during the probe")
+  void shouldReportTheSourceRemovedWithoutPublishingWhenItVanishedDuringTheProbe() {
+    var request = request(ProbeVersion.CURRENT);
+    producer.runDuringProbe(() -> delete(source));
+
+    var result = execution().execute(request);
+
+    assertThat(result).isEqualTo(new ProbeExecutionResult.SourceRemoved());
+    assertThat(outcomes.publications()).isEmpty();
   }
 
   @Test
@@ -242,7 +256,8 @@ class ProbeExecutionTest {
   @Test
   @DisplayName("Should propagate failure without publishing when the producer fails transiently")
   void shouldPropagateFailureWithoutPublishingWhenTheProducerFailsTransiently() {
-    producer.failWith(new ProbeExecutionException("worker unavailable"));
+    producer.failWith(
+        new ProbeExecutionException(ItemFailureReason.TEMPORARY, "worker unavailable"));
     var execution = execution();
     var request = request(ProbeVersion.CURRENT);
 
@@ -296,6 +311,14 @@ class ProbeExecutionTest {
     try {
       var attributes = Files.readAttributes(path, BasicFileAttributes.class);
       return new SourceFileSnapshot(attributes.size(), attributes.lastModifiedTime().toInstant());
+    } catch (IOException exception) {
+      throw new UncheckedIOException(exception);
+    }
+  }
+
+  private static void delete(Path path) {
+    try {
+      Files.delete(path);
     } catch (IOException exception) {
       throw new UncheckedIOException(exception);
     }

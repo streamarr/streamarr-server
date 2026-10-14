@@ -12,17 +12,20 @@ import com.github.kagkarlsson.scheduler.stats.StatsRegistry;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.github.kagkarlsson.scheduler.task.TaskInstanceId;
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
+import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
+import com.streamarr.server.services.streaming.FfprobeService;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -32,6 +35,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import javax.sql.DataSource;
 import org.jooq.DSLContext;
@@ -146,6 +150,23 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
         completions.countDown();
       }
     };
+  }
+
+  /** Fails every attempt that reaches a worker, holding each until {@code release} completes. */
+  static FfprobeService workerFailingAfter(
+      CountDownLatch probing, CompletableFuture<Void> release) {
+    return _ -> {
+      probing.countDown();
+      release.join();
+      throw new ProbeExecutionException(
+          ItemFailureReason.SOURCE_INACCESSIBLE, "Worker could not read the source");
+    };
+  }
+
+  // A link to itself fails every stat with an I/O error other than NoSuchFileException.
+  static void makeUnreadable(Path source) throws IOException {
+    Files.delete(source);
+    Files.createSymbolicLink(source, source.getFileName());
   }
 
   void assertPublished(List<ProbeTaskRequest> requests) {

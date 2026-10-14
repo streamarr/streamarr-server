@@ -14,4 +14,9 @@ public record ProbeTaskRequest(
     @NonNull UUID libraryId,
     @NonNull String filepathUri,
     @NonNull SourceFileSnapshot snapshot,
-    int probeVersion) {}
+    int probeVersion) {
+
+  public ProbeInputs inputs() {
+    return new ProbeInputs(snapshot, probeVersion);
+  }
+}

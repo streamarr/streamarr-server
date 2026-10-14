@@ -1,8 +1,10 @@
 package com.streamarr.server.repositories.media;
 
 import com.streamarr.server.domain.media.MatchingFailure;
+import com.streamarr.server.domain.media.MediaFileStatus;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -21,4 +23,7 @@ public interface MediaFileRepositoryCustom {
    * without writing when the file is matched or missing.
    */
   boolean tryMarkMatchingFailed(UUID mediaFileId, MatchingFailure failure);
+
+  /** Counts the listed media files that still exist by their matching status. */
+  Map<MediaFileStatus, Long> countStatuses(Collection<UUID> mediaFileIds);
 }

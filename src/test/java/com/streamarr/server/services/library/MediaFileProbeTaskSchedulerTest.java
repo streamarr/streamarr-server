@@ -86,6 +86,19 @@ class MediaFileProbeTaskSchedulerTest {
                 .build());
   }
 
+  @Test
+  @DisplayName("Should retry a failed probe at once when discovery schedules the file")
+  void shouldRetryAFailedProbeAtOnceWhenDiscoverySchedulesTheFile() {
+    var scheduler = schedulerBuilder().build();
+
+    scheduler.schedule(mediaFile.getId());
+
+    assertThat(requests.retryingRequests())
+        .singleElement()
+        .satisfies(request -> assertThat(request.mediaFileId()).isEqualTo(mediaFile.getId()));
+    assertThat(requests.requests()).isEmpty();
+  }
+
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   @DisplayName("Should skip enqueue when the current outcome matches the observed source")

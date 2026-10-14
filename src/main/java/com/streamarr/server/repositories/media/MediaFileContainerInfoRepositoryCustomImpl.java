@@ -5,21 +5,31 @@ import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE_CONTAINER_IN
 import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE_PROBE_TASK_REQUEST;
 import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE_STREAM_INFO;
 
+import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.domain.task.ProbeAttemptFailure;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbePublication;
+import com.streamarr.server.domain.task.ProbeState;
+import com.streamarr.server.jooq.generated.enums.ItemResultFailureReason;
 import com.streamarr.server.jooq.generated.tables.records.MediaFileStreamInfoRecord;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
+import org.jooq.Record;
 import org.jooq.Record1;
 import org.jooq.SelectConditionStep;
+import org.jooq.impl.DSL;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -56,11 +66,12 @@ public class MediaFileContainerInfoRepositoryCustomImpl
 
   @Override
   @Transactional
-  public boolean recordProbeRequest(UUID mediaFileId, ProbeInputs inputs) {
+  public boolean trySaveProbeRequest(UUID mediaFileId, ProbeInputs inputs) {
     if (!lockMediaFile(mediaFileId)) {
       return false;
     }
 
+    clearFailure(mediaFileId, requestedInputsMatch(inputs).not());
     dsl.insertInto(MEDIA_FILE_PROBE_TASK_REQUEST)
         .set(MEDIA_FILE_PROBE_TASK_REQUEST.MEDIA_FILE_ID, mediaFileId)
         .set(MEDIA_FILE_PROBE_TASK_REQUEST.SOURCE_SIZE, inputs.snapshot().size())
@@ -87,6 +98,62 @@ public class MediaFileContainerInfoRepositoryCustomImpl
   }
 
   @Override
+  @Transactional
+  public boolean trySaveProbeFailure(
+      UUID mediaFileId, ProbeInputs inputs, ProbeAttemptFailure failure) {
+    if (!lockMediaFile(mediaFileId)) {
+      return false;
+    }
+
+    return dsl.update(MEDIA_FILE_PROBE_TASK_REQUEST)
+            .set(
+                MEDIA_FILE_PROBE_TASK_REQUEST.FAILURE_REASON,
+                ItemResultFailureReason.lookupLiteral(failure.reason().name()))
+            .set(MEDIA_FILE_PROBE_TASK_REQUEST.FAILURE_DETAIL, failure.detail())
+            .set(
+                MEDIA_FILE_PROBE_TASK_REQUEST.FAILED_AT,
+                failure.failedAt().atOffset(ZoneOffset.UTC))
+            .where(MEDIA_FILE_PROBE_TASK_REQUEST.MEDIA_FILE_ID.eq(mediaFileId))
+            .and(requestedInputsMatch(inputs))
+            .execute()
+        > 0;
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<ProbeState> findProbeStates(Collection<UUID> mediaFileIds) {
+    return dsl.select(
+            MEDIA_FILE.ID,
+            MEDIA_FILE_PROBE_TASK_REQUEST.SOURCE_SIZE,
+            MEDIA_FILE_PROBE_TASK_REQUEST.SOURCE_MODIFIED_EPOCH_SECOND,
+            MEDIA_FILE_PROBE_TASK_REQUEST.SOURCE_MODIFIED_NANOS,
+            MEDIA_FILE_PROBE_TASK_REQUEST.PROBE_VERSION,
+            MEDIA_FILE_PROBE_TASK_REQUEST.FAILURE_REASON,
+            MEDIA_FILE_PROBE_TASK_REQUEST.FAILURE_DETAIL,
+            MEDIA_FILE_PROBE_TASK_REQUEST.FAILED_AT,
+            MEDIA_FILE_CONTAINER_INFO.SOURCE_SIZE,
+            MEDIA_FILE_CONTAINER_INFO.SOURCE_MODIFIED_EPOCH_SECOND,
+            MEDIA_FILE_CONTAINER_INFO.SOURCE_MODIFIED_NANOS,
+            MEDIA_FILE_CONTAINER_INFO.PROBE_VERSION,
+            MEDIA_FILE_CONTAINER_INFO.PROBE_ERROR)
+        .from(MEDIA_FILE)
+        .leftJoin(MEDIA_FILE_PROBE_TASK_REQUEST)
+        .on(MEDIA_FILE_PROBE_TASK_REQUEST.MEDIA_FILE_ID.eq(MEDIA_FILE.ID))
+        .leftJoin(MEDIA_FILE_CONTAINER_INFO)
+        .on(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(MEDIA_FILE.ID))
+        .where(MEDIA_FILE.ID.eq(DSL.any(mediaFileIds.toArray(UUID[]::new))))
+        .fetch(MediaFileContainerInfoRepositoryCustomImpl::toProbeState);
+  }
+
+  @Override
+  @Transactional(propagation = Propagation.MANDATORY)
+  public void withdrawProbeRequest(UUID mediaFileId) {
+    dsl.deleteFrom(MEDIA_FILE_PROBE_TASK_REQUEST)
+        .where(MEDIA_FILE_PROBE_TASK_REQUEST.MEDIA_FILE_ID.eq(mediaFileId))
+        .execute();
+  }
+
+  @Override
   @Transactional(propagation = Propagation.MANDATORY)
   public Optional<ProbeInputs> lockProbeInputs(UUID mediaFileId) {
     if (!lockMediaFile(mediaFileId)) {
@@ -104,12 +171,91 @@ public class MediaFileContainerInfoRepositoryCustomImpl
             MEDIA_FILE_PROBE_TASK_REQUEST.PROBE_VERSION)
         .from(MEDIA_FILE_PROBE_TASK_REQUEST)
         .where(MEDIA_FILE_PROBE_TASK_REQUEST.MEDIA_FILE_ID.eq(mediaFileId))
-        .fetchOptional(
-            row ->
-                new ProbeInputs(
-                    new SourceFileSnapshot(
-                        row.value1(), Instant.ofEpochSecond(row.value2(), row.value3())),
-                    row.value4()));
+        .fetchOptional()
+        .flatMap(MediaFileContainerInfoRepositoryCustomImpl::toRequestedInputs);
+  }
+
+  private void clearFailure(UUID mediaFileId, Condition condition) {
+    dsl.update(MEDIA_FILE_PROBE_TASK_REQUEST)
+        .setNull(MEDIA_FILE_PROBE_TASK_REQUEST.FAILURE_REASON)
+        .setNull(MEDIA_FILE_PROBE_TASK_REQUEST.FAILURE_DETAIL)
+        .setNull(MEDIA_FILE_PROBE_TASK_REQUEST.FAILED_AT)
+        .where(MEDIA_FILE_PROBE_TASK_REQUEST.MEDIA_FILE_ID.eq(mediaFileId))
+        .and(condition)
+        .execute();
+  }
+
+  private static Condition requestedInputsMatch(ProbeInputs inputs) {
+    return MEDIA_FILE_PROBE_TASK_REQUEST
+        .SOURCE_SIZE
+        .eq(inputs.snapshot().size())
+        .and(
+            MEDIA_FILE_PROBE_TASK_REQUEST.SOURCE_MODIFIED_EPOCH_SECOND.eq(
+                inputs.snapshot().modifiedAt().getEpochSecond()))
+        .and(
+            MEDIA_FILE_PROBE_TASK_REQUEST.SOURCE_MODIFIED_NANOS.eq(
+                inputs.snapshot().modifiedAt().getNano()))
+        .and(MEDIA_FILE_PROBE_TASK_REQUEST.PROBE_VERSION.eq(inputs.probeVersion()));
+  }
+
+  private static ProbeState toProbeState(Record row) {
+    return ProbeState.builder()
+        .mediaFileId(row.get(MEDIA_FILE.ID))
+        .requested(toRequestedInputs(row))
+        .stored(toStoredOutcome(row))
+        .failure(toAttemptFailure(row))
+        .build();
+  }
+
+  private static Optional<ProbeInputs> toRequestedInputs(Record row) {
+    var request = MEDIA_FILE_PROBE_TASK_REQUEST;
+    if (row.get(request.PROBE_VERSION) == null) {
+      return Optional.empty();
+    }
+
+    return Optional.of(
+        inputs(
+            row.get(request.SOURCE_SIZE),
+            Instant.ofEpochSecond(
+                row.get(request.SOURCE_MODIFIED_EPOCH_SECOND),
+                row.get(request.SOURCE_MODIFIED_NANOS)),
+            row.get(request.PROBE_VERSION)));
+  }
+
+  private static Optional<ProbeState.Stored> toStoredOutcome(Record row) {
+    var outcome = MEDIA_FILE_CONTAINER_INFO;
+    if (row.get(outcome.PROBE_VERSION) == null) {
+      return Optional.empty();
+    }
+
+    var inputs =
+        inputs(
+            row.get(outcome.SOURCE_SIZE),
+            Instant.ofEpochSecond(
+                row.get(outcome.SOURCE_MODIFIED_EPOCH_SECOND),
+                row.get(outcome.SOURCE_MODIFIED_NANOS)),
+            row.get(outcome.PROBE_VERSION));
+    return Optional.of(
+        new ProbeState.Stored(
+            inputs, Optional.ofNullable(row.get(outcome.PROBE_ERROR)).map(ProbeError::valueOf)));
+  }
+
+  private static Optional<ProbeAttemptFailure> toAttemptFailure(Record row) {
+    var request = MEDIA_FILE_PROBE_TASK_REQUEST;
+    if (row.get(request.FAILURE_REASON) == null) {
+      return Optional.empty();
+    }
+
+    return Optional.of(
+        ProbeAttemptFailure.builder()
+            .reason(ItemFailureReason.valueOf(row.get(request.FAILURE_REASON).getLiteral()))
+            .detail(row.get(request.FAILURE_DETAIL))
+            .failedAt(row.get(request.FAILED_AT).toInstant())
+            .build());
+  }
+
+  private static ProbeInputs inputs(long size, Instant modifiedAt, int probeVersion) {
+    return new ProbeInputs(new SourceFileSnapshot(size, modifiedAt), probeVersion);
   }
 
   private void invalidateOutcomeUnlessSnapshotMatches(
@@ -149,6 +295,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
 
   private void replaceOutcome(ProbePublication publication) {
     var mediaFileId = publication.mediaFileId();
+    clearFailure(mediaFileId, DSL.noCondition());
     dsl.deleteFrom(MEDIA_FILE_CONTAINER_INFO)
         .where(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(mediaFileId))
         .execute();
