@@ -21,6 +21,7 @@ import com.streamarr.server.services.ArtworkService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeasonWithEpisodesRequest;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
@@ -32,7 +33,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -96,7 +96,7 @@ public class LibraryRefreshService {
     var seriesList = seriesRepository.findWithExternalIdsByLibrary_Id(library.getId());
     var tasks = new ArrayList<Future<?>>();
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = SystemWork.newExecutorRunningAsSystemActor("library-refresh-series-")) {
       for (var series : seriesList) {
         var tmdbId = findTmdbId(series);
         if (tmdbId.isEmpty()) {
@@ -210,7 +210,7 @@ public class LibraryRefreshService {
     var movies = movieRepository.findWithExternalIdsByLibrary_Id(library.getId());
     var tasks = new ArrayList<Future<?>>();
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = SystemWork.newExecutorRunningAsSystemActor("library-refresh-movie-")) {
       for (var movie : movies) {
         var tmdbId = findTmdbId(movie);
         if (tmdbId.isEmpty()) {

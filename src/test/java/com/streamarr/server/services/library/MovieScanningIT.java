@@ -105,6 +105,50 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should name the System actor when file discovery creates a movie")
+  void shouldNameSystemActorWhenFileDiscoveryCreatesMovie() throws IOException {
+    var library = createMovieLibrary();
+    var file = createMovieFile("Inception (2010)", "Inception (2010).mkv");
+    stubTmdbMovieSearch("Inception", "27205", "Inception", "2010-07-16");
+    stubTmdbMovieMetadata("27205", "Inception");
+
+    libraryManagementService.processDiscoveredFile(library.getId(), file);
+
+    assertThat(movieRepository.findAll())
+        .singleElement()
+        .extracting(Movie::getCreatedBy, Movie::getLastModifiedBy)
+        .containsOnly(SystemActor.ID);
+    assertThat(mediaFileRepository.findByLibraryId(library.getId()))
+        .singleElement()
+        .extracting(MediaFile::getCreatedBy)
+        .isEqualTo(SystemActor.ID);
+  }
+
+  @Test
+  @DisplayName(
+      "Should name the System actor as modifier and keep an empty creator when a refresh updates"
+          + " a movie")
+  void shouldNameSystemActorAsModifierAndKeepEmptyCreatorWhenRefreshUpdatesMovie()
+      throws IOException {
+    var library = createMovieLibrary();
+    var file = createMovieFile("Inception (2010)", "Inception (2010).mkv");
+    stubTmdbMovieSearch("Inception", "27205", "Inception", "2010-07-16");
+    stubTmdbMovieMetadata("27205", "Inception");
+    libraryManagementService.processDiscoveredFile(library.getId(), file);
+    clearMovieAuditors();
+    stubTmdbMovieMetadata("27205", "Inception Remastered");
+
+    libraryManagementService.refreshLibrary(library.getId());
+
+    var movie = movieRepository.findAll().getFirst();
+    assertThat(movie.getTitle()).isEqualTo("Inception Remastered");
+    assertThat(movie.getCreatedBy()).isNull();
+    assertThat(movie.getLastModifiedBy()).isEqualTo(SystemActor.ID);
+    assertThat(libraryRepository.findById(library.getId()).orElseThrow().getLastModifiedBy())
+        .isEqualTo(SystemActor.ID);
+  }
+
+  @Test
   @DisplayName("Should fall back to folder name when filename lacks year")
   void shouldFallBackToFolderNameWhenFilenameLacksYear() throws IOException {
     var library = createMovieLibrary();
@@ -187,6 +231,13 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   // Genres are shared across test classes, so each test inserts a genre no other test uses.
   private static int uniqueGenreId() {
     return ThreadLocalRandom.current().nextInt(1_000_000, Integer.MAX_VALUE);
+  }
+
+  // Rows written before the System actor existed have empty audit columns.
+  private void clearMovieAuditors() {
+    jdbcTemplate.update(
+        "UPDATE base_collectable SET created_by = NULL, last_modified_by = NULL"
+            + " WHERE id IN (SELECT id FROM movie)");
   }
 
   private UUID genreCreator(int genreId) {
