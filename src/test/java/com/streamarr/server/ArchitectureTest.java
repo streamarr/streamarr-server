@@ -41,13 +41,6 @@ import com.streamarr.server.services.architecturefixture.DirectGenreServiceFixtu
 import com.streamarr.server.services.architecturefixture.IncomingHttpServiceFixture;
 import com.streamarr.server.services.architecturefixture.IncomingWebRequestServiceFixture;
 import com.streamarr.server.services.architecturefixture.SubdomainServiceCycleFixture;
-import com.streamarr.server.services.architecturefixture.SystemWorkThreadFixtures.DefaultAsyncExecutor;
-import com.streamarr.server.services.architecturefixture.SystemWorkThreadFixtures.OrdinaryExecutorReference;
-import com.streamarr.server.services.architecturefixture.SystemWorkThreadFixtures.OrdinaryFixedPool;
-import com.streamarr.server.services.architecturefixture.SystemWorkThreadFixtures.OrdinaryThreadBuilder;
-import com.streamarr.server.services.architecturefixture.SystemWorkThreadFixtures.OrdinaryThreadConstructor;
-import com.streamarr.server.services.architecturefixture.SystemWorkThreadFixtures.OrdinaryVirtualThreadStart;
-import com.streamarr.server.services.architecturefixture.SystemWorkThreadFixtures.SystemWorkThreads;
 import com.streamarr.server.services.auth.AccountPasswordVerifier;
 import com.streamarr.server.services.auth.LoginService;
 import com.streamarr.server.services.auth.PasswordTimingEqualizer;
@@ -58,6 +51,13 @@ import com.streamarr.server.services.authorization.DirectAuthorizationDeciderFix
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.library.MovieFileProcessor;
 import com.streamarr.server.services.library.SeriesFileProcessor;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.DefaultAsyncExecutor;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryExecutorReference;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryFixedPool;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryThreadBuilder;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryThreadConstructor;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryVirtualThreadStart;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.SystemWorkThreads;
 import com.streamarr.server.services.streaming.remote.architecturefixture.AllowedWorkerProtocolFixture;
 import com.streamarr.transcode.engine.architecturefixture.EngineImplementationFixture;
 import com.streamarr.transcode.probe.architecturefixture.ProbeImplementationFixture;

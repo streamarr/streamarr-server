@@ -1,4 +1,4 @@
-package com.streamarr.server.services.architecturefixture;
+package com.streamarr.server.services.library.architecturefixture;
 
 import com.streamarr.server.services.audit.SystemWork;
 import java.util.concurrent.CompletableFuture;
