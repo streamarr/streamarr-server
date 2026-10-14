@@ -1,6 +1,5 @@
 package com.streamarr.server.fakes;
 
-import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
@@ -61,8 +60,8 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     }
 
     var accepting = acceptingTarget(request);
-    if (request.pinnedEncoderBackend().isPresent() && accepting.isEmpty()) {
-      throw new TranscodeException("No connected transcode worker runs the pinned encoder backend");
+    if (request.pinnedEncoder().isPresent() && accepting.isEmpty()) {
+      throw new TranscodeException("No connected transcode worker runs the pinned encoder");
     }
 
     var handle = doStart(request);
@@ -76,7 +75,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private Optional<ExecutionTargetId> acceptingTarget(TranscodeRequest request) {
     var candidates =
         request
-            .pinnedEncoderBackend()
+            .pinnedEncoder()
             .map(this::executionTargets)
             .orElseGet(() -> executionTargets(request.transcodeDecision()));
     return candidates.stream()
@@ -246,15 +245,15 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
-  public Set<ExecutionTargetId> executionTargets(EncoderBackend pinnedEncoderBackend) {
+  public Set<ExecutionTargetId> executionTargets(WorkerVerifiedEncoder pinnedEncoder) {
     return executionTargets.stream()
-        .filter(target -> advertises(target, pinnedEncoderBackend))
+        .filter(target -> advertises(target, pinnedEncoder))
         .collect(Collectors.toCollection(LinkedHashSet::new));
   }
 
-  private boolean advertises(ExecutionTargetId target, EncoderBackend backend) {
-    var encoder = encodersByTarget.getOrDefault(target, Map.of()).get(backend.codecFamily());
-    return encoder != null && encoder.backend().equals(backend);
+  private boolean advertises(ExecutionTargetId target, WorkerVerifiedEncoder pinnedEncoder) {
+    return pinnedEncoder.equals(
+        encodersByTarget.getOrDefault(target, Map.of()).get(pinnedEncoder.backend().codecFamily()));
   }
 
   /**

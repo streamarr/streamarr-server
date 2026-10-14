@@ -91,7 +91,7 @@ public class StreamSession {
    * and whether it is keyframe-verified. Every later job attempt of the variant must run on that
    * encoder, so a later pin never replaces the first.
    */
-  public void pinEncoder(String variantLabel, WorkerVerifiedEncoder encoder) {
+  public void pinEncoder(@NonNull String variantLabel, @NonNull WorkerVerifiedEncoder encoder) {
     pinnedEncoders.putIfAbsent(variantLabel, encoder);
   }
 

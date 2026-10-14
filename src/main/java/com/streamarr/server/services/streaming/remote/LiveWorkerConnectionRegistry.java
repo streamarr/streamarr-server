@@ -147,8 +147,8 @@ final class LiveWorkerConnectionRegistry {
   }
 
   // Every later job attempt of a pinned variant runs only where its encoder backend runs.
-  Optional<VariantDispatch> dispatch(VariantJob job, EncoderBackend pinnedEncoderBackend) {
-    return dispatchToFirst(job, connection -> connection.advertises(pinnedEncoderBackend));
+  Optional<VariantDispatch> dispatch(VariantJob job, WorkerVerifiedEncoder pinnedEncoder) {
+    return dispatchToFirst(job, connection -> connection.advertises(pinnedEncoder));
   }
 
   private Optional<VariantDispatch> dispatchToFirst(
@@ -237,9 +237,8 @@ final class LiveWorkerConnectionRegistry {
   }
 
   Set<ExecutionTargetId> eligibleWorkers(
-      UUID sourceNamespaceId, EncoderBackend pinnedEncoderBackend) {
-    return eligibleWorkers(
-        sourceNamespaceId, connection -> connection.advertises(pinnedEncoderBackend));
+      UUID sourceNamespaceId, WorkerVerifiedEncoder pinnedEncoder) {
+    return eligibleWorkers(sourceNamespaceId, connection -> connection.advertises(pinnedEncoder));
   }
 
   private Set<ExecutionTargetId> eligibleWorkers(
@@ -618,9 +617,10 @@ final class LiveWorkerConnectionRegistry {
       return Optional.ofNullable(countedEncoders.get(job.getDecision().getVideoCodecFamily()));
     }
 
-    private boolean advertises(EncoderBackend backend) {
-      var encoder = countedEncoders.get(backend.codecFamily());
-      return encoder != null && encoder.backend().equals(backend);
+    // The keyframe-verified flag must match too: a playlist that carries
+    // EXT-X-INDEPENDENT-SEGMENTS for the pin needs closed GOPs from every attempt.
+    private boolean advertises(WorkerVerifiedEncoder pinnedEncoder) {
+      return pinnedEncoder.equals(countedEncoders.get(pinnedEncoder.backend().codecFamily()));
     }
 
     private boolean canAccessSourceNamespace(Uuid sourceNamespaceId) {

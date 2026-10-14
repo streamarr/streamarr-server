@@ -8,6 +8,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static com.streamarr.server.fixtures.StreamSessionFixture.sessionWithDurationBuilder;
 import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.h264Nvenc;
 import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libx264;
+import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libx264NotKeyframeVerified;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -51,6 +52,8 @@ class ProducerLifecycleServiceTest {
 
   private static final ExecutionTargetId LIBX264_WORKER = new ExecutionTargetId("libx264-worker");
   private static final ExecutionTargetId NVENC_WORKER = new ExecutionTargetId("nvenc-worker");
+  private static final ExecutionTargetId UNVERIFIED_LIBX264_WORKER =
+      new ExecutionTargetId("unverified-libx264-worker");
 
   private FakeTranscodeExecutor transcodeExecutor;
   private FakeSegmentStore segmentStore;
@@ -763,6 +766,39 @@ class ProducerLifecycleServiceTest {
 
   @Test
   @DisplayName(
+      "Should run a replacement attempt only on a keyframe-verified worker when the pinned encoder is keyframe-verified")
+  void
+      shouldRunReplacementAttemptOnlyOnKeyframeVerifiedWorkerWhenPinnedEncoderIsKeyframeVerified() {
+    var session = sessionPinnedToLibx264(defaultSessionBuilder());
+    transcodeExecutor.setTargetEncoders(
+        UNVERIFIED_LIBX264_WORKER, List.of(libx264NotKeyframeVerified()));
+    transcodeExecutor.setExecutionTargets(List.of(UNVERIFIED_LIBX264_WORKER, LIBX264_WORKER));
+    transcodeExecutor.markDead(session.getSessionId());
+
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
+
+    assertThat(transcodeExecutor.getStartedTargets()).containsExactly(LIBX264_WORKER);
+    assertThat(session.getHandle().orElseThrow().encoder()).contains(libx264());
+    assertThat(session.getPinnedEncoder(StreamSession.defaultVariant())).contains(libx264());
+  }
+
+  @Test
+  @DisplayName(
+      "Should exhaust recovery when only a worker without keyframe verification has the pinned encoder backend")
+  void shouldExhaustRecoveryWhenOnlyWorkerWithoutKeyframeVerificationHasPinnedEncoderBackend() {
+    var session = sessionPinnedToLibx264(defaultSessionBuilder());
+    transcodeExecutor.setTargetEncoders(
+        UNVERIFIED_LIBX264_WORKER, List.of(libx264NotKeyframeVerified()));
+    transcodeExecutor.setExecutionTargets(List.of(UNVERIFIED_LIBX264_WORKER));
+    transcodeExecutor.markDead(session.getSessionId());
+
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.EXHAUSTED);
+
+    assertThat(transcodeExecutor.getStartedTargets()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
       "Should exhaust recovery without starting an attempt when no worker has the pinned encoder backend")
   void shouldExhaustRecoveryWithoutStartingAttemptWhenNoWorkerHasPinnedEncoderBackend() {
     var session = sessionPinnedToLibx264(defaultSessionBuilder());
@@ -801,8 +837,8 @@ class ProducerLifecycleServiceTest {
 
     assertThat(startedSince(startedBefore))
         .singleElement()
-        .extracting(TranscodeRequest::pinnedEncoderBackend)
-        .isEqualTo(Optional.of(libx264().backend()));
+        .extracting(TranscodeRequest::pinnedEncoder)
+        .isEqualTo(Optional.of(libx264()));
     assertThat(session.getHandle().orElseThrow().encoder()).contains(libx264());
   }
 

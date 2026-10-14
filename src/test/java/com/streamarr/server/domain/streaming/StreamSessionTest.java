@@ -6,6 +6,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.h264Nvenc;
 import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libx264;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.UUID;
@@ -86,6 +87,27 @@ class StreamSessionTest {
 
     assertThat(session.getHandle()).isEmpty();
     assertThat(session.getVariantHandle("nope")).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should reject a pin when its variant label is missing")
+  void shouldRejectPinWhenItsVariantLabelIsMissing() {
+    var session = buildActiveSession();
+    var encoder = libx264();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> session.pinEncoder(null, encoder))
+        .withMessageContaining("variantLabel");
+  }
+
+  @Test
+  @DisplayName("Should reject a pin when its encoder is missing")
+  void shouldRejectPinWhenItsEncoderIsMissing() {
+    var session = buildActiveSession();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> session.pinEncoder("720p", null))
+        .withMessageContaining("encoder");
   }
 
   @Test

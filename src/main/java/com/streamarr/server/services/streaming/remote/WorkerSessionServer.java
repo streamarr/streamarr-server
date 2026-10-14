@@ -1,6 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
-import com.streamarr.server.domain.streaming.EncoderBackend;
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.transcode.v1.ProbeRequest;
@@ -89,11 +89,11 @@ public final class WorkerSessionServer implements AutoCloseable {
     return workerConnections.dispatch(job);
   }
 
-  /** Dispatches only to a worker that advertises the pinned encoder backend. */
+  /** Dispatches only to a worker that advertises the pinned worker-verified encoder. */
   public synchronized Optional<VariantDispatch> dispatch(
-      VariantJob job, EncoderBackend pinnedEncoderBackend) {
+      VariantJob job, @NonNull WorkerVerifiedEncoder pinnedEncoder) {
     requireStarted();
-    return workerConnections.dispatch(job, pinnedEncoderBackend);
+    return workerConnections.dispatch(job, pinnedEncoder);
   }
 
   /**
@@ -124,9 +124,9 @@ public final class WorkerSessionServer implements AutoCloseable {
   }
 
   public synchronized Set<ExecutionTargetId> eligibleWorkers(
-      UUID sourceNamespaceId, EncoderBackend pinnedEncoderBackend) {
+      UUID sourceNamespaceId, @NonNull WorkerVerifiedEncoder pinnedEncoder) {
     requireStarted();
-    return workerConnections.eligibleWorkers(sourceNamespaceId, pinnedEncoderBackend);
+    return workerConnections.eligibleWorkers(sourceNamespaceId, pinnedEncoder);
   }
 
   public synchronized boolean stopVariant(UUID streamSessionId, String variantLabel) {

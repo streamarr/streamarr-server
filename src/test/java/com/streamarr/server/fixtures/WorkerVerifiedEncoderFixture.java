@@ -12,6 +12,11 @@ public final class WorkerVerifiedEncoderFixture {
     return encoder("h264", "libx264", EncoderBackend.Kind.SOFTWARE).keyframeVerified(true).build();
   }
 
+  /** libx264 from a worker that does not list it as keyframe-verified, such as an older image. */
+  public static WorkerVerifiedEncoder libx264NotKeyframeVerified() {
+    return encoder("h264", "libx264", EncoderBackend.Kind.SOFTWARE).build();
+  }
+
   public static WorkerVerifiedEncoder h264Nvenc() {
     return encoder("h264", "h264_nvenc", EncoderBackend.Kind.HARDWARE).build();
   }

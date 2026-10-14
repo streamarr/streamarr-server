@@ -604,7 +604,7 @@ class LiveWorkerConnectionRegistryTest {
         registration(
             WORKER_ID, hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc")),
         collecting(nvencResponses));
-    var pinned = WorkerVerifiedEncoderFixture.libx264().backend();
+    var pinned = WorkerVerifiedEncoderFixture.libx264();
     var job = encodeJob("h264");
 
     assertThat(registry.dispatch(job, pinned)).isEmpty();
@@ -618,6 +618,52 @@ class LiveWorkerConnectionRegistryTest {
         .map(VariantDispatch::encoder)
         .contains(Optional.of(WorkerVerifiedEncoderFixture.libx264()));
     assertThat(nvencResponses).noneMatch(EstablishWorkerSessionResponse::hasStartVariant);
+  }
+
+  @Test
+  @DisplayName(
+      "Should send a keyframe-verified pin only to a worker that advertises the encoder as keyframe-verified")
+  void shouldSendKeyframeVerifiedPinOnlyToWorkerThatAdvertisesEncoderAsKeyframeVerified() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var unverifiedResponses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    var verifiedWorkerId = UUID.randomUUID();
+    registry.register(
+        WORKER_ID,
+        registration(
+            WORKER_ID, softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264")),
+        collecting(unverifiedResponses));
+    var pinned = WorkerVerifiedEncoderFixture.libx264();
+    var job = encodeJob("h264");
+
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, pinned)).isEmpty();
+    assertThat(registry.dispatch(job, pinned)).isEmpty();
+
+    var verifiedWorkerSessionId =
+        registry.register(
+            verifiedWorkerId,
+            registration(verifiedWorkerId, libx264Encoder()),
+            new CancellableObserver());
+
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, pinned))
+        .containsExactly(new ExecutionTargetId(verifiedWorkerSessionId.toString()));
+    assertThat(registry.dispatch(job, pinned))
+        .map(VariantDispatch::encoder)
+        .contains(Optional.of(WorkerVerifiedEncoderFixture.libx264()));
+    assertThat(unverifiedResponses).noneMatch(EstablishWorkerSessionResponse::hasStartVariant);
+  }
+
+  @Test
+  @DisplayName(
+      "Should send a pin without keyframe verification only to a worker that advertises the same flag")
+  void shouldSendPinWithoutKeyframeVerificationOnlyToWorkerThatAdvertisesTheSameFlag() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    registry.register(
+        WORKER_ID, registration(WORKER_ID, libx264Encoder()), new CancellableObserver());
+
+    var pinned = WorkerVerifiedEncoderFixture.libx264NotKeyframeVerified();
+
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, pinned)).isEmpty();
+    assertThat(registry.dispatch(encodeJob("h264"), pinned)).isEmpty();
   }
 
   @Test
@@ -638,13 +684,10 @@ class LiveWorkerConnectionRegistryTest {
             new CancellableObserver());
 
     var targets =
-        registry.eligibleWorkers(
-            SOURCE_NAMESPACE_ID, WorkerVerifiedEncoderFixture.libx264().backend());
+        registry.eligibleWorkers(SOURCE_NAMESPACE_ID, WorkerVerifiedEncoderFixture.libx264());
 
     assertThat(targets).containsExactly(new ExecutionTargetId(libx264WorkerSessionId.toString()));
-    assertThat(
-            registry.eligibleWorkers(
-                UUID.randomUUID(), WorkerVerifiedEncoderFixture.libx264().backend()))
+    assertThat(registry.eligibleWorkers(UUID.randomUUID(), WorkerVerifiedEncoderFixture.libx264()))
         .isEmpty();
   }
 

@@ -1,16 +1,17 @@
 package com.streamarr.server.services.streaming.remote;
 
-import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import java.nio.file.Path;
 import java.util.Set;
 import java.util.UUID;
+import lombok.NonNull;
 
 public final class RemoteTranscodeExecutor implements TranscodeExecutor {
 
@@ -30,7 +31,7 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
     var job = jobMapper.map(request);
     var dispatched =
         request
-            .pinnedEncoderBackend()
+            .pinnedEncoder()
             .map(pinned -> workerServer.dispatch(job, pinned))
             .orElseGet(() -> workerServer.dispatch(job));
     return dispatched
@@ -95,8 +96,8 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
-  public Set<ExecutionTargetId> executionTargets(EncoderBackend pinnedEncoderBackend) {
-    return workerServer.eligibleWorkers(sourceNamespaceId, pinnedEncoderBackend);
+  public Set<ExecutionTargetId> executionTargets(@NonNull WorkerVerifiedEncoder pinnedEncoder) {
+    return workerServer.eligibleWorkers(sourceNamespaceId, pinnedEncoder);
   }
 
   @Override

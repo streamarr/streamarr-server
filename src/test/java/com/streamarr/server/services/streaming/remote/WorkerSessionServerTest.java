@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
 import com.streamarr.transcode.v1.ProbeRequest;
@@ -94,13 +95,35 @@ class WorkerSessionServerTest {
     var server = unstartedServer();
     var sourceNamespaceId = UUID.randomUUID();
     var job = VariantJob.getDefaultInstance();
-    var pinnedEncoderBackend = WorkerVerifiedEncoderFixture.libx264().backend();
+    var pinnedEncoder = WorkerVerifiedEncoderFixture.libx264();
 
     assertNotStarted(() -> server.eligibleWorkers(sourceNamespaceId, streamCopyDecision()));
-    assertNotStarted(() -> server.eligibleWorkers(sourceNamespaceId, pinnedEncoderBackend));
-    assertNotStarted(() -> server.dispatch(job, pinnedEncoderBackend));
+    assertNotStarted(() -> server.eligibleWorkers(sourceNamespaceId, pinnedEncoder));
+    assertNotStarted(() -> server.dispatch(job, pinnedEncoder));
     assertNotStarted(() -> server.hasConnectedWorker(sourceNamespaceId));
     assertNotStarted(() -> server.stopVariant(UUID.randomUUID(), "720p"));
+  }
+
+  @Test
+  @DisplayName("Should reject a pinned dispatch when its pinned encoder is missing")
+  void shouldRejectPinnedDispatchWhenItsPinnedEncoderIsMissing() {
+    var server = unstartedServer();
+    var job = VariantJob.getDefaultInstance();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> server.dispatch(job, null))
+        .withMessageContaining("pinnedEncoder");
+  }
+
+  @Test
+  @DisplayName("Should reject a pinned eligible-worker lookup when its pinned encoder is missing")
+  void shouldRejectPinnedEligibleWorkerLookupWhenItsPinnedEncoderIsMissing() {
+    var server = unstartedServer();
+    var sourceNamespaceId = UUID.randomUUID();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> server.eligibleWorkers(sourceNamespaceId, (WorkerVerifiedEncoder) null))
+        .withMessageContaining("pinnedEncoder");
   }
 
   @Test

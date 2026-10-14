@@ -8,7 +8,6 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
-import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import java.time.Clock;
@@ -185,7 +184,7 @@ public class ProducerLifecycleService {
   private Set<ExecutionTargetId> eligibleTargets(StreamSession session, String variantLabel) {
     return session
         .getPinnedEncoder(variantLabel)
-        .map(pin -> transcodeExecutor.executionTargets(pin.backend()))
+        .map(transcodeExecutor::executionTargets)
         .orElseGet(() -> transcodeExecutor.executionTargets(session.getTranscodeDecision()));
   }
 
@@ -616,8 +615,7 @@ public class ProducerLifecycleService {
     return TranscodeRequest.builder()
         .sessionId(session.getSessionId())
         .variantLabel(variantLabel)
-        .pinnedEncoderBackend(
-            session.getPinnedEncoder(variantLabel).map(WorkerVerifiedEncoder::backend))
+        .pinnedEncoder(session.getPinnedEncoder(variantLabel))
         .sourcePath(session.getSourcePath())
         .seekPosition(timeline.mediaSegmentStartSeconds(startSequenceNumber))
         .keyframeSeekPosition(timeline.keyframeSeekPosition(startSequenceNumber))
