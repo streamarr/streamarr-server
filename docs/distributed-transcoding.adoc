@@ -130,6 +130,7 @@ The worker ID comes from the Pod UID. Scaling the Deployment produces distinct i
 
 Port `9090` requires mesh mutual TLS and the `streamarr-transcode-worker` ServiceAccount.
 Port `8080` retains its existing mesh and application access controls.
+An ingress in front of port `8080` must pass WebSocket upgrades on `/graphql`. See link:graphql-subscriptions.adoc#_reverse_proxies[GraphQL Subscriptions].
 If the namespace already has an allow policy, it must also permit the authorized worker's traffic to port `9090`.
 Do not add exclusions for the worker port to the sidecar annotations.
 
