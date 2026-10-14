@@ -33,19 +33,24 @@ public class CompanyService {
       return Set.of();
     }
 
+    companies.forEach(CompanyService::requireSourceId);
+
     return companies.stream()
+        .sorted(CreditInsertOrder.bySourceId(Company::getSourceId))
         .map(c -> findOrCreateCompany(c, imageSourcesBySourceId, imageRefreshMode))
         .collect(Collectors.toSet());
+  }
+
+  private static void requireSourceId(Company company) {
+    if (company.getSourceId() == null) {
+      throw new IllegalArgumentException("Company sourceId must not be null");
+    }
   }
 
   private Company findOrCreateCompany(
       Company company,
       Map<String, List<ImageSource>> imageSourcesBySourceId,
       ImageRefreshMode imageRefreshMode) {
-    if (company.getSourceId() == null) {
-      throw new IllegalArgumentException("Company sourceId must not be null");
-    }
-
     var imageSources = imageSourcesBySourceId.getOrDefault(company.getSourceId(), List.of());
 
     companyRepository.insertIfAbsent(company.getSourceId(), company.getName());

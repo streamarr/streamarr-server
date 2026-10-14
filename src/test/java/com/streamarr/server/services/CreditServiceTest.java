@@ -1,6 +1,7 @@
 package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.domain.media.ImageEntityType;
@@ -10,12 +11,14 @@ import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeCompanyRepository;
+import com.streamarr.server.fakes.FakeGenreRepository;
 import com.streamarr.server.fakes.FakePersonRepository;
 import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -29,6 +32,7 @@ import org.junit.jupiter.api.Test;
 class CreditServiceTest {
 
   private FakePersonRepository personRepository;
+  private FakeGenreRepository genreRepository;
   private FakeCompanyRepository companyRepository;
   private CapturingEventPublisher eventPublisher;
   private CreditService creditService;
@@ -36,11 +40,13 @@ class CreditServiceTest {
   @BeforeEach
   void setUp() {
     personRepository = new FakePersonRepository();
+    genreRepository = new FakeGenreRepository();
     companyRepository = new FakeCompanyRepository();
     eventPublisher = new CapturingEventPublisher();
     creditService =
         CreditServiceFixture.creditServiceBuilder()
             .personRepository(personRepository)
+            .genreRepository(genreRepository)
             .companyRepository(companyRepository)
             .eventPublisher(eventPublisher)
             .build();
@@ -132,6 +138,34 @@ class CreditServiceTest {
     assertThat(saved.genres()).isEmpty();
     assertThat(saved.studios()).isEmpty();
     assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should reject genres before saving any when one genre has no source id")
+  void shouldRejectGenresBeforeSavingAnyWhenOneGenreHasNoSourceId() {
+    var genres = new LinkedHashSet<Genre>();
+    genres.add(genre("18", "Drama"));
+    genres.add(genre(null, "Unidentified Genre"));
+    var request = requestFor(MediaTitleCredits.builder().genres(genres).build()).build();
+
+    assertThatThrownBy(() -> creditService.getOrCreateCredits(request))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Genre sourceId must not be null");
+    assertThat(genreRepository.count()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should reject studios before saving any when one studio has no source id")
+  void shouldRejectStudiosBeforeSavingAnyWhenOneStudioHasNoSourceId() {
+    var studios = new LinkedHashSet<Company>();
+    studios.add(company("174", "Identified Studio"));
+    studios.add(company(null, "Unidentified Studio"));
+    var request = requestFor(MediaTitleCredits.builder().studios(studios).build()).build();
+
+    assertThatThrownBy(() -> creditService.getOrCreateCredits(request))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Company sourceId must not be null");
+    assertThat(companyRepository.count()).isZero();
   }
 
   private static MediaTitleCreditsRequest.MediaTitleCreditsRequestBuilder requestFor(

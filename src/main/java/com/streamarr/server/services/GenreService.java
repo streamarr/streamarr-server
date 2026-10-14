@@ -20,14 +20,21 @@ public class GenreService {
       return Set.of();
     }
 
-    return genres.stream().map(this::findOrCreateGenre).collect(Collectors.toSet());
+    genres.forEach(GenreService::requireSourceId);
+
+    return genres.stream()
+        .sorted(CreditInsertOrder.bySourceId(Genre::getSourceId))
+        .map(this::findOrCreateGenre)
+        .collect(Collectors.toSet());
   }
 
-  private Genre findOrCreateGenre(Genre genre) {
+  private static void requireSourceId(Genre genre) {
     if (genre.getSourceId() == null) {
       throw new IllegalArgumentException("Genre sourceId must not be null");
     }
+  }
 
+  private Genre findOrCreateGenre(Genre genre) {
     genreRepository.insertIfAbsent(genre.getSourceId(), genre.getName());
     var saved =
         genreRepository
