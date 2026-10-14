@@ -3,4 +3,14 @@ type Subscription {
     A library's status or scan times changed. ServerAdmin only.
     """
     libraryStatusChanged: Library!
+
+    """
+    A library was added. ServerAdmin only.
+    """
+    libraryAdded: Library!
+
+    """
+    A library was removed. ServerAdmin only.
+    """
+    libraryRemoved: LibraryRemoval!
 }

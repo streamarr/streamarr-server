@@ -14,7 +14,9 @@ import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.GraphQlHttpTestClient;
 import com.streamarr.server.support.GraphQlTransportWsTestClient;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.io.IOException;
 import java.net.URI;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -40,6 +42,10 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
 
   private static final String STATUS_SUBSCRIPTION =
       "subscription { libraryStatusChanged { id name status scanStartedOn scanCompletedOn } }";
+  private static final String ADDED_SUBSCRIPTION =
+      "subscription { libraryAdded { id name status scanStartedOn scanCompletedOn } }";
+  private static final String REMOVED_SUBSCRIPTION =
+      "subscription { libraryRemoved { libraryId } }";
 
   @LocalServerPort private int port;
 
@@ -138,6 +144,77 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should deliver the added library and the removal's library id when another session adds and removes a library")
+  void shouldDeliverAddedLibraryAndRemovalIdWhenAnotherSessionAddsAndRemovesLibrary()
+      throws IOException {
+    var socket = connect(adminBearer());
+    subscribeToLibraryAdministration(socket);
+    var otherSession = adminBearer();
+
+    var libraryId = addLibrary(otherSession, "Added Library", directory("added"));
+
+    var added = socket.nextMessageFor("added").path("payload").path("data").path("libraryAdded");
+    assertThat(added.path("id").asString()).isEqualTo(libraryId.toString());
+    assertThat(added.path("name").asString()).isEqualTo("Added Library");
+    assertThat(added.path("status").asString()).isEqualTo("HEALTHY");
+    awaitStatus(socket, libraryId, "HEALTHY");
+
+    var removed = http.execute(otherSession, removeMutation(libraryId));
+
+    assertThat(removed.path("data").path("removeLibrary").asBoolean()).isTrue();
+    assertThat(removedLibraryId(socket)).isEqualTo(libraryId.toString());
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver only the sentinel changes when refused requests and a rolled-back addition come first")
+  void shouldDeliverOnlySentinelChangesWhenRefusedRequestsAndRolledBackAdditionComeFirst()
+      throws IOException {
+    var admin = adminBearer();
+    var registered = saveLibrary(directory("registered"));
+    var socket = connect(admin);
+    subscribeToLibraryAdministration(socket);
+    var member = authTestSupport.createIdentity();
+    identities.add(member);
+
+    var refusedAddition =
+        http.execute(
+            authTestSupport.profileBearer(member),
+            addLibraryMutation("Refused Library", directory("refused")));
+    var rolledBackAddition =
+        http.execute(admin, addLibraryMutation("Duplicate Library", directory("registered")));
+    markStatus(registered, LibraryStatus.SCANNING);
+    var refusedRemoval = http.execute(admin, removeMutation(registered.getId()));
+    markStatus(registered, LibraryStatus.HEALTHY);
+    var sentinelId = addLibrary(admin, "Sentinel Library", directory("sentinel"));
+    awaitStatus(socket, sentinelId, "HEALTHY");
+    http.execute(admin, removeMutation(registered.getId()));
+
+    assertThat(errorCode(refusedAddition)).isEqualTo("FORBIDDEN");
+    assertThat(
+            rolledBackAddition
+                .path("data")
+                .path("addLibrary")
+                .path("userErrors")
+                .path(0)
+                .path("__typename")
+                .asString())
+        .isEqualTo("LibraryPathAlreadyRegisteredError");
+    assertThat(errorCode(refusedRemoval)).isNotEmpty();
+    assertThat(
+            socket
+                .nextMessageFor("added")
+                .path("payload")
+                .path("data")
+                .path("libraryAdded")
+                .path("id")
+                .asString())
+        .isEqualTo(sentinelId.toString());
+    assertThat(removedLibraryId(socket)).isEqualTo(registered.getId().toString());
+  }
+
+  @Test
+  @DisplayName(
       "Should refuse the subscription with FORBIDDEN when the Account is not a ServerAdmin")
   void shouldRefuseSubscriptionWithForbiddenWhenAccountIsNotServerAdmin() {
     var identity = authTestSupport.createIdentity();
@@ -196,6 +273,70 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     return socket;
   }
 
+  private void subscribeToLibraryAdministration(GraphQlTransportWsTestClient socket) {
+    socket.subscribe("added", ADDED_SUBSCRIPTION);
+    socket.subscribe("removed", REMOVED_SUBSCRIPTION);
+    socket.subscribe("status", STATUS_SUBSCRIPTION);
+    awaitActiveSubscriptions("libraryAdded", 1);
+    awaitActiveSubscriptions("libraryRemoved", 1);
+    awaitActiveSubscriptions("libraryStatusChanged", 1);
+  }
+
+  private static String removedLibraryId(GraphQlTransportWsTestClient socket) {
+    return socket
+        .nextMessageFor("removed")
+        .path("payload")
+        .path("data")
+        .path("libraryRemoved")
+        .path("libraryId")
+        .asString();
+  }
+
+  private UUID addLibrary(String bearer, String name, Path directory) {
+    var response = http.execute(bearer, addLibraryMutation(name, directory));
+    var libraryId =
+        UUID.fromString(
+            response.path("data").path("addLibrary").path("library").path("id").asString());
+    libraryIds.add(libraryId);
+    return libraryId;
+  }
+
+  private Path directory(String name) throws IOException {
+    return Files.createDirectories(libraryDirectory.resolve(name));
+  }
+
+  private void markStatus(Library library, LibraryStatus status) {
+    library.setStatus(status);
+    libraryRepository.saveAndFlush(library);
+  }
+
+  private static void awaitStatus(
+      GraphQlTransportWsTestClient socket, UUID libraryId, String status) {
+    while (!status.equals(nextStatusChange(socket, libraryId).path("status").asString())) {
+      // Earlier transitions of the same library are skipped.
+    }
+  }
+
+  private static String errorCode(JsonNode response) {
+    return response.path("errors").path(0).path("extensions").path("code").asString();
+  }
+
+  private static String addLibraryMutation(String name, Path directory) {
+    return """
+        mutation {
+          addLibrary(input: {name: "%s", filepath: "%s", type: MOVIE, backend: LOCAL}) {
+            library { id name status }
+            userErrors { __typename }
+          }
+        }
+        """
+        .formatted(name, directory);
+  }
+
+  private static String removeMutation(UUID libraryId) {
+    return "mutation { removeLibrary(id: \"%s\") }".formatted(libraryId);
+  }
+
   private String adminBearer() {
     var identity = authTestSupport.createAdminIdentity();
     identities.add(identity);
@@ -240,23 +381,15 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     return gauge.value();
   }
 
+  /** The next status change of one library on the "status" operation, skipping other libraries. */
   private static JsonNode nextStatusChange(GraphQlTransportWsTestClient socket, UUID libraryId) {
-    return socket
-        .nextMessageMatching(
-            message ->
-                "next".equals(message.path("type").asString())
-                    && libraryId
-                        .toString()
-                        .equals(
-                            message
-                                .path("payload")
-                                .path("data")
-                                .path("libraryStatusChanged")
-                                .path("id")
-                                .asString()))
-        .path("payload")
-        .path("data")
-        .path("libraryStatusChanged");
+    while (true) {
+      var change =
+          socket.nextMessageFor("status").path("payload").path("data").path("libraryStatusChanged");
+      if (libraryId.toString().equals(change.path("id").asString())) {
+        return change;
+      }
+    }
   }
 
   private static String scanMutation(UUID libraryId) {

@@ -7,10 +7,14 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.graphql.dto.LibraryRemoval;
+import com.streamarr.server.services.events.library.LibraryAddedEvent;
+import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.events.library.LibraryStatusChangedEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.DisplayName;
@@ -57,6 +61,34 @@ class LibraryAdministrationEventListenerTest {
     listener.onLibraryStatusChanged(new LibraryStatusChangedEvent(UUID.randomUUID()));
 
     assertThat(delivered).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should broadcast the current library when a library is added")
+  void shouldBroadcastCurrentLibraryWhenLibraryIsAdded() {
+    var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
+    var delivered = collect(broadcasters.additions());
+
+    listener.onLibraryAdded(new LibraryAddedEvent(library.getId(), library.getFilepathUri()));
+
+    assertThat(delivered)
+        .singleElement()
+        .satisfies(
+            payload -> {
+              assertThat(payload.getId()).isEqualTo(library.getId());
+              assertThat(payload.getName()).isEqualTo(library.getName());
+            });
+  }
+
+  @Test
+  @DisplayName("Should broadcast a removal receipt with the library id when a library is removed")
+  void shouldBroadcastRemovalReceiptWithLibraryIdWhenLibraryIsRemoved() {
+    var libraryId = UUID.randomUUID();
+    var delivered = collect(broadcasters.removals());
+
+    listener.onLibraryRemoved(new LibraryRemovedEvent(libraryId, "file:///removed", Set.of()));
+
+    assertThat(delivered).containsExactly(new LibraryRemoval(libraryId));
   }
 
   @Test

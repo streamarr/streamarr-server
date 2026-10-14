@@ -13,12 +13,12 @@ import java.util.Optional;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.function.Predicate;
 import lombok.Builder;
 import lombok.NonNull;
 import tools.jackson.databind.JsonNode;
@@ -27,7 +27,7 @@ import tools.jackson.databind.ObjectMapper;
 /**
  * A raw {@code graphql-transport-ws} client on the JDK WebSocket, so tests observe every frame the
  * server sends: {@code next}, {@code error}, {@code complete} and the close frame. It answers
- * server pings itself and keeps every other message in arrival order.
+ * server pings itself and queues every other message by operation id, in arrival order.
  */
 public final class GraphQlTransportWsTestClient implements AutoCloseable {
 
@@ -105,30 +105,24 @@ public final class GraphQlTransportWsTestClient implements AutoCloseable {
     send(Map.of("type", "complete", "id", operationId));
   }
 
-  /** The next message the server sent, failing after a bound. */
+  /** The next connection-level message, such as {@code connection_ack}, failing after a bound. */
   public JsonNode nextMessage() {
+    return poll(listener.connectionMessages);
+  }
+
+  /** The next message for one operation, in arrival order, failing after a bound. */
+  public JsonNode nextMessageFor(String operationId) {
+    return poll(listener.operationMessages(operationId));
+  }
+
+  private static JsonNode poll(BlockingQueue<JsonNode> queue) {
     try {
-      var message = listener.messages.poll(MESSAGE_BOUND.toMillis(), TimeUnit.MILLISECONDS);
+      var message = queue.poll(MESSAGE_BOUND.toMillis(), TimeUnit.MILLISECONDS);
       assertThat(message).as("a message within %s", MESSAGE_BOUND).isNotNull();
       return message;
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new AssertionError("Interrupted while waiting for a message", e);
-    }
-  }
-
-  /** The next message for one operation, skipping other operations' messages. */
-  public JsonNode nextMessageFor(String operationId) {
-    return nextMessageMatching(message -> operationId.equals(message.path("id").asString()));
-  }
-
-  /** The next message that satisfies the predicate, skipping the others. */
-  public JsonNode nextMessageMatching(Predicate<JsonNode> predicate) {
-    while (true) {
-      var message = nextMessage();
-      if (predicate.test(message)) {
-        return message;
-      }
     }
   }
 
@@ -182,7 +176,9 @@ public final class GraphQlTransportWsTestClient implements AutoCloseable {
 
   private static final class Listener implements WebSocket.Listener {
 
-    private final BlockingQueue<JsonNode> messages = new LinkedBlockingQueue<>();
+    private final BlockingQueue<JsonNode> connectionMessages = new LinkedBlockingQueue<>();
+    private final Map<String, BlockingQueue<JsonNode>> operationMessages =
+        new ConcurrentHashMap<>();
     private final List<JsonNode> received = new CopyOnWriteArrayList<>();
     private final CompletableFuture<Closure> closure = new CompletableFuture<>();
     private final StringBuilder partialText = new StringBuilder();
@@ -207,7 +203,17 @@ public final class GraphQlTransportWsTestClient implements AutoCloseable {
       }
 
       received.add(message);
-      messages.add(message);
+      var operationId = message.path("id");
+      if (operationId.isMissingNode() || operationId.isNull()) {
+        connectionMessages.add(message);
+        return;
+      }
+
+      operationMessages(operationId.asString()).add(message);
+    }
+
+    private BlockingQueue<JsonNode> operationMessages(String operationId) {
+      return operationMessages.computeIfAbsent(operationId, _ -> new LinkedBlockingQueue<>());
     }
 
     @Override

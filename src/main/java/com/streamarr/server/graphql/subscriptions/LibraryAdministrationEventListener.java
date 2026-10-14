@@ -1,7 +1,10 @@
 package com.streamarr.server.graphql.subscriptions;
 
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.graphql.dto.LibraryRemoval;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.services.events.library.LibraryAddedEvent;
+import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.events.library.LibraryStatusChangedEvent;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.Optional;
@@ -37,6 +40,18 @@ public class LibraryAdministrationEventListener {
     var statusChanges = broadcasters.statusChanges();
     publish(
         statusChanges, () -> currentLibrary(event.libraryId()).ifPresent(statusChanges::broadcast));
+  }
+
+  @TransactionalEventListener(fallbackExecution = true)
+  public void onLibraryAdded(LibraryAddedEvent event) {
+    var additions = broadcasters.additions();
+    publish(additions, () -> currentLibrary(event.libraryId()).ifPresent(additions::broadcast));
+  }
+
+  @TransactionalEventListener(fallbackExecution = true)
+  public void onLibraryRemoved(LibraryRemovedEvent event) {
+    var removals = broadcasters.removals();
+    publish(removals, () -> removals.broadcast(new LibraryRemoval(event.libraryId())));
   }
 
   // A detached copy: the payload is resolved on delivery threads, outside any persistence context.

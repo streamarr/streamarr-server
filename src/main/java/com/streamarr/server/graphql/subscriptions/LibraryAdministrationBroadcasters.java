@@ -1,6 +1,7 @@
 package com.streamarr.server.graphql.subscriptions;
 
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.graphql.dto.LibraryRemoval;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Component;
 import reactor.core.scheduler.Scheduler;
@@ -10,6 +11,8 @@ import reactor.core.scheduler.Scheduler;
 public class LibraryAdministrationBroadcasters {
 
   private final SubscriptionBroadcaster<Library> statusChanges;
+  private final SubscriptionBroadcaster<Library> additions;
+  private final SubscriptionBroadcaster<LibraryRemoval> removals;
 
   public LibraryAdministrationBroadcasters(
       MeterRegistry meterRegistry, Scheduler deliveryScheduler) {
@@ -19,9 +22,29 @@ public class LibraryAdministrationBroadcasters {
             .meterRegistry(meterRegistry)
             .deliveryScheduler(deliveryScheduler)
             .build();
+    this.additions =
+        SubscriptionBroadcaster.<Library>builder()
+            .field("libraryAdded")
+            .meterRegistry(meterRegistry)
+            .deliveryScheduler(deliveryScheduler)
+            .build();
+    this.removals =
+        SubscriptionBroadcaster.<LibraryRemoval>builder()
+            .field("libraryRemoved")
+            .meterRegistry(meterRegistry)
+            .deliveryScheduler(deliveryScheduler)
+            .build();
   }
 
   public SubscriptionBroadcaster<Library> statusChanges() {
     return statusChanges;
+  }
+
+  public SubscriptionBroadcaster<Library> additions() {
+    return additions;
+  }
+
+  public SubscriptionBroadcaster<LibraryRemoval> removals() {
+    return removals;
   }
 }
