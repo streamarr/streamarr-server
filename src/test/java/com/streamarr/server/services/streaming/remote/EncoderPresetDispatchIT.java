@@ -7,14 +7,13 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigura
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.abrSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
-import static com.streamarr.server.jooq.generated.tables.ServerSettings.SERVER_SETTINGS;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
+import static com.streamarr.server.support.ServerSettingsTestSupport.resetServerSettings;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.config.StreamingProperties;
-import com.streamarr.server.domain.streaming.EncoderPresetChoice;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
@@ -103,10 +102,7 @@ class EncoderPresetDispatchIT extends AbstractIntegrationTest {
     worker.close();
     channel.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
     server.close();
-    dsl.update(SERVER_SETTINGS)
-        .set(SERVER_SETTINGS.ENCODER_PRESET, EncoderPresetChoice.AUTOMATIC.name())
-        .setNull(SERVER_SETTINGS.LAST_MODIFIED_BY)
-        .execute();
+    resetServerSettings(dsl);
     authTestSupport.deleteIdentity(serverAdmin);
   }
 

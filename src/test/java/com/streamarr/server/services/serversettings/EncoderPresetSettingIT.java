@@ -2,12 +2,12 @@ package com.streamarr.server.services.serversettings;
 
 import static com.streamarr.server.jooq.generated.tables.ServerSettings.SERVER_SETTINGS;
 import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
+import static com.streamarr.server.support.ServerSettingsTestSupport.resetServerSettings;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.domain.streaming.EncoderPresetChoice;
 import com.streamarr.server.support.AuthTestSupport;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
@@ -43,10 +43,7 @@ class EncoderPresetSettingIT extends AbstractIntegrationTest {
 
   @AfterEach
   void tearDown() {
-    dsl.update(SERVER_SETTINGS)
-        .set(SERVER_SETTINGS.ENCODER_PRESET, EncoderPresetChoice.AUTOMATIC.name())
-        .setNull(SERVER_SETTINGS.LAST_MODIFIED_BY)
-        .execute();
+    resetServerSettings(dsl);
     authTestSupport.deleteIdentity(resident);
     authTestSupport.deleteIdentity(serverAdmin);
   }
