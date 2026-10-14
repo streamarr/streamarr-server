@@ -92,6 +92,16 @@ class BufPublicationWorkflowTest {
     }
   }
 
+  @Test
+  @DisplayName("Should reject only wire-incompatible changes when checking the Protobuf contract")
+  void shouldRejectOnlyWireIncompatibleChangesWhenCheckingTheProtobufContract() throws Exception {
+    try (var input = Files.newInputStream(Path.of("buf.yaml"))) {
+      Map<String, Object> module = new Yaml().load(input);
+
+      assertThat(module).containsEntry("breaking", Map.of("use", List.of("WIRE_JSON")));
+    }
+  }
+
   @ParameterizedTest
   @CsvSource({
     "push, refs/heads/main, true",
