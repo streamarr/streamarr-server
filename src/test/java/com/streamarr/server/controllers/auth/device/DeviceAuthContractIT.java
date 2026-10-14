@@ -111,6 +111,20 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should keep an empty auditor when device pairing starts")
+  void shouldKeepEmptyAuditorWhenDevicePairingStarts() throws Exception {
+    issueCode("Apple TV");
+
+    assertThat(authorizationRepository.findAll())
+        .singleElement()
+        .satisfies(
+            authorization -> {
+              assertThat(authorization.getCreatedBy()).isNull();
+              assertThat(authorization.getLastModifiedBy()).isNull();
+            });
+  }
+
+  @Test
   @DisplayName(
       "Should reject issuance and use a fallback name when the request omits device fields")
   void shouldRejectIssuanceAndUseFallbackNameWhenRequestOmitsDeviceFields() throws Exception {

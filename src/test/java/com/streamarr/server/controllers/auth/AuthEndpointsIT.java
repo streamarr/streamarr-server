@@ -1,5 +1,6 @@
 package com.streamarr.server.controllers.auth;
 
+import static com.streamarr.server.jooq.generated.tables.AuthSession.AUTH_SESSION;
 import static com.streamarr.server.jooq.generated.tables.CredentialAttempt.CREDENTIAL_ATTEMPT;
 import static com.streamarr.server.jooq.generated.tables.ServerBootstrap.SERVER_BOOTSTRAP;
 import static com.streamarr.server.support.AuthTestSupport.remoteAddr;
@@ -176,6 +177,37 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     assertThat(refreshCookie.getMaxAge())
         .isEqualTo(Math.toIntExact(tokenProperties.refreshTokenTtl().toSeconds()));
     assertUncacheable(response);
+  }
+
+  @Test
+  @DisplayName("Should keep an empty auditor when sign-in creates a session")
+  void shouldKeepEmptyAuditorWhenSignInCreatesSession() throws Exception {
+    seedSingleProfileIdentity();
+    var seededSessionIds =
+        dsl.select(AUTH_SESSION.ID)
+            .from(AUTH_SESSION)
+            .where(AUTH_SESSION.ACCOUNT_ID.eq(account.getId()))
+            .fetch(AUTH_SESSION.ID);
+
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(loginBody(account.getEmail(), password)))
+        .andExpect(status().isOk());
+
+    assertThat(
+            dsl.select(AUTH_SESSION.CREATED_BY, AUTH_SESSION.LAST_MODIFIED_BY)
+                .from(AUTH_SESSION)
+                .where(AUTH_SESSION.ACCOUNT_ID.eq(account.getId()))
+                .and(AUTH_SESSION.ID.notIn(seededSessionIds))
+                .fetch())
+        .singleElement()
+        .satisfies(
+            auditors -> {
+              assertThat(auditors.value1()).isNull();
+              assertThat(auditors.value2()).isNull();
+            });
   }
 
   @Test
