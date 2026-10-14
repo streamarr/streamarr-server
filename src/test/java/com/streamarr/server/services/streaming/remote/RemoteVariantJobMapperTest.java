@@ -15,8 +15,8 @@ import java.nio.file.Path;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
@@ -52,10 +52,22 @@ class RemoteVariantJobMapperTest {
     assertThat(job.getDecision().getContainer()).isEqualTo(ContainerFormat.CONTAINER_FORMAT_FMP4);
   }
 
-  @Test
+  @ParameterizedTest(name = "{0} → {1}")
+  @CsvSource({
+    "ULTRAFAST, ENCODER_PRESET_ULTRAFAST",
+    "SUPERFAST, ENCODER_PRESET_SUPERFAST",
+    "VERYFAST, ENCODER_PRESET_VERYFAST",
+    "FASTER, ENCODER_PRESET_FASTER",
+    "FAST, ENCODER_PRESET_FAST",
+    "MEDIUM, ENCODER_PRESET_MEDIUM",
+    "SLOW, ENCODER_PRESET_SLOW",
+    "SLOWER, ENCODER_PRESET_SLOWER",
+    "VERYSLOW, ENCODER_PRESET_VERYSLOW"
+  })
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   @DisplayName("Should write the encoder preset when mapping a variant job")
-  void shouldWriteEncoderPresetWhenMappingVariantJob() {
+  void shouldWriteEncoderPresetWhenMappingVariantJob(
+      EncoderPreset preset, com.streamarr.transcode.v1.EncoderPreset expected) {
     var request =
         TranscodeRequest.builder()
             .sessionId(UUID.randomUUID())
@@ -68,12 +80,11 @@ class RemoteVariantJobMapperTest {
                     .audioDecision(AudioDecision.stereoAac())
                     .subtitleDecision(SubtitleDecision.exclude())
                     .build())
-            .encoderPreset(EncoderPreset.FASTER)
+            .encoderPreset(preset)
             .build();
 
     var job = mapper.map(request);
 
-    assertThat(job.getVariant().getEncoderPreset())
-        .isEqualTo(com.streamarr.transcode.v1.EncoderPreset.ENCODER_PRESET_FASTER);
+    assertThat(job.getVariant().getEncoderPreset()).isEqualTo(expected);
   }
 }
