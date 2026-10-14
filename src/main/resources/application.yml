@@ -69,6 +69,11 @@ image:
   storage-path: ${IMAGE_STORAGE_PATH:}
   replacement-lock-timeout: ${IMAGE_REPLACEMENT_LOCK_TIMEOUT:5s}
 
+# CPU-heavy work, such as decoding and resizing images, holds one of these permits while it runs.
+# Primary work gets a freed permit before background work. 0 means one per available processor.
+cpu:
+  permits: ${CPU_PERMITS:0}
+
 # Artwork steps run as db-scheduler task instances on two schedulers with their own tables:
 # primary artwork (movies, series, seasons and episodes) and background artwork (people and
 # companies). Each thread count caps how many items' steps run at once on that scheduler.

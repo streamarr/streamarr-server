@@ -16,6 +16,7 @@ import com.streamarr.server.services.ArtworkRuns;
 import com.streamarr.server.services.ArtworkService;
 import com.streamarr.server.services.ArtworkSteps;
 import com.streamarr.server.services.ImageService;
+import com.streamarr.server.services.concurrency.CpuPermits;
 import com.streamarr.server.services.concurrency.Sleeper;
 import com.streamarr.server.services.metadata.ImageVariantService;
 import com.streamarr.server.services.metadata.TmdbImageDownloader;
@@ -84,6 +85,7 @@ public record ArtworkFixture(
             .itemResults(results)
             .imageService(imageService)
             .imageDownloader(downloader)
+            .cpuPermits(new CpuPermits(Runtime.getRuntime().availableProcessors()))
             .clock(artworkClock)
             .build();
     var scheduling = new FakeArtworkScheduling();

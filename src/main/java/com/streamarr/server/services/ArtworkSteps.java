@@ -15,6 +15,7 @@ import com.streamarr.server.services.ArtworkPlan.PlannedImage.KeepStoredImage;
 import com.streamarr.server.services.ArtworkPlan.PlannedImage.ReportUnavailable;
 import com.streamarr.server.services.ImageService.ProcessedImage;
 import com.streamarr.server.services.audit.SystemWork;
+import com.streamarr.server.services.concurrency.CpuPermits;
 import com.streamarr.server.services.metadata.TmdbImageDownloader;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import java.io.IOException;
@@ -48,6 +49,7 @@ public class ArtworkSteps {
   private final ItemResultRepository itemResults;
   private final ImageService imageService;
   private final TmdbImageDownloader imageDownloader;
+  private final CpuPermits cpuPermits;
   private final Clock clock;
 
   /** What one step left to do after its attempt. */
@@ -155,12 +157,22 @@ public class ArtworkSteps {
           case TmdbImageSource tmdb -> imageDownloader.downloadImage(tmdb.key());
         };
 
-    return imageService.processImage(
-        imageData,
-        source.imageType(),
-        attempt.item().itemId(),
-        attempt.item().itemType(),
-        source.key());
+    return cpuPermits.runWithPermit(
+        cpuPriorityOf(attempt.item()),
+        () ->
+            imageService.processImage(
+                imageData,
+                source.imageType(),
+                attempt.item().itemId(),
+                attempt.item().itemType(),
+                source.key()));
+  }
+
+  private static CpuPermits.Priority cpuPriorityOf(ArtworkItem item) {
+    return switch (ArtworkPriority.of(item.itemType())) {
+      case PRIMARY -> CpuPermits.Priority.PRIMARY;
+      case BACKGROUND -> CpuPermits.Priority.BACKGROUND;
+    };
   }
 
   private StepOutcome save(ArtworkAttempt attempt, ImageDownload download) {
