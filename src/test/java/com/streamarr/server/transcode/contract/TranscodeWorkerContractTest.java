@@ -12,6 +12,9 @@ import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
+import com.streamarr.transcode.v1.VideoCodecFamily;
+import com.streamarr.transcode.v1.VideoDecision;
+import com.streamarr.transcode.v1.VideoMode;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
@@ -125,6 +128,33 @@ class TranscodeWorkerContractTest {
 
     assertThat(parsed.getMetadata().getJobAttemptId()).isEqualTo(attemptId);
     assertThat(parsed.getMetadata().getSegmentName()).isEqualTo("segment0.m4s");
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell an encode without a codec profile apart from a copy when validating the protocol")
+  void shouldTellAnEncodeWithoutACodecProfileApartFromACopyWhenValidatingTheProtocol()
+      throws Exception {
+    var encodeWithoutCodecProfile =
+        VideoDecision.newBuilder()
+            .setMode(VideoMode.VIDEO_MODE_ENCODE)
+            .setCodecFamily(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264)
+            .setCodecString("avc1.64002A")
+            .build();
+    var copy =
+        VideoDecision.newBuilder()
+            .setMode(VideoMode.VIDEO_MODE_COPY)
+            .setCodecFamily(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264)
+            .setCodecString("avc1.64002A")
+            .build();
+
+    var parsedEncode = VideoDecision.parseFrom(encodeWithoutCodecProfile.toByteArray());
+    var parsedCopy = VideoDecision.parseFrom(copy.toByteArray());
+
+    assertThat(parsedEncode.getMode()).isEqualTo(VideoMode.VIDEO_MODE_ENCODE);
+    assertThat(parsedCopy.getMode()).isEqualTo(VideoMode.VIDEO_MODE_COPY);
+    assertThat(parsedEncode).isNotEqualTo(parsedCopy);
+    assertThat(parsedCopy.hasLevel()).isFalse();
   }
 
   @Test

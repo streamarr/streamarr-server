@@ -86,6 +86,9 @@ enum VideoCodecFamily {
   VIDEO_CODEC_FAMILY_AV1 = 3;
 }
 
+// Each codec profile belongs to one codec family. The worker fails the job attempt with
+// JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION when codec_profile belongs to a codec family other than
+// codec_family.
 enum VideoCodecProfile {
   VIDEO_CODEC_PROFILE_UNSPECIFIED = 0;
   VIDEO_CODEC_PROFILE_H264_HIGH = 1;
@@ -93,19 +96,33 @@ enum VideoCodecProfile {
   VIDEO_CODEC_PROFILE_AV1_MAIN = 3;
 }
 
-// H.264 has no tier, so an H.264 encode carries VIDEO_CODEC_TIER_UNSPECIFIED.
+// A copy carries VIDEO_CODEC_TIER_UNSPECIFIED. H.264 has no tier, so an H.264 encode also carries
+// VIDEO_CODEC_TIER_UNSPECIFIED.
 enum VideoCodecTier {
   VIDEO_CODEC_TIER_UNSPECIFIED = 0;
   VIDEO_CODEC_TIER_MAIN = 1;
   VIDEO_CODEC_TIER_HIGH = 2;
 }
 
-// The server decides the variant's video output, and the worker never works these values out
-// again. An encode forces codec_profile, tier and level. A copy forces nothing: it carries no
-// codec_profile, tier or level, and its codec_string is the one that the probe computed for the
-// source stream. The worker fails the job attempt with JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH when
-// the codec string of an initialization segment that it produces differs from codec_string.
+enum VideoMode {
+  VIDEO_MODE_UNSPECIFIED = 0;
+  VIDEO_MODE_COPY = 1;
+  VIDEO_MODE_ENCODE = 2;
+}
+
+// The server computes codec_profile, tier, level and codec_string. The worker never computes them.
+// mode says whether the worker copies or encodes the video. VIDEO_MODE_COPY goes with
+// TRANSCODE_MODE_REMUX and TRANSCODE_MODE_AUDIO_TRANSCODE. VIDEO_MODE_ENCODE goes with
+// TRANSCODE_MODE_VIDEO_TRANSCODE and TRANSCODE_MODE_FULL_TRANSCODE. The worker fails the job
+// attempt with JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION when mode and TranscodeDecision.mode
+// disagree, or when an encode lacks codec_profile or level.
+//
+// For an encode, the worker forces codec_profile, tier and level. A copy carries no codec_profile,
+// tier or level. A copy's codec_string is the one that the probe computed for the source stream.
+// The worker fails the job attempt with JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH when the codec string
+// of an initialization segment that it produces differs from codec_string.
 message VideoDecision {
+  VideoMode mode = 6;
   VideoCodecFamily codec_family = 1;
   VideoCodecProfile codec_profile = 2;
   VideoCodecTier tier = 3;
@@ -117,6 +134,9 @@ message VideoDecision {
 
 message TranscodeDecision {
   TranscodeMode mode = 1;
+  // video.codec_family replaces this string once the server fills video. While the server sends
+  // both, the worker fails the job attempt with JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION when they
+  // name different codec families.
   string video_codec_family = 2;
   AudioDecision audio = 3;
   SubtitleDecision subtitle = 4;
@@ -174,7 +194,8 @@ enum JobAttemptFailure {
   JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION = 2;
   JOB_ATTEMPT_FAILURE_STARTUP_FAILED = 3;
   JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED = 4;
-  // The produced output differs from the job's video decision.
+  // The produced output differs from the job's video decision. The same decision on the same
+  // encoder backend produces the same mismatch, so a replacement job attempt fails the same way.
   JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH = 5;
 }
 
