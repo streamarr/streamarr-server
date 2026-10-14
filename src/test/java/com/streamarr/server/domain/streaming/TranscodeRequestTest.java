@@ -14,6 +14,16 @@ import org.junit.jupiter.api.Test;
 class TranscodeRequestTest {
 
   @Test
+  @DisplayName(
+      "Should leave the frame rate and the pinned encoder empty when the builder omits them")
+  void shouldLeaveFrameRateAndPinnedEncoderEmptyWhenBuilderOmitsThem() {
+    var request = requestWithoutEncoderPreset().encoderPreset(EncoderPreset.FASTER).build();
+
+    assertThat(request.framerate()).isEmpty();
+    assertThat(request.pinnedEncoderBackend()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should reject construction when the encoder preset is missing")
   void shouldRejectConstructionWhenTheEncoderPresetIsMissing() {
     var builder = requestWithoutEncoderPreset();

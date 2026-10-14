@@ -44,10 +44,11 @@ public record TranscodeRequest(
     }
   }
 
-  @SuppressWarnings("java:S1068") // Lombok builder default — field is used by generated code
-  public static class TranscodeRequestBuilder {
-    private OptionalDouble framerate = OptionalDouble.empty();
-    private Optional<Duration> keyframeSeekPosition = Optional.empty();
-    private Optional<EncoderBackend> pinnedEncoderBackend = Optional.empty();
+  // Lombok skips its own builder() because this one exists.
+  public static TranscodeRequestBuilder builder() {
+    return new TranscodeRequestBuilder()
+        .framerate(OptionalDouble.empty())
+        .keyframeSeekPosition(Optional.empty())
+        .pinnedEncoderBackend(Optional.empty());
   }
 }
