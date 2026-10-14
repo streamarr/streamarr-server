@@ -463,6 +463,26 @@ class WorkerSessionGrpcServiceTest {
 
   @Test
   @DisplayName(
+      "Should send no further encode of the codec family to a worker whose start report named another encoder backend")
+  void shouldSendNoFurtherEncodeOfCodecFamilyToWorkerWhoseStartReportNamedAnotherEncoderBackend()
+      throws Exception {
+    var started = startedEncode(new SimpleMeterRegistry());
+    var nextEncode =
+        started.job().toBuilder()
+            .setStreamSessionId(toProto(UUID.randomUUID()))
+            .setJobAttemptId(toProto(UUID.randomUUID()))
+            .build();
+
+    started
+        .session()
+        .onNext(jobAttemptStarted(started.job(), ReportedEncoderBackend.DIFFERENT.backend()));
+
+    assertThat(started.registry().dispatch(nextEncode)).isEmpty();
+    assertThat(started.responses()).noneMatch(response -> isStartOf(response, nextEncode));
+  }
+
+  @Test
+  @DisplayName(
       "Should keep a job attempt running when its start report names the pinned encoder backend")
   void shouldKeepJobAttemptRunningWhenItsStartReportNamesPinnedEncoderBackend() throws Exception {
     var meterRegistry = new SimpleMeterRegistry();
@@ -763,6 +783,11 @@ class WorkerSessionGrpcServiceTest {
       return registry.isRunning(
           fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel());
     }
+  }
+
+  private static boolean isStartOf(EstablishWorkerSessionResponse response, VariantJob job) {
+    return response.hasStartVariant()
+        && response.getStartVariant().getJob().getJobAttemptId().equals(job.getJobAttemptId());
   }
 
   private static EstablishWorkerSessionRequest jobAttemptStarted(

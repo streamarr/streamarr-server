@@ -727,6 +727,56 @@ class LiveWorkerConnectionRegistryTest {
 
   @Test
   @DisplayName(
+      "Should withdraw the worker's encoder for the codec family when a start report names another backend")
+  void shouldWithdrawWorkersEncoderForCodecFamilyWhenStartReportNamesAnotherBackend() {
+    var encode = RunningEncode.dispatch();
+
+    encode
+        .registry()
+        .stopJobAttemptIfEncoderBackendDiffers(
+            WORKER_ID, encode.workerSessionId(), nvencStarted(encode.job().getJobAttemptId()));
+
+    assertThat(
+            encode
+                .registry()
+                .eligibleWorkers(SOURCE_NAMESPACE_ID, WorkerVerifiedEncoderFixture.libx264()))
+        .isEmpty();
+    assertThat(encode.registry().encodableVideoCodecFamilies(SOURCE_NAMESPACE_ID))
+        .doesNotContain("h264");
+    assertThat(encode.registry().eligibleWorkers(SOURCE_NAMESPACE_ID, streamCopyDecision()))
+        .containsExactly(new ExecutionTargetId(encode.workerSessionId().toString()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop every encode whose start report names another backend after the worker's encoder was withdrawn")
+  void shouldStopEveryEncodeWhoseStartReportNamesAnotherBackendAfterWorkersEncoderWasWithdrawn() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var registration = registration(WORKER_ID, 2).toBuilder();
+    registration.getCapabilitiesBuilder().addVideoEncoders(libx264Encoder());
+    var workerSessionId =
+        registry.register(WORKER_ID, registration.build(), new CancellableObserver());
+    var first = encodeJob("h264");
+    var second = encodeJob("h264");
+    assertThat(registry.dispatch(first)).isPresent();
+    assertThat(registry.dispatch(second)).isPresent();
+
+    registry.stopJobAttemptIfEncoderBackendDiffers(
+        WORKER_ID, workerSessionId, nvencStarted(first.getJobAttemptId()));
+    registry.stopJobAttemptIfEncoderBackendDiffers(
+        WORKER_ID, workerSessionId, nvencStarted(second.getJobAttemptId()));
+
+    assertThat(isRunning(registry, first)).isFalse();
+    assertThat(isRunning(registry, second)).isFalse();
+  }
+
+  private static boolean isRunning(LiveWorkerConnectionRegistry registry, VariantJob job) {
+    return registry.isRunning(
+        fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel());
+  }
+
+  @Test
+  @DisplayName(
       "Should keep a job attempt running when a start report naming another backend comes from an unknown worker")
   void shouldKeepJobAttemptRunningWhenStartReportNamingAnotherBackendComesFromUnknownWorker() {
     var encode = RunningEncode.dispatch();

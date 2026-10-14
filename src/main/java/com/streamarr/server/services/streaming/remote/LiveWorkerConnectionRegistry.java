@@ -374,12 +374,15 @@ final class LiveWorkerConnectionRegistry {
     private final WorkerIdentity worker;
     private final Set<Uuid> sourceNamespaceIds;
     private final Set<Integer> probeVersions;
-    // The worker-verified encoder that counts for each codec family, keyed by family name.
+    // The worker-verified encoder that counts for each codec family, keyed by family name. A start
+    // report that names another backend withdraws the family's entry for this worker session.
     private final Map<String, WorkerVerifiedEncoder> countedEncoders;
     private final int maximumActiveVariants;
     private final StreamObserver<EstablishWorkerSessionResponse> responseObserver;
 
     private final Map<UUID, VariantJob> activeVariants = new ConcurrentHashMap<>();
+    // The encoder each active encode was dispatched for, which its start report must name.
+    private final Map<UUID, WorkerVerifiedEncoder> dispatchedEncoders = new ConcurrentHashMap<>();
     private final Map<UUID, PendingProbe> activeProbes = new ConcurrentHashMap<>();
 
     private WorkerConnection(
@@ -391,13 +394,14 @@ final class LiveWorkerConnectionRegistry {
       sourceNamespaceIds = Set.copyOf(registration.getCapabilities().getSourceNamespaceIdsList());
       probeVersions = Set.copyOf(registration.getCapabilities().getProbeVersionsList());
       countedEncoders =
-          registration.getCapabilities().getVideoEncodersList().stream()
-              .map(RemoteEncoderBackendMapper::workerVerifiedEncoder)
-              .flatMap(Optional::stream)
-              .filter(LiveWorkerConnectionRegistry::isCountedForEncodes)
-              .collect(
-                  Collectors.toUnmodifiableMap(
-                      encoder -> encoder.backend().codecFamily(), Function.identity()));
+          new ConcurrentHashMap<>(
+              registration.getCapabilities().getVideoEncodersList().stream()
+                  .map(RemoteEncoderBackendMapper::workerVerifiedEncoder)
+                  .flatMap(Optional::stream)
+                  .filter(LiveWorkerConnectionRegistry::isCountedForEncodes)
+                  .collect(
+                      Collectors.toUnmodifiableMap(
+                          encoder -> encoder.backend().codecFamily(), Function.identity())));
       maximumActiveVariants = registration.getAvailableSlots();
       this.responseObserver = responseObserver;
     }
@@ -426,7 +430,9 @@ final class LiveWorkerConnectionRegistry {
       if (!trySend(EstablishWorkerSessionResponse.newBuilder().setStartVariant(command).build())) {
         return false;
       }
-      activeVariants.put(fromProto(job.getJobAttemptId()), job);
+      var jobAttemptId = fromProto(job.getJobAttemptId());
+      activeVariants.put(jobAttemptId, job);
+      encoderFor(job).ifPresent(encoder -> dispatchedEncoders.put(jobAttemptId, encoder));
       return true;
     }
 
@@ -636,6 +642,7 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private synchronized boolean tryStop(UUID jobAttemptId) {
+      dispatchedEncoders.remove(jobAttemptId);
       if (activeVariants.remove(jobAttemptId) == null) {
         return false;
       }
@@ -673,6 +680,7 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private synchronized Optional<VariantJob> releaseJobAttempt(UUID jobAttemptId) {
+      dispatchedEncoders.remove(jobAttemptId);
       return Optional.ofNullable(activeVariants.remove(jobAttemptId));
     }
 
@@ -730,7 +738,7 @@ final class LiveWorkerConnectionRegistry {
     }
 
     // Dispatch sends an encode only to a worker that advertises the variant's pinned backend, so
-    // this connection's advertised backend is the pin.
+    // the encoder that the attempt was dispatched for is the pin.
     private synchronized void stopJobAttemptIfEncoderBackendDiffers(JobAttemptStarted started) {
       var jobAttemptId = fromProto(started.getJobAttemptId());
       var job = activeVariants.get(jobAttemptId);
@@ -738,7 +746,9 @@ final class LiveWorkerConnectionRegistry {
         return;
       }
 
-      var pinned = encoderFor(job).map(WorkerVerifiedEncoder::backend);
+      var pinned =
+          Optional.ofNullable(dispatchedEncoders.get(jobAttemptId))
+              .map(WorkerVerifiedEncoder::backend);
       var reported =
           Optional.of(started)
               .filter(JobAttemptStarted::hasEncoderBackend)
@@ -749,6 +759,9 @@ final class LiveWorkerConnectionRegistry {
       }
 
       var stopped = tryStop(jobAttemptId);
+      // The worker runs another encoder than it advertised, so no later attempt may rely on the
+      // advertisement, including a replacement attempt of this variant.
+      countedEncoders.remove(job.getDecision().getVideoCodecFamily());
       encoderBackendMismatches.increment();
       log.warn(
           "Stopped job attempt {} for stream session {} variant {} because the worker reported"
@@ -786,6 +799,7 @@ final class LiveWorkerConnectionRegistry {
     private List<VariantJob> abandonAllJobsWithoutWaiting() {
       var drained = List.copyOf(activeVariants.values());
       activeVariants.clear();
+      dispatchedEncoders.clear();
       activeProbes.keySet().forEach(attemptId -> failProbe(attemptId, "Worker session ended"));
       return drained;
     }
