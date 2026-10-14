@@ -10,6 +10,7 @@ import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.StartProbeCommand;
@@ -164,6 +165,16 @@ final class LiveWorkerConnectionRegistry {
     }
 
     return connection.completeProbe(result);
+  }
+
+  boolean acceptKeyframePositionsPart(
+      UUID workerId, UUID workerSessionId, ProbeKeyframePositionsPart part) {
+    var connection = connections.get(workerId);
+    if (connection == null || !connection.workerSessionId().equals(workerSessionId)) {
+      return false;
+    }
+
+    return connection.acceptKeyframePositionsPart(part);
   }
 
   boolean dispatchTo(ExecutionTargetId target, VariantJob job) {
@@ -328,7 +339,12 @@ final class LiveWorkerConnectionRegistry {
       }
 
       var attemptId = fromProto(request.getProbeAttemptId());
-      var pending = new PendingProbe(request, new CompletableFuture<>(), new CompletableFuture<>());
+      var pending =
+          new PendingProbe(
+              request,
+              new CompletableFuture<>(),
+              new CompletableFuture<>(),
+              new ReceivedKeyframePositionsParts());
       if (pendingProbes.putIfAbsent(attemptId, pending.result()) != null) {
         return new ProbeDispatch.Refused(ProbeRefusal.ATTEMPT_IN_PROGRESS);
       }
@@ -440,7 +456,29 @@ final class LiveWorkerConnectionRegistry {
         return false;
       }
 
-      pending.result().complete(new ProbeAttemptReport(result, List.of()));
+      if (pending.keyframePositionsParts().exceedsContract()) {
+        pending
+            .result()
+            .completeExceptionally(
+                new ProbeExecutionException(
+                    ItemFailureReason.TEMPORARY,
+                    "Worker probe sent more keyframe positions than the contract allows"));
+        return false;
+      }
+
+      pending
+          .result()
+          .complete(new ProbeAttemptReport(result, pending.keyframePositionsParts().parts()));
+      return true;
+    }
+
+    private boolean acceptKeyframePositionsPart(ProbeKeyframePositionsPart part) {
+      var pending = activeProbes.get(fromProto(part.getProbeAttemptId()));
+      if (pending == null) {
+        return false;
+      }
+
+      pending.keyframePositionsParts().add(part);
       return true;
     }
 
@@ -606,6 +644,7 @@ final class LiveWorkerConnectionRegistry {
     private record PendingProbe(
         ProbeRequest request,
         CompletableFuture<ProbeAttemptReport> result,
-        CompletableFuture<Void> terminated) {}
+        CompletableFuture<Void> terminated,
+        ReceivedKeyframePositionsParts keyframePositionsParts) {}
   }
 }
