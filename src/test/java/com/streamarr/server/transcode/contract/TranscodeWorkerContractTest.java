@@ -235,7 +235,8 @@ class TranscodeWorkerContractTest {
             "probe_versions",
             "start_probe",
             "probe_result",
-            "accepted_length_bytes")
+            "accepted_length_bytes",
+            "encoder_preset")
         .doesNotContain(
             "session_id",
             "source_path",
