@@ -78,6 +78,7 @@ class AccessBoundGraphQlWebSocketHandlerTest {
         "graphQlHandler",
         "jsonConverter",
         "connectionInitTimeout",
+        "keepAlive",
         "allowedOrigins",
         "clock",
         "taskScheduler"
@@ -89,9 +90,9 @@ class AccessBoundGraphQlWebSocketHandlerTest {
         .filter(required -> !required.getKey().equals(argument))
         .forEach(required -> required.getValue().accept(builder));
 
-    // The framework's constructor checks the handler and converter before the subclass runs.
     assertThatThrownBy(builder::build)
-        .isInstanceOfAny(NullPointerException.class, IllegalArgumentException.class);
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageStartingWith(argument + " ");
   }
 
   private static Map<String, Consumer<AccessBoundGraphQlWebSocketHandlerBuilder>>
@@ -103,6 +104,8 @@ class AccessBoundGraphQlWebSocketHandlerTest {
         builder -> builder.jsonConverter(new JacksonJsonHttpMessageConverter()),
         "connectionInitTimeout",
         builder -> builder.connectionInitTimeout(Duration.ofSeconds(10)),
+        "keepAlive",
+        builder -> builder.keepAlive(Duration.ofSeconds(20)),
         "allowedOrigins",
         builder -> builder.allowedOrigins(new CorsConfiguration()),
         "clock",
@@ -131,7 +134,7 @@ class AccessBoundGraphQlWebSocketHandlerTest {
   }
 
   private static AccessBoundGraphQlWebSocketHandlerBuilder completeBuilder() {
-    var builder = AccessBoundGraphQlWebSocketHandler.builder().keepAlive(Duration.ofSeconds(20));
+    var builder = AccessBoundGraphQlWebSocketHandler.builder();
     requiredArguments().values().forEach(required -> required.accept(builder));
     return builder;
   }

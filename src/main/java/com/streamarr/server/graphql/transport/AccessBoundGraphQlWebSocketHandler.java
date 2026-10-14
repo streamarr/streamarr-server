@@ -23,19 +23,46 @@ class AccessBoundGraphQlWebSocketHandler extends GraphQlWebSocketHandler {
   private final Clock clock;
   private final TaskScheduler taskScheduler;
 
+  private AccessBoundGraphQlWebSocketHandler(Arguments arguments) {
+    super(
+        arguments.graphQlHandler(),
+        arguments.jsonConverter(),
+        arguments.connectionInitTimeout(),
+        arguments.keepAlive(),
+        arguments.allowedOrigins());
+    this.clock = arguments.clock();
+    this.taskScheduler = arguments.taskScheduler();
+  }
+
+  // A factory method, so the null checks run before the framework's constructor.
   @Builder
-  private AccessBoundGraphQlWebSocketHandler(
-      WebGraphQlHandler graphQlHandler,
-      HttpMessageConverter<Object> jsonConverter,
+  private static AccessBoundGraphQlWebSocketHandler create(
+      @NonNull WebGraphQlHandler graphQlHandler,
+      @NonNull HttpMessageConverter<Object> jsonConverter,
       @NonNull Duration connectionInitTimeout,
-      Duration keepAlive,
+      @NonNull Duration keepAlive,
       @NonNull CorsConfiguration allowedOrigins,
       @NonNull Clock clock,
       @NonNull TaskScheduler taskScheduler) {
-    super(graphQlHandler, jsonConverter, connectionInitTimeout, keepAlive, allowedOrigins);
-    this.clock = clock;
-    this.taskScheduler = taskScheduler;
+    return new AccessBoundGraphQlWebSocketHandler(
+        new Arguments(
+            graphQlHandler,
+            jsonConverter,
+            connectionInitTimeout,
+            keepAlive,
+            allowedOrigins,
+            clock,
+            taskScheduler));
   }
+
+  private record Arguments(
+      WebGraphQlHandler graphQlHandler,
+      HttpMessageConverter<Object> jsonConverter,
+      Duration connectionInitTimeout,
+      Duration keepAlive,
+      CorsConfiguration allowedOrigins,
+      Clock clock,
+      TaskScheduler taskScheduler) {}
 
   @Override
   public WebSocketHttpRequestHandler initWebSocketHttpRequestHandler(
