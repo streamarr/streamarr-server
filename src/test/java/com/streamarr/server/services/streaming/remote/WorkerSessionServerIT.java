@@ -11,6 +11,7 @@ import static org.awaitility.Awaitility.await;
 
 import com.google.protobuf.ByteString;
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.SubtitleMode;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
@@ -482,6 +483,7 @@ class WorkerSessionServerIT {
             .sessionId(UUID.randomUUID())
             .sourcePath(Path.of("/media/movie.mkv"))
             .transcodeDecision(decision)
+            .encoderPreset(EncoderPreset.FASTER)
             .build();
 
     var dispatched = dispatchThroughRemoteExecutor(request);
@@ -509,6 +511,7 @@ class WorkerSessionServerIT {
             .targetSegmentDuration(6)
             .startSequenceNumber(2)
             .mediaSegmentCount(1200)
+            .encoderPreset(EncoderPreset.FASTER)
             .build();
 
     var execution = dispatchThroughRemoteExecutor(request).job().getExecution();
@@ -1225,6 +1228,7 @@ class WorkerSessionServerIT {
             .height(1080)
             .bitrate(5_000_000)
             .variantLabel("720p")
+            .encoderPreset(EncoderPreset.FASTER)
             .build();
 
     var dispatched = dispatchThroughRemoteExecutor(request);

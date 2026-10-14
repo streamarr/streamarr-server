@@ -183,11 +183,28 @@ message MediaSourceRef {
   string relative_key = 2;
 }
 
+// One name on the preset scale that serves every software encoder.
+enum EncoderPreset {
+  ENCODER_PRESET_UNSPECIFIED = 0;
+  ENCODER_PRESET_ULTRAFAST = 1;
+  ENCODER_PRESET_SUPERFAST = 2;
+  ENCODER_PRESET_VERYFAST = 3;
+  ENCODER_PRESET_FASTER = 4;
+  ENCODER_PRESET_FAST = 5;
+  ENCODER_PRESET_MEDIUM = 6;
+  ENCODER_PRESET_SLOW = 7;
+  ENCODER_PRESET_SLOWER = 8;
+  ENCODER_PRESET_VERYSLOW = 9;
+}
+
 message VariantSpec {
   string variant_label = 1;
   uint32 width = 2;
   uint32 height = 3;
   uint64 bitrate_bits_per_second = 4;
+  // The server always sets a preset from the scale and never sends Automatic. Every job attempt of
+  // a variant carries the same preset.
+  EncoderPreset encoder_preset = 5;
 }
 
 message TranscodeExecution {

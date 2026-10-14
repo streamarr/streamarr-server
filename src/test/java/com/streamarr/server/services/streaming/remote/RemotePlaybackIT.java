@@ -10,6 +10,7 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.controllers.StreamController;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -269,7 +270,8 @@ class RemotePlaybackIT {
         .seekPosition(12)
         .startSequenceNumber(3)
         .mediaSegmentCount(6)
-        .variantLabel(StreamSession.defaultVariant());
+        .variantLabel(StreamSession.defaultVariant())
+        .encoderPreset(EncoderPreset.FASTER);
   }
 
   private Map<TranscodeRequest, List<String>> launchedCommands(
@@ -410,6 +412,7 @@ class RemotePlaybackIT {
                   .width(mediaProbe.width())
                   .height(mediaProbe.height())
                   .bitrate(mediaProbe.bitrate())
+                  .encoderPreset(EncoderPreset.FASTER)
                   .build());
 
       assertThat(segmentStore.publication("segment0.m4s"))
@@ -601,6 +604,7 @@ class RemotePlaybackIT {
         .height(1080)
         .bitrate(5_000_000)
         .variantLabel(StreamSession.defaultVariant())
+        .encoderPreset(EncoderPreset.FASTER)
         .build();
   }
 

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
@@ -183,6 +184,7 @@ class SessionReaperTest {
             .height(1080)
             .bitrate(5_000_000)
             .variantLabel("1080p")
+            .encoderPreset(EncoderPreset.FASTER)
             .build());
 
     streamingService.addSession(session);
@@ -235,6 +237,7 @@ class SessionReaperTest {
             .height(1080)
             .bitrate(5_000_000)
             .variantLabel("1080p")
+            .encoderPreset(EncoderPreset.FASTER)
             .build());
     executor.start(
         TranscodeRequest.builder()
@@ -248,6 +251,7 @@ class SessionReaperTest {
             .height(720)
             .bitrate(3_000_000)
             .variantLabel("720p")
+            .encoderPreset(EncoderPreset.FASTER)
             .build());
 
     return session;

@@ -2,12 +2,14 @@ package com.streamarr.server.services.streaming;
 
 import static com.streamarr.server.fixtures.StreamSessionFixture.abrSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static com.streamarr.server.fixtures.StreamSessionFixture.sessionWithDurationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
@@ -19,7 +21,9 @@ import com.streamarr.server.fixtures.StreamingRigFixture;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -602,5 +606,94 @@ class ProducerLifecycleServiceTest {
     assertThat(transcodeExecutor.getStopped()).contains(session.getSessionId());
     assertThat(transcodeExecutor.isRunning(session.getSessionId(), StreamSession.defaultVariant()))
         .isFalse();
+  }
+
+  private StreamSession startedTranscodeSession(String videoCodecFamily) {
+    var session =
+        abrSessionBuilder().transcodeDecision(fullTranscodeDecision(videoCodecFamily)).build();
+    runtimeRegistry.save(session);
+    lifecycle.startAll(session, 0, 0);
+    return session;
+  }
+
+  @Test
+  @DisplayName("Should carry the faster preset when an H.264 variant job starts")
+  void shouldCarryFasterPresetWhenH264VariantJobStarts() {
+    startedTranscodeSession("h264");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::encoderPreset)
+        .containsOnly(EncoderPreset.FASTER);
+  }
+
+  @Test
+  @DisplayName("Should carry the faster preset when an AV1 variant job starts")
+  void shouldCarryFasterPresetWhenAv1VariantJobStarts() {
+    startedTranscodeSession("av1");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::encoderPreset)
+        .containsOnly(EncoderPreset.FASTER);
+  }
+
+  @Test
+  @DisplayName("Should carry the veryfast preset when an HEVC variant job starts")
+  void shouldCarryVeryfastPresetWhenHevcVariantJobStarts() {
+    startedTranscodeSession("hevc");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::encoderPreset)
+        .containsOnly(EncoderPreset.VERYFAST);
+  }
+
+  @Test
+  @DisplayName("Should carry the first attempt's preset when a replacement attempt starts")
+  void shouldCarryTheFirstAttemptsPresetWhenReplacementAttemptStarts() {
+    var session = startedTranscodeSession("hevc");
+    var firstAttemptPresets = presetsByVariantLabel(transcodeExecutor.getStartedRequests());
+    transcodeExecutor.markDead(session.getSessionId(), "720p");
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    lifecycle.recover(session.getSessionId(), "720p", "720p/segment2.m4s");
+    lifecycle.ensurePositioned(session.getSessionId(), "1080p/segment100.m4s");
+
+    assertThat(startedSince(startedBefore))
+        .hasSizeGreaterThan(1)
+        .allSatisfy(
+            replacement ->
+                assertThat(replacement.encoderPreset())
+                    .isEqualTo(firstAttemptPresets.get(replacement.variantLabel())));
+  }
+
+  @Test
+  @DisplayName("Should carry the first attempt's preset when a suspended session resumes")
+  void shouldCarryTheFirstAttemptsPresetWhenSuspendedSessionResumes() {
+    var session = startedTranscodeSession("hevc");
+    var firstAttemptPresets = presetsByVariantLabel(transcodeExecutor.getStartedRequests());
+    for (var variant : session.getVariants()) {
+      session.setVariantHandle(variant.label(), mintHandle(1L, TranscodeStatus.SUSPENDED));
+      transcodeExecutor.markDead(session.getSessionId(), variant.label());
+    }
+
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    lifecycle.ensurePositioned(session.getSessionId(), "segment5.m4s");
+
+    assertThat(startedSince(startedBefore))
+        .hasSize(session.getVariants().size())
+        .allSatisfy(
+            resumed ->
+                assertThat(resumed.encoderPreset())
+                    .isEqualTo(firstAttemptPresets.get(resumed.variantLabel())));
+  }
+
+  private static Map<String, EncoderPreset> presetsByVariantLabel(List<TranscodeRequest> requests) {
+    return requests.stream()
+        .collect(Collectors.toMap(TranscodeRequest::variantLabel, TranscodeRequest::encoderPreset));
+  }
+
+  private List<TranscodeRequest> startedSince(int startedBefore) {
+    var started = transcodeExecutor.getStartedRequests();
+    return started.subList(startedBefore, started.size());
   }
 }
