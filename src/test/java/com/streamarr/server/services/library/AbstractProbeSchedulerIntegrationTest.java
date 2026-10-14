@@ -5,10 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.kagkarlsson.scheduler.Scheduler;
 import com.github.kagkarlsson.scheduler.SchedulerClient;
-import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerConfigurationSupport;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
-import com.github.kagkarlsson.scheduler.stats.StatsRegistry;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.github.kagkarlsson.scheduler.task.TaskInstanceId;
 import com.streamarr.server.AbstractIntegrationTest;
@@ -24,7 +22,6 @@ import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import com.streamarr.server.services.streaming.FfprobeService;
-import com.streamarr.server.support.UnstartedSchedulerConfiguration;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -116,25 +113,16 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
 
   SchedulerClient startScheduler(
       ProbeExecution execution, AbstractSchedulerListener listener, Clock clock) {
-    var task = MediaProbeTask.create(execution, probeTaskCompletion);
-    var properties = UnstartedSchedulerConfiguration.schedulerProperties(environment);
-    properties.setThreads(2);
-    scheduler =
-        DbSchedulerConfigurationSupport.buildScheduler(
-            properties,
-            schedulerCustomizer,
-            StatsRegistry.NOOP,
-            clock::instant,
-            dataSource,
-            List.of(task),
-            List.of(listener),
-            List.of());
-    var client =
-        SchedulerClient.Builder.create(dataSource, task)
-            .serializer(schedulerCustomizer.serializer().orElseThrow())
-            .build();
-    scheduler.start();
-    return client;
+    var started =
+        ProbeSchedulerStarter.builder()
+            .customizer(schedulerCustomizer)
+            .completion(probeTaskCompletion)
+            .dataSource(dataSource)
+            .environment(environment)
+            .build()
+            .start(execution, listener, clock);
+    scheduler = started.scheduler();
+    return started.client();
   }
 
   static AbstractSchedulerListener countingOk(CountDownLatch completions) {
