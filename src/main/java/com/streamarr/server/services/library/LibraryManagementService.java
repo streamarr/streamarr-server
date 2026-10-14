@@ -263,7 +263,8 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     deleteLibraryContent(libraryId, mediaFiles);
     libraryRepository.delete(library);
 
-    eventPublisher.publishEvent(new LibraryRemovedEvent(library.getFilepathUri(), mediaFileIds));
+    eventPublisher.publishEvent(
+        new LibraryRemovedEvent(libraryId, library.getFilepathUri(), mediaFileIds));
   }
 
   private Library findLibraryOrThrow(UUID libraryId) {

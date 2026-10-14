@@ -1775,6 +1775,7 @@ class LibraryManagementServiceTest {
 
       var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
       assertThat(events).hasSize(1);
+      assertThat(events.getFirst().libraryId()).isEqualTo(savedLibraryId);
       assertThat(events.getFirst().filepathUri()).isEqualTo(expectedFilepath);
       assertThat(events.getFirst().mediaFileIds()).containsExactly(mediaFile.getId());
     }

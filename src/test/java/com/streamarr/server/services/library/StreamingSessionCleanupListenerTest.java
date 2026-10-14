@@ -35,7 +35,7 @@ class StreamingSessionCleanupListenerTest {
     var session = buildSessionForMediaFile(mediaFileId);
     fakeStreamingService.addSession(session);
 
-    var event = new LibraryRemovedEvent("/library/path", Set.of(mediaFileId));
+    var event = new LibraryRemovedEvent(UUID.randomUUID(), "/library/path", Set.of(mediaFileId));
     listener.onLibraryRemoved(event);
 
     assertThat(fakeStreamingService.getAllSessions()).isEmpty();
@@ -50,7 +50,8 @@ class StreamingSessionCleanupListenerTest {
     fakeStreamingService.addSession(unrelatedSession);
 
     var removedMediaFileId = UUID.randomUUID();
-    var event = new LibraryRemovedEvent("/library/path", Set.of(removedMediaFileId));
+    var event =
+        new LibraryRemovedEvent(UUID.randomUUID(), "/library/path", Set.of(removedMediaFileId));
     listener.onLibraryRemoved(event);
 
     assertThat(fakeStreamingService.getAllSessions()).hasSize(1);
@@ -64,7 +65,7 @@ class StreamingSessionCleanupListenerTest {
     var session = buildSessionForMediaFile(UUID.randomUUID());
     fakeStreamingService.addSession(session);
 
-    var event = new LibraryRemovedEvent("/library/path", Set.of());
+    var event = new LibraryRemovedEvent(UUID.randomUUID(), "/library/path", Set.of());
     listener.onLibraryRemoved(event);
 
     assertThat(fakeStreamingService.getAllSessions()).hasSize(1);
