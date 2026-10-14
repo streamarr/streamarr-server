@@ -60,6 +60,7 @@ final class LiveWorkerConnectionRegistry {
   private final long probeTimeoutNanos;
   private final long keyframeScanTimeoutNanos;
   private final long probeCancellationTimeoutNanos;
+  private final long startReportTimeoutNanos;
   private final Counter initializationSegmentMismatches;
   private final Counter encoderBackendMismatches;
 
@@ -69,6 +70,7 @@ final class LiveWorkerConnectionRegistry {
     probeTimeoutNanos = configuration.probeTimeout().toNanos();
     keyframeScanTimeoutNanos = configuration.keyframeScanTimeout().toNanos();
     probeCancellationTimeoutNanos = configuration.probeCancellationTimeout().toNanos();
+    startReportTimeoutNanos = configuration.startReportTimeout().toNanos();
     initializationSegmentMismatches =
         Counter.builder(INITIALIZATION_SEGMENT_MISMATCH_METRIC)
             .description(
@@ -361,7 +363,7 @@ final class LiveWorkerConnectionRegistry {
     // initialization segment, and must not queue behind worker register/disconnect. Stale lookups
     // fail the connection's re-check.
     var connection = connections.get(authenticatedWorkerId);
-    if (connection == null) {
+    if (connection == null || !connection.awaitConfirmedEncoderBackend(metadata)) {
       return Optional.empty();
     }
     return connection.publishIfStillAuthorized(metadata, publish);
@@ -380,8 +382,9 @@ final class LiveWorkerConnectionRegistry {
     private final StreamObserver<EstablishWorkerSessionResponse> responseObserver;
 
     private final Map<UUID, VariantJob> activeVariants = new ConcurrentHashMap<>();
-    // The encoder each active encode was dispatched for, which its start report must name.
-    private final Map<UUID, WorkerVerifiedEncoder> dispatchedEncoders = new ConcurrentHashMap<>();
+    // Each active encode, keyed by job attempt id, with the encoder it was dispatched for. Its
+    // start report must name that encoder's backend before any of its uploads publishes.
+    private final Map<UUID, EncodeAttempt> encodeAttempts = new ConcurrentHashMap<>();
     private final Map<UUID, PendingProbe> activeProbes = new ConcurrentHashMap<>();
 
     private WorkerConnection(
@@ -431,7 +434,11 @@ final class LiveWorkerConnectionRegistry {
       }
       var jobAttemptId = fromProto(job.getJobAttemptId());
       activeVariants.put(jobAttemptId, job);
-      encoderFor(job).ifPresent(encoder -> dispatchedEncoders.put(jobAttemptId, encoder));
+      encoderFor(job)
+          .ifPresent(
+              encoder ->
+                  encodeAttempts.put(
+                      jobAttemptId, new EncodeAttempt(encoder, new CompletableFuture<>())));
       return true;
     }
 
@@ -641,7 +648,7 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private synchronized boolean tryStop(UUID jobAttemptId) {
-      dispatchedEncoders.remove(jobAttemptId);
+      forgetEncodeAttempt(jobAttemptId);
       if (activeVariants.remove(jobAttemptId) == null) {
         return false;
       }
@@ -679,7 +686,7 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private synchronized Optional<VariantJob> releaseJobAttempt(UUID jobAttemptId) {
-      dispatchedEncoders.remove(jobAttemptId);
+      forgetEncodeAttempt(jobAttemptId);
       return Optional.ofNullable(activeVariants.remove(jobAttemptId));
     }
 
@@ -745,15 +752,19 @@ final class LiveWorkerConnectionRegistry {
         return;
       }
 
-      var pinned =
-          Optional.ofNullable(dispatchedEncoders.get(jobAttemptId))
-              .map(WorkerVerifiedEncoder::backend);
+      var attempt = encodeAttempts.get(jobAttemptId);
+      if (attempt == null) {
+        return;
+      }
+
+      var pinned = attempt.encoder().backend();
       var reported =
           Optional.of(started)
               .filter(JobAttemptStarted::hasEncoderBackend)
               .map(JobAttemptStarted::getEncoderBackend)
               .flatMap(RemoteEncoderBackendMapper::encoderBackend);
-      if (pinned.isEmpty() || pinned.equals(reported)) {
+      if (reported.equals(Optional.of(pinned))) {
+        attempt.backendConfirmed().complete(true);
         return;
       }
 
@@ -769,8 +780,31 @@ final class LiveWorkerConnectionRegistry {
           fromProto(job.getStreamSessionId()),
           job.getVariant().getVariantLabel(),
           reported.map(EncoderBackend::encoder).orElse("none"),
-          pinned.get().encoder(),
+          pinned.encoder(),
           stopped);
+    }
+
+    // Unsynchronized: the start report that releases the wait takes this connection's monitor.
+    // A copy, or an attempt this connection no longer runs, needs no wait; publication re-checks
+    // ownership.
+    private boolean awaitConfirmedEncoderBackend(SegmentUploadMetadata metadata) {
+      var attempt = encodeAttempts.get(fromProto(metadata.getJobAttemptId()));
+      if (attempt == null) {
+        return true;
+      }
+
+      return attempt
+          .backendConfirmed()
+          .copy()
+          .completeOnTimeout(false, startReportTimeoutNanos, TimeUnit.NANOSECONDS)
+          .join();
+    }
+
+    private void forgetEncodeAttempt(UUID jobAttemptId) {
+      var attempt = encodeAttempts.remove(jobAttemptId);
+      if (attempt != null) {
+        attempt.backendConfirmed().complete(false);
+      }
     }
 
     private void refuseDifferingInitialization(SegmentUploadMetadata metadata) {
@@ -798,7 +832,7 @@ final class LiveWorkerConnectionRegistry {
     private List<VariantJob> abandonAllJobsWithoutWaiting() {
       var drained = List.copyOf(activeVariants.values());
       activeVariants.clear();
-      dispatchedEncoders.clear();
+      List.copyOf(encodeAttempts.keySet()).forEach(this::forgetEncodeAttempt);
       activeProbes.keySet().forEach(attemptId -> failProbe(attemptId, "Worker session ended"));
       return drained;
     }
@@ -813,6 +847,9 @@ final class LiveWorkerConnectionRegistry {
         }
       }
     }
+
+    private record EncodeAttempt(
+        WorkerVerifiedEncoder encoder, CompletableFuture<Boolean> backendConfirmed) {}
 
     private record PendingProbe(
         ProbeRequest request,

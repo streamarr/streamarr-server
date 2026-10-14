@@ -57,6 +57,9 @@ Packet scans run on a scheduler of their own, so they never take the threads tha
 Until then, the probe retains its execution slot.
 A worker that misses this deadline is disconnected and fenced. Its other active jobs are abandoned and recover through the existing playback recovery path.
 Closing a worker connection cancels its probes and waits for their native processes to terminate.
+The server publishes no segment of an encode until the worker's start report names the encoder backend that the worker advertised.
+`STREAMING_WORKER_SESSION_START_REPORT_TIMEOUT` bounds how long an upload waits for that report. It defaults to `10s`.
+When the report names another backend, or does not arrive in time, the server refuses the upload.
 An unresponsive filesystem can delay worker shutdown.
 
 The server exposes Spring Boot probe groups at `/actuator/health/liveness` and `/actuator/health/readiness` on port `8080`.

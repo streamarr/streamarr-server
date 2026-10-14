@@ -29,6 +29,7 @@ import com.streamarr.transcode.v1.WorkerVerifiedVideoEncoder;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -36,7 +37,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
+import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -819,6 +822,144 @@ class LiveWorkerConnectionRegistryTest {
     assertThat(encode.isRunning()).isTrue();
   }
 
+  @Test
+  @DisplayName(
+      "Should publish an encode attempt's upload once its start report names the dispatched encoder backend")
+  void shouldPublishEncodeAttemptsUploadOnceItsStartReportNamesDispatchedEncoderBackend()
+      throws Exception {
+    var encode = RunningEncode.dispatch();
+
+    var published = new AtomicBoolean();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var publication = executor.submit(() -> encode.publishInitializationSegment(published));
+      encode
+          .registry()
+          .checkReportedEncoderBackend(
+              WORKER_ID, encode.workerSessionId(), libx264Started(encode.job().getJobAttemptId()));
+
+      assertThat(publication.get(5, TimeUnit.SECONDS)).contains(SegmentPublication.PUBLISHED);
+    }
+
+    assertThat(published).isTrue();
+    assertThat(encode.isRunning()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse an encode attempt's upload that overtakes a start report naming another backend")
+  void shouldRefuseEncodeAttemptsUploadThatOvertakesStartReportNamingAnotherBackend()
+      throws Exception {
+    var encode = RunningEncode.dispatch();
+    var published = new AtomicBoolean();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var publication = executor.submit(() -> encode.publishInitializationSegment(published));
+      encode
+          .registry()
+          .checkReportedEncoderBackend(
+              WORKER_ID, encode.workerSessionId(), nvencStarted(encode.job().getJobAttemptId()));
+
+      assertThat(publication.get(5, TimeUnit.SECONDS)).isEmpty();
+    }
+
+    assertThat(published).isFalse();
+    assertThat(encode.isRunning()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse an encode attempt's upload when its start report does not arrive in time")
+  void shouldRefuseEncodeAttemptsUploadWhenItsStartReportDoesNotArriveInTime() {
+    var encode =
+        RunningEncode.dispatch(
+            WorkerSessionServerConfiguration.builder()
+                .startReportTimeout(Duration.ofMillis(50))
+                .build());
+    var published = new AtomicBoolean();
+
+    assertThat(encode.publishInitializationSegment(published)).isEmpty();
+
+    assertThat(published).isFalse();
+    assertThat(encode.isRunning()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should release a held upload without waiting for the start report when the encode attempt stops")
+  void shouldReleaseHeldUploadWithoutWaitingForStartReportWhenEncodeAttemptStops()
+      throws Exception {
+    var encode =
+        RunningEncode.dispatch(
+            WorkerSessionServerConfiguration.builder()
+                .startReportTimeout(Duration.ofMinutes(5))
+                .build());
+
+    var published = new AtomicBoolean();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var publication = executor.submit(() -> encode.publishInitializationSegment(published));
+      encode
+          .registry()
+          .stopVariant(
+              fromProto(encode.job().getStreamSessionId()),
+              encode.job().getVariant().getVariantLabel());
+
+      assertThat(publication.get(5, TimeUnit.SECONDS)).isEmpty();
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should release a held upload without waiting for the start report when the worker disconnects")
+  void shouldReleaseHeldUploadWithoutWaitingForStartReportWhenWorkerDisconnects() throws Exception {
+    var encode =
+        RunningEncode.dispatch(
+            WorkerSessionServerConfiguration.builder()
+                .startReportTimeout(Duration.ofMinutes(5))
+                .build());
+
+    var published = new AtomicBoolean();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var publication = executor.submit(() -> encode.publishInitializationSegment(published));
+      encode.registry().disconnect(WORKER_ID, encode.workerSessionId());
+
+      assertThat(publication.get(5, TimeUnit.SECONDS)).isEmpty();
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should release a held upload without waiting for the start report when the worker finishes the attempt")
+  void shouldReleaseHeldUploadWithoutWaitingForStartReportWhenWorkerFinishesAttempt()
+      throws Exception {
+    var encode =
+        RunningEncode.dispatch(
+            WorkerSessionServerConfiguration.builder()
+                .startReportTimeout(Duration.ofMinutes(5))
+                .build());
+
+    var published = new AtomicBoolean();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var publication = executor.submit(() -> encode.publishInitializationSegment(published));
+      encode
+          .registry()
+          .releaseJobAttempt(
+              WORKER_ID, encode.workerSessionId(), fromProto(encode.job().getJobAttemptId()));
+
+      assertThat(publication.get(5, TimeUnit.SECONDS)).isEmpty();
+    }
+  }
+
+  private static JobAttemptStarted libx264Started(Uuid jobAttemptId) {
+    return JobAttemptStarted.newBuilder()
+        .setJobAttemptId(jobAttemptId)
+        .setEncoderBackend(libx264Encoder().getBackend())
+        .build();
+  }
+
   private static JobAttemptStarted nvencStarted(Uuid jobAttemptId) {
     return JobAttemptStarted.newBuilder()
         .setJobAttemptId(jobAttemptId)
@@ -827,22 +968,45 @@ class LiveWorkerConnectionRegistryTest {
         .build();
   }
 
+  @Builder
   private record RunningEncode(
-      LiveWorkerConnectionRegistry registry, UUID workerSessionId, VariantJob job) {
+      LiveWorkerConnectionRegistry registry,
+      UUID workerSessionId,
+      WorkerIdentity worker,
+      VariantJob job) {
 
     private static RunningEncode dispatch() {
-      var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+      return dispatch(WorkerSessionServerConfiguration.builder().build());
+    }
+
+    private static RunningEncode dispatch(WorkerSessionServerConfiguration configuration) {
+      var registry = new LiveWorkerConnectionRegistry(configuration, new SimpleMeterRegistry());
+      var workerRegistration = registration(WORKER_ID, libx264Encoder());
       var workerSessionId =
-          registry.register(
-              WORKER_ID, registration(WORKER_ID, libx264Encoder()), new CancellableObserver());
+          registry.register(WORKER_ID, workerRegistration, new CancellableObserver());
       var job = encodeJob("h264");
       assertThat(registry.dispatch(job)).isPresent();
-      return new RunningEncode(registry, workerSessionId, job);
+      return RunningEncode.builder()
+          .registry(registry)
+          .workerSessionId(workerSessionId)
+          .worker(workerRegistration.getWorker())
+          .job(job)
+          .build();
     }
 
     private boolean isRunning() {
       return registry.isRunning(
           fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel());
+    }
+
+    private Optional<SegmentPublication> publishInitializationSegment(AtomicBoolean published) {
+      return registry.publishIfAuthorized(
+          WORKER_ID,
+          uploadMetadata(workerSessionId, worker, job),
+          () -> {
+            published.set(true);
+            return SegmentPublication.PUBLISHED;
+          });
     }
   }
 

@@ -10,7 +10,8 @@ public record WorkerSessionServerConfiguration(
     int port,
     Duration probeTimeout,
     Duration keyframeScanTimeout,
-    Duration probeCancellationTimeout) {
+    Duration probeCancellationTimeout,
+    Duration startReportTimeout) {
 
   public WorkerSessionServerConfiguration {
     probeTimeout = probeTimeout == null ? Duration.ofMinutes(1) : probeTimeout;
@@ -18,6 +19,7 @@ public record WorkerSessionServerConfiguration(
         keyframeScanTimeout == null ? Duration.ofMinutes(30) : keyframeScanTimeout;
     probeCancellationTimeout =
         probeCancellationTimeout == null ? Duration.ofSeconds(5) : probeCancellationTimeout;
+    startReportTimeout = startReportTimeout == null ? Duration.ofSeconds(10) : startReportTimeout;
 
     if (probeTimeout.isZero() || probeTimeout.isNegative()) {
       throw new IllegalArgumentException("Worker probe timeout must be positive");
@@ -29,6 +31,10 @@ public record WorkerSessionServerConfiguration(
 
     if (probeCancellationTimeout.isZero() || probeCancellationTimeout.isNegative()) {
       throw new IllegalArgumentException("Worker probe cancellation timeout must be positive");
+    }
+
+    if (startReportTimeout.isZero() || startReportTimeout.isNegative()) {
+      throw new IllegalArgumentException("Worker start report timeout must be positive");
     }
 
     if (address.isBlank()) {

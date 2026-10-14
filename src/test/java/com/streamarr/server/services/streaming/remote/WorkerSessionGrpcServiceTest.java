@@ -13,6 +13,7 @@ import com.google.protobuf.ByteString;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
@@ -57,6 +58,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.LongStream;
+import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -483,6 +485,32 @@ class WorkerSessionGrpcServiceTest {
 
   @Test
   @DisplayName(
+      "Should store no initialization segment that an encode attempt uploads before its start report names another encoder backend")
+  void
+      shouldStoreNoInitializationSegmentThatEncodeAttemptUploadsBeforeItsStartReportNamesAnotherBackend()
+          throws Exception {
+    var started =
+        startedEncode(
+            WorkerSessionServerConfiguration.builder()
+                .startReportTimeout(Duration.ofMillis(100))
+                .build(),
+            new SimpleMeterRegistry());
+    var response = new RecordingUploadResponseObserver();
+
+    started.uploadInitializationSegment(response);
+    started
+        .session()
+        .onNext(jobAttemptStarted(started.job(), ReportedEncoderBackend.DIFFERENT.backend()));
+
+    assertThat(response.error()).isNotNull();
+    assertThat(Status.fromThrowable(response.error()).getCode())
+        .isEqualTo(Status.Code.PERMISSION_DENIED);
+    assertThat(started.hasStoredInitializationSegment()).isFalse();
+    assertThat(started.isRunning()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
       "Should keep a job attempt running when its start report names the pinned encoder backend")
   void shouldKeepJobAttemptRunningWhenItsStartReportNamesPinnedEncoderBackend() throws Exception {
     var meterRegistry = new SimpleMeterRegistry();
@@ -750,12 +778,17 @@ class WorkerSessionGrpcServiceTest {
   }
 
   private static StartedEncode startedEncode(SimpleMeterRegistry meterRegistry) throws Exception {
+    return startedEncode(WorkerSessionServerConfiguration.builder().build(), meterRegistry);
+  }
+
+  private static StartedEncode startedEncode(
+      WorkerSessionServerConfiguration configuration, SimpleMeterRegistry meterRegistry)
+      throws Exception {
     var workerId = UUID.randomUUID();
     var sourceNamespaceId = UUID.randomUUID();
-    var registry =
-        new LiveWorkerConnectionRegistry(
-            WorkerSessionServerConfiguration.builder().build(), meterRegistry);
-    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var registry = new LiveWorkerConnectionRegistry(configuration, meterRegistry);
+    var segmentStore = new FakeSegmentStore();
+    var service = new WorkerSessionGrpcService(registry, segmentStore);
     var responses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
     var session = workerSession(service, workerId, new CollectingResponseObserver(responses));
     var registration = registration(worker(workerId), sourceNamespaceId).toBuilder();
@@ -770,11 +803,25 @@ class WorkerSessionGrpcServiceTest {
                     .setVideoCodecFamily("h264"))
             .build();
     assertThat(registry.dispatch(job)).isPresent();
-    return new StartedEncode(registry, session, job, responses);
+    return StartedEncode.builder()
+        .registry(registry)
+        .service(service)
+        .segmentStore(segmentStore)
+        .worker(registration.getWorker())
+        .workerSessionId(fromProto(responses.getFirst().getSessionAccepted().getWorkerSessionId()))
+        .session(session)
+        .job(job)
+        .responses(responses)
+        .build();
   }
 
+  @Builder
   private record StartedEncode(
       LiveWorkerConnectionRegistry registry,
+      WorkerSessionGrpcService service,
+      FakeSegmentStore segmentStore,
+      WorkerIdentity worker,
+      UUID workerSessionId,
       StreamObserver<EstablishWorkerSessionRequest> session,
       VariantJob job,
       List<EstablishWorkerSessionResponse> responses) {
@@ -782,6 +829,27 @@ class WorkerSessionGrpcServiceTest {
     private boolean isRunning() {
       return registry.isRunning(
           fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel());
+    }
+
+    private void uploadInitializationSegment(StreamObserver<UploadSegmentResponse> response)
+        throws Exception {
+      var segmentData = ByteString.copyFromUtf8("init");
+      var upload = upload(service, fromProto(worker.getWorkerId()), response);
+      upload.onNext(
+          UploadSegmentRequest.newBuilder()
+              .setMetadata(
+                  metadataBuilder(workerSessionId, worker, job)
+                      .setSegmentName(SegmentNames.INITIALIZATION_SEGMENT_NAME)
+                      .setContentLengthBytes(segmentData.size()))
+              .build());
+      upload.onNext(UploadSegmentRequest.newBuilder().setData(segmentData).build());
+      upload.onCompleted();
+    }
+
+    private boolean hasStoredInitializationSegment() {
+      return segmentStore.segmentExists(
+          fromProto(job.getStreamSessionId()),
+          job.getVariant().getVariantLabel() + "/" + SegmentNames.INITIALIZATION_SEGMENT_NAME);
     }
   }
 

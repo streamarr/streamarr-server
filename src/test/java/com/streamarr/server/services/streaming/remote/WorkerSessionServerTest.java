@@ -34,11 +34,17 @@ class WorkerSessionServerTest {
     var probeTimeout = defaults.probeTimeout();
     var keyframeScanTimeout = defaults.keyframeScanTimeout();
     var cancellationTimeout = defaults.probeCancellationTimeout();
+    var startReportTimeout = defaults.startReportTimeout();
 
     assertThatThrownBy(
             () ->
                 new WorkerSessionServerConfiguration(
-                    address, 0, probeTimeout, keyframeScanTimeout, cancellationTimeout))
+                    address,
+                    0,
+                    probeTimeout,
+                    keyframeScanTimeout,
+                    cancellationTimeout,
+                    startReportTimeout))
         .hasMessageContaining("address");
   }
 
