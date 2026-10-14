@@ -33,18 +33,9 @@ public class CompanyService {
       return Set.of();
     }
 
-    companies.forEach(CompanyService::requireSourceId);
-
-    return companies.stream()
-        .sorted(CreditInsertOrder.bySourceId(Company::getSourceId))
+    return CreditInsertOrder.sortedBySourceId(companies, Company::getSourceId, "Company").stream()
         .map(c -> findOrCreateCompany(c, imageSourcesBySourceId, imageRefreshMode))
         .collect(Collectors.toSet());
-  }
-
-  private static void requireSourceId(Company company) {
-    if (company.getSourceId() == null) {
-      throw new IllegalArgumentException("Company sourceId must not be null");
-    }
   }
 
   private Company findOrCreateCompany(

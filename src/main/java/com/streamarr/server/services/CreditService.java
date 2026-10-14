@@ -16,9 +16,9 @@ public class CreditService {
   private final CompanyService companyService;
 
   /**
-   * Finds or creates every credited person, genre and studio in the caller's transaction, inserting
-   * them in {@link CreditInsertOrder}: cast and directors together in one pass, then genres, then
-   * studios. The returned cast and directors keep their listed order.
+   * Finds or creates every credited person, genre and studio. Every transaction inserts people
+   * first, then genres, then studios, each table in {@link CreditInsertOrder}. Cast and directors
+   * go in one pass, and the returned cast and directors keep their listed order.
    */
   @Transactional
   public MediaTitleCredits getOrCreateCredits(@NonNull MediaTitleCreditsRequest request) {

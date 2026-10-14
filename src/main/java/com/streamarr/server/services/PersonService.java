@@ -35,14 +35,14 @@ public class PersonService {
       return List.of();
     }
 
-    persons.forEach(PersonService::requireSourceId);
+    persons.forEach(PersonService::requirePerson);
 
     var firstListedBySourceId = new LinkedHashMap<String, Person>();
     persons.forEach(person -> firstListedBySourceId.putIfAbsent(person.getSourceId(), person));
 
     var savedBySourceId = new HashMap<String, Person>();
-    firstListedBySourceId.values().stream()
-        .sorted(CreditInsertOrder.bySourceId(Person::getSourceId))
+    CreditInsertOrder.sortedBySourceId(
+            firstListedBySourceId.values(), Person::getSourceId, "Person")
         .forEach(
             person ->
                 savedBySourceId.put(
@@ -73,13 +73,9 @@ public class PersonService {
     return saved;
   }
 
-  private static void requireSourceId(Person person) {
+  private static void requirePerson(Person person) {
     if (person == null) {
       throw new IllegalArgumentException("Person must not be null");
-    }
-
-    if (person.getSourceId() == null) {
-      throw new IllegalArgumentException("Person sourceId must not be null");
     }
   }
 
