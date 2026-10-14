@@ -22,7 +22,8 @@ final class RemoteProbeResultMapper {
   private static final long MAXIMUM_PROTOBUF_DURATION_SECONDS = 315_576_000_000L;
   private static final int MAXIMUM_PROTOBUF_DURATION_NANOS = 999_999_999;
 
-  ProbeOutcome map(ProbeAttemptResult result) {
+  ProbeOutcome map(ProbeAttemptReport report) {
+    var result = report.result();
     if (result.hasMedia()) {
       return success(result.getMedia());
     }

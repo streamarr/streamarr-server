@@ -34,6 +34,10 @@ import org.junit.jupiter.params.provider.ValueSource;
 @DisplayName("Remote Probe Result Mapper Tests")
 class RemoteProbeResultMapperTest {
 
+  private static ProbeAttemptReport reportOf(ProbeAttemptResult result) {
+    return new ProbeAttemptReport(result, List.of());
+  }
+
   @ParameterizedTest
   @ValueSource(ints = {-1, Integer.MIN_VALUE})
   @DisplayName("Should reject a stream when its required index exceeds the supported integer range")
@@ -42,7 +46,8 @@ class RemoteProbeResultMapperTest {
     var mapper = new RemoteProbeResultMapper();
     var result = resultWithStream(ProbeStreamInfo.newBuilder().setIndex(index));
 
-    assertThatThrownBy(() -> mapper.map(result)).isInstanceOf(ProbeExecutionException.class);
+    assertThatThrownBy(() -> mapper.map(reportOf(result)))
+        .isInstanceOf(ProbeExecutionException.class);
   }
 
   @ParameterizedTest
@@ -54,7 +59,7 @@ class RemoteProbeResultMapperTest {
     var result =
         resultWithStream(
             ProbeStreamInfo.newBuilder().setWidth(value).setHeight(value).setChannels(value));
-    var outcome = (ProbeOutcome.Success) new RemoteProbeResultMapper().map(result);
+    var outcome = (ProbeOutcome.Success) new RemoteProbeResultMapper().map(reportOf(result));
     var stream = outcome.streams().getFirst();
 
     assertThat(stream.width()).isEmpty();
@@ -67,7 +72,7 @@ class RemoteProbeResultMapperTest {
   @DisplayName("Should leave framerate unknown when a worker reports an invalid rate")
   void shouldLeaveFramerateUnknownWhenWorkerReportsInvalidRate(double rate) throws Exception {
     var result = resultWithStream(ProbeStreamInfo.newBuilder().setFramerate(rate));
-    var outcome = (ProbeOutcome.Success) new RemoteProbeResultMapper().map(result);
+    var outcome = (ProbeOutcome.Success) new RemoteProbeResultMapper().map(reportOf(result));
 
     assertThat(outcome.streams().getFirst().framerate()).isEmpty();
   }
@@ -97,7 +102,8 @@ class RemoteProbeResultMapperTest {
     var mapper = new RemoteProbeResultMapper();
     var result = resultWithDuration(seconds, nanos);
 
-    assertThatThrownBy(() -> mapper.map(result)).isInstanceOf(ProbeExecutionException.class);
+    assertThatThrownBy(() -> mapper.map(reportOf(result)))
+        .isInstanceOf(ProbeExecutionException.class);
   }
 
   private ProbeAttemptResult resultWithDuration(long seconds, int nanos) throws Exception {
@@ -120,7 +126,7 @@ class RemoteProbeResultMapperTest {
   void shouldRetainValidDurationOnlyWhenWorkerReportsNonnegativeMediaTime(
       long seconds, int nanos, boolean known) throws Exception {
     var result = resultWithDuration(seconds, nanos);
-    var outcome = (ProbeOutcome.Success) new RemoteProbeResultMapper().map(result);
+    var outcome = (ProbeOutcome.Success) new RemoteProbeResultMapper().map(reportOf(result));
 
     assertThat(outcome.container().duration())
         .isEqualTo(known ? Optional.of(Duration.ofSeconds(seconds, nanos)) : Optional.empty());
@@ -137,7 +143,7 @@ class RemoteProbeResultMapperTest {
                     .addStreams(ProbeStreamInfo.newBuilder().setCodecType("video")))
             .build();
 
-    var outcome = new RemoteProbeResultMapper().map(result);
+    var outcome = new RemoteProbeResultMapper().map(reportOf(result));
 
     var video = StreamInfo.builder().index(0).codecType("video").build();
     assertThat(outcome)
@@ -152,7 +158,7 @@ class RemoteProbeResultMapperTest {
             .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA)
             .build();
 
-    var outcome = new RemoteProbeResultMapper().map(result);
+    var outcome = new RemoteProbeResultMapper().map(reportOf(result));
 
     assertThat(outcome).isEqualTo(new ProbeOutcome.Failure(ProbeError.INVALID_MEDIA));
   }
@@ -165,7 +171,7 @@ class RemoteProbeResultMapperTest {
             .setFailure(ProbeFailure.PROBE_FAILURE_NO_VIDEO_STREAM)
             .build();
 
-    var outcome = new RemoteProbeResultMapper().map(result);
+    var outcome = new RemoteProbeResultMapper().map(reportOf(result));
 
     assertThat(outcome).isEqualTo(new ProbeOutcome.Failure(ProbeError.NO_VIDEO_STREAM));
   }
@@ -182,7 +188,7 @@ class RemoteProbeResultMapperTest {
     var mapper = new RemoteProbeResultMapper();
     var result = ProbeAttemptResult.newBuilder().setFailure(failure).build();
 
-    assertThatThrownBy(() -> mapper.map(result))
+    assertThatThrownBy(() -> mapper.map(reportOf(result)))
         .isInstanceOfSatisfying(
             ProbeExecutionException.class,
             exception -> assertThat(exception.reason()).isEqualTo(reason))
@@ -196,7 +202,7 @@ class RemoteProbeResultMapperTest {
     var result =
         ProbeAttemptResult.newBuilder().setFailure(ProbeFailure.PROBE_FAILURE_CANCELLED).build();
 
-    assertThatThrownBy(() -> mapper.map(result))
+    assertThatThrownBy(() -> mapper.map(reportOf(result)))
         .isInstanceOf(ProbeCancelledException.class)
         .isNotInstanceOf(ProbeExecutionException.class)
         .hasMessageContaining(ProbeFailure.PROBE_FAILURE_CANCELLED.name());
@@ -209,7 +215,7 @@ class RemoteProbeResultMapperTest {
       ProbeAttemptResult result) {
     var mapper = new RemoteProbeResultMapper();
 
-    assertThatThrownBy(() -> mapper.map(result))
+    assertThatThrownBy(() -> mapper.map(reportOf(result)))
         .isInstanceOfSatisfying(
             ProbeExecutionException.class,
             exception -> assertThat(exception.reason()).isEqualTo(ItemFailureReason.TEMPORARY));
@@ -233,7 +239,8 @@ class RemoteProbeResultMapperTest {
                     .addStreams(ProbeStreamInfo.newBuilder().setCodecType("audio")))
             .build();
 
-    assertThatThrownBy(() -> mapper.map(result)).isInstanceOf(ProbeExecutionException.class);
+    assertThatThrownBy(() -> mapper.map(reportOf(result)))
+        .isInstanceOf(ProbeExecutionException.class);
   }
 
   @Test
@@ -248,7 +255,8 @@ class RemoteProbeResultMapperTest {
                     .addStreams(ProbeStreamInfo.newBuilder().setIndex(1).setCodecType("video")))
             .build();
 
-    assertThatThrownBy(() -> mapper.map(result)).isInstanceOf(ProbeExecutionException.class);
+    assertThatThrownBy(() -> mapper.map(reportOf(result)))
+        .isInstanceOf(ProbeExecutionException.class);
   }
 
   @Test
@@ -288,7 +296,7 @@ class RemoteProbeResultMapperTest {
             .build();
     var result = ProbeAttemptResult.newBuilder().setMedia(media).build();
 
-    var outcome = new RemoteProbeResultMapper().map(result);
+    var outcome = new RemoteProbeResultMapper().map(reportOf(result));
 
     var container =
         ProbeContainer.builder()
