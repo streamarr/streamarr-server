@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
+import java.net.http.WebSocketHandshakeException;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.List;
@@ -87,6 +88,26 @@ public final class GraphQlTransportWsTestClient implements AutoCloseable {
 
   public static GraphQlTransportWsTestClient connect(Handshake handshake) {
     return bounded(open(handshake));
+  }
+
+  /** The HTTP status of a handshake the server refused; fails if the upgrade succeeds. */
+  public static int refusedHandshakeStatus(Handshake handshake) {
+    try {
+      var client = open(handshake).get(MESSAGE_BOUND.toMillis(), TimeUnit.MILLISECONDS);
+      client.close();
+      throw new AssertionError("The server accepted a handshake it should refuse");
+    } catch (ExecutionException e) {
+      if (e.getCause() instanceof WebSocketHandshakeException refused) {
+        return refused.getResponse().statusCode();
+      }
+
+      throw new AssertionError("The handshake failed without an HTTP response", e.getCause());
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new AssertionError("Interrupted while opening the WebSocket", e);
+    } catch (TimeoutException e) {
+      throw new AssertionError("The handshake did not finish within " + MESSAGE_BOUND, e);
+    }
   }
 
   /** Sends {@code connection_init} and waits for {@code connection_ack}. */

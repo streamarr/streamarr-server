@@ -36,6 +36,19 @@ class CanonicalBaseUrlTest {
         .isEqualTo("https://home.example.com/streamarr/link");
   }
 
+  @Test
+  @DisplayName("Should keep scheme, host and port in the origin when the base URL contains a path")
+  void shouldKeepSchemeHostAndPortInOriginWhenBaseUrlContainsPath() {
+    assertThat(CanonicalBaseUrl.of("https://home.example.com:8443/streamarr", false).origin())
+        .contains("https://home.example.com:8443");
+  }
+
+  @Test
+  @DisplayName("Should report no origin when no base URL is configured")
+  void shouldReportNoOriginWhenNoBaseUrlIsConfigured() {
+    assertThat(CanonicalBaseUrl.absent().origin()).isEmpty();
+  }
+
   @ParameterizedTest(name = "Should reject \"{0}\"")
   @ValueSource(
       strings = {
