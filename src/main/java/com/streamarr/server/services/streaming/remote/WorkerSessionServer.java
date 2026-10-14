@@ -141,6 +141,13 @@ public final class WorkerSessionServer implements AutoCloseable {
     return workerConnections.availableSlots(sourceNamespaceId);
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  public synchronized int availableSlots(
+      UUID sourceNamespaceId, com.streamarr.transcode.v1.TranscodeDecision decision) {
+    requireStarted();
+    return workerConnections.availableSlots(sourceNamespaceId, decision);
+  }
+
   private void requireStarted() {
     if (!started) {
       throw new IllegalStateException("Worker session server is not started");

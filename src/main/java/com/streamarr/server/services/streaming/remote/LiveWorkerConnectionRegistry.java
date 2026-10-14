@@ -17,6 +17,7 @@ import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.StartProbeCommand;
 import com.streamarr.transcode.v1.StartVariantCommand;
 import com.streamarr.transcode.v1.StopVariantCommand;
+import com.streamarr.transcode.v1.TranscodeDecision;
 import com.streamarr.transcode.v1.TranscodeMode;
 import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
@@ -254,6 +255,7 @@ final class LiveWorkerConnectionRegistry {
     var sourceNamespace = toProto(sourceNamespaceId);
     return connections.values().stream()
         .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
+        .filter(connection -> connection.availableSlots() > 0)
         .flatMap(connection -> connection.encodableVideoCodecFamilies.stream())
         .collect(Collectors.toUnmodifiableSet());
   }
@@ -279,6 +281,15 @@ final class LiveWorkerConnectionRegistry {
     var sourceNamespace = toProto(sourceNamespaceId);
     return connections.values().stream()
         .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
+        .mapToInt(WorkerConnection::availableSlots)
+        .sum();
+  }
+
+  int availableSlots(UUID sourceNamespaceId, TranscodeDecision decision) {
+    var sourceNamespace = toProto(sourceNamespaceId);
+    return connections.values().stream()
+        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
+        .filter(connection -> connection.canEncode(decision))
         .mapToInt(WorkerConnection::availableSlots)
         .sum();
   }
@@ -354,7 +365,7 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private synchronized boolean tryDispatch(VariantJob job) {
-      if (!canAccessSource(job) || !canEncode(job) || availableSlots() == 0) {
+      if (!canAccessSource(job) || !canEncode(job.getDecision()) || availableSlots() == 0) {
         return false;
       }
 
@@ -549,8 +560,7 @@ final class LiveWorkerConnectionRegistry {
       return job.hasSource() && canAccessSourceNamespace(job.getSource().getSourceNamespaceId());
     }
 
-    private boolean canEncode(VariantJob job) {
-      var decision = job.getDecision();
+    private boolean canEncode(TranscodeDecision decision) {
       var encodesVideo =
           decision.getMode() == TranscodeMode.TRANSCODE_MODE_VIDEO_TRANSCODE
               || decision.getMode() == TranscodeMode.TRANSCODE_MODE_FULL_TRANSCODE;

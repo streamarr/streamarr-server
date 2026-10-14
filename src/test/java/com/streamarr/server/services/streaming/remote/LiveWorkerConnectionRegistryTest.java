@@ -309,6 +309,55 @@ class LiveWorkerConnectionRegistryTest {
 
   @Test
   @DisplayName(
+      "Should count an encode's free slots only on workers that encode its codec family and a copy's on every worker")
+  void shouldCountAnEncodesFreeSlotsOnlyOnWorkersThatEncodeItsCodecFamily() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var av1WorkerId = UUID.randomUUID();
+    registry.register(
+        WORKER_ID,
+        registration(
+            WORKER_ID, softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264")),
+        new CancellableObserver());
+    registry.register(
+        av1WorkerId,
+        registration(
+            av1WorkerId, softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "libsvtav1")),
+        new CancellableObserver());
+    var hevcCopy =
+        encodeJob("hevc").getDecision().toBuilder()
+            .setMode(TranscodeMode.TRANSCODE_MODE_REMUX)
+            .build();
+
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, encodeJob("av1").getDecision()))
+        .isOne();
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, encodeJob("hevc").getDecision()))
+        .isZero();
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, hevcCopy)).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("Should leave out a codec family when every worker that encodes it has no free slot")
+  void shouldLeaveOutACodecFamilyWhenEveryWorkerThatEncodesItHasNoFreeSlot() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var av1WorkerId = UUID.randomUUID();
+    registry.register(
+        WORKER_ID,
+        registration(
+            WORKER_ID, softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264")),
+        new CancellableObserver());
+    registry.register(
+        av1WorkerId,
+        registration(
+            av1WorkerId, softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "libsvtav1")),
+        new CancellableObserver());
+
+    assertThat(registry.dispatch(encodeJob("av1"))).isTrue();
+
+    assertThat(registry.encodableVideoCodecFamilies(SOURCE_NAMESPACE_ID)).containsOnly("h264");
+  }
+
+  @Test
+  @DisplayName(
       "Should refuse an encode for a worker whose only encoder for the codec family is unverified hardware")
   void shouldRefuseAnEncodeForAWorkerWhoseOnlyEncoderForTheCodecFamilyIsUnverifiedHardware() {
     var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();

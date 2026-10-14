@@ -77,7 +77,7 @@ public class HlsStreamingService implements StreamingService {
 
     var variants = resolveVariants(probe, options, decision);
     try {
-      variants = enforceCapacityLimits(decision.transcodeMode(), variants);
+      variants = enforceCapacityLimits(decision, variants);
     } catch (MaxConcurrentTranscodesException _) {
       return Outcome.rejected(
           new CreateStreamSessionRejection.TranscodeCapacityUnavailable(
@@ -217,24 +217,25 @@ public class HlsStreamingService implements StreamingService {
   }
 
   private List<QualityVariant> enforceCapacityLimits(
-      TranscodeMode mode, List<QualityVariant> variants) {
-    if (transcodeExecutor.availableSlots() <= 0) {
+      TranscodeDecision decision, List<QualityVariant> variants) {
+    if (transcodeExecutor.availableSlots(decision) <= 0) {
       throw new MaxConcurrentTranscodesException(properties.maxConcurrentTranscodes());
     }
 
     if (!variants.isEmpty()) {
-      return capVariantsToAvailableSlots(variants);
+      return capVariantsToAvailableSlots(decision, variants);
     }
 
-    if (requiresTranscode(mode)) {
-      enforceTranscodeLimit();
+    if (requiresTranscode(decision.transcodeMode())) {
+      enforceTranscodeLimit(decision);
     }
 
     return variants;
   }
 
-  private List<QualityVariant> capVariantsToAvailableSlots(List<QualityVariant> variants) {
-    var slotsAvailable = availableTranscodeSlots();
+  private List<QualityVariant> capVariantsToAvailableSlots(
+      TranscodeDecision decision, List<QualityVariant> variants) {
+    var slotsAvailable = availableTranscodeSlots(decision);
     if (slotsAvailable <= 0) {
       throw new MaxConcurrentTranscodesException(properties.maxConcurrentTranscodes());
     }
@@ -246,7 +247,7 @@ public class HlsStreamingService implements StreamingService {
     return variants;
   }
 
-  private int availableTranscodeSlots() {
+  private int availableTranscodeSlots(TranscodeDecision decision) {
     var activeTranscodes =
         runtimeRegistry.findAll().stream()
             .filter(s -> !s.isSuspended())
@@ -254,15 +255,15 @@ public class HlsStreamingService implements StreamingService {
             .mapToInt(s -> Math.max(1, s.getVariants().size()))
             .sum();
     var configuredSlots = properties.maxConcurrentTranscodes() - activeTranscodes;
-    return Math.min(configuredSlots, transcodeExecutor.availableSlots());
+    return Math.min(configuredSlots, transcodeExecutor.availableSlots(decision));
   }
 
   private boolean requiresTranscode(TranscodeMode mode) {
     return mode != TranscodeMode.REMUX;
   }
 
-  private void enforceTranscodeLimit() {
-    if (availableTranscodeSlots() <= 0) {
+  private void enforceTranscodeLimit(TranscodeDecision decision) {
+    if (availableTranscodeSlots(decision) <= 0) {
       throw new MaxConcurrentTranscodesException(properties.maxConcurrentTranscodes());
     }
   }

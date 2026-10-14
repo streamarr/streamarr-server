@@ -1,5 +1,6 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
@@ -10,12 +11,14 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public class FakeTranscodeExecutor implements TranscodeExecutor {
@@ -39,7 +42,8 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final AtomicLong livenessChecks = new AtomicLong();
   private final Object observationMonitor = new Object();
   private int availableSlots = TranscodeExecutor.UNBOUNDED_SLOTS;
-  private Set<String> encodableVideoCodecFamilies = Set.of("h264", "hevc", "av1");
+  private final Map<String, Integer> encodeSlotsByVideoCodecFamily =
+      new ConcurrentHashMap<>(unboundedEncodeSlots(Set.of("h264", "hevc", "av1")));
   private boolean healthy = true;
   private volatile boolean failUntargetedStarts;
 
@@ -61,8 +65,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   }
 
   private TranscodeHandle doStart(TranscodeRequest request) {
-    if (encodesVideo(request)
-        && !encodableVideoCodecFamilies.contains(request.transcodeDecision().videoCodecFamily())) {
+    if (encodesVideo(request.transcodeDecision()) && !tryTakeEncodeSlot(request)) {
       throw new TranscodeException("No connected transcode worker can encode this variant");
     }
 
@@ -179,6 +182,16 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     return availableSlots;
   }
 
+  @Override
+  public int availableSlots(TranscodeDecision decision) {
+    if (!encodesVideo(decision)) {
+      return availableSlots;
+    }
+
+    var encodeSlots = encodeSlotsByVideoCodecFamily.getOrDefault(decision.videoCodecFamily(), 0);
+    return Math.min(availableSlots, encodeSlots);
+  }
+
   public void setAvailableSlots(int availableSlots) {
     this.availableSlots = availableSlots;
   }
@@ -194,15 +207,46 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public Set<String> encodableVideoCodecFamilies() {
-    return encodableVideoCodecFamilies;
+    return encodeSlotsByVideoCodecFamily.entrySet().stream()
+        .filter(entry -> entry.getValue() > 0)
+        .map(Map.Entry::getKey)
+        .collect(Collectors.toUnmodifiableSet());
   }
 
+  /** Every listed family gets unbounded encode slots; any other family has none. */
   public void setEncodableVideoCodecFamilies(Set<String> families) {
-    encodableVideoCodecFamilies = Set.copyOf(families);
+    setEncodeSlots(unboundedEncodeSlots(families));
   }
 
-  private static boolean encodesVideo(TranscodeRequest request) {
-    return switch (request.transcodeDecision().transcodeMode()) {
+  /**
+   * Free encode slots for each video codec family, as if each family's encoder ran on its own
+   * worker. Each started encode takes one slot from its family.
+   */
+  public void setEncodeSlots(Map<String, Integer> slotsByVideoCodecFamily) {
+    encodeSlotsByVideoCodecFamily.clear();
+    encodeSlotsByVideoCodecFamily.putAll(slotsByVideoCodecFamily);
+  }
+
+  private synchronized boolean tryTakeEncodeSlot(TranscodeRequest request) {
+    var family = request.transcodeDecision().videoCodecFamily();
+    var slots = encodeSlotsByVideoCodecFamily.getOrDefault(family, 0);
+    if (slots <= 0) {
+      return false;
+    }
+
+    if (slots != UNBOUNDED_SLOTS) {
+      encodeSlotsByVideoCodecFamily.put(family, slots - 1);
+    }
+
+    return true;
+  }
+
+  private static Map<String, Integer> unboundedEncodeSlots(Set<String> families) {
+    return families.stream().collect(Collectors.toMap(Function.identity(), _ -> UNBOUNDED_SLOTS));
+  }
+
+  private static boolean encodesVideo(TranscodeDecision decision) {
+    return switch (decision.transcodeMode()) {
       case VIDEO_TRANSCODE, FULL_TRANSCODE -> true;
       case REMUX, AUDIO_TRANSCODE -> false;
     };
