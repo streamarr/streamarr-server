@@ -3,6 +3,7 @@ package com.streamarr.server.graphql.subscriptions;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.graphql.dto.LibraryRemoval;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.events.library.LibraryStatusChangedEvent;
@@ -35,12 +36,11 @@ public class LibraryAdministrationEventListener {
   private final LibraryRepository libraryRepository;
   private final LibraryAdministrationBroadcasters broadcasters;
   private final MeterRegistry meterRegistry;
+  private final MutexFactory<UUID> statusPublicationLocks = new MutexFactory<>();
 
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
   public void onLibraryStatusChanged(LibraryStatusChangedEvent event) {
-    var statusChanges = broadcasters.getStatusChanges();
-    publish(
-        statusChanges, () -> currentLibrary(event.libraryId()).ifPresent(statusChanges::broadcast));
+    publish(broadcasters.getStatusChanges(), () -> broadcastCurrentStatus(event.libraryId()));
   }
 
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
@@ -53,6 +53,20 @@ public class LibraryAdministrationEventListener {
   public void onLibraryRemoved(LibraryRemovedEvent event) {
     var removals = broadcasters.getRemovals();
     publish(removals, () -> removals.broadcast(new LibraryRemoval(event.libraryId())));
+  }
+
+  // Writers on different threads can save one library's status back to back. Reading and
+  // broadcasting under the library's lock keeps broadcasts in read order, so the last broadcast
+  // carries the latest saved status. That holds while each read sees the latest committed row:
+  // status writes run outside transactions, so this read starts its own.
+  private void broadcastCurrentStatus(UUID libraryId) {
+    var lock = statusPublicationLocks.getMutex(libraryId);
+    lock.lock();
+    try {
+      currentLibrary(libraryId).ifPresent(broadcasters.getStatusChanges()::broadcast);
+    } finally {
+      lock.unlock();
+    }
   }
 
   // A detached copy: the payload is resolved on delivery threads, outside any persistence context.

@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.subscriptions;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
@@ -12,11 +13,15 @@ import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.events.library.LibraryStatusChangedEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -26,6 +31,8 @@ import reactor.core.scheduler.Schedulers;
 @Tag("UnitTest")
 @DisplayName("Library Administration Event Listener Tests")
 class LibraryAdministrationEventListenerTest {
+
+  private static final Duration BOUND = Duration.ofSeconds(5);
 
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
   private final FakeLibraryRepository libraryRepository = new FakeLibraryRepository();
@@ -52,6 +59,38 @@ class LibraryAdministrationEventListenerTest {
               assertThat(payload.getStatus()).isEqualTo(LibraryStatus.SCANNING);
               assertThat(payload).isNotSameAs(library);
             });
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the saved status last when an older publication pauses between its read and"
+          + " broadcast")
+  void shouldDeliverSavedStatusLastWhenOlderPublicationPausesBetweenReadAndBroadcast()
+      throws Exception {
+    var pausingRepository = new FirstReadPausingLibraryRepository();
+    var orderedListener =
+        new LibraryAdministrationEventListener(pausingRepository, broadcasters, meterRegistry);
+    var library = pausingRepository.save(LibraryFixtureCreator.buildFakeLibrary());
+    var delivered = collect(broadcasters.getStatusChanges());
+    var event = new LibraryStatusChangedEvent(library.getId());
+
+    var olderPublication =
+        Thread.ofPlatform().start(() -> orderedListener.onLibraryStatusChanged(event));
+    pausingRepository.awaitFirstReadPaused();
+    pausingRepository.save(library.toBuilder().status(LibraryStatus.SCANNING).build());
+    var newerPublication =
+        Thread.ofPlatform().start(() -> orderedListener.onLibraryStatusChanged(event));
+    // A thread parked on a lock offers no callback, so the test polls the thread's state.
+    await()
+        .atMost(BOUND)
+        .until(
+            () ->
+                newerPublication.getState() == Thread.State.WAITING || !newerPublication.isAlive());
+    pausingRepository.releaseFirstRead();
+    assertThat(olderPublication.join(BOUND)).isTrue();
+    assertThat(newerPublication.join(BOUND)).isTrue();
+
+    assertThat(delivered).last().extracting(Library::getStatus).isEqualTo(LibraryStatus.SCANNING);
   }
 
   @Test
@@ -118,6 +157,44 @@ class LibraryAdministrationEventListenerTest {
     var delivered = new CopyOnWriteArrayList<T>();
     broadcaster.register().subscribe(delivered::add);
     return delivered;
+  }
+
+  // Its first read takes a copy of the saved row, then waits for the test before returning it.
+  private static final class FirstReadPausingLibraryRepository extends FakeLibraryRepository {
+
+    private final CountDownLatch firstReadPaused = new CountDownLatch(1);
+    private final CountDownLatch firstReadReleased = new CountDownLatch(1);
+    private final AtomicBoolean firstRead = new AtomicBoolean(true);
+
+    @Override
+    public Optional<Library> findById(UUID id) {
+      Optional<Library> saved = super.findById(id).map(library -> library.toBuilder().build());
+      if (firstRead.compareAndSet(true, false)) {
+        firstReadPaused.countDown();
+        awaitRelease();
+      }
+
+      return saved;
+    }
+
+    private void awaitRelease() {
+      try {
+        if (!firstReadReleased.await(BOUND.toMillis(), TimeUnit.MILLISECONDS)) {
+          throw new IllegalStateException("The test never released the first read.");
+        }
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new IllegalStateException("Interrupted while the first read was paused.", e);
+      }
+    }
+
+    private void awaitFirstReadPaused() throws InterruptedException {
+      assertThat(firstReadPaused.await(BOUND.toMillis(), TimeUnit.MILLISECONDS)).isTrue();
+    }
+
+    private void releaseFirstRead() {
+      firstReadReleased.countDown();
+    }
   }
 
   private static final class UnavailableLibraryRepository extends FakeLibraryRepository {
