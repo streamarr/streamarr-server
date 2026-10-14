@@ -9,6 +9,7 @@ import static org.awaitility.Awaitility.await;
 import com.google.common.primitives.Bytes;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -388,6 +389,7 @@ class RemoteRecoveryIT {
         .height(1080)
         .bitrate(5_000_000)
         .variantLabel(StreamSession.defaultVariant())
+        .encoderPreset(EncoderPreset.FASTER)
         .build();
   }
 

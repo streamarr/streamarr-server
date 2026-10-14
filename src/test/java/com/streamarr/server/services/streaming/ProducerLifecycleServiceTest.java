@@ -2,12 +2,14 @@ package com.streamarr.server.services.streaming;
 
 import static com.streamarr.server.fixtures.StreamSessionFixture.abrSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static com.streamarr.server.fixtures.StreamSessionFixture.sessionWithDurationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
@@ -602,5 +604,63 @@ class ProducerLifecycleServiceTest {
     assertThat(transcodeExecutor.getStopped()).contains(session.getSessionId());
     assertThat(transcodeExecutor.isRunning(session.getSessionId(), StreamSession.defaultVariant()))
         .isFalse();
+  }
+
+  private StreamSession startedTranscodeSession(String videoCodecFamily) {
+    var session =
+        abrSessionBuilder().transcodeDecision(fullTranscodeDecision(videoCodecFamily)).build();
+    runtimeRegistry.save(session);
+    lifecycle.startAll(session, 0, 0);
+    return session;
+  }
+
+  @Test
+  @DisplayName("Should carry the faster preset when an H.264 variant job starts")
+  void shouldCarryFasterPresetWhenH264VariantJobStarts() {
+    startedTranscodeSession("h264");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::encoderPreset)
+        .containsOnly(EncoderPreset.FASTER);
+  }
+
+  @Test
+  @DisplayName("Should carry the faster preset when an AV1 variant job starts")
+  void shouldCarryFasterPresetWhenAv1VariantJobStarts() {
+    startedTranscodeSession("av1");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::encoderPreset)
+        .containsOnly(EncoderPreset.FASTER);
+  }
+
+  @Test
+  @DisplayName("Should carry the veryfast preset when an HEVC variant job starts")
+  void shouldCarryVeryfastPresetWhenHevcVariantJobStarts() {
+    startedTranscodeSession("hevc");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::encoderPreset)
+        .containsOnly(EncoderPreset.VERYFAST);
+  }
+
+  @Test
+  @DisplayName("Should carry the same preset when a replacement attempt starts")
+  void shouldCarryTheSamePresetWhenReplacementAttemptStarts() {
+    var session = startedTranscodeSession("hevc");
+    transcodeExecutor.markDead(session.getSessionId(), "720p");
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    lifecycle.recover(session.getSessionId(), "720p", "720p/segment2.m4s");
+    lifecycle.ensurePositioned(session.getSessionId(), "1080p/segment100.m4s");
+
+    var replacements =
+        transcodeExecutor
+            .getStartedRequests()
+            .subList(startedBefore, transcodeExecutor.getStartedRequests().size());
+    assertThat(replacements)
+        .hasSizeGreaterThan(1)
+        .extracting(TranscodeRequest::encoderPreset)
+        .containsOnly(EncoderPreset.VERYFAST);
   }
 }

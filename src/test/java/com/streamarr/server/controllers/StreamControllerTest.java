@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
@@ -270,6 +271,7 @@ class StreamControllerTest {
                 .sessionId(SESSION_ID)
                 .sourcePath(session.getSourcePath())
                 .transcodeDecision(session.getTranscodeDecision())
+                .encoderPreset(EncoderPreset.FASTER)
                 .build());
     session.setHandle(handle);
     runtimeRegistry.save(session);

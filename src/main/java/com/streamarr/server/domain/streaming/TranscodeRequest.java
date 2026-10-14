@@ -20,7 +20,8 @@ public record TranscodeRequest(
     long bitrate,
     String variantLabel,
     int startSequenceNumber,
-    int mediaSegmentCount) {
+    int mediaSegmentCount,
+    @NonNull EncoderPreset encoderPreset) {
 
   public TranscodeRequest {
     if (variantLabel == null) {

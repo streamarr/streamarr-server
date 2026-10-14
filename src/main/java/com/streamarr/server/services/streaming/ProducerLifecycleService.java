@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -620,7 +621,9 @@ public class ProducerLifecycleService {
         .framerate(probe.framerate())
         .transcodeDecision(session.getTranscodeDecision())
         .startSequenceNumber(startSequenceNumber)
-        .mediaSegmentCount(timeline.mediaSegmentCount());
+        .mediaSegmentCount(timeline.mediaSegmentCount())
+        .encoderPreset(
+            EncoderPreset.automaticFor(session.getTranscodeDecision().videoCodecFamily()));
   }
 
   private void withSessionLock(UUID sessionId, Runnable action) {

@@ -4,6 +4,7 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPAC
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
@@ -14,6 +15,7 @@ import java.nio.file.Path;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -42,10 +44,36 @@ class RemoteVariantJobMapperTest {
                     .audioDecision(AudioDecision.stereoAac())
                     .subtitleDecision(SubtitleDecision.exclude())
                     .build())
+            .encoderPreset(EncoderPreset.FASTER)
             .build();
 
     var job = mapper.map(request);
 
     assertThat(job.getDecision().getContainer()).isEqualTo(ContainerFormat.CONTAINER_FORMAT_FMP4);
+  }
+
+  @Test
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @DisplayName("Should write the encoder preset when mapping a variant job")
+  void shouldWriteEncoderPresetWhenMappingVariantJob() {
+    var request =
+        TranscodeRequest.builder()
+            .sessionId(UUID.randomUUID())
+            .sourcePath(SOURCE_ROOT.resolve("movie.mkv"))
+            .variantLabel(StreamSession.defaultVariant())
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                    .videoCodecFamily("h264")
+                    .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
+                    .build())
+            .encoderPreset(EncoderPreset.FASTER)
+            .build();
+
+    var job = mapper.map(request);
+
+    assertThat(job.getVariant().getEncoderPreset())
+        .isEqualTo(com.streamarr.transcode.v1.EncoderPreset.ENCODER_PRESET_FASTER);
   }
 }
