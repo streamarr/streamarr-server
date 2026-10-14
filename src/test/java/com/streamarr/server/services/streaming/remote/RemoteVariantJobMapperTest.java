@@ -17,6 +17,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
@@ -86,5 +87,34 @@ class RemoteVariantJobMapperTest {
     var job = mapper.map(request);
 
     assertThat(job.getVariant().getEncoderPreset()).isEqualTo(expected);
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = TranscodeMode.class,
+      names = {"REMUX", "AUDIO_TRANSCODE"})
+  @DisplayName("Should leave align_keyframes_to_segments unset when the job copies video")
+  void shouldLeaveAlignKeyframesToSegmentsUnsetWhenJobCopiesVideo(TranscodeMode mode) {
+    var request =
+        TranscodeRequest.builder()
+            .sessionId(UUID.randomUUID())
+            .sourcePath(SOURCE_ROOT.resolve("movie.mkv"))
+            .variantLabel(StreamSession.defaultVariant())
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(mode)
+                    .videoCodecFamily("h264")
+                    .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
+                    .needsKeyframeAlignment(true)
+                    .build())
+            .encoderPreset(EncoderPreset.FASTER)
+            .build();
+
+    var decision = mapper.map(request).getDecision();
+
+    var alignKeyframesToSegments =
+        decision.getDescriptorForType().findFieldByName("align_keyframes_to_segments");
+    assertThat(decision.hasField(alignKeyframesToSegments)).isFalse();
   }
 }

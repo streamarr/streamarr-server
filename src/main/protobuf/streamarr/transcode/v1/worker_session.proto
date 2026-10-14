@@ -172,7 +172,9 @@ message TranscodeDecision {
   AudioDecision audio = 3;
   SubtitleDecision subtitle = 4;
   ContainerFormat container = 5;
-  bool align_keyframes_to_segments = 6;
+  // Retired. Servers send false and workers ignore the flag. The producer applies ADR 0037's
+  // boundary rule in every transcode mode, so the flag has no behavior to switch.
+  bool align_keyframes_to_segments = 6 [deprecated = true];
   VideoDecision video = 7;
 }
 
