@@ -15,6 +15,8 @@ import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -37,6 +39,22 @@ class CompanyServiceTest {
     companyRepository = new FakeCompanyRepository();
     eventPublisher = new CapturingEventPublisher();
     companyService = new CompanyService(companyRepository, eventPublisher);
+  }
+
+  @Test
+  @DisplayName(
+      "Should insert companies in ascending source id order when they are listed in another order")
+  void shouldInsertCompaniesInAscendingSourceIdOrderWhenTheyAreListedInAnotherOrder() {
+    var insertOrderRepository = new InsertOrderCompanyRepository();
+    var companies = new LinkedHashSet<Company>();
+    companies.add(Company.builder().name("Company 300").sourceId("300").build());
+    companies.add(Company.builder().name("Company 100").sourceId("100").build());
+    companies.add(Company.builder().name("Company 200").sourceId("200").build());
+
+    new CompanyService(insertOrderRepository, new CapturingEventPublisher())
+        .getOrCreateCompanies(companies, Map.of(), ImageRefreshMode.PRESERVE);
+
+    assertThat(insertOrderRepository.insertedSourceIds()).containsExactly("100", "200", "300");
   }
 
   @Test
@@ -220,5 +238,20 @@ class CompanyServiceTest {
                     companies, emptyImageSources, ImageRefreshMode.PRESERVE))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("not found after upsert");
+  }
+
+  private static final class InsertOrderCompanyRepository extends FakeCompanyRepository {
+
+    private final List<String> insertedSourceIds = new ArrayList<>();
+
+    @Override
+    public boolean insertIfAbsent(String sourceId, String name) {
+      insertedSourceIds.add(sourceId);
+      return super.insertIfAbsent(sourceId, name);
+    }
+
+    private List<String> insertedSourceIds() {
+      return List.copyOf(insertedSourceIds);
+    }
   }
 }
