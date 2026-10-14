@@ -161,6 +161,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
         while (result.next()) {
           creators.add(result.getObject(1, UUID.class));
         }
+
         return creators;
       }
     }
