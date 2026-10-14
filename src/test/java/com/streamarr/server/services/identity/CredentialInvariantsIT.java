@@ -1,5 +1,7 @@
 package com.streamarr.server.services.identity;
 
+import static com.streamarr.server.support.security.SignedInAccount.callSignedInAs;
+import static com.streamarr.server.support.security.SignedInAccount.runSignedInAs;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -68,6 +70,70 @@ class CredentialInvariantsIT extends AbstractIntegrationTest {
     } finally {
       invitationRepository.deleteById(invitation.getId());
       authTestSupport.deleteAccount(target.getId());
+    }
+  }
+
+  @Test
+  @DisplayName("Should clear the modifier when issuer deletion invalidates an invitation")
+  void shouldClearModifierWhenIssuerDeletionInvalidatesAnInvitation() {
+    var issuer = authTestSupport.createAccount();
+    var target = authTestSupport.createAccount();
+    var invitation =
+        callSignedInAs(
+            UUID.randomUUID(),
+            () -> savePendingInvitation(target, issuer, Instant.now().plus(Duration.ofDays(7))));
+    assertThat(invitation.getLastModifiedBy()).isNotNull();
+
+    try {
+      runSignedInAs(UUID.randomUUID(), () -> authTestSupport.deleteAccount(issuer.getId()));
+
+      var invalidated = invitationRepository.findById(invitation.getId()).orElseThrow();
+      assertThat(invalidated.getStatus()).isEqualTo(AccountInvitationStatus.INVALIDATED);
+      assertThat(invalidated.getLastModifiedBy()).isNull();
+    } finally {
+      invitationRepository.deleteById(invitation.getId());
+      authTestSupport.deleteAccount(target.getId());
+    }
+  }
+
+  @Test
+  @DisplayName("Should clear the modifier when issuer deletion invalidates a reset code")
+  void shouldClearModifierWhenIssuerDeletionInvalidatesAResetCode() {
+    var issuer = authTestSupport.createAccount();
+    var target = authTestSupport.createAccount();
+    var resetCode =
+        callSignedInAs(
+            UUID.randomUUID(),
+            () -> savePendingResetCode(target, issuer, Instant.now().plus(Duration.ofHours(1))));
+    assertThat(resetCode.getLastModifiedBy()).isNotNull();
+
+    try {
+      runSignedInAs(UUID.randomUUID(), () -> authTestSupport.deleteAccount(issuer.getId()));
+
+      var invalidated = resetCodeRepository.findById(resetCode.getId()).orElseThrow();
+      assertThat(invalidated.getStatus()).isEqualTo(PasswordResetCodeStatus.INVALIDATED);
+      assertThat(invalidated.getLastModifiedBy()).isNull();
+    } finally {
+      authTestSupport.deleteAccount(target.getId());
+    }
+  }
+
+  @Test
+  @DisplayName("Should clear the modifier when Profile deletion resolves a LINK invitation")
+  void shouldClearModifierWhenProfileDeletionResolvesALinkInvitation() {
+    var fixture =
+        callSignedInAs(
+            UUID.randomUUID(), () -> pendingLinkInvitation(Instant.now().plus(Duration.ofDays(7))));
+    assertThat(fixture.invitation().getLastModifiedBy()).isNotNull();
+
+    try {
+      runSignedInAs(UUID.randomUUID(), () -> deleteProfile(fixture.profile()));
+
+      var resolved = invitationRepository.findById(fixture.invitation().getId()).orElseThrow();
+      assertThat(resolved.getStatus()).isEqualTo(AccountInvitationStatus.INVALIDATED);
+      assertThat(resolved.getLastModifiedBy()).isNull();
+    } finally {
+      delete(fixture);
     }
   }
 

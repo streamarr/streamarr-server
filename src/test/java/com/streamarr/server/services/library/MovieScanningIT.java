@@ -27,6 +27,7 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.UUID;
+import lombok.Builder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -141,6 +142,26 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
             });
     assertThat(libraryRepository.findById(library.id()).orElseThrow().getLastModifiedBy())
         .isEqualTo(SystemActor.ID);
+  }
+
+  @Test
+  @DisplayName("Should name the System actor as modifier when a refresh changes only the summary")
+  void shouldNameSystemActorAsModifierWhenARefreshChangesOnlyTheSummary() throws IOException {
+    var library = createLibraryWithMatchingMovieFile();
+    stubTmdbMovieMetadata("27205", "Inception");
+    libraryManagementService.processDiscoveredFile(library.id(), library.movieFile());
+    clearAuditors();
+    stubTmdbMovieMetadata(inception().overview("A thief returns for one last job.").build());
+
+    libraryManagementService.refreshLibrary(library.id());
+
+    assertThat(movieRepository.findAll())
+        .singleElement()
+        .satisfies(
+            movie -> {
+              assertThat(movie.getSummary()).isEqualTo("A thief returns for one last job.");
+              assertThat(movie.getLastModifiedBy()).isEqualTo(SystemActor.ID);
+            });
   }
 
   @Test
@@ -331,6 +352,23 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   }
 
   private void stubTmdbMovieMetadata(String tmdbId, String title, int genreId) {
+    stubTmdbMovieMetadata(inception().tmdbId(tmdbId).title(title).genreId(genreId).build());
+  }
+
+  private static TmdbMovieStub.TmdbMovieStubBuilder inception() {
+    return TmdbMovieStub.builder()
+        .tmdbId("27205")
+        .title("Inception")
+        .genreId(28)
+        .overview("A thief who steals corporate secrets through dream-sharing technology.");
+  }
+
+  @Builder
+  private record TmdbMovieStub(String tmdbId, String title, int genreId, String overview) {}
+
+  private void stubTmdbMovieMetadata(TmdbMovieStub movie) {
+    var tmdbId = movie.tmdbId();
+    var title = movie.title();
     wireMock.stubFor(
         get(urlPathEqualTo("/movie/" + tmdbId))
             .withQueryParam("append_to_response", equalTo("credits,release_dates"))
@@ -345,7 +383,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
                           "title": "%s",
                           "original_title": "%s",
                           "release_date": "2010-07-16",
-                          "overview": "A thief who steals corporate secrets through dream-sharing technology.",
+                          "overview": "%s",
                           "runtime": 148,
                           "imdb_id": "tt1375666",
                           "genres": [{"id": %s, "name": "Action"}],
@@ -354,6 +392,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
                           "release_dates": {"results": []}
                         }
                         """
-                            .formatted(tmdbId, title, title, genreId, tmdbId))));
+                            .formatted(
+                                tmdbId, title, title, movie.overview(), movie.genreId(), tmdbId))));
   }
 }

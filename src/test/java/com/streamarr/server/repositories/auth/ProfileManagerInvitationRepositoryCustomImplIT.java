@@ -177,6 +177,28 @@ class ProfileManagerInvitationRepositoryCustomImplIT extends AbstractIntegration
 
   @Test
   @Transactional(propagation = Propagation.NOT_SUPPORTED)
+  @DisplayName("Should clear the modifier when party deletion resolves a pending invitation")
+  void shouldClearModifierWhenPartyDeletionResolvesAPendingInvitation() {
+    var inviter = authTestSupport.createAdminIdentity();
+    var recipient = authTestSupport.createIdentity();
+    var pendingInvitation = saveInvitation(inviter, recipient, Instant.now().plusSeconds(3600));
+    assertThat(pendingInvitation.getLastModifiedBy()).isNotNull();
+
+    try {
+      clearRequiredParty(pendingInvitation.getId(), RequiredParty.INVITER);
+
+      var resolved = invitationRepository.findById(pendingInvitation.getId()).orElseThrow();
+      assertThat(resolved.getStatus()).isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+      assertThat(resolved.getLastModifiedBy()).isNull();
+    } finally {
+      invitationRepository.deleteById(pendingInvitation.getId());
+      authTestSupport.deleteIdentity(recipient);
+      authTestSupport.deleteIdentity(inviter);
+    }
+  }
+
+  @Test
+  @Transactional(propagation = Propagation.NOT_SUPPORTED)
   @DisplayName("Should preserve expiry when a required invitation party disappears")
   void shouldPreserveExpiryWhenRequiredInvitationPartyDisappears() {
     var inviter = authTestSupport.createAdminIdentity();
