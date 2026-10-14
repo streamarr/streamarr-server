@@ -9,18 +9,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractWireMockIntegrationTest;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.auth.SystemActor;
+import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -43,6 +48,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DataSource dataSource;
+  @Autowired private PersonRepository personRepository;
 
   private Library library;
 
@@ -93,6 +99,40 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
     assertThat(wireMock.findAll(getRequestedFor(urlPathEqualTo("/poster.jpg")))).isEmpty();
   }
 
+  @Test
+  @DisplayName("Should name the System actor on images that required artwork saves")
+  void shouldNameSystemActorOnImagesThatRequiredArtworkSaves() throws Exception {
+    var artworkRun = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+
+    var movie = movieService.createMovieWithAssociations(movieMetadata(), mediaFile(), artworkRun);
+    artworkRun.close();
+    artworkRun.completion().get(10, TimeUnit.SECONDS);
+
+    assertThat(imageCreators(movie.getId()))
+        .hasSize(ImageSize.values().length)
+        .containsOnly(SystemActor.ID);
+  }
+
+  @Test
+  @DisplayName("Should name the System actor on images that background artwork saves")
+  void shouldNameSystemActorOnImagesThatBackgroundArtworkSaves() throws Exception {
+    var person =
+        personRepository.saveAndFlush(
+            Person.builder().name("Artwork Person").sourceId(UUID.randomUUID().toString()).build());
+    var artwork =
+        ArtworkSources.builder()
+            .entityId(person.getId())
+            .entityType(ImageEntityType.PERSON)
+            .sources(List.of(new TmdbImageSource(ImageType.PROFILE, "/poster.jpg")))
+            .build();
+
+    artworkService.fetchSecondary(artwork, ImageRefreshMode.PRESERVE).get(10, TimeUnit.SECONDS);
+
+    assertThat(imageCreators(person.getId()))
+        .hasSize(ImageSize.values().length)
+        .containsOnly(SystemActor.ID);
+  }
+
   private MetadataResult<Movie> movieMetadata() {
     return new MetadataResult<>(
         Movie.builder().title("Artwork Movie").titleSort("artwork movie").library(library).build(),
@@ -109,6 +149,21 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
             .filename("artwork.mkv")
             .filepathUri("file:///library/" + UUID.randomUUID() + "/artwork.mkv")
             .build());
+  }
+
+  private List<UUID> imageCreators(UUID entityId) throws SQLException {
+    try (var connection = dataSource.getConnection();
+        var statement =
+            connection.prepareStatement("SELECT created_by FROM image WHERE entity_id = ?")) {
+      statement.setObject(1, entityId);
+      try (var result = statement.executeQuery()) {
+        var creators = new ArrayList<UUID>();
+        while (result.next()) {
+          creators.add(result.getObject(1, UUID.class));
+        }
+        return creators;
+      }
+    }
   }
 
   private int committedImageRows(UUID entityId) throws SQLException {
