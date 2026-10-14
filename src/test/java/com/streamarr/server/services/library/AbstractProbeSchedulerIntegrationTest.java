@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.kagkarlsson.scheduler.Scheduler;
 import com.github.kagkarlsson.scheduler.SchedulerClient;
-import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.github.kagkarlsson.scheduler.task.TaskInstanceId;
@@ -33,14 +32,13 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
-import javax.sql.DataSource;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.env.Environment;
+import org.springframework.context.ApplicationContext;
 
 abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegrationTest {
 
@@ -49,13 +47,10 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
   @Autowired PersistedProbeReader reader;
   @Autowired ProbeExecution probeExecution;
   @Autowired private ProbeTaskRequests scheduling;
-  @Autowired private DataSource dataSource;
   @Autowired private MediaFileRepository mediaFiles;
   @Autowired private LibraryRepository libraries;
   @Autowired private DSLContext dsl;
-  @Autowired private ProbeTaskCompletion probeTaskCompletion;
-  @Autowired private DbSchedulerCustomizer schedulerCustomizer;
-  @Autowired private Environment environment;
+  @Autowired private ApplicationContext applicationContext;
 
   private final List<MediaFile> createdFiles = new ArrayList<>();
   private UUID libraryId;
@@ -114,13 +109,7 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
   SchedulerClient startScheduler(
       ProbeExecution execution, AbstractSchedulerListener listener, Clock clock) {
     var started =
-        ProbeSchedulerStarter.builder()
-            .customizer(schedulerCustomizer)
-            .completion(probeTaskCompletion)
-            .dataSource(dataSource)
-            .environment(environment)
-            .build()
-            .start(execution, listener, clock);
+        ProbeSchedulerStarter.fromContext(applicationContext).start(execution, listener, clock);
     scheduler = started.scheduler();
     return started.client();
   }

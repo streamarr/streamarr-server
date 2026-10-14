@@ -11,12 +11,11 @@ import java.time.Clock;
 import java.util.List;
 import javax.sql.DataSource;
 import lombok.Builder;
+import org.springframework.context.ApplicationContext;
 import org.springframework.core.env.Environment;
 
-/**
- * Starts a probe scheduler against the test database from the application's scheduler customizer,
- * as the db-scheduler starter would. The test profile turns the starter off.
- */
+// Starts a probe scheduler against the test database from the application's scheduler customizer,
+// as the db-scheduler starter would. The test profile turns the starter off.
 @Builder
 record ProbeSchedulerStarter(
     DbSchedulerCustomizer customizer,
@@ -24,8 +23,16 @@ record ProbeSchedulerStarter(
     DataSource dataSource,
     Environment environment) {
 
-  /** A started probe scheduler and a client that schedules its probe task. */
   record StartedProbeScheduler(Scheduler scheduler, SchedulerClient client) {}
+
+  static ProbeSchedulerStarter fromContext(ApplicationContext context) {
+    return ProbeSchedulerStarter.builder()
+        .customizer(context.getBean(DbSchedulerCustomizer.class))
+        .completion(context.getBean(ProbeTaskCompletion.class))
+        .dataSource(context.getBean(DataSource.class))
+        .environment(context.getEnvironment())
+        .build();
+  }
 
   StartedProbeScheduler start(
       ProbeExecution execution, AbstractSchedulerListener listener, Clock clock) {

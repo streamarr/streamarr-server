@@ -6,7 +6,6 @@ import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
@@ -29,7 +28,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
-import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -38,7 +36,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.env.Environment;
+import org.springframework.context.ApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 @Isolated
@@ -54,10 +52,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private ProbeExecution probeExecution;
-  @Autowired private ProbeTaskCompletion probeTaskCompletion;
-  @Autowired private DbSchedulerCustomizer schedulerCustomizer;
-  @Autowired private DataSource dataSource;
-  @Autowired private Environment environment;
+  @Autowired private ApplicationContext applicationContext;
 
   @TempDir Path tempDir;
 
@@ -219,12 +214,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   private void startProbeScheduler() {
     jdbcTemplate.update("DELETE FROM scheduled_tasks");
     probeScheduler =
-        ProbeSchedulerStarter.builder()
-            .customizer(schedulerCustomizer)
-            .completion(probeTaskCompletion)
-            .dataSource(dataSource)
-            .environment(environment)
-            .build()
+        ProbeSchedulerStarter.fromContext(applicationContext)
             .start(probeExecution, new AbstractSchedulerListener() {}, Clock.systemUTC());
   }
 
