@@ -44,7 +44,8 @@ class PersonServiceTest {
   void shouldCreateNewPersonWhenSourceIdNotFound() {
     var person = Person.builder().name("Tom Hanks").sourceId("actor-1").build();
 
-    var result = personService.getOrCreatePersons(List.of(person), Map.of());
+    var result =
+        personService.getOrCreatePersons(List.of(person), Map.of(), ImageRefreshMode.PRESERVE);
 
     assertThat(result).hasSize(1);
     var saved = result.getFirst();
@@ -62,7 +63,8 @@ class PersonServiceTest {
 
     var updated = Person.builder().name("New Name").sourceId("actor-1").build();
 
-    var result = personService.getOrCreatePersons(List.of(updated), Map.of());
+    var result =
+        personService.getOrCreatePersons(List.of(updated), Map.of(), ImageRefreshMode.PRESERVE);
 
     assertThat(result).hasSize(1);
     var returned = result.getFirst();
@@ -81,7 +83,9 @@ class PersonServiceTest {
     var updatedExisting = Person.builder().name("Updated Actor").sourceId("existing-1").build();
     var brandNew = Person.builder().name("Brand New Actor").sourceId("new-1").build();
 
-    var result = personService.getOrCreatePersons(List.of(updatedExisting, brandNew), Map.of());
+    var result =
+        personService.getOrCreatePersons(
+            List.of(updatedExisting, brandNew), Map.of(), ImageRefreshMode.PRESERVE);
 
     var returnedExisting =
         result.stream().filter(p -> "existing-1".equals(p.getSourceId())).findFirst().orElseThrow();
@@ -97,7 +101,9 @@ class PersonServiceTest {
     var updatedExisting = Person.builder().name("Updated Actor").sourceId("existing-1").build();
     var brandNew = Person.builder().name("Brand New Actor").sourceId("new-1").build();
 
-    var result = personService.getOrCreatePersons(List.of(updatedExisting, brandNew), Map.of());
+    var result =
+        personService.getOrCreatePersons(
+            List.of(updatedExisting, brandNew), Map.of(), ImageRefreshMode.PRESERVE);
 
     var returnedNew =
         result.stream().filter(p -> "new-1".equals(p.getSourceId())).findFirst().orElseThrow();
@@ -114,7 +120,7 @@ class PersonServiceTest {
         Map.<String, List<ImageSource>>of(
             "actor-1", List.of(new TmdbImageSource(ImageType.PROFILE, "/tom.jpg")));
 
-    personService.getOrCreatePersons(List.of(person), imageSources);
+    personService.getOrCreatePersons(List.of(person), imageSources, ImageRefreshMode.PRESERVE);
 
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
     assertThat(events).hasSize(1);
@@ -131,7 +137,7 @@ class PersonServiceTest {
     var expectedImageSource = new TmdbImageSource(ImageType.PROFILE, "/tom.jpg");
     var imageSources = Map.<String, List<ImageSource>>of("actor-1", List.of(expectedImageSource));
 
-    personService.getOrCreatePersons(List.of(updated), imageSources);
+    personService.getOrCreatePersons(List.of(updated), imageSources, ImageRefreshMode.PRESERVE);
 
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
     assertThat(events)
@@ -168,7 +174,7 @@ class PersonServiceTest {
     personRepository.save(Person.builder().name("Tom Hanks").sourceId("actor-1").build());
     var updated = Person.builder().name("Tom Hanks").sourceId("actor-1").build();
 
-    personService.getOrCreatePersons(List.of(updated), Map.of());
+    personService.getOrCreatePersons(List.of(updated), Map.of(), ImageRefreshMode.PRESERVE);
 
     assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class)).isEmpty();
   }
@@ -181,7 +187,10 @@ class PersonServiceTest {
 
     var emptyImageSources = Map.<String, List<ImageSource>>of();
 
-    assertThatThrownBy(() -> personService.getOrCreatePersons(persons, emptyImageSources))
+    assertThatThrownBy(
+            () ->
+                personService.getOrCreatePersons(
+                    persons, emptyImageSources, ImageRefreshMode.PRESERVE))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -196,7 +205,9 @@ class PersonServiceTest {
         Map.<String, List<ImageSource>>of(
             "actor-1", List.of(new TmdbImageSource(ImageType.PROFILE, "/valid.jpg")));
 
-    assertThatThrownBy(() -> personService.getOrCreatePersons(persons, imageSources))
+    assertThatThrownBy(
+            () ->
+                personService.getOrCreatePersons(persons, imageSources, ImageRefreshMode.PRESERVE))
         .isInstanceOf(IllegalArgumentException.class);
     assertThat(personRepository.count()).isZero();
     assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class)).isEmpty();
@@ -209,7 +220,8 @@ class PersonServiceTest {
     persons.add(Person.builder().name("Valid Actor").sourceId("actor-1").build());
     persons.add(null);
 
-    assertThatThrownBy(() -> personService.getOrCreatePersons(persons, Map.of()))
+    assertThatThrownBy(
+            () -> personService.getOrCreatePersons(persons, Map.of(), ImageRefreshMode.PRESERVE))
         .isInstanceOf(IllegalArgumentException.class);
     assertThat(personRepository.count()).isZero();
   }
@@ -217,7 +229,7 @@ class PersonServiceTest {
   @Test
   @DisplayName("Should return empty list when input is null")
   void shouldReturnEmptyListWhenInputIsNull() {
-    var result = personService.getOrCreatePersons(null, Map.of());
+    var result = personService.getOrCreatePersons(null, Map.of(), ImageRefreshMode.PRESERVE);
 
     assertThat(result).isEmpty();
   }
@@ -231,7 +243,7 @@ class PersonServiceTest {
             Person.builder().name("Actor A").sourceId("100").build(),
             Person.builder().name("Actor B").sourceId("200").build());
 
-    var result = personService.getOrCreatePersons(persons, Map.of());
+    var result = personService.getOrCreatePersons(persons, Map.of(), ImageRefreshMode.PRESERVE);
 
     assertThat(result).extracting(Person::getSourceId).containsExactly("300", "100", "200");
   }
@@ -248,9 +260,9 @@ class PersonServiceTest {
     var descendingRepository = new RecordingPersonRepository();
 
     new PersonService(ascendingRepository, new CapturingEventPublisher())
-        .getOrCreatePersons(ascending, Map.of());
+        .getOrCreatePersons(ascending, Map.of(), ImageRefreshMode.PRESERVE);
     new PersonService(descendingRepository, new CapturingEventPublisher())
-        .getOrCreatePersons(ascending.reversed(), Map.of());
+        .getOrCreatePersons(ascending.reversed(), Map.of(), ImageRefreshMode.PRESERVE);
 
     assertThat(descendingRepository.processedSourceIds())
         .isEqualTo(ascendingRepository.processedSourceIds());
@@ -267,7 +279,8 @@ class PersonServiceTest {
     var persons = List.of(person);
 
     Map<String, List<ImageSource>> emptyImageSources = Map.of();
-    assertThatThrownBy(() -> service.getOrCreatePersons(persons, emptyImageSources))
+    assertThatThrownBy(
+            () -> service.getOrCreatePersons(persons, emptyImageSources, ImageRefreshMode.PRESERVE))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("not found after upsert");
   }

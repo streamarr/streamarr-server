@@ -24,19 +24,6 @@ public class PersonService {
 
   @Transactional
   public List<Person> getOrCreatePersons(
-      List<Person> persons, Map<String, List<ImageSource>> imageSourcesBySourceId) {
-    return getOrCreatePersonsInternal(persons, imageSourcesBySourceId, ImageRefreshMode.PRESERVE);
-  }
-
-  @Transactional
-  public List<Person> getOrCreatePersons(
-      List<Person> persons,
-      Map<String, List<ImageSource>> imageSourcesBySourceId,
-      ImageRefreshMode imageRefreshMode) {
-    return getOrCreatePersonsInternal(persons, imageSourcesBySourceId, imageRefreshMode);
-  }
-
-  private List<Person> getOrCreatePersonsInternal(
       List<Person> persons,
       Map<String, List<ImageSource>> imageSourcesBySourceId,
       ImageRefreshMode imageRefreshMode) {

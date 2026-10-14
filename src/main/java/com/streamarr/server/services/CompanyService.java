@@ -26,20 +26,6 @@ public class CompanyService {
 
   @Transactional
   public Set<Company> getOrCreateCompanies(
-      Set<Company> companies, Map<String, List<ImageSource>> imageSourcesBySourceId) {
-    return getOrCreateCompaniesInternal(
-        companies, imageSourcesBySourceId, ImageRefreshMode.PRESERVE);
-  }
-
-  @Transactional
-  public Set<Company> getOrCreateCompanies(
-      Set<Company> companies,
-      Map<String, List<ImageSource>> imageSourcesBySourceId,
-      ImageRefreshMode imageRefreshMode) {
-    return getOrCreateCompaniesInternal(companies, imageSourcesBySourceId, imageRefreshMode);
-  }
-
-  private Set<Company> getOrCreateCompaniesInternal(
       Set<Company> companies,
       Map<String, List<ImageSource>> imageSourcesBySourceId,
       ImageRefreshMode imageRefreshMode) {

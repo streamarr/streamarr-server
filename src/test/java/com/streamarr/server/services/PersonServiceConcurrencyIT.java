@@ -6,6 +6,7 @@ import static org.awaitility.Awaitility.await;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.repositories.PersonRepository;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -42,7 +43,9 @@ class PersonServiceConcurrencyIT extends AbstractIntegrationTest {
             try {
               startLatch.await();
               var person = Person.builder().name("Concurrent Actor").sourceId(sourceId).build();
-              var result = personService.getOrCreatePersons(List.of(person), Map.of());
+              var result =
+                  personService.getOrCreatePersons(
+                      List.of(person), Map.of(), ImageRefreshMode.PRESERVE);
               results.add(result);
             } catch (Exception e) {
               exceptions.add(e);
@@ -90,7 +93,8 @@ class PersonServiceConcurrencyIT extends AbstractIntegrationTest {
           () -> {
             try {
               startLatch.await();
-              var result = personService.getOrCreatePersons(persons, Map.of());
+              var result =
+                  personService.getOrCreatePersons(persons, Map.of(), ImageRefreshMode.PRESERVE);
               results.add(result);
             } catch (Exception e) {
               exceptions.add(e);

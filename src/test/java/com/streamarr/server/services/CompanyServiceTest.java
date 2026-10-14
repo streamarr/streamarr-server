@@ -44,7 +44,8 @@ class CompanyServiceTest {
   void shouldCreateNewCompanyWhenSourceIdNotFound() {
     var company = Company.builder().name("Warner Bros.").sourceId("wb-123").build();
 
-    var result = companyService.getOrCreateCompanies(Set.of(company), Map.of());
+    var result =
+        companyService.getOrCreateCompanies(Set.of(company), Map.of(), ImageRefreshMode.PRESERVE);
 
     assertThat(result).hasSize(1);
     var saved = result.iterator().next();
@@ -62,7 +63,8 @@ class CompanyServiceTest {
 
     var updated = Company.builder().name("New Name").sourceId("studio-1").build();
 
-    var result = companyService.getOrCreateCompanies(Set.of(updated), Map.of());
+    var result =
+        companyService.getOrCreateCompanies(Set.of(updated), Map.of(), ImageRefreshMode.PRESERVE);
 
     assertThat(result).hasSize(1);
     var returned = result.iterator().next();
@@ -81,7 +83,9 @@ class CompanyServiceTest {
     var updatedExisting = Company.builder().name("Updated Studio").sourceId("existing-1").build();
     var brandNew = Company.builder().name("Brand New Studio").sourceId("new-1").build();
 
-    var result = companyService.getOrCreateCompanies(Set.of(updatedExisting, brandNew), Map.of());
+    var result =
+        companyService.getOrCreateCompanies(
+            Set.of(updatedExisting, brandNew), Map.of(), ImageRefreshMode.PRESERVE);
 
     var returnedExisting =
         result.stream().filter(c -> "existing-1".equals(c.getSourceId())).findFirst().orElseThrow();
@@ -98,7 +102,9 @@ class CompanyServiceTest {
     var updatedExisting = Company.builder().name("Updated Studio").sourceId("existing-1").build();
     var brandNew = Company.builder().name("Brand New Studio").sourceId("new-1").build();
 
-    var result = companyService.getOrCreateCompanies(Set.of(updatedExisting, brandNew), Map.of());
+    var result =
+        companyService.getOrCreateCompanies(
+            Set.of(updatedExisting, brandNew), Map.of(), ImageRefreshMode.PRESERVE);
 
     var returnedNew =
         result.stream().filter(c -> "new-1".equals(c.getSourceId())).findFirst().orElseThrow();
@@ -115,7 +121,7 @@ class CompanyServiceTest {
         Map.<String, List<ImageSource>>of(
             "wb-123", List.of(new TmdbImageSource(ImageType.LOGO, "/wb.png")));
 
-    companyService.getOrCreateCompanies(Set.of(company), imageSources);
+    companyService.getOrCreateCompanies(Set.of(company), imageSources, ImageRefreshMode.PRESERVE);
 
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
     assertThat(events).hasSize(1);
@@ -132,7 +138,7 @@ class CompanyServiceTest {
     var expectedImageSource = new TmdbImageSource(ImageType.LOGO, "/wb.png");
     var imageSources = Map.<String, List<ImageSource>>of("wb-123", List.of(expectedImageSource));
 
-    companyService.getOrCreateCompanies(Set.of(updated), imageSources);
+    companyService.getOrCreateCompanies(Set.of(updated), imageSources, ImageRefreshMode.PRESERVE);
 
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
     assertThat(events)
@@ -169,7 +175,7 @@ class CompanyServiceTest {
     companyRepository.save(Company.builder().name("Existing").sourceId("wb-123").build());
     var updated = Company.builder().name("Updated").sourceId("wb-123").build();
 
-    companyService.getOrCreateCompanies(Set.of(updated), Map.of());
+    companyService.getOrCreateCompanies(Set.of(updated), Map.of(), ImageRefreshMode.PRESERVE);
 
     assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class)).isEmpty();
   }
@@ -182,14 +188,17 @@ class CompanyServiceTest {
 
     var emptyImageSources = Map.<String, List<ImageSource>>of();
 
-    assertThatThrownBy(() -> companyService.getOrCreateCompanies(companies, emptyImageSources))
+    assertThatThrownBy(
+            () ->
+                companyService.getOrCreateCompanies(
+                    companies, emptyImageSources, ImageRefreshMode.PRESERVE))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
   @DisplayName("Should return empty set when input is null")
   void shouldReturnEmptySetWhenInputIsNull() {
-    var result = companyService.getOrCreateCompanies(null, Map.of());
+    var result = companyService.getOrCreateCompanies(null, Map.of(), ImageRefreshMode.PRESERVE);
 
     assertThat(result).isEmpty();
   }
@@ -205,7 +214,10 @@ class CompanyServiceTest {
     var companies = Set.of(company);
 
     Map<String, List<ImageSource>> emptyImageSources = Map.of();
-    assertThatThrownBy(() -> service.getOrCreateCompanies(companies, emptyImageSources))
+    assertThatThrownBy(
+            () ->
+                service.getOrCreateCompanies(
+                    companies, emptyImageSources, ImageRefreshMode.PRESERVE))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("not found after upsert");
   }
