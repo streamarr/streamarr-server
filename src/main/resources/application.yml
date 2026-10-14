@@ -15,6 +15,14 @@ spring:
     virtual:
       enabled: true
 
+  # Subscriptions use graphql-transport-ws on the same path as HTTP queries and mutations.
+  graphql:
+    websocket:
+      path: /graphql
+      connection-init-timeout: ${GRAPHQL_WEBSOCKET_CONNECTION_INIT_TIMEOUT:10s}
+      # Below the common 60 s reverse-proxy idle timeout.
+      keep-alive: ${GRAPHQL_WEBSOCKET_KEEP_ALIVE:20s}
+
 dgs:
   graphql:
     graphiql:

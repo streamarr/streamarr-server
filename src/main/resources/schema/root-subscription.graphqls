@@ -1,0 +1,6 @@
+type Subscription {
+    """
+    A library's status or scan times changed. ServerAdmin only.
+    """
+    libraryStatusChanged: Library!
+}
