@@ -26,6 +26,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.util.unit.DataSize;
 import reactor.core.scheduler.Schedulers;
 
 @Tag("UnitTest")
@@ -38,7 +39,9 @@ class LibraryAdministrationEventListenerTest {
   private final FakeLibraryRepository libraryRepository = new FakeLibraryRepository();
   private final LibraryAdministrationBroadcasters broadcasters =
       new LibraryAdministrationBroadcasters(
-          meterRegistry, Schedulers.immediate(), new SubscriptionProperties(64, 32));
+          meterRegistry,
+          Schedulers.immediate(),
+          new SubscriptionProperties(64, 32, DataSize.ofMegabytes(1)));
   private final LibraryAdministrationEventListener listener =
       new LibraryAdministrationEventListener(libraryRepository, broadcasters, meterRegistry);
 

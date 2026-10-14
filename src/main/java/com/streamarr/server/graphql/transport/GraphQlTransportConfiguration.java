@@ -1,7 +1,10 @@
 package com.streamarr.server.graphql.transport;
 
 import com.streamarr.server.config.CanonicalBaseUrl;
+import com.streamarr.server.graphql.subscriptions.SubscriptionProperties;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
+import java.util.concurrent.Executor;
 import org.springframework.boot.graphql.autoconfigure.GraphQlProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,8 +33,13 @@ class GraphQlTransportConfiguration {
       JsonMapper jsonMapper,
       CanonicalBaseUrl canonicalBaseUrl,
       Clock clock,
-      TaskScheduler taskScheduler) {
+      TaskScheduler taskScheduler,
+      SubscriptionProperties subscriptionProperties,
+      MeterRegistry meterRegistry) {
     var websocket = graphQlProperties.getWebsocket();
+    // Not a bean: an Executor bean would replace the application's task executor.
+    var sendThreads = Thread.ofVirtual().name("graphql-websocket-send-", 0).factory();
+    Executor sendExecutor = task -> sendThreads.newThread(task).start();
     var allowedOrigins = new CorsConfiguration();
     canonicalBaseUrl.origin().ifPresent(allowedOrigins::addAllowedOrigin);
     return AccessBoundGraphQlWebSocketHandler.builder()
@@ -42,6 +50,12 @@ class GraphQlTransportConfiguration {
         .allowedOrigins(allowedOrigins)
         .clock(clock)
         .taskScheduler(taskScheduler)
+        .sendBuffer(
+            SendBufferSettings.builder()
+                .sendExecutor(sendExecutor)
+                .capacity(subscriptionProperties.connectionSendBuffer())
+                .meterRegistry(meterRegistry)
+                .build())
         .build();
   }
 }

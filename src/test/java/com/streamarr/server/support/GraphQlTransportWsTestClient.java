@@ -151,6 +151,15 @@ public final class GraphQlTransportWsTestClient implements AutoCloseable {
     }
   }
 
+  /** Stops reading frames, the way a client on a stalled network does. */
+  public void pauseReading() {
+    listener.pauseReading();
+  }
+
+  public void resumeReading() {
+    listener.resumeReading(webSocket);
+  }
+
   /** Every message received so far, including those already taken. */
   public List<JsonNode> receivedMessages() {
     return List.copyOf(listener.received);
@@ -202,6 +211,41 @@ public final class GraphQlTransportWsTestClient implements AutoCloseable {
     private final List<JsonNode> received = new CopyOnWriteArrayList<>();
     private final CompletableFuture<Closure> closure = new CompletableFuture<>();
     private final StringBuilder partialText = new StringBuilder();
+    private final Object demand = new Object();
+    private boolean readingPaused;
+    private boolean requestOwed;
+
+    // While paused the client requests no more frames, so the server's writes stall once the
+    // socket buffers between them fill.
+    private void pauseReading() {
+      synchronized (demand) {
+        readingPaused = true;
+      }
+    }
+
+    private void resumeReading(WebSocket webSocket) {
+      synchronized (demand) {
+        readingPaused = false;
+        if (!requestOwed) {
+          return;
+        }
+
+        requestOwed = false;
+      }
+
+      webSocket.request(1);
+    }
+
+    private void requestNext(WebSocket webSocket) {
+      synchronized (demand) {
+        if (readingPaused) {
+          requestOwed = true;
+          return;
+        }
+      }
+
+      webSocket.request(1);
+    }
 
     @Override
     public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
@@ -212,7 +256,7 @@ public final class GraphQlTransportWsTestClient implements AutoCloseable {
         accept(webSocket, message);
       }
 
-      webSocket.request(1);
+      requestNext(webSocket);
       return null;
     }
 

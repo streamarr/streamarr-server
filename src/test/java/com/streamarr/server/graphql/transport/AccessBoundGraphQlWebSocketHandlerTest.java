@@ -9,6 +9,7 @@ import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.graphql.transport.AccessBoundGraphQlWebSocketHandler.AccessBoundGraphQlWebSocketHandlerBuilder;
 import io.micrometer.context.ContextSnapshot;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
@@ -30,6 +31,7 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.context.SecurityContextImpl;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.util.unit.DataSize;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 import org.springframework.web.socket.server.support.DefaultHandshakeHandler;
@@ -81,7 +83,8 @@ class AccessBoundGraphQlWebSocketHandlerTest {
         "keepAlive",
         "allowedOrigins",
         "clock",
-        "taskScheduler"
+        "taskScheduler",
+        "sendBuffer"
       })
   @DisplayName("Should refuse to build when a required argument is missing")
   void shouldRefuseToBuildWhenRequiredArgumentIsMissing(String argument) {
@@ -111,7 +114,15 @@ class AccessBoundGraphQlWebSocketHandlerTest {
         "clock",
         builder -> builder.clock(new MutableClock()),
         "taskScheduler",
-        builder -> builder.taskScheduler(new FakeTaskScheduler()));
+        builder -> builder.taskScheduler(new FakeTaskScheduler()),
+        "sendBuffer",
+        builder ->
+            builder.sendBuffer(
+                SendBufferSettings.builder()
+                    .sendExecutor(Runnable::run)
+                    .capacity(DataSize.ofMegabytes(1))
+                    .meterRegistry(new SimpleMeterRegistry())
+                    .build()));
   }
 
   private static StreamarrAuthenticationToken accessTokenAuthentication() {

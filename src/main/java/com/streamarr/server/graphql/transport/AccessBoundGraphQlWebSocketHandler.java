@@ -15,13 +15,15 @@ import org.springframework.web.socket.server.support.WebSocketHttpRequestHandler
 
 /**
  * The graphql-transport-ws handler on /graphql, bounded by the access token that opened each
- * connection. The handshake captures the token's expiry and a redacted copy of the token, and
- * {@link AccessBoundWebSocketHandler} closes the connection at expiry.
+ * connection and by the bytes it holds for its client. The handshake captures the token's expiry
+ * and a redacted copy of the token, and {@link AccessBoundWebSocketHandler} closes the connection
+ * at expiry. {@link SendBufferedWebSocketHandler} closes a connection whose client fell behind.
  */
 class AccessBoundGraphQlWebSocketHandler extends GraphQlWebSocketHandler {
 
   private final Clock clock;
   private final TaskScheduler taskScheduler;
+  private final SendBufferSettings sendBuffer;
 
   private AccessBoundGraphQlWebSocketHandler(Arguments arguments) {
     super(
@@ -32,6 +34,7 @@ class AccessBoundGraphQlWebSocketHandler extends GraphQlWebSocketHandler {
         arguments.allowedOrigins());
     this.clock = arguments.clock();
     this.taskScheduler = arguments.taskScheduler();
+    this.sendBuffer = arguments.sendBuffer();
   }
 
   // A factory method, so the null checks run before the framework's constructor.
@@ -43,7 +46,8 @@ class AccessBoundGraphQlWebSocketHandler extends GraphQlWebSocketHandler {
       @NonNull Duration keepAlive,
       @NonNull CorsConfiguration allowedOrigins,
       @NonNull Clock clock,
-      @NonNull TaskScheduler taskScheduler) {
+      @NonNull TaskScheduler taskScheduler,
+      @NonNull SendBufferSettings sendBuffer) {
     return new AccessBoundGraphQlWebSocketHandler(
         new Arguments(
             graphQlHandler,
@@ -52,7 +56,8 @@ class AccessBoundGraphQlWebSocketHandler extends GraphQlWebSocketHandler {
             keepAlive,
             allowedOrigins,
             clock,
-            taskScheduler));
+            taskScheduler,
+            sendBuffer));
   }
 
   private record Arguments(
@@ -62,7 +67,8 @@ class AccessBoundGraphQlWebSocketHandler extends GraphQlWebSocketHandler {
       Duration keepAlive,
       CorsConfiguration allowedOrigins,
       Clock clock,
-      TaskScheduler taskScheduler) {}
+      TaskScheduler taskScheduler,
+      SendBufferSettings sendBuffer) {}
 
   @Override
   public WebSocketHttpRequestHandler initWebSocketHttpRequestHandler(
@@ -74,7 +80,9 @@ class AccessBoundGraphQlWebSocketHandler extends GraphQlWebSocketHandler {
     interceptors.addFirst(new WebSocketAuthorityHandshakeInterceptor());
     var requestHandler =
         new WebSocketHttpRequestHandler(
-            new AccessBoundWebSocketHandler(this, clock, taskScheduler), handshakeHandler);
+            new AccessBoundWebSocketHandler(
+                new SendBufferedWebSocketHandler(this, sendBuffer), clock, taskScheduler),
+            handshakeHandler);
     requestHandler.setHandshakeInterceptors(interceptors);
     return requestHandler;
   }

@@ -27,6 +27,7 @@ graphql:
   subscriptions:
     operation-buffer: ${GRAPHQL_SUBSCRIPTION_OPERATION_BUFFER:64}
     max-operations-per-connection: ${GRAPHQL_SUBSCRIPTION_MAX_OPERATIONS_PER_CONNECTION:32}
+    connection-send-buffer: ${GRAPHQL_SUBSCRIPTION_CONNECTION_SEND_BUFFER:1MB}
 
 dgs:
   graphql:
