@@ -5,11 +5,6 @@ import static com.streamarr.server.fixtures.PaginationFixture.buildCursorOptions
 import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
@@ -25,9 +20,13 @@ import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
+import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeCompanyRepository;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
+import com.streamarr.server.fakes.FakeGenreRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
+import com.streamarr.server.fakes.FakePersonRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
@@ -87,9 +86,10 @@ class SeriesServiceTest {
             .imageDownloader(imageDownloader)
             .build();
     artworkRun = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
-    personService = mock(PersonService.class);
-    genreService = mock(GenreService.class);
-    companyService = mock(CompanyService.class);
+    var eventPublisher = new CapturingEventPublisher();
+    personService = new PersonService(new FakePersonRepository(), eventPublisher);
+    genreService = new GenreService(new FakeGenreRepository());
+    companyService = new CompanyService(new FakeCompanyRepository(), eventPublisher);
     var paginationService = new PaginationService();
     var fileSystem = Jimfs.newFileSystem(Configuration.unix());
     var imageService =
@@ -582,33 +582,14 @@ class SeriesServiceTest {
     void shouldUpdateAssociationsWhenRefreshingSeriesMetadata() {
       var existing = seriesRepository.save(Series.builder().title("Breaking Bad").build());
 
-      var castInput = List.of(Person.builder().name("Bryan Cranston").build());
-      var directorInput = List.of(Person.builder().name("Vince Gilligan").build());
-      var freshGenres = Set.of(Genre.builder().name("Drama").build());
-      var freshStudios = Set.of(Company.builder().name("Sony Pictures").build());
-
-      when(personService.getOrCreatePersons(
-              argThat(
-                  persons ->
-                      persons != null
-                          && persons.stream().anyMatch(p -> "Bryan Cranston".equals(p.getName()))),
-              any(),
-              eq(ImageRefreshMode.PRESERVE)))
-          .thenReturn(castInput);
-      when(personService.getOrCreatePersons(
-              argThat(
-                  persons ->
-                      persons != null
-                          && persons.stream().anyMatch(p -> "Vince Gilligan".equals(p.getName()))),
-              any(),
-              eq(ImageRefreshMode.PRESERVE)))
-          .thenReturn(directorInput);
-      when(genreService.getOrCreateGenres(any())).thenReturn(freshGenres);
-      when(companyService.getOrCreateCompanies(any(), any(), eq(ImageRefreshMode.PRESERVE)))
-          .thenReturn(freshStudios);
-
       var fresh =
-          Series.builder().title("Breaking Bad").cast(castInput).directors(directorInput).build();
+          Series.builder()
+              .title("Breaking Bad")
+              .cast(List.of(Person.builder().name("Bryan Cranston").sourceId("17419").build()))
+              .directors(List.of(Person.builder().name("Vince Gilligan").sourceId("66633").build()))
+              .genres(Set.of(Genre.builder().name("Drama").sourceId("18").build()))
+              .studios(Set.of(Company.builder().name("Sony Pictures").sourceId("11073").build()))
+              .build();
       var metadataResult = MetadataFixture.<Series>metadataResultBuilder().entity(fresh).build();
 
       var result = seriesService.refreshSeriesMetadata(existing, metadataResult, artworkRun);

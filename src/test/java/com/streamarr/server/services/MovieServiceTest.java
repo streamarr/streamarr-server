@@ -4,11 +4,6 @@ import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fixtures.PaginationFixture.buildCursorOptions;
 import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
@@ -27,9 +22,13 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
+import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeCompanyRepository;
+import com.streamarr.server.fakes.FakeGenreRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
+import com.streamarr.server.fakes.FakePersonRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.fixtures.ArtworkServiceFixture;
 import com.streamarr.server.fixtures.MetadataFixture;
@@ -82,9 +81,10 @@ class MovieServiceTest {
             .imageDownloader(imageDownloader)
             .build();
     artworkRun = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
-    personService = mock(PersonService.class);
-    genreService = mock(GenreService.class);
-    companyService = mock(CompanyService.class);
+    var eventPublisher = new CapturingEventPublisher();
+    personService = new PersonService(new FakePersonRepository(), eventPublisher);
+    genreService = new GenreService(new FakeGenreRepository());
+    companyService = new CompanyService(new FakeCompanyRepository(), eventPublisher);
     var paginationService = new PaginationService();
     var fileSystem = Jimfs.newFileSystem(Configuration.unix());
     var imageService =
@@ -948,35 +948,15 @@ class MovieServiceTest {
     void shouldUpdateAssociationsWhenRefreshingMovieMetadata() {
       var existing = movieRepository.save(Movie.builder().title("Inception").build());
 
-      var castInput = List.of(Person.builder().name("Leonardo DiCaprio").build());
-      var directorInput = List.of(Person.builder().name("Christopher Nolan").build());
-      var freshGenres = Set.of(Genre.builder().name("Sci-Fi").build());
-      var freshStudios = Set.of(Company.builder().name("Warner Bros.").build());
-
-      when(personService.getOrCreatePersons(
-              argThat(
-                  persons ->
-                      persons != null
-                          && persons.stream()
-                              .anyMatch(p -> "Leonardo DiCaprio".equals(p.getName()))),
-              any(),
-              eq(ImageRefreshMode.PRESERVE)))
-          .thenReturn(castInput);
-      when(personService.getOrCreatePersons(
-              argThat(
-                  persons ->
-                      persons != null
-                          && persons.stream()
-                              .anyMatch(p -> "Christopher Nolan".equals(p.getName()))),
-              any(),
-              eq(ImageRefreshMode.PRESERVE)))
-          .thenReturn(directorInput);
-      when(genreService.getOrCreateGenres(any())).thenReturn(freshGenres);
-      when(companyService.getOrCreateCompanies(any(), any(), eq(ImageRefreshMode.PRESERVE)))
-          .thenReturn(freshStudios);
-
       var fresh =
-          Movie.builder().title("Inception").cast(castInput).directors(directorInput).build();
+          Movie.builder()
+              .title("Inception")
+              .cast(List.of(Person.builder().name("Leonardo DiCaprio").sourceId("6193").build()))
+              .directors(
+                  List.of(Person.builder().name("Christopher Nolan").sourceId("525").build()))
+              .genres(Set.of(Genre.builder().name("Sci-Fi").sourceId("878").build()))
+              .studios(Set.of(Company.builder().name("Warner Bros.").sourceId("174").build()))
+              .build();
       var metadataResult = MetadataFixture.<Movie>metadataResultBuilder().entity(fresh).build();
 
       var result = movieService.refreshMovieMetadata(existing, metadataResult, artworkRun);
