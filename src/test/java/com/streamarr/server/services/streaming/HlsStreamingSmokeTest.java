@@ -163,14 +163,8 @@ class HlsStreamingSmokeTest {
             .forEach(session -> streamingService.destroySession(session.getSessionId()));
       }
     } finally {
-      try {
-        if (workerFixture != null) {
-          workerFixture.close();
-        }
-      } finally {
-        if (segmentStore != null) {
-          segmentStore.shutdown();
-        }
+      if (workerFixture != null) {
+        workerFixture.close();
       }
     }
   }

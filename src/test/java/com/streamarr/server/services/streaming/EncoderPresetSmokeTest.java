@@ -47,28 +47,32 @@ class EncoderPresetSmokeTest {
       Path.of("src/test/resources/BigBuckBunny_320x180_10s.mp4").toAbsolutePath();
   private static final String FIRST_MEDIA_SEGMENT = SegmentNames.mediaSegmentName(0);
 
-  // SVT-AV1 produces repeatable bytes only on one thread, so the worker's encode and each reference
-  // encode run SVT-AV1 with lp=1.
+  // SVT-AV1 produces repeatable bytes only on one thread. The worker's encode gets this suffix from
+  // SVT_AV1_ON_ONE_THREAD, and each reference encode gets it in svtAv1Reference, because
+  // generateMedia runs the image's FFmpeg without the worker's script.
+  private static final String ONE_SVT_AV1_THREAD = ":lp=1";
   private static final String SVT_AV1_ON_ONE_THREAD =
       """
       encode=()
       previous=
       for value in "$@"; do
         if [[ $previous == -svtav1-params ]]; then
-          value="$value:lp=1"
+          value="$value%s"
         fi
         encode+=("$value")
         previous=$value
       done
       exec ffmpeg "${encode[@]}"
-      """;
+      """
+          .formatted(ONE_SVT_AV1_THREAD);
 
   @TempDir private Path temporaryDirectory;
   private Path testVideo;
   private LocalSegmentStore segmentStore;
   private WorkerStreamingSmokeFixture workerFixture;
   private RemoteTranscodeExecutor transcodeExecutor;
-  private FakeRuntimeStreamSessionRegistry runtimeRegistry;
+  private final FakeRuntimeStreamSessionRegistry runtimeRegistry =
+      new FakeRuntimeStreamSessionRegistry();
   private ServerSettingsService serverSettings;
   private ProducerLifecycleService lifecycle;
 
@@ -88,7 +92,6 @@ class EncoderPresetSmokeTest {
     transcodeExecutor =
         new RemoteTranscodeExecutor(
             workerFixture.workerSessions(), workerFixture.sourceNamespaceId(), sourceRoot);
-    runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
     serverSettings =
         new ServerSettingsService(
             new FakeAuthorizationService(accountScopedBuilder().build()),
@@ -111,23 +114,12 @@ class EncoderPresetSmokeTest {
 
   @AfterEach
   void tearDown() {
-    try {
-      if (runtimeRegistry != null) {
-        runtimeRegistry.findAll().stream()
-            .map(StreamSession::getSessionId)
-            .forEach(transcodeExecutor::stop);
-      }
-    } finally {
-      try {
-        if (workerFixture != null) {
-          workerFixture.close();
-        }
-      } finally {
-        if (segmentStore != null) {
-          segmentStore.shutdown();
-        }
-      }
+    if (workerFixture == null) {
+      return;
     }
+
+    workerFixture.stopStreamSessionsAndClose(
+        runtimeRegistry.findAll().stream().map(StreamSession::getSessionId).toList());
   }
 
   // Automatic resolves to faster for libx264. The options are x264's own definitions of faster and
@@ -228,17 +220,19 @@ class EncoderPresetSmokeTest {
   private byte[] svtAv1Reference(List<String> workerCommand, int svtAv1Preset) throws Exception {
     assertThat(workerCommand).as("the worker's FFmpeg arguments").endsWith("pipe:1");
     var arguments = new ArrayList<>(workerCommand.subList(0, workerCommand.size() - 1));
-    var preset = arguments.indexOf("-preset");
-    if (preset >= 0) {
-      arguments.subList(preset, preset + 2).clear();
+    var presetFlagIndex = arguments.indexOf("-preset");
+    if (presetFlagIndex >= 0) {
+      arguments.subList(presetFlagIndex, presetFlagIndex + 2).clear();
     }
 
-    var encoder = arguments.indexOf("libsvtav1");
-    assertThat(encoder).as("the position of the libsvtav1 encoder").isNotNegative();
-    arguments.addAll(encoder + 1, List.of("-preset", String.valueOf(svtAv1Preset)));
-    var parameters = arguments.indexOf("-svtav1-params") + 1;
-    assertThat(parameters).as("the SVT-AV1 command sets encoder parameters").isPositive();
-    arguments.set(parameters, arguments.get(parameters) + ":lp=1");
+    var encoderIndex = arguments.indexOf("libsvtav1");
+    assertThat(encoderIndex).as("the position of the libsvtav1 encoder").isNotNegative();
+    arguments.addAll(encoderIndex + 1, List.of("-preset", String.valueOf(svtAv1Preset)));
+    var svtAv1ParametersIndex = arguments.indexOf("-svtav1-params") + 1;
+    assertThat(svtAv1ParametersIndex)
+        .as("the SVT-AV1 command sets encoder parameters")
+        .isPositive();
+    arguments.set(svtAv1ParametersIndex, arguments.get(svtAv1ParametersIndex) + ONE_SVT_AV1_THREAD);
     var reference = temporaryDirectory.resolve("svtav1-preset-" + svtAv1Preset + ".mp4");
     return Files.readAllBytes(workerFixture.worker().generateMedia(reference, arguments));
   }
