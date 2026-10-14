@@ -20,6 +20,7 @@ import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupportConfig;
+import com.streamarr.server.support.ConstraintViolations;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -92,7 +93,7 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
                       shareRepository.saveAndFlush(share);
                     }))
         .isInstanceOf(DataIntegrityViolationException.class)
-        .extracting(IdentityInvariantsIT::constraintName)
+        .extracting(ConstraintViolations::constraintName)
         .isEqualTo(CHK_INVALIDATION_REASON);
   }
 
@@ -115,7 +116,7 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
                                 .invalidationReason("offerer no longer authorized")
                                 .build())))
         .isInstanceOf(DataIntegrityViolationException.class)
-        .extracting(IdentityInvariantsIT::constraintName)
+        .extracting(ConstraintViolations::constraintName)
         .isEqualTo(CHK_INVALIDATION_REASON);
   }
 
@@ -213,7 +214,7 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
 
     assertThatThrownBy(() -> restrict(visitorId))
         .isInstanceOf(DataIntegrityViolationException.class)
-        .extracting(IdentityInvariantsIT::constraintName)
+        .extracting(ConstraintViolations::constraintName)
         .isEqualTo(CHK_HOSTING_ADMIN);
   }
 
@@ -230,7 +231,7 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
 
     assertThatThrownBy(() -> demote(hostAccountId))
         .isInstanceOf(DataIntegrityViolationException.class)
-        .extracting(IdentityInvariantsIT::constraintName)
+        .extracting(ConstraintViolations::constraintName)
         .isEqualTo(CHK_HOUSEHOLD_ADMIN);
   }
 
@@ -249,7 +250,7 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
                 transactionTemplate.executeWithoutResult(
                     _ -> userAccountRepository.deleteById(host.account().getId())))
         .isInstanceOf(DataIntegrityViolationException.class)
-        .extracting(IdentityInvariantsIT::constraintName)
+        .extracting(ConstraintViolations::constraintName)
         .isEqualTo(CHK_HOUSEHOLD_ADMIN);
   }
 

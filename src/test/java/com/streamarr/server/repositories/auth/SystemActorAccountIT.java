@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.jooq.generated.enums.HouseholdRole;
+import com.streamarr.server.support.ConstraintViolations;
 import java.util.UUID;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
@@ -15,10 +16,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/**
- * The System actor is not an account. Sessions, tokens, devices, Household membership and Profiles
- * all reference an account, so no row may take the System actor's id.
- */
 @Tag("IntegrationTest")
 @DisplayName("System Actor Account Integration Tests")
 class SystemActorAccountIT extends AbstractIntegrationTest {
@@ -26,12 +23,14 @@ class SystemActorAccountIT extends AbstractIntegrationTest {
   @Autowired private DSLContext dsl;
   @Autowired private TransactionTemplate transactionTemplate;
 
+  // Sessions, tokens, devices, Household membership and Profiles all reference an account, so
+  // rejecting the account row keeps the System actor from holding any of them.
   @Test
   @DisplayName("Should reject an account when its id is the System actor's id")
   void shouldRejectAccountWhenItsIdIsSystemActorId() {
     assertThatThrownBy(() -> transactionTemplate.executeWithoutResult(_ -> insertSystemAccount()))
         .isInstanceOf(DataIntegrityViolationException.class)
-        .extracting(IdentityInvariantsIT::constraintName)
+        .extracting(ConstraintViolations::constraintName)
         .isEqualTo("chk_user_account_id_not_system_actor");
   }
 
