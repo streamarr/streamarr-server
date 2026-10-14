@@ -1,12 +1,13 @@
 package com.streamarr.server.graphql.transport;
 
 import com.netflix.graphql.types.errors.ErrorType;
+import com.streamarr.server.graphql.CodedGraphQlErrors;
 import com.streamarr.server.graphql.subscriptions.SubscriptionProperties;
 import graphql.ExecutionResult;
-import graphql.GraphqlErrorBuilder;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import lombok.RequiredArgsConstructor;
 import org.reactivestreams.Publisher;
 import org.springframework.graphql.server.WebGraphQlRequest;
 import org.springframework.graphql.server.WebGraphQlResponse;
@@ -24,14 +25,12 @@ import reactor.core.publisher.Mono;
  * is refused with TOO_MANY_OPERATIONS before it executes.
  */
 @Component
-public class WebSocketOperationLimitInterceptor implements WebSocketGraphQlInterceptor {
-
-  static final String TOO_MANY_OPERATIONS = "TOO_MANY_OPERATIONS";
+class WebSocketOperationLimitInterceptor implements WebSocketGraphQlInterceptor {
 
   private final int maxOperationsPerConnection;
   private final Map<String, Integer> activeOperationsBySession = new ConcurrentHashMap<>();
 
-  public WebSocketOperationLimitInterceptor(SubscriptionProperties properties) {
+  WebSocketOperationLimitInterceptor(SubscriptionProperties properties) {
     this.maxOperationsPerConnection = properties.maxOperationsPerConnection();
   }
 
@@ -93,29 +92,23 @@ public class WebSocketOperationLimitInterceptor implements WebSocketGraphQlInter
 
   private WebGraphQlResponse refusal(WebGraphQlRequest request) {
     var error =
-        GraphqlErrorBuilder.newError()
-            .message(
-                "A connection runs at most %d operations at once; complete one first."
-                    .formatted(maxOperationsPerConnection))
-            .errorType(ErrorType.BAD_REQUEST)
-            .extensions(
-                Map.of("errorType", ErrorType.BAD_REQUEST.name(), "code", TOO_MANY_OPERATIONS))
-            .build();
+        CodedGraphQlErrors.withCode(
+            ErrorType.BAD_REQUEST,
+            "TOO_MANY_OPERATIONS",
+            "A connection runs at most %d operations at once; complete one first."
+                .formatted(maxOperationsPerConnection));
     return new WebGraphQlResponse(
         new DefaultExecutionGraphQlResponse(
             request.toExecutionInput(),
             ExecutionResult.newExecutionResult().addError(error).build()));
   }
 
-  /** One operation's place on its connection, given back exactly once. */
+  // One operation's place on its connection, given back exactly once.
+  @RequiredArgsConstructor
   private final class Reservation {
 
     private final String sessionId;
     private final AtomicBoolean released = new AtomicBoolean();
-
-    private Reservation(String sessionId) {
-      this.sessionId = sessionId;
-    }
 
     private void release() {
       if (!released.compareAndSet(false, true)) {

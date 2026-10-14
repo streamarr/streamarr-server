@@ -1,9 +1,8 @@
 package com.streamarr.server.graphql.subscriptions;
 
 import com.netflix.graphql.types.errors.ErrorType;
+import com.streamarr.server.graphql.CodedGraphQlErrors;
 import graphql.GraphQLError;
-import graphql.GraphqlErrorBuilder;
-import java.util.Map;
 import org.springframework.graphql.execution.SubscriptionExceptionResolverAdapter;
 import org.springframework.stereotype.Component;
 
@@ -12,9 +11,7 @@ import org.springframework.stereotype.Component;
  * through to the framework's sanitized "Subscription error".
  */
 @Component
-public class SubscriptionOverflowExceptionResolver extends SubscriptionExceptionResolverAdapter {
-
-  public static final String SUBSCRIPTION_OVERFLOW = "SUBSCRIPTION_OVERFLOW";
+class SubscriptionOverflowExceptionResolver extends SubscriptionExceptionResolverAdapter {
 
   @Override
   protected GraphQLError resolveToSingleError(Throwable exception) {
@@ -22,11 +19,7 @@ public class SubscriptionOverflowExceptionResolver extends SubscriptionException
       return null;
     }
 
-    return GraphqlErrorBuilder.newError()
-        .message(overflow.getMessage())
-        .errorType(ErrorType.UNAVAILABLE)
-        .extensions(
-            Map.of("errorType", ErrorType.UNAVAILABLE.name(), "code", SUBSCRIPTION_OVERFLOW))
-        .build();
+    return CodedGraphQlErrors.withCode(
+        ErrorType.UNAVAILABLE, "SUBSCRIPTION_OVERFLOW", overflow.getMessage());
   }
 }

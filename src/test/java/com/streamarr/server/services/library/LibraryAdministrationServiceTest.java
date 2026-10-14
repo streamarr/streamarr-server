@@ -96,7 +96,7 @@ class LibraryAdministrationServiceTest {
   @Test
   @DisplayName("Should authorize viewing library administration through the typed intent")
   void shouldAuthorizeLibraryAdministrationViewThroughTypedIntent() {
-    libraryAdministrationService.requireLibraryAdministrationView(identity);
+    libraryAdministrationService.requireViewLibraryAdministration(identity);
 
     assertThat(authorizationService.recordedIntents())
         .containsExactly(new Intent.ViewLibraryAdministration());
@@ -108,7 +108,7 @@ class LibraryAdministrationServiceTest {
     authorizationService.denyAll();
 
     assertThatThrownBy(
-            () -> libraryAdministrationService.requireLibraryAdministrationView(identity))
+            () -> libraryAdministrationService.requireViewLibraryAdministration(identity))
         .isInstanceOf(AccessDeniedException.class);
   }
 

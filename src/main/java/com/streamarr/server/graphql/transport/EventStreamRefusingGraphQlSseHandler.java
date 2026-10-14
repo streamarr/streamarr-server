@@ -14,9 +14,9 @@ import org.springframework.web.servlet.function.ServerResponse;
  * the WebSocket, and the framework's event-stream handler would otherwise run a query or mutation
  * before rejecting its result.
  */
-public class EventStreamRefusingGraphQlSseHandler extends GraphQlSseHandler {
+class EventStreamRefusingGraphQlSseHandler extends GraphQlSseHandler {
 
-  public EventStreamRefusingGraphQlSseHandler(WebGraphQlHandler graphQlHandler) {
+  EventStreamRefusingGraphQlSseHandler(WebGraphQlHandler graphQlHandler) {
     super(graphQlHandler);
   }
 

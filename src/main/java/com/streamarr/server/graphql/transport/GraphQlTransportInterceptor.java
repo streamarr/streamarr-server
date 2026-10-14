@@ -11,21 +11,24 @@ import reactor.core.publisher.Mono;
  * Records which transport carried each operation, for {@link OperationTransportInstrumentation}.
  */
 @Component
-public class GraphQlTransportInterceptor implements WebGraphQlInterceptor {
+class GraphQlTransportInterceptor implements WebGraphQlInterceptor {
 
   @Override
   public Mono<WebGraphQlResponse> intercept(WebGraphQlRequest request, Chain chain) {
-    var transport = GraphQlTransport.HTTP;
-    if (request instanceof WebSocketGraphQlRequest) {
-      transport = GraphQlTransport.WEBSOCKET;
-    }
-
-    var carriedBy = transport;
+    var transport = transportOf(request);
     request.configureExecutionInput(
         (input, builder) ->
             builder
-                .graphQLContext(context -> context.put(GraphQlTransport.class, carriedBy))
+                .graphQLContext(context -> context.put(GraphQlTransport.class, transport))
                 .build());
     return chain.next(request);
+  }
+
+  private static GraphQlTransport transportOf(WebGraphQlRequest request) {
+    if (request instanceof WebSocketGraphQlRequest) {
+      return GraphQlTransport.WEBSOCKET;
+    }
+
+    return GraphQlTransport.HTTP;
   }
 }

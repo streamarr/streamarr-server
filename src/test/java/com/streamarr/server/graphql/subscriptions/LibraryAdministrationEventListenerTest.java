@@ -40,7 +40,7 @@ class LibraryAdministrationEventListenerTest {
   void shouldBroadcastCurrentLibraryWhenStatusChanges() {
     var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
     library.setStatus(LibraryStatus.SCANNING);
-    var delivered = collect(broadcasters.statusChanges());
+    var delivered = collect(broadcasters.getStatusChanges());
 
     listener.onLibraryStatusChanged(new LibraryStatusChangedEvent(library.getId()));
 
@@ -57,7 +57,7 @@ class LibraryAdministrationEventListenerTest {
   @Test
   @DisplayName("Should broadcast nothing when the changed library no longer exists")
   void shouldBroadcastNothingWhenChangedLibraryNoLongerExists() {
-    var delivered = collect(broadcasters.statusChanges());
+    var delivered = collect(broadcasters.getStatusChanges());
 
     listener.onLibraryStatusChanged(new LibraryStatusChangedEvent(UUID.randomUUID()));
 
@@ -68,7 +68,7 @@ class LibraryAdministrationEventListenerTest {
   @DisplayName("Should broadcast the current library when a library is added")
   void shouldBroadcastCurrentLibraryWhenLibraryIsAdded() {
     var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
-    var delivered = collect(broadcasters.additions());
+    var delivered = collect(broadcasters.getAdditions());
 
     listener.onLibraryAdded(new LibraryAddedEvent(library.getId(), library.getFilepathUri()));
 
@@ -85,7 +85,7 @@ class LibraryAdministrationEventListenerTest {
   @DisplayName("Should broadcast a removal receipt with the library id when a library is removed")
   void shouldBroadcastRemovalReceiptWithLibraryIdWhenLibraryIsRemoved() {
     var libraryId = UUID.randomUUID();
-    var delivered = collect(broadcasters.removals());
+    var delivered = collect(broadcasters.getRemovals());
 
     listener.onLibraryRemoved(new LibraryRemovedEvent(libraryId, "file:///removed", Set.of()));
 

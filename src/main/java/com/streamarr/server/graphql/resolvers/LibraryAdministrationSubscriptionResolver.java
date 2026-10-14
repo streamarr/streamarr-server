@@ -20,22 +20,24 @@ public class LibraryAdministrationSubscriptionResolver {
 
   @DgsSubscription
   public Publisher<Library> libraryStatusChanged() {
-    libraryAdministrationService.requireLibraryAdministrationView(
-        authorizationService.currentIdentity());
-    return broadcasters.statusChanges().register();
+    requireViewLibraryAdministration();
+    return broadcasters.getStatusChanges().register();
   }
 
   @DgsSubscription
   public Publisher<Library> libraryAdded() {
-    libraryAdministrationService.requireLibraryAdministrationView(
-        authorizationService.currentIdentity());
-    return broadcasters.additions().register();
+    requireViewLibraryAdministration();
+    return broadcasters.getAdditions().register();
   }
 
   @DgsSubscription
   public Publisher<LibraryRemoval> libraryRemoved() {
-    libraryAdministrationService.requireLibraryAdministrationView(
+    requireViewLibraryAdministration();
+    return broadcasters.getRemovals().register();
+  }
+
+  private void requireViewLibraryAdministration() {
+    libraryAdministrationService.requireViewLibraryAdministration(
         authorizationService.currentIdentity());
-    return broadcasters.removals().register();
   }
 }

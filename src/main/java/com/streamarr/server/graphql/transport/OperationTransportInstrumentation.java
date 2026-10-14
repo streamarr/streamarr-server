@@ -19,14 +19,17 @@ import org.springframework.stereotype.Component;
  * captured at the handshake.
  */
 @Component
-public class OperationTransportInstrumentation extends SimplePerformantInstrumentation {
+class OperationTransportInstrumentation extends SimplePerformantInstrumentation {
 
   @Override
   public InstrumentationContext<ExecutionResult> beginExecuteOperation(
       InstrumentationExecuteOperationParameters parameters, InstrumentationState state) {
     var executionContext = parameters.getExecutionContext();
-    GraphQlTransport transport = executionContext.getGraphQLContext().get(GraphQlTransport.class);
-    var refusal = refusal(executionContext.getOperationDefinition().getOperation(), transport);
+    var operation = executionContext.getOperationDefinition().getOperation();
+    // In-process execution, such as the DGS query executor, passes no transport handler.
+    Optional<GraphQlTransport> transport =
+        executionContext.getGraphQLContext().getOrEmpty(GraphQlTransport.class);
+    var refusal = transport.flatMap(carrier -> refusal(operation, carrier));
     if (refusal.isPresent()) {
       throw new AbortExecutionException(List.of(refusal.get()));
     }
@@ -34,14 +37,13 @@ public class OperationTransportInstrumentation extends SimplePerformantInstrumen
     return super.beginExecuteOperation(parameters, state);
   }
 
-  // Only the HTTP and WebSocket handlers record a transport; in-process execution has none.
   private static Optional<GraphQLError> refusal(Operation operation, GraphQlTransport transport) {
-    var subscription = operation == Operation.SUBSCRIPTION;
-    if (transport == GraphQlTransport.HTTP && subscription) {
+    var isSubscription = operation == Operation.SUBSCRIPTION;
+    if (transport == GraphQlTransport.HTTP && isSubscription) {
       return Optional.of(TransportRefusals.websocketRequired());
     }
 
-    if (transport == GraphQlTransport.WEBSOCKET && !subscription) {
+    if (transport == GraphQlTransport.WEBSOCKET && !isSubscription) {
       return Optional.of(TransportRefusals.httpRequired());
     }
 

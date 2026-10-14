@@ -25,20 +25,20 @@ import org.springframework.web.socket.handler.WebSocketSessionDecorator;
  * when the expiry timer runs late.
  */
 @Slf4j
-public class AccessBoundWebSocketHandler extends WebSocketHandlerDecorator {
+class AccessBoundWebSocketHandler extends WebSocketHandlerDecorator {
 
   /** The session attribute that holds the opening access token's expiry, an {@link Instant}. */
-  public static final String ACCESS_EXPIRES_AT =
+  static final String ACCESS_EXPIRES_AT =
       AccessBoundWebSocketHandler.class.getName() + ".accessExpiresAt";
 
   /** A private close code outside the graphql-transport-ws codes, which clients treat as fatal. */
-  public static final CloseStatus ACCESS_EXPIRED = new CloseStatus(4100, "Access token expired");
+  static final CloseStatus ACCESS_EXPIRED = new CloseStatus(4100, "Access token expired");
 
   private final Clock clock;
   private final TaskScheduler taskScheduler;
   private final Map<String, AccessBoundSession> sessions = new ConcurrentHashMap<>();
 
-  public AccessBoundWebSocketHandler(
+  AccessBoundWebSocketHandler(
       WebSocketHandler graphQlHandler, Clock clock, TaskScheduler taskScheduler) {
     super(graphQlHandler);
     this.clock = clock;
@@ -56,7 +56,7 @@ public class AccessBoundWebSocketHandler extends WebSocketHandlerDecorator {
 
     var bound = new AccessBoundSession(session, accessExpiresAt.get(), clock);
     sessions.put(session.getId(), bound);
-    bound.expiryTimer = taskScheduler.schedule(bound::closeForExpiry, accessExpiresAt.get());
+    bound.startExpiryTimer(taskScheduler);
     super.afterConnectionEstablished(bound);
   }
 
@@ -106,7 +106,7 @@ public class AccessBoundWebSocketHandler extends WebSocketHandlerDecorator {
     return Optional.empty();
   }
 
-  /** The one session object the GraphQL handler sees; it refuses to send after expiry. */
+  // The one session object the GraphQL handler sees; it refuses to send after expiry.
   private static final class AccessBoundSession extends WebSocketSessionDecorator {
 
     private final Instant accessExpiresAt;
@@ -132,6 +132,10 @@ public class AccessBoundWebSocketHandler extends WebSocketHandlerDecorator {
       }
 
       super.sendMessage(message);
+    }
+
+    private void startExpiryTimer(TaskScheduler taskScheduler) {
+      expiryTimer = taskScheduler.schedule(this::closeForExpiry, accessExpiresAt);
     }
 
     private void closeForExpiry() {

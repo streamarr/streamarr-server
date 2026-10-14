@@ -3,9 +3,9 @@ package com.streamarr.server.graphql.subscriptions;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Per-connection limits for GraphQL subscriptions.
+ * Limits for GraphQL subscriptions.
  *
- * @param operationBuffer values an operation may fall behind before it ends with
+ * @param operationBuffer values one operation may fall behind before it ends with
  *     SUBSCRIPTION_OVERFLOW
  * @param maxOperationsPerConnection operations one WebSocket may run at once
  */

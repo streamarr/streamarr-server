@@ -3,10 +3,12 @@ package com.streamarr.server.graphql.subscriptions;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.graphql.dto.LibraryRemoval;
 import io.micrometer.core.instrument.MeterRegistry;
+import lombok.Getter;
 import org.springframework.stereotype.Component;
 import reactor.core.scheduler.Scheduler;
 
 /** One broadcaster per library-administration subscription field. */
+@Getter
 @Component
 public class LibraryAdministrationBroadcasters {
 
@@ -16,38 +18,22 @@ public class LibraryAdministrationBroadcasters {
 
   public LibraryAdministrationBroadcasters(
       MeterRegistry meterRegistry, Scheduler deliveryScheduler, SubscriptionProperties properties) {
-    this.statusChanges =
-        SubscriptionBroadcaster.<Library>builder()
-            .field("libraryStatusChanged")
-            .meterRegistry(meterRegistry)
-            .deliveryScheduler(deliveryScheduler)
-            .operationBuffer(properties.operationBuffer())
-            .build();
-    this.additions =
-        SubscriptionBroadcaster.<Library>builder()
-            .field("libraryAdded")
-            .meterRegistry(meterRegistry)
-            .deliveryScheduler(deliveryScheduler)
-            .operationBuffer(properties.operationBuffer())
-            .build();
-    this.removals =
-        SubscriptionBroadcaster.<LibraryRemoval>builder()
-            .field("libraryRemoved")
-            .meterRegistry(meterRegistry)
-            .deliveryScheduler(deliveryScheduler)
-            .operationBuffer(properties.operationBuffer())
-            .build();
+    var shared = new SharedSettings(meterRegistry, deliveryScheduler, properties.operationBuffer());
+    this.statusChanges = shared.broadcaster("libraryStatusChanged");
+    this.additions = shared.broadcaster("libraryAdded");
+    this.removals = shared.broadcaster("libraryRemoved");
   }
 
-  public SubscriptionBroadcaster<Library> statusChanges() {
-    return statusChanges;
-  }
+  private record SharedSettings(
+      MeterRegistry meterRegistry, Scheduler deliveryScheduler, int operationBuffer) {
 
-  public SubscriptionBroadcaster<Library> additions() {
-    return additions;
-  }
-
-  public SubscriptionBroadcaster<LibraryRemoval> removals() {
-    return removals;
+    private <T> SubscriptionBroadcaster<T> broadcaster(String field) {
+      return SubscriptionBroadcaster.<T>builder()
+          .field(field)
+          .meterRegistry(meterRegistry)
+          .deliveryScheduler(deliveryScheduler)
+          .operationBuffer(operationBuffer)
+          .build();
+    }
   }
 }

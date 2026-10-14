@@ -9,10 +9,8 @@ import reactor.core.scheduler.Schedulers;
 @Configuration(proxyBeanMethods = false)
 class GraphQlSubscriptionConfiguration {
 
-  /**
-   * Runs subscription delivery on virtual threads. A publishOn worker drains one operation at a
-   * time, so each operation still receives its values in broadcast order.
-   */
+  // A publishOn worker drains one operation at a time, so each operation still receives its
+  // values in broadcast order on these virtual threads.
   @Bean(destroyMethod = "dispose")
   Scheduler graphQlSubscriptionDeliveryScheduler() {
     return Schedulers.fromExecutorService(

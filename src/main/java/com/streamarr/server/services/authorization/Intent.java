@@ -23,7 +23,7 @@ public sealed interface Intent {
 
   record RefreshLibrary(UUID libraryId) implements UnitIntent {}
 
-  /** Watch library administration: server-wide library status, additions and removals. */
+  /** View library administration: server-wide library status, additions and removals. */
   record ViewLibraryAdministration() implements UnitIntent {}
 
   /** See the Profiles available in the session's context Household. */

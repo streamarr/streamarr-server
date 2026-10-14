@@ -350,7 +350,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
       log.info("Starting {} library refresh.", library.getName());
 
       library.setStatus(LibraryStatus.REFRESHING);
-      saveStatus(library);
+      saveStatusAndPublishChange(library);
 
       return library;
     } finally {
@@ -362,17 +362,17 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     var elapsedSeconds = Duration.between(startTime, Instant.now()).getSeconds();
 
     library.setStatus(LibraryStatus.HEALTHY);
-    saveStatus(library);
+    saveStatusAndPublishChange(library);
 
     log.info("Finished {} library refresh in {} seconds.", library.getName(), elapsedSeconds);
   }
 
   private void completeRefreshWithFailure(Library library) {
     library.setStatus(LibraryStatus.UNHEALTHY);
-    saveStatus(library);
+    saveStatusAndPublishChange(library);
   }
 
-  private void saveStatus(Library library) {
+  private void saveStatusAndPublishChange(Library library) {
     libraryRepository.save(library);
     eventPublisher.publishEvent(new LibraryStatusChangedEvent(library.getId()));
   }
@@ -499,7 +499,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
 
     library.setStatus(LibraryStatus.HEALTHY);
     library.setScanCompletedOn(endTime);
-    saveStatus(library);
+    saveStatusAndPublishChange(library);
 
     log.info(
         "Finished {} library scan in {} seconds: {}.",
@@ -511,7 +511,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
   private void completeScanWithFailure(Library library, Throwable cause) {
     library.setStatus(LibraryStatus.UNHEALTHY);
     library.setScanCompletedOn(Instant.now());
-    saveStatus(library);
+    saveStatusAndPublishChange(library);
 
     log.error("Failed {} library scan.", library.getName(), cause);
   }
@@ -537,7 +537,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
 
       library.setStatus(LibraryStatus.SCANNING);
       library.setScanStartedOn(Instant.now());
-      saveStatus(library);
+      saveStatusAndPublishChange(library);
 
       return library;
     } finally {

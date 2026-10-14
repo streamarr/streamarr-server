@@ -21,11 +21,8 @@ class GraphQlTransportConfiguration {
     return new EventStreamRefusingGraphQlSseHandler(webGraphQlHandler);
   }
 
-  /**
-   * The handshake origin rule: a browser may open the socket from the server's own origin or from
-   * the configured STREAMARR_BASE_URL origin, which is what browsers send behind a TLS-terminating
-   * proxy. A request without an Origin, as native clients send, passes.
-   */
+  // A browser may open the socket from the server's own origin or from the STREAMARR_BASE_URL
+  // origin, which browsers send behind a TLS-terminating proxy. Native clients send no Origin.
   @Bean
   GraphQlWebSocketHandler graphQlWebSocketHandler(
       WebGraphQlHandler webGraphQlHandler,

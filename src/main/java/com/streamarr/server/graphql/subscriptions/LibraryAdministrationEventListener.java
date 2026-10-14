@@ -12,6 +12,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
@@ -28,29 +29,29 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @RequiredArgsConstructor
 public class LibraryAdministrationEventListener {
 
-  public static final String PUBLICATION_FAILURES_METRIC =
+  static final String PUBLICATION_FAILURES_METRIC =
       "streamarr.graphql.subscriptions.publication_failures";
 
   private final LibraryRepository libraryRepository;
   private final LibraryAdministrationBroadcasters broadcasters;
   private final MeterRegistry meterRegistry;
 
-  @TransactionalEventListener(fallbackExecution = true)
+  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
   public void onLibraryStatusChanged(LibraryStatusChangedEvent event) {
-    var statusChanges = broadcasters.statusChanges();
+    var statusChanges = broadcasters.getStatusChanges();
     publish(
         statusChanges, () -> currentLibrary(event.libraryId()).ifPresent(statusChanges::broadcast));
   }
 
-  @TransactionalEventListener(fallbackExecution = true)
+  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
   public void onLibraryAdded(LibraryAddedEvent event) {
-    var additions = broadcasters.additions();
+    var additions = broadcasters.getAdditions();
     publish(additions, () -> currentLibrary(event.libraryId()).ifPresent(additions::broadcast));
   }
 
-  @TransactionalEventListener(fallbackExecution = true)
+  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
   public void onLibraryRemoved(LibraryRemovedEvent event) {
-    var removals = broadcasters.removals();
+    var removals = broadcasters.getRemovals();
     publish(removals, () -> removals.broadcast(new LibraryRemoval(event.libraryId())));
   }
 

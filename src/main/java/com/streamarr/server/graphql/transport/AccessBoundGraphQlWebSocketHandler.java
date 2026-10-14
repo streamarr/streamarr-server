@@ -18,7 +18,7 @@ import org.springframework.web.socket.server.support.WebSocketHttpRequestHandler
  * connection. The handshake captures the token's expiry and a redacted copy of the token, and
  * {@link AccessBoundWebSocketHandler} closes the connection at expiry.
  */
-public class AccessBoundGraphQlWebSocketHandler extends GraphQlWebSocketHandler {
+class AccessBoundGraphQlWebSocketHandler extends GraphQlWebSocketHandler {
 
   private final Clock clock;
   private final TaskScheduler taskScheduler;

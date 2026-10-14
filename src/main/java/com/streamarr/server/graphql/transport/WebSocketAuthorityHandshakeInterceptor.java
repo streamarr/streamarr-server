@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.transport;
 
 import com.streamarr.server.config.security.StreamarrAuthenticationToken;
 import java.util.Map;
+import java.util.Optional;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
@@ -19,7 +20,7 @@ import org.springframework.web.socket.server.HandshakeInterceptor;
  * context during the handshake and keeps it for the connection's lifetime, so the raw access token
  * would otherwise live as long as the socket.
  */
-public class WebSocketAuthorityHandshakeInterceptor implements HandshakeInterceptor {
+class WebSocketAuthorityHandshakeInterceptor implements HandshakeInterceptor {
 
   private static final String REDACTED_TOKEN_VALUE = "[redacted]";
 
@@ -32,13 +33,14 @@ public class WebSocketAuthorityHandshakeInterceptor implements HandshakeIntercep
       WebSocketHandler wsHandler,
       Map<String, Object> attributes) {
     var context = SecurityContextHolder.getContext();
-    if (!(context.getAuthentication() instanceof StreamarrAuthenticationToken authentication)
-        || !(authentication.getCredentials() instanceof Jwt jwt)
-        || jwt.getExpiresAt() == null) {
+    var opening = openingAccessToken(context);
+    if (opening.isEmpty()) {
       response.setStatusCode(HttpStatus.UNAUTHORIZED);
       return false;
     }
 
+    var authentication = opening.get().authentication();
+    var jwt = opening.get().jwt();
     attributes.put(AccessBoundWebSocketHandler.ACCESS_EXPIRES_AT, jwt.getExpiresAt());
     requestContext.set(context);
     SecurityContextHolder.setContext(
@@ -46,6 +48,22 @@ public class WebSocketAuthorityHandshakeInterceptor implements HandshakeIntercep
             new StreamarrAuthenticationToken(
                 authentication.getPrincipal(), redacted(jwt), authentication.getAuthorities())));
     return true;
+  }
+
+  private static Optional<OpeningAccessToken> openingAccessToken(SecurityContext context) {
+    if (!(context.getAuthentication() instanceof StreamarrAuthenticationToken authentication)) {
+      return Optional.empty();
+    }
+
+    if (!(authentication.getCredentials() instanceof Jwt jwt)) {
+      return Optional.empty();
+    }
+
+    if (jwt.getExpiresAt() == null) {
+      return Optional.empty();
+    }
+
+    return Optional.of(new OpeningAccessToken(authentication, jwt));
   }
 
   @Override
@@ -69,4 +87,6 @@ public class WebSocketAuthorityHandshakeInterceptor implements HandshakeIntercep
         .claims(claims -> claims.putAll(jwt.getClaims()))
         .build();
   }
+
+  private record OpeningAccessToken(StreamarrAuthenticationToken authentication, Jwt jwt) {}
 }

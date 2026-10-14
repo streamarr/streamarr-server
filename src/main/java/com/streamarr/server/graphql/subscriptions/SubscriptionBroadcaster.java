@@ -20,7 +20,8 @@ import reactor.core.scheduler.Scheduler;
  */
 public final class SubscriptionBroadcaster<T> {
 
-  public static final String ACTIVE_REGISTRATIONS_METRIC = "streamarr.graphql.subscriptions.active";
+  private static final String ACTIVE_REGISTRATIONS_METRIC =
+      "streamarr.graphql.subscriptions.active";
 
   private final Set<FluxSink<T>> registrations = ConcurrentHashMap.newKeySet();
   private final String field;
