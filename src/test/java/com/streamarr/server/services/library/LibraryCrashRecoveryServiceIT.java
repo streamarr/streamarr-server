@@ -15,8 +15,11 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.springframework.beans.factory.annotation.Autowired;
 
+// Shutdown recovery resets every busy library, including libraries that other tests are scanning.
+@Isolated
 @Tag("IntegrationTest")
 @DisplayName("Library Crash Recovery Service Integration Tests")
 class LibraryCrashRecoveryServiceIT extends AbstractIntegrationTest {
@@ -48,6 +51,19 @@ class LibraryCrashRecoveryServiceIT extends AbstractIntegrationTest {
     var recovered = libraryRepository.findById(stuckLibrary.getId()).orElseThrow();
     assertThat(recovered.getCreatedBy()).isNull();
     assertThat(recovered.getLastModifiedBy()).isEqualTo(SystemActor.ID);
+  }
+
+  @Test
+  @DisplayName("Should name the System actor when shutdown resets a busy library")
+  void shouldNameSystemActorWhenShutdownResetsBusyLibrary() {
+    var busyLibrary = libraryRepository.saveAndFlush(buildScanningLibrary());
+
+    recoveryService.onShutdown();
+
+    var reset = libraryRepository.findById(busyLibrary.getId()).orElseThrow();
+    assertThat(reset.getStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+    assertThat(reset.getCreatedBy()).isNull();
+    assertThat(reset.getLastModifiedBy()).isEqualTo(SystemActor.ID);
   }
 
   @Test
