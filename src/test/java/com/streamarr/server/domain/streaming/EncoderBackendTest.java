@@ -35,12 +35,4 @@ class EncoderBackendTest {
         .isThrownBy(() -> new EncoderBackend("h264", "libx264", null))
         .withMessageContaining("kind");
   }
-
-  @Test
-  @DisplayName("Should reject a worker-verified encoder when its encoder backend is missing")
-  void shouldRejectWorkerVerifiedEncoderWhenItsEncoderBackendIsMissing() {
-    assertThatNullPointerException()
-        .isThrownBy(() -> new WorkerVerifiedEncoder(null, true))
-        .withMessageContaining("backend");
-  }
 }

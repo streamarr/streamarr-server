@@ -73,6 +73,10 @@ class WorkerSessionGrpcServiceTest {
   private static final int MAXIMUM_KEYFRAME_POSITIONS_PER_PROBE = 1_048_576;
   // worker_session.proto bounds each list of a keyframe positions part to 4,096 entries.
   private static final int MAXIMUM_ENTRIES_PER_PART = 4_096;
+  private static final String ENCODER_BACKEND_MISMATCH_METRIC =
+      "streamarr.streaming.encoder_backend_mismatches";
+  private static final WorkerVerifiedVideoEncoder LIBX264 =
+      softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264");
 
   @Test
   @DisplayName(
@@ -413,9 +417,6 @@ class WorkerSessionGrpcServiceTest {
     assertThat(registry.isRunning(streamSessionId, job.getVariant().getVariantLabel())).isTrue();
   }
 
-  private static final String ENCODER_BACKEND_MISMATCH_METRIC =
-      "streamarr.streaming.encoder_backend_mismatches";
-
   @ParameterizedTest(name = "{0}")
   @EnumSource(ReportedEncoderBackend.class)
   @DisplayName(
@@ -470,79 +471,6 @@ class WorkerSessionGrpcServiceTest {
             registry.isRunning(
                 fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel()))
         .isTrue();
-  }
-
-  private enum ReportedEncoderBackend {
-    DIFFERENT(
-        Optional.of(
-            hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc").getBackend())),
-    ABSENT(Optional.empty());
-
-    private final Optional<VideoEncoderBackend> backend;
-
-    ReportedEncoderBackend(Optional<VideoEncoderBackend> backend) {
-      this.backend = backend;
-    }
-
-    private Optional<VideoEncoderBackend> backend() {
-      return backend;
-    }
-  }
-
-  private static final WorkerVerifiedVideoEncoder LIBX264 =
-      softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264");
-
-  private static StartedEncode startedEncode(SimpleMeterRegistry meterRegistry) throws Exception {
-    var workerId = UUID.randomUUID();
-    var sourceNamespaceId = UUID.randomUUID();
-    var registry =
-        new LiveWorkerConnectionRegistry(
-            WorkerSessionServerConfiguration.builder().build(), meterRegistry);
-    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
-    var responses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
-    var session = workerSession(service, workerId, new CollectingResponseObserver(responses));
-    var registration = registration(worker(workerId), sourceNamespaceId).toBuilder();
-    registration.getCapabilitiesBuilder().addVideoEncoders(LIBX264);
-    session.onNext(
-        EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build());
-    var job =
-        variantJob(sourceNamespaceId).toBuilder()
-            .setDecision(
-                TranscodeDecision.newBuilder()
-                    .setMode(TranscodeMode.TRANSCODE_MODE_FULL_TRANSCODE)
-                    .setVideoCodecFamily("h264"))
-            .build();
-    assertThat(registry.dispatch(job)).isPresent();
-    return new StartedEncode(registry, session, job, responses);
-  }
-
-  private record StartedEncode(
-      LiveWorkerConnectionRegistry registry,
-      StreamObserver<EstablishWorkerSessionRequest> session,
-      VariantJob job,
-      List<EstablishWorkerSessionResponse> responses) {
-
-    private boolean isRunning() {
-      return registry.isRunning(
-          fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel());
-    }
-  }
-
-  private static EstablishWorkerSessionRequest jobAttemptStarted(
-      VariantJob job, Optional<VideoEncoderBackend> backend) {
-    var started = JobAttemptStarted.newBuilder().setJobAttemptId(job.getJobAttemptId());
-    backend.ifPresent(started::setEncoderBackend);
-    return EstablishWorkerSessionRequest.newBuilder().setJobAttemptStarted(started).build();
-  }
-
-  private static StreamObserver<EstablishWorkerSessionRequest> workerSession(
-      WorkerSessionGrpcService service,
-      UUID workerId,
-      StreamObserver<EstablishWorkerSessionResponse> responseObserver)
-      throws Exception {
-    return Context.current()
-        .withValue(WorkerIdentityServerInterceptor.AUTHENTICATED_WORKER_ID, workerId)
-        .call(() -> service.establishWorkerSession(responseObserver));
   }
 
   @Test
@@ -759,6 +687,76 @@ class WorkerSessionGrpcServiceTest {
 
   private record OwnershipLossResult(
       RecordingUploadResponseObserver response, UUID streamSessionId, String segmentName) {}
+
+  private enum ReportedEncoderBackend {
+    DIFFERENT(
+        Optional.of(
+            hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc").getBackend())),
+    ABSENT(Optional.empty());
+
+    private final Optional<VideoEncoderBackend> backend;
+
+    ReportedEncoderBackend(Optional<VideoEncoderBackend> backend) {
+      this.backend = backend;
+    }
+
+    private Optional<VideoEncoderBackend> backend() {
+      return backend;
+    }
+  }
+
+  private static StartedEncode startedEncode(SimpleMeterRegistry meterRegistry) throws Exception {
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var registry =
+        new LiveWorkerConnectionRegistry(
+            WorkerSessionServerConfiguration.builder().build(), meterRegistry);
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var responses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    var session = workerSession(service, workerId, new CollectingResponseObserver(responses));
+    var registration = registration(worker(workerId), sourceNamespaceId).toBuilder();
+    registration.getCapabilitiesBuilder().addVideoEncoders(LIBX264);
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build());
+    var job =
+        variantJob(sourceNamespaceId).toBuilder()
+            .setDecision(
+                TranscodeDecision.newBuilder()
+                    .setMode(TranscodeMode.TRANSCODE_MODE_FULL_TRANSCODE)
+                    .setVideoCodecFamily("h264"))
+            .build();
+    assertThat(registry.dispatch(job)).isPresent();
+    return new StartedEncode(registry, session, job, responses);
+  }
+
+  private record StartedEncode(
+      LiveWorkerConnectionRegistry registry,
+      StreamObserver<EstablishWorkerSessionRequest> session,
+      VariantJob job,
+      List<EstablishWorkerSessionResponse> responses) {
+
+    private boolean isRunning() {
+      return registry.isRunning(
+          fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel());
+    }
+  }
+
+  private static EstablishWorkerSessionRequest jobAttemptStarted(
+      VariantJob job, Optional<VideoEncoderBackend> backend) {
+    var started = JobAttemptStarted.newBuilder().setJobAttemptId(job.getJobAttemptId());
+    backend.ifPresent(started::setEncoderBackend);
+    return EstablishWorkerSessionRequest.newBuilder().setJobAttemptStarted(started).build();
+  }
+
+  private static StreamObserver<EstablishWorkerSessionRequest> workerSession(
+      WorkerSessionGrpcService service,
+      UUID workerId,
+      StreamObserver<EstablishWorkerSessionResponse> responseObserver)
+      throws Exception {
+    return Context.current()
+        .withValue(WorkerIdentityServerInterceptor.AUTHENTICATED_WORKER_ID, workerId)
+        .call(() -> service.establishWorkerSession(responseObserver));
+  }
 
   private static StreamObserver<UploadSegmentRequest> upload(
       WorkerSessionGrpcService service,

@@ -548,6 +548,20 @@ class HlsPlaylistServiceTest {
       assertThat(playlist.lines()).contains(INDEPENDENT_SEGMENTS);
     }
 
+    @Test
+    @DisplayName(
+        "Should leave the tag out of every media playlist when the multivariant playlist carries it")
+    void shouldLeaveTagOutOfEveryMediaPlaylistWhenMultivariantPlaylistCarriesIt() {
+      var session = encodedLadder("h264");
+      session.pinEncoder("1080p", WorkerVerifiedEncoderFixture.libx264());
+      session.pinEncoder("720p", WorkerVerifiedEncoderFixture.libx264());
+
+      assertThat(service.generateMultivariantPlaylist(session, "test-token").lines())
+          .contains(INDEPENDENT_SEGMENTS);
+      assertThat(mediaPlaylist(session, "1080p").lines()).doesNotContain(INDEPENDENT_SEGMENTS);
+      assertThat(mediaPlaylist(session, "720p").lines()).doesNotContain(INDEPENDENT_SEGMENTS);
+    }
+
     static Stream<Arguments> keyframeVerifiedEncoders() {
       return Stream.of(
           Arguments.of("h264", WorkerVerifiedEncoderFixture.libx264()),

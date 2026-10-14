@@ -49,6 +49,9 @@ import org.junit.jupiter.params.provider.EnumSource;
 @DisplayName("Producer Lifecycle Service Tests")
 class ProducerLifecycleServiceTest {
 
+  private static final ExecutionTargetId LIBX264_WORKER = new ExecutionTargetId("libx264-worker");
+  private static final ExecutionTargetId NVENC_WORKER = new ExecutionTargetId("nvenc-worker");
+
   private FakeTranscodeExecutor transcodeExecutor;
   private FakeSegmentStore segmentStore;
   private FakeRuntimeStreamSessionRegistry runtimeRegistry;
@@ -722,19 +725,6 @@ class ProducerLifecycleServiceTest {
                     .isEqualTo(firstAttemptPresets.get(resumed.variantLabel())));
   }
 
-  private static final ExecutionTargetId LIBX264_WORKER = new ExecutionTargetId("libx264-worker");
-  private static final ExecutionTargetId NVENC_WORKER = new ExecutionTargetId("nvenc-worker");
-
-  private StreamSession sessionPinnedToLibx264(StreamSession.StreamSessionBuilder session) {
-    var started = session.transcodeDecision(fullTranscodeDecision("h264")).build();
-    transcodeExecutor.setTargetEncoders(LIBX264_WORKER, List.of(libx264()));
-    transcodeExecutor.setTargetEncoders(NVENC_WORKER, List.of(h264Nvenc()));
-    transcodeExecutor.setExecutionTargets(List.of(LIBX264_WORKER));
-    runtimeRegistry.save(started);
-    lifecycle.startAll(started, 0);
-    return started;
-  }
-
   @Test
   @DisplayName(
       "Should pin each variant to the encoder backend of its first job attempt when a stream session starts")
@@ -821,9 +811,10 @@ class ProducerLifecycleServiceTest {
   void shouldStartNoRelocationWhenNoWorkerHasPinnedEncoderBackend() {
     var session = sessionPinnedToLibx264(defaultSessionBuilder());
     transcodeExecutor.setExecutionTargets(List.of(NVENC_WORKER));
+    var sessionId = session.getSessionId();
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
-    assertThatThrownBy(() -> lifecycle.ensurePositioned(session.getSessionId(), "segment100.m4s"))
+    assertThatThrownBy(() -> lifecycle.ensurePositioned(sessionId, "segment100.m4s"))
         .isInstanceOf(TranscodeException.class);
 
     assertThat(startedSince(startedBefore)).isEmpty();
@@ -854,6 +845,16 @@ class ProducerLifecycleServiceTest {
 
     assertThat(transcodeExecutor.getStartedTargets()).isEmpty();
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
+  }
+
+  private StreamSession sessionPinnedToLibx264(StreamSession.StreamSessionBuilder session) {
+    var started = session.transcodeDecision(fullTranscodeDecision("h264")).build();
+    transcodeExecutor.setTargetEncoders(LIBX264_WORKER, List.of(libx264()));
+    transcodeExecutor.setTargetEncoders(NVENC_WORKER, List.of(h264Nvenc()));
+    transcodeExecutor.setExecutionTargets(List.of(LIBX264_WORKER));
+    runtimeRegistry.save(started);
+    lifecycle.startAll(started, 0);
+    return started;
   }
 
   private static Map<String, EncoderPreset> presetsByVariantLabel(List<TranscodeRequest> requests) {
