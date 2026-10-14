@@ -44,7 +44,9 @@ public interface MediaFileContainerInfoRepositoryCustom {
 
   /**
    * Reads what the stored outcome says about the source's keyframes, with the decoded positions
-   * when they are known. Empty when no outcome is stored.
+   * when they are known. Empty when no outcome is stored. Throws {@link
+   * com.streamarr.server.exceptions.MalformedKeyframePositionsException} when the stored positions
+   * cannot be decoded, without marking the caller's transaction rollback-only.
    */
   Optional<KeyframeKnowledge> findKeyframeKnowledge(UUID mediaFileId);
 

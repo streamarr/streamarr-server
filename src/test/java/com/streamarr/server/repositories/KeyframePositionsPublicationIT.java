@@ -19,7 +19,6 @@ import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbePublication;
-import com.streamarr.server.exceptions.MalformedKeyframePositionsException;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -171,8 +170,8 @@ class KeyframePositionsPublicationIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should refuse stored positions when their keyframe count differs from the encoded keyframes")
-  void shouldRefuseStoredPositionsWhenTheirKeyframeCountDiffersFromEncodedKeyframes() {
+      "Should find no outcome when the stored keyframe count differs from the encoded keyframes")
+  void shouldFindNoOutcomeWhenStoredKeyframeCountDiffersFromEncodedKeyframes() {
     var file = createMediaFile();
     repository.publish(
         publication(
@@ -183,10 +182,25 @@ class KeyframePositionsPublicationIT extends AbstractIntegrationTest {
         .set(MEDIA_FILE_KEYFRAME_POSITIONS.KEYFRAME_COUNT, 3_599)
         .where(MEDIA_FILE_KEYFRAME_POSITIONS.MEDIA_FILE_ID.eq(file.getId()))
         .execute();
-    var mediaFileId = file.getId();
 
-    assertThatThrownBy(() -> reader.find(mediaFileId))
-        .isInstanceOf(MalformedKeyframePositionsException.class);
+    assertThat(reader.find(file.getId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should find no outcome when the stored positions name an unknown format")
+  void shouldFindNoOutcomeWhenStoredPositionsNameUnknownFormat() {
+    var file = createMediaFile();
+    repository.publish(
+        publication(
+            file.getId(),
+            SNAPSHOT_A,
+            success(new KeyframeKnowledge.Known(twoHourSourcePositions()))));
+    dsl.update(MEDIA_FILE_KEYFRAME_POSITIONS)
+        .set(MEDIA_FILE_KEYFRAME_POSITIONS.ENCODED_TIMES, new byte[] {2})
+        .where(MEDIA_FILE_KEYFRAME_POSITIONS.MEDIA_FILE_ID.eq(file.getId()))
+        .execute();
+
+    assertThat(reader.find(file.getId())).isEmpty();
   }
 
   private static KeyframePositions twoHourSourcePositions() {

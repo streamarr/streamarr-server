@@ -162,7 +162,9 @@ public class MediaFileContainerInfoRepositoryCustomImpl
   }
 
   @Override
-  @Transactional(readOnly = true)
+  // A read changes nothing, so a malformed row must not mark the caller's transaction
+  // rollback-only.
+  @Transactional(readOnly = true, noRollbackFor = MalformedKeyframePositionsException.class)
   public Optional<KeyframeKnowledge> findKeyframeKnowledge(UUID mediaFileId) {
     return dsl.select(
             MEDIA_FILE_CONTAINER_INFO.KEYFRAME_STATUS,
