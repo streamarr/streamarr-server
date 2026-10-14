@@ -9,6 +9,7 @@ import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
@@ -82,7 +83,7 @@ public final class WorkerSessionServer implements AutoCloseable {
     return runtime.server().getPort();
   }
 
-  public synchronized boolean dispatch(VariantJob job) {
+  public synchronized Optional<VariantDispatch> dispatch(VariantJob job) {
     requireStarted();
     return workerConnections.dispatch(job);
   }
@@ -101,7 +102,8 @@ public final class WorkerSessionServer implements AutoCloseable {
     return workerConnections.dispatchProbe(request);
   }
 
-  public synchronized boolean dispatchTo(ExecutionTargetId target, VariantJob job) {
+  public synchronized Optional<VariantDispatch> dispatchTo(
+      ExecutionTargetId target, VariantJob job) {
     requireStarted();
     return workerConnections.dispatchTo(target, job);
   }

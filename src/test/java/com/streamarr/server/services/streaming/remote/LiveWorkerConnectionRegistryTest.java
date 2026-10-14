@@ -97,7 +97,7 @@ class LiveWorkerConnectionRegistryTest {
         .isInstanceOf(RuntimeException.class);
 
     assertThat(registry.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isFalse();
-    assertThat(registry.dispatch(variantJob())).isFalse();
+    assertThat(registry.dispatch(variantJob())).isEmpty();
   }
 
   @Test
@@ -113,7 +113,7 @@ class LiveWorkerConnectionRegistryTest {
         .isInstanceOf(RuntimeException.class);
 
     assertThat(registry.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isTrue();
-    assertThat(registry.dispatch(variantJob())).isTrue();
+    assertThat(registry.dispatch(variantJob())).isPresent();
     assertThat(originalResponses)
         .extracting(EstablishWorkerSessionResponse::getCommandCase)
         .containsExactly(
@@ -140,7 +140,7 @@ class LiveWorkerConnectionRegistryTest {
       assertThat(replacementClosing.await(5, TimeUnit.SECONDS)).isTrue();
       assertThat(replacement).isNotDone();
 
-      assertThat(registry.dispatch(variantJob())).isTrue();
+      assertThat(registry.dispatch(variantJob())).isPresent();
       continueReplacement.countDown();
       replacement.get(5, TimeUnit.SECONDS);
     } finally {
@@ -171,7 +171,7 @@ class LiveWorkerConnectionRegistryTest {
       registry.disconnect(WORKER_ID, workerSessionId);
       observer.dispatchRelease.countDown();
 
-      assertThat(dispatching.get(5, TimeUnit.SECONDS)).isFalse();
+      assertThat(dispatching.get(5, TimeUnit.SECONDS)).isEmpty();
       assertThat(registry.isRunning(streamSessionId, job.getVariant().getVariantLabel())).isFalse();
     }
   }
@@ -188,7 +188,7 @@ class LiveWorkerConnectionRegistryTest {
 
     var dispatched = registry.dispatch(job);
 
-    assertThat(dispatched).isFalse();
+    assertThat(dispatched).isEmpty();
     assertThat(
             registry.isRunning(
                 fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel()))
@@ -223,7 +223,7 @@ class LiveWorkerConnectionRegistryTest {
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(3);
     assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, streamCopyDecision())).hasSize(2);
 
-    assertThat(registry.dispatch(variantJob())).isTrue();
+    assertThat(registry.dispatch(variantJob())).isPresent();
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(2);
   }
 
@@ -242,7 +242,7 @@ class LiveWorkerConnectionRegistryTest {
         collecting(h264OnlyResponses));
     var av1Job = encodeJob("av1");
 
-    assertThat(registry.dispatch(av1Job)).isFalse();
+    assertThat(registry.dispatch(av1Job)).isEmpty();
 
     registry.register(
         av1WorkerId,
@@ -250,7 +250,7 @@ class LiveWorkerConnectionRegistryTest {
             av1WorkerId, softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "libsvtav1")),
         collecting(av1Responses));
 
-    assertThat(registry.dispatch(av1Job)).isTrue();
+    assertThat(registry.dispatch(av1Job)).isPresent();
     assertThat(h264OnlyResponses)
         .extracting(EstablishWorkerSessionResponse::getCommandCase)
         .containsExactly(EstablishWorkerSessionResponse.CommandCase.SESSION_ACCEPTED);
@@ -274,7 +274,7 @@ class LiveWorkerConnectionRegistryTest {
                     .setVideoCodecFamily("av1"))
             .build();
 
-    assertThat(registry.dispatch(copyJob)).isTrue();
+    assertThat(registry.dispatch(copyJob)).isPresent();
   }
 
   @Test
@@ -382,7 +382,7 @@ class LiveWorkerConnectionRegistryTest {
             av1WorkerId, softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "libsvtav1")),
         new CancellableObserver());
 
-    assertThat(registry.dispatch(encodeJob("av1"))).isTrue();
+    assertThat(registry.dispatch(encodeJob("av1"))).isPresent();
 
     assertThat(registry.encodableVideoCodecFamilies(SOURCE_NAMESPACE_ID)).containsOnly("h264");
   }
@@ -402,7 +402,7 @@ class LiveWorkerConnectionRegistryTest {
         registration(WORKER_ID, hardwareEncoder(family, encoder)),
         new CancellableObserver());
 
-    assertThat(registry.dispatch(encodeJob(codecFamilyName))).isFalse();
+    assertThat(registry.dispatch(encodeJob(codecFamilyName))).isEmpty();
   }
 
   @Test
@@ -414,7 +414,7 @@ class LiveWorkerConnectionRegistryTest {
     var observer = new CancellableObserver();
     registry.register(WORKER_ID, registration(), observer);
     var job = variantJob();
-    assertThat(registry.dispatch(job)).isTrue();
+    assertThat(registry.dispatch(job)).isPresent();
     observer.cancel();
     var streamSessionId = fromProto(job.getStreamSessionId());
 
@@ -444,7 +444,7 @@ class LiveWorkerConnectionRegistryTest {
     var workerSessionId =
         registry.register(WORKER_ID, registration, collecting(new CopyOnWriteArrayList<>()));
     var job = variantJob();
-    assertThat(registry.dispatch(job)).isTrue();
+    assertThat(registry.dispatch(job)).isPresent();
 
     var metadata = uploadMetadata(workerSessionId, worker, job);
 
@@ -497,7 +497,7 @@ class LiveWorkerConnectionRegistryTest {
     var workerRegistration = registration();
     var workerSessionId = registry.register(WORKER_ID, workerRegistration, collecting(responses));
     var job = variantJob();
-    assertThat(registry.dispatch(job)).isTrue();
+    assertThat(registry.dispatch(job)).isPresent();
 
     // The disconnect drains the attempt while the refused upload holds the connection monitor.
     var outcome =
@@ -534,7 +534,7 @@ class LiveWorkerConnectionRegistryTest {
     registry.disconnect(WORKER_ID, staleSessionId);
 
     assertThat(registry.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isTrue();
-    assertThat(registry.dispatch(variantJob())).isTrue();
+    assertThat(registry.dispatch(variantJob())).isPresent();
   }
 
   @Test
@@ -545,7 +545,7 @@ class LiveWorkerConnectionRegistryTest {
     var staleSessionId = registry.register(WORKER_ID, registration(), new CancellableObserver());
     registry.register(WORKER_ID, registration(), collecting(new CopyOnWriteArrayList<>()));
     var replacementJob = variantJob();
-    assertThat(registry.dispatch(replacementJob)).isTrue();
+    assertThat(registry.dispatch(replacementJob)).isPresent();
 
     var released =
         registry.releaseJobAttempt(

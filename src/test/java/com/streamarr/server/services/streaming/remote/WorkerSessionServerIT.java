@@ -126,7 +126,7 @@ class WorkerSessionServerIT {
         var worker = connectProbeWorker(channel, identity);
         var session = worker.nextResponse().getSessionAccepted();
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().hasStartVariant()).isTrue();
         var request =
             ProbeRequest.newBuilder()
@@ -200,7 +200,7 @@ class WorkerSessionServerIT {
         var worker = connectProbeWorker(channel, identity);
         var session = worker.nextResponse().getSessionAccepted();
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().hasStartVariant()).isTrue();
         var request =
             ProbeRequest.newBuilder()
@@ -340,7 +340,7 @@ class WorkerSessionServerIT {
         var worker = connectProbeWorker(channel, workerIdentity(UUID.randomUUID()));
         assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().hasStartVariant()).isTrue();
         var request =
             ProbeRequest.newBuilder()
@@ -549,7 +549,7 @@ class WorkerSessionServerIT {
         assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
         var job = variantJob();
 
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
 
         var command = worker.nextResponse().getStartVariant();
         assertThat(command.getTarget().getWorkerId()).isEqualTo(toProto(AUTHENTICATED_WORKER_ID));
@@ -665,7 +665,7 @@ class WorkerSessionServerIT {
         worker.close();
         worker.awaitClosed();
 
-        assertThat(server.dispatch(variantJob())).isFalse();
+        assertThat(server.dispatch(variantJob())).isEmpty();
       } finally {
         shutdown(channel);
       }
@@ -690,7 +690,7 @@ class WorkerSessionServerIT {
         assertUploadRejected(first::awaitClosed, Status.Code.ABORTED);
         var job = variantJob();
 
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(replacement.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         replacement.close();
       } finally {
@@ -756,7 +756,7 @@ class WorkerSessionServerIT {
     try (var server = server()) {
       server.start();
 
-      assertThat(server.dispatch(variantJob())).isFalse();
+      assertThat(server.dispatch(variantJob())).isEmpty();
     }
   }
 
@@ -777,7 +777,7 @@ class WorkerSessionServerIT {
         assertThat(executor.isHealthy()).isFalse();
         assertThat(executor.availableSlots()).isZero();
 
-        assertThat(server.dispatch(variantJob())).isFalse();
+        assertThat(server.dispatch(variantJob())).isEmpty();
       } finally {
         shutdown(channel);
       }
@@ -798,11 +798,11 @@ class WorkerSessionServerIT {
         assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
         var first = variantJob();
         var second = variantJob();
-        assertThat(server.dispatch(first)).isTrue();
+        assertThat(server.dispatch(first)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(first);
         assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isZero();
 
-        assertThat(server.dispatch(second)).isFalse();
+        assertThat(server.dispatch(second)).isEmpty();
 
         worker.send(
             EstablishWorkerSessionRequest.newBuilder()
@@ -812,7 +812,7 @@ class WorkerSessionServerIT {
         await()
             .atMost(5, TimeUnit.SECONDS)
             .until(() -> server.availableSlots(SOURCE_NAMESPACE_ID) == 1);
-        assertThat(server.dispatch(second)).isTrue();
+        assertThat(server.dispatch(second)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(second);
       } finally {
         shutdown(channel);
@@ -834,11 +834,11 @@ class WorkerSessionServerIT {
       try (var worker = connect(channel, identity)) {
         var workerSession = worker.nextResponse().getSessionAccepted();
         assertThat(server.stopVariant(UUID.randomUUID(), "720p")).isFalse();
-        assertThat(server.dispatch(variantJob().toBuilder().clearSource().build())).isFalse();
+        assertThat(server.dispatch(variantJob().toBuilder().clearSource().build())).isEmpty();
         assertThat(server.isRunning(UUID.randomUUID(), "720p")).isFalse();
 
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         assertThat(server.isRunning(fromProto(job.getStreamSessionId()), "missing")).isFalse();
         var metadata =
@@ -881,7 +881,7 @@ class WorkerSessionServerIT {
         var first = connect(channel, firstIdentity);
         var firstSession = first.nextResponse().getSessionAccepted();
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(first.nextResponse().getStartVariant().getJob()).isEqualTo(job);
 
         var replacement = connect(channel, workerIdentity(UUID.randomUUID()));
@@ -924,7 +924,7 @@ class WorkerSessionServerIT {
         var workerSession = worker.nextResponse().getSessionAccepted();
         var initial = variantJob();
         var streamSessionId = fromProto(initial.getStreamSessionId());
-        assertThat(server.dispatch(initial)).isTrue();
+        assertThat(server.dispatch(initial)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(initial);
         var initialUpload = segmentMetadata(workerSession, identity, initial);
         upload(
@@ -946,7 +946,7 @@ class WorkerSessionServerIT {
                 .build());
         await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId, "720p"));
         var replacement = initial.toBuilder().setJobAttemptId(toProto(UUID.randomUUID())).build();
-        assertThat(server.dispatch(replacement)).isTrue();
+        assertThat(server.dispatch(replacement)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(replacement);
 
         var refused =
@@ -998,7 +998,7 @@ class WorkerSessionServerIT {
         var worker = connect(channel, identity);
         var workerSession = worker.nextResponse().getSessionAccepted();
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         var segmentData = "partial segment".getBytes();
         var metadata =
@@ -1032,7 +1032,7 @@ class WorkerSessionServerIT {
       try (var worker = connect(channel, identity)) {
         var workerSession = worker.nextResponse().getSessionAccepted();
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         var metadata =
             segmentMetadata(workerSession, identity, job).setContentLengthBytes(1).build();
@@ -1108,7 +1108,7 @@ class WorkerSessionServerIT {
       try (var worker = connect(channel, identity)) {
         var workerSession = worker.nextResponse().getSessionAccepted();
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         var segmentData = new byte[128 * 1024];
         var metadata =
@@ -1151,7 +1151,7 @@ class WorkerSessionServerIT {
       try (var worker = connect(channel, identity)) {
         var workerSession = worker.nextResponse().getSessionAccepted();
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         var metadata =
             segmentMetadata(workerSession, identity, job).setContentLengthBytes(1).build();
@@ -1187,7 +1187,7 @@ class WorkerSessionServerIT {
               variantJob().toBuilder()
                   .setVariant(VariantSpec.newBuilder().setVariantLabel(unsafeName))
                   .build();
-          assertThat(server.dispatch(unsafeJob)).isTrue();
+          assertThat(server.dispatch(unsafeJob)).isPresent();
           assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(unsafeJob);
           var unsafe =
               segmentMetadata(workerSession, identity, unsafeJob).setContentLengthBytes(1).build();
@@ -1226,7 +1226,7 @@ class WorkerSessionServerIT {
       try (var worker = connect(channel, identity)) {
         var workerSession = worker.nextResponse().getSessionAccepted();
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         var data = "segment".getBytes();
         var metadata =
@@ -1256,7 +1256,7 @@ class WorkerSessionServerIT {
         var worker = connect(channel, identity);
         var workerSession = worker.nextResponse().getSessionAccepted();
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         var segmentData = ByteString.copyFromUtf8("in flight");
         var upload = beginSegmentUpload(channel);
@@ -1301,7 +1301,7 @@ class WorkerSessionServerIT {
       try (var worker = connect(channel, identity)) {
         var workerSession = worker.nextResponse().getSessionAccepted();
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         var data = "segment".getBytes();
         var metadata =
@@ -1352,8 +1352,8 @@ class WorkerSessionServerIT {
 
         var job = variantJob();
         assertThat(server.dispatchTo(new ExecutionTargetId(UUID.randomUUID().toString()), job))
-            .isFalse();
-        assertThat(server.dispatchTo(expectedTarget, job)).isTrue();
+            .isEmpty();
+        assertThat(server.dispatchTo(expectedTarget, job)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
       } finally {
         shutdown(channel);
@@ -1403,7 +1403,7 @@ class WorkerSessionServerIT {
         var workerSession = worker.nextResponse().getSessionAccepted();
         var job = variantJob();
         var streamSessionId = fromProto(job.getStreamSessionId());
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
 
         worker.send(
@@ -1443,7 +1443,7 @@ class WorkerSessionServerIT {
         assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
         var completedJob = variantJob();
         var completedSession = fromProto(completedJob.getStreamSessionId());
-        assertThat(server.dispatch(completedJob)).isTrue();
+        assertThat(server.dispatch(completedJob)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(completedJob);
         worker.send(
             EstablishWorkerSessionRequest.newBuilder()
@@ -1457,7 +1457,7 @@ class WorkerSessionServerIT {
 
         var stoppedJob = variantJob();
         var stoppedSession = fromProto(stoppedJob.getStreamSessionId());
-        assertThat(server.dispatch(stoppedJob)).isTrue();
+        assertThat(server.dispatch(stoppedJob)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(stoppedJob);
         assertThat(server.stopVariant(stoppedSession, "720p")).isTrue();
         assertThat(worker.nextResponse().hasStopVariant()).isTrue();
@@ -1491,7 +1491,7 @@ class WorkerSessionServerIT {
         assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
         var job = variantJob();
         var streamSessionId = fromProto(job.getStreamSessionId());
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
 
         worker.close();

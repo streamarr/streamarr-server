@@ -124,7 +124,7 @@ final class MeshMediaHandler implements HttpHandler {
                     .setMediaSegmentCount(FIXTURE_TIMELINE.mediaSegmentCount())
                     .setFramerate(24))
             .build();
-    if (!server.dispatch(job)) {
+    if (server.dispatch(job).isEmpty()) {
       throw new IllegalStateException("No worker accepted the media fixture transcode");
     }
 

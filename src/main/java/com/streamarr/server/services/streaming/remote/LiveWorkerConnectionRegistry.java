@@ -131,13 +131,14 @@ final class LiveWorkerConnectionRegistry {
     }
   }
 
-  boolean dispatch(VariantJob job) {
+  Optional<VariantDispatch> dispatch(VariantJob job) {
     for (var connection : connections.values()) {
-      if (tryDispatchUnlessDisconnected(connection, job)) {
-        return true;
+      var dispatched = tryDispatchUnlessDisconnected(connection, job);
+      if (dispatched.isPresent()) {
+        return dispatched;
       }
     }
-    return false;
+    return Optional.empty();
   }
 
   ProbeDispatch dispatchProbe(ProbeRequest request) {
@@ -184,13 +185,13 @@ final class LiveWorkerConnectionRegistry {
     return connection.acceptKeyframePositionsPart(part);
   }
 
-  boolean dispatchTo(ExecutionTargetId target, VariantJob job) {
+  Optional<VariantDispatch> dispatchTo(ExecutionTargetId target, VariantJob job) {
     for (var connection : connections.values()) {
       if (connection.workerSessionId().toString().equals(target.value())) {
         return tryDispatchUnlessDisconnected(connection, job);
       }
     }
-    return false;
+    return Optional.empty();
   }
 
   /**
@@ -198,15 +199,16 @@ final class LiveWorkerConnectionRegistry {
    * that monitor, so the drain can land between the send and the put. The job would then be
    * orphaned: held by a dropped connection, never logged as abandoned.
    */
-  private boolean tryDispatchUnlessDisconnected(WorkerConnection connection, VariantJob job) {
+  private Optional<VariantDispatch> tryDispatchUnlessDisconnected(
+      WorkerConnection connection, VariantJob job) {
     if (!connection.tryDispatch(job)) {
-      return false;
+      return Optional.empty();
     }
     if (!connections.containsValue(connection)) {
       connection.releaseJobAttempt(fromProto(job.getJobAttemptId()));
-      return false;
+      return Optional.empty();
     }
-    return true;
+    return Optional.of(new VariantDispatch(connection.executionTargetId()));
   }
 
   Set<ExecutionTargetId> eligibleWorkers(UUID sourceNamespaceId, TranscodeDecision decision) {
@@ -214,7 +216,7 @@ final class LiveWorkerConnectionRegistry {
     return connections.values().stream()
         .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
         .filter(connection -> connection.canEncode(decision))
-        .map(connection -> new ExecutionTargetId(connection.workerSessionId().toString()))
+        .map(WorkerConnection::executionTargetId)
         .collect(Collectors.toCollection(LinkedHashSet::new));
   }
 
@@ -353,6 +355,10 @@ final class LiveWorkerConnectionRegistry {
 
     private UUID workerSessionId() {
       return workerSessionId;
+    }
+
+    private ExecutionTargetId executionTargetId() {
+      return new ExecutionTargetId(workerSessionId.toString());
     }
 
     private synchronized void accept() {

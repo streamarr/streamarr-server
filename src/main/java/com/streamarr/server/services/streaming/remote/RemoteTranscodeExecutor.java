@@ -26,7 +26,7 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public TranscodeHandle start(TranscodeRequest request) {
-    if (!workerServer.dispatch(jobMapper.map(request))) {
+    if (workerServer.dispatch(jobMapper.map(request)).isEmpty()) {
       throw new TranscodeException("No connected transcode worker can run this variant");
     }
     return handleFor(request);
@@ -34,7 +34,7 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public TranscodeHandle start(TranscodeRequest request, ExecutionTargetId target) {
-    if (!workerServer.dispatchTo(target, jobMapper.map(request))) {
+    if (workerServer.dispatchTo(target, jobMapper.map(request)).isEmpty()) {
       throw new TranscodeException(
           "Worker connection " + target.value() + " cannot run this variant");
     }

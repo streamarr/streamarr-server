@@ -72,7 +72,7 @@ class WorkerDispatchFlowControlIT {
                   () -> {
                     var sent = 0;
                     for (var i = 0; i < FLOOD_COMMANDS; i++) {
-                      if (server.dispatch(variantJob())) {
+                      if (server.dispatch(variantJob()).isPresent()) {
                         sent++;
                       }
                     }

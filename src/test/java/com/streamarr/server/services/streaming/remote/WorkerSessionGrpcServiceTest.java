@@ -322,7 +322,7 @@ class WorkerSessionGrpcServiceTest {
             .setRegistration(registration(worker(workerId), sourceNamespaceId))
             .build());
     var job = variantJob(sourceNamespaceId);
-    assertThat(registry.dispatch(job)).isTrue();
+    assertThat(registry.dispatch(job)).isPresent();
     var streamSessionId = fromProto(job.getStreamSessionId());
     var variantLabel = job.getVariant().getVariantLabel();
     assertThat(registry.isRunning(streamSessionId, variantLabel)).isTrue();
@@ -354,7 +354,7 @@ class WorkerSessionGrpcServiceTest {
             .setRegistration(registration(worker(workerId), sourceNamespaceId))
             .build());
     var job = variantJob(sourceNamespaceId);
-    assertThat(registry.dispatch(job)).isTrue();
+    assertThat(registry.dispatch(job)).isPresent();
     var streamSessionId = fromProto(job.getStreamSessionId());
 
     session.onNext(
@@ -389,7 +389,7 @@ class WorkerSessionGrpcServiceTest {
             .build();
     session.onNext(registration);
     var job = variantJob(sourceNamespaceId);
-    assertThat(registry.dispatch(job)).isTrue();
+    assertThat(registry.dispatch(job)).isPresent();
     var streamSessionId = fromProto(job.getStreamSessionId());
     var establishedWorkers = registry.eligibleWorkers(sourceNamespaceId, streamCopyDecision());
 
@@ -475,7 +475,7 @@ class WorkerSessionGrpcServiceTest {
         registry.register(
             workerId, registration(worker, sourceNamespaceId), new IgnoringResponseObserver());
     var job = variantJob(sourceNamespaceId);
-    assertThat(registry.dispatch(job)).isTrue();
+    assertThat(registry.dispatch(job)).isPresent();
     var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
     var metadata =
         metadataBuilder(workerSessionId, worker, job)
@@ -521,7 +521,7 @@ class WorkerSessionGrpcServiceTest {
         registry.register(
             workerId, registration(worker, sourceNamespaceId), new IgnoringResponseObserver());
     var job = variantJob(sourceNamespaceId);
-    assertThat(registry.dispatch(job)).isTrue();
+    assertThat(registry.dispatch(job)).isPresent();
     var segmentStore = new FakeSegmentStore();
     var service = new WorkerSessionGrpcService(registry, segmentStore);
     var response = new SuccessfulUploadResponseObserver();
@@ -592,7 +592,7 @@ class WorkerSessionGrpcServiceTest {
         registry.register(
             workerId, registration(worker, sourceNamespaceId), new IgnoringResponseObserver());
     var job = variantJob(sourceNamespaceId);
-    assertThat(registry.dispatch(job)).isTrue();
+    assertThat(registry.dispatch(job)).isPresent();
     var service = new WorkerSessionGrpcService(registry, segmentStore);
     var response = new RecordingUploadResponseObserver();
     var segmentData = ByteString.copyFromUtf8("segment");
