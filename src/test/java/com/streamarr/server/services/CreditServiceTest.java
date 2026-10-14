@@ -15,6 +15,7 @@ import com.streamarr.server.fakes.FakeGenreRepository;
 import com.streamarr.server.fakes.FakePersonRepository;
 import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
@@ -208,6 +209,54 @@ class CreditServiceTest {
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Company sourceId must not be null");
     assertThat(companyRepository.count()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should reject a missing request when saving credits")
+  void shouldRejectAMissingRequestWhenSavingCredits() {
+    assertThatThrownBy(() -> creditService.getOrCreateCredits(null))
+        .isInstanceOf(NullPointerException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject a credits request when it has no credits")
+  void shouldRejectACreditsRequestWhenItHasNoCredits() {
+    var builder = MediaTitleCreditsRequest.builder().imageRefreshMode(ImageRefreshMode.PRESERVE);
+
+    assertThatThrownBy(builder::build).isInstanceOf(NullPointerException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject a credits request when it has no image refresh mode")
+  void shouldRejectACreditsRequestWhenItHasNoImageRefreshMode() {
+    var builder = MediaTitleCreditsRequest.builder().credits(MediaTitleCredits.builder().build());
+
+    assertThatThrownBy(builder::build).isInstanceOf(NullPointerException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject a missing metadata result when taking its image sources")
+  void shouldRejectAMissingMetadataResultWhenTakingItsImageSources() {
+    assertThatThrownBy(() -> MediaTitleCreditsRequest.withImageSourcesOf(null))
+        .isInstanceOf(NullPointerException.class);
+  }
+
+  @Test
+  @DisplayName("Should carry a metadata result's person and company image sources")
+  void shouldCarryAMetadataResultsPersonAndCompanyImageSources() {
+    var profile = List.<ImageSource>of(new TmdbImageSource(ImageType.PROFILE, "/profile.jpg"));
+    var logo = List.<ImageSource>of(new TmdbImageSource(ImageType.LOGO, "/logo.png"));
+    var metadataResult =
+        new MetadataResult<>(new Object(), List.of(), Map.of("100", profile), Map.of("174", logo));
+
+    var request =
+        MediaTitleCreditsRequest.withImageSourcesOf(metadataResult)
+            .credits(MediaTitleCredits.builder().build())
+            .imageRefreshMode(ImageRefreshMode.PRESERVE)
+            .build();
+
+    assertThat(request.personImageSources()).isEqualTo(Map.of("100", profile));
+    assertThat(request.companyImageSources()).isEqualTo(Map.of("174", logo));
   }
 
   private static MediaTitleCreditsRequest.MediaTitleCreditsRequestBuilder requestFor(
