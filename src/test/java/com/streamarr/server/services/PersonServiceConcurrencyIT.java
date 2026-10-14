@@ -1,17 +1,22 @@
 package com.streamarr.server.services;
 
+import static com.streamarr.server.support.HeldCreditInsert.CreditTable.PERSON;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.repositories.PersonRepository;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.support.HeldCreditInsert;
+import com.streamarr.server.support.OrderedSourceIds;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -24,6 +29,8 @@ class PersonServiceConcurrencyIT extends AbstractIntegrationTest {
   @Autowired private PersonService personService;
 
   @Autowired private PersonRepository personRepository;
+
+  @Autowired private DataSource dataSource;
 
   @Test
   @DisplayName("Should create single person when concurrent inserts race on same source ID")
@@ -42,7 +49,9 @@ class PersonServiceConcurrencyIT extends AbstractIntegrationTest {
             try {
               startLatch.await();
               var person = Person.builder().name("Concurrent Actor").sourceId(sourceId).build();
-              var result = personService.getOrCreatePersons(List.of(person), Map.of());
+              var result =
+                  personService.getOrCreatePersons(
+                      List.of(person), Map.of(), ImageRefreshMode.PRESERVE);
               results.add(result);
             } catch (Exception e) {
               exceptions.add(e);
@@ -67,51 +76,25 @@ class PersonServiceConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should create all persons when concurrent inserts overlap in opposite order")
-  void shouldCreateAllPersonsWhenConcurrentInsertsOverlapInOppositeOrder() {
-    var suffix = String.valueOf(System.nanoTime());
-    var forward =
+  @DisplayName("Should create all persons when another media title inserts them in opposite order")
+  void shouldCreateAllPersonsWhenAnotherMediaTitleInsertsThemInOppositeOrder() throws Exception {
+    var sourceIds = OrderedSourceIds.unique();
+    var persons =
         List.of(
-            Person.builder().name("Actor A").sourceId("100-" + suffix).build(),
-            Person.builder().name("Actor B").sourceId("200-" + suffix).build(),
-            Person.builder().name("Actor C").sourceId("300-" + suffix).build());
-    var reversed = forward.reversed();
+            Person.builder().name("Actor B").sourceId(sourceIds.higher()).build(),
+            Person.builder().name("Actor A").sourceId(sourceIds.lower()).build());
 
-    var threadCount = 10;
-    var executor = Executors.newFixedThreadPool(threadCount);
-    var startLatch = new CountDownLatch(1);
-    var doneLatch = new CountDownLatch(threadCount);
-    var results = new CopyOnWriteArrayList<List<Person>>();
-    var exceptions = new CopyOnWriteArrayList<Exception>();
+    try (var otherMediaTitle = HeldCreditInsert.open(dataSource)) {
+      otherMediaTitle.insert(PERSON, sourceIds.lower());
 
-    for (int i = 0; i < threadCount; i++) {
-      var persons = (i % 2 == 0) ? forward : reversed;
-      executor.submit(
-          () -> {
-            try {
-              startLatch.await();
-              var result = personService.getOrCreatePersons(persons, Map.of());
-              results.add(result);
-            } catch (Exception e) {
-              exceptions.add(e);
-            } finally {
-              doneLatch.countDown();
-            }
-          });
+      var saved =
+          otherMediaTitle.commitAfterSaveWaits(
+              () -> personService.getOrCreatePersons(persons, Map.of(), ImageRefreshMode.PRESERVE),
+              held -> held.insert(PERSON, sourceIds.higher()));
+
+      assertThat(saved)
+          .extracting(Person::getSourceId)
+          .containsExactly(sourceIds.higher(), sourceIds.lower());
     }
-
-    startLatch.countDown();
-
-    await()
-        .atMost(Duration.ofSeconds(10))
-        .untilAsserted(() -> assertThat(doneLatch.getCount()).isZero());
-
-    executor.shutdown();
-
-    assertThat(exceptions).isEmpty();
-    assertThat(results).hasSize(threadCount);
-    assertThat(personRepository.findPersonBySourceId("100-" + suffix)).isPresent();
-    assertThat(personRepository.findPersonBySourceId("200-" + suffix)).isPresent();
-    assertThat(personRepository.findPersonBySourceId("300-" + suffix)).isPresent();
   }
 }

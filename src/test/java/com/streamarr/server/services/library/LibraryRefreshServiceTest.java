@@ -37,23 +37,19 @@ import com.streamarr.server.exceptions.ArtworkResultNotSavedException;
 import com.streamarr.server.exceptions.LibraryRefreshFailedException;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
-import com.streamarr.server.fakes.FakeCompanyRepository;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
-import com.streamarr.server.fakes.FakePersonRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.GatedImageDownloader;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.ArtworkServiceFixture;
+import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.fixtures.MetadataFixture;
-import com.streamarr.server.services.CompanyService;
-import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.MovieService;
-import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.ImageVariantService;
@@ -118,9 +114,8 @@ class LibraryRefreshServiceTest {
     seriesProviderResolver = mock(SeriesMetadataProviderResolver.class);
     movieProviderResolver = mock(MovieMetadataProviderResolver.class);
 
-    var personService = new PersonService(new FakePersonRepository(), eventPublisher);
-    var genreService = mock(GenreService.class);
-    var companyService = new CompanyService(new FakeCompanyRepository(), eventPublisher);
+    var creditService =
+        CreditServiceFixture.creditServiceBuilder().eventPublisher(eventPublisher).build();
     var fileSystem = Jimfs.newFileSystem(Configuration.unix());
     var imageService =
         new ImageService(
@@ -133,9 +128,7 @@ class LibraryRefreshServiceTest {
     var seriesService =
         new SeriesService(
             seriesRepository,
-            personService,
-            genreService,
-            companyService,
+            creditService,
             new PaginationService(),
             artworkService,
             imageService,
@@ -149,9 +142,7 @@ class LibraryRefreshServiceTest {
     var movieService =
         new MovieService(
             movieRepository,
-            personService,
-            genreService,
-            companyService,
+            creditService,
             new PaginationService(),
             artworkService,
             imageService,

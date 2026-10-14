@@ -15,6 +15,7 @@ import com.streamarr.server.repositories.RatingRepository;
 import com.streamarr.server.repositories.ReviewRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.pagination.LetterJumpResolver;
@@ -40,9 +41,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class MovieService {
 
   private final MovieRepository movieRepository;
-  private final PersonService personService;
-  private final GenreService genreService;
-  private final CompanyService companyService;
+  private final CreditService creditService;
   private final PaginationService paginationService;
   private final ArtworkService artworkService;
   private final ImageService imageService;
@@ -98,16 +97,10 @@ public class MovieService {
   public Movie createMovieWithAssociations(
       MetadataResult<Movie> metadataResult, MediaFile mediaFile, ArtworkRun artworkRun) {
     var movie = metadataResult.entity();
-
-    movie.setCast(
-        personService.getOrCreatePersons(movie.getCast(), metadataResult.personImageSources()));
-    movie.setDirectors(
-        personService.getOrCreatePersons(
-            movie.getDirectors(), metadataResult.personImageSources()));
-    movie.setGenres(genreService.getOrCreateGenres(movie.getGenres()));
-    movie.setStudios(
-        companyService.getOrCreateCompanies(
-            movie.getStudios(), metadataResult.companyImageSources()));
+    creditService
+        .getOrCreateCredits(
+            MediaTitleCreditsRequest.fromMetadataResult(metadataResult, ImageRefreshMode.PRESERVE))
+        .copyTo(movie);
 
     var savedMovie = saveMovieWithMediaFile(movie, mediaFile);
 
@@ -120,7 +113,6 @@ public class MovieService {
   public Movie refreshMovieMetadata(
       Movie existing, MetadataResult<Movie> metadataResult, ArtworkRun artworkRun) {
     var fresh = metadataResult.entity();
-    var imageRefreshMode = artworkRun.imageRefreshMode();
 
     existing.setTitle(fresh.getTitle());
     existing.setOriginalTitle(fresh.getOriginalTitle());
@@ -130,17 +122,11 @@ public class MovieService {
     existing.setRuntime(fresh.getRuntime());
     existing.setContentRating(fresh.getContentRating());
     existing.setReleaseDate(fresh.getReleaseDate());
-
-    existing.setCast(
-        personService.getOrCreatePersons(
-            fresh.getCast(), metadataResult.personImageSources(), imageRefreshMode));
-    existing.setDirectors(
-        personService.getOrCreatePersons(
-            fresh.getDirectors(), metadataResult.personImageSources(), imageRefreshMode));
-    existing.setGenres(genreService.getOrCreateGenres(fresh.getGenres()));
-    existing.setStudios(
-        companyService.getOrCreateCompanies(
-            fresh.getStudios(), metadataResult.companyImageSources(), imageRefreshMode));
+    creditService
+        .getOrCreateCredits(
+            MediaTitleCreditsRequest.fromMetadataResult(
+                metadataResult, artworkRun.imageRefreshMode()))
+        .copyTo(existing);
 
     var saved = movieRepository.saveAndFlush(existing);
     fetchRequiredArtwork(saved.getId(), metadataResult.imageSources(), artworkRun);

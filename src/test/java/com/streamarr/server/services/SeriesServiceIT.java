@@ -1201,10 +1201,14 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     void shouldUpdateCastWhenRefreshingSeriesMetadataWithChangedCast() {
       var personA =
           personService.getOrCreatePersons(
-              List.of(Person.builder().name("Actor A").sourceId("src-a").build()), Map.of());
+              List.of(Person.builder().name("Actor A").sourceId("src-a").build()),
+              Map.of(),
+              ImageRefreshMode.PRESERVE);
       var personB =
           personService.getOrCreatePersons(
-              List.of(Person.builder().name("Actor B").sourceId("src-b").build()), Map.of());
+              List.of(Person.builder().name("Actor B").sourceId("src-b").build()),
+              Map.of(),
+              ImageRefreshMode.PRESERVE);
 
       var series =
           seriesRepository.saveAndFlush(

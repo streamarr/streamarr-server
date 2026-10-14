@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.repositories.PersonRepository;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -34,7 +35,8 @@ class PersonServiceTransactionIT extends AbstractIntegrationTest {
             Person.builder().name("Valid Actor").sourceId(validSourceId).build(),
             Person.builder().name(null).sourceId(invalidSourceId).build());
 
-    assertThatThrownBy(() -> personService.getOrCreatePersons(persons, Map.of()))
+    assertThatThrownBy(
+            () -> personService.getOrCreatePersons(persons, Map.of(), ImageRefreshMode.PRESERVE))
         .isInstanceOf(DataIntegrityViolationException.class);
     assertThat(personRepository.findPersonBySourceId(validSourceId)).isEmpty();
     assertThat(personRepository.findPersonBySourceId(invalidSourceId)).isEmpty();

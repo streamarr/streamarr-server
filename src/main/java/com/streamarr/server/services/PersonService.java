@@ -6,10 +6,11 @@ import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
-import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -22,21 +23,12 @@ public class PersonService {
   private final PersonRepository personRepository;
   private final ApplicationEventPublisher eventPublisher;
 
+  /**
+   * Returns the saved people in the order of {@code persons}. Each distinct source id is saved
+   * once, from its first listing, and its artwork is requested once.
+   */
   @Transactional
   public List<Person> getOrCreatePersons(
-      List<Person> persons, Map<String, List<ImageSource>> imageSourcesBySourceId) {
-    return getOrCreatePersonsInternal(persons, imageSourcesBySourceId, ImageRefreshMode.PRESERVE);
-  }
-
-  @Transactional
-  public List<Person> getOrCreatePersons(
-      List<Person> persons,
-      Map<String, List<ImageSource>> imageSourcesBySourceId,
-      ImageRefreshMode imageRefreshMode) {
-    return getOrCreatePersonsInternal(persons, imageSourcesBySourceId, imageRefreshMode);
-  }
-
-  private List<Person> getOrCreatePersonsInternal(
       List<Person> persons,
       Map<String, List<ImageSource>> imageSourcesBySourceId,
       ImageRefreshMode imageRefreshMode) {
@@ -44,11 +36,14 @@ public class PersonService {
       return List.of();
     }
 
-    persons.forEach(PersonService::requireSourceId);
+    persons.forEach(PersonService::requirePerson);
+
+    var firstListedBySourceId = new LinkedHashMap<String, Person>();
+    persons.forEach(person -> firstListedBySourceId.putIfAbsent(person.getSourceId(), person));
 
     var savedBySourceId = new HashMap<String, Person>();
-    persons.stream()
-        .sorted(Comparator.comparing(Person::getSourceId))
+    CreditInsertOrder.sortedBySourceId(
+            firstListedBySourceId.values(), Person::getSourceId, "Person")
         .forEach(
             person ->
                 savedBySourceId.put(
@@ -73,19 +68,26 @@ public class PersonService {
                     new IllegalStateException(
                         "Person not found after upsert for sourceId: " + person.getSourceId()));
 
-    saved.setName(person.getName());
+    renameBeforeNextInsert(saved, person.getName());
 
     publishImageEvent(saved, imageSources, imageRefreshMode);
     return saved;
   }
 
-  private static void requireSourceId(Person person) {
-    if (person == null) {
-      throw new IllegalArgumentException("Person must not be null");
+  // Hibernate would write a rename at its next flush, after this transaction has inserted higher
+  // keys, so the row lock would be taken out of insert order. Flushing here takes it in order.
+  private void renameBeforeNextInsert(Person saved, String name) {
+    if (Objects.equals(saved.getName(), name)) {
+      return;
     }
 
-    if (person.getSourceId() == null) {
-      throw new IllegalArgumentException("Person sourceId must not be null");
+    saved.setName(name);
+    personRepository.flush();
+  }
+
+  private static void requirePerson(Person person) {
+    if (person == null) {
+      throw new IllegalArgumentException("Person must not be null");
     }
   }
 

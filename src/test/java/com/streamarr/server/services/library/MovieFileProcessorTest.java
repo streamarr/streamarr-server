@@ -14,19 +14,20 @@ import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
+import com.streamarr.server.fakes.FakePersonRepository;
 import com.streamarr.server.fakes.FakeProbeTaskRequests;
 import com.streamarr.server.fixtures.ArtworkServiceFixture;
+import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.MetadataFixture;
+import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.services.ArtworkService;
-import com.streamarr.server.services.CompanyService;
-import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.MovieService;
-import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataProvider;
@@ -59,37 +60,12 @@ class MovieFileProcessorTest {
   private final MetadataProvider<Movie> tmdbMovieProvider = mock(TMDBMovieProvider.class);
   private final MovieMetadataProviderResolver movieMetadataProviderResolver =
       new MovieMetadataProviderResolver(List.of(tmdbMovieProvider));
-  private final PersonService personService = mock(PersonService.class);
-  private final GenreService genreService = mock(GenreService.class);
-  private final CompanyService companyService = mock(CompanyService.class);
   private final FakeMediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
   private final FakeMovieRepository fakeMovieRepository = new FakeMovieRepository();
   private final ArtworkService artworkService =
       ArtworkServiceFixture.artworkServiceBuilder().build();
-  private final MovieService movieService =
-      new MovieService(
-          fakeMovieRepository,
-          personService,
-          genreService,
-          companyService,
-          null,
-          artworkService,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null);
-
   private final MovieFileProcessor movieFileProcessor =
-      new MovieFileProcessor(
-          new DefaultVideoFileMetadataParser(),
-          new ExternalIdVideoFileMetadataParser(),
-          movieMetadataProviderResolver,
-          movieService,
-          fakeMediaFileRepository,
-          new MutexFactoryProvider());
+      movieFileProcessorSavingPeopleIn(new FakePersonRepository());
 
   @Test
   @DisplayName("Should restore interrupt flag when enrichment throws InterruptedException")
@@ -235,12 +211,17 @@ class MovieFileProcessorTest {
         .thenReturn(
             new MetadataFetchOutcome.Found<>(
                 MetadataFixture.<Movie>metadataResultBuilder()
-                    .entity(Movie.builder().title("About Time").build())
+                    .entity(
+                        Movie.builder()
+                            .title("About Time")
+                            .cast(List.of(Person.builder().name("Lead").sourceId("1").build()))
+                            .build())
                     .build()));
-    when(personService.getOrCreatePersons(any(), any()))
-        .thenThrow(new IllegalStateException("db hiccup"));
+    var failingMovieFileProcessor =
+        movieFileProcessorSavingPeopleIn(
+            new FailingInsertPersonRepository(new IllegalStateException("db hiccup")));
 
-    movieFileProcessor.process(discoveryOf(library), mediaFile);
+    failingMovieFileProcessor.process(discoveryOf(library), mediaFile);
 
     assertMatchingFailure(
         mediaFile, MediaFileStatus.ENRICHMENT_FAILED, ItemFailureReason.TEMPORARY);
@@ -353,5 +334,43 @@ class MovieFileProcessorTest {
         .fileSystem(FileSystems.getDefault())
         .build()
         .open("scan", library);
+  }
+
+  private MovieFileProcessor movieFileProcessorSavingPeopleIn(PersonRepository personRepository) {
+    var movieService =
+        new MovieService(
+            fakeMovieRepository,
+            CreditServiceFixture.creditServiceBuilder().personRepository(personRepository).build(),
+            null,
+            artworkService,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null);
+
+    return new MovieFileProcessor(
+        new DefaultVideoFileMetadataParser(),
+        new ExternalIdVideoFileMetadataParser(),
+        movieMetadataProviderResolver,
+        movieService,
+        fakeMediaFileRepository,
+        new MutexFactoryProvider());
+  }
+
+  private static final class FailingInsertPersonRepository extends FakePersonRepository {
+
+    private final RuntimeException insertFailure;
+
+    FailingInsertPersonRepository(RuntimeException insertFailure) {
+      this.insertFailure = insertFailure;
+    }
+
+    @Override
+    public boolean insertIfAbsent(String sourceId, String name) {
+      throw insertFailure;
+    }
   }
 }

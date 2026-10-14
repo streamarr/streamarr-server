@@ -8,6 +8,7 @@ import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -26,20 +27,6 @@ public class CompanyService {
 
   @Transactional
   public Set<Company> getOrCreateCompanies(
-      Set<Company> companies, Map<String, List<ImageSource>> imageSourcesBySourceId) {
-    return getOrCreateCompaniesInternal(
-        companies, imageSourcesBySourceId, ImageRefreshMode.PRESERVE);
-  }
-
-  @Transactional
-  public Set<Company> getOrCreateCompanies(
-      Set<Company> companies,
-      Map<String, List<ImageSource>> imageSourcesBySourceId,
-      ImageRefreshMode imageRefreshMode) {
-    return getOrCreateCompaniesInternal(companies, imageSourcesBySourceId, imageRefreshMode);
-  }
-
-  private Set<Company> getOrCreateCompaniesInternal(
       Set<Company> companies,
       Map<String, List<ImageSource>> imageSourcesBySourceId,
       ImageRefreshMode imageRefreshMode) {
@@ -47,7 +34,7 @@ public class CompanyService {
       return Set.of();
     }
 
-    return companies.stream()
+    return CreditInsertOrder.sortedBySourceId(companies, Company::getSourceId, "Company").stream()
         .map(c -> findOrCreateCompany(c, imageSourcesBySourceId, imageRefreshMode))
         .collect(Collectors.toSet());
   }
@@ -56,10 +43,6 @@ public class CompanyService {
       Company company,
       Map<String, List<ImageSource>> imageSourcesBySourceId,
       ImageRefreshMode imageRefreshMode) {
-    if (company.getSourceId() == null) {
-      throw new IllegalArgumentException("Company sourceId must not be null");
-    }
-
     var imageSources = imageSourcesBySourceId.getOrDefault(company.getSourceId(), List.of());
 
     companyRepository.insertIfAbsent(company.getSourceId(), company.getName());
@@ -71,10 +54,21 @@ public class CompanyService {
                     new IllegalStateException(
                         "Company not found after upsert for sourceId: " + company.getSourceId()));
 
-    saved.setName(company.getName());
+    renameBeforeNextInsert(saved, company.getName());
 
     publishImageEvent(saved, imageSources, imageRefreshMode);
     return saved;
+  }
+
+  // Hibernate would write a rename at its next flush, after this transaction has inserted higher
+  // keys, so the row lock would be taken out of insert order. Flushing here takes it in order.
+  private void renameBeforeNextInsert(Company saved, String name) {
+    if (Objects.equals(saved.getName(), name)) {
+      return;
+    }
+
+    saved.setName(name);
+    companyRepository.flush();
   }
 
   private void publishImageEvent(

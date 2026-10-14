@@ -8,6 +8,9 @@ import static org.mockito.Mockito.when;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.fakes.FakeGenreRepository;
 import com.streamarr.server.repositories.GenreRepository;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +29,21 @@ class GenreServiceTest {
   void setUp() {
     genreRepository = new FakeGenreRepository();
     genreService = new GenreService(genreRepository);
+  }
+
+  @Test
+  @DisplayName(
+      "Should insert genres in ascending source id order when they are listed in another order")
+  void shouldInsertGenresInAscendingSourceIdOrderWhenTheyAreListedInAnotherOrder() {
+    var insertOrderRepository = new InsertOrderGenreRepository();
+    var genres = new LinkedHashSet<Genre>();
+    genres.add(Genre.builder().name("Genre 300").sourceId("300").build());
+    genres.add(Genre.builder().name("Genre 100").sourceId("100").build());
+    genres.add(Genre.builder().name("Genre 200").sourceId("200").build());
+
+    new GenreService(insertOrderRepository).getOrCreateGenres(genres);
+
+    assertThat(insertOrderRepository.insertedSourceIds()).containsExactly("100", "200", "300");
   }
 
   @Test
@@ -125,5 +143,20 @@ class GenreServiceTest {
     assertThatThrownBy(() -> service.getOrCreateGenres(genres))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("not found after upsert");
+  }
+
+  private static final class InsertOrderGenreRepository extends FakeGenreRepository {
+
+    private final List<String> insertedSourceIds = new ArrayList<>();
+
+    @Override
+    public boolean insertIfAbsent(String sourceId, String name) {
+      insertedSourceIds.add(sourceId);
+      return super.insertIfAbsent(sourceId, name);
+    }
+
+    private List<String> insertedSourceIds() {
+      return List.copyOf(insertedSourceIds);
+    }
   }
 }

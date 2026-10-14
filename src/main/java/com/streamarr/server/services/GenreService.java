@@ -2,6 +2,7 @@ package com.streamarr.server.services;
 
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.repositories.GenreRepository;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -20,14 +21,12 @@ public class GenreService {
       return Set.of();
     }
 
-    return genres.stream().map(this::findOrCreateGenre).collect(Collectors.toSet());
+    return CreditInsertOrder.sortedBySourceId(genres, Genre::getSourceId, "Genre").stream()
+        .map(this::findOrCreateGenre)
+        .collect(Collectors.toSet());
   }
 
   private Genre findOrCreateGenre(Genre genre) {
-    if (genre.getSourceId() == null) {
-      throw new IllegalArgumentException("Genre sourceId must not be null");
-    }
-
     genreRepository.insertIfAbsent(genre.getSourceId(), genre.getName());
     var saved =
         genreRepository
@@ -37,7 +36,18 @@ public class GenreService {
                     new IllegalStateException(
                         "Genre not found after upsert for sourceId: " + genre.getSourceId()));
 
-    saved.setName(genre.getName());
+    renameBeforeNextInsert(saved, genre.getName());
     return saved;
+  }
+
+  // Hibernate would write a rename at its next flush, after this transaction has inserted higher
+  // keys, so the row lock would be taken out of insert order. Flushing here takes it in order.
+  private void renameBeforeNextInsert(Genre saved, String name) {
+    if (Objects.equals(saved.getName(), name)) {
+      return;
+    }
+
+    saved.setName(name);
+    genreRepository.flush();
   }
 }
