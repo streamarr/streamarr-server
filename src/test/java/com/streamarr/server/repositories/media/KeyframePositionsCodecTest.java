@@ -127,4 +127,17 @@ class KeyframePositionsCodecTest {
     assertThatThrownBy(() -> KeyframePositionsCodec.decode(encoded))
         .isInstanceOf(MalformedKeyframePositionsException.class);
   }
+
+  @Test
+  @DisplayName("Should reject an encoding when the tenth byte of a number carries bits past 64")
+  void shouldRejectEncodingWhenTenthByteOfNumberCarriesBitsPast64() {
+    // Nine continuation bytes carry 63 bits, so the tenth byte may carry only the 64th bit.
+    var encoded = new byte[12];
+    encoded[0] = 1;
+    Arrays.fill(encoded, 1, 10, (byte) 0xFF);
+    encoded[10] = 0x7F;
+
+    assertThatThrownBy(() -> KeyframePositionsCodec.decode(encoded))
+        .isInstanceOf(MalformedKeyframePositionsException.class);
+  }
 }

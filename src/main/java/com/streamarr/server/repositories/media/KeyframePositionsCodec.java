@@ -84,6 +84,11 @@ public class KeyframePositionsCodec {
         }
 
         var current = encoded[position++];
+        if (index == MAXIMUM_VARINT_BYTES - 1 && (current & 0x7E) != 0) {
+          throw new MalformedKeyframePositionsException(
+              "Keyframe positions hold a number past 64 bits");
+        }
+
         value |= (long) (current & 0x7F) << (7 * index);
         if ((current & 0x80) == 0) {
           return (value >>> 1) ^ -(value & 1);
