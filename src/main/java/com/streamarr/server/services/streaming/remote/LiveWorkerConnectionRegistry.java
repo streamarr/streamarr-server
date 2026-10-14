@@ -258,11 +258,7 @@ final class LiveWorkerConnectionRegistry {
         .collect(Collectors.toUnmodifiableSet());
   }
 
-  /**
-   * ADR 0009 counts a hardware encoder backend only after it passes ADR 0037's checks, and the
-   * keyframe-verified flag is the one of those checks that a worker reports. H.264 is the codec
-   * that the server falls back to, so any worker-verified H.264 encoder counts.
-   */
+  // Any H.264 encoder counts, so the H.264 fallback stays dispatchable on every worker.
   private static boolean isCountedForEncodes(WorkerVerifiedVideoEncoder encoder) {
     var backend = encoder.getBackend();
     return backend.getKind() == EncoderKind.ENCODER_KIND_SOFTWARE
