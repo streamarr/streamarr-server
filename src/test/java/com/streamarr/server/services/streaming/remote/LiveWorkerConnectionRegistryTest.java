@@ -733,7 +733,7 @@ class LiveWorkerConnectionRegistryTest {
 
     encode
         .registry()
-        .stopJobAttemptIfEncoderBackendDiffers(
+        .checkReportedEncoderBackend(
             WORKER_ID, encode.workerSessionId(), nvencStarted(encode.job().getJobAttemptId()));
 
     assertThat(
@@ -761,9 +761,9 @@ class LiveWorkerConnectionRegistryTest {
     assertThat(registry.dispatch(first)).isPresent();
     assertThat(registry.dispatch(second)).isPresent();
 
-    registry.stopJobAttemptIfEncoderBackendDiffers(
+    registry.checkReportedEncoderBackend(
         WORKER_ID, workerSessionId, nvencStarted(first.getJobAttemptId()));
-    registry.stopJobAttemptIfEncoderBackendDiffers(
+    registry.checkReportedEncoderBackend(
         WORKER_ID, workerSessionId, nvencStarted(second.getJobAttemptId()));
 
     assertThat(isRunning(registry, first)).isFalse();
@@ -783,7 +783,7 @@ class LiveWorkerConnectionRegistryTest {
 
     encode
         .registry()
-        .stopJobAttemptIfEncoderBackendDiffers(
+        .checkReportedEncoderBackend(
             UUID.randomUUID(),
             encode.workerSessionId(),
             nvencStarted(encode.job().getJobAttemptId()));
@@ -799,7 +799,7 @@ class LiveWorkerConnectionRegistryTest {
 
     encode
         .registry()
-        .stopJobAttemptIfEncoderBackendDiffers(
+        .checkReportedEncoderBackend(
             WORKER_ID, UUID.randomUUID(), nvencStarted(encode.job().getJobAttemptId()));
 
     assertThat(encode.isRunning()).isTrue();
@@ -813,7 +813,7 @@ class LiveWorkerConnectionRegistryTest {
 
     encode
         .registry()
-        .stopJobAttemptIfEncoderBackendDiffers(
+        .checkReportedEncoderBackend(
             WORKER_ID, encode.workerSessionId(), nvencStarted(toProto(UUID.randomUUID())));
 
     assertThat(encode.isRunning()).isTrue();

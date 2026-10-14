@@ -219,7 +219,7 @@ final class WorkerSessionGrpcService
           "Worker {} started job attempt {}",
           authenticatedWorkerId,
           fromProto(started.getJobAttemptId()));
-      workerConnections.stopJobAttemptIfEncoderBackendDiffers(
+      workerConnections.checkReportedEncoderBackend(
           authenticatedWorkerId, workerSessionId, started);
     }
 

@@ -338,14 +338,13 @@ final class LiveWorkerConnectionRegistry {
     return connection.releaseJobAttempt(jobAttemptId);
   }
 
-  void stopJobAttemptIfEncoderBackendDiffers(
-      UUID workerId, UUID workerSessionId, JobAttemptStarted started) {
+  void checkReportedEncoderBackend(UUID workerId, UUID workerSessionId, JobAttemptStarted started) {
     var connection = connections.get(workerId);
     if (connection == null || !connection.workerSessionId().equals(workerSessionId)) {
       return;
     }
 
-    connection.stopJobAttemptIfEncoderBackendDiffers(started);
+    connection.checkReportedEncoderBackend(started);
   }
 
   boolean authorizesUpload(UUID authenticatedWorkerId, SegmentUploadMetadata metadata) {
@@ -739,7 +738,7 @@ final class LiveWorkerConnectionRegistry {
 
     // Dispatch sends an encode only to a worker that advertises the variant's pinned backend, so
     // the encoder that the attempt was dispatched for is the pin.
-    private synchronized void stopJobAttemptIfEncoderBackendDiffers(JobAttemptStarted started) {
+    private synchronized void checkReportedEncoderBackend(JobAttemptStarted started) {
       var jobAttemptId = fromProto(started.getJobAttemptId());
       var job = activeVariants.get(jobAttemptId);
       if (job == null) {
