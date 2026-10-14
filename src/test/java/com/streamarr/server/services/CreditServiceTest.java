@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
@@ -234,28 +236,90 @@ class CreditServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject a missing metadata result when taking its image sources")
-  void shouldRejectAMissingMetadataResultWhenTakingItsImageSources() {
-    assertThatThrownBy(() -> MediaTitleCreditsRequest.withImageSourcesOf(null))
+  @DisplayName("Should reject a missing metadata result when building a credits request from it")
+  void shouldRejectAMissingMetadataResultWhenBuildingACreditsRequestFromIt() {
+    assertThatThrownBy(
+            () -> MediaTitleCreditsRequest.fromMetadataResult(null, ImageRefreshMode.PRESERVE))
         .isInstanceOf(NullPointerException.class);
   }
 
   @Test
-  @DisplayName("Should carry a metadata result's person and company image sources")
-  void shouldCarryAMetadataResultsPersonAndCompanyImageSources() {
+  @DisplayName("Should reject a missing image refresh mode when building a credits request")
+  void shouldRejectAMissingImageRefreshModeWhenBuildingACreditsRequest() {
+    var metadataResult = new MetadataResult<>(Movie.builder().build(), List.of(), null, null);
+
+    assertThatThrownBy(() -> MediaTitleCreditsRequest.fromMetadataResult(metadataResult, null))
+        .isInstanceOf(NullPointerException.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry a metadata result's credits and artwork sources when building a credits"
+          + " request")
+  void shouldCarryAMetadataResultsCreditsAndArtworkSourcesWhenBuildingACreditsRequest() {
     var profile = List.<ImageSource>of(new TmdbImageSource(ImageType.PROFILE, "/profile.jpg"));
     var logo = List.<ImageSource>of(new TmdbImageSource(ImageType.LOGO, "/logo.png"));
+    var actor = person("100", "Actor 100");
+    var director = person("200", "Director 200");
+    var drama = genre("18", "Drama");
+    var studio = company("174", "Studio With Logo");
+    var series =
+        Series.builder()
+            .cast(List.of(actor))
+            .directors(List.of(director))
+            .genres(Set.of(drama))
+            .studios(Set.of(studio))
+            .build();
     var metadataResult =
-        new MetadataResult<>(new Object(), List.of(), Map.of("100", profile), Map.of("174", logo));
+        new MetadataResult<>(series, List.of(), Map.of("100", profile), Map.of("174", logo));
 
     var request =
-        MediaTitleCreditsRequest.withImageSourcesOf(metadataResult)
-            .credits(MediaTitleCredits.builder().build())
-            .imageRefreshMode(ImageRefreshMode.PRESERVE)
-            .build();
+        MediaTitleCreditsRequest.fromMetadataResult(metadataResult, ImageRefreshMode.FORCE_REFRESH);
 
+    assertThat(request.credits())
+        .isEqualTo(
+            new MediaTitleCredits(
+                List.of(actor), List.of(director), Set.of(drama), Set.of(studio)));
     assertThat(request.personImageSources()).isEqualTo(Map.of("100", profile));
     assertThat(request.companyImageSources()).isEqualTo(Map.of("174", logo));
+    assertThat(request.imageRefreshMode()).isEqualTo(ImageRefreshMode.FORCE_REFRESH);
+  }
+
+  @Test
+  @DisplayName("Should replace every credit list on a media title when copying credits to it")
+  void shouldReplaceEveryCreditListOnAMediaTitleWhenCopyingCreditsToIt() {
+    var actor = person("100", "Actor 100");
+    var director = person("200", "Director 200");
+    var drama = genre("18", "Drama");
+    var studio = company("174", "Studio With Logo");
+    var movie =
+        Movie.builder()
+            .cast(List.of(person("900", "Earlier Actor")))
+            .genres(Set.of(genre("99", "Earlier Genre")))
+            .build();
+
+    new MediaTitleCredits(List.of(actor), List.of(director), Set.of(drama), Set.of(studio))
+        .copyTo(movie);
+
+    assertThat(movie.getCast()).containsExactly(actor);
+    assertThat(movie.getDirectors()).containsExactly(director);
+    assertThat(movie.getGenres()).containsExactly(drama);
+    assertThat(movie.getStudios()).containsExactly(studio);
+  }
+
+  @Test
+  @DisplayName("Should reject a missing media title when copying credits")
+  void shouldRejectAMissingMediaTitleWhenCopyingCredits() {
+    var credits = MediaTitleCredits.builder().build();
+
+    assertThatThrownBy(() -> credits.copyTo(null)).isInstanceOf(NullPointerException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject a missing media title when listing its credits")
+  void shouldRejectAMissingMediaTitleWhenListingItsCredits() {
+    assertThatThrownBy(() -> MediaTitleCredits.listedOn(null))
+        .isInstanceOf(NullPointerException.class);
   }
 
   private static MediaTitleCreditsRequest.MediaTitleCreditsRequestBuilder requestFor(

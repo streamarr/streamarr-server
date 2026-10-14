@@ -72,7 +72,10 @@ public class SeriesService {
   public Series createSeriesWithAssociations(
       MetadataResult<Series> metadataResult, ArtworkRun artworkRun) {
     var series = metadataResult.entity();
-    replaceCredits(series, metadataResult, ImageRefreshMode.PRESERVE);
+    creditService
+        .getOrCreateCredits(
+            MediaTitleCreditsRequest.fromMetadataResult(metadataResult, ImageRefreshMode.PRESERVE))
+        .copyTo(series);
 
     var savedSeries = seriesRepository.saveAndFlush(series);
 
@@ -145,7 +148,11 @@ public class SeriesService {
     existing.setRuntime(fresh.getRuntime());
     existing.setContentRating(fresh.getContentRating());
     existing.setFirstAirDate(fresh.getFirstAirDate());
-    replaceCredits(existing, metadataResult, artworkRun.imageRefreshMode());
+    creditService
+        .getOrCreateCredits(
+            MediaTitleCreditsRequest.fromMetadataResult(
+                metadataResult, artworkRun.imageRefreshMode()))
+        .copyTo(existing);
 
     var saved = seriesRepository.saveAndFlush(existing);
     artworkService.fetchRequired(
@@ -156,28 +163,6 @@ public class SeriesService {
             .sources(metadataResult.imageSources())
             .build());
     return saved;
-  }
-
-  private void replaceCredits(
-      Series target, MetadataResult<Series> metadataResult, ImageRefreshMode imageRefreshMode) {
-    var source = metadataResult.entity();
-    var credits =
-        creditService.getOrCreateCredits(
-            MediaTitleCreditsRequest.withImageSourcesOf(metadataResult)
-                .credits(
-                    MediaTitleCredits.builder()
-                        .cast(source.getCast())
-                        .directors(source.getDirectors())
-                        .genres(source.getGenres())
-                        .studios(source.getStudios())
-                        .build())
-                .imageRefreshMode(imageRefreshMode)
-                .build());
-
-    target.setCast(credits.cast());
-    target.setDirectors(credits.directors());
-    target.setGenres(credits.genres());
-    target.setStudios(credits.studios());
   }
 
   @Transactional

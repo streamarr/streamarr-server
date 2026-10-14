@@ -97,7 +97,10 @@ public class MovieService {
   public Movie createMovieWithAssociations(
       MetadataResult<Movie> metadataResult, MediaFile mediaFile, ArtworkRun artworkRun) {
     var movie = metadataResult.entity();
-    replaceCredits(movie, metadataResult, ImageRefreshMode.PRESERVE);
+    creditService
+        .getOrCreateCredits(
+            MediaTitleCreditsRequest.fromMetadataResult(metadataResult, ImageRefreshMode.PRESERVE))
+        .copyTo(movie);
 
     var savedMovie = saveMovieWithMediaFile(movie, mediaFile);
 
@@ -119,33 +122,15 @@ public class MovieService {
     existing.setRuntime(fresh.getRuntime());
     existing.setContentRating(fresh.getContentRating());
     existing.setReleaseDate(fresh.getReleaseDate());
-    replaceCredits(existing, metadataResult, artworkRun.imageRefreshMode());
+    creditService
+        .getOrCreateCredits(
+            MediaTitleCreditsRequest.fromMetadataResult(
+                metadataResult, artworkRun.imageRefreshMode()))
+        .copyTo(existing);
 
     var saved = movieRepository.saveAndFlush(existing);
     fetchRequiredArtwork(saved.getId(), metadataResult.imageSources(), artworkRun);
     return saved;
-  }
-
-  private void replaceCredits(
-      Movie target, MetadataResult<Movie> metadataResult, ImageRefreshMode imageRefreshMode) {
-    var source = metadataResult.entity();
-    var credits =
-        creditService.getOrCreateCredits(
-            MediaTitleCreditsRequest.withImageSourcesOf(metadataResult)
-                .credits(
-                    MediaTitleCredits.builder()
-                        .cast(source.getCast())
-                        .directors(source.getDirectors())
-                        .genres(source.getGenres())
-                        .studios(source.getStudios())
-                        .build())
-                .imageRefreshMode(imageRefreshMode)
-                .build());
-
-    target.setCast(credits.cast());
-    target.setDirectors(credits.directors());
-    target.setGenres(credits.genres());
-    target.setStudios(credits.studios());
   }
 
   private void fetchRequiredArtwork(

@@ -1,5 +1,6 @@
 package com.streamarr.server.services;
 
+import com.streamarr.server.domain.media.CreditedMediaTitle;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
@@ -10,8 +11,8 @@ import lombok.Builder;
 import lombok.NonNull;
 
 /**
- * A movie's or series' provider credits to save, with the artwork sources for each credited person
- * and studio keyed by source id.
+ * A media title's provider credits to save, with the artwork sources for each credited person and
+ * studio keyed by source id.
  */
 @Builder
 public record MediaTitleCreditsRequest(
@@ -25,11 +26,15 @@ public record MediaTitleCreditsRequest(
     companyImageSources = Objects.requireNonNullElse(companyImageSources, Map.of());
   }
 
-  /** A builder carrying the person and company artwork sources of one metadata result. */
-  public static MediaTitleCreditsRequestBuilder withImageSourcesOf(
-      @NonNull MetadataResult<?> metadataResult) {
+  /** The credits listed on a metadata result's media title, with the result's artwork sources. */
+  public static MediaTitleCreditsRequest fromMetadataResult(
+      @NonNull MetadataResult<? extends CreditedMediaTitle> metadataResult,
+      @NonNull ImageRefreshMode imageRefreshMode) {
     return builder()
+        .credits(MediaTitleCredits.listedOn(metadataResult.entity()))
         .personImageSources(metadataResult.personImageSources())
-        .companyImageSources(metadataResult.companyImageSources());
+        .companyImageSources(metadataResult.companyImageSources())
+        .imageRefreshMode(imageRefreshMode)
+        .build();
   }
 }

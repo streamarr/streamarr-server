@@ -35,7 +35,7 @@ import lombok.experimental.SuperBuilder;
 @SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
-public class Movie extends BaseCollectable<Movie> {
+public class Movie extends BaseCollectable<Movie> implements CreditedMediaTitle {
 
   private String tagline;
 

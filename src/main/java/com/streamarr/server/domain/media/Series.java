@@ -33,7 +33,7 @@ import lombok.experimental.SuperBuilder;
 @SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
-public class Series extends BaseCollectable<Series> {
+public class Series extends BaseCollectable<Series> implements CreditedMediaTitle {
 
   private String tagline;
 
