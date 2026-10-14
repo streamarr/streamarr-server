@@ -209,10 +209,11 @@ final class LiveWorkerConnectionRegistry {
     return true;
   }
 
-  Set<ExecutionTargetId> eligibleWorkers(UUID sourceNamespaceId) {
+  Set<ExecutionTargetId> eligibleWorkers(UUID sourceNamespaceId, TranscodeDecision decision) {
     var sourceNamespace = toProto(sourceNamespaceId);
     return connections.values().stream()
         .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
+        .filter(connection -> connection.canEncode(decision))
         .map(connection -> new ExecutionTargetId(connection.workerSessionId().toString()))
         .collect(Collectors.toCollection(LinkedHashSet::new));
   }

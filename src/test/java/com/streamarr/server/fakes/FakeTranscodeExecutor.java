@@ -39,6 +39,8 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final Set<ExecutionTargetId> refusingTargets = ConcurrentHashMap.newKeySet();
   private Set<ExecutionTargetId> executionTargets =
       new LinkedHashSet<>(Set.of(ExecutionTargetId.LOCAL));
+  private final Map<ExecutionTargetId, Set<String>> encodableVideoCodecFamiliesByTarget =
+      new ConcurrentHashMap<>();
   private final AtomicLong livenessChecks = new AtomicLong();
   private final Object observationMonitor = new Object();
   private int availableSlots = TranscodeExecutor.UNBOUNDED_SLOTS;
@@ -57,7 +59,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public TranscodeHandle start(TranscodeRequest request, ExecutionTargetId target) {
-    if (refusingTargets.contains(target)) {
+    if (refusingTargets.contains(target) || !canRun(target, request.transcodeDecision())) {
       throw new TranscodeException("Target " + target.value() + " refused the transcode");
     }
     startedTargets.add(target);
@@ -197,12 +199,26 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
-  public Set<ExecutionTargetId> executionTargets() {
-    return new LinkedHashSet<>(executionTargets);
+  public Set<ExecutionTargetId> executionTargets(TranscodeDecision decision) {
+    return executionTargets.stream()
+        .filter(target -> canRun(target, decision))
+        .collect(Collectors.toCollection(LinkedHashSet::new));
   }
 
   public void setExecutionTargets(List<ExecutionTargetId> targets) {
     executionTargets = new LinkedHashSet<>(targets);
+  }
+
+  /** The target refuses an encode of any other family. A target left unset encodes every one. */
+  public void setTargetEncodableVideoCodecFamilies(ExecutionTargetId target, Set<String> families) {
+    encodableVideoCodecFamiliesByTarget.put(target, Set.copyOf(families));
+  }
+
+  private boolean canRun(ExecutionTargetId target, TranscodeDecision decision) {
+    var families = encodableVideoCodecFamiliesByTarget.get(target);
+    return !encodesVideo(decision)
+        || families == null
+        || families.contains(decision.videoCodecFamily());
   }
 
   @Override

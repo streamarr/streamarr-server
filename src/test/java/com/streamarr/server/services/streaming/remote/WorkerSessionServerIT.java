@@ -4,6 +4,7 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChannelBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.streamCopyDecision;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -1337,7 +1338,7 @@ class WorkerSessionServerIT {
           throws Exception {
     try (var server = server()) {
       server.start();
-      assertThat(server.eligibleWorkers(SOURCE_NAMESPACE_ID)).isEmpty();
+      assertThat(server.eligibleWorkers(SOURCE_NAMESPACE_ID, streamCopyDecision())).isEmpty();
       var channel = workerChannel(server.port());
 
       try (var worker = connect(channel, AUTHENTICATED_WORKER_ID)) {
@@ -1345,8 +1346,9 @@ class WorkerSessionServerIT {
         var expectedTarget =
             new ExecutionTargetId(fromProto(workerSession.getWorkerSessionId()).toString());
 
-        assertThat(server.eligibleWorkers(SOURCE_NAMESPACE_ID)).containsExactly(expectedTarget);
-        assertThat(server.eligibleWorkers(UUID.randomUUID())).isEmpty();
+        assertThat(server.eligibleWorkers(SOURCE_NAMESPACE_ID, streamCopyDecision()))
+            .containsExactly(expectedTarget);
+        assertThat(server.eligibleWorkers(UUID.randomUUID(), streamCopyDecision())).isEmpty();
 
         var job = variantJob();
         assertThat(server.dispatchTo(new ExecutionTargetId(UUID.randomUUID().toString()), job))

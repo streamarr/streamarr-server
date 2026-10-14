@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.hardwareEncoder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.streamCopyDecision;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -203,10 +204,10 @@ class LiveWorkerConnectionRegistryTest {
 
     assertThat(registry.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isTrue();
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
-    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID)).hasSize(1);
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, streamCopyDecision())).hasSize(1);
     assertThat(registry.hasConnectedWorker(unavailableNamespace)).isFalse();
     assertThat(registry.availableSlots(unavailableNamespace)).isZero();
-    assertThat(registry.eligibleWorkers(unavailableNamespace)).isEmpty();
+    assertThat(registry.eligibleWorkers(unavailableNamespace, streamCopyDecision())).isEmpty();
   }
 
   @Test
@@ -218,7 +219,7 @@ class LiveWorkerConnectionRegistryTest {
     registry.register(secondWorkerId, registration(secondWorkerId, 2), new CancellableObserver());
 
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(3);
-    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID)).hasSize(2);
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, streamCopyDecision())).hasSize(2);
 
     assertThat(registry.dispatch(variantJob())).isTrue();
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(2);
@@ -333,6 +334,34 @@ class LiveWorkerConnectionRegistryTest {
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, encodeJob("hevc").getDecision()))
         .isZero();
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, hevcCopy)).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName(
+      "Should offer an encode only the workers that encode its codec family as execution targets")
+  void shouldOfferAnEncodeOnlyTheWorkersThatEncodeItsCodecFamilyAsExecutionTargets() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var av1WorkerId = UUID.randomUUID();
+    registry.register(
+        WORKER_ID,
+        registration(
+            WORKER_ID, softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264")),
+        new CancellableObserver());
+    registry.register(
+        av1WorkerId,
+        registration(
+            av1WorkerId, softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "libsvtav1")),
+        new CancellableObserver());
+    var allWorkers = registry.eligibleWorkers(SOURCE_NAMESPACE_ID, streamCopyDecision());
+
+    var av1Targets = registry.eligibleWorkers(SOURCE_NAMESPACE_ID, encodeJob("av1").getDecision());
+
+    assertThat(allWorkers).hasSize(2);
+    assertThat(av1Targets).singleElement().isIn(allWorkers);
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, encodeJob("h264").getDecision()))
+        .singleElement()
+        .isIn(allWorkers)
+        .isNotEqualTo(av1Targets.iterator().next());
   }
 
   @Test

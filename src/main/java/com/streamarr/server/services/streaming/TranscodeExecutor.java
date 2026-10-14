@@ -35,8 +35,12 @@ public interface TranscodeExecutor {
    */
   int availableSlots(TranscodeDecision decision);
 
-  /** Identities eligible to run a producer right now; iteration order drives failover order. */
-  Set<ExecutionTargetId> executionTargets();
+  /**
+   * Identities eligible to run a producer with this decision right now: any worker for a copy, and
+   * for an encode only a worker that can encode the decision's video codec family. Iteration order
+   * drives failover order.
+   */
+  Set<ExecutionTargetId> executionTargets(TranscodeDecision decision);
 
   /**
    * The video codec families, such as {@code h264} or {@code av1}, that a connected worker with a

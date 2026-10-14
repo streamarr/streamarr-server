@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.streamCopyDecision;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -91,7 +92,7 @@ class WorkerSessionServerTest {
     var server = unstartedServer();
     var sourceNamespaceId = UUID.randomUUID();
 
-    assertNotStarted(() -> server.eligibleWorkers(sourceNamespaceId));
+    assertNotStarted(() -> server.eligibleWorkers(sourceNamespaceId, streamCopyDecision()));
     assertNotStarted(() -> server.hasConnectedWorker(sourceNamespaceId));
     assertNotStarted(() -> server.stopVariant(UUID.randomUUID(), "720p"));
   }

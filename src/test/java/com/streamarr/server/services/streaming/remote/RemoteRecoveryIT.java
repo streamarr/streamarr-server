@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.streamCopyDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackAuthorityFor;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -93,7 +94,8 @@ class RemoteRecoveryIT {
         healthyWorker.start();
         await()
             .atMost(5, TimeUnit.SECONDS)
-            .until(() -> !server.eligibleWorkers(SOURCE_NAMESPACE_ID).isEmpty());
+            .until(
+                () -> !server.eligibleWorkers(SOURCE_NAMESPACE_ID, streamCopyDecision()).isEmpty());
 
         var delivery =
             rig.coordinator()

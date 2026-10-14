@@ -5,6 +5,8 @@ import com.streamarr.server.services.streaming.remote.ProbeDispatch;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
 import com.streamarr.server.services.streaming.remote.protocol.WorkerIdentityMetadata;
 import com.streamarr.transcode.v1.EncoderKind;
+import com.streamarr.transcode.v1.TranscodeDecision;
+import com.streamarr.transcode.v1.TranscodeMode;
 import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.WorkerVerifiedVideoEncoder;
 import io.grpc.Metadata;
@@ -19,6 +21,14 @@ public final class RemoteWorkerFixtures {
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
 
   private RemoteWorkerFixtures() {}
+
+  /** A decision that copies the video, so every worker that can read the source can run it. */
+  public static TranscodeDecision streamCopyDecision() {
+    return TranscodeDecision.newBuilder()
+        .setMode(TranscodeMode.TRANSCODE_MODE_REMUX)
+        .setVideoCodecFamily("h264")
+        .build();
+  }
 
   public static WorkerVerifiedVideoEncoder softwareEncoder(
       VideoCodecFamily codecFamily, String encoder) {

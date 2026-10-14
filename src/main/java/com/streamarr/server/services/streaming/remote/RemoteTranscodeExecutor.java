@@ -78,8 +78,9 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
-  public Set<ExecutionTargetId> executionTargets() {
-    return workerServer.eligibleWorkers(sourceNamespaceId);
+  public Set<ExecutionTargetId> executionTargets(TranscodeDecision decision) {
+    return workerServer.eligibleWorkers(
+        sourceNamespaceId, RemoteVariantJobMapper.decision(decision));
   }
 
   @Override

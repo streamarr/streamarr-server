@@ -105,7 +105,9 @@ public class ProducerLifecycleService {
             .build();
     if (handle.status() == TranscodeStatus.FAILED
         && !state.resetForFreshTargets(
-            transcodeExecutor.executionTargets(), handle, clock.instant())) {
+            transcodeExecutor.executionTargets(session.getTranscodeDecision()),
+            handle,
+            clock.instant())) {
       return RecoveryResult.EXHAUSTED;
     }
 
@@ -150,7 +152,7 @@ public class ProducerLifecycleService {
         return RecoveryResult.WAITING;
       }
 
-      var eligibleTargets = transcodeExecutor.executionTargets();
+      var eligibleTargets = transcodeExecutor.executionTargets(session.getTranscodeDecision());
       // Segment publication is external to the session mutex and may advance during discovery.
       syncProgress(state, handle, pending);
       if (noLongerNeedsRecovery(state, pending, running)) {

@@ -1,6 +1,7 @@
 package com.streamarr.server.fixtures.mesh;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.streamCopyDecision;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -169,7 +170,11 @@ class MeshMediaHandlerIT {
       worker.start();
       await()
           .atMost(10, TimeUnit.SECONDS)
-          .until(() -> !rig.server.eligibleWorkers(MeshValidationServer.SOURCE_ID).isEmpty());
+          .until(
+              () ->
+                  !rig.server
+                      .eligibleWorkers(MeshValidationServer.SOURCE_ID, streamCopyDecision())
+                      .isEmpty());
 
       var response = rig.requestMedia("/media/segment");
 
