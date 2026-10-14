@@ -277,6 +277,7 @@ message EstablishWorkerSessionRequest {
     JobAttemptCompleted job_attempt_completed = 4;
     JobAttemptStopped job_attempt_stopped = 5;
     ProbeAttemptResult probe_result = 6;
+    ProbeKeyframePositionsPart probe_keyframe_positions_part = 7;
   }
 }
 
@@ -331,19 +332,38 @@ enum KeyframePositionSource {
   KEYFRAME_POSITION_SOURCE_PACKET_SCAN = 2;
 }
 
-// The keyframe positions of the chosen video stream. Entry i of both lists describes the same
-// keyframe, so both lists have the same length. Entries are ordered by decode time. Times count
-// ticks of time_base_numerator / time_base_denominator seconds on the zero-based timeline that the
-// producer groups samples on: the demuxer time minus the container start time, as FFmpeg's
-// -copyts -start_at_zero produces. The first entry of each list is an absolute time; each later
-// entry is the difference from the entry before it.
+// The keyframe positions of the chosen video stream. The positions themselves travel in the
+// attempt's ProbeKeyframePositionsPart messages, which arrive before this result.
 message KeyframePositions {
   uint32 stream_index = 1;
   uint32 time_base_numerator = 2;
   uint32 time_base_denominator = 3;
-  repeated sint64 presentation_time_deltas = 4;
-  repeated sint64 decode_time_deltas = 5;
-  KeyframePositionSource source = 6;
+  KeyframePositionSource source = 4;
+  // The number of entries in each list across every part of the attempt. The server discards the
+  // parts and the positions when the count differs from the entries it received.
+  uint32 keyframe_count = 5;
+}
+
+// One run of consecutive keyframe positions from a probe attempt. A long source has too many
+// keyframes for one session message, so the worker splits the positions into parts. Each list in a
+// part holds at most 4,096 entries. Even when every entry takes the widest sint64 encoding of 10
+// bytes, a part then stays below 128 KiB, the largest session message the server accepts.
+//
+// The worker sends every part of the attempt in decode-time order, before the attempt's
+// ProbeAttemptResult. The worker sends parts only when the result reports KeyframePositions. The
+// server discards the parts of an attempt whose result reports anything else.
+//
+// Entry i of both lists in a part describes the same keyframe, so both lists have the same length.
+// Entries are ordered by decode time, within a part and across the parts.
+// Times count ticks of time_base_numerator / time_base_denominator seconds on the zero-based
+// timeline that the producer groups samples on: the demuxer time minus the container start time,
+// as FFmpeg's -copyts -start_at_zero produces. The first entry of the attempt's first part is an
+// absolute time. Every later entry, including the first entry of a later part, is the difference
+// from the entry before it.
+message ProbeKeyframePositionsPart {
+  Uuid probe_attempt_id = 1;
+  repeated sint64 presentation_time_deltas = 2;
+  repeated sint64 decode_time_deltas = 3;
 }
 
 // Why the server must request a packet scan to learn the keyframe positions.
