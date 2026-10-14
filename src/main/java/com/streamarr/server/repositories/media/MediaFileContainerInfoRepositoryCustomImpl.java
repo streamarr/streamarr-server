@@ -308,7 +308,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
     row.setProbeVersion(publication.probeVersion());
     switch (publication.outcome()) {
       case ProbeOutcome.Failure(var error) -> row.setProbeError(error.name());
-      case ProbeOutcome.Success(var container, _) -> {
+      case ProbeOutcome.Success(var container, _, _) -> {
         row.setFormat(container.format().orElse(null));
         row.setTotalBitrate(
             container.bitrate().isPresent() ? container.bitrate().getAsLong() : null);
