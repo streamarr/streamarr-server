@@ -1,11 +1,11 @@
 package com.streamarr.server.config;
 
-import com.github.kagkarlsson.scheduler.SchedulerClient;
 import com.github.kagkarlsson.scheduler.SchedulerName;
 import com.github.kagkarlsson.scheduler.SystemClock;
 import com.github.kagkarlsson.scheduler.TaskRepository;
 import com.github.kagkarlsson.scheduler.TaskResolver;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
+import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerProperties;
 import com.github.kagkarlsson.scheduler.event.SchedulerListeners;
 import com.github.kagkarlsson.scheduler.jdbc.AutodetectJdbcCustomization;
 import com.github.kagkarlsson.scheduler.jdbc.JdbcCustomization;
@@ -13,25 +13,25 @@ import com.github.kagkarlsson.scheduler.jdbc.JdbcTaskRepository;
 import com.github.kagkarlsson.scheduler.jdbc.PostgreSqlJdbcCustomization;
 import com.github.kagkarlsson.scheduler.serializer.Serializer;
 import com.github.kagkarlsson.scheduler.task.Task;
-import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
+import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.audit.SystemWork;
-import com.streamarr.server.services.library.KeyframePacketScanCompletion;
 import com.streamarr.server.services.library.KeyframePacketScanExecution;
-import com.streamarr.server.services.library.KeyframePacketScanRequests;
-import com.streamarr.server.services.library.KeyframePacketScanTask;
 import com.streamarr.server.services.library.MediaProbeTask;
 import com.streamarr.server.services.library.ProbeExecution;
 import com.streamarr.server.services.library.ProbeTaskCompletion;
-import com.streamarr.server.services.library.SchedulerKeyframePacketScanRequests;
 import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import javax.sql.DataSource;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
+import org.springframework.transaction.PlatformTransactionManager;
 
 @Configuration(proxyBeanMethods = false)
 public class ProbeSchedulingConfiguration {
@@ -53,28 +53,36 @@ public class ProbeSchedulingConfiguration {
     return MediaProbeTask.create(execution, completion, clock);
   }
 
-  @Bean
-  public Task<KeyframePacketScanTaskRequest> keyframePacketScanTask(
-      KeyframePacketScanExecution execution, KeyframePacketScanCompletion completion, Clock clock) {
-    return KeyframePacketScanTask.create(execution, completion, clock);
-  }
-
   /**
-   * Probe publication schedules a keyframe packet scan in its own transaction. The client is not a
-   * {@code SchedulerClient} bean, so probe requests keep the scheduler's own client.
+   * Runs keyframe packet scans on their own scheduler, which starts with the application only while
+   * db-scheduler is enabled.
    */
   @Bean
-  public KeyframePacketScanRequests keyframePacketScanRequests(
+  @SuppressWarnings("java:S107") // Spring injects each collaborator by type.
+  public KeyframePacketScanScheduler keyframePacketScanScheduler(
+      DbSchedulerCustomizer dbSchedulerCustomizer,
       DataSource dataSource,
-      Task<KeyframePacketScanTaskRequest> keyframePacketScanTask,
-      Serializer probeTaskSerializer,
-      Clock clock) {
-    var client =
-        SchedulerClient.Builder.create(
-                new SchedulerTransactionDataSource(dataSource), keyframePacketScanTask)
-            .serializer(probeTaskSerializer)
-            .build();
-    return new SchedulerKeyframePacketScanRequests(client, keyframePacketScanTask, clock);
+      PlatformTransactionManager transactionManager,
+      KeyframePacketScanExecution execution,
+      MediaFileContainerInfoRepository outcomes,
+      ProbeSchedulingProperties properties,
+      Clock clock,
+      Environment environment) {
+    var schedulerProperties =
+        Binder.get(environment)
+            .bind("db-scheduler", Bindable.of(DbSchedulerProperties.class))
+            .orElseGet(DbSchedulerProperties::new);
+    return KeyframePacketScanScheduler.builder()
+        .schedulerProperties(schedulerProperties)
+        .customizer(dbSchedulerCustomizer)
+        .dataSource(dataSource)
+        .transactionManager(transactionManager)
+        .execution(execution)
+        .outcomes(outcomes)
+        .properties(properties)
+        .clock(clock)
+        .autoStartup(schedulerProperties.isEnabled())
+        .build();
   }
 
   /**

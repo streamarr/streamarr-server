@@ -5,7 +5,6 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigura
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
@@ -69,7 +68,6 @@ class KeyframePacketScanWorkerIT extends AbstractIntegrationTest {
   @Autowired private MediaFileContainerInfoRepository outcomes;
   @Autowired private MediaFileRepository mediaFiles;
   @Autowired private LibraryRepository libraries;
-  @Autowired private ProbeSchedulingProperties probeScheduling;
 
   private MediaFile mediaFile;
   private Library library;
@@ -123,7 +121,6 @@ class KeyframePacketScanWorkerIT extends AbstractIntegrationTest {
               .scanner(remote::scanKeyframePackets)
               .fileSystem(FileSystems.getDefault())
               .outcomes(outcomes)
-              .properties(probeScheduling)
               .build()
               .execute(packetScans.requests().getFirst());
 

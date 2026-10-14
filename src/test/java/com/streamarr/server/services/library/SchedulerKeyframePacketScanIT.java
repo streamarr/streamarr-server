@@ -2,10 +2,10 @@ package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.github.kagkarlsson.scheduler.TaskRepository;
+import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
-import com.github.kagkarlsson.scheduler.task.Task;
+import com.streamarr.server.config.KeyframePacketScanScheduler;
 import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
@@ -14,6 +14,7 @@ import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.ProbeContainer;
+import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
@@ -24,6 +25,7 @@ import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import com.streamarr.server.services.streaming.KeyframePacketScanner;
+import com.streamarr.server.support.UnstartedSchedulerConfiguration;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.FileSystems;
@@ -40,12 +42,15 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.sql.DataSource;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
 import org.springframework.transaction.PlatformTransactionManager;
 
 @Tag("IntegrationTest")
@@ -69,10 +74,13 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
   @Autowired private MediaFileContainerInfoRepository outcomes;
   @Autowired private ProbeSchedulingProperties probeScheduling;
   @Autowired private PlatformTransactionManager transactionManager;
-  @Autowired private TaskRepository probeTasks;
+  @Autowired private DbSchedulerCustomizer schedulerCustomizer;
+  @Autowired private DataSource dataSource;
+  @Autowired private Environment environment;
   @Autowired private DSLContext dsl;
 
   private final BlockingQueue<ExecutionComplete> scanCompletions = new LinkedBlockingQueue<>();
+  private KeyframePacketScanScheduler scanScheduler;
 
   @Test
   @DisplayName("Should keep the scan scheduled when the server restarts")
@@ -84,10 +92,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
     stopScheduler();
     assertThat(scheduledScans()).as("The probe's publication schedules the scan").isOne();
 
-    startScheduler(
-        List.of(scanTask(_ -> success(SCANNED), Clock.systemUTC())),
-        recordingScanCompletions(),
-        Clock.systemUTC());
+    startScanScheduler(_ -> success(SCANNED), Clock.systemUTC());
 
     assertThat(scanCompletions.poll(30, TimeUnit.SECONDS)).isNotNull();
     assertThat(storedKeyframes(request)).isEqualTo(SCANNED);
@@ -111,10 +116,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
 
           return success(SCANNED);
         };
-    startScheduler(
-        List.of(scanTask(scanner, Clock.systemUTC())),
-        recordingScanCompletions(),
-        Clock.systemUTC());
+    startScanScheduler(scanner, Clock.systemUTC());
     assertThat(scanning.await(30, TimeUnit.SECONDS)).isTrue();
 
     var changed = changeSource(request);
@@ -140,15 +142,11 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
     var request = requestUnchangedFiles(1).getFirst();
     packetScanRequiredProbe().execute(request);
 
-    startScheduler(
-        List.of(
-            scanTask(
-                _ -> {
-                  changeSource(request);
-                  return success(SCANNED);
-                },
-                Clock.systemUTC())),
-        recordingScanCompletions(),
+    startScanScheduler(
+        _ -> {
+          changeSource(request);
+          return success(SCANNED);
+        },
         Clock.systemUTC());
 
     assertThat(scanCompletions.poll(30, TimeUnit.SECONDS)).isNotNull();
@@ -167,14 +165,10 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
         new MutableClock(
             new AtomicReference<>(Instant.now().truncatedTo(ChronoUnit.SECONDS).plusSeconds(1)));
 
-    startScheduler(
-        List.of(
-            scanTask(
-                _ -> {
-                  throw new ProbeWorkersBusyException();
-                },
-                clock)),
-        recordingScanCompletions(),
+    startScanScheduler(
+        _ -> {
+          throw new ProbeWorkersBusyException();
+        },
         clock);
 
     var deferred = scanCompletions.poll(30, TimeUnit.SECONDS);
@@ -185,30 +179,85 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
     assertThat(storedKeyframes(request)).isEqualTo(PACKET_SCAN_REQUIRED.keyframes());
   }
 
+  @Test
+  @DisplayName("Should keep probing on every probe thread while a keyframe packet scan runs")
+  void shouldKeepProbingOnEveryProbeThreadWhileAKeyframePacketScanRuns() throws Exception {
+    var files = createUnchangedFiles(3);
+    packetScanRequiredProbe().execute(files.getFirst());
+    var scanning = new CountDownLatch(1);
+    var release = new CountDownLatch(1);
+    KeyframePacketScanner blockedScanner =
+        _ -> {
+          scanning.countDown();
+          awaitRelease(release);
+          return success(SCANNED);
+        };
+    var probing = new CountDownLatch(2);
+    var bothProbing = new CountDownLatch(1);
+    var producer =
+        new FakeFfprobeService() {
+          @Override
+          public ProbeOutcome probe(ProbeExecutionRequest request) {
+            probing.countDown();
+            if (probing.getCount() == 0) {
+              bothProbing.countDown();
+            }
+
+            awaitRelease(release);
+            return super.probe(request);
+          }
+        };
+    producer.answerWith(PACKET_SCAN_REQUIRED);
+    var probes = probeExecution.toBuilder().producer(producer).build();
+    startScheduler(probes, countingCompletions(new CountDownLatch(0)));
+    startScanScheduler(blockedScanner, Clock.systemUTC());
+    assertThat(scanning.await(30, TimeUnit.SECONDS)).isTrue();
+
+    files.stream().skip(1).forEach(scheduling::request);
+
+    try {
+      assertThat(bothProbing.await(10, TimeUnit.SECONDS))
+          .as("Both probes run while the scan holds its slot")
+          .isTrue();
+    } finally {
+      release.countDown();
+    }
+  }
+
   private ProbeExecution packetScanRequiredProbe() {
     var producer = new FakeFfprobeService();
     producer.answerWith(PACKET_SCAN_REQUIRED);
     return probeExecution.toBuilder().producer(producer).build();
   }
 
-  private Task<?> scanTask(KeyframePacketScanner scanner, Clock clock) {
+  private void startScanScheduler(KeyframePacketScanner scanner, Clock clock) {
     var execution =
         KeyframePacketScanExecution.builder()
             .reader(reader)
             .scanner(scanner)
             .fileSystem(FileSystems.getDefault())
             .outcomes(outcomes)
-            .properties(probeScheduling)
             .build();
-    var completion =
-        KeyframePacketScanCompletion.builder()
-            .outcomes(outcomes)
+    scanScheduler =
+        KeyframePacketScanScheduler.builder()
+            .schedulerProperties(UnstartedSchedulerConfiguration.schedulerProperties(environment))
+            .customizer(schedulerCustomizer)
+            .dataSource(dataSource)
             .transactionManager(transactionManager)
-            .clock(clock)
+            .execution(execution)
+            .outcomes(outcomes)
             .properties(probeScheduling)
-            .probeTasks(probeTasks)
+            .clock(clock)
+            .listeners(List.of(recordingScanCompletions()))
             .build();
-    return KeyframePacketScanTask.create(execution, completion, clock);
+    scanScheduler.start();
+  }
+
+  @AfterEach
+  void stopScanScheduler() {
+    if (scanScheduler != null) {
+      scanScheduler.stop();
+    }
   }
 
   private AbstractSchedulerListener recordingScanCompletions() {
@@ -232,13 +281,13 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
 
   private int scheduledScans() {
     return dsl.fetchCount(
-        DSL.table("scheduled_tasks"),
+        DSL.table(KeyframePacketScanScheduler.TABLE_NAME),
         DSL.field("task_name", String.class).eq(KeyframePacketScanTask.NAME));
   }
 
   private Instant pendingScanExecutionTime() {
     return dsl.select(DSL.field("execution_time", Instant.class))
-        .from(DSL.table("scheduled_tasks"))
+        .from(DSL.table(KeyframePacketScanScheduler.TABLE_NAME))
         .where(DSL.field("task_name", String.class).eq(KeyframePacketScanTask.NAME))
         .and(DSL.field("picked", Boolean.class).isFalse())
         .and(DSL.coalesce(DSL.field("consecutive_failures", Integer.class), 0).eq(0))

@@ -3,8 +3,6 @@ package com.streamarr.server.services.library;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streamarr.server.config.ProbeSchedulingProperties;
-import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
@@ -45,9 +43,6 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -195,64 +190,6 @@ class KeyframePacketScanExecutionTest {
   }
 
   @Test
-  @DisplayName("Should defer a packet scan when the server already runs its maximum of scans")
-  void shouldDeferAPacketScanWhenTheServerAlreadyRunsItsMaximumOfScans() throws Exception {
-    var firstRequest = storePacketScanRequired();
-    var secondSource = tempDir.resolve("second.ts");
-    Files.write(secondSource, new byte[] {4, 5, 6});
-    var secondFile = saveMediaFile(secondSource);
-    var secondRequest = storePacketScanRequired(secondFile, secondSource, ProbeVersion.CURRENT);
-    var scanning = new CountDownLatch(1);
-    var release = new CountDownLatch(1);
-    scanner =
-        scan -> {
-          if (scan.sourcePath().equals(source)) {
-            scanning.countDown();
-            await(release);
-          }
-
-          return success(known());
-        };
-    var execution = execution();
-
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var first = executor.submit(() -> execution.execute(firstRequest));
-      assertThat(scanning.await(5, TimeUnit.SECONDS)).isTrue();
-
-      var deferred = execution.execute(secondRequest);
-      release.countDown();
-
-      assertThat(deferred).isEqualTo(new KeyframePacketScanResult.Deferred());
-      assertThat(first.get(5, TimeUnit.SECONDS))
-          .isEqualTo(new KeyframePacketScanResult.Completed());
-    }
-
-    assertThat(execution.execute(secondRequest))
-        .as("The finished scan must free its scan slot")
-        .isEqualTo(new KeyframePacketScanResult.Completed());
-    assertThat(outcomes.findKeyframeKnowledge(secondFile.getId())).contains(known());
-  }
-
-  @Test
-  @DisplayName("Should free the scan slot when a packet scan fails")
-  void shouldFreeTheScanSlotWhenAPacketScanFails() {
-    var request = storePacketScanRequired();
-    scanner =
-        _ -> {
-          throw new ProbeExecutionException(ItemFailureReason.TEMPORARY, "worker disconnected");
-        };
-    var execution = execution();
-    assertThatThrownBy(() -> execution.execute(request))
-        .isInstanceOf(ProbeExecutionException.class);
-    scanner = scanAnswering(success(known()));
-
-    var result = execution.execute(request);
-
-    assertThat(result).isEqualTo(new KeyframePacketScanResult.Completed());
-    assertThat(storedKeyframes()).isEqualTo(known());
-  }
-
-  @Test
   @DisplayName("Should store unavailable keyframes when the packet scan ends in a media error")
   void shouldStoreUnavailableKeyframesWhenThePacketScanEndsInAMediaError() {
     var request = storePacketScanRequired();
@@ -322,7 +259,6 @@ class KeyframePacketScanExecutionTest {
             })
         .fileSystem(FileSystems.getDefault())
         .outcomes(outcomes)
-        .properties(new ProbeSchedulingProperties(null, null, 1))
         .build();
   }
 
@@ -423,15 +359,6 @@ class KeyframePacketScanExecutionTest {
       Files.write(path, new byte[] {9}, StandardOpenOption.APPEND);
     } catch (IOException exception) {
       throw new UncheckedIOException(exception);
-    }
-  }
-
-  private static void await(CountDownLatch latch) {
-    try {
-      assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
-    } catch (InterruptedException exception) {
-      Thread.currentThread().interrupt();
-      throw new IllegalStateException(exception);
     }
   }
 }

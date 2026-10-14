@@ -50,6 +50,8 @@ Set `TRANSCODE_WORKER_FFPROBE_PATH` to the worker's ffprobe binary. It defaults 
 `STREAMING_WORKER_SESSION_KEYFRAME_SCAN_TIMEOUT` bounds each keyframe packet scan on the server. It defaults to `30m`.
 A packet scan reads every packet of the source's video stream, which takes longer than a probe on network storage.
 A timeout requests worker cancellation and lets the scheduler retry.
+Packet scans run on a scheduler of their own, so they never take the threads that run probes.
+`PROBE_MAX_CONCURRENT_KEYFRAME_PACKET_SCANS` sets how many scans each server runs at once. It defaults to `1`.
 `STREAMING_WORKER_SESSION_PROBE_CANCELLATION_TIMEOUT` allows `5s` for the worker to acknowledge termination.
 Until then, the probe retains its execution slot.
 A worker that misses this deadline is disconnected and fenced. Its other active jobs are abandoned and recover through the existing playback recovery path.

@@ -1,6 +1,5 @@
 package com.streamarr.server.services.library;
 
-import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
@@ -21,17 +20,19 @@ import java.nio.file.FileSystem;
 import java.nio.file.Path;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.Semaphore;
 import lombok.Builder;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
  * One keyframe packet scan execution, independent of the scheduler that runs it. Transient failures
  * escape as {@link ProbeExecutionException} so the scheduler retries them with backoff. Busy
- * workers and a full set of scan slots defer the scan without a failure.
+ * workers defer the scan without a failure.
  */
 @Service
+@Builder
+@RequiredArgsConstructor
 @Slf4j
 public class KeyframePacketScanExecution {
 
@@ -39,21 +40,6 @@ public class KeyframePacketScanExecution {
   private final KeyframePacketScanner scanner;
   private final FileSystem fileSystem;
   private final MediaFileContainerInfoRepository outcomes;
-  private final Semaphore scanSlots;
-
-  @Builder
-  public KeyframePacketScanExecution(
-      PersistedProbeReader reader,
-      KeyframePacketScanner scanner,
-      FileSystem fileSystem,
-      MediaFileContainerInfoRepository outcomes,
-      ProbeSchedulingProperties properties) {
-    this.reader = reader;
-    this.scanner = scanner;
-    this.fileSystem = fileSystem;
-    this.outcomes = outcomes;
-    this.scanSlots = new Semaphore(properties.maxConcurrentKeyframePacketScans());
-  }
 
   public KeyframePacketScanResult execute(KeyframePacketScanTaskRequest request) {
     if (request.probeVersion() != ProbeVersion.CURRENT || !storedOutcomeNeedsScan(request)) {
@@ -65,17 +51,7 @@ public class KeyframePacketScanExecution {
       return new KeyframePacketScanResult.Completed();
     }
 
-    if (!scanSlots.tryAcquire()) {
-      return new KeyframePacketScanResult.Deferred();
-    }
-
-    Optional<ProbeOutcome> outcome;
-    try {
-      outcome = scan(request, path);
-    } finally {
-      scanSlots.release();
-    }
-
+    var outcome = scan(request, path);
     if (outcome.isEmpty()) {
       return new KeyframePacketScanResult.Deferred();
     }

@@ -9,6 +9,7 @@ import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.github.kagkarlsson.scheduler.task.TaskInstanceId;
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.config.KeyframePacketScanScheduler;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
@@ -58,7 +59,7 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
 
   @BeforeEach
   void clearScheduledTasks() {
-    dsl.deleteFrom(DSL.table("scheduled_tasks")).execute();
+    deleteScheduledTasks();
   }
 
   // Statistics gathered at one row make PostgreSQL join the claim's LIMIT subquery as a rescanned
@@ -80,11 +81,16 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
   @AfterEach
   void stopSchedulerAndRemoveFiles() {
     stopScheduler();
-    dsl.deleteFrom(DSL.table("scheduled_tasks")).execute();
+    deleteScheduledTasks();
     mediaFiles.deleteAll(createdFiles);
     if (libraryId != null) {
       libraries.deleteById(libraryId);
     }
+  }
+
+  private void deleteScheduledTasks() {
+    dsl.deleteFrom(DSL.table("scheduled_tasks")).execute();
+    dsl.deleteFrom(DSL.table(KeyframePacketScanScheduler.TABLE_NAME)).execute();
   }
 
   List<ProbeTaskRequest> requestUnchangedFiles(int count) throws IOException {
