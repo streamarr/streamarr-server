@@ -31,8 +31,16 @@ public final class HeldCreditInsert implements AutoCloseable {
 
     private String insertSql() {
       return "INSERT INTO "
-          + name().toLowerCase(Locale.ROOT)
+          + tableName()
           + " (source_id, name) VALUES (?, ?) ON CONFLICT (source_id) DO NOTHING";
+    }
+
+    private String lockForRenameSql() {
+      return "SELECT id FROM " + tableName() + " WHERE source_id = ? FOR NO KEY UPDATE";
+    }
+
+    private String tableName() {
+      return name().toLowerCase(Locale.ROOT);
     }
   }
 
@@ -76,6 +84,21 @@ public final class HeldCreditInsert implements AutoCloseable {
       statement.setString(1, sourceId);
       statement.setString(2, "Held " + sourceId);
       statement.executeUpdate();
+    }
+  }
+
+  /**
+   * Takes the row lock that renaming an existing credit holds until commit. A real rename would
+   * also write a new row version, which makes a later insert of the same source id wait here. The
+   * lock alone plays a media title that renamed the credit after the save checked that the row
+   * exists.
+   */
+  public void lockForRename(CreditTable table, String sourceId) throws SQLException {
+    try (var statement = connection.prepareStatement(table.lockForRenameSql())) {
+      statement.setString(1, sourceId);
+      try (var lockedRow = statement.executeQuery()) {
+        assertThat(lockedRow.next()).isTrue();
+      }
     }
   }
 

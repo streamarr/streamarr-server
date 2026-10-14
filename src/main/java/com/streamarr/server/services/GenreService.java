@@ -2,6 +2,7 @@ package com.streamarr.server.services;
 
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.repositories.GenreRepository;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -35,7 +36,18 @@ public class GenreService {
                     new IllegalStateException(
                         "Genre not found after upsert for sourceId: " + genre.getSourceId()));
 
-    saved.setName(genre.getName());
+    renameBeforeNextInsert(saved, genre.getName());
     return saved;
+  }
+
+  // Hibernate would write a rename at its next flush, after this transaction has inserted higher
+  // keys, so the row lock would be taken out of insert order. Flushing here takes it in order.
+  private void renameBeforeNextInsert(Genre saved, String name) {
+    if (Objects.equals(saved.getName(), name)) {
+      return;
+    }
+
+    saved.setName(name);
+    genreRepository.flush();
   }
 }

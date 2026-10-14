@@ -1,7 +1,9 @@
 package com.streamarr.server.services;
 
 import static com.streamarr.server.support.HeldCreditInsert.CreditTable.GENRE;
+import static com.streamarr.server.support.HeldCreditInsert.CreditTable.PERSON;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.Library;
@@ -10,8 +12,10 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Genre;
+import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
@@ -48,6 +52,7 @@ class ConcurrentMediaTitleSaveIT extends AbstractIntegrationTest {
   @Autowired private SeriesRepository seriesRepository;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
+  @Autowired private PersonRepository personRepository;
   @Autowired private DataSource dataSource;
 
   private Library library;
@@ -139,6 +144,45 @@ class ConcurrentMediaTitleSaveIT extends AbstractIntegrationTest {
             artworkRun -> seriesService.refreshSeriesMetadata(existing, metadata, artworkRun));
 
     assertSavedGenres(seriesService.findGenres(series.getId()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should refresh movie when another media title renamed the same person and is inserting the"
+          + " same new person")
+  void shouldRefreshMovieWhenAnotherMediaTitleRenamedTheSamePersonAndIsInsertingTheSameNewPerson()
+      throws Exception {
+    var personIds = OrderedSourceIds.unique();
+    personRepository.saveAndFlush(
+        Person.builder().sourceId(personIds.lower()).name("Earlier Name").build());
+    var existing =
+        movieRepository.saveAndFlush(
+            Movie.builder().title("Refreshed Movie").library(library).build());
+    var metadata =
+        metadataFor(
+            Movie.builder()
+                .title("Refreshed Movie")
+                .cast(
+                    List.of(
+                        Person.builder().sourceId(personIds.lower()).name("Renamed").build(),
+                        Person.builder().sourceId(personIds.higher()).name("New Actor").build()))
+                .build());
+
+    Movie movie;
+    try (var artworkRun = artworkService.openRun("refresh", ImageRefreshMode.PRESERVE);
+        var otherMediaTitle = HeldCreditInsert.open(dataSource)) {
+      otherMediaTitle.lockForRename(PERSON, personIds.lower());
+
+      movie =
+          otherMediaTitle.commitAfterSaveWaits(
+              () -> movieService.refreshMovieMetadata(existing, metadata, artworkRun),
+              held -> held.insert(PERSON, personIds.higher()));
+    }
+
+    assertThat(movieService.findCast(movie.getId()))
+        .extracting(Person::getSourceId, Person::getName)
+        .containsExactly(
+            tuple(personIds.lower(), "Renamed"), tuple(personIds.higher(), "New Actor"));
   }
 
   private <T> T saveWhileAnotherMediaTitleSavesTheGenresInOppositeOrder(

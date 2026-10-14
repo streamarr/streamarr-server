@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -67,10 +68,21 @@ public class PersonService {
                     new IllegalStateException(
                         "Person not found after upsert for sourceId: " + person.getSourceId()));
 
-    saved.setName(person.getName());
+    renameBeforeNextInsert(saved, person.getName());
 
     publishImageEvent(saved, imageSources, imageRefreshMode);
     return saved;
+  }
+
+  // Hibernate would write a rename at its next flush, after this transaction has inserted higher
+  // keys, so the row lock would be taken out of insert order. Flushing here takes it in order.
+  private void renameBeforeNextInsert(Person saved, String name) {
+    if (Objects.equals(saved.getName(), name)) {
+      return;
+    }
+
+    saved.setName(name);
+    personRepository.flush();
   }
 
   private static void requirePerson(Person person) {

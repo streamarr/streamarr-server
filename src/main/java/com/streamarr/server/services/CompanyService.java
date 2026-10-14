@@ -8,6 +8,7 @@ import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -53,10 +54,21 @@ public class CompanyService {
                     new IllegalStateException(
                         "Company not found after upsert for sourceId: " + company.getSourceId()));
 
-    saved.setName(company.getName());
+    renameBeforeNextInsert(saved, company.getName());
 
     publishImageEvent(saved, imageSources, imageRefreshMode);
     return saved;
+  }
+
+  // Hibernate would write a rename at its next flush, after this transaction has inserted higher
+  // keys, so the row lock would be taken out of insert order. Flushing here takes it in order.
+  private void renameBeforeNextInsert(Company saved, String name) {
+    if (Objects.equals(saved.getName(), name)) {
+      return;
+    }
+
+    saved.setName(name);
+    companyRepository.flush();
   }
 
   private void publishImageEvent(

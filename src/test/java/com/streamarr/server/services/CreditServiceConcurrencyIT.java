@@ -9,6 +9,9 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
+import com.streamarr.server.repositories.CompanyRepository;
+import com.streamarr.server.repositories.GenreRepository;
+import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.support.HeldCreditInsert;
 import com.streamarr.server.support.HeldCreditInsert.CreditTable;
@@ -16,12 +19,16 @@ import com.streamarr.server.support.OrderedSourceIds;
 import java.sql.SQLException;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
@@ -35,6 +42,9 @@ class CreditServiceConcurrencyIT extends AbstractIntegrationTest {
 
   @Autowired private CreditService creditService;
   @Autowired private DataSource dataSource;
+  @Autowired private PersonRepository personRepository;
+  @Autowired private GenreRepository genreRepository;
+  @Autowired private CompanyRepository companyRepository;
 
   private OrderedSourceIds sourceIds;
 
@@ -136,6 +146,30 @@ class CreditServiceConcurrencyIT extends AbstractIntegrationTest {
     assertThat(saved.studios()).extracting(Company::getSourceId).containsExactly(sourceIds.lower());
   }
 
+  @ParameterizedTest
+  @EnumSource(CreditTable.class)
+  @DisplayName(
+      "Should save credits when another media title renamed the same credit and is inserting the"
+          + " same new credit")
+  void shouldSaveCreditsWhenAnotherMediaTitleRenamedTheSameCreditAndIsInsertingTheSameNewCredit(
+      CreditTable table) throws Exception {
+    saveExistingCredit(table, sourceIds.lower());
+    var credits = renamedThenNewCredits(table);
+
+    try (var otherMediaTitle = HeldCreditInsert.open(dataSource)) {
+      otherMediaTitle.lockForRename(table, sourceIds.lower());
+
+      var saved =
+          otherMediaTitle.commitAfterSaveWaits(
+              () -> creditService.getOrCreateCredits(requestFor(credits)),
+              held -> held.insert(table, sourceIds.higher()));
+
+      assertThat(savedNamesBySourceId(table, saved))
+          .containsExactlyInAnyOrderEntriesOf(
+              Map.of(sourceIds.lower(), "Renamed", sourceIds.higher(), "New"));
+    }
+  }
+
   private MediaTitleCredits saveWhileAnotherMediaTitleInserts(
       CreditTable firstTable, CreditTable secondTable, MediaTitleCredits credits)
       throws SQLException {
@@ -164,5 +198,58 @@ class CreditServiceConcurrencyIT extends AbstractIntegrationTest {
         .credits(credits)
         .imageRefreshMode(ImageRefreshMode.PRESERVE)
         .build();
+  }
+
+  private void saveExistingCredit(CreditTable table, String sourceId) {
+    switch (table) {
+      case PERSON ->
+          personRepository.saveAndFlush(
+              Person.builder().sourceId(sourceId).name("Earlier Name").build());
+      case GENRE ->
+          genreRepository.saveAndFlush(
+              Genre.builder().sourceId(sourceId).name("Earlier Name").build());
+      case COMPANY ->
+          companyRepository.saveAndFlush(
+              Company.builder().sourceId(sourceId).name("Earlier Name").build());
+    }
+  }
+
+  private MediaTitleCredits renamedThenNewCredits(CreditTable table) {
+    return switch (table) {
+      case PERSON ->
+          MediaTitleCredits.builder()
+              .cast(
+                  List.of(
+                      Person.builder().sourceId(sourceIds.lower()).name("Renamed").build(),
+                      Person.builder().sourceId(sourceIds.higher()).name("New").build()))
+              .build();
+      case GENRE ->
+          MediaTitleCredits.builder()
+              .genres(
+                  Set.of(
+                      Genre.builder().sourceId(sourceIds.lower()).name("Renamed").build(),
+                      Genre.builder().sourceId(sourceIds.higher()).name("New").build()))
+              .build();
+      case COMPANY ->
+          MediaTitleCredits.builder()
+              .studios(
+                  Set.of(
+                      Company.builder().sourceId(sourceIds.lower()).name("Renamed").build(),
+                      Company.builder().sourceId(sourceIds.higher()).name("New").build()))
+              .build();
+    };
+  }
+
+  private static Map<String, String> savedNamesBySourceId(
+      CreditTable table, MediaTitleCredits saved) {
+    return switch (table) {
+      case PERSON ->
+          saved.cast().stream().collect(Collectors.toMap(Person::getSourceId, Person::getName));
+      case GENRE ->
+          saved.genres().stream().collect(Collectors.toMap(Genre::getSourceId, Genre::getName));
+      case COMPANY ->
+          saved.studios().stream()
+              .collect(Collectors.toMap(Company::getSourceId, Company::getName));
+    };
   }
 }
