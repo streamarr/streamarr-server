@@ -92,6 +92,7 @@ class MovieResolverTest {
         dgsQueryExecutor.executeAndExtractJsonPath(
             String.format("{ movie(id: \"%s\") { createdBy } }", movieId), "data.movie.createdBy");
 
+    // Clients compare audit fields with this published id, so the test pins the literal value.
     assertThat(createdBy).isEqualTo("b634c755-3c6a-4ff1-a0a7-3e812d0ed1b9");
   }
 
