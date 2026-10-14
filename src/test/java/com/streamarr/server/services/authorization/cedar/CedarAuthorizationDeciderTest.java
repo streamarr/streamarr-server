@@ -71,7 +71,8 @@ class CedarAuthorizationDeciderTest {
         Arguments.of(new Intent.AddLibrary()),
         Arguments.of(new Intent.RemoveLibrary(libraryId)),
         Arguments.of(new Intent.ScanLibrary(libraryId)),
-        Arguments.of(new Intent.RefreshLibrary(libraryId)));
+        Arguments.of(new Intent.RefreshLibrary(libraryId)),
+        Arguments.of(new Intent.ViewLibraryAdministration()));
   }
 
   @ParameterizedTest
@@ -105,6 +106,28 @@ class CedarAuthorizationDeciderTest {
     var identity = identityFor(liveAccount(true, false));
 
     assertThat(decider.decide(identity, new Intent.AddLibrary()))
+        .isEqualTo(new Decision.Denied<>(Decision.DenialReason.POLICY));
+  }
+
+  @Test
+  @DisplayName("Should deny viewing library administration when the session is device-bound")
+  void shouldDenyLibraryAdministrationViewWhenSessionIsDeviceBound() {
+    var identity =
+        AuthenticatedIdentityFixture.profileScopedBuilder()
+            .accountId(liveAccount(true, true))
+            .registrationId(Optional.of(UUID.randomUUID()))
+            .build();
+
+    assertThat(decider.decide(identity, new Intent.ViewLibraryAdministration()))
+        .isEqualTo(new Decision.Denied<>(Decision.DenialReason.POLICY));
+  }
+
+  @Test
+  @DisplayName("Should deny viewing library administration when the ServerAdmin is disabled")
+  void shouldDenyLibraryAdministrationViewWhenAccountIsDisabled() {
+    var identity = identityFor(liveAccount(true, false));
+
+    assertThat(decider.decide(identity, new Intent.ViewLibraryAdministration()))
         .isEqualTo(new Decision.Denied<>(Decision.DenialReason.POLICY));
   }
 

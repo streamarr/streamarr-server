@@ -93,6 +93,25 @@ class LibraryAdministrationServiceTest {
         .contains(new RefreshRequest(libraryId, ImageRefreshMode.FORCE_REFRESH));
   }
 
+  @Test
+  @DisplayName("Should authorize viewing library administration through the typed intent")
+  void shouldAuthorizeLibraryAdministrationViewThroughTypedIntent() {
+    libraryAdministrationService.requireLibraryAdministrationView(identity);
+
+    assertThat(authorizationService.recordedIntents())
+        .containsExactly(new Intent.ViewLibraryAdministration());
+  }
+
+  @Test
+  @DisplayName("Should refuse viewing library administration when authorization denies")
+  void shouldRefuseLibraryAdministrationViewWhenAuthorizationDenies() {
+    authorizationService.denyAll();
+
+    assertThatThrownBy(
+            () -> libraryAdministrationService.requireLibraryAdministrationView(identity))
+        .isInstanceOf(AccessDeniedException.class);
+  }
+
   private static final class RecordingLibraryManagementService extends LibraryManagementService {
 
     private AuthenticatedIdentity addedIdentity;
