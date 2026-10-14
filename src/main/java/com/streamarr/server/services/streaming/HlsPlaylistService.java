@@ -106,7 +106,7 @@ public class HlsPlaylistService {
    * time {@code [i * targetSegmentDuration, (i + 1) * targetSegmentDuration)}; a stream copy's
    * segment runs from its opening keyframe to the next one.
    */
-  public String generateMediaPlaylist(StreamSession session, String token) {
+  public String generateMediaPlaylist(StreamSession session, String variantLabel, String token) {
     var timeline = MediaSegmentTimelines.of(session, properties);
     var segmentCount = timeline.mediaSegmentCount();
     var extinfDurations =

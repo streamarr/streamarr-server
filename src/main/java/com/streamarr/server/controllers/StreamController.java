@@ -65,7 +65,9 @@ public class StreamController {
       return ResponseEntity.notFound().build();
     }
 
-    var playlist = playlistService.generateMediaPlaylist(session.get(), playbackToken());
+    var playlist =
+        playlistService.generateMediaPlaylist(
+            session.get(), StreamSession.defaultVariant(), playbackToken());
 
     return ResponseEntity.ok().contentType(HLS_MEDIA_TYPE).body(playlist);
   }
@@ -123,7 +125,7 @@ public class StreamController {
       return ResponseEntity.notFound().build();
     }
 
-    var playlist = playlistService.generateMediaPlaylist(s, playbackToken());
+    var playlist = playlistService.generateMediaPlaylist(s, variantLabel, playbackToken());
 
     return ResponseEntity.ok().contentType(HLS_MEDIA_TYPE).body(playlist);
   }

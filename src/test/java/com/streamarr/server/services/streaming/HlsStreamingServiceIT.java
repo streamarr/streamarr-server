@@ -232,7 +232,8 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
         .isEqualTo(ProbeFixture.completeProbe(storedProbe).mediaProbe());
     assertThat(playlistService.generateMultivariantPlaylist(session, "token"))
         .contains("BANDWIDTH=2400000,AVERAGE-BANDWIDTH=2000000,RESOLUTION=1280x720");
-    assertThat(playlistService.generateMediaPlaylist(session, "token"))
+    assertThat(
+            playlistService.generateMediaPlaylist(session, StreamSession.defaultVariant(), "token"))
         .contains(
             "#EXT-X-VERSION:6",
             "#EXT-X-MAP:URI=\"init.mp4?t=token\"",

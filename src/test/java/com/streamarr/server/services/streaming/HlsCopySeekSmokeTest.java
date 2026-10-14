@@ -192,7 +192,10 @@ class HlsCopySeekSmokeTest {
     assertThat(gridIntervalCount(session))
         .as("the AAC tail forms a grid interval past the last keyframe")
         .isEqualTo(copySegmentSeconds.size() + 1);
-    assertThat(extinfSeconds(playlistService.generateMediaPlaylist(session, "smoke-token")))
+    assertThat(
+            extinfSeconds(
+                playlistService.generateMediaPlaylist(
+                    session, StreamSession.defaultVariant(), "smoke-token")))
         .zipSatisfy(
             copySegmentSeconds,
             (advertised, expected) -> assertThat(advertised).isCloseTo(expected, within(0.1)));

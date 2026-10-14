@@ -231,7 +231,8 @@ class HlsPlaylistServiceTest {
   void shouldIncludeEachFixedTagWhenGeneratingMediaPlaylist(String tag) {
     var session = createSession(TranscodeMode.FULL_TRANSCODE, 30);
 
-    var playlist = service.generateMediaPlaylist(session, "test-token");
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
 
     assertThat(playlist).contains(tag);
   }
@@ -261,7 +262,8 @@ class HlsPlaylistServiceTest {
                     .build())
             .build();
 
-    var playlist = service.generateMediaPlaylist(session, "test-token");
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
 
     assertThat(playlist)
         .contains("#EXTINF:6.500000,\n")
@@ -280,7 +282,10 @@ class HlsPlaylistServiceTest {
             .build();
 
     assertThatIllegalStateException()
-        .isThrownBy(() -> service.generateMediaPlaylist(session, "test-token"));
+        .isThrownBy(
+            () ->
+                service.generateMediaPlaylist(
+                    session, StreamSession.defaultVariant(), "test-token"));
   }
 
   static Stream<Arguments> keyframesThatOpenNoStreamCopy() {
@@ -296,7 +301,8 @@ class HlsPlaylistServiceTest {
   void shouldUseM4sExtensionWhenGeneratingMediaPlaylist() {
     var session = createSession(TranscodeMode.FULL_TRANSCODE, 18);
 
-    var playlist = service.generateMediaPlaylist(session, "test-token");
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
 
     assertThat(playlist)
         .contains("segment0.m4s?t=test-token")
@@ -309,7 +315,8 @@ class HlsPlaylistServiceTest {
   void shouldCalculateCorrectSegmentCountWhenDurationIs18Seconds() {
     var session = createSession(TranscodeMode.FULL_TRANSCODE, 18);
 
-    var playlist = service.generateMediaPlaylist(session, "test-token");
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
 
     assertThat(playlist)
         .contains("segment0.m4s")
@@ -323,7 +330,8 @@ class HlsPlaylistServiceTest {
   void shouldStartMediaPlaylistWithExtm3uWhenGeneratingPlaylist() {
     var session = createSession(TranscodeMode.FULL_TRANSCODE, 30);
 
-    var playlist = service.generateMediaPlaylist(session, "test-token");
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
 
     assertThat(playlist).startsWith("#EXTM3U\n");
   }
@@ -343,7 +351,8 @@ class HlsPlaylistServiceTest {
   void shouldNotContainMultivariantPlaylistTagsWhenGeneratingMediaPlaylist() {
     var session = createSession(TranscodeMode.FULL_TRANSCODE, 30);
 
-    var playlist = service.generateMediaPlaylist(session, "test-token");
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
 
     assertThat(playlist).doesNotContain("#EXT-X-STREAM-INF");
   }
@@ -353,7 +362,8 @@ class HlsPlaylistServiceTest {
   void shouldSetLastSegmentDurationWhenShorterThanTargetDuration() {
     var session = createSession(TranscodeMode.FULL_TRANSCODE, 16);
 
-    var playlist = service.generateMediaPlaylist(session, "test-token");
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
 
     var lines = playlist.lines().toList();
     var extinfLines = lines.stream().filter(l -> l.startsWith("#EXTINF:")).toList();
@@ -369,7 +379,8 @@ class HlsPlaylistServiceTest {
   void shouldIncludeExtraSegmentWhenDurationHasSubSecondRemainder() {
     var session = createSessionWithDuration(TranscodeMode.FULL_TRANSCODE, Duration.ofMillis(18500));
 
-    var playlist = service.generateMediaPlaylist(session, "test-token");
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
 
     var segmentLines =
         playlist
@@ -384,7 +395,8 @@ class HlsPlaylistServiceTest {
   void shouldCalculateLastSegmentDurationWhenDurationHasSubSecondPrecision() {
     var session = createSessionWithDuration(TranscodeMode.FULL_TRANSCODE, Duration.ofMillis(18500));
 
-    var playlist = service.generateMediaPlaylist(session, "test-token");
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
 
     var extinfLines = playlist.lines().filter(l -> l.startsWith("#EXTINF:")).toList();
     assertThat(extinfLines).hasSize(4);
@@ -401,7 +413,8 @@ class HlsPlaylistServiceTest {
     var session = createSession(TranscodeMode.FULL_TRANSCODE, 120);
     session.updatePlaybackState(90, PlaybackState.PLAYING);
 
-    var playlist = service.generateMediaPlaylist(session, "test-token");
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
 
     var segmentLines =
         playlist
@@ -416,7 +429,8 @@ class HlsPlaylistServiceTest {
   void shouldGenerateFullSegmentsWhenSeekPositionIsZero() {
     var session = createSession(TranscodeMode.FULL_TRANSCODE, 120);
 
-    var playlist = service.generateMediaPlaylist(session, "test-token");
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
 
     var segmentLines =
         playlist
