@@ -52,11 +52,20 @@ import com.streamarr.server.services.authorization.DirectAuthorizationDeciderFix
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.library.MovieFileProcessor;
 import com.streamarr.server.services.library.SeriesFileProcessor;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.CommonForkJoinPool;
 import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.DefaultAsyncExecutor;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.DefaultDelayedExecutor;
 import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryExecutorReference;
 import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryFixedPool;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryForkJoinPool;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryParallelStream;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryParallelStreamSwitch;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryScheduledPoolConstructor;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinarySpringTaskExecutor;
 import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryThreadBuilder;
 import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryThreadConstructor;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryThreadPoolConstructor;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryTimer;
 import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryVirtualThreadStart;
 import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.SystemWorkThreads;
 import com.streamarr.server.services.streaming.remote.architecturefixture.AllowedWorkerProtocolFixture;
@@ -77,13 +86,17 @@ import com.tngtech.archunit.lang.CompositeArchRule;
 import com.tngtech.archunit.library.dependencies.SliceAssignment;
 import com.tngtech.archunit.library.dependencies.SliceIdentifier;
 import java.nio.file.Path;
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
+import java.util.Timer;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ThreadFactory;
 import java.util.function.Predicate;
+import java.util.stream.BaseStream;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -439,7 +452,16 @@ class ArchitectureTest {
         OrdinaryThreadConstructor.class,
         OrdinaryExecutorReference.class,
         OrdinaryFixedPool.class,
-        DefaultAsyncExecutor.class
+        DefaultAsyncExecutor.class,
+        OrdinaryParallelStream.class,
+        OrdinaryParallelStreamSwitch.class,
+        CommonForkJoinPool.class,
+        OrdinaryForkJoinPool.class,
+        OrdinaryThreadPoolConstructor.class,
+        OrdinaryScheduledPoolConstructor.class,
+        DefaultDelayedExecutor.class,
+        OrdinarySpringTaskExecutor.class,
+        OrdinaryTimer.class
       })
   @DisplayName("Should reject a thread when system work starts it outside SystemWork")
   void shouldRejectThreadWhenSystemWorkStartsItOutsideSystemWork(Class<?> fixture) {
@@ -695,8 +717,19 @@ class ArchitectureTest {
                         || (target.getName().startsWith("new")
                             && !takes(target, ThreadFactory.class))),
             new ThreadSource(
+                Executor.class,
+                target ->
+                    target.getName().equals(CONSTRUCTOR) && !takes(target, ThreadFactory.class)),
+            new ThreadSource(ForkJoinPool.class, target -> target.getName().equals("commonPool")),
+            new ThreadSource(
                 CompletableFuture.class,
-                target -> target.getName().endsWith("Async") && !takes(target, Executor.class)));
+                target ->
+                    (target.getName().endsWith("Async")
+                            || target.getName().equals("delayedExecutor"))
+                        && !takes(target, Executor.class)),
+            new ThreadSource(Collection.class, target -> target.getName().equals("parallelStream")),
+            new ThreadSource(BaseStream.class, target -> target.getName().equals("parallel")),
+            new ThreadSource(Timer.class, target -> target.getName().equals(CONSTRUCTOR)));
 
     private StartsThreadOutsideSystemWork() {
       super("start a thread outside SystemWork");
@@ -719,7 +752,7 @@ class ArchitectureTest {
         Class<?> owner, Predicate<AccessTarget.CodeUnitAccessTarget> startsThreadThrough) {
 
       boolean startsThread(AccessTarget.CodeUnitAccessTarget target) {
-        return target.getOwner().isEquivalentTo(owner) && startsThreadThrough.test(target);
+        return target.getOwner().isAssignableTo(owner) && startsThreadThrough.test(target);
       }
     }
   }
