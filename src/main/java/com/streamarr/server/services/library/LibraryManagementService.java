@@ -15,6 +15,7 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.concurrency.MutexFactory;
@@ -47,7 +48,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -375,7 +375,12 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     }
   }
 
+  /** Scans the library as the System actor, whoever calls this method. */
   public void scanLibrary(UUID libraryId) {
+    SystemWork.runAsSystemActor(() -> scanLibraryAsSystemActor(libraryId));
+  }
+
+  private void scanLibraryAsSystemActor(UUID libraryId) {
     if (!activeScans.add(libraryId)) {
       throw new LibraryScanInProgressException(libraryId);
     }
@@ -399,7 +404,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
   private FileDiscovery discoverFiles(Library library) {
     var discovery = fileDiscoveryRuns.open("scan of", library);
     try (discovery;
-        var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var executor = SystemWork.newExecutorRunningAsSystemActor("library-scan-file-");
         var stream = Files.walk(FilepathCodec.decode(fileSystem, library.getFilepathUri()))) {
 
       var tasks =

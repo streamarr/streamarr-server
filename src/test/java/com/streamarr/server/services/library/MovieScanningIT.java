@@ -6,12 +6,17 @@ import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
+import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.auth.SystemActor;
+import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
+import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
@@ -20,7 +25,12 @@ import com.streamarr.server.support.BoundedTask;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Duration;
+import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
+import javax.sql.DataSource;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -28,6 +38,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 @Isolated
@@ -42,8 +53,15 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   @Autowired private MovieRepository movieRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private JdbcTemplate jdbcTemplate;
+  @Autowired private ProbeExecution probeExecution;
+  @Autowired private ProbeTaskCompletion probeTaskCompletion;
+  @Autowired private DbSchedulerCustomizer schedulerCustomizer;
+  @Autowired private DataSource dataSource;
+  @Autowired private Environment environment;
 
   @TempDir Path tempDir;
+
+  private ProbeSchedulerStarter.StartedProbeScheduler probeScheduler;
 
   @BeforeEach
   void cleanupDatabase() {
@@ -51,6 +69,39 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     mediaFileRepository.deleteAll();
     movieRepository.deleteAll();
     libraryRepository.deleteAll();
+  }
+
+  @AfterEach
+  void stopProbeScheduler() {
+    if (probeScheduler != null) {
+      probeScheduler.scheduler().stop();
+    }
+  }
+
+  @Test
+  @DisplayName("Should name the System actor as creator when a scan creates a movie and media file")
+  void shouldNameSystemActorAsCreatorWhenScanCreatesMovieAndMediaFile() throws Exception {
+    var library = createMovieLibrary();
+    createMovieFile("Inception (2010)", "Inception (2010).mkv");
+    var genreId = uniqueGenreId();
+    stubTmdbMovieSearch("Inception", "27205", "Inception", "2010-07-16");
+    stubTmdbMovieMetadata("27205", "Inception", genreId);
+    startProbeScheduler();
+
+    BoundedTask.runWithin(SCAN_BOUND, () -> libraryManagementService.scanLibrary(library.getId()));
+
+    var scanned = libraryRepository.findById(library.getId()).orElseThrow();
+    assertThat(scanned.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
+    assertThat(scanned.getLastModifiedBy()).isEqualTo(SystemActor.ID);
+    assertThat(movieRepository.findAll())
+        .singleElement()
+        .extracting(Movie::getCreatedBy, Movie::getLastModifiedBy)
+        .containsOnly(SystemActor.ID);
+    assertThat(mediaFileRepository.findByLibraryId(library.getId()))
+        .singleElement()
+        .extracting(MediaFile::getCreatedBy, MediaFile::getLastModifiedBy)
+        .containsOnly(SystemActor.ID);
+    assertThat(genreCreator(genreId)).isEqualTo(SystemActor.ID);
   }
 
   @Test
@@ -119,6 +170,29 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   }
 
   // --- Helpers ---
+
+  // Probes run in db-scheduler, and a scan finishes only after its probes have stored results.
+  private void startProbeScheduler() {
+    jdbcTemplate.update("DELETE FROM scheduled_tasks");
+    probeScheduler =
+        ProbeSchedulerStarter.builder()
+            .customizer(schedulerCustomizer)
+            .completion(probeTaskCompletion)
+            .dataSource(dataSource)
+            .environment(environment)
+            .build()
+            .start(probeExecution, new AbstractSchedulerListener() {}, Clock.systemUTC());
+  }
+
+  // Genres are shared across test classes, so each test inserts a genre no other test uses.
+  private static int uniqueGenreId() {
+    return ThreadLocalRandom.current().nextInt(1_000_000, Integer.MAX_VALUE);
+  }
+
+  private UUID genreCreator(int genreId) {
+    return jdbcTemplate.queryForObject(
+        "SELECT created_by FROM genre WHERE source_id = ?", UUID.class, String.valueOf(genreId));
+  }
 
   // The movie has no poster or backdrop, so the scan must record them as unavailable.
   private void rejectItemErrorsWhile(BoundedTask.Action action) throws Exception {
@@ -196,6 +270,10 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   }
 
   private void stubTmdbMovieMetadata(String tmdbId, String title) {
+    stubTmdbMovieMetadata(tmdbId, title, 28);
+  }
+
+  private void stubTmdbMovieMetadata(String tmdbId, String title, int genreId) {
     wireMock.stubFor(
         get(urlPathEqualTo("/movie/" + tmdbId))
             .withQueryParam("append_to_response", equalTo("credits,release_dates"))
@@ -213,12 +291,12 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
                           "overview": "A thief who steals corporate secrets through dream-sharing technology.",
                           "runtime": 148,
                           "imdb_id": "tt1375666",
-                          "genres": [{"id": 28, "name": "Action"}],
+                          "genres": [{"id": %s, "name": "Action"}],
                           "production_companies": [],
                           "credits": {"id": %s, "cast": [], "crew": []},
                           "release_dates": {"results": []}
                         }
                         """
-                            .formatted(tmdbId, title, title, tmdbId))));
+                            .formatted(tmdbId, title, title, genreId, tmdbId))));
   }
 }
