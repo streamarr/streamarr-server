@@ -25,11 +25,38 @@ enum ContainerFormat {
   CONTAINER_FORMAT_FMP4 = 2;
 }
 
+enum EncoderKind {
+  ENCODER_KIND_UNSPECIFIED = 0;
+  ENCODER_KIND_HARDWARE = 1;
+  ENCODER_KIND_SOFTWARE = 2;
+}
+
+// The encoder a worker actually runs for a codec family. Every job attempt of a variant must use
+// the encoder backend that the variant's first job attempt used, because the backend decides the
+// variant's initialization segment.
+message VideoEncoderBackend {
+  VideoCodecFamily codec_family = 1;
+  // The FFmpeg encoder name, such as libx264 or h264_nvenc.
+  string encoder = 2;
+  EncoderKind kind = 3;
+}
+
+message VerifiedVideoEncoder {
+  VideoEncoderBackend backend = 1;
+  // True when ADR 0037 lists the encoder as keyframe-verified. The worker takes the flag from that
+  // list and never derives it from its own output.
+  bool keyframe_verified = 2;
+}
+
 message WorkerCapabilities {
   repeated Uuid source_namespace_ids = 1;
   // Supported nonzero versions of Streamarr's retained probe fields and their interpretation.
   // These are independent of the installed FFmpeg and ffprobe versions.
   repeated uint32 probe_versions = 2;
+  // One entry for each codec family the worker can encode: the encoder backend that the worker
+  // runs for every job of that codec family. A hardware encoder appears only after its test encode
+  // passed at startup.
+  repeated VerifiedVideoEncoder video_encoders = 3;
 }
 
 message WorkerRegistration {
@@ -186,6 +213,8 @@ message VariantJob {
 
 message JobAttemptStarted {
   Uuid job_attempt_id = 1;
+  // The encoder backend that the job attempt runs. Absent when the job attempt copies the video.
+  optional VideoEncoderBackend encoder_backend = 2;
 }
 
 enum JobAttemptFailure {
