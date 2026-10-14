@@ -40,6 +40,7 @@ import com.streamarr.server.services.architecturefixture.DirectAccountPasswordMa
 import com.streamarr.server.services.architecturefixture.DirectGenreServiceFixture;
 import com.streamarr.server.services.architecturefixture.IncomingHttpServiceFixture;
 import com.streamarr.server.services.architecturefixture.IncomingWebRequestServiceFixture;
+import com.streamarr.server.services.architecturefixture.ReactiveServiceFixture;
 import com.streamarr.server.services.architecturefixture.SubdomainServiceCycleFixture;
 import com.streamarr.server.services.auth.AccountPasswordVerifier;
 import com.streamarr.server.services.auth.LoginService;
@@ -108,6 +109,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
+import reactor.core.publisher.Flux;
 
 @Tag("UnitTest")
 @DisplayName("Architecture Rules")
@@ -237,6 +239,18 @@ class ArchitectureTest {
               "org.springframework.http..",
               "org.springframework.web.context.request..")
           .as("Services receive protocol data explicitly and must not depend on HTTP or DGS types");
+
+  @ArchTest
+  static final ArchRule reactiveTypesMustStayInGraphqlLayer =
+      noClasses()
+          .that()
+          .resideOutsideOfPackage("..graphql..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAnyPackage("reactor..", "org.reactivestreams..")
+          .as(
+              "Reactive types stay in the GraphQL layer; services, domain and repositories use"
+                  + " virtual threads");
 
   @ArchTest
   static final ArchRule authServicesMustNotDependOnJooq =
@@ -620,6 +634,19 @@ class ArchitectureTest {
     assertThatThrownBy(() -> servicesMustNotDependOnDrivingAdapterTypes.check(services))
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining("HTTP");
+  }
+
+  @Test
+  @DisplayName("Should reject reactive types when a service returns a publisher")
+  void shouldRejectReactiveTypesWhenServiceReturnsPublisher() {
+    var services = new ClassFileImporter().importClasses(ReactiveServiceFixture.class);
+
+    assertThat(
+            reactiveTypesMustStayInGraphqlLayer.evaluate(services).getFailureReport().getDetails())
+        .anySatisfy(
+            detail ->
+                assertThat(detail)
+                    .contains(ReactiveServiceFixture.class.getName(), Flux.class.getName()));
   }
 
   @ParameterizedTest
