@@ -7,7 +7,6 @@ import com.streamarr.server.config.security.AuthCookies;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.GraphQlTransportWsTestClient;
 import com.streamarr.server.support.GraphQlTransportWsTestClient.Handshake;
-import java.net.URI;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -114,7 +113,7 @@ class GraphQlWebSocketTransportIT extends AbstractIntegrationTest {
   }
 
   private Handshake.HandshakeBuilder handshake() {
-    return Handshake.builder().endpoint(URI.create("ws://localhost:%d/graphql".formatted(port)));
+    return GraphQlTransportWsTestClient.handshakeTo(port);
   }
 
   private String accessCookie() {

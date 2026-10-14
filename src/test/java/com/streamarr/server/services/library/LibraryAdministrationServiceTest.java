@@ -94,8 +94,8 @@ class LibraryAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should authorize viewing library administration through the typed intent")
-  void shouldAuthorizeLibraryAdministrationViewThroughTypedIntent() {
+  @DisplayName("Should authorize through the typed intent when library administration is viewed")
+  void shouldAuthorizeThroughTypedIntentWhenLibraryAdministrationIsViewed() {
     libraryAdministrationService.requireViewLibraryAdministration(identity);
 
     assertThat(authorizationService.recordedIntents())
@@ -104,7 +104,7 @@ class LibraryAdministrationServiceTest {
 
   @Test
   @DisplayName("Should refuse viewing library administration when authorization denies")
-  void shouldRefuseLibraryAdministrationViewWhenAuthorizationDenies() {
+  void shouldRefuseViewingLibraryAdministrationWhenAuthorizationDenies() {
     authorizationService.denyAll();
 
     assertThatThrownBy(

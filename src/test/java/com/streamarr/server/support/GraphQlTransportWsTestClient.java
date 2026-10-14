@@ -20,8 +20,11 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
+import lombok.Value;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -30,9 +33,10 @@ import tools.jackson.databind.ObjectMapper;
  * server sends: {@code next}, {@code error}, {@code complete} and the close frame. It answers
  * server pings itself and queues every other message by operation id, in arrival order.
  */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class GraphQlTransportWsTestClient implements AutoCloseable {
 
-  public static final String SUBPROTOCOL = "graphql-transport-ws";
+  private static final String SUBPROTOCOL = "graphql-transport-ws";
 
   private static final ObjectMapper JSON = new ObjectMapper();
   private static final Duration MESSAGE_BOUND = Duration.ofSeconds(10);
@@ -41,42 +45,42 @@ public final class GraphQlTransportWsTestClient implements AutoCloseable {
   private final WebSocket webSocket;
   private final Listener listener;
 
-  private GraphQlTransportWsTestClient(
-      HttpClient httpClient, WebSocket webSocket, Listener listener) {
-    this.httpClient = httpClient;
-    this.webSocket = webSocket;
-    this.listener = listener;
+  /** The handshake request: the endpoint plus optional credentials and origin. */
+  @Value
+  @Builder
+  public static class Handshake {
+    @NonNull URI endpoint;
+    @Builder.Default Optional<String> bearerToken = Optional.empty();
+    @Builder.Default Optional<String> cookie = Optional.empty();
+    @Builder.Default Optional<String> origin = Optional.empty();
   }
 
-  /** The handshake request: the endpoint plus optional credentials and origin. */
-  @Builder
-  public record Handshake(
-      @NonNull URI endpoint,
-      Optional<String> bearerToken,
-      Optional<String> cookie,
-      Optional<String> origin) {
+  /** A handshake to the server's {@code /graphql} WebSocket endpoint on the given port. */
+  public static Handshake.HandshakeBuilder handshakeTo(int port) {
+    return Handshake.builder().endpoint(URI.create("ws://localhost:%d/graphql".formatted(port)));
+  }
 
-    public Handshake {
-      bearerToken = bearerToken == null ? Optional.empty() : bearerToken;
-      cookie = cookie == null ? Optional.empty() : cookie;
-      origin = origin == null ? Optional.empty() : origin;
-    }
+  /** Opens a socket the way a native client does and waits for {@code connection_ack}. */
+  public static GraphQlTransportWsTestClient connectWithBearer(int port, String bearer) {
+    return connect(handshakeTo(port).bearerToken(Optional.of(bearer)).build()).initialize();
   }
 
   /** The close frame the server sent, or the local abort when the server never closed. */
   public record Closure(int statusCode, String reason) {}
 
-  /** Opens the socket and completes the handshake; a refused upgrade fails the future. */
-  public static CompletableFuture<GraphQlTransportWsTestClient> open(Handshake handshake) {
+  // A refused upgrade fails the future.
+  private static CompletableFuture<GraphQlTransportWsTestClient> open(Handshake handshake) {
     var httpClient = HttpClient.newHttpClient();
     var listener = new Listener();
     var builder = httpClient.newWebSocketBuilder().subprotocols(SUBPROTOCOL);
-    handshake.bearerToken().ifPresent(token -> builder.header("Authorization", "Bearer " + token));
-    handshake.cookie().ifPresent(cookie -> builder.header("Cookie", cookie));
-    handshake.origin().ifPresent(origin -> builder.header("Origin", origin));
+    handshake
+        .getBearerToken()
+        .ifPresent(token -> builder.header("Authorization", "Bearer " + token));
+    handshake.getCookie().ifPresent(cookie -> builder.header("Cookie", cookie));
+    handshake.getOrigin().ifPresent(origin -> builder.header("Origin", origin));
 
     return builder
-        .buildAsync(handshake.endpoint(), listener)
+        .buildAsync(handshake.getEndpoint(), listener)
         .thenApply(webSocket -> new GraphQlTransportWsTestClient(httpClient, webSocket, listener))
         .whenComplete(
             (client, failure) -> {
@@ -150,11 +154,6 @@ public final class GraphQlTransportWsTestClient implements AutoCloseable {
   /** Every message received so far, including those already taken. */
   public List<JsonNode> receivedMessages() {
     return List.copyOf(listener.received);
-  }
-
-  /** Completes when the server closes the socket. */
-  public CompletableFuture<Closure> closure() {
-    return listener.closure;
   }
 
   public Closure awaitClosure() {

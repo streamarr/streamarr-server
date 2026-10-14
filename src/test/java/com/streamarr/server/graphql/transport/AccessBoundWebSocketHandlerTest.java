@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -37,8 +38,8 @@ class AccessBoundWebSocketHandlerTest {
               clock.instant().plus(ACCESS_LIFETIME)));
 
   @Test
-  @DisplayName("Should pass messages through while the access token is still valid")
-  void shouldPassMessagesThroughWhileAccessTokenIsStillValid() throws Exception {
+  @DisplayName("Should pass messages through when the access token is still valid")
+  void shouldPassMessagesThroughWhenAccessTokenIsStillValid() throws Exception {
     handler.afterConnectionEstablished(session);
 
     handler.handleMessage(session, new TextMessage("subscribe"));
@@ -48,8 +49,8 @@ class AccessBoundWebSocketHandlerTest {
   }
 
   @Test
-  @DisplayName("Should close with the access-expired code instead of sending once the clock passes")
-  void shouldCloseWithAccessExpiredCodeInsteadOfSendingOnceClockPassesExpiry() throws Exception {
+  @DisplayName("Should close with the access-expired code instead of sending when the clock passes")
+  void shouldCloseWithAccessExpiredCodeInsteadOfSendingWhenClockPassesExpiry() throws Exception {
     handler.afterConnectionEstablished(session);
     clock.advance(ACCESS_LIFETIME);
 
@@ -67,7 +68,7 @@ class AccessBoundWebSocketHandlerTest {
 
     handler.handleMessage(session, new TextMessage("subscribe"));
 
-    assertThat(graphQlHandler.receivedMessageCount()).isZero();
+    assertThat(graphQlHandler.receivedMessages()).isEmpty();
     assertThat(session.closeStatus()).contains(AccessBoundWebSocketHandler.ACCESS_EXPIRED);
   }
 
@@ -124,7 +125,7 @@ class AccessBoundWebSocketHandlerTest {
   void shouldIgnoreMessageWhenItsSessionWasNeverEstablished() throws Exception {
     handler.handleMessage(session, new TextMessage("subscribe"));
 
-    assertThat(graphQlHandler.receivedMessageCount()).isZero();
+    assertThat(graphQlHandler.receivedMessages()).isEmpty();
     assertThat(session.sentMessages()).isEmpty();
   }
 
@@ -153,7 +154,7 @@ class AccessBoundWebSocketHandlerTest {
   void shouldNotReportClosureWhenSessionWasNeverEstablished() throws Exception {
     handler.afterConnectionClosed(session, CloseStatus.NORMAL);
 
-    assertThat(graphQlHandler.closedSessionCount()).isZero();
+    assertThat(graphQlHandler.closedSessions()).isEmpty();
   }
 
   @Test
@@ -188,13 +189,13 @@ class AccessBoundWebSocketHandlerTest {
         .toList();
   }
 
-  /** Stands in for the GraphQL handler: it echoes requests and can deliver unprompted frames. */
+  // Stands in for the GraphQL handler: it echoes requests and can deliver unprompted frames.
   private static final class EchoingWebSocketHandler extends TextWebSocketHandler {
 
     private final AtomicReference<WebSocketSession> established = new AtomicReference<>();
     private final AtomicReference<WebSocketSession> transportErrorSession = new AtomicReference<>();
-    private int receivedMessageCount;
-    private int closedSessionCount;
+    private final List<TextMessage> receivedMessages = new CopyOnWriteArrayList<>();
+    private final List<WebSocketSession> closedSessions = new CopyOnWriteArrayList<>();
 
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) {
@@ -203,15 +204,15 @@ class AccessBoundWebSocketHandlerTest {
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-      closedSessionCount++;
+      closedSessions.add(session);
     }
 
     private WebSocketSession transportErrorSession() {
       return transportErrorSession.get();
     }
 
-    private int closedSessionCount() {
-      return closedSessionCount;
+    private List<WebSocketSession> closedSessions() {
+      return List.copyOf(closedSessions);
     }
 
     @Override
@@ -222,7 +223,7 @@ class AccessBoundWebSocketHandlerTest {
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message)
         throws IOException {
-      receivedMessageCount++;
+      receivedMessages.add(message);
       session.sendMessage(new TextMessage("echo:" + message.getPayload()));
     }
 
@@ -234,8 +235,8 @@ class AccessBoundWebSocketHandlerTest {
       return established.get();
     }
 
-    private int receivedMessageCount() {
-      return receivedMessageCount;
+    private List<TextMessage> receivedMessages() {
+      return List.copyOf(receivedMessages);
     }
   }
 }

@@ -1,18 +1,23 @@
 package com.streamarr.server.graphql.transport;
 
+import static com.streamarr.server.support.GraphQlResults.firstErrorCode;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.Library;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.support.ActiveSubscriptions;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.GraphQlHttpTestClient;
 import com.streamarr.server.support.GraphQlTransportWsTestClient;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.net.URI;
 import java.net.http.HttpRequest;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -42,18 +47,20 @@ class GraphQlOperationTransportIT extends AbstractIntegrationTest {
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MeterRegistry meterRegistry;
 
+  private final List<UUID> libraryIds = new ArrayList<>();
   private AuthTestSupport.TestIdentity admin;
   private GraphQlHttpTestClient http;
 
   @BeforeEach
   void createAdmin() {
     admin = authTestSupport.createAdminIdentity();
-    http = new GraphQlHttpTestClient(endpoint("http"));
+    http = new GraphQlHttpTestClient(URI.create("http://localhost:%d/graphql".formatted(port)));
   }
 
   @AfterEach
-  void deleteAdmin() {
+  void releaseResources() {
     http.close();
+    libraryIds.forEach(libraryRepository::deleteById);
     authTestSupport.deleteIdentity(admin);
   }
 
@@ -63,71 +70,41 @@ class GraphQlOperationTransportIT extends AbstractIntegrationTest {
   void shouldRefuseSubscriptionWithWebsocketRequiredWhenSentOverHttpJson() {
     var response = http.execute(authTestSupport.profileBearer(admin), STATUS_SUBSCRIPTION);
 
-    assertThat(response.path("errors").path(0).path("extensions").path("code").asString())
-        .isEqualTo("WEBSOCKET_REQUIRED");
+    assertThat(firstErrorCode(response)).isEqualTo("WEBSOCKET_REQUIRED");
     assertThat(response.path("data").isMissingNode() || response.path("data").isNull()).isTrue();
-    assertThat(activeStatusSubscriptions()).isZero();
+    assertThat(new ActiveSubscriptions(meterRegistry).count("libraryStatusChanged")).isZero();
   }
 
   @Test
   @DisplayName("Should refuse an event-stream request with WEBSOCKET_REQUIRED before executing it")
   void shouldRefuseEventStreamRequestWithWebsocketRequiredBeforeExecutingIt() {
-    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
-    try {
-      var response =
-          http.send(
-              HttpRequest.newBuilder(endpoint("http"))
-                  .header("Content-Type", "application/json")
-                  .header("Accept", "text/event-stream")
-                  .header("Authorization", "Bearer " + authTestSupport.profileBearer(admin))
-                  .POST(
-                      HttpRequest.BodyPublishers.ofString(
-                          JSON.writeValueAsString(
-                              Map.of(
-                                  "query",
-                                  "mutation { removeLibrary(id: \"%s\") }"
-                                      .formatted(library.getId())))))
-                  .build());
+    var library = saveLibrary();
 
-      assertThat(response.statusCode()).isEqualTo(406);
-      assertThat(
-              JSON.readTree(response.body())
-                  .path("errors")
-                  .path(0)
-                  .path("extensions")
-                  .path("code")
-                  .asString())
-          .isEqualTo("WEBSOCKET_REQUIRED");
-      assertThat(libraryRepository.existsById(library.getId())).isTrue();
-    } finally {
-      libraryRepository.deleteById(library.getId());
-    }
+    var response =
+        http.send(
+            HttpRequest.newBuilder(URI.create("http://localhost:%d/graphql".formatted(port)))
+                .header("Content-Type", "application/json")
+                .header("Accept", "text/event-stream")
+                .header("Authorization", "Bearer " + authTestSupport.profileBearer(admin))
+                .POST(
+                    HttpRequest.BodyPublishers.ofString(
+                        JSON.writeValueAsString(Map.of("query", removeMutation(library)))))
+                .build());
+
+    assertThat(response.statusCode()).isEqualTo(406);
+    assertThat(firstErrorCode(JSON.readTree(response.body()))).isEqualTo("WEBSOCKET_REQUIRED");
+    assertThat(libraryRepository.existsById(library.getId())).isTrue();
   }
 
   @Test
   @DisplayName("Should refuse a query with HTTP_REQUIRED when it is sent over the WebSocket")
   void shouldRefuseQueryWithHttpRequiredWhenSentOverWebSocket() {
-    try (var socket =
-        GraphQlTransportWsTestClient.connect(
-            GraphQlTransportWsTestClient.Handshake.builder()
-                .endpoint(endpoint("ws"))
-                .bearerToken(Optional.of(authTestSupport.profileBearer(admin)))
-                .build())) {
-      socket.initialize();
-
+    try (var socket = connect()) {
       socket.subscribe("query", "query { libraries { id } }");
 
       var refusal = socket.nextMessageFor("query");
       assertThat(refusal.path("type").asString()).isEqualTo("next");
-      assertThat(
-              refusal
-                  .path("payload")
-                  .path("errors")
-                  .path(0)
-                  .path("extensions")
-                  .path("code")
-                  .asString())
-          .isEqualTo("HTTP_REQUIRED");
+      assertThat(firstErrorCode(refusal.path("payload"))).isEqualTo("HTTP_REQUIRED");
       assertThat(refusal.path("payload").path("data").path("libraries").isMissingNode()).isTrue();
       assertThat(socket.nextMessageFor("query").path("type").asString()).isEqualTo("complete");
     }
@@ -136,43 +113,29 @@ class GraphQlOperationTransportIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should refuse a mutation with HTTP_REQUIRED before executing it over the WebSocket")
   void shouldRefuseMutationWithHttpRequiredBeforeExecutingItOverWebSocket() {
-    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
-    try (var socket =
-        GraphQlTransportWsTestClient.connect(
-            GraphQlTransportWsTestClient.Handshake.builder()
-                .endpoint(endpoint("ws"))
-                .bearerToken(Optional.of(authTestSupport.profileBearer(admin)))
-                .build())) {
-      socket.initialize();
+    var library = saveLibrary();
 
-      socket.subscribe(
-          "mutation", "mutation { removeLibrary(id: \"%s\") }".formatted(library.getId()));
+    try (var socket = connect()) {
+      socket.subscribe("mutation", removeMutation(library));
 
-      assertThat(
-              socket
-                  .nextMessageFor("mutation")
-                  .path("payload")
-                  .path("errors")
-                  .path(0)
-                  .path("extensions")
-                  .path("code")
-                  .asString())
+      assertThat(firstErrorCode(socket.nextMessageFor("mutation").path("payload")))
           .isEqualTo("HTTP_REQUIRED");
       assertThat(libraryRepository.existsById(library.getId())).isTrue();
-    } finally {
-      libraryRepository.deleteById(library.getId());
     }
   }
 
-  private URI endpoint(String scheme) {
-    return URI.create("%s://localhost:%d/graphql".formatted(scheme, port));
+  private GraphQlTransportWsTestClient connect() {
+    return GraphQlTransportWsTestClient.connectWithBearer(
+        port, authTestSupport.profileBearer(admin));
   }
 
-  private double activeStatusSubscriptions() {
-    return meterRegistry
-        .get("streamarr.graphql.subscriptions.active")
-        .tag("field", "libraryStatusChanged")
-        .gauge()
-        .value();
+  private Library saveLibrary() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    libraryIds.add(library.getId());
+    return library;
+  }
+
+  private static String removeMutation(Library library) {
+    return "mutation { removeLibrary(id: \"%s\") }".formatted(library.getId());
   }
 }

@@ -3,6 +3,7 @@ package com.streamarr.server.graphql.subscriptions;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.support.ActiveSubscriptions;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.List;
@@ -59,8 +60,8 @@ class SubscriptionBroadcasterTest {
   }
 
   @Test
-  @DisplayName("Should count a registration while it is subscribed")
-  void shouldCountRegistrationWhileItIsSubscribed() {
+  @DisplayName("Should count a registration when an operation subscribes")
+  void shouldCountRegistrationWhenOperationSubscribes() {
     assertThat(activeRegistrations()).isZero();
 
     broadcaster.register().subscribe(new RecordingSubscriber(Long.MAX_VALUE));
@@ -167,14 +168,10 @@ class SubscriptionBroadcasterTest {
   }
 
   private static double activeRegistrations(SimpleMeterRegistry registry) {
-    return registry
-        .get("streamarr.graphql.subscriptions.active")
-        .tag("field", "libraryStatusChanged")
-        .gauge()
-        .value();
+    return new ActiveSubscriptions(registry).count("libraryStatusChanged");
   }
 
-  /** Requests a fixed demand up front and keeps every signal for the test to take. */
+  // Requests a fixed demand up front and keeps every signal for the test to take.
   private static final class RecordingSubscriber extends BaseSubscriber<String> {
 
     private final long initialDemand;

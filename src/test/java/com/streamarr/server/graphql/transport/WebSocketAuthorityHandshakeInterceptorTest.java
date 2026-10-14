@@ -42,8 +42,8 @@ class WebSocketAuthorityHandshakeInterceptorTest {
   }
 
   @Test
-  @DisplayName("Should keep the identity and expiry but not the raw token while the handshake runs")
-  void shouldKeepIdentityAndExpiryButNotRawTokenWhileHandshakeRuns() {
+  @DisplayName("Should keep the identity and expiry without the raw token when the handshake runs")
+  void shouldKeepIdentityAndExpiryWithoutRawTokenWhenHandshakeRuns() {
     var authentication = accessTokenAuthentication();
     SecurityContextHolder.setContext(new SecurityContextImpl(authentication));
     var attributes = new HashMap<String, Object>();
@@ -71,8 +71,8 @@ class WebSocketAuthorityHandshakeInterceptorTest {
   }
 
   @Test
-  @DisplayName("Should restore the request's security context after the handshake")
-  void shouldRestoreRequestSecurityContextAfterHandshake() {
+  @DisplayName("Should restore the request's security context when the handshake ends")
+  void shouldRestoreRequestSecurityContextWhenHandshakeEnds() {
     var original = new SecurityContextImpl(accessTokenAuthentication());
     SecurityContextHolder.setContext(original);
     interceptor.beforeHandshake(request, response, new TextWebSocketHandler(), new HashMap<>());

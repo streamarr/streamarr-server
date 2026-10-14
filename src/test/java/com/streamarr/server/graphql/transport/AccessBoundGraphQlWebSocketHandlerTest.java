@@ -3,14 +3,19 @@ package com.streamarr.server.graphql.transport;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.config.security.StreamarrAuthenticationToken;
 import com.streamarr.server.fakes.FakeTaskScheduler;
 import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.graphql.transport.AccessBoundGraphQlWebSocketHandler.AccessBoundGraphQlWebSocketHandlerBuilder;
+import io.micrometer.context.ContextSnapshot;
 import java.time.Duration;
-import java.util.ArrayList;
+import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -18,9 +23,15 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.graphql.server.WebGraphQlHandler;
 import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
+import org.springframework.http.server.ServletServerHttpRequest;
+import org.springframework.http.server.ServletServerHttpResponse;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.context.SecurityContextImpl;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.socket.WebSocketHandler;
-import org.springframework.web.socket.handler.WebSocketHandlerDecorator;
+import org.springframework.web.socket.handler.TextWebSocketHandler;
 import org.springframework.web.socket.server.support.DefaultHandshakeHandler;
 import reactor.core.publisher.Mono;
 
@@ -28,17 +39,37 @@ import reactor.core.publisher.Mono;
 @DisplayName("Access-Bound GraphQL WebSocket Handler Tests")
 class AccessBoundGraphQlWebSocketHandlerTest {
 
+  private static final String RAW_ACCESS_TOKEN = "raw-access-token-value";
+
+  @AfterEach
+  void clearSecurityContext() {
+    SecurityContextHolder.clearContext();
+  }
+
   @Test
-  @DisplayName("Should capture the opening authority before any other handshake interceptor runs")
-  void shouldCaptureOpeningAuthorityBeforeAnyOtherHandshakeInterceptorRuns() {
+  @DisplayName("Should snapshot a redacted access token when the handshake interceptors run")
+  void shouldSnapshotRedactedAccessTokenWhenHandshakeInterceptorsRun() throws Exception {
     var requestHandler =
         completeBuilder().build().initWebSocketHttpRequestHandler(new DefaultHandshakeHandler());
+    SecurityContextHolder.setContext(new SecurityContextImpl(accessTokenAuthentication()));
+    var attributes = new HashMap<String, Object>();
 
-    assertThat(requestHandler.getHandshakeInterceptors())
-        .first()
-        .isInstanceOf(WebSocketAuthorityHandshakeInterceptor.class);
-    assertThat(decoratorsOf(requestHandler.getWebSocketHandler()))
-        .contains(AccessBoundWebSocketHandler.class);
+    for (var interceptor : requestHandler.getHandshakeInterceptors()) {
+      interceptor.beforeHandshake(request(), response(), new TextWebSocketHandler(), attributes);
+    }
+
+    SecurityContextHolder.clearContext();
+    var snapshot =
+        attributes.values().stream()
+            .filter(ContextSnapshot.class::isInstance)
+            .map(ContextSnapshot.class::cast)
+            .findFirst()
+            .orElseThrow();
+    try (var _ = snapshot.setThreadLocals()) {
+      assertThat(SecurityContextHolder.getContext().getAuthentication().getCredentials())
+          .isInstanceOfSatisfying(
+              Jwt.class, jwt -> assertThat(jwt.getTokenValue()).isNotEqualTo(RAW_ACCESS_TOKEN));
+    }
   }
 
   @ParameterizedTest(name = "{0}")
@@ -63,17 +94,6 @@ class AccessBoundGraphQlWebSocketHandlerTest {
         .isInstanceOfAny(NullPointerException.class, IllegalArgumentException.class);
   }
 
-  private static List<Class<?>> decoratorsOf(WebSocketHandler handler) {
-    var decorators = new ArrayList<Class<?>>();
-    var current = handler;
-    while (current instanceof WebSocketHandlerDecorator decorator) {
-      decorators.add(decorator.getClass());
-      current = decorator.getDelegate();
-    }
-
-    return decorators;
-  }
-
   private static Map<String, Consumer<AccessBoundGraphQlWebSocketHandlerBuilder>>
       requiredArguments() {
     return Map.of(
@@ -89,6 +109,25 @@ class AccessBoundGraphQlWebSocketHandlerTest {
         builder -> builder.clock(new MutableClock()),
         "taskScheduler",
         builder -> builder.taskScheduler(new FakeTaskScheduler()));
+  }
+
+  private static StreamarrAuthenticationToken accessTokenAuthentication() {
+    var jwt =
+        Jwt.withTokenValue(RAW_ACCESS_TOKEN)
+            .header("alg", "ES256")
+            .subject("account")
+            .expiresAt(Instant.now().plusSeconds(600))
+            .build();
+    return new StreamarrAuthenticationToken(
+        AuthenticatedIdentityFixture.profileScopedBuilder().build(), jwt, List.of());
+  }
+
+  private static ServletServerHttpRequest request() {
+    return new ServletServerHttpRequest(new MockHttpServletRequest("GET", "/graphql"));
+  }
+
+  private static ServletServerHttpResponse response() {
+    return new ServletServerHttpResponse(new MockHttpServletResponse());
   }
 
   private static AccessBoundGraphQlWebSocketHandlerBuilder completeBuilder() {

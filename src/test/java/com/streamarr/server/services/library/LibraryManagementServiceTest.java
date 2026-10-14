@@ -2140,7 +2140,7 @@ class LibraryManagementServiceTest {
 
   private record ObservedStatus(UUID libraryId, LibraryStatus status) {}
 
-  /** Reads the saved status at the moment each status change is published. */
+  // Reads the saved status at the moment each status change is published.
   private static final class StatusObservingEventPublisher extends CapturingEventPublisher {
 
     private final LibraryRepository libraries;

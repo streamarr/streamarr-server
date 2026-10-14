@@ -1,15 +1,13 @@
 package com.streamarr.server.graphql.transport;
 
+import static com.streamarr.server.support.GraphQlResults.firstErrorCode;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.support.ActiveSubscriptions;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.GraphQlTransportWsTestClient;
 import io.micrometer.core.instrument.MeterRegistry;
-import java.net.URI;
-import java.time.Duration;
-import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -29,6 +27,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 class WebSocketOperationLimitIT extends AbstractIntegrationTest {
 
   private static final int MAX_OPERATIONS_PER_CONNECTION = 32;
+  private static final String STATUS_FIELD = "libraryStatusChanged";
   private static final String STATUS_SUBSCRIPTION =
       "subscription { libraryStatusChanged { id status } }";
 
@@ -38,14 +37,17 @@ class WebSocketOperationLimitIT extends AbstractIntegrationTest {
   @Autowired private MeterRegistry meterRegistry;
 
   private AuthTestSupport.TestIdentity admin;
+  private ActiveSubscriptions activeSubscriptions;
 
   @BeforeEach
   void createAdmin() {
     admin = authTestSupport.createAdminIdentity();
+    activeSubscriptions = new ActiveSubscriptions(meterRegistry);
   }
 
   @AfterEach
   void deleteAdmin() {
+    activeSubscriptions.awaitNoneActive();
     authTestSupport.deleteIdentity(admin);
   }
 
@@ -59,21 +61,13 @@ class WebSocketOperationLimitIT extends AbstractIntegrationTest {
 
       var refusal = socket.nextMessageFor("one-too-many");
       assertThat(refusal.path("type").asString()).isEqualTo("next");
-      assertThat(
-              refusal
-                  .path("payload")
-                  .path("errors")
-                  .path(0)
-                  .path("extensions")
-                  .path("code")
-                  .asString())
-          .isEqualTo("TOO_MANY_OPERATIONS");
+      assertThat(firstErrorCode(refusal.path("payload"))).isEqualTo("TOO_MANY_OPERATIONS");
       assertThat(socket.nextMessageFor("one-too-many").path("type").asString())
           .isEqualTo("complete");
-      assertThat(activeStatusSubscriptions()).isEqualTo(MAX_OPERATIONS_PER_CONNECTION);
+      assertThat(activeSubscriptions.count(STATUS_FIELD)).isEqualTo(MAX_OPERATIONS_PER_CONNECTION);
     }
 
-    awaitActiveStatusSubscriptions(0);
+    activeSubscriptions.awaitCount(STATUS_FIELD, 0);
   }
 
   @Test
@@ -83,10 +77,10 @@ class WebSocketOperationLimitIT extends AbstractIntegrationTest {
       subscribeUpToLimit(socket);
 
       socket.complete("status-0");
-      awaitActiveStatusSubscriptions(MAX_OPERATIONS_PER_CONNECTION - 1);
+      activeSubscriptions.awaitCount(STATUS_FIELD, MAX_OPERATIONS_PER_CONNECTION - 1);
       socket.subscribe("replacement", STATUS_SUBSCRIPTION);
 
-      awaitActiveStatusSubscriptions(MAX_OPERATIONS_PER_CONNECTION);
+      activeSubscriptions.awaitCount(STATUS_FIELD, MAX_OPERATIONS_PER_CONNECTION);
     }
   }
 
@@ -96,22 +90,22 @@ class WebSocketOperationLimitIT extends AbstractIntegrationTest {
     try (var socket = connect()) {
       socket.subscribe("first", STATUS_SUBSCRIPTION);
       socket.subscribe("second", STATUS_SUBSCRIPTION);
-      awaitActiveStatusSubscriptions(2);
+      activeSubscriptions.awaitCount(STATUS_FIELD, 2);
     }
 
-    awaitActiveStatusSubscriptions(0);
+    activeSubscriptions.awaitCount(STATUS_FIELD, 0);
   }
 
   @Test
-  @DisplayName("Should give a new connection its own operation limit")
-  void shouldGiveNewConnectionItsOwnOperationLimit() {
+  @DisplayName("Should accept an operation when another connection is full")
+  void shouldAcceptOperationWhenAnotherConnectionIsFull() {
     try (var full = connect();
         var fresh = connect()) {
       subscribeUpToLimit(full);
 
       fresh.subscribe("status", STATUS_SUBSCRIPTION);
 
-      awaitActiveStatusSubscriptions(MAX_OPERATIONS_PER_CONNECTION + 1);
+      activeSubscriptions.awaitCount(STATUS_FIELD, MAX_OPERATIONS_PER_CONNECTION + 1);
     }
   }
 
@@ -120,33 +114,11 @@ class WebSocketOperationLimitIT extends AbstractIntegrationTest {
       socket.subscribe("status-" + operation, STATUS_SUBSCRIPTION);
     }
 
-    awaitActiveStatusSubscriptions(MAX_OPERATIONS_PER_CONNECTION);
+    activeSubscriptions.awaitCount(STATUS_FIELD, MAX_OPERATIONS_PER_CONNECTION);
   }
 
   private GraphQlTransportWsTestClient connect() {
-    return GraphQlTransportWsTestClient.connect(
-            GraphQlTransportWsTestClient.Handshake.builder()
-                .endpoint(URI.create("ws://localhost:%d/graphql".formatted(port)))
-                .bearerToken(Optional.of(authTestSupport.profileBearer(admin)))
-                .build())
-        .initialize();
-  }
-
-  // Registration and release have no protocol message (ADR 0042), so the test waits on the gauge.
-  private void awaitActiveStatusSubscriptions(int expected) {
-    await().atMost(Duration.ofSeconds(10)).until(() -> activeStatusSubscriptions() == expected);
-  }
-
-  private double activeStatusSubscriptions() {
-    var gauge =
-        meterRegistry
-            .find("streamarr.graphql.subscriptions.active")
-            .tag("field", "libraryStatusChanged")
-            .gauge();
-    if (gauge == null) {
-      return 0;
-    }
-
-    return gauge.value();
+    return GraphQlTransportWsTestClient.connectWithBearer(
+        port, authTestSupport.profileBearer(admin));
   }
 }

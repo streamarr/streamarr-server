@@ -1,7 +1,7 @@
 package com.streamarr.server.graphql.subscriptions;
 
+import static com.streamarr.server.support.GraphQlResults.firstErrorCode;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.Library;
@@ -10,6 +10,7 @@ import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.support.ActiveSubscriptions;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.GraphQlHttpTestClient;
 import com.streamarr.server.support.GraphQlTransportWsTestClient;
@@ -18,11 +19,9 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,6 +39,7 @@ import tools.jackson.databind.JsonNode;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
 
+  private static final String STATUS_FIELD = "libraryStatusChanged";
   private static final String STATUS_SUBSCRIPTION =
       "subscription { libraryStatusChanged { id name status scanStartedOn scanCompletedOn } }";
   private static final String ADDED_SUBSCRIPTION =
@@ -59,10 +59,12 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
   private final List<AuthTestSupport.TestIdentity> identities = new ArrayList<>();
   private final List<UUID> libraryIds = new ArrayList<>();
   private final List<GraphQlTransportWsTestClient> sockets = new ArrayList<>();
+  private ActiveSubscriptions activeSubscriptions;
   private GraphQlHttpTestClient http;
 
   @BeforeEach
   void openHttpClient() {
+    activeSubscriptions = new ActiveSubscriptions(meterRegistry);
     http = new GraphQlHttpTestClient(URI.create("http://localhost:%d/graphql".formatted(port)));
   }
 
@@ -70,6 +72,7 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
   void releaseResources() {
     sockets.forEach(GraphQlTransportWsTestClient::close);
     http.close();
+    activeSubscriptions.awaitNoneActive();
     libraryIds.forEach(libraryRepository::deleteById);
     identities.forEach(authTestSupport::deleteIdentity);
   }
@@ -92,9 +95,7 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
               assertThat(node.path("status").asString()).isEqualTo("HEALTHY");
               assertThat(node.path("scanCompletedOn").isNull()).isTrue();
             });
-    var socket = connect(bearer);
-    socket.subscribe("status", STATUS_SUBSCRIPTION);
-    awaitActiveSubscriptions("libraryStatusChanged", 1);
+    var socket = statusSubscribedSocket(bearer);
 
     var accepted = http.execute(bearer, scanMutation(library.getId()));
 
@@ -114,7 +115,7 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
   void shouldDeliverUnhealthyWhenScanFails() {
     var bearer = adminBearer();
     var library = saveLibrary(libraryDirectory.resolve("missing"));
-    var socket = subscribedSocket(bearer, "status", STATUS_SUBSCRIPTION, "libraryStatusChanged");
+    var socket = statusSubscribedSocket(bearer);
 
     http.execute(bearer, scanMutation(library.getId()));
 
@@ -130,7 +131,7 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
   void shouldDeliverRefreshingThenHealthyWhenRefreshRuns() {
     var bearer = adminBearer();
     var library = saveLibrary(libraryDirectory);
-    var socket = subscribedSocket(bearer, "status", STATUS_SUBSCRIPTION, "libraryStatusChanged");
+    var socket = statusSubscribedSocket(bearer);
 
     var accepted =
         http.execute(bearer, "mutation { refreshLibrary(id: \"%s\") }".formatted(library.getId()));
@@ -147,13 +148,12 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
       "Should deliver the added library and the removal's library id when another session adds and removes a library")
   void shouldDeliverAddedLibraryAndRemovalIdWhenAnotherSessionAddsAndRemovesLibrary()
       throws IOException {
-    var socket = connect(adminBearer());
-    subscribeToLibraryAdministration(socket);
+    var socket = libraryAdministrationSocket(adminBearer());
     var otherSession = adminBearer();
 
     var libraryId = addLibrary(otherSession, "Added Library", directory("added"));
 
-    var added = socket.nextMessageFor("added").path("payload").path("data").path("libraryAdded");
+    var added = nextAddedLibrary(socket);
     assertThat(added.path("id").asString()).isEqualTo(libraryId.toString());
     assertThat(added.path("name").asString()).isEqualTo("Added Library");
     assertThat(added.path("status").asString()).isEqualTo("HEALTHY");
@@ -166,33 +166,37 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName(
-      "Should deliver only the sentinel changes when refused requests and a rolled-back addition come first")
-  void shouldDeliverOnlySentinelChangesWhenRefusedRequestsAndRolledBackAdditionComeFirst()
-      throws IOException {
+  @DisplayName("Should deliver only the later addition when a refused addition comes first")
+  void shouldDeliverOnlyLaterAdditionWhenRefusedAdditionComesFirst() throws IOException {
     var admin = adminBearer();
-    var registered = saveLibrary(directory("registered"));
-    var socket = connect(admin);
-    subscribeToLibraryAdministration(socket);
+    var socket = libraryAdministrationSocket(admin);
     var member = authTestSupport.createIdentity();
     identities.add(member);
 
-    var refusedAddition =
+    var refused =
         http.execute(
             authTestSupport.profileBearer(member),
             addLibraryMutation("Refused Library", directory("refused")));
-    var rolledBackAddition =
-        http.execute(admin, addLibraryMutation("Duplicate Library", directory("registered")));
-    markStatus(registered, LibraryStatus.SCANNING);
-    var refusedRemoval = http.execute(admin, removeMutation(registered.getId()));
-    markStatus(registered, LibraryStatus.HEALTHY);
     var sentinelId = addLibrary(admin, "Sentinel Library", directory("sentinel"));
-    awaitStatus(socket, sentinelId, "HEALTHY");
-    http.execute(admin, removeMutation(registered.getId()));
 
-    assertThat(errorCode(refusedAddition)).isEqualTo("FORBIDDEN");
+    assertThat(firstErrorCode(refused)).isEqualTo("FORBIDDEN");
+    assertThat(nextAddedLibrary(socket).path("id").asString()).isEqualTo(sentinelId.toString());
+    awaitStatus(socket, sentinelId, "HEALTHY");
+  }
+
+  @Test
+  @DisplayName("Should deliver only the later addition when a rolled-back addition comes first")
+  void shouldDeliverOnlyLaterAdditionWhenRolledBackAdditionComesFirst() throws IOException {
+    var admin = adminBearer();
+    var registered = saveLibrary(directory("registered"));
+    var socket = libraryAdministrationSocket(admin);
+
+    var rolledBack =
+        http.execute(admin, addLibraryMutation("Duplicate Library", directory("registered")));
+    var sentinelId = addLibrary(admin, "Sentinel Library", directory("sentinel"));
+
     assertThat(
-            rolledBackAddition
+            rolledBack
                 .path("data")
                 .path("addLibrary")
                 .path("userErrors")
@@ -200,17 +204,27 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
                 .path("__typename")
                 .asString())
         .isEqualTo("LibraryPathAlreadyRegisteredError");
-    assertThat(errorCode(refusedRemoval)).isNotEmpty();
-    assertThat(
-            socket
-                .nextMessageFor("added")
-                .path("payload")
-                .path("data")
-                .path("libraryAdded")
-                .path("id")
-                .asString())
-        .isEqualTo(sentinelId.toString());
-    assertThat(removedLibraryId(socket)).isEqualTo(registered.getId().toString());
+    assertThat(libraryRepository.findById(registered.getId())).isPresent();
+    assertThat(nextAddedLibrary(socket).path("id").asString()).isEqualTo(sentinelId.toString());
+    awaitStatus(socket, sentinelId, "HEALTHY");
+  }
+
+  @Test
+  @DisplayName("Should deliver only the later removal when a refused removal comes first")
+  void shouldDeliverOnlyLaterRemovalWhenRefusedRemovalComesFirst() throws IOException {
+    var admin = adminBearer();
+    var busy = saveLibrary(directory("busy"));
+    var sentinel = saveLibrary(directory("sentinel"));
+    var socket = libraryAdministrationSocket(admin);
+    markStatus(busy, LibraryStatus.SCANNING);
+
+    var refused = http.execute(admin, removeMutation(busy.getId()));
+    var removed = http.execute(admin, removeMutation(sentinel.getId()));
+
+    assertThat(refused.path("errors").isEmpty()).isFalse();
+    assertThat(libraryRepository.findById(busy.getId())).isPresent();
+    assertThat(removed.path("data").path("removeLibrary").asBoolean()).isTrue();
+    assertThat(removedLibraryId(socket)).isEqualTo(sentinel.getId().toString());
   }
 
   @Test
@@ -252,34 +266,31 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
 
     var refusal = socket.nextMessageFor("refused");
     assertThat(refusal.path("type").asString()).isEqualTo("next");
-    assertThat(
-            refusal
-                .path("payload")
-                .path("errors")
-                .path(0)
-                .path("extensions")
-                .path("code")
-                .asString())
-        .isEqualTo("FORBIDDEN");
+    assertThat(firstErrorCode(refusal.path("payload"))).isEqualTo("FORBIDDEN");
     assertThat(socket.nextMessageFor("refused").path("type").asString()).isEqualTo("complete");
-    assertThat(activeSubscriptions("libraryStatusChanged")).isZero();
+    assertThat(activeSubscriptions.count(STATUS_FIELD)).isZero();
   }
 
-  private GraphQlTransportWsTestClient subscribedSocket(
-      String bearer, String operationId, String document, String field) {
+  private GraphQlTransportWsTestClient statusSubscribedSocket(String bearer) {
     var socket = connect(bearer);
-    socket.subscribe(operationId, document);
-    awaitActiveSubscriptions(field, 1);
+    socket.subscribe("status", STATUS_SUBSCRIPTION);
+    activeSubscriptions.awaitCount(STATUS_FIELD, 1);
     return socket;
   }
 
-  private void subscribeToLibraryAdministration(GraphQlTransportWsTestClient socket) {
+  private GraphQlTransportWsTestClient libraryAdministrationSocket(String bearer) {
+    var socket = connect(bearer);
     socket.subscribe("added", ADDED_SUBSCRIPTION);
     socket.subscribe("removed", REMOVED_SUBSCRIPTION);
     socket.subscribe("status", STATUS_SUBSCRIPTION);
-    awaitActiveSubscriptions("libraryAdded", 1);
-    awaitActiveSubscriptions("libraryRemoved", 1);
-    awaitActiveSubscriptions("libraryStatusChanged", 1);
+    activeSubscriptions.awaitCount("libraryAdded", 1);
+    activeSubscriptions.awaitCount("libraryRemoved", 1);
+    activeSubscriptions.awaitCount(STATUS_FIELD, 1);
+    return socket;
+  }
+
+  private static JsonNode nextAddedLibrary(GraphQlTransportWsTestClient socket) {
+    return socket.nextMessageFor("added").path("payload").path("data").path("libraryAdded");
   }
 
   private static String removedLibraryId(GraphQlTransportWsTestClient socket) {
@@ -317,10 +328,6 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     }
   }
 
-  private static String errorCode(JsonNode response) {
-    return response.path("errors").path(0).path("extensions").path("code").asString();
-  }
-
   private static String addLibraryMutation(String name, Path directory) {
     return """
         mutation {
@@ -356,32 +363,12 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
   }
 
   private GraphQlTransportWsTestClient connect(String bearer) {
-    var socket =
-        GraphQlTransportWsTestClient.connect(
-            GraphQlTransportWsTestClient.Handshake.builder()
-                .endpoint(URI.create("ws://localhost:%d/graphql".formatted(port)))
-                .bearerToken(Optional.of(bearer))
-                .build());
+    var socket = GraphQlTransportWsTestClient.connectWithBearer(port, bearer);
     sockets.add(socket);
-    return socket.initialize();
+    return socket;
   }
 
-  // Registration has no readiness message (ADR 0042), so the test waits on the public gauge.
-  private void awaitActiveSubscriptions(String field, int expected) {
-    await().atMost(Duration.ofSeconds(10)).until(() -> activeSubscriptions(field) == expected);
-  }
-
-  private double activeSubscriptions(String field) {
-    var gauge =
-        meterRegistry.find("streamarr.graphql.subscriptions.active").tag("field", field).gauge();
-    if (gauge == null) {
-      return 0;
-    }
-
-    return gauge.value();
-  }
-
-  /** The next status change of one library on the "status" operation, skipping other libraries. */
+  // The next status change of one library on the "status" operation, skipping other libraries.
   private static JsonNode nextStatusChange(GraphQlTransportWsTestClient socket, UUID libraryId) {
     while (true) {
       var change =

@@ -1,17 +1,14 @@
 package com.streamarr.server.graphql.transport;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.support.ActiveSubscriptions;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.GraphQlTransportWsTestClient;
 import io.micrometer.core.instrument.MeterRegistry;
-import java.net.URI;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,14 +36,17 @@ class WebSocketAccessExpiryIT extends AbstractIntegrationTest {
   @Autowired private MeterRegistry meterRegistry;
 
   private AuthTestSupport.TestIdentity admin;
+  private ActiveSubscriptions activeSubscriptions;
 
   @BeforeEach
   void createAdmin() {
     admin = authTestSupport.createAdminIdentity();
+    activeSubscriptions = new ActiveSubscriptions(meterRegistry);
   }
 
   @AfterEach
   void deleteAdmin() {
+    activeSubscriptions.awaitNoneActive();
     authTestSupport.deleteIdentity(admin);
   }
 
@@ -56,15 +56,9 @@ class WebSocketAccessExpiryIT extends AbstractIntegrationTest {
     var expiresAt = Instant.now().plusSeconds(3).truncatedTo(ChronoUnit.SECONDS);
     var bearer = authTestSupport.profileBearerExpiringAt(admin, expiresAt);
 
-    try (var socket =
-        GraphQlTransportWsTestClient.connect(
-            GraphQlTransportWsTestClient.Handshake.builder()
-                .endpoint(URI.create("ws://localhost:%d/graphql".formatted(port)))
-                .bearerToken(Optional.of(bearer))
-                .build())) {
-      socket.initialize();
+    try (var socket = GraphQlTransportWsTestClient.connectWithBearer(port, bearer)) {
       socket.subscribe("status", "subscription { libraryStatusChanged { id status } }");
-      awaitActiveStatusSubscriptions(1);
+      activeSubscriptions.awaitCount(STATUS_FIELD, 1);
 
       var closure = socket.awaitClosure();
 
@@ -73,25 +67,7 @@ class WebSocketAccessExpiryIT extends AbstractIntegrationTest {
       assertThat(Instant.now()).isAfterOrEqualTo(expiresAt);
       assertThat(socket.receivedMessages())
           .noneMatch(message -> "complete".equals(message.path("type").asString()));
-      awaitActiveStatusSubscriptions(0);
+      activeSubscriptions.awaitCount(STATUS_FIELD, 0);
     }
-  }
-
-  // Registration and release have no protocol message (ADR 0042), so the test waits on the gauge.
-  private void awaitActiveStatusSubscriptions(int expected) {
-    await().atMost(Duration.ofSeconds(10)).until(() -> activeStatusSubscriptions() == expected);
-  }
-
-  private double activeStatusSubscriptions() {
-    var gauge =
-        meterRegistry
-            .find("streamarr.graphql.subscriptions.active")
-            .tag("field", STATUS_FIELD)
-            .gauge();
-    if (gauge == null) {
-      return 0;
-    }
-
-    return gauge.value();
   }
 }
