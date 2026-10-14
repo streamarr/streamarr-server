@@ -2,6 +2,7 @@ package com.streamarr.server.services;
 
 import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
@@ -116,6 +117,20 @@ class ArtworkPlanTest {
   @DisplayName("Should name the planned image type when a download is planned")
   void shouldNameThePlannedImageTypeWhenADownloadIsPlanned() {
     assertThat(new DownloadImage(POSTER, false).imageType()).isEqualTo(ImageType.POSTER);
+  }
+
+  @Test
+  @DisplayName("Should reject a plan without its artwork, stored images or refresh mode")
+  void shouldRejectAPlanWithoutItsArtworkStoredImagesOrRefreshMode() {
+    var artwork = movieArtwork(POSTER);
+    var noneStored = Map.<ImageType, List<Image>>of();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> ArtworkPlan.of(null, noneStored, ImageRefreshMode.PRESERVE));
+    assertThatNullPointerException()
+        .isThrownBy(() -> ArtworkPlan.of(artwork, null, ImageRefreshMode.PRESERVE));
+    assertThatNullPointerException().isThrownBy(() -> ArtworkPlan.of(artwork, noneStored, null));
+    assertThatNullPointerException().isThrownBy(() -> new ArtworkPlan(null));
   }
 
   private ArtworkSources movieArtwork(ImageSource... sources) {

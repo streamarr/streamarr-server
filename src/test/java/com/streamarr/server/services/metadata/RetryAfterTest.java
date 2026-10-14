@@ -1,6 +1,7 @@
 package com.streamarr.server.services.metadata;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -48,5 +49,14 @@ class RetryAfterTest {
   @DisplayName("Should read no delay when the host sends no header")
   void shouldReadNoDelayWhenTheHostSendsNoHeader() {
     assertThat(RetryAfter.parse(Optional.empty(), NOW)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should reject a missing header or clock reading")
+  void shouldRejectAMissingHeaderOrClockReading() {
+    var noHeader = Optional.<String>empty();
+
+    assertThatNullPointerException().isThrownBy(() -> RetryAfter.parse(null, NOW));
+    assertThatNullPointerException().isThrownBy(() -> RetryAfter.parse(noHeader, null));
   }
 }

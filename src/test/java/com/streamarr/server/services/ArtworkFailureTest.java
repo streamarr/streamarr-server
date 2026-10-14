@@ -1,6 +1,7 @@
 package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.exceptions.ImageDownloadException;
@@ -117,5 +118,23 @@ class ArtworkFailureTest {
     var delay = ArtworkFailure.retryDelay(40, Optional.empty());
 
     assertThat(delay).isEqualTo(Duration.ofSeconds(300));
+  }
+
+  @Test
+  @DisplayName("Should reject a missing cause or Retry-After")
+  void shouldRejectAMissingCauseOrRetryAfter() {
+    assertThatNullPointerException().isThrownBy(() -> ArtworkFailure.classify(null));
+    assertThatNullPointerException().isThrownBy(() -> ArtworkFailure.retryDelay(0, null));
+  }
+
+  @Test
+  @DisplayName("Should reject a download failure without its path or Retry-After")
+  void shouldRejectADownloadFailureWithoutItsPathOrRetryAfter() {
+    var noDelay = Optional.<Duration>empty();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> new ImageDownloadException(404, null, noDelay));
+    assertThatNullPointerException()
+        .isThrownBy(() -> new ImageDownloadException(404, "/poster.jpg", null));
   }
 }

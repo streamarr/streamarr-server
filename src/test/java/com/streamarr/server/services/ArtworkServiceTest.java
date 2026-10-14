@@ -402,6 +402,21 @@ class ArtworkServiceTest {
     }
 
     @Test
+    @DisplayName("Should count the newest request's images once when a run requests an item twice")
+    void shouldCountTheNewestRequestsImagesOnceWhenARunRequestsAnItemTwice() {
+      artwork.scheduling().holdScheduledSteps();
+      var run = artworkService.openRun("refresh", ImageRefreshMode.PRESERVE);
+      var movieId = UUID.randomUUID();
+
+      artworkService.requestPrimaryArtwork(run, movieArtwork(movieId, POSTER));
+      artworkService.requestPrimaryArtwork(run, movieArtwork(movieId, POSTER, BACKDROP));
+      artwork.scheduling().runPendingSteps();
+
+      assertThat(artwork.closeAndAwait(run).counts())
+          .isEqualTo(ArtworkCounts.builder().saved(2).build());
+    }
+
+    @Test
     @DisplayName("Should finish a run with no counts when it is closed before any request")
     void shouldFinishARunWithNoCountsWhenItIsClosedBeforeAnyRequest() {
       var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
