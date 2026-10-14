@@ -8,6 +8,7 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import java.time.Clock;
@@ -15,6 +16,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
@@ -105,9 +107,7 @@ public class ProducerLifecycleService {
             .build();
     if (handle.status() == TranscodeStatus.FAILED
         && !state.resetForFreshTargets(
-            transcodeExecutor.executionTargets(session.getTranscodeDecision()),
-            handle,
-            clock.instant())) {
+            eligibleTargets(session, variantLabel), handle, clock.instant())) {
       return RecoveryResult.EXHAUSTED;
     }
 
@@ -152,7 +152,7 @@ public class ProducerLifecycleService {
         return RecoveryResult.WAITING;
       }
 
-      var eligibleTargets = transcodeExecutor.executionTargets(session.getTranscodeDecision());
+      var eligibleTargets = eligibleTargets(session, pending.variantLabel());
       // Segment publication is external to the session mutex and may advance during discovery.
       syncProgress(state, handle, pending);
       if (noLongerNeedsRecovery(state, pending, running)) {
@@ -179,6 +179,14 @@ public class ProducerLifecycleService {
         return outcome.get();
       }
     }
+  }
+
+  // Every later job attempt of a pinned variant runs only where its encoder backend runs.
+  private Set<ExecutionTargetId> eligibleTargets(StreamSession session, String variantLabel) {
+    return session
+        .getPinnedEncoderBackend(variantLabel)
+        .map(pin -> transcodeExecutor.executionTargets(pin.backend()))
+        .orElseGet(() -> transcodeExecutor.executionTargets(session.getTranscodeDecision()));
   }
 
   private boolean noLongerNeedsRecovery(
@@ -400,7 +408,7 @@ public class ProducerLifecycleService {
       return new ReplaceResult.Refused(refusal.getMessage());
     }
 
-    session.setVariantHandle(command.variantLabel(), replacement);
+    installHandle(session, command.variantLabel(), replacement);
     runtimeRegistry.save(session);
     return new ReplaceResult.Replaced(replacement.attemptId());
   }
@@ -446,7 +454,7 @@ public class ProducerLifecycleService {
 
   private TranscodeRequest replacementRequest(
       StreamSession session, ReplaceProducerCommand command) {
-    var request = baseRequest(session, command.segmentIndex()).variantLabel(command.variantLabel());
+    var request = baseRequest(session, command.variantLabel(), command.segmentIndex());
 
     var variant =
         session.getVariants().stream()
@@ -571,40 +579,45 @@ public class ProducerLifecycleService {
 
   private void startSingleTranscode(StreamSession session, int startSequenceNumber) {
     var probe = session.getMediaProbe();
+    var variantLabel = StreamSession.defaultVariant();
     var request =
-        baseRequest(session, startSequenceNumber)
+        baseRequest(session, variantLabel, startSequenceNumber)
             .width(probe.width())
             .height(probe.height())
             .bitrate(probe.bitrate())
-            .variantLabel(StreamSession.defaultVariant())
             .build();
-    var handle = transcodeExecutor.start(request);
-
-    session.setHandle(handle);
+    installHandle(session, variantLabel, transcodeExecutor.start(request));
   }
 
   private void startVariantTranscodes(
       StreamSession session, List<QualityVariant> variants, int startSequenceNumber) {
     for (var variant : variants) {
       var request =
-          baseRequest(session, startSequenceNumber)
+          baseRequest(session, variant.label(), startSequenceNumber)
               .width(variant.width())
               .height(variant.height())
               .bitrate(variant.videoBitrate())
-              .variantLabel(variant.label())
               .build();
-      var handle = transcodeExecutor.start(request);
-
-      session.setVariantHandle(variant.label(), handle);
+      installHandle(session, variant.label(), transcodeExecutor.start(request));
     }
   }
 
+  // The first job attempt that reports an encoder pins the variant to that encoder backend.
+  private static void installHandle(
+      StreamSession session, String variantLabel, TranscodeHandle handle) {
+    session.setVariantHandle(variantLabel, handle);
+    handle.encoder().ifPresent(encoder -> session.pinEncoderBackend(variantLabel, encoder));
+  }
+
   private TranscodeRequest.TranscodeRequestBuilder baseRequest(
-      StreamSession session, int startSequenceNumber) {
+      StreamSession session, String variantLabel, int startSequenceNumber) {
     var probe = session.getMediaProbe();
     var timeline = timelineOf(session);
     return TranscodeRequest.builder()
         .sessionId(session.getSessionId())
+        .variantLabel(variantLabel)
+        .pinnedEncoderBackend(
+            session.getPinnedEncoderBackend(variantLabel).map(WorkerVerifiedEncoder::backend))
         .sourcePath(session.getSourcePath())
         .seekPosition(timeline.mediaSegmentStartSeconds(startSequenceNumber))
         .keyframeSeekPosition(timeline.keyframeSeekPosition(startSequenceNumber))

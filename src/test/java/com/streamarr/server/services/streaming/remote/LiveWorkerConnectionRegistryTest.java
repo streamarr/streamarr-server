@@ -9,6 +9,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
+import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.MediaSourceRef;
@@ -26,6 +28,7 @@ import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -558,6 +561,95 @@ class LiveWorkerConnectionRegistryTest {
                 replacementJob.getVariant().getVariantLabel()))
         .isTrue();
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isZero();
+  }
+
+  @Test
+  @DisplayName("Should report the accepting worker's encoder when dispatching an encode")
+  void shouldReportTheAcceptingWorkersEncoderWhenDispatchingAnEncode() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    registry.register(
+        WORKER_ID, registration(WORKER_ID, libx264Encoder()), new CancellableObserver());
+
+    var dispatched = registry.dispatch(encodeJob("h264"));
+
+    assertThat(dispatched)
+        .map(VariantDispatch::encoder)
+        .contains(Optional.of(WorkerVerifiedEncoderFixture.libx264()));
+  }
+
+  @Test
+  @DisplayName("Should report no encoder when dispatching a stream copy")
+  void shouldReportNoEncoderWhenDispatchingAStreamCopy() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    registry.register(
+        WORKER_ID, registration(WORKER_ID, libx264Encoder()), new CancellableObserver());
+
+    var dispatched =
+        registry.dispatch(variantJob().toBuilder().setDecision(streamCopyDecision()).build());
+
+    assertThat(dispatched).map(VariantDispatch::encoder).contains(Optional.empty());
+  }
+
+  @Test
+  @DisplayName(
+      "Should dispatch a pinned encode only to a worker that advertises the pinned encoder backend")
+  void shouldDispatchPinnedEncodeOnlyToWorkerThatAdvertisesPinnedEncoderBackend() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var nvencResponses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    var libx264WorkerId = UUID.randomUUID();
+    registry.register(
+        WORKER_ID,
+        registration(
+            WORKER_ID, hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc")),
+        collecting(nvencResponses));
+    var pinned = WorkerVerifiedEncoderFixture.libx264().backend();
+    var job = encodeJob("h264");
+
+    assertThat(registry.dispatch(job, pinned)).isEmpty();
+
+    registry.register(
+        libx264WorkerId,
+        registration(libx264WorkerId, libx264Encoder()),
+        new CancellableObserver());
+
+    assertThat(registry.dispatch(job, pinned))
+        .map(VariantDispatch::encoder)
+        .contains(Optional.of(WorkerVerifiedEncoderFixture.libx264()));
+    assertThat(nvencResponses).noneMatch(EstablishWorkerSessionResponse::hasStartVariant);
+  }
+
+  @Test
+  @DisplayName(
+      "Should list only workers that advertise the pinned encoder backend when finding execution targets")
+  void shouldListOnlyWorkersThatAdvertisePinnedEncoderBackendWhenFindingExecutionTargets() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var libx264WorkerId = UUID.randomUUID();
+    registry.register(
+        WORKER_ID,
+        registration(
+            WORKER_ID, hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc")),
+        new CancellableObserver());
+    var libx264WorkerSessionId =
+        registry.register(
+            libx264WorkerId,
+            registration(libx264WorkerId, libx264Encoder()),
+            new CancellableObserver());
+
+    var targets =
+        registry.eligibleWorkers(
+            SOURCE_NAMESPACE_ID, WorkerVerifiedEncoderFixture.libx264().backend());
+
+    assertThat(targets).containsExactly(new ExecutionTargetId(libx264WorkerSessionId.toString()));
+    assertThat(
+            registry.eligibleWorkers(
+                UUID.randomUUID(), WorkerVerifiedEncoderFixture.libx264().backend()))
+        .isEmpty();
+  }
+
+  private static WorkerVerifiedVideoEncoder libx264Encoder() {
+    return softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264").toBuilder()
+        .setKeyframeVerified(true)
+        .build();
   }
 
   private static WorkerRegistration registration() {

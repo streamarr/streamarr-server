@@ -3,6 +3,8 @@ package com.streamarr.server.domain.streaming;
 import static com.streamarr.server.fixtures.StreamSessionFixture.buildActiveSession;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
+import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.h264Nvenc;
+import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libx264;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -84,5 +86,17 @@ class StreamSessionTest {
 
     assertThat(session.getHandle()).isEmpty();
     assertThat(session.getVariantHandle("nope")).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should keep the first pinned encoder backend when a later attempt reports another")
+  void shouldKeepTheFirstPinnedEncoderBackendWhenLaterAttemptReportsAnother() {
+    var session = buildActiveSession();
+
+    session.pinEncoderBackend("720p", libx264());
+    session.pinEncoderBackend("720p", h264Nvenc());
+
+    assertThat(session.getPinnedEncoderBackend("720p")).contains(libx264());
+    assertThat(session.getPinnedEncoderBackend("1080p")).isEmpty();
   }
 }

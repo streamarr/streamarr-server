@@ -41,6 +41,38 @@ class TranscodeRequestTest {
         .hasMessageContaining("keyframeSeekPosition");
   }
 
+  @Test
+  @DisplayName("Should reject construction when the pinned encoder backend is missing")
+  void shouldRejectConstructionWhenThePinnedEncoderBackendIsMissing() {
+    var request = requestWithoutEncoderPreset().encoderPreset(EncoderPreset.FASTER).build();
+
+    assertThatThrownBy(() -> withoutPinnedEncoderBackend(request))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("pinnedEncoderBackend");
+  }
+
+  // The builder rejects a null pinned encoder backend before construction, so this calls the
+  // canonical constructor.
+  private static TranscodeRequest withoutPinnedEncoderBackend(TranscodeRequest request) {
+    return new TranscodeRequest(
+        request.sessionId(),
+        request.attemptId(),
+        request.sourcePath(),
+        request.seekPosition(),
+        request.keyframeSeekPosition(),
+        request.targetSegmentDuration(),
+        request.framerate(),
+        request.transcodeDecision(),
+        request.width(),
+        request.height(),
+        request.bitrate(),
+        request.variantLabel(),
+        request.startSequenceNumber(),
+        request.mediaSegmentCount(),
+        request.encoderPreset(),
+        null);
+  }
+
   private static TranscodeRequest.TranscodeRequestBuilder requestWithoutEncoderPreset() {
     return TranscodeRequest.builder()
         .sessionId(UUID.randomUUID())

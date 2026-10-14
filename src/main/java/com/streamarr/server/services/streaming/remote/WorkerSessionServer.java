@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
+import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.transcode.v1.ProbeRequest;
@@ -88,6 +89,13 @@ public final class WorkerSessionServer implements AutoCloseable {
     return workerConnections.dispatch(job);
   }
 
+  /** Dispatches only to a worker that advertises the pinned encoder backend. */
+  public synchronized Optional<VariantDispatch> dispatch(
+      VariantJob job, EncoderBackend pinnedEncoderBackend) {
+    requireStarted();
+    return workerConnections.dispatch(job, pinnedEncoderBackend);
+  }
+
   /**
    * Returns a refusal with its reason when no worker accepts the attempt. Each execution attempt
    * requires a fresh, non-nil ID, a nonzero contract version, and a source.
@@ -113,6 +121,12 @@ public final class WorkerSessionServer implements AutoCloseable {
       UUID sourceNamespaceId, com.streamarr.transcode.v1.TranscodeDecision decision) {
     requireStarted();
     return workerConnections.eligibleWorkers(sourceNamespaceId, decision);
+  }
+
+  public synchronized Set<ExecutionTargetId> eligibleWorkers(
+      UUID sourceNamespaceId, EncoderBackend pinnedEncoderBackend) {
+    requireStarted();
+    return workerConnections.eligibleWorkers(sourceNamespaceId, pinnedEncoderBackend);
   }
 
   public synchronized boolean stopVariant(UUID streamSessionId, String variantLabel) {

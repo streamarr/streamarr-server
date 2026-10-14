@@ -24,7 +24,8 @@ public record TranscodeRequest(
     String variantLabel,
     int startSequenceNumber,
     int mediaSegmentCount,
-    @NonNull EncoderPreset encoderPreset) {
+    @NonNull EncoderPreset encoderPreset,
+    @NonNull Optional<EncoderBackend> pinnedEncoderBackend) {
 
   /**
    * A stream copy attempt after segment 0 carries {@code keyframeSeekPosition}, the decode time of
@@ -47,5 +48,6 @@ public record TranscodeRequest(
   public static class TranscodeRequestBuilder {
     private OptionalDouble framerate = OptionalDouble.empty();
     private Optional<Duration> keyframeSeekPosition = Optional.empty();
+    private Optional<EncoderBackend> pinnedEncoderBackend = Optional.empty();
   }
 }

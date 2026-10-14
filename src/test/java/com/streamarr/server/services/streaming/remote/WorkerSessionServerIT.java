@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.hardwareEncoder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChannelBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
@@ -12,8 +13,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import com.google.protobuf.ByteString;
+import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.SubtitleMode;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
@@ -23,9 +26,12 @@ import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.BlockingSegmentStore;
+import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamSessionFixture;
+import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
+import com.streamarr.server.services.streaming.ProducerLifecycleService;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
@@ -736,6 +742,97 @@ class WorkerSessionServerIT {
             .isEqualTo("h264");
       } finally {
         shutdown(channel);
+      }
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a replacement attempt on the pinned encoder backend when another worker advertises a different H.264 backend")
+  void
+      shouldKeepReplacementAttemptOnPinnedEncoderBackendWhenAnotherWorkerAdvertisesDifferentH264Backend()
+          throws Exception {
+    var nvencWorkerId = UUID.randomUUID();
+    var nvencCapabilities =
+        WorkerCapabilities.newBuilder()
+            .addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID))
+            .addVideoEncoders(
+                hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc"))
+            .build();
+    try (var server = server()) {
+      server.start();
+      var libx264Channel = workerChannel(server.port());
+      var nvencChannel = plaintextChannelBuilder(server.port(), nvencWorkerId).build();
+
+      try (var libx264Worker = connect(libx264Channel, AUTHENTICATED_WORKER_ID)) {
+        assertThat(libx264Worker.nextResponse().hasSessionAccepted()).isTrue();
+        var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, Path.of("/media"));
+        var runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
+        var session =
+            StreamSessionFixture.defaultSessionBuilder()
+                .transcodeDecision(StreamSessionFixture.fullTranscodeDecision("h264"))
+                .build();
+        runtimeRegistry.save(session);
+        var lifecycle =
+            StreamingRigFixture.streamingRigBuilder()
+                .transcodeExecutor(executor)
+                .segmentStore(new FakeSegmentStore())
+                .properties(StreamingProperties.builder().build())
+                .runtimeRegistry(runtimeRegistry)
+                .build()
+                .lifecycle();
+        lifecycle.startAll(session, 0);
+        var initial = libx264Worker.nextResponse().getStartVariant().getJob();
+
+        try (var nvencWorker =
+            connect(
+                nvencChannel,
+                workerIdentity(nvencWorkerId, UUID.randomUUID()),
+                nvencCapabilities)) {
+          assertThat(nvencWorker.nextResponse().hasSessionAccepted()).isTrue();
+          libx264Worker.send(
+              EstablishWorkerSessionRequest.newBuilder()
+                  .setJobAttemptFailed(
+                      JobAttemptFailed.newBuilder()
+                          .setJobAttemptId(initial.getJobAttemptId())
+                          .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED))
+                  .build());
+          await()
+              .atMost(5, TimeUnit.SECONDS)
+              .until(
+                  () ->
+                      !executor.isRunning(session.getSessionId(), StreamSession.defaultVariant()));
+
+          var recovery =
+              lifecycle.recover(
+                  session.getSessionId(), StreamSession.defaultVariant(), "segment0.m4s");
+
+          assertThat(recovery).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
+          var replacement = libx264Worker.nextResponse().getStartVariant().getJob();
+          assertThat(replacement.getJobAttemptId()).isNotEqualTo(initial.getJobAttemptId());
+          assertThat(fromProto(replacement.getJobAttemptId()))
+              .isEqualTo(session.getHandle().orElseThrow().attemptId());
+          assertThat(session.getPinnedEncoderBackend(StreamSession.defaultVariant()))
+              .map(pin -> pin.backend().encoder())
+              .contains("libx264");
+
+          lifecycle.ensurePositioned(session.getSessionId(), "segment100.m4s");
+
+          assertThat(libx264Worker.nextResponse().hasStopVariant()).isTrue();
+          assertThat(
+                  libx264Worker
+                      .nextResponse()
+                      .getStartVariant()
+                      .getJob()
+                      .getExecution()
+                      .getStartSequenceNumber())
+              .as("the relocation's job attempt")
+              .isEqualTo(100);
+          assertThat(nvencWorker.responses()).isEmpty();
+        }
+      } finally {
+        shutdown(libx264Channel);
+        shutdown(nvencChannel);
       }
     }
   }

@@ -6,7 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
 import com.streamarr.transcode.v1.ProbeRequest;
+import com.streamarr.transcode.v1.VariantJob;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.UUID;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
@@ -91,8 +93,12 @@ class WorkerSessionServerTest {
   void shouldFailFastForEveryCapabilityWhenTheServerHasNotBeenStarted() {
     var server = unstartedServer();
     var sourceNamespaceId = UUID.randomUUID();
+    var job = VariantJob.getDefaultInstance();
+    var pinnedEncoderBackend = WorkerVerifiedEncoderFixture.libx264().backend();
 
     assertNotStarted(() -> server.eligibleWorkers(sourceNamespaceId, streamCopyDecision()));
+    assertNotStarted(() -> server.eligibleWorkers(sourceNamespaceId, pinnedEncoderBackend));
+    assertNotStarted(() -> server.dispatch(job, pinnedEncoderBackend));
     assertNotStarted(() -> server.hasConnectedWorker(sourceNamespaceId));
     assertNotStarted(() -> server.stopVariant(UUID.randomUUID(), "720p"));
   }

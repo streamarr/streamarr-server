@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
+import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
@@ -26,24 +27,34 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public TranscodeHandle start(TranscodeRequest request) {
-    if (workerServer.dispatch(jobMapper.map(request)).isEmpty()) {
-      throw new TranscodeException("No connected transcode worker can run this variant");
-    }
-    return handleFor(request);
+    var job = jobMapper.map(request);
+    var dispatched =
+        request
+            .pinnedEncoderBackend()
+            .map(pinned -> workerServer.dispatch(job, pinned))
+            .orElseGet(() -> workerServer.dispatch(job));
+    return dispatched
+        .map(dispatch -> handleFor(request, dispatch))
+        .orElseThrow(
+            () -> new TranscodeException("No connected transcode worker can run this variant"));
   }
 
   @Override
   public TranscodeHandle start(TranscodeRequest request, ExecutionTargetId target) {
-    if (workerServer.dispatchTo(target, jobMapper.map(request)).isEmpty()) {
-      throw new TranscodeException(
-          "Worker connection " + target.value() + " cannot run this variant");
-    }
-    return handleFor(request);
+    return workerServer
+        .dispatchTo(target, jobMapper.map(request))
+        .map(dispatch -> handleFor(request, dispatch))
+        .orElseThrow(
+            () ->
+                new TranscodeException(
+                    "Worker connection " + target.value() + " cannot run this variant"));
   }
 
-  private static TranscodeHandle handleFor(TranscodeRequest request) {
-    return TranscodeHandle.remoteDispatch(
-        request.attemptId(), TranscodeStatus.ACTIVE, request.startSequenceNumber());
+  private static TranscodeHandle handleFor(TranscodeRequest request, VariantDispatch dispatch) {
+    var handle =
+        TranscodeHandle.remoteDispatch(
+            request.attemptId(), TranscodeStatus.ACTIVE, request.startSequenceNumber());
+    return dispatch.encoder().map(handle::withEncoder).orElse(handle);
   }
 
   @Override
@@ -81,6 +92,11 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   public Set<ExecutionTargetId> executionTargets(TranscodeDecision decision) {
     return workerServer.eligibleWorkers(
         sourceNamespaceId, RemoteVariantJobMapper.decision(decision));
+  }
+
+  @Override
+  public Set<ExecutionTargetId> executionTargets(EncoderBackend pinnedEncoderBackend) {
+    return workerServer.eligibleWorkers(sourceNamespaceId, pinnedEncoderBackend);
   }
 
   @Override

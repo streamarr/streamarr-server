@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
@@ -11,11 +12,17 @@ public interface TranscodeExecutor {
   /** Sentinel returned by {@link #availableSlots()} when the executor imposes no slot limit. */
   int UNBOUNDED_SLOTS = Integer.MAX_VALUE;
 
+  /**
+   * Starts on the first execution target that can run the request. A request with a pinned encoder
+   * backend starts only on a target that advertises that backend. The handle carries the
+   * worker-verified encoder that the accepting target advertises for an encode.
+   */
   TranscodeHandle start(TranscodeRequest request);
 
   /**
    * Starts on one specific execution target. Throws {@code TranscodeException} when the target
-   * refuses or cannot start the producer.
+   * refuses or cannot start the producer. The handle carries the worker-verified encoder that the
+   * target advertises for an encode.
    */
   TranscodeHandle start(TranscodeRequest request, ExecutionTargetId target);
 
@@ -41,6 +48,13 @@ public interface TranscodeExecutor {
    * drives failover order.
    */
   Set<ExecutionTargetId> executionTargets(TranscodeDecision decision);
+
+  /**
+   * Identities eligible to run a later job attempt of a variant pinned to this encoder backend:
+   * only workers that advertise the same backend for its codec family. Iteration order drives
+   * failover order.
+   */
+  Set<ExecutionTargetId> executionTargets(EncoderBackend pinnedEncoderBackend);
 
   /**
    * The video codec families, such as {@code h264} or {@code av1}, that a connected worker with a
