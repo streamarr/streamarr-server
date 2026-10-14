@@ -7,12 +7,14 @@ import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.exceptions.ProbeTimedOutException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.transcode.v1.ProbeRequest;
 import java.nio.file.Path;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 
 public final class RemoteFfprobeService implements FfprobeService {
 
@@ -58,6 +60,10 @@ public final class RemoteFfprobeService implements FfprobeService {
     } catch (ExecutionException exception) {
       if (exception.getCause() instanceof ProbeExecutionException failure) {
         throw failure;
+      }
+
+      if (exception.getCause() instanceof TimeoutException) {
+        throw new ProbeTimedOutException(exception);
       }
 
       throw new ProbeExecutionException(

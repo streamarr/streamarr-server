@@ -16,6 +16,7 @@ import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.exceptions.ProbeTimedOutException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.LoopbackProbeWorker;
@@ -77,7 +78,7 @@ class RemoteFfprobeServiceIT {
               .hasRootCauseInstanceOf(TimeoutException.class)
               .cause()
               .isInstanceOfSatisfying(
-                  ProbeExecutionException.class,
+                  ProbeTimedOutException.class,
                   failure -> assertThat(failure.reason()).isEqualTo(ItemFailureReason.TEMPORARY));
           assertThat(worker.nextResponse().getCancelProbe().getProbeAttemptId())
               .as("The deadline must ask the worker to cancel the attempt")
@@ -119,8 +120,8 @@ class RemoteFfprobeServiceIT {
           var dispatched = worker.nextResponse().getStartProbe().getRequest();
           assertThat(dispatched.getScanKeyframePackets()).isTrue();
           assertThatThrownBy(() -> result.get(5, TimeUnit.SECONDS))
-              .as("The keyframe scan deadline must fail the scan")
-              .hasCauseInstanceOf(ProbeExecutionException.class)
+              .as("The keyframe scan deadline must fail the scan as timed out")
+              .hasCauseInstanceOf(ProbeTimedOutException.class)
               .hasRootCauseInstanceOf(TimeoutException.class);
           assertThat(worker.nextResponse().getCancelProbe().getProbeAttemptId())
               .as("The deadline must ask the worker to cancel the scan")
