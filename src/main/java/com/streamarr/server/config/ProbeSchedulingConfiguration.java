@@ -1,5 +1,6 @@
 package com.streamarr.server.config;
 
+import com.github.kagkarlsson.scheduler.SchedulerClient;
 import com.github.kagkarlsson.scheduler.SchedulerName;
 import com.github.kagkarlsson.scheduler.SystemClock;
 import com.github.kagkarlsson.scheduler.TaskRepository;
@@ -12,11 +13,17 @@ import com.github.kagkarlsson.scheduler.jdbc.JdbcTaskRepository;
 import com.github.kagkarlsson.scheduler.jdbc.PostgreSqlJdbcCustomization;
 import com.github.kagkarlsson.scheduler.serializer.Serializer;
 import com.github.kagkarlsson.scheduler.task.Task;
+import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.services.audit.SystemWork;
+import com.streamarr.server.services.library.KeyframePacketScanCompletion;
+import com.streamarr.server.services.library.KeyframePacketScanExecution;
+import com.streamarr.server.services.library.KeyframePacketScanRequests;
+import com.streamarr.server.services.library.KeyframePacketScanTask;
 import com.streamarr.server.services.library.MediaProbeTask;
 import com.streamarr.server.services.library.ProbeExecution;
 import com.streamarr.server.services.library.ProbeTaskCompletion;
+import com.streamarr.server.services.library.SchedulerKeyframePacketScanRequests;
 import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
@@ -44,6 +51,30 @@ public class ProbeSchedulingConfiguration {
   public Task<ProbeTaskRequest> mediaProbeTask(
       ProbeExecution execution, ProbeTaskCompletion completion, Clock clock) {
     return MediaProbeTask.create(execution, completion, clock);
+  }
+
+  @Bean
+  public Task<KeyframePacketScanTaskRequest> keyframePacketScanTask(
+      KeyframePacketScanExecution execution, KeyframePacketScanCompletion completion, Clock clock) {
+    return KeyframePacketScanTask.create(execution, completion, clock);
+  }
+
+  /**
+   * Probe publication schedules a keyframe packet scan in its own transaction. The client is not a
+   * {@code SchedulerClient} bean, so probe requests keep the scheduler's own client.
+   */
+  @Bean
+  public KeyframePacketScanRequests keyframePacketScanRequests(
+      DataSource dataSource,
+      Task<KeyframePacketScanTaskRequest> keyframePacketScanTask,
+      Serializer probeTaskSerializer,
+      Clock clock) {
+    var client =
+        SchedulerClient.Builder.create(
+                new SchedulerTransactionDataSource(dataSource), keyframePacketScanTask)
+            .serializer(probeTaskSerializer)
+            .build();
+    return new SchedulerKeyframePacketScanRequests(client, keyframePacketScanTask, clock);
   }
 
   /**

@@ -30,7 +30,7 @@ class ProbeSchedulingPropertiesTest {
   @Test
   @DisplayName("Should retry busy workers after five seconds when no delay is configured")
   void shouldRetryBusyWorkersAfterFiveSecondsWhenNoDelayIsConfigured() {
-    var properties = new ProbeSchedulingProperties(null, null);
+    var properties = new ProbeSchedulingProperties(null, null, null);
 
     assertThat(properties.busyWorkerRetryDelay()).isEqualTo(Duration.ofSeconds(5));
   }
@@ -64,7 +64,7 @@ class ProbeSchedulingPropertiesTest {
   void shouldRejectBusyWorkerRetryDelayWhenItIsNotPositive(long seconds) {
     var delay = Duration.ofSeconds(seconds);
 
-    assertThatThrownBy(() -> new ProbeSchedulingProperties(delay, null))
+    assertThatThrownBy(() -> new ProbeSchedulingProperties(delay, null, null))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Busy worker retry delay must be positive");
   }
@@ -72,7 +72,7 @@ class ProbeSchedulingPropertiesTest {
   @Test
   @DisplayName("Should check probe results every two seconds when no interval is configured")
   void shouldCheckProbeResultsEveryTwoSecondsWhenNoIntervalIsConfigured() {
-    var properties = new ProbeSchedulingProperties(null, null);
+    var properties = new ProbeSchedulingProperties(null, null, null);
 
     assertThat(properties.resultCheckInterval()).isEqualTo(Duration.ofSeconds(2));
   }
@@ -83,8 +83,41 @@ class ProbeSchedulingPropertiesTest {
   void shouldRejectProbeResultCheckIntervalWhenItIsNotPositive(long seconds) {
     var interval = Duration.ofSeconds(seconds);
 
-    assertThatThrownBy(() -> new ProbeSchedulingProperties(null, interval))
+    assertThatThrownBy(() -> new ProbeSchedulingProperties(null, interval, null))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Probe result check interval must be positive");
+  }
+
+  @Test
+  @DisplayName("Should run one keyframe packet scan at a time when no maximum is configured")
+  void shouldRunOneKeyframePacketScanAtATimeWhenNoMaximumIsConfigured() {
+    var properties = new ProbeSchedulingProperties(null, null, null);
+
+    assertThat(properties.maxConcurrentKeyframePacketScans()).isOne();
+  }
+
+  @Test
+  @DisplayName(
+      "Should run the environment's number of keyframe packet scans when"
+          + " PROBE_MAX_CONCURRENT_KEYFRAME_PACKET_SCANS is set")
+  void shouldRunTheEnvironmentsNumberOfKeyframePacketScansWhenTheMaximumIsSet() {
+    PACKAGED_CONFIGURATION
+        .withPropertyValues("PROBE_MAX_CONCURRENT_KEYFRAME_PACKET_SCANS=3")
+        .run(
+            context ->
+                assertThat(
+                        context
+                            .getBean(ProbeSchedulingProperties.class)
+                            .maxConcurrentKeyframePacketScans())
+                    .isEqualTo(3));
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {0, -1})
+  @DisplayName("Should reject the keyframe packet scan maximum when it is not positive")
+  void shouldRejectTheKeyframePacketScanMaximumWhenItIsNotPositive(int maximum) {
+    assertThatThrownBy(() -> new ProbeSchedulingProperties(null, null, maximum))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("The keyframe packet scan maximum must be positive");
   }
 }

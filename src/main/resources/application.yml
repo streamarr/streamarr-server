@@ -204,6 +204,9 @@ probe:
   busy-worker-retry-delay: ${PROBE_BUSY_WORKER_RETRY_DELAY:5s}
   # How often a scan that waits for its probes checks their stored results.
   result-check-interval: ${PROBE_RESULT_CHECK_INTERVAL:2s}
+  # Keyframe packet scans run on the probe scheduler's threads and hold a worker slot for the whole
+  # scan. A scan that finds this many scans running waits like a probe that finds workers busy.
+  max-concurrent-keyframe-packet-scans: ${PROBE_MAX_CONCURRENT_KEYFRAME_PACKET_SCANS:1}
 
 library:
   watcher:

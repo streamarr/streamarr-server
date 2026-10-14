@@ -3,8 +3,10 @@ package com.streamarr.server.services.library;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
@@ -23,6 +25,8 @@ import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * One probe execution, independent of the scheduler that runs it. Failed attempts escape as {@link
@@ -41,6 +45,8 @@ public class ProbeExecution {
   private final FfprobeService producer;
   private final FileSystem fileSystem;
   private final MediaFileContainerInfoRepository outcomes;
+  private final KeyframePacketScanRequests packetScans;
+  private final PlatformTransactionManager transactionManager;
 
   public ProbeExecutionResult execute(ProbeTaskRequest request) {
     if (request.probeVersion() > ProbeVersion.CURRENT) {
@@ -105,14 +111,39 @@ public class ProbeExecution {
           request.toBuilder().snapshot(after.get()).build());
     }
 
-    outcomes.publish(
+    publish(request, observed, outcome);
+    return new ProbeExecutionResult.Completed();
+  }
+
+  // The scan is scheduled in the publication's transaction, so a stored outcome that needs a scan
+  // always has one.
+  private void publish(
+      ProbeTaskRequest request, SourceFileSnapshot observed, ProbeOutcome outcome) {
+    var publication =
         ProbePublication.builder()
             .mediaFileId(request.mediaFileId())
             .snapshot(observed)
             .probeVersion(request.probeVersion())
             .outcome(outcome)
-            .build());
-    return new ProbeExecutionResult.Completed();
+            .build();
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            _ -> {
+              if (outcomes.publish(publication) && needsPacketScan(outcome)) {
+                packetScans.request(
+                    KeyframePacketScanTaskRequest.builder()
+                        .mediaFileId(request.mediaFileId())
+                        .filepathUri(request.filepathUri())
+                        .snapshot(observed)
+                        .probeVersion(request.probeVersion())
+                        .build());
+              }
+            });
+  }
+
+  private static boolean needsPacketScan(ProbeOutcome outcome) {
+    return outcome instanceof ProbeOutcome.Success success
+        && success.keyframes() instanceof KeyframeKnowledge.PacketScanRequired;
   }
 
   private static Optional<SourceFileSnapshot> snapshot(Path path) {

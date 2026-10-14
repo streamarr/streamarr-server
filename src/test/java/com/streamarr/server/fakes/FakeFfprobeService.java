@@ -18,6 +18,7 @@ public class FakeFfprobeService implements FfprobeService {
   private final AtomicInteger probeCount = new AtomicInteger();
   private final AtomicReference<ProbeExecutionRequest> lastRequest = new AtomicReference<>();
   private volatile boolean lastProbeOnVirtualThread;
+  private Optional<ProbeOutcome> outcome = Optional.empty();
 
   private MediaProbe defaultProbe =
       MediaProbe.builder()
@@ -40,7 +41,12 @@ public class FakeFfprobeService implements FfprobeService {
       throw failure;
     }
 
-    return ProbeFixture.completeProbe(defaultProbe);
+    return outcome.orElseGet(() -> ProbeFixture.completeProbe(defaultProbe));
+  }
+
+  /** Answers every probe with this outcome instead of the default probe. */
+  public void answerWith(ProbeOutcome outcome) {
+    this.outcome = Optional.of(outcome);
   }
 
   public void setDefaultProbe(MediaProbe probe) {

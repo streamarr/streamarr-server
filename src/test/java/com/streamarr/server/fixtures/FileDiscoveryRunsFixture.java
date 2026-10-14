@@ -60,7 +60,7 @@ public final class FileDiscoveryRunsFixture {
                 .outcomes(outcomes)
                 .sleeper(probeSleeper)
                 .clock(probeClock)
-                .properties(new ProbeSchedulingProperties(null, CHECK_INTERVAL))
+                .properties(new ProbeSchedulingProperties(null, CHECK_INTERVAL, null))
                 .build())
         .mediaFiles(mediaFiles)
         .build();

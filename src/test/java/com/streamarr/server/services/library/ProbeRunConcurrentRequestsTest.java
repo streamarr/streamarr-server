@@ -83,7 +83,7 @@ class ProbeRunConcurrentRequestsTest {
               throw new AssertionError("every requested probe already has its outcome");
             })
         .clock(clock)
-        .properties(new ProbeSchedulingProperties(null, Duration.ofSeconds(2)))
+        .properties(new ProbeSchedulingProperties(null, Duration.ofSeconds(2), null))
         .build();
   }
 

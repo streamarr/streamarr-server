@@ -25,6 +25,7 @@ import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
+import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
@@ -290,6 +291,8 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
             .producer(producer)
             .fileSystem(FileSystems.getDefault())
             .outcomes(outcomes)
+            .packetScans(new CapturingKeyframePacketScanRequests())
+            .transactionManager(transactionManager)
             .build();
     var completion =
         ProbeTaskCompletion.builder()
