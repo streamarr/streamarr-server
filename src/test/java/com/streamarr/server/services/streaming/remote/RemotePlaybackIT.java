@@ -614,7 +614,6 @@ class RemotePlaybackIT {
         .videoCodecFamily("h264")
         .audioDecision(AudioDecision.stereoAac())
         .subtitleDecision(SubtitleDecision.exclude())
-        .needsKeyframeAlignment(true)
         .build();
   }
 
@@ -645,7 +644,6 @@ class RemotePlaybackIT {
   private TranscodeDecision.TranscodeDecisionBuilder decisionBuilder() {
     return TranscodeDecision.builder()
         .videoCodecFamily("h264")
-        .needsKeyframeAlignment(true)
         .subtitleDecision(SubtitleDecision.exclude());
   }
 

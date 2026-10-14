@@ -32,15 +32,21 @@ import com.streamarr.transcode.v1.JobAttemptCompleted;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.JobAttemptStopped;
+import com.streamarr.transcode.v1.KeyframePositionSource;
+import com.streamarr.transcode.v1.KeyframePositions;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeFailure;
+import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
+import com.streamarr.transcode.v1.ProbeKeyframes;
+import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.UploadSegmentResponse;
+import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
 import com.streamarr.transcode.v1.WorkerCapabilities;
@@ -68,6 +74,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.IntStream;
 import lombok.Builder;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.DisplayName;
@@ -86,6 +93,13 @@ class WorkerSessionServerIT {
       UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
   private static final UUID SOURCE_NAMESPACE_ID =
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
+  // Ten hours of keyframes at one keyframe per second.
+  private static final int LONG_SOURCE_KEYFRAME_COUNT = 36_000;
+  // Every entry takes the widest sint64 encoding, 10 bytes, so the test covers the largest
+  // keyframe positions a worker can report for this many keyframes.
+  private static final long WIDEST_KEYFRAME_TIME_DELTA = Long.MIN_VALUE;
+  // worker_session.proto bounds each list of a ProbeKeyframePositionsPart to this many entries.
+  private static final int MAXIMUM_KEYFRAMES_PER_PART = 4_096;
 
   @ParameterizedTest
   @EnumSource(SessionEnd.class)
@@ -308,6 +322,85 @@ class WorkerSessionServerIT {
         shutdown(channel);
       }
     }
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a worker's running variant when the worker reports the keyframe positions of a long source")
+  void shouldKeepWorkersRunningVariantWhenWorkerReportsKeyframePositionsOfLongSource()
+      throws Exception {
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+      try {
+        var worker = connectProbeWorker(channel, workerIdentity(UUID.randomUUID()));
+        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
+        var job = variantJob();
+        assertThat(server.dispatch(job)).isTrue();
+        assertThat(worker.nextResponse().hasStartVariant()).isTrue();
+        var request =
+            ProbeRequest.newBuilder()
+                .setProbeAttemptId(toProto(UUID.randomUUID()))
+                .setProbeVersion(1)
+                .setSource(job.getSource())
+                .build();
+        var pending = dispatched(server.dispatchProbe(request));
+        assertThat(worker.nextResponse().getStartProbe().getRequest()).isEqualTo(request);
+        var result =
+            ProbeAttemptResult.newBuilder()
+                .setProbeAttemptId(request.getProbeAttemptId())
+                .setProbeVersion(1)
+                .setMedia(
+                    ProbeMediaInfo.newBuilder()
+                        .setKeyframes(
+                            ProbeKeyframes.newBuilder()
+                                .setPositions(
+                                    KeyframePositions.newBuilder()
+                                        .setTimeBaseNumerator(1)
+                                        .setTimeBaseDenominator(90_000)
+                                        .setSource(
+                                            KeyframePositionSource
+                                                .KEYFRAME_POSITION_SOURCE_PACKET_SCAN)
+                                        .setKeyframeCount(LONG_SOURCE_KEYFRAME_COUNT))))
+                .build();
+
+        IntStream.iterate(
+                0,
+                first -> first < LONG_SOURCE_KEYFRAME_COUNT,
+                first -> first + MAXIMUM_KEYFRAMES_PER_PART)
+            .mapToObj(
+                first ->
+                    widestKeyframePositionsPart(
+                        request.getProbeAttemptId(),
+                        Math.min(MAXIMUM_KEYFRAMES_PER_PART, LONG_SOURCE_KEYFRAME_COUNT - first)))
+            .forEach(
+                part ->
+                    worker.send(
+                        EstablishWorkerSessionRequest.newBuilder()
+                            .setProbeKeyframePositionsPart(part)
+                            .build()));
+        worker.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(result).build());
+
+        assertThat(pending.get(5, TimeUnit.SECONDS)).isEqualTo(result);
+        assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isTrue();
+        assertThat(server.availableSlots(SOURCE_NAMESPACE_ID))
+            .as("the running variant must keep its slot")
+            .isEqualTo(1);
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
+  private static ProbeKeyframePositionsPart widestKeyframePositionsPart(
+      Uuid probeAttemptId, int keyframes) {
+    var part = ProbeKeyframePositionsPart.newBuilder().setProbeAttemptId(probeAttemptId);
+    for (var keyframe = 0; keyframe < keyframes; keyframe++) {
+      part.addPresentationTimeDeltas(WIDEST_KEYFRAME_TIME_DELTA);
+      part.addDecodeTimeDeltas(WIDEST_KEYFRAME_TIME_DELTA);
+    }
+
+    return part.build();
   }
 
   @Test

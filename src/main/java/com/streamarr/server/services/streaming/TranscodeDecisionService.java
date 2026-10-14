@@ -29,15 +29,12 @@ public class TranscodeDecisionService {
     var subtitleDecision = SubtitleDecision.exclude();
 
     var mode = resolveTranscodeMode(videoCompatible, audioDecision, subtitleDecision);
-    boolean needsKeyframeAlignment =
-        mode == TranscodeMode.REMUX || mode == TranscodeMode.AUDIO_TRANSCODE;
 
     return TranscodeDecision.builder()
         .transcodeMode(mode)
         .videoCodecFamily(videoCodecFamily)
         .audioDecision(audioDecision)
         .subtitleDecision(subtitleDecision)
-        .needsKeyframeAlignment(needsKeyframeAlignment)
         .build();
   }
 

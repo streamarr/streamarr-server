@@ -70,7 +70,6 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(decision.videoCodecFamily()).isEqualTo("h264");
     assertThat(decision.audioDecision().codec()).isEqualTo("aac");
-    assertThat(decision.needsKeyframeAlignment()).isTrue();
   }
 
   @Test
@@ -84,7 +83,6 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
     assertThat(decision.videoCodecFamily()).isEqualTo("h264");
     assertThat(decision.audioDecision().codec()).isEqualTo("aac");
-    assertThat(decision.needsKeyframeAlignment()).isTrue();
   }
 
   @Test
@@ -99,7 +97,6 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.videoCodecFamily()).isEqualTo("h264");
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
     assertThat(decision.audioDecision().codec()).isEqualTo("aac");
-    assertThat(decision.needsKeyframeAlignment()).isFalse();
   }
 
   @Test
@@ -137,28 +134,6 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
     assertThat(decision.videoCodecFamily()).isEqualTo("av1");
     assertThat(decision.audioDecision().codec()).isEqualTo("aac");
-  }
-
-  @Test
-  @DisplayName("Should not need keyframe alignment when doing full transcode")
-  void shouldNotNeedKeyframeAlignmentWhenDoingFullTranscode() {
-    var source = probe("hevc", "flac", 2, 0);
-    var clientOptions = options(List.of("h264"));
-
-    var decision = service.decide(source, clientOptions);
-
-    assertThat(decision.needsKeyframeAlignment()).isFalse();
-  }
-
-  @Test
-  @DisplayName("Should need keyframe alignment when doing audio transcode")
-  void shouldNeedKeyframeAlignmentWhenDoingAudioTranscode() {
-    var source = probe("h264", "flac", 2, 0);
-    var clientOptions = options(List.of("h264"));
-
-    var decision = service.decide(source, clientOptions);
-
-    assertThat(decision.needsKeyframeAlignment()).isTrue();
   }
 
   @Test

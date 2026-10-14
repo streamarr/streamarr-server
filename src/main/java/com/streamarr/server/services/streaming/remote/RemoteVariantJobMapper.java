@@ -53,7 +53,6 @@ final class RemoteVariantJobMapper {
         .setSubtitle(subtitle(decision.subtitleDecision()))
         // Every HLS variant is fMP4 (ADR 0037); the additive contract keeps the field.
         .setContainer(ContainerFormat.CONTAINER_FORMAT_FMP4)
-        .setAlignKeyframesToSegments(decision.needsKeyframeAlignment())
         .build();
   }
 

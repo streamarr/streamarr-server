@@ -7,5 +7,4 @@ public record TranscodeDecision(
     TranscodeMode transcodeMode,
     String videoCodecFamily,
     AudioDecision audioDecision,
-    SubtitleDecision subtitleDecision,
-    boolean needsKeyframeAlignment) {}
+    SubtitleDecision subtitleDecision) {}

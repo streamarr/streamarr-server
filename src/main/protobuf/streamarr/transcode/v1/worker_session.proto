@@ -172,7 +172,8 @@ message TranscodeDecision {
   AudioDecision audio = 3;
   SubtitleDecision subtitle = 4;
   ContainerFormat container = 5;
-  bool align_keyframes_to_segments = 6;
+  reserved 6;
+  reserved "align_keyframes_to_segments";
   VideoDecision video = 7;
 }
 
@@ -218,6 +219,12 @@ message TranscodeExecution {
   // count, or whose start_sequence_number is not below it, is an invalid specification. ADR 0037
   // describes how the worker bounds its list of forced keyframes with it.
   uint32 media_segment_count = 5;
+  // The source position where the attempt starts reading, with sub-second precision, on the
+  // zero-based timeline of ProbeKeyframePositionsPart. When the field is set, the worker seeks to
+  // it instead of seek_position_seconds. The server chooses the position. For an attempt that
+  // copies video, the server sends the decode time of the first source keyframe of the attempt's
+  // first media segment. This version of the server sets the field for no other attempt.
+  google.protobuf.Duration seek_position = 6;
 }
 
 message VariantJob {
@@ -270,6 +277,7 @@ message EstablishWorkerSessionRequest {
     JobAttemptCompleted job_attempt_completed = 4;
     JobAttemptStopped job_attempt_stopped = 5;
     ProbeAttemptResult probe_result = 6;
+    ProbeKeyframePositionsPart probe_keyframe_positions_part = 7;
   }
 }
 
@@ -289,6 +297,11 @@ message ProbeRequest {
   // Requested Streamarr probe result contract version. Zero, including omission, is invalid.
   uint32 probe_version = 2;
   MediaSourceRef source = 3;
+  // When true, the worker finds keyframe positions by scanning every packet of the chosen video
+  // stream instead of reading the container index. Only the probe versions that report keyframe
+  // positions accept this flag. A worker answers the flag under any other probe version with
+  // PROBE_FAILURE_UNSUPPORTED_VERSION.
+  bool scan_keyframe_packets = 4;
 }
 
 message ProbeContainerInfo {
@@ -311,9 +324,91 @@ message ProbeStreamInfo {
   bool is_forced = 11;
 }
 
+enum KeyframePositionSource {
+  KEYFRAME_POSITION_SOURCE_UNSPECIFIED = 0;
+  // The worker read the positions from the container index: the MP4 or MOV sync-sample table, or
+  // the Matroska Cues element.
+  KEYFRAME_POSITION_SOURCE_CONTAINER_INDEX = 1;
+  // The worker scanned every packet of the chosen video stream.
+  KEYFRAME_POSITION_SOURCE_PACKET_SCAN = 2;
+}
+
+// The keyframe positions of the chosen video stream. The positions themselves travel in the
+// attempt's ProbeKeyframePositionsPart messages, which arrive before this result.
+message KeyframePositions {
+  // The ProbeStreamInfo.index of the chosen video stream: its index in the container.
+  uint32 stream_index = 1;
+  uint32 time_base_numerator = 2;
+  uint32 time_base_denominator = 3;
+  KeyframePositionSource source = 4;
+  // The number of entries in each list across every part of the attempt. The count is at least
+  // one; a stream without keyframes reports KEYFRAMES_UNAVAILABLE_REASON_NO_KEYFRAMES instead. The
+  // server discards the parts and the positions when the count differs from the entries it
+  // received.
+  uint32 keyframe_count = 5;
+}
+
+// One run of consecutive keyframe positions from a probe attempt. A long source has too many
+// keyframes for one session message, so the worker splits the positions into parts. Each list in a
+// part holds at most 4,096 entries. Even when every entry takes the widest sint64 encoding of 10
+// bytes, a part then stays below 128 KiB, the largest session message the server accepts.
+//
+// The worker sends every part of the attempt in decode-time order, before the attempt's
+// ProbeAttemptResult. The worker sends parts only when the result reports KeyframePositions. The
+// server discards the parts of an attempt whose result reports anything else.
+//
+// Entry i of both lists in a part describes the same keyframe, so both lists have the same length.
+// Entries are ordered by decode time, within a part and across the parts.
+// Times count ticks of time_base_numerator / time_base_denominator seconds on the zero-based
+// timeline that the producer groups samples on: the demuxer time minus the container start time,
+// as FFmpeg's -copyts -start_at_zero produces. The first entry of the attempt's first part is an
+// absolute time. Every later entry, including the first entry of a later part, is the difference
+// from the entry before it.
+message ProbeKeyframePositionsPart {
+  Uuid probe_attempt_id = 1;
+  repeated sint64 presentation_time_deltas = 2;
+  repeated sint64 decode_time_deltas = 3;
+}
+
+// Why the server must request a packet scan to learn the keyframe positions.
+enum KeyframePacketScanReason {
+  KEYFRAME_PACKET_SCAN_REASON_UNSPECIFIED = 0;
+  // The container has no index. MPEG-TS, AVI and fragmented MP4 sources are examples.
+  KEYFRAME_PACKET_SCAN_REASON_NO_CONTAINER_INDEX = 1;
+  // The container index is sparse or incomplete, such as Matroska Cues that skip keyframes.
+  KEYFRAME_PACKET_SCAN_REASON_INCOMPLETE_CONTAINER_INDEX = 2;
+  // The worker cannot read the last keyframe that the container index lists, as in a truncated
+  // file.
+  KEYFRAME_PACKET_SCAN_REASON_UNREADABLE_LAST_INDEXED_KEYFRAME = 3;
+}
+
+enum KeyframesUnavailableReason {
+  KEYFRAMES_UNAVAILABLE_REASON_UNSPECIFIED = 0;
+  // A keyframe has no presentation time or no decode time.
+  KEYFRAMES_UNAVAILABLE_REASON_KEYFRAME_WITHOUT_TIMESTAMP = 1;
+  // A packet scan found no keyframe in the chosen video stream.
+  KEYFRAMES_UNAVAILABLE_REASON_NO_KEYFRAMES = 2;
+}
+
+// The worker cannot report usable keyframe positions. The server never copies such a source.
+message KeyframesUnavailable {
+  KeyframesUnavailableReason reason = 1;
+}
+
+message ProbeKeyframes {
+  oneof result {
+    KeyframePositions positions = 1;
+    // Only a probe that reads the container index reports this result.
+    KeyframePacketScanReason packet_scan_required = 2;
+    KeyframesUnavailable unavailable = 3;
+  }
+}
+
 message ProbeMediaInfo {
   ProbeContainerInfo container = 1;
   repeated ProbeStreamInfo streams = 2;
+  // Present only for the probe versions that report keyframe positions.
+  ProbeKeyframes keyframes = 3;
 }
 
 message ProbeAttemptResult {
