@@ -87,13 +87,13 @@ class FileDiscoveryRunsTest {
   @DisplayName("Should report required results when secondary artwork is still pending")
   void shouldReportRequiredResultsWhenSecondaryArtworkIsStillPending() throws Exception {
     imageDownloader.holdPathsStartingWith("/profile");
-    artworkService.fetchSecondary(personArtwork(), ImageRefreshMode.PRESERVE);
+    artworkService.requestBackgroundArtwork(personArtwork(), ImageRefreshMode.PRESERVE);
     imageDownloader.awaitHeldDownloads(1, Duration.ofSeconds(5));
     var runs = fileDiscoveryRuns();
     var discovery = runs.open("scan of", library);
     try (discovery) {
       discovery.probeRun().request(mediaFile().getId());
-      artworkService.fetchRequired(discovery.artworkRun(), movieArtwork());
+      artworkService.requestPrimaryArtwork(discovery.artworkRun(), movieArtwork());
     }
 
     var results = runs.awaitResults(discovery);
@@ -102,7 +102,7 @@ class FileDiscoveryRunsTest {
     assertThat(results.artwork().counts())
         .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
     assertThat(results.probes().count(RequestedProbeResult.READY)).isOne();
-    assertThat(results.secondaryImagesPending()).isOne();
+    assertThat(results.backgroundImagesPending()).isOne();
   }
 
   @Test
@@ -112,7 +112,7 @@ class FileDiscoveryRunsTest {
     var runs = fileDiscoveryRuns();
     var discovery = runs.open("scan of", library);
     try (discovery) {
-      artworkService.fetchRequired(discovery.artworkRun(), movieArtwork());
+      artworkService.requestPrimaryArtwork(discovery.artworkRun(), movieArtwork());
     }
 
     assertThatThrownBy(() -> runs.awaitResults(discovery))
@@ -152,7 +152,7 @@ class FileDiscoveryRunsTest {
     var discovery = runs.open("scan of", library);
     try (discovery) {
       discovery.probeRun().request(mediaFile().getId());
-      artworkService.fetchRequired(discovery.artworkRun(), movieArtwork());
+      artworkService.requestPrimaryArtwork(discovery.artworkRun(), movieArtwork());
     }
 
     assertThatThrownBy(
@@ -188,7 +188,7 @@ class FileDiscoveryRunsTest {
     var discovery = runs.open("scan of", library);
     try (discovery) {
       discovery.probeRun().request(mediaFile().getId());
-      timedArtwork.fetchRequired(discovery.artworkRun(), movieArtwork());
+      timedArtwork.requestPrimaryArtwork(discovery.artworkRun(), movieArtwork());
     }
 
     try (var results = BoundedTask.start(() -> runs.awaitResults(discovery))) {

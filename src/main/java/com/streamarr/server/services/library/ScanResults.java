@@ -19,7 +19,7 @@ public record ScanResults(
     @NonNull Map<MediaFileStatus, Long> files,
     @NonNull ArtworkRunSummary artwork,
     @NonNull ProbeRunSummary probes,
-    int secondaryImagesPending) {
+    int backgroundImagesPending) {
 
   public ScanResults {
     files = Map.copyOf(files);
@@ -34,7 +34,7 @@ public record ScanResults(
         "probes in %s seconds (%s)".formatted(seconds(probes.elapsed()), probes.describe()),
         "in the background: %s pending across all libraries, %s retrying, %s to probe"
             .formatted(
-                SummaryText.counted(secondaryImagesPending, "secondary image", "secondary images"),
+                SummaryText.counted(backgroundImagesPending, "secondary image", "secondary images"),
                 SummaryText.counted(
                     probes.count(RequestedProbeResult.FAILED), "failed probe", "failed probes"),
                 SummaryText.counted(

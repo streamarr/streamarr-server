@@ -20,6 +20,6 @@ public class ImageEnrichmentListener {
             .entityType(event.entityType())
             .sources(event.imageSources())
             .build();
-    artworkService.fetchSecondary(artwork, event.imageRefreshMode());
+    artworkService.requestBackgroundArtwork(artwork, event.imageRefreshMode());
   }
 }

@@ -127,7 +127,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
             .build();
 
     artworkService
-        .fetchSecondary(artwork, ImageRefreshMode.PRESERVE)
+        .requestBackgroundArtwork(artwork, ImageRefreshMode.PRESERVE)
         .get(BOUND_SECONDS, TimeUnit.SECONDS);
 
     assertThat(imageCreators(person.getId()))

@@ -63,7 +63,7 @@ public class FileDiscoveryRuns {
             .files(mediaFiles.countStatuses(discovery.probeRun().mediaFileIds()))
             .artwork(artwork)
             .probes(probes.get())
-            .secondaryImagesPending(artworkService.pendingSecondaryImages())
+            .backgroundImagesPending(artworkService.pendingBackgroundImages())
             .build();
       } finally {
         probes.cancel(true);

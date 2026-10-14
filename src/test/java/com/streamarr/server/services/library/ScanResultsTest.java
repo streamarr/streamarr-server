@@ -39,7 +39,7 @@ class ScanResultsTest {
                         RequestedProbeResult.PROBED_BY_NEWER_VERSION, 12,
                         RequestedProbeResult.REMOVED, 13),
                     Duration.ofMillis(1200)))
-            .secondaryImagesPending(14)
+            .backgroundImagesPending(14)
             .build();
 
     assertThat(results.describe())
@@ -67,7 +67,7 @@ class ScanResultsTest {
                     ArtworkCounts.builder().saved(1).skipped(1).unavailable(1).failed(1).build(),
                     Duration.ofSeconds(1)))
             .probes(probes(probeCounts, Duration.ofSeconds(1)))
-            .secondaryImagesPending(1)
+            .backgroundImagesPending(1)
             .build();
 
     assertThat(results.describe())
@@ -87,7 +87,7 @@ class ScanResultsTest {
             .files(Map.of())
             .artwork(artwork(ArtworkCounts.builder().build(), Duration.ZERO))
             .probes(probes(Map.of(), Duration.ZERO))
-            .secondaryImagesPending(0)
+            .backgroundImagesPending(0)
             .build();
 
     assertThat(results.describe())

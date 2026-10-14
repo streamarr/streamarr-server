@@ -70,12 +70,12 @@ public class ArtworkService {
    *
    * @throws IllegalStateException if the run is closed to new requests
    */
-  public CompletableFuture<List<ArtworkResult>> fetchRequired(
+  public CompletableFuture<List<ArtworkResult>> requestPrimaryArtwork(
       ArtworkRun run, ArtworkSources artwork) {
     run.register();
     var request = new CompletableFuture<List<ArtworkResult>>();
     var fetch = new RequiredFetch(run, artwork, request);
-    progress.requested(ArtworkPriority.REQUIRED, fetch.sourceImages());
+    progress.requested(ArtworkPriority.PRIMARY, fetch.sourceImages());
     afterOwningTransaction(() -> startRequiredFetch(fetch), () -> finish(fetch, List.of()));
     return request;
   }
@@ -85,10 +85,10 @@ public class ArtworkService {
    * artwork.secondary-concurrency} secondary fetches run at once, and the rest wait in a queue so
    * they cannot delay required artwork.
    */
-  public CompletableFuture<List<ArtworkResult>> fetchSecondary(
+  public CompletableFuture<List<ArtworkResult>> requestBackgroundArtwork(
       ArtworkSources artwork, ImageRefreshMode refreshMode) {
     var sourceImages = artwork.requestedImageTypes().size();
-    progress.requested(ArtworkPriority.SECONDARY, sourceImages);
+    progress.requested(ArtworkPriority.BACKGROUND, sourceImages);
     var attemptedAt = clock.instant();
     CompletableFuture<List<ArtworkResult>> results;
     try {
@@ -109,13 +109,13 @@ public class ArtworkService {
             counted = artwork.failures(failure);
           }
 
-          progress.finished(ArtworkPriority.SECONDARY, sourceImages, counted);
+          progress.finished(ArtworkPriority.BACKGROUND, sourceImages, counted);
         });
   }
 
   /** Returns how many secondary source images are requested but not finished, server-wide. */
-  public int pendingSecondaryImages() {
-    return progress.pending(ArtworkPriority.SECONDARY);
+  public int pendingBackgroundImages() {
+    return progress.pending(ArtworkPriority.BACKGROUND);
   }
 
   @PreDestroy
@@ -142,7 +142,7 @@ public class ArtworkService {
       log.error("Failed to record artwork results for entity {}", fetch.artwork().entityId(), e);
       var failures = fetch.artwork().failures(e);
       fetch.run().finishUnsaved(failures, e);
-      progress.finished(ArtworkPriority.REQUIRED, fetch.sourceImages(), failures);
+      progress.finished(ArtworkPriority.PRIMARY, fetch.sourceImages(), failures);
       fetch.request().completeExceptionally(e);
       return;
     }
@@ -152,7 +152,7 @@ public class ArtworkService {
 
   private void finish(RequiredFetch fetch, List<ArtworkResult> results) {
     fetch.run().finish(results);
-    progress.finished(ArtworkPriority.REQUIRED, fetch.sourceImages(), results);
+    progress.finished(ArtworkPriority.PRIMARY, fetch.sourceImages(), results);
     fetch.request().complete(results);
   }
 

@@ -79,7 +79,7 @@ public class SeriesService {
 
     var savedSeries = seriesRepository.saveAndFlush(series);
 
-    artworkService.fetchRequired(
+    artworkService.requestPrimaryArtwork(
         artworkRun,
         ArtworkSources.builder()
             .entityId(savedSeries.getId())
@@ -106,7 +106,7 @@ public class SeriesService {
                 .library(library)
                 .build());
 
-    artworkService.fetchRequired(
+    artworkService.requestPrimaryArtwork(
         request.artworkRun(),
         ArtworkSources.builder()
             .entityId(season.getId())
@@ -155,7 +155,7 @@ public class SeriesService {
         .copyTo(existing);
 
     var saved = seriesRepository.saveAndFlush(existing);
-    artworkService.fetchRequired(
+    artworkService.requestPrimaryArtwork(
         artworkRun,
         ArtworkSources.builder()
             .entityId(saved.getId())
@@ -181,7 +181,7 @@ public class SeriesService {
     season.setAirDate(details.airDate());
 
     var savedSeason = seasonRepository.saveAndFlush(season);
-    artworkService.fetchRequired(
+    artworkService.requestPrimaryArtwork(
         request.artworkRun(),
         ArtworkSources.builder()
             .entityId(savedSeason.getId())
@@ -224,7 +224,7 @@ public class SeriesService {
           .findFirst()
           .ifPresent(
               details ->
-                  artworkService.fetchRequired(
+                  artworkService.requestPrimaryArtwork(
                       request.artworkRun(),
                       ArtworkSources.builder()
                           .entityId(episode.getId())

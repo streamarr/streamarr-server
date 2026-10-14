@@ -135,7 +135,7 @@ public class MovieService {
 
   private void fetchRequiredArtwork(
       UUID movieId, List<ImageSource> sources, ArtworkRun artworkRun) {
-    artworkService.fetchRequired(
+    artworkService.requestPrimaryArtwork(
         artworkRun,
         ArtworkSources.builder()
             .entityId(movieId)

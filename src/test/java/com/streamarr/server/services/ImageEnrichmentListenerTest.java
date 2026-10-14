@@ -622,7 +622,7 @@ class ImageEnrichmentListenerTest {
     List<ArtworkResult> results;
     mutex.lock();
     try {
-      var request = artworkService.fetchSecondary(artwork, ImageRefreshMode.PRESERVE);
+      var request = artworkService.requestBackgroundArtwork(artwork, ImageRefreshMode.PRESERVE);
       assertThat(mutex.awaitLockAttempts()).isTrue();
 
       mutex.interruptibleThread().interrupt();
