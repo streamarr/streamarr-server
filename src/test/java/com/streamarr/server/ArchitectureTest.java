@@ -645,8 +645,7 @@ class ArchitectureTest {
   private static ArchRule onlyCreditServiceMaySaveCredits() {
     return noClasses()
         .that()
-        .doNotBelongToAnyOf(
-            CreditService.class, PersonService.class, GenreService.class, CompanyService.class)
+        .doNotBelongToAnyOf(CreditService.class)
         .should()
         .dependOnClassesThat()
         .belongToAnyOf(PersonService.class, GenreService.class, CompanyService.class)
