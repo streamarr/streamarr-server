@@ -3,20 +3,32 @@ package com.streamarr.server.graphql.transport;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.services.events.library.LibraryStatusChangedEvent;
+import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.support.ActiveSubscriptions;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.GraphQlTransportWsTestClient;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.ApplicationEventPublisher;
 
 /**
  * A socket lives no longer than the access token that opened it. At expiry the server closes it
@@ -29,12 +41,19 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 class WebSocketAccessExpiryIT extends AbstractIntegrationTest {
 
   private static final String STATUS_FIELD = "libraryStatusChanged";
+  private static final String STATUS_SUBSCRIPTION =
+      "subscription { libraryStatusChanged { id status } }";
 
   @LocalServerPort private int port;
 
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private MeterRegistry meterRegistry;
+  @Autowired private LibraryRepository libraryRepository;
+  @Autowired private ApplicationEventPublisher eventPublisher;
 
+  @TempDir private Path libraryDirectory;
+
+  private final List<UUID> libraryIds = new ArrayList<>();
   private AuthTestSupport.TestIdentity admin;
   private ActiveSubscriptions activeSubscriptions;
 
@@ -47,6 +66,7 @@ class WebSocketAccessExpiryIT extends AbstractIntegrationTest {
   @AfterEach
   void deleteAdmin() {
     activeSubscriptions.awaitNoneActive();
+    libraryIds.forEach(libraryRepository::deleteById);
     authTestSupport.deleteIdentity(admin);
   }
 
@@ -57,7 +77,7 @@ class WebSocketAccessExpiryIT extends AbstractIntegrationTest {
     var bearer = authTestSupport.profileBearerExpiringAt(admin, expiresAt);
 
     try (var socket = GraphQlTransportWsTestClient.connectWithBearer(port, bearer)) {
-      socket.subscribe("status", "subscription { libraryStatusChanged { id status } }");
+      socket.subscribe("status", STATUS_SUBSCRIPTION);
       activeSubscriptions.awaitCount(STATUS_FIELD, 1);
 
       var closure = socket.awaitClosure();
@@ -69,5 +89,45 @@ class WebSocketAccessExpiryIT extends AbstractIntegrationTest {
           .noneMatch(message -> "complete".equals(message.path("type").asString()));
       activeSubscriptions.awaitCount(STATUS_FIELD, 0);
     }
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver status changes on a new socket when the client reconnects with a fresh"
+          + " token after 4100")
+  void shouldDeliverStatusChangesOnNewSocketWhenClientReconnectsWithFreshTokenAfter4100() {
+    var library = saveLibrary();
+    var expiresAt = Instant.now().plusSeconds(3).truncatedTo(ChronoUnit.SECONDS);
+    try (var expiring =
+        GraphQlTransportWsTestClient.connectWithBearer(
+            port, authTestSupport.profileBearerExpiringAt(admin, expiresAt))) {
+      expiring.subscribe("status", STATUS_SUBSCRIPTION);
+      assertThat(expiring.awaitClosure().statusCode()).isEqualTo(4100);
+    }
+
+    activeSubscriptions.awaitCount(STATUS_FIELD, 0);
+    try (var renewed =
+        GraphQlTransportWsTestClient.connectWithBearer(
+            port, authTestSupport.profileBearer(admin))) {
+      renewed.subscribe("status", STATUS_SUBSCRIPTION);
+      activeSubscriptions.awaitCount(STATUS_FIELD, 1);
+
+      eventPublisher.publishEvent(new LibraryStatusChangedEvent(library.getId()));
+
+      var change = renewed.nextMessageFor("status").path("payload").path("data").path(STATUS_FIELD);
+      assertThat(change.path("id").asString()).isEqualTo(library.getId().toString());
+      assertThat(change.path("status").asString()).isEqualTo("HEALTHY");
+    }
+  }
+
+  private Library saveLibrary() {
+    var library =
+        libraryRepository.saveAndFlush(
+            LibraryFixtureCreator.unsavedLibraryBuilder()
+                .filepathUri(FilepathCodec.encode(libraryDirectory))
+                .status(LibraryStatus.HEALTHY)
+                .build());
+    libraryIds.add(library.getId());
+    return library;
   }
 }
