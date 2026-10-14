@@ -27,13 +27,18 @@ public final class RemoteFfprobeService implements FfprobeService {
 
   @Override
   public ProbeOutcome probe(ProbeExecutionRequest request) {
-    var dispatch =
-        server.dispatchProbe(
-            ProbeRequest.newBuilder()
-                .setProbeAttemptId(toProto(request.attemptId()))
-                .setProbeVersion(request.probeVersion())
-                .setSource(sourceMapper.map(request.sourcePath()))
-                .build());
+    return dispatch(probeRequest(request).build());
+  }
+
+  private ProbeRequest.Builder probeRequest(ProbeExecutionRequest request) {
+    return ProbeRequest.newBuilder()
+        .setProbeAttemptId(toProto(request.attemptId()))
+        .setProbeVersion(request.probeVersion())
+        .setSource(sourceMapper.map(request.sourcePath()));
+  }
+
+  private ProbeOutcome dispatch(ProbeRequest request) {
+    var dispatch = server.dispatchProbe(request);
     var pending =
         switch (dispatch) {
           case ProbeDispatch.Dispatched(var result) -> result;
