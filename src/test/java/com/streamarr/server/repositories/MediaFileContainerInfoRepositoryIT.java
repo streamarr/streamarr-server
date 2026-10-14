@@ -12,6 +12,7 @@ import com.streamarr.server.domain.media.MediaFileStreamId;
 import com.streamarr.server.domain.media.MediaFileStreamInfo;
 import com.streamarr.server.domain.media.PersistedProbeOutcome;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -195,8 +196,14 @@ class MediaFileContainerInfoRepositoryIT extends AbstractIntegrationTest {
                     MediaFileStreamInfo.builder().stream(file.getId(), stream).build()));
     flushAndClear();
 
-    var outcome = repository.findByMediaFileId(file.getId()).orElseThrow().getOutcome();
-    assertThat(outcome).isEqualTo(new ProbeOutcome.Success(container, streams));
+    var outcome =
+        repository
+            .findByMediaFileId(file.getId())
+            .orElseThrow()
+            .getOutcome(KeyframeKnowledge.NotReported::new);
+    assertThat(outcome)
+        .isEqualTo(
+            new ProbeOutcome.Success(container, streams, new KeyframeKnowledge.NotReported()));
     var summary = ((ProbeOutcome.Success) outcome).mediaProbe();
     assertThat(summary.videoCodec()).isEqualTo("h264");
     assertThat(summary.audioCodec()).isEqualTo("aac");

@@ -20,15 +20,6 @@ public sealed interface ProbeOutcome {
       streams = List.copyOf(streams);
     }
 
-    /** An outcome whose probe version does not report keyframe positions. */
-    public Success(@NonNull ProbeContainer container, @NonNull List<StreamInfo> streams) {
-      this(container, streams, new KeyframeKnowledge.NotReported());
-    }
-
-    public Success withKeyframes(@NonNull KeyframeKnowledge knowledge) {
-      return new Success(container, streams, knowledge);
-    }
-
     public MediaProbe mediaProbe() {
       var video =
           streams.stream().filter(s -> "video".equals(s.codecType())).findFirst().orElseThrow();

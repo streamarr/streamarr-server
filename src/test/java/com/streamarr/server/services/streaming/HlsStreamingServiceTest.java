@@ -15,6 +15,7 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -397,7 +398,8 @@ class HlsStreamingServiceTest {
                 .format(complete.container().format())
                 .bitrate(complete.container().bitrate())
                 .build(),
-            complete.streams());
+            complete.streams(),
+            new KeyframeKnowledge.NotReported());
     return Stream.of(
         Arguments.of("missing", withoutDuration),
         Arguments.of("zero", probeLasting(Duration.ZERO)),

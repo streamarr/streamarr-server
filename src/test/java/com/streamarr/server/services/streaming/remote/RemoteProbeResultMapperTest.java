@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -147,7 +148,11 @@ class RemoteProbeResultMapperTest {
 
     var video = StreamInfo.builder().index(0).codecType("video").build();
     assertThat(outcome)
-        .isEqualTo(new ProbeOutcome.Success(ProbeContainer.builder().build(), List.of(video)));
+        .isEqualTo(
+            new ProbeOutcome.Success(
+                ProbeContainer.builder().build(),
+                List.of(video),
+                new KeyframeKnowledge.NotReported()));
   }
 
   @Test
@@ -327,6 +332,8 @@ class RemoteProbeResultMapperTest {
             .build();
     var unknown = StreamInfo.builder().index(11).codecType("unknown").build();
     assertThat(outcome)
-        .isEqualTo(new ProbeOutcome.Success(container, List.of(video, audio, unknown)));
+        .isEqualTo(
+            new ProbeOutcome.Success(
+                container, List.of(video, audio, unknown), new KeyframeKnowledge.NotReported()));
   }
 }

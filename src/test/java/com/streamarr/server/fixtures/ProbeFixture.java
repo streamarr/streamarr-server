@@ -1,5 +1,6 @@
 package com.streamarr.server.fixtures;
 
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -21,7 +22,8 @@ public class ProbeFixture {
             .duration(Optional.of(probe.duration()))
             .bitrate(OptionalLong.of(probe.bitrate()))
             .build(),
-        streams(probe));
+        streams(probe),
+        new KeyframeKnowledge.NotReported());
   }
 
   private static List<StreamInfo> streams(MediaProbe probe) {

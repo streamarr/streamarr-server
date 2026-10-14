@@ -7,6 +7,7 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -92,7 +93,9 @@ class ProbeOutcomePublicationIT extends AbstractIntegrationTest {
   void shouldReplaceStreamRowsWhenRepublishingTheSameSnapshotAndVersion() {
     var file = createMediaFile();
     repository.publish(publication(file.getId(), SNAPSHOT_A, 1, success("h264", "aac")));
-    var videoOnly = new ProbeOutcome.Success(container(), List.of(video("h264")));
+    var videoOnly =
+        new ProbeOutcome.Success(
+            container(), List.of(video("h264")), new KeyframeKnowledge.NotReported());
 
     var published = repository.publish(publication(file.getId(), SNAPSHOT_A, 1, videoOnly));
 
@@ -133,7 +136,10 @@ class ProbeOutcomePublicationIT extends AbstractIntegrationTest {
   }
 
   private static ProbeOutcome.Success success(String videoCodec, String audioCodec) {
-    return new ProbeOutcome.Success(container(), List.of(video(videoCodec), audio(audioCodec)));
+    return new ProbeOutcome.Success(
+        container(),
+        List.of(video(videoCodec), audio(audioCodec)),
+        new KeyframeKnowledge.NotReported());
   }
 
   private static ProbeContainer container() {

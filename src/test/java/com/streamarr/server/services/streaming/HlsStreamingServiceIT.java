@@ -14,6 +14,7 @@ import com.streamarr.server.domain.media.MediaFileContainerInfo;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
@@ -186,7 +187,8 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
     storeOutcome(
         new ProbeOutcome.Success(
             ProbeContainer.builder().format(complete.container().format()).build(),
-            complete.streams()));
+            complete.streams(),
+            new KeyframeKnowledge.NotReported()));
     var command =
         createStreamSessionCommand(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
 

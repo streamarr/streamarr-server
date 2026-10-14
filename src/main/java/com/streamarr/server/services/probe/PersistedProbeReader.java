@@ -2,7 +2,6 @@ package com.streamarr.server.services.probe;
 
 import com.streamarr.server.domain.media.PersistedProbeOutcome;
 import com.streamarr.server.domain.media.ProbeVersion;
-import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,15 +27,8 @@ public class PersistedProbeReader {
                 new PersistedProbeOutcome(
                     row.getSnapshot(),
                     row.getProbeVersion(),
-                    withKeyframes(mediaFileId, row.getOutcome())))
+                    row.getOutcome(
+                        () -> repository.findKeyframeKnowledge(mediaFileId).orElseThrow())))
         .filter(outcome -> outcome.isCompatibleWith(ProbeVersion.CURRENT));
-  }
-
-  private ProbeOutcome withKeyframes(UUID mediaFileId, ProbeOutcome outcome) {
-    return switch (outcome) {
-      case ProbeOutcome.Failure failure -> failure;
-      case ProbeOutcome.Success success ->
-          repository.findKeyframeKnowledge(mediaFileId).map(success::withKeyframes).orElse(success);
-    };
   }
 }

@@ -1,5 +1,6 @@
 package com.streamarr.server.domain.media;
 
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -18,11 +19,13 @@ import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.UUID;
+import java.util.function.Supplier;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.NonNull;
 
 @Entity
 @Getter
@@ -88,13 +91,19 @@ public class MediaFileContainerInfo {
     return getClass().hashCode();
   }
 
-  public ProbeOutcome getOutcome() {
+  /**
+   * This entity does not map the keyframe columns, so the caller reads what a successful outcome
+   * says about the source's keyframes. The supplier runs only for a successful outcome.
+   */
+  public ProbeOutcome getOutcome(@NonNull Supplier<KeyframeKnowledge> keyframes) {
     if (probeError != null) {
       return new ProbeOutcome.Failure(probeError);
     }
 
     return new ProbeOutcome.Success(
-        getContainer(), streams.stream().map(MediaFileStreamInfo::toStreamInfo).toList());
+        getContainer(),
+        streams.stream().map(MediaFileStreamInfo::toStreamInfo).toList(),
+        keyframes.get());
   }
 
   public Optional<ProbeError> getProbeError() {
