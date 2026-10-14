@@ -14,7 +14,6 @@ import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
-import com.streamarr.transcode.v1.VerifiedVideoEncoder;
 import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.VideoDecision;
 import com.streamarr.transcode.v1.VideoEncoderBackend;
@@ -22,6 +21,7 @@ import com.streamarr.transcode.v1.VideoMode;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
+import com.streamarr.transcode.v1.WorkerVerifiedVideoEncoder;
 import io.grpc.MethodDescriptor.MethodType;
 import java.util.HashSet;
 import java.util.Set;
@@ -96,18 +96,18 @@ class TranscodeWorkerContractTest {
 
   @Test
   @DisplayName(
-      "Should advertise each verified video encoder with its encoder backend when a worker registers")
-  void shouldAdvertiseEachVerifiedVideoEncoderWithItsEncoderBackendWhenWorkerRegisters()
+      "Should advertise each worker-verified video encoder with its encoder backend when a worker registers")
+  void shouldAdvertiseEachWorkerVerifiedVideoEncoderWithItsEncoderBackendWhenWorkerRegisters()
       throws Exception {
     var software =
-        VerifiedVideoEncoder.newBuilder()
+        WorkerVerifiedVideoEncoder.newBuilder()
             .setBackend(
                 encoderBackend(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264")
                     .setKind(EncoderKind.ENCODER_KIND_SOFTWARE))
             .setKeyframeVerified(true)
             .build();
     var hardware =
-        VerifiedVideoEncoder.newBuilder()
+        WorkerVerifiedVideoEncoder.newBuilder()
             .setBackend(
                 encoderBackend(VideoCodecFamily.VIDEO_CODEC_FAMILY_HEVC, "hevc_nvenc")
                     .setKind(EncoderKind.ENCODER_KIND_HARDWARE))
@@ -125,8 +125,8 @@ class TranscodeWorkerContractTest {
   }
 
   @Test
-  @DisplayName("Should report the encoder backend only when a job attempt encodes the video")
-  void shouldReportTheEncoderBackendOnlyWhenJobAttemptEncodesTheVideo() throws Exception {
+  @DisplayName("Should leave the encoder backend absent when a job attempt omits it")
+  void shouldLeaveTheEncoderBackendAbsentWhenJobAttemptOmitsIt() throws Exception {
     var attemptId = uuid(UUID.randomUUID());
     var backend =
         encoderBackend(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "libsvtav1")

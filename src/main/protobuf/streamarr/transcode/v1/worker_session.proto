@@ -41,10 +41,13 @@ message VideoEncoderBackend {
   EncoderKind kind = 3;
 }
 
-message VerifiedVideoEncoder {
+// An encoder that passed the worker's test encode and that the worker advertises. A worker-verified
+// encoder is not necessarily keyframe-verified.
+message WorkerVerifiedVideoEncoder {
   VideoEncoderBackend backend = 1;
-  // True when ADR 0037 lists the encoder as keyframe-verified. The worker takes the flag from that
-  // list and never derives it from its own output.
+  // True when ADR 0037 lists the encoder, with the encoder settings that the worker runs, as
+  // keyframe-verified. For example, ADR 0037 lists the VideoToolbox encoders only with B-frames
+  // off. The worker takes the flag from that list and never derives it from its own output.
   bool keyframe_verified = 2;
 }
 
@@ -54,9 +57,10 @@ message WorkerCapabilities {
   // These are independent of the installed FFmpeg and ffprobe versions.
   repeated uint32 probe_versions = 2;
   // One entry for each codec family the worker can encode: the encoder backend that the worker
-  // runs for every job of that codec family. A hardware encoder appears only after its test encode
-  // passed at startup.
-  repeated VerifiedVideoEncoder video_encoders = 3;
+  // runs for every job of that codec family. Every entry, hardware or software, passed the worker's
+  // test encode. The server counts a hardware encoder backend only after the backend also passes
+  // the checks that ADR 0037 sets.
+  repeated WorkerVerifiedVideoEncoder video_encoders = 3;
 }
 
 message WorkerRegistration {
@@ -214,7 +218,7 @@ message VariantJob {
 message JobAttemptStarted {
   Uuid job_attempt_id = 1;
   // The encoder backend that the job attempt runs. Absent when the job attempt copies the video.
-  optional VideoEncoderBackend encoder_backend = 2;
+  VideoEncoderBackend encoder_backend = 2;
 }
 
 enum JobAttemptFailure {
