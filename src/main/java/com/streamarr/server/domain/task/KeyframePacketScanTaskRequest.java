@@ -7,11 +7,18 @@ import lombok.NonNull;
 
 /**
  * The inputs of one keyframe packet scan task instance: which file, and the source snapshot and
- * probe version of the stored outcome that asked for the scan.
+ * probe version of the stored outcome that asked for the scan. {@code failedScans} counts the scans
+ * of these inputs that ran without a usable result.
  */
 @Builder(toBuilder = true)
 public record KeyframePacketScanTaskRequest(
     @NonNull UUID mediaFileId,
     @NonNull String filepathUri,
     @NonNull SourceFileSnapshot snapshot,
-    int probeVersion) {}
+    int probeVersion,
+    int failedScans) {
+
+  public ProbeInputs inputs() {
+    return new ProbeInputs(snapshot, probeVersion);
+  }
+}

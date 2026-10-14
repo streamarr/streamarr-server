@@ -13,11 +13,13 @@ import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
+import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
+import com.streamarr.server.exceptions.ProbeTimedOutException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.MutableClock;
@@ -40,6 +42,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.sql.DataSource;
@@ -224,6 +227,31 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
     }
   }
 
+  @Test
+  @DisplayName("Should store unavailable keyframes and stop scanning when every scan times out")
+  void shouldStoreUnavailableKeyframesAndStopScanningWhenEveryScanTimesOut() throws Exception {
+    var request = requestUnchangedFiles(1).getFirst();
+    packetScanRequiredProbe().execute(request);
+    var scans = new AtomicInteger();
+    startScanScheduler(
+        _ -> {
+          scans.incrementAndGet();
+          throw new ProbeTimedOutException(new TimeoutException());
+        },
+        Clock.systemUTC());
+
+    for (var attempt = 1; attempt <= 3; attempt++) {
+      assertThat(scanCompletions.poll(30, TimeUnit.SECONDS)).isNotNull();
+      retryPendingScansNow();
+    }
+
+    assertThat(scans).hasValue(3);
+    assertThat(storedKeyframes(request))
+        .isEqualTo(
+            new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_FAILED));
+    assertThat(scheduledScans()).isZero();
+  }
+
   private ProbeExecution packetScanRequiredProbe() {
     var producer = new FakeFfprobeService();
     producer.answerWith(PACKET_SCAN_REQUIRED);
@@ -283,6 +311,14 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
     return dsl.fetchCount(
         DSL.table(KeyframePacketScanScheduler.TABLE_NAME),
         DSL.field("task_name", String.class).eq(KeyframePacketScanTask.NAME));
+  }
+
+  // Stands in for the retry delay elapsing.
+  private void retryPendingScansNow() {
+    dsl.update(DSL.table(KeyframePacketScanScheduler.TABLE_NAME))
+        .set(DSL.field("execution_time", Instant.class), Instant.now())
+        .where(DSL.field("picked", Boolean.class).isFalse())
+        .execute();
   }
 
   private Instant pendingScanExecutionTime() {

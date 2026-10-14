@@ -10,6 +10,7 @@ import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.exceptions.ProbeTimedOutException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
@@ -28,7 +29,8 @@ import org.springframework.stereotype.Service;
 /**
  * One keyframe packet scan execution, independent of the scheduler that runs it. Transient failures
  * escape as {@link ProbeExecutionException} so the scheduler retries them with backoff. Busy
- * workers defer the scan without a failure.
+ * workers defer the scan without a failure. A scan that times out or reports no keyframe result
+ * ends as {@link KeyframePacketScanResult.Failed}, which its completion counts.
  */
 @Service
 @Builder
@@ -51,9 +53,23 @@ public class KeyframePacketScanExecution {
       return new KeyframePacketScanResult.Completed();
     }
 
-    var outcome = scan(request, path);
-    if (outcome.isEmpty()) {
+    ProbeOutcome outcome;
+    try {
+      outcome =
+          scanner.scanKeyframePackets(
+              ProbeExecutionRequest.builder()
+                  .sourcePath(path)
+                  .attemptId(UUID.randomUUID())
+                  .probeVersion(request.probeVersion())
+                  .build());
+    } catch (ProbeWorkersBusyException _) {
+      log.debug(
+          "Deferring keyframe packet scan for media file {}: all compatible workers are busy",
+          request.mediaFileId());
       return new KeyframePacketScanResult.Deferred();
+    } catch (ProbeTimedOutException _) {
+      log.warn("Keyframe packet scan for media file {} timed out", request.mediaFileId());
+      return new KeyframePacketScanResult.Failed();
     }
 
     // A source that changed during the scan gets a new probe when the server observes the change.
@@ -61,12 +77,25 @@ public class KeyframePacketScanExecution {
       return new KeyframePacketScanResult.Completed();
     }
 
+    return publish(request, outcome);
+  }
+
+  private KeyframePacketScanResult publish(
+      KeyframePacketScanTaskRequest request, ProbeOutcome outcome) {
+    var keyframes = scannedKeyframes(outcome);
+    if (keyframes.isEmpty()) {
+      log.warn(
+          "Keyframe packet scan for media file {} reported no keyframe result",
+          request.mediaFileId());
+      return new KeyframePacketScanResult.Failed();
+    }
+
     outcomes.publishKeyframePacketScan(
         KeyframePacketScanPublication.builder()
             .mediaFileId(request.mediaFileId())
             .snapshot(request.snapshot())
             .probeVersion(request.probeVersion())
-            .keyframes(keyframes(outcome.get()))
+            .keyframes(keyframes.get())
             .build());
     return new KeyframePacketScanResult.Completed();
   }
@@ -82,38 +111,21 @@ public class KeyframePacketScanExecution {
         .isPresent();
   }
 
-  private Optional<ProbeOutcome> scan(KeyframePacketScanTaskRequest request, Path path) {
-    try {
-      return Optional.of(
-          scanner.scanKeyframePackets(
-              ProbeExecutionRequest.builder()
-                  .sourcePath(path)
-                  .attemptId(UUID.randomUUID())
-                  .probeVersion(request.probeVersion())
-                  .build()));
-    } catch (ProbeWorkersBusyException _) {
-      log.debug(
-          "Deferring keyframe packet scan for media file {}: all compatible workers are busy",
-          request.mediaFileId());
-      return Optional.empty();
-    }
-  }
-
-  private static KeyframeKnowledge keyframes(ProbeOutcome outcome) {
+  private static Optional<KeyframeKnowledge> scannedKeyframes(ProbeOutcome outcome) {
     return switch (outcome) {
       case ProbeOutcome.Failure _ ->
-          new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_MEDIA_ERROR);
-      case ProbeOutcome.Success(_, _, var keyframes) -> scannedKeyframes(keyframes);
+          Optional.of(
+              new KeyframeKnowledge.Unavailable(
+                  KeyframesUnavailableReason.PACKET_SCAN_MEDIA_ERROR));
+      case ProbeOutcome.Success(_, _, var keyframes) -> reportedKeyframes(keyframes);
     };
   }
 
-  private static KeyframeKnowledge scannedKeyframes(KeyframeKnowledge keyframes) {
+  private static Optional<KeyframeKnowledge> reportedKeyframes(KeyframeKnowledge keyframes) {
     return switch (keyframes) {
-      case KeyframeKnowledge.Known _, KeyframeKnowledge.Unavailable _ -> keyframes;
+      case KeyframeKnowledge.Known _, KeyframeKnowledge.Unavailable _ -> Optional.of(keyframes);
       case KeyframeKnowledge.PacketScanRequired _, KeyframeKnowledge.NotReported _ ->
-          throw new ProbeExecutionException(
-              ItemFailureReason.TEMPORARY,
-              "The worker's packet scan reported no keyframe positions");
+          Optional.empty();
     };
   }
 

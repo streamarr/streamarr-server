@@ -23,6 +23,7 @@ import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.exceptions.ProbeTimedOutException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fakes.FakeFfprobeService;
@@ -43,6 +44,7 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -216,15 +218,30 @@ class KeyframePacketScanExecutionTest {
 
   @ParameterizedTest
   @MethodSource("keyframesThatNoPacketScanReports")
-  @DisplayName("Should fail for retry when the packet scan reports no keyframe result")
-  void shouldFailForRetryWhenThePacketScanReportsNoKeyframeResult(KeyframeKnowledge keyframes) {
+  @DisplayName("Should end the scan as failed when the packet scan reports no keyframe result")
+  void shouldEndTheScanAsFailedWhenThePacketScanReportsNoKeyframeResult(
+      KeyframeKnowledge keyframes) {
     var request = storePacketScanRequired();
     scanner = scanAnswering(success(keyframes));
-    var execution = execution();
 
-    assertThatThrownBy(() -> execution.execute(request))
-        .isInstanceOf(ProbeExecutionException.class)
-        .hasMessage("The worker's packet scan reported no keyframe positions");
+    var result = execution().execute(request);
+
+    assertThat(result).isEqualTo(new KeyframePacketScanResult.Failed());
+    assertThat(storedKeyframes()).isEqualTo(packetScanRequired());
+  }
+
+  @Test
+  @DisplayName("Should end the scan as failed when the packet scan times out")
+  void shouldEndTheScanAsFailedWhenThePacketScanTimesOut() {
+    var request = storePacketScanRequired();
+    scanner =
+        _ -> {
+          throw new ProbeTimedOutException(new TimeoutException());
+        };
+
+    var result = execution().execute(request);
+
+    assertThat(result).isEqualTo(new KeyframePacketScanResult.Failed());
     assertThat(storedKeyframes()).isEqualTo(packetScanRequired());
   }
 
