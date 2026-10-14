@@ -210,7 +210,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
   @Override
   public void triggerAsyncScan(UUID libraryId) {
     SystemWork.startThreadRunningAsSystemActor(
-        "library-scan",
+        "library-scan-" + libraryId,
         () -> {
           try {
             scanLibrary(libraryId);
@@ -230,7 +230,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
 
   private void startAsyncRefresh(UUID libraryId, Runnable refresh) {
     SystemWork.startThreadRunningAsSystemActor(
-        "library-refresh",
+        "library-refresh-" + libraryId,
         () -> {
           try {
             refresh.run();
