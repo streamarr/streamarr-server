@@ -8,6 +8,7 @@ import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.repositories.LibraryRepository;
 import java.util.UUID;
@@ -35,6 +36,18 @@ class LibraryCrashRecoveryServiceIT extends AbstractIntegrationTest {
     var recovered = libraryRepository.findById(stuckLibrary.getId()).orElseThrow();
     assertThat(recovered.getStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
     assertThat(recovered.getScanCompletedOn()).isNotNull();
+  }
+
+  @Test
+  @DisplayName("Should name the System actor when resetting an interrupted library")
+  void shouldNameSystemActorWhenResettingInterruptedLibrary() {
+    var stuckLibrary = libraryRepository.saveAndFlush(buildScanningLibrary());
+
+    recoveryService.onStartup();
+
+    var recovered = libraryRepository.findById(stuckLibrary.getId()).orElseThrow();
+    assertThat(recovered.getCreatedBy()).isNull();
+    assertThat(recovered.getLastModifiedBy()).isEqualTo(SystemActor.ID);
   }
 
   @Test

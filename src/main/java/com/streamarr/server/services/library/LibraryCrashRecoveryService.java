@@ -3,6 +3,7 @@ package com.streamarr.server.services.library;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.services.audit.SystemWork;
 import jakarta.annotation.PreDestroy;
 import java.time.Instant;
 import java.util.List;
@@ -22,6 +23,15 @@ public class LibraryCrashRecoveryService {
 
   @EventListener(ApplicationReadyEvent.class)
   public void onStartup() {
+    SystemWork.runAsSystemActor(this::resetOrphanedLibraries);
+  }
+
+  @PreDestroy
+  public void onShutdown() {
+    SystemWork.runAsSystemActor(this::resetBusyLibraries);
+  }
+
+  private void resetOrphanedLibraries() {
     var orphanedScanning =
         libraryRepository.findAllByStatus(LibraryStatus.SCANNING).stream()
             .filter(lib -> !activeScanChecker.isActivelyScanning(lib.getId()))
@@ -32,8 +42,7 @@ public class LibraryCrashRecoveryService {
     resetLibraries(orphanedRefreshing);
   }
 
-  @PreDestroy
-  public void onShutdown() {
+  private void resetBusyLibraries() {
     resetLibraries(libraryRepository.findAllByStatus(LibraryStatus.SCANNING));
     resetLibraries(libraryRepository.findAllByStatus(LibraryStatus.REFRESHING));
   }
