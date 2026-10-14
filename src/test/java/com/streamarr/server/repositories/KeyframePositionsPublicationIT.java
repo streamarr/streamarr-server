@@ -3,6 +3,7 @@ package com.streamarr.server.repositories;
 import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE_KEYFRAME_POSITIONS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.media.MediaFile;
@@ -23,10 +24,14 @@ import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.probe.PersistedProbeReader;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.LongStream;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
@@ -35,6 +40,8 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Keyframe positions publication")
@@ -54,6 +61,8 @@ class KeyframePositionsPublicationIT extends AbstractIntegrationTest {
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private PersistedProbeReader reader;
   @Autowired private DSLContext dsl;
+  @Autowired private JdbcTemplate jdbc;
+  @Autowired private TransactionTemplate transactionTemplate;
 
   private final List<MediaFile> createdFiles = new ArrayList<>();
 
@@ -201,6 +210,62 @@ class KeyframePositionsPublicationIT extends AbstractIntegrationTest {
         .execute();
 
     assertThat(reader.find(file.getId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should pair the outcome with its own positions when a publication commits between the two reads")
+  void shouldPairOutcomeWithItsOwnPositionsWhenPublicationCommitsBetweenTheTwoReads()
+      throws Exception {
+    var file = createMediaFile();
+    var original = success(new KeyframeKnowledge.Known(twoHourSourcePositions()));
+    repository.publish(publication(file.getId(), SNAPSHOT_A, original));
+    var replacement =
+        new ProbeOutcome.Success(
+            ProbeContainer.builder().format(Optional.of("mp4")).build(),
+            List.of(StreamInfo.builder().index(0).codecType("video").build()),
+            new KeyframeKnowledge.Known(
+                KeyframePositions.builder()
+                    .streamIndex(0)
+                    .timeBaseNumerator(1)
+                    .timeBaseDenominator((int) TICKS_PER_SECOND)
+                    .source(KeyframePositionSource.PACKET_SCAN)
+                    .keyframes(List.of(new KeyframePosition(0, 0)))
+                    .build()));
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var read =
+          transactionTemplate.execute(
+              _ -> {
+                // The reader's first query reads the outcome row. Its keyframe read then waits for
+                // this lock until the replacement commits.
+                dsl.execute("LOCK TABLE media_file_keyframe_positions IN ACCESS EXCLUSIVE MODE");
+                repository.publish(publication(file.getId(), SNAPSHOT_A, replacement));
+                var pending = executor.submit(() -> reader.find(file.getId()));
+                await()
+                    .atMost(Duration.ofSeconds(10))
+                    .until(this::hasReaderWaitingForKeyframePositions);
+                return pending;
+              });
+
+      assertThat(read.get(10, TimeUnit.SECONDS))
+          .hasValueSatisfying(stored -> assertThat(stored.outcome()).isEqualTo(original));
+    }
+  }
+
+  private boolean hasReaderWaitingForKeyframePositions() {
+    return Boolean.TRUE.equals(
+        jdbc.queryForObject(
+            """
+            SELECT EXISTS (
+              SELECT 1
+              FROM pg_locks AS lock
+              JOIN pg_class AS relation ON relation.oid = lock.relation
+              WHERE relation.relname = 'media_file_keyframe_positions'
+                AND NOT lock.granted
+            )
+            """,
+            Boolean.class));
   }
 
   private static KeyframePositions twoHourSourcePositions() {
