@@ -27,7 +27,7 @@ Only the current GitHub release can advance Docker's `latest` tag; retrying an o
 - Enable repository auto-merge; retain the existing required-check ruleset and give the release App no bypass.
 - Create a dedicated, organization-owned release App with repository **Contents**, **Pull requests**, and **Issues** write permissions, installed on the Streamarr repositories that use release automation.
 - Store that App's credentials as `ORG_STREAMARR_RELEASE_CLIENT_ID` and `ORG_STREAMARR_RELEASE_PRIVATE_KEY`. Release automation requires these secrets and has no fallback to another App.
-- Keep the FFmpeg App's credentials and permissions separate. Rotate or revoke the release App's private keys independently.
+- The worker's FFmpeg lock synchronization also mints a contents-only token from the release App. Rotating or revoking the release App's private keys therefore affects both automations ([ADR 0034](https://github.com/streamarr/streamarr-adr/blob/main/adr/0034-release-please-owns-maven-release-versions.adoc)).
 
 ## Migration from Release Drafter
 
