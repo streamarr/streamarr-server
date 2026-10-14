@@ -16,6 +16,7 @@ import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.ProbeAttemptFailure;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbePublication;
@@ -70,6 +71,56 @@ public class MediaFileContainerInfoRepositoryCustomImpl
 
     replaceOutcome(publication);
     return true;
+  }
+
+  @Override
+  @Transactional
+  public boolean publishKeyframePacketScan(KeyframePacketScanPublication publication) {
+    var changes = dsl.newRecord(MEDIA_FILE_CONTAINER_INFO);
+    setKeyframeStatus(changes, publication.keyframes());
+    changes.setKeyframePacketScanReason(null);
+    var updated =
+        dsl.update(MEDIA_FILE_CONTAINER_INFO)
+            .set(changes)
+            .where(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(publication.mediaFileId()))
+            .and(snapshotMatches(publication.snapshot()))
+            .and(MEDIA_FILE_CONTAINER_INFO.PROBE_VERSION.eq(publication.probeVersion()))
+            .and(needsPacketScan())
+            .execute();
+    if (updated == 0) {
+      return false;
+    }
+
+    if (publication.keyframes() instanceof KeyframeKnowledge.Known(var positions)) {
+      insertKeyframePositions(publication.mediaFileId(), positions);
+    }
+
+    return true;
+  }
+
+  @Override
+  @Transactional(propagation = Propagation.MANDATORY)
+  public Optional<ProbeInputs> lockPacketScanInputs(UUID mediaFileId) {
+    if (!lockMediaFile(mediaFileId)) {
+      return Optional.empty();
+    }
+
+    return dsl.select(
+            MEDIA_FILE_CONTAINER_INFO.SOURCE_SIZE,
+            MEDIA_FILE_CONTAINER_INFO.SOURCE_MODIFIED_EPOCH_SECOND,
+            MEDIA_FILE_CONTAINER_INFO.SOURCE_MODIFIED_NANOS,
+            MEDIA_FILE_CONTAINER_INFO.PROBE_VERSION)
+        .from(MEDIA_FILE_CONTAINER_INFO)
+        .where(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(mediaFileId))
+        .and(needsPacketScan())
+        .fetchOptional(
+            row ->
+                inputs(
+                    row.value1(), Instant.ofEpochSecond(row.value2(), row.value3()), row.value4()));
+  }
+
+  private static Condition needsPacketScan() {
+    return MEDIA_FILE_CONTAINER_INFO.KEYFRAME_STATUS.eq(KeyframeStatus.PACKET_SCAN_REQUIRED.name());
   }
 
   @Override

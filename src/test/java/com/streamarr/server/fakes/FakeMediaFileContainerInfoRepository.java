@@ -6,6 +6,7 @@ import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.ProbeAttemptFailure;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbePublication;
@@ -99,6 +100,28 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     }
 
     return true;
+  }
+
+  @Override
+  public synchronized boolean publishKeyframePacketScan(KeyframePacketScanPublication publication) {
+    var mediaFileId = publication.mediaFileId();
+    if (!lockPacketScanInputs(mediaFileId)
+        .equals(Optional.of(new ProbeInputs(publication.snapshot(), publication.probeVersion())))) {
+      return false;
+    }
+
+    keyframes.put(mediaFileId, publication.keyframes());
+    return true;
+  }
+
+  @Override
+  public synchronized Optional<ProbeInputs> lockPacketScanInputs(UUID mediaFileId) {
+    if (!(keyframes.get(mediaFileId) instanceof KeyframeKnowledge.PacketScanRequired)) {
+      return Optional.empty();
+    }
+
+    var row = rows.get(mediaFileId);
+    return Optional.of(new ProbeInputs(row.getSnapshot(), row.getProbeVersion()));
   }
 
   @Override

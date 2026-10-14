@@ -5,5 +5,7 @@ public enum KeyframesUnavailableReason {
   /** A keyframe has no presentation time or no decode time. */
   KEYFRAME_WITHOUT_TIMESTAMP,
   /** A packet scan found no keyframe in the chosen video stream. */
-  NO_KEYFRAMES
+  NO_KEYFRAMES,
+  /** A packet scan ended in a terminal media error, although the probe had read the source. */
+  PACKET_SCAN_MEDIA_ERROR
 }

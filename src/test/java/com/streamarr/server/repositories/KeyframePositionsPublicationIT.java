@@ -18,6 +18,7 @@ import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
@@ -154,6 +155,110 @@ class KeyframePositionsPublicationIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should store the scanned positions when the stored outcome needs a packet scan")
+  void shouldStoreTheScannedPositionsWhenTheStoredOutcomeNeedsAPacketScan() {
+    var file = createMediaFile();
+    repository.publish(publication(file.getId(), SNAPSHOT_A, packetScanRequired()));
+    var scanned = new KeyframeKnowledge.Known(scannedPositions());
+
+    var published =
+        repository.publishKeyframePacketScan(packetScan(file.getId(), SNAPSHOT_A, scanned));
+
+    assertThat(published).isTrue();
+    assertThat(reader.find(file.getId()))
+        .hasValueSatisfying(stored -> assertThat(stored.outcome()).isEqualTo(success(scanned)));
+  }
+
+  @Test
+  @DisplayName("Should store unavailable keyframes when a packet scan ended in a media error")
+  void shouldStoreUnavailableKeyframesWhenAPacketScanEndedInAMediaError() {
+    var file = createMediaFile();
+    repository.publish(publication(file.getId(), SNAPSHOT_A, packetScanRequired()));
+    var unavailable =
+        new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_MEDIA_ERROR);
+
+    var published =
+        repository.publishKeyframePacketScan(packetScan(file.getId(), SNAPSHOT_A, unavailable));
+
+    assertThat(published).isTrue();
+    assertThat(reader.find(file.getId()))
+        .hasValueSatisfying(stored -> assertThat(stored.outcome()).isEqualTo(success(unavailable)));
+    assertThat(positionsRowCount(file.getId())).isZero();
+  }
+
+  @Test
+  @DisplayName("Should discard the scanned positions when the source changed during the scan")
+  void shouldDiscardTheScannedPositionsWhenTheSourceChangedDuringTheScan() {
+    var file = createMediaFile();
+    repository.publish(publication(file.getId(), SNAPSHOT_B, packetScanRequired()));
+
+    var published =
+        repository.publishKeyframePacketScan(
+            packetScan(file.getId(), SNAPSHOT_A, new KeyframeKnowledge.Known(scannedPositions())));
+
+    assertThat(published).isFalse();
+    assertThat(reader.find(file.getId()))
+        .hasValueSatisfying(stored -> assertThat(stored.outcome()).isEqualTo(packetScanRequired()));
+    assertThat(positionsRowCount(file.getId())).isZero();
+  }
+
+  @Test
+  @DisplayName("Should discard the scanned positions when the scan used another probe version")
+  void shouldDiscardTheScannedPositionsWhenTheScanUsedAnotherProbeVersion() {
+    var file = createMediaFile();
+    repository.publish(publication(file.getId(), SNAPSHOT_A, packetScanRequired()));
+    var scan =
+        packetScan(file.getId(), SNAPSHOT_A, new KeyframeKnowledge.Known(scannedPositions()))
+            .toBuilder()
+            .probeVersion(2)
+            .build();
+
+    assertThat(repository.publishKeyframePacketScan(scan)).isFalse();
+    assertThat(positionsRowCount(file.getId())).isZero();
+  }
+
+  @Test
+  @DisplayName("Should keep the stored positions when the outcome no longer needs a packet scan")
+  void shouldKeepTheStoredPositionsWhenTheOutcomeNoLongerNeedsAPacketScan() {
+    var file = createMediaFile();
+    var indexed = success(new KeyframeKnowledge.Known(twoHourSourcePositions()));
+    repository.publish(publication(file.getId(), SNAPSHOT_A, indexed));
+
+    var published =
+        repository.publishKeyframePacketScan(
+            packetScan(file.getId(), SNAPSHOT_A, new KeyframeKnowledge.Known(scannedPositions())));
+
+    assertThat(published).isFalse();
+    assertThat(reader.find(file.getId()))
+        .hasValueSatisfying(stored -> assertThat(stored.outcome()).isEqualTo(indexed));
+  }
+
+  @Test
+  @DisplayName("Should read the packet scan inputs only while the stored outcome needs a scan")
+  void shouldReadThePacketScanInputsOnlyWhileTheStoredOutcomeNeedsAScan() {
+    var file = createMediaFile();
+    repository.publish(publication(file.getId(), SNAPSHOT_A, packetScanRequired()));
+
+    var needed = transactionTemplate.execute(_ -> repository.lockPacketScanInputs(file.getId()));
+    repository.publishKeyframePacketScan(
+        packetScan(file.getId(), SNAPSHOT_A, new KeyframeKnowledge.Known(scannedPositions())));
+    var scanned = transactionTemplate.execute(_ -> repository.lockPacketScanInputs(file.getId()));
+
+    assertThat(needed).contains(new ProbeInputs(SNAPSHOT_A, 1));
+    assertThat(scanned).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should read no packet scan inputs when the media file no longer exists")
+  void shouldReadNoPacketScanInputsWhenTheMediaFileNoLongerExists() {
+    var missing = UUID.randomUUID();
+
+    var inputs = transactionTemplate.execute(_ -> repository.lockPacketScanInputs(missing));
+
+    assertThat(inputs).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should refuse a positions row when the outcome's keyframes are not known")
   void shouldRefusePositionsRowWhenOutcomesKeyframesAreNotKnown() {
     var file = createMediaFile();
@@ -266,6 +371,34 @@ class KeyframePositionsPublicationIT extends AbstractIntegrationTest {
             )
             """,
             Boolean.class));
+  }
+
+  private static KeyframePositions scannedPositions() {
+    return KeyframePositions.builder()
+        .streamIndex(0)
+        .timeBaseNumerator(1)
+        .timeBaseDenominator((int) TICKS_PER_SECOND)
+        .source(KeyframePositionSource.PACKET_SCAN)
+        .keyframes(
+            List.of(
+                new KeyframePosition(0, 0),
+                new KeyframePosition(TICKS_PER_SECOND, TICKS_PER_SECOND)))
+        .build();
+  }
+
+  private static ProbeOutcome.Success packetScanRequired() {
+    return success(
+        new KeyframeKnowledge.PacketScanRequired(KeyframePacketScanReason.NO_CONTAINER_INDEX));
+  }
+
+  private static KeyframePacketScanPublication packetScan(
+      UUID mediaFileId, SourceFileSnapshot snapshot, KeyframeKnowledge keyframes) {
+    return KeyframePacketScanPublication.builder()
+        .mediaFileId(mediaFileId)
+        .snapshot(snapshot)
+        .probeVersion(1)
+        .keyframes(keyframes)
+        .build();
   }
 
   private static KeyframePositions twoHourSourcePositions() {

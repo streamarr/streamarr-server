@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.media;
 
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.ProbeAttemptFailure;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbePublication;
@@ -19,6 +20,19 @@ public interface MediaFileContainerInfoRepositoryCustom {
    * same source snapshot, or when the latest requested inputs differ.
    */
   boolean publish(ProbePublication publication);
+
+  /**
+   * Stores what a packet scan learned on the outcome that asked for the scan, in one guarded
+   * update. Returns {@code false} without writing unless the stored outcome still needs a packet
+   * scan for the publication's source snapshot and probe version.
+   */
+  boolean publishKeyframePacketScan(KeyframePacketScanPublication publication);
+
+  /**
+   * Reads the source snapshot and probe version of a stored outcome that needs a packet scan, under
+   * the media file lock. Empty when no stored outcome needs one. Requires the caller's transaction.
+   */
+  Optional<ProbeInputs> lockPacketScanInputs(UUID mediaFileId);
 
   /**
    * Saves desired inputs and invalidates a changed-source outcome under the media file lock.

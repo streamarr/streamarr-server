@@ -262,7 +262,7 @@ public class MediaFileContainerInfo extends TableImpl<MediaFileContainerInfoReco
             Internal.createCheck(this, DSL.name("media_file_container_info_duration_nanos_check"), "(((duration_nanos >= 0) AND (duration_nanos <= 999999999)))", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_keyframe_packet_scan_reason_check"), "((keyframe_packet_scan_reason = ANY (ARRAY['NO_CONTAINER_INDEX'::text, 'INCOMPLETE_CONTAINER_INDEX'::text, 'UNREADABLE_LAST_INDEXED_KEYFRAME'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_keyframe_status_check"), "((keyframe_status = ANY (ARRAY['KNOWN'::text, 'PACKET_SCAN_REQUIRED'::text, 'UNAVAILABLE'::text])))", true),
-            Internal.createCheck(this, DSL.name("media_file_container_info_keyframes_unavailable_reason_check"), "((keyframes_unavailable_reason = ANY (ARRAY['KEYFRAME_WITHOUT_TIMESTAMP'::text, 'NO_KEYFRAMES'::text])))", true),
+            Internal.createCheck(this, DSL.name("media_file_container_info_keyframes_unavailable_reason_check"), "((keyframes_unavailable_reason = ANY (ARRAY['KEYFRAME_WITHOUT_TIMESTAMP'::text, 'NO_KEYFRAMES'::text, 'PACKET_SCAN_MEDIA_ERROR'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_probe_error_check"), "((probe_error = ANY (ARRAY['INVALID_MEDIA'::text, 'NO_VIDEO_STREAM'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_probe_version_check"), "((probe_version > 0))", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_source_modified_nanos_check"), "(((source_modified_nanos >= 0) AND (source_modified_nanos <= 999999999)))", true),
