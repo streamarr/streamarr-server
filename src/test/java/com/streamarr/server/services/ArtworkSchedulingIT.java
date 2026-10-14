@@ -270,6 +270,39 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should save the artwork when its steps are scheduled again outside a transaction while a"
+          + " starting scheduler picks them")
+  void shouldSaveTheArtworkWhenItsStepsAreScheduledAgainWhileAStartingSchedulerPicksThem()
+      throws Exception {
+    stubImage("/poster.jpg", Duration.ZERO);
+    var run = requestMovieArtwork(ImageRefreshMode.PRESERVE, POSTER);
+    var completed = new CompletableFuture<ExecutionComplete>();
+    var scheduler = startPrimaryScheduler(completedInto(completed));
+
+    scheduler.scheduleSteps(movie());
+
+    completed.get(BOUND.toSeconds(), TimeUnit.SECONDS);
+    assertThat(awaitRun(run).counts())
+        .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+  }
+
+  @Test
+  @DisplayName("Should keep one running scheduler when started twice and none when stopped twice")
+  void shouldKeepOneRunningSchedulerWhenStartedTwiceAndNoneWhenStoppedTwice() {
+    var scheduler = startPrimaryScheduler(new AbstractSchedulerListener() {});
+
+    scheduler.start();
+    var runningAfterSecondStart = scheduler.isRunning();
+    scheduler.stop();
+    scheduler.stop();
+
+    assertThat(runningAfterSecondStart).isTrue();
+    assertThat(scheduler.isRunning()).isFalse();
+    assertThat(contextSchedulers.isRunning()).isFalse();
+  }
+
+  @Test
   @DisplayName("Should keep artwork executions out of the table whose threads run probes")
   void shouldKeepArtworkExecutionsOutOfTheTableWhoseThreadsRunProbes() {
     var probeExecutionsBefore = scheduledArtworkTasks("scheduled_tasks");

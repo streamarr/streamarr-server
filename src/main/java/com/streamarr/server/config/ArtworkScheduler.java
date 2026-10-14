@@ -9,6 +9,7 @@ import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerProperties;
 import com.github.kagkarlsson.scheduler.event.SchedulerListener;
 import com.github.kagkarlsson.scheduler.event.SchedulerListeners;
+import com.github.kagkarlsson.scheduler.exceptions.ExecutionException;
 import com.github.kagkarlsson.scheduler.exceptions.TaskInstanceCurrentlyExecutingException;
 import com.github.kagkarlsson.scheduler.exceptions.TaskInstanceNotFoundException;
 import com.github.kagkarlsson.scheduler.jdbc.AutodetectJdbcCustomization;
@@ -143,7 +144,10 @@ public final class ArtworkScheduler {
       client.reschedule(instance, now);
     } catch (TaskInstanceCurrentlyExecutingException _) {
       // The running execution's completion reads the request again.
-    } catch (TaskInstanceNotFoundException _) {
+    } catch (TaskInstanceNotFoundException | ExecutionException _) {
+      // The execution was removed, or a scheduler picked it after it was read and the
+      // version-guarded update matched no row. A picked execution still exists, so this schedules
+      // nothing and its completion reads the request again.
       client.scheduleIfNotExists(instance, now);
     }
   }
