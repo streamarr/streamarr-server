@@ -12,6 +12,7 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fixtures.Fmp4Fixture;
+import com.streamarr.server.fixtures.ServerSettingsFixture;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
@@ -84,6 +85,7 @@ class HlsRecoveryContinuitySmokeTest {
             .properties(properties)
             .runtimeRegistry(runtimeRegistry)
             .sessionMutex(new MutexFactory<>())
+            .serverSettings(ServerSettingsFixture.defaultServerSettings())
             .build();
     coordinator =
         SegmentDeliveryCoordinator.builder()

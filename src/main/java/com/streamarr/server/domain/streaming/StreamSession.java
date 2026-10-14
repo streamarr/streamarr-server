@@ -9,6 +9,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NonNull;
@@ -35,6 +36,10 @@ public class StreamSession {
   @Getter(lombok.AccessLevel.NONE)
   @Builder.Default
   private final Map<String, WorkerVerifiedEncoder> pinnedEncoders = new ConcurrentHashMap<>();
+
+  @Getter(lombok.AccessLevel.NONE)
+  @Builder.Default
+  private final Map<String, EncoderPreset> variantEncoderPresets = new ConcurrentHashMap<>();
 
   @Builder.Default private final List<QualityVariant> variants = Collections.emptyList();
 
@@ -97,6 +102,15 @@ public class StreamSession {
 
   public Optional<WorkerVerifiedEncoder> getPinnedEncoder(String variantLabel) {
     return Optional.ofNullable(pinnedEncoders.get(variantLabel));
+  }
+
+  /**
+   * The variant's preset: the first call fixes it from {@code firstAttemptPreset}, and every later
+   * job attempt of the variant reuses it (ADR 0044).
+   */
+  public EncoderPreset pinEncoderPreset(
+      @NonNull String variantLabel, @NonNull Supplier<EncoderPreset> firstAttemptPreset) {
+    return variantEncoderPresets.computeIfAbsent(variantLabel, _ -> firstAttemptPreset.get());
   }
 
   public boolean isSuspended() {

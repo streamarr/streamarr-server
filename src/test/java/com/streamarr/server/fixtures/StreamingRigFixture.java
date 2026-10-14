@@ -2,6 +2,7 @@ package com.streamarr.server.fixtures;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.ProducerLifecycleService;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
@@ -22,7 +23,8 @@ public final class StreamingRigFixture {
       StreamingProperties properties,
       RuntimeStreamSessionRegistry runtimeRegistry,
       Clock clock,
-      Duration pollInterval) {
+      Duration pollInterval,
+      ServerSettingsService serverSettings) {
     var lifecycle =
         ProducerLifecycleService.builder()
             .transcodeExecutor(transcodeExecutor)
@@ -31,6 +33,10 @@ public final class StreamingRigFixture {
             .runtimeRegistry(runtimeRegistry)
             .sessionMutex(new MutexFactory<>())
             .clock(clock == null ? Clock.systemUTC() : clock)
+            .serverSettings(
+                serverSettings == null
+                    ? ServerSettingsFixture.defaultServerSettings()
+                    : serverSettings)
             .build();
     var coordinatorBuilder =
         SegmentDeliveryCoordinator.builder()

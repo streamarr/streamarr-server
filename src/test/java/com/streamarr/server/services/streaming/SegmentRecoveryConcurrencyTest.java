@@ -13,6 +13,7 @@ import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fixtures.ServerSettingsFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture.StreamingRig;
 import com.streamarr.server.services.concurrency.MutexFactory;
@@ -177,6 +178,7 @@ class SegmentRecoveryConcurrencyTest {
             .properties(properties)
             .runtimeRegistry(registry)
             .sessionMutex(race.mutexFactory())
+            .serverSettings(ServerSettingsFixture.defaultServerSettings())
             .clock(clock)
             .build();
     var coordinator =
