@@ -13,8 +13,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
  * Supplies the auditor for every audit column that JPA or jOOQ writes.
  *
  * <p>System work names the {@link SystemActor}, even when a request started the work on its own
- * thread. A signed-in request names its account. Any other write leaves the auditor empty, because
- * a request without an account is still a person's request.
+ * thread. A signed-in request names its account. Any other write leaves the auditor empty. A
+ * request without an account is a person's request, so it never names the System actor.
  */
 public class SecurityAuditorAware implements AuditorAware<UUID> {
 

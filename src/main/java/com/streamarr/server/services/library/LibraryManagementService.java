@@ -299,17 +299,17 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     refreshLibrary(libraryId, libraryRefreshService::refreshLibrary);
   }
 
-  /** Refreshes the library as the System actor, whoever calls this method. */
+  /** Refreshes the library as {@link #refreshLibrary(UUID)} does, with {@code imageRefreshMode}. */
   public void refreshLibrary(UUID libraryId, ImageRefreshMode imageRefreshMode) {
     refreshLibrary(
         libraryId, library -> libraryRefreshService.refreshLibrary(library, imageRefreshMode));
   }
 
   private void refreshLibrary(UUID libraryId, Consumer<Library> refresh) {
-    SystemWork.runAsSystemActor(() -> refreshLibraryAsSystemActor(libraryId, refresh));
+    SystemWork.runAsSystemActor(() -> refreshItemsInLibrary(libraryId, refresh));
   }
 
-  private void refreshLibraryAsSystemActor(UUID libraryId, Consumer<Library> refresh) {
+  private void refreshItemsInLibrary(UUID libraryId, Consumer<Library> refresh) {
     if (!activeRefreshes.add(libraryId)) {
       throw new LibraryRefreshInProgressException(libraryId);
     }
@@ -372,10 +372,10 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
 
   /** Processes a file that the file watcher discovered, as the System actor. */
   public void processDiscoveredFile(UUID libraryId, Path path) {
-    SystemWork.runAsSystemActor(() -> processDiscoveredFileAsSystemActor(libraryId, path));
+    SystemWork.runAsSystemActor(() -> processDiscoveredFileInLibrary(libraryId, path));
   }
 
-  private void processDiscoveredFileAsSystemActor(UUID libraryId, Path path) {
+  private void processDiscoveredFileInLibrary(UUID libraryId, Path path) {
     var library =
         libraryRepository
             .findById(libraryId)
@@ -390,10 +390,10 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
 
   /** Scans the library as the System actor, whoever calls this method. */
   public void scanLibrary(UUID libraryId) {
-    SystemWork.runAsSystemActor(() -> scanLibraryAsSystemActor(libraryId));
+    SystemWork.runAsSystemActor(() -> scanFilesInLibrary(libraryId));
   }
 
-  private void scanLibraryAsSystemActor(UUID libraryId) {
+  private void scanFilesInLibrary(UUID libraryId) {
     if (!activeScans.add(libraryId)) {
       throw new LibraryScanInProgressException(libraryId);
     }
