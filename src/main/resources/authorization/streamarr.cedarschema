@@ -396,6 +396,16 @@ namespace Streamarr {
     resource: Server,
     context: {},
   };
+  action viewEncoderPreset in serverAdministration appliesTo {
+    principal: Account,
+    resource: Server,
+    context: {},
+  };
+  action changeEncoderPreset in serverAdministration appliesTo {
+    principal: Account,
+    resource: Server,
+    context: {},
+  };
   action viewProfileAdministration in profileAdministration appliesTo {
     principal: Account,
     resource: Profile,

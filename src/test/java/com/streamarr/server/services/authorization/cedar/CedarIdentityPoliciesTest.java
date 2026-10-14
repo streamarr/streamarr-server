@@ -1296,6 +1296,53 @@ class CedarIdentityPoliciesTest {
   }
 
   @Nested
+  @DisplayName("Encoder preset")
+  class EncoderPresetAdministration {
+
+    private final List<Intent.UnitIntent> encoderPresetIntents =
+        List.of(new Intent.ViewEncoderPreset(), new Intent.ChangeEncoderPreset());
+
+    @Test
+    @DisplayName(
+        "Should allow reading and changing the encoder preset when the caller is ServerAdmin")
+    void shouldAllowEncoderPresetWhenCallerIsServerAdmin() {
+      account.setServerAdmin(true);
+      accounts.save(account);
+
+      assertThat(encoderPresetIntents)
+          .allSatisfy(intent -> assertThat(decide(atHome(), intent)).isEqualTo(ALLOWED));
+    }
+
+    @Test
+    @DisplayName("Should deny the encoder preset when the caller is not ServerAdmin")
+    void shouldDenyEncoderPresetWhenCallerIsNotServerAdmin() {
+      assertThat(encoderPresetIntents)
+          .allSatisfy(intent -> assertThat(decide(atHome(), intent)).isEqualTo(DENIED));
+    }
+
+    @Test
+    @DisplayName("Should deny the encoder preset when the ServerAdmin session is device-bound")
+    void shouldDenyEncoderPresetWhenServerAdminSessionIsDeviceBound() {
+      account.setServerAdmin(true);
+      accounts.save(account);
+
+      assertThat(encoderPresetIntents)
+          .allSatisfy(intent -> assertThat(decide(onDevice(atHome()), intent)).isEqualTo(DENIED));
+    }
+
+    @Test
+    @DisplayName("Should deny the encoder preset when the ServerAdmin Account is disabled")
+    void shouldDenyEncoderPresetWhenServerAdminAccountIsDisabled() {
+      account.setServerAdmin(true);
+      account.setEnabled(false);
+      accounts.save(account);
+
+      assertThat(encoderPresetIntents)
+          .allSatisfy(intent -> assertThat(decide(atHome(), intent)).isEqualTo(DENIED));
+    }
+  }
+
+  @Nested
   @DisplayName("Transfers and deletion")
   class TransfersAndDeletion {
 

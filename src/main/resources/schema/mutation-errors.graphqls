@@ -358,3 +358,8 @@ type DestinationNotFoundError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
 }
+
+type UnknownEncoderPresetError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}

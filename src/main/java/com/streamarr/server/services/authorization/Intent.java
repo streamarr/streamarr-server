@@ -207,4 +207,10 @@ public sealed interface Intent {
 
   /** Only ServerAdmin reads the security audit (ADR 0024 §Audit). */
   record ViewSecurityAudit() implements UnitIntent {}
+
+  /** Read the server's encoder preset setting (ADR 0044); a whole-surface gate. */
+  record ViewEncoderPreset() implements UnitIntent {}
+
+  /** Change the server's encoder preset setting (ADR 0044); a whole-surface gate. */
+  record ChangeEncoderPreset() implements UnitIntent {}
 }

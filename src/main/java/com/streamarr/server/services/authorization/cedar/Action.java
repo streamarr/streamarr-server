@@ -286,7 +286,11 @@ enum Action {
       FreshReauthentication.REQUIRED,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
   VIEW_SECURITY_AUDIT(
-      "viewSecurityAudit", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
+      "viewSecurityAudit", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  VIEW_ENCODER_PRESET(
+      "viewEncoderPreset", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  CHANGE_ENCODER_PRESET(
+      "changeEncoderPreset", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
 
   private static final String ACTION_TYPE = "Streamarr::Action";
 
