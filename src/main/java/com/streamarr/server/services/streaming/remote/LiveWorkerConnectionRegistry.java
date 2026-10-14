@@ -397,9 +397,7 @@ final class LiveWorkerConnectionRegistry {
               .filter(LiveWorkerConnectionRegistry::isCountedForEncodes)
               .collect(
                   Collectors.toUnmodifiableMap(
-                      encoder -> encoder.backend().codecFamily(),
-                      Function.identity(),
-                      (first, _) -> first));
+                      encoder -> encoder.backend().codecFamily(), Function.identity()));
       maximumActiveVariants = registration.getAvailableSlots();
       this.responseObserver = responseObserver;
     }

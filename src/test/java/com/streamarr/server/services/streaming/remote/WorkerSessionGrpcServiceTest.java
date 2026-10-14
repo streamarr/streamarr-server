@@ -417,6 +417,30 @@ class WorkerSessionGrpcServiceTest {
     assertThat(registry.isRunning(streamSessionId, job.getVariant().getVariantLabel())).isTrue();
   }
 
+  @Test
+  @DisplayName("Should reject a registration when it advertises two encoders for one codec family")
+  void shouldRejectRegistrationWhenItAdvertisesTwoEncodersForOneCodecFamily() throws Exception {
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var responses = new TerminalErrorObserver();
+    var session = workerSession(service, workerId, responses);
+    var registration = registration(worker(workerId), sourceNamespaceId).toBuilder();
+    registration
+        .getCapabilitiesBuilder()
+        .addVideoEncoders(hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc"))
+        .addVideoEncoders(LIBX264);
+
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build());
+
+    assertThat(responses.error).isNotNull();
+    assertThat(Status.fromThrowable(responses.error).getCode())
+        .isEqualTo(Status.Code.INVALID_ARGUMENT);
+    assertThat(registry.hasConnectedWorker(sourceNamespaceId)).isFalse();
+  }
+
   @ParameterizedTest(name = "{0}")
   @EnumSource(ReportedEncoderBackend.class)
   @DisplayName(
@@ -912,6 +936,27 @@ class WorkerSessionGrpcServiceTest {
     @Override
     public void onCompleted() {
       throw new AssertionError("Registered worker should remain connected");
+    }
+  }
+
+  private static final class TerminalErrorObserver
+      implements StreamObserver<EstablishWorkerSessionResponse> {
+
+    private Throwable error;
+
+    @Override
+    public void onNext(EstablishWorkerSessionResponse value) {
+      // This failure-path test reads only the terminal error.
+    }
+
+    @Override
+    public void onError(Throwable throwable) {
+      error = throwable;
+    }
+
+    @Override
+    public void onCompleted() {
+      throw new AssertionError("A rejected registration ends with an error");
     }
   }
 

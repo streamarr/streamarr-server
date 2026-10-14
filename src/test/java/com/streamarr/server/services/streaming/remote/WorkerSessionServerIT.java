@@ -843,7 +843,8 @@ class WorkerSessionServerIT {
       "Should refuse a targeted start when the target does not advertise the request's pinned encoder")
   void shouldRefuseTargetedStartWhenTargetDoesNotAdvertiseRequestsPinnedEncoder() throws Exception {
     var nvencCapabilities =
-        capabilities(SOURCE_NAMESPACE_ID).toBuilder()
+        WorkerCapabilities.newBuilder()
+            .addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID))
             .addVideoEncoders(
                 hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc"))
             .build();
