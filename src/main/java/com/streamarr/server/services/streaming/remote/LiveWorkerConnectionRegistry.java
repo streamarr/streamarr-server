@@ -11,6 +11,7 @@ import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
+import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeRequest;
@@ -52,12 +53,15 @@ final class LiveWorkerConnectionRegistry {
 
   private static final String INITIALIZATION_SEGMENT_MISMATCH_METRIC =
       "streamarr.streaming.initialization_segment_mismatches";
+  private static final String ENCODER_BACKEND_MISMATCH_METRIC =
+      "streamarr.streaming.encoder_backend_mismatches";
   private static final Executor PROBE_DEADLINE_CALLBACKS =
       command -> Thread.ofVirtual().name("worker-probe-deadline").start(command);
   private final long probeTimeoutNanos;
   private final long keyframeScanTimeoutNanos;
   private final long probeCancellationTimeoutNanos;
   private final Counter initializationSegmentMismatches;
+  private final Counter encoderBackendMismatches;
 
   LiveWorkerConnectionRegistry(
       @NonNull WorkerSessionServerConfiguration configuration,
@@ -70,6 +74,12 @@ final class LiveWorkerConnectionRegistry {
             .description(
                 "Initialization segment uploads refused because they differ from the one stored"
                     + " for the variant")
+            .register(meterRegistry);
+    encoderBackendMismatches =
+        Counter.builder(ENCODER_BACKEND_MISMATCH_METRIC)
+            .description(
+                "Job attempts stopped because the worker reported an encoder backend other than"
+                    + " the one pinned for the variant")
             .register(meterRegistry);
   }
 
@@ -317,6 +327,16 @@ final class LiveWorkerConnectionRegistry {
       return Optional.empty();
     }
     return connection.releaseJobAttempt(jobAttemptId);
+  }
+
+  void stopJobAttemptIfEncoderBackendDiffers(
+      UUID workerId, UUID workerSessionId, JobAttemptStarted started) {
+    var connection = connections.get(workerId);
+    if (connection == null || !connection.workerSessionId().equals(workerSessionId)) {
+      return;
+    }
+
+    connection.stopJobAttemptIfEncoderBackendDiffers(started);
   }
 
   boolean authorizesUpload(UUID authenticatedWorkerId, SegmentUploadMetadata metadata) {
@@ -699,6 +719,38 @@ final class LiveWorkerConnectionRegistry {
       }
 
       return Optional.of(outcome);
+    }
+
+    // Dispatch sends an encode only to a worker that advertises the variant's pinned backend, so
+    // this connection's advertised backend is the pin.
+    private synchronized void stopJobAttemptIfEncoderBackendDiffers(JobAttemptStarted started) {
+      var jobAttemptId = fromProto(started.getJobAttemptId());
+      var job = activeVariants.get(jobAttemptId);
+      if (job == null) {
+        return;
+      }
+
+      var pinned = encoderFor(job).map(WorkerVerifiedEncoder::backend);
+      var reported =
+          Optional.of(started)
+              .filter(JobAttemptStarted::hasEncoderBackend)
+              .map(JobAttemptStarted::getEncoderBackend)
+              .flatMap(RemoteEncoderBackendMapper::encoderBackend);
+      if (pinned.isEmpty() || pinned.equals(reported)) {
+        return;
+      }
+
+      var stopped = tryStop(jobAttemptId);
+      encoderBackendMismatches.increment();
+      log.warn(
+          "Stopped job attempt {} for stream session {} variant {} because the worker reported"
+              + " encoder backend {} instead of the pinned {}; attempt stopped: {}",
+          jobAttemptId,
+          fromProto(job.getStreamSessionId()),
+          job.getVariant().getVariantLabel(),
+          reported.map(EncoderBackend::encoder).orElse("none"),
+          pinned.get().encoder(),
+          stopped);
     }
 
     private void refuseDifferingInitialization(SegmentUploadMetadata metadata) {

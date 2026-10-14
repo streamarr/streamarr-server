@@ -1,6 +1,8 @@
 package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.hardwareEncoder;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.streamCopyDecision;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
@@ -17,6 +19,7 @@ import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptCompleted;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
+import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.JobAttemptStopped;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
@@ -25,22 +28,30 @@ import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
+import com.streamarr.transcode.v1.TranscodeDecision;
+import com.streamarr.transcode.v1.TranscodeMode;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.UploadSegmentResponse;
 import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
+import com.streamarr.transcode.v1.VideoCodecFamily;
+import com.streamarr.transcode.v1.VideoEncoderBackend;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
+import com.streamarr.transcode.v1.WorkerVerifiedVideoEncoder;
 import io.grpc.Context;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -51,6 +62,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
@@ -399,6 +411,128 @@ class WorkerSessionGrpcServiceTest {
     assertThat(registry.eligibleWorkers(sourceNamespaceId, streamCopyDecision()))
         .isEqualTo(establishedWorkers);
     assertThat(registry.isRunning(streamSessionId, job.getVariant().getVariantLabel())).isTrue();
+  }
+
+  private static final String ENCODER_BACKEND_MISMATCH_METRIC =
+      "streamarr.streaming.encoder_backend_mismatches";
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(ReportedEncoderBackend.class)
+  @DisplayName(
+      "Should stop a job attempt when its start report names an encoder backend other than the pinned one")
+  void shouldStopJobAttemptWhenItsStartReportNamesEncoderBackendOtherThanPinnedOne(
+      ReportedEncoderBackend reported) throws Exception {
+    var meterRegistry = new SimpleMeterRegistry();
+    var started = startedEncode(meterRegistry);
+
+    started.session().onNext(jobAttemptStarted(started.job(), reported.backend()));
+
+    assertThat(started.isRunning()).isFalse();
+    assertThat(started.responses())
+        .filteredOn(EstablishWorkerSessionResponse::hasStopVariant)
+        .singleElement()
+        .extracting(response -> response.getStopVariant().getJobAttemptId())
+        .isEqualTo(started.job().getJobAttemptId());
+    assertThat(meterRegistry.get(ENCODER_BACKEND_MISMATCH_METRIC).counter().count()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a job attempt running when its start report names the pinned encoder backend")
+  void shouldKeepJobAttemptRunningWhenItsStartReportNamesPinnedEncoderBackend() throws Exception {
+    var meterRegistry = new SimpleMeterRegistry();
+    var started = startedEncode(meterRegistry);
+
+    started.session().onNext(jobAttemptStarted(started.job(), Optional.of(LIBX264.getBackend())));
+
+    assertThat(started.isRunning()).isTrue();
+    assertThat(meterRegistry.get(ENCODER_BACKEND_MISMATCH_METRIC).counter().count()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should keep a stream copy running when its start report names no encoder backend")
+  void shouldKeepStreamCopyRunningWhenItsStartReportNamesNoEncoderBackend() throws Exception {
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var session = workerSession(service, workerId, new IgnoringResponseObserver());
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setRegistration(registration(worker(workerId), sourceNamespaceId))
+            .build());
+    var job = variantJob(sourceNamespaceId).toBuilder().setDecision(streamCopyDecision()).build();
+    assertThat(registry.dispatch(job)).isPresent();
+
+    session.onNext(jobAttemptStarted(job, Optional.empty()));
+
+    assertThat(
+            registry.isRunning(
+                fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel()))
+        .isTrue();
+  }
+
+  private enum ReportedEncoderBackend {
+    DIFFERENT(
+        Optional.of(
+            hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc").getBackend())),
+    ABSENT(Optional.empty());
+
+    private final Optional<VideoEncoderBackend> backend;
+
+    ReportedEncoderBackend(Optional<VideoEncoderBackend> backend) {
+      this.backend = backend;
+    }
+
+    private Optional<VideoEncoderBackend> backend() {
+      return backend;
+    }
+  }
+
+  private static final WorkerVerifiedVideoEncoder LIBX264 =
+      softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264");
+
+  private static StartedEncode startedEncode(SimpleMeterRegistry meterRegistry) throws Exception {
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var registry =
+        new LiveWorkerConnectionRegistry(
+            WorkerSessionServerConfiguration.builder().build(), meterRegistry);
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var responses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    var session = workerSession(service, workerId, new CollectingResponseObserver(responses));
+    var registration = registration(worker(workerId), sourceNamespaceId).toBuilder();
+    registration.getCapabilitiesBuilder().addVideoEncoders(LIBX264);
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build());
+    var job =
+        variantJob(sourceNamespaceId).toBuilder()
+            .setDecision(
+                TranscodeDecision.newBuilder()
+                    .setMode(TranscodeMode.TRANSCODE_MODE_FULL_TRANSCODE)
+                    .setVideoCodecFamily("h264"))
+            .build();
+    assertThat(registry.dispatch(job)).isPresent();
+    return new StartedEncode(registry, session, job, responses);
+  }
+
+  private record StartedEncode(
+      LiveWorkerConnectionRegistry registry,
+      StreamObserver<EstablishWorkerSessionRequest> session,
+      VariantJob job,
+      List<EstablishWorkerSessionResponse> responses) {
+
+    private boolean isRunning() {
+      return registry.isRunning(
+          fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel());
+    }
+  }
+
+  private static EstablishWorkerSessionRequest jobAttemptStarted(
+      VariantJob job, Optional<VideoEncoderBackend> backend) {
+    var started = JobAttemptStarted.newBuilder().setJobAttemptId(job.getJobAttemptId());
+    backend.ifPresent(started::setEncoderBackend);
+    return EstablishWorkerSessionRequest.newBuilder().setJobAttemptStarted(started).build();
   }
 
   private static StreamObserver<EstablishWorkerSessionRequest> workerSession(
@@ -761,6 +895,25 @@ class WorkerSessionGrpcServiceTest {
 
     private boolean completed() {
       return completed;
+    }
+  }
+
+  private record CollectingResponseObserver(List<EstablishWorkerSessionResponse> responses)
+      implements StreamObserver<EstablishWorkerSessionResponse> {
+
+    @Override
+    public void onNext(EstablishWorkerSessionResponse value) {
+      responses.add(value);
+    }
+
+    @Override
+    public void onError(Throwable throwable) {
+      throw new AssertionError("Registered worker should remain connected", throwable);
+    }
+
+    @Override
+    public void onCompleted() {
+      throw new AssertionError("Registered worker should remain connected");
     }
   }
 

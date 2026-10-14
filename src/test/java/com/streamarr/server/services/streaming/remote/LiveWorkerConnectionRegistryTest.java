@@ -13,10 +13,12 @@ import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
+import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.TranscodeDecision;
 import com.streamarr.transcode.v1.TranscodeMode;
+import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
 import com.streamarr.transcode.v1.VideoCodecFamily;
@@ -644,6 +646,77 @@ class LiveWorkerConnectionRegistryTest {
             registry.eligibleWorkers(
                 UUID.randomUUID(), WorkerVerifiedEncoderFixture.libx264().backend()))
         .isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a job attempt running when a start report naming another backend comes from an unknown worker")
+  void shouldKeepJobAttemptRunningWhenStartReportNamingAnotherBackendComesFromUnknownWorker() {
+    var encode = RunningEncode.dispatch();
+
+    encode
+        .registry()
+        .stopJobAttemptIfEncoderBackendDiffers(
+            UUID.randomUUID(),
+            encode.workerSessionId(),
+            nvencStarted(encode.job().getJobAttemptId()));
+
+    assertThat(encode.isRunning()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a job attempt running when a start report naming another backend comes from a replaced worker session")
+  void shouldKeepJobAttemptRunningWhenStartReportNamingAnotherBackendComesFromReplacedSession() {
+    var encode = RunningEncode.dispatch();
+
+    encode
+        .registry()
+        .stopJobAttemptIfEncoderBackendDiffers(
+            WORKER_ID, UUID.randomUUID(), nvencStarted(encode.job().getJobAttemptId()));
+
+    assertThat(encode.isRunning()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a job attempt running when a start report naming another backend names an unknown job attempt")
+  void shouldKeepJobAttemptRunningWhenStartReportNamingAnotherBackendNamesUnknownJobAttempt() {
+    var encode = RunningEncode.dispatch();
+
+    encode
+        .registry()
+        .stopJobAttemptIfEncoderBackendDiffers(
+            WORKER_ID, encode.workerSessionId(), nvencStarted(toProto(UUID.randomUUID())));
+
+    assertThat(encode.isRunning()).isTrue();
+  }
+
+  private static JobAttemptStarted nvencStarted(Uuid jobAttemptId) {
+    return JobAttemptStarted.newBuilder()
+        .setJobAttemptId(jobAttemptId)
+        .setEncoderBackend(
+            hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc").getBackend())
+        .build();
+  }
+
+  private record RunningEncode(
+      LiveWorkerConnectionRegistry registry, UUID workerSessionId, VariantJob job) {
+
+    private static RunningEncode dispatch() {
+      var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+      var workerSessionId =
+          registry.register(
+              WORKER_ID, registration(WORKER_ID, libx264Encoder()), new CancellableObserver());
+      var job = encodeJob("h264");
+      assertThat(registry.dispatch(job)).isPresent();
+      return new RunningEncode(registry, workerSessionId, job);
+    }
+
+    private boolean isRunning() {
+      return registry.isRunning(
+          fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel());
+    }
   }
 
   private static WorkerVerifiedVideoEncoder libx264Encoder() {
