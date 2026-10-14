@@ -6,7 +6,6 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.web.socket.CloseStatus;
@@ -47,8 +46,9 @@ class AccessBoundWebSocketHandler extends WebSocketHandlerDecorator {
   @Override
   public void afterConnectionEstablished(WebSocketSession session) throws Exception {
     var bound = new AccessBoundSession(session, accessExpiresAt(session), clock);
-    sessions.put(session.getId(), bound);
+    // Started before the session is visible, so a close always finds the timer to cancel.
     bound.startExpiryTimer(taskScheduler);
+    sessions.put(session.getId(), bound);
     super.afterConnectionEstablished(bound);
   }
 
@@ -104,7 +104,6 @@ class AccessBoundWebSocketHandler extends WebSocketHandlerDecorator {
 
     private final Instant accessExpiresAt;
     private final Clock clock;
-    private final AtomicBoolean expiryClosed = new AtomicBoolean();
     private volatile ScheduledFuture<?> expiryTimer;
 
     private AccessBoundSession(WebSocketSession session, Instant accessExpiresAt, Clock clock) {
@@ -131,11 +130,8 @@ class AccessBoundWebSocketHandler extends WebSocketHandlerDecorator {
       expiryTimer = taskScheduler.schedule(this::closeForExpiry, accessExpiresAt);
     }
 
+    // The container ignores a close after the first, so a late send and the timer may both close.
     private void closeForExpiry() {
-      if (!expiryClosed.compareAndSet(false, true)) {
-        return;
-      }
-
       try {
         getDelegate().close(ACCESS_EXPIRED);
       } catch (IOException e) {
@@ -144,10 +140,7 @@ class AccessBoundWebSocketHandler extends WebSocketHandlerDecorator {
     }
 
     private void cancelExpiryTimer() {
-      var timer = expiryTimer;
-      if (timer != null) {
-        timer.cancel(false);
-      }
+      expiryTimer.cancel(false);
     }
   }
 }

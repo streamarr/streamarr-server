@@ -150,6 +150,23 @@ class SendBufferedWebSocketHandlerTest {
   }
 
   @Test
+  @DisplayName("Should keep dropping frames when closing a client that fell behind fails")
+  void shouldKeepDroppingFramesWhenClosingClientThatFellBehindFails() throws Exception {
+    handler.afterConnectionEstablished(session);
+    session.failCloses();
+    stallWritesAfter("first");
+    graphQlHandler.deliver("0123456789");
+
+    graphQlHandler.deliver("x");
+    graphQlHandler.deliver("y");
+    session.releaseWrites();
+    sendExecutor.close();
+
+    assertThat(writtenPayloads()).containsExactly("first");
+    assertThat(fellBehindClosures()).isEqualTo(1);
+  }
+
+  @Test
   @DisplayName("Should ignore a message when its session was never established")
   void shouldIgnoreMessageWhenItsSessionWasNeverEstablished() throws Exception {
     handler.handleMessage(session, new TextMessage("subscribe"));
