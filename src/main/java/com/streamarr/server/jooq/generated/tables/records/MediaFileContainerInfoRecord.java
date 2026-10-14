@@ -166,6 +166,52 @@ public class MediaFileContainerInfoRecord extends UpdatableRecordImpl<MediaFileC
         return (String) get(9);
     }
 
+    /**
+     * Setter for <code>public.media_file_container_info.keyframe_status</code>.
+     */
+    public void setKeyframeStatus(String value) {
+        set(10, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_container_info.keyframe_status</code>.
+     */
+    public String getKeyframeStatus() {
+        return (String) get(10);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_container_info.keyframe_packet_scan_reason</code>.
+     */
+    public void setKeyframePacketScanReason(String value) {
+        set(11, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_container_info.keyframe_packet_scan_reason</code>.
+     */
+    public String getKeyframePacketScanReason() {
+        return (String) get(11);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_container_info.keyframes_unavailable_reason</code>.
+     */
+    public void setKeyframesUnavailableReason(String value) {
+        set(12, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_container_info.keyframes_unavailable_reason</code>.
+     */
+    public String getKeyframesUnavailableReason() {
+        return (String) get(12);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -189,7 +235,7 @@ public class MediaFileContainerInfoRecord extends UpdatableRecordImpl<MediaFileC
     /**
      * Create a detached, initialised MediaFileContainerInfoRecord
      */
-    public MediaFileContainerInfoRecord(UUID mediaFileId, Long sourceSize, Long sourceModifiedEpochSecond, Integer sourceModifiedNanos, Integer probeVersion, String format, Long durationSeconds, Integer durationNanos, Long totalBitrate, String probeError) {
+    public MediaFileContainerInfoRecord(UUID mediaFileId, Long sourceSize, Long sourceModifiedEpochSecond, Integer sourceModifiedNanos, Integer probeVersion, String format, Long durationSeconds, Integer durationNanos, Long totalBitrate, String probeError, String keyframeStatus, String keyframePacketScanReason, String keyframesUnavailableReason) {
         super(MediaFileContainerInfo.MEDIA_FILE_CONTAINER_INFO);
 
         setMediaFileId(mediaFileId);
@@ -202,6 +248,9 @@ public class MediaFileContainerInfoRecord extends UpdatableRecordImpl<MediaFileC
         setDurationNanos(durationNanos);
         setTotalBitrate(totalBitrate);
         setProbeError(probeError);
+        setKeyframeStatus(keyframeStatus);
+        setKeyframePacketScanReason(keyframePacketScanReason);
+        setKeyframesUnavailableReason(keyframesUnavailableReason);
         resetTouchedOnNotNull();
     }
 }

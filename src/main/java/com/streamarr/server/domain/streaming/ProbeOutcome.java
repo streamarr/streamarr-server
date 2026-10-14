@@ -25,6 +25,10 @@ public sealed interface ProbeOutcome {
       this(container, streams, new KeyframeKnowledge.NotReported());
     }
 
+    public Success withKeyframes(@NonNull KeyframeKnowledge knowledge) {
+      return new Success(container, streams, knowledge);
+    }
+
     public MediaProbe mediaProbe() {
       var video =
           streams.stream().filter(s -> "video".equals(s.codecType())).findFirst().orElseThrow();
