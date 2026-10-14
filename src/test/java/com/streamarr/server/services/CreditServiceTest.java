@@ -73,6 +73,48 @@ class CreditServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should return the same saved person in both lists when cast and directors list that person")
+  void shouldReturnTheSameSavedPersonInBothListsWhenCastAndDirectorsListThatPerson() {
+    var credits =
+        MediaTitleCredits.builder()
+            .cast(List.of(person("300", "Actor Director"), person("100", "Actor")))
+            .directors(List.of(person("200", "Director"), person("300", "Actor Director")))
+            .build();
+
+    var saved = creditService.getOrCreateCredits(requestFor(credits).build());
+
+    assertThat(saved.cast()).extracting(Person::getSourceId).containsExactly("300", "100");
+    assertThat(saved.directors()).extracting(Person::getSourceId).containsExactly("200", "300");
+    assertThat(saved.directors().getLast().getId()).isEqualTo(saved.cast().getFirst().getId());
+    assertThat(personRepository.count()).isEqualTo(3);
+  }
+
+  @Test
+  @DisplayName(
+      "Should request a person's artwork once when cast and directors list the same person")
+  void shouldRequestAPersonsArtworkOnceWhenCastAndDirectorsListTheSamePerson() {
+    var profile = List.<ImageSource>of(new TmdbImageSource(ImageType.PROFILE, "/profile.jpg"));
+    var credits =
+        MediaTitleCredits.builder()
+            .cast(List.of(person("300", "Actor Director")))
+            .directors(List.of(person("300", "Actor Director")))
+            .build();
+
+    var saved =
+        creditService.getOrCreateCredits(
+            requestFor(credits).personImageSources(Map.of("300", profile)).build());
+
+    assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class))
+        .containsExactly(
+            new MetadataEnrichedEvent(
+                saved.cast().getFirst().getId(),
+                ImageEntityType.PERSON,
+                profile,
+                ImageRefreshMode.PRESERVE));
+  }
+
+  @Test
   @DisplayName("Should return saved genres and studios when saving credits")
   void shouldReturnSavedGenresAndStudiosWhenSavingCredits() {
     var credits =

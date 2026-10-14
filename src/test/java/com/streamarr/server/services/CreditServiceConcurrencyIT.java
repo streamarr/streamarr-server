@@ -2,17 +2,20 @@ package com.streamarr.server.services;
 
 import static com.streamarr.server.support.HeldCreditInsert.CreditTable.COMPANY;
 import static com.streamarr.server.support.HeldCreditInsert.CreditTable.GENRE;
+import static com.streamarr.server.support.HeldCreditInsert.CreditTable.PERSON;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
+import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.support.HeldCreditInsert;
 import com.streamarr.server.support.HeldCreditInsert.CreditTable;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
@@ -79,6 +82,23 @@ class CreditServiceConcurrencyIT extends AbstractIntegrationTest {
     assertThat(saved.studios())
         .extracting(Company::getSourceId)
         .containsExactlyInAnyOrder(lowerSourceId, higherSourceId);
+  }
+
+  @Test
+  @DisplayName(
+      "Should save people when a person is cast on one title and director of the other title")
+  void shouldSavePeopleWhenAPersonIsCastOnOneTitleAndDirectorOfTheOtherTitle() throws Exception {
+    var credits =
+        MediaTitleCredits.builder()
+            .cast(List.of(Person.builder().sourceId(higherSourceId).name("Higher Actor").build()))
+            .directors(
+                List.of(Person.builder().sourceId(lowerSourceId).name("Lower Director").build()))
+            .build();
+
+    var saved = saveWhileAnotherTitleInserts(PERSON, credits);
+
+    assertThat(saved.cast()).extracting(Person::getSourceId).containsExactly(higherSourceId);
+    assertThat(saved.directors()).extracting(Person::getSourceId).containsExactly(lowerSourceId);
   }
 
   private MediaTitleCredits saveWhileAnotherTitleInserts(

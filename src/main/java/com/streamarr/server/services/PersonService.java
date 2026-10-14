@@ -7,6 +7,7 @@ import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,10 @@ public class PersonService {
   private final PersonRepository personRepository;
   private final ApplicationEventPublisher eventPublisher;
 
+  /**
+   * Returns the saved people in the order of {@code persons}. Each distinct source id is saved
+   * once, from its first listing, and its artwork is requested once.
+   */
   @Transactional
   public List<Person> getOrCreatePersons(
       List<Person> persons,
@@ -32,8 +37,11 @@ public class PersonService {
 
     persons.forEach(PersonService::requireSourceId);
 
+    var firstListedBySourceId = new LinkedHashMap<String, Person>();
+    persons.forEach(person -> firstListedBySourceId.putIfAbsent(person.getSourceId(), person));
+
     var savedBySourceId = new HashMap<String, Person>();
-    persons.stream()
+    firstListedBySourceId.values().stream()
         .sorted(CreditInsertOrder.bySourceId(Person::getSourceId))
         .forEach(
             person ->

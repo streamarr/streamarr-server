@@ -1,5 +1,7 @@
 package com.streamarr.server.services;
 
+import java.util.List;
+import java.util.stream.Stream;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -13,18 +15,24 @@ public class CreditService {
   private final GenreService genreService;
   private final CompanyService companyService;
 
-  /** Finds or creates every credited person, genre and studio in the caller's transaction. */
+  /**
+   * Finds or creates every credited person, genre and studio in the caller's transaction, inserting
+   * them in {@link CreditInsertOrder}: cast and directors together in one pass, then genres, then
+   * studios. The returned cast and directors keep their listed order.
+   */
   @Transactional
   public MediaTitleCredits getOrCreateCredits(@NonNull MediaTitleCreditsRequest request) {
     var credits = request.credits();
     var imageRefreshMode = request.imageRefreshMode();
 
-    var cast =
+    var castCount = credits.cast().size();
+    var people =
         personService.getOrCreatePersons(
-            credits.cast(), request.personImageSources(), imageRefreshMode);
-    var directors =
-        personService.getOrCreatePersons(
-            credits.directors(), request.personImageSources(), imageRefreshMode);
+            Stream.concat(credits.cast().stream(), credits.directors().stream()).toList(),
+            request.personImageSources(),
+            imageRefreshMode);
+    var cast = List.copyOf(people.subList(0, castCount));
+    var directors = List.copyOf(people.subList(castCount, people.size()));
     var genres = genreService.getOrCreateGenres(credits.genres());
     var studios =
         companyService.getOrCreateCompanies(
