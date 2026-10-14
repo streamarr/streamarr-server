@@ -19,8 +19,10 @@ import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamSessionFixture;
+import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -512,6 +514,110 @@ class HlsPlaylistServiceTest {
       for (var line : streamInfLines) {
         assertThat(line).contains("CODECS=");
       }
+    }
+  }
+
+  @Nested
+  @DisplayName("EXT-X-INDEPENDENT-SEGMENTS")
+  class IndependentSegmentsTests {
+
+    private static final String INDEPENDENT_SEGMENTS = "#EXT-X-INDEPENDENT-SEGMENTS";
+
+    private StreamSession encodedLadder(String videoCodecFamily) {
+      return StreamSessionFixture.abrSessionBuilder()
+          .transcodeDecision(StreamSessionFixture.fullTranscodeDecision(videoCodecFamily))
+          .build();
+    }
+
+    private String mediaPlaylist(StreamSession session, String variantLabel) {
+      return service.generateMediaPlaylist(session, variantLabel, "test-token");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("keyframeVerifiedEncoders")
+    @DisplayName(
+        "Should write the tag in the multivariant playlist when every video variant comes from a keyframe-verified encoder")
+    void shouldWriteTagInMultivariantPlaylistWhenEveryVideoVariantComesFromKeyframeVerifiedEncoder(
+        String videoCodecFamily, WorkerVerifiedEncoder encoder) {
+      var session = encodedLadder(videoCodecFamily);
+      session.pinEncoderBackend("1080p", encoder);
+      session.pinEncoderBackend("720p", encoder);
+
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
+
+      assertThat(playlist.lines()).contains(INDEPENDENT_SEGMENTS);
+    }
+
+    static Stream<Arguments> keyframeVerifiedEncoders() {
+      return Stream.of(
+          Arguments.of("h264", WorkerVerifiedEncoderFixture.libx264()),
+          Arguments.of("av1", WorkerVerifiedEncoderFixture.libsvtav1()));
+    }
+
+    @Test
+    @DisplayName(
+        "Should write the tag in the multivariant playlist when the only video variant comes from a keyframe-verified encoder")
+    void
+        shouldWriteTagInMultivariantPlaylistWhenOnlyVideoVariantComesFromKeyframeVerifiedEncoder() {
+      var session = createSession(TranscodeMode.FULL_TRANSCODE, 120);
+      session.pinEncoderBackend(
+          StreamSession.defaultVariant(), WorkerVerifiedEncoderFixture.libx264());
+
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
+
+      assertThat(playlist.lines()).contains(INDEPENDENT_SEGMENTS);
+    }
+
+    @Test
+    @DisplayName(
+        "Should write the tag only in the keyframe-verified variant's media playlist when the ladder mixes encoders")
+    void shouldWriteTagOnlyInKeyframeVerifiedVariantsMediaPlaylistWhenLadderMixesEncoders() {
+      var session = encodedLadder("h264");
+      session.pinEncoderBackend("1080p", WorkerVerifiedEncoderFixture.libx264());
+      session.pinEncoderBackend("720p", WorkerVerifiedEncoderFixture.h264Nvenc());
+
+      assertThat(service.generateMultivariantPlaylist(session, "test-token").lines())
+          .doesNotContain(INDEPENDENT_SEGMENTS);
+      assertThat(mediaPlaylist(session, "1080p").lines()).contains(INDEPENDENT_SEGMENTS);
+      assertThat(mediaPlaylist(session, "720p").lines()).doesNotContain(INDEPENDENT_SEGMENTS);
+    }
+
+    @Test
+    @DisplayName(
+        "Should write the tag only in the pinned variant's media playlist when another variant has no pinned encoder backend")
+    void
+        shouldWriteTagOnlyInPinnedVariantsMediaPlaylistWhenAnotherVariantHasNoPinnedEncoderBackend() {
+      var session = encodedLadder("h264");
+      session.pinEncoderBackend("1080p", WorkerVerifiedEncoderFixture.libx264());
+
+      assertThat(service.generateMultivariantPlaylist(session, "test-token").lines())
+          .doesNotContain(INDEPENDENT_SEGMENTS);
+      assertThat(mediaPlaylist(session, "1080p").lines()).contains(INDEPENDENT_SEGMENTS);
+      assertThat(mediaPlaylist(session, "720p").lines()).doesNotContain(INDEPENDENT_SEGMENTS);
+    }
+
+    @Test
+    @DisplayName("Should write no tag when the variants come from libx265")
+    void shouldWriteNoTagWhenVariantsComeFromLibx265() {
+      var session = encodedLadder("hevc");
+      session.pinEncoderBackend("1080p", WorkerVerifiedEncoderFixture.libx265());
+      session.pinEncoderBackend("720p", WorkerVerifiedEncoderFixture.libx265());
+
+      assertThat(service.generateMultivariantPlaylist(session, "test-token").lines())
+          .doesNotContain(INDEPENDENT_SEGMENTS);
+      assertThat(mediaPlaylist(session, "1080p").lines()).doesNotContain(INDEPENDENT_SEGMENTS);
+      assertThat(mediaPlaylist(session, "720p").lines()).doesNotContain(INDEPENDENT_SEGMENTS);
+    }
+
+    @Test
+    @DisplayName("Should write no tag when the stream session copies the video")
+    void shouldWriteNoTagWhenStreamSessionCopiesTheVideo() {
+      var session = StreamSessionFixture.defaultSessionBuilder().build();
+
+      assertThat(service.generateMultivariantPlaylist(session, "test-token").lines())
+          .doesNotContain(INDEPENDENT_SEGMENTS);
+      assertThat(mediaPlaylist(session, StreamSession.defaultVariant()).lines())
+          .doesNotContain(INDEPENDENT_SEGMENTS);
     }
   }
 
