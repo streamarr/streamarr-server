@@ -77,11 +77,13 @@ import com.tngtech.archunit.lang.CompositeArchRule;
 import com.tngtech.archunit.library.dependencies.SliceAssignment;
 import com.tngtech.archunit.library.dependencies.SliceIdentifier;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -676,8 +678,25 @@ class ArchitectureTest {
   private static final class StartsThreadOutsideSystemWork
       extends DescribedPredicate<JavaAccess<?>> {
 
-    private static final Set<String> THREAD_STARTERS =
-        Set.of("ofVirtual", "ofPlatform", "startVirtualThread", "<init>");
+    private static final String CONSTRUCTOR = "<init>";
+
+    // Each source runs work on a thread that does not carry the System actor binding.
+    private static final List<ThreadSource> THREAD_SOURCES =
+        List.of(
+            new ThreadSource(
+                Thread.class,
+                target ->
+                    Set.of("ofVirtual", "ofPlatform", "startVirtualThread", CONSTRUCTOR)
+                        .contains(target.getName())),
+            new ThreadSource(
+                Executors.class,
+                target ->
+                    target.getName().equals("defaultThreadFactory")
+                        || (target.getName().startsWith("new")
+                            && !takes(target, ThreadFactory.class))),
+            new ThreadSource(
+                CompletableFuture.class,
+                target -> target.getName().endsWith("Async") && !takes(target, Executor.class)));
 
     private StartsThreadOutsideSystemWork() {
       super("start a thread outside SystemWork");
@@ -689,32 +708,19 @@ class ArchitectureTest {
         return false;
       }
 
-      var owner = target.getOwner();
-      if (owner.isEquivalentTo(Thread.class)) {
-        return THREAD_STARTERS.contains(target.getName());
-      }
-
-      if (owner.isEquivalentTo(Executors.class)) {
-        return startsDefaultThreads(target);
-      }
-
-      if (owner.isEquivalentTo(CompletableFuture.class)) {
-        return target.getName().endsWith("Async") && !takes(target, Executor.class);
-      }
-
-      return false;
-    }
-
-    private static boolean startsDefaultThreads(AccessTarget.CodeUnitAccessTarget target) {
-      if (target.getName().equals("defaultThreadFactory")) {
-        return true;
-      }
-
-      return target.getName().startsWith("new") && !takes(target, ThreadFactory.class);
+      return THREAD_SOURCES.stream().anyMatch(source -> source.startsThread(target));
     }
 
     private static boolean takes(AccessTarget.CodeUnitAccessTarget target, Class<?> type) {
       return target.getRawParameterTypes().stream().anyMatch(param -> param.isEquivalentTo(type));
+    }
+
+    private record ThreadSource(
+        Class<?> owner, Predicate<AccessTarget.CodeUnitAccessTarget> startsThreadThrough) {
+
+      boolean startsThread(AccessTarget.CodeUnitAccessTarget target) {
+        return target.getOwner().isEquivalentTo(owner) && startsThreadThrough.test(target);
+      }
     }
   }
 
