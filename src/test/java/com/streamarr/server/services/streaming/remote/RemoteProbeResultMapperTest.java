@@ -46,9 +46,9 @@ class RemoteProbeResultMapperTest {
       throws Exception {
     var mapper = new RemoteProbeResultMapper();
     var result = resultWithStream(ProbeStreamInfo.newBuilder().setIndex(index));
+    var report = reportOf(result);
 
-    assertThatThrownBy(() -> mapper.map(reportOf(result)))
-        .isInstanceOf(ProbeExecutionException.class);
+    assertThatThrownBy(() -> mapper.map(report)).isInstanceOf(ProbeExecutionException.class);
   }
 
   @ParameterizedTest
@@ -102,9 +102,9 @@ class RemoteProbeResultMapperTest {
       throws Exception {
     var mapper = new RemoteProbeResultMapper();
     var result = resultWithDuration(seconds, nanos);
+    var report = reportOf(result);
 
-    assertThatThrownBy(() -> mapper.map(reportOf(result)))
-        .isInstanceOf(ProbeExecutionException.class);
+    assertThatThrownBy(() -> mapper.map(report)).isInstanceOf(ProbeExecutionException.class);
   }
 
   private ProbeAttemptResult resultWithDuration(long seconds, int nanos) throws Exception {
@@ -192,8 +192,9 @@ class RemoteProbeResultMapperTest {
       ProbeFailure failure, ItemFailureReason reason) {
     var mapper = new RemoteProbeResultMapper();
     var result = ProbeAttemptResult.newBuilder().setFailure(failure).build();
+    var report = reportOf(result);
 
-    assertThatThrownBy(() -> mapper.map(reportOf(result)))
+    assertThatThrownBy(() -> mapper.map(report))
         .isInstanceOfSatisfying(
             ProbeExecutionException.class,
             exception -> assertThat(exception.reason()).isEqualTo(reason))
@@ -206,8 +207,9 @@ class RemoteProbeResultMapperTest {
     var mapper = new RemoteProbeResultMapper();
     var result =
         ProbeAttemptResult.newBuilder().setFailure(ProbeFailure.PROBE_FAILURE_CANCELLED).build();
+    var report = reportOf(result);
 
-    assertThatThrownBy(() -> mapper.map(reportOf(result)))
+    assertThatThrownBy(() -> mapper.map(report))
         .isInstanceOf(ProbeCancelledException.class)
         .isNotInstanceOf(ProbeExecutionException.class)
         .hasMessageContaining(ProbeFailure.PROBE_FAILURE_CANCELLED.name());
@@ -219,8 +221,9 @@ class RemoteProbeResultMapperTest {
   void shouldReportATemporaryFailureWhenTheWorkerOutcomeIsUnknownOrMissing(
       ProbeAttemptResult result) {
     var mapper = new RemoteProbeResultMapper();
+    var report = reportOf(result);
 
-    assertThatThrownBy(() -> mapper.map(reportOf(result)))
+    assertThatThrownBy(() -> mapper.map(report))
         .isInstanceOfSatisfying(
             ProbeExecutionException.class,
             exception -> assertThat(exception.reason()).isEqualTo(ItemFailureReason.TEMPORARY));
@@ -243,9 +246,9 @@ class RemoteProbeResultMapperTest {
                 ProbeMediaInfo.newBuilder()
                     .addStreams(ProbeStreamInfo.newBuilder().setCodecType("audio")))
             .build();
+    var report = reportOf(result);
 
-    assertThatThrownBy(() -> mapper.map(reportOf(result)))
-        .isInstanceOf(ProbeExecutionException.class);
+    assertThatThrownBy(() -> mapper.map(report)).isInstanceOf(ProbeExecutionException.class);
   }
 
   @Test
@@ -259,9 +262,9 @@ class RemoteProbeResultMapperTest {
                     .addStreams(ProbeStreamInfo.getDefaultInstance())
                     .addStreams(ProbeStreamInfo.newBuilder().setIndex(1).setCodecType("video")))
             .build();
+    var report = reportOf(result);
 
-    assertThatThrownBy(() -> mapper.map(reportOf(result)))
-        .isInstanceOf(ProbeExecutionException.class);
+    assertThatThrownBy(() -> mapper.map(report)).isInstanceOf(ProbeExecutionException.class);
   }
 
   @Test
