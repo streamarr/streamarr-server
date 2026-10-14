@@ -13,12 +13,14 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record SubscriptionProperties(int operationBuffer, int maxOperationsPerConnection) {
 
   public SubscriptionProperties {
-    if (operationBuffer <= 0) {
-      operationBuffer = 64;
-    }
+    requirePositive("operation-buffer", operationBuffer);
+    requirePositive("max-operations-per-connection", maxOperationsPerConnection);
+  }
 
-    if (maxOperationsPerConnection <= 0) {
-      maxOperationsPerConnection = 32;
+  private static void requirePositive(String limit, int value) {
+    if (value <= 0) {
+      throw new IllegalArgumentException(
+          "graphql.subscriptions.%s must be positive, but was %d.".formatted(limit, value));
     }
   }
 }
