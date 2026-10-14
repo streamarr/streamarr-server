@@ -812,7 +812,7 @@ class WorkerSessionServerIT {
           assertThat(replacement.getJobAttemptId()).isNotEqualTo(initial.getJobAttemptId());
           assertThat(fromProto(replacement.getJobAttemptId()))
               .isEqualTo(session.getHandle().orElseThrow().attemptId());
-          assertThat(session.getPinnedEncoderBackend(StreamSession.defaultVariant()))
+          assertThat(session.getPinnedEncoder(StreamSession.defaultVariant()))
               .map(pin -> pin.backend().encoder())
               .contains("libx264");
 

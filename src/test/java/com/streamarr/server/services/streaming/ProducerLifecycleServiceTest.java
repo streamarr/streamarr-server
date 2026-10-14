@@ -741,9 +741,9 @@ class ProducerLifecycleServiceTest {
   void shouldPinEachVariantToEncoderBackendOfItsFirstJobAttemptWhenStreamSessionStarts() {
     var session = sessionPinnedToLibx264(abrSessionBuilder());
 
-    assertThat(session.getPinnedEncoderBackend("1080p")).contains(libx264());
-    assertThat(session.getPinnedEncoderBackend("720p")).contains(libx264());
-    assertThat(session.getPinnedEncoderBackend("1080p").orElseThrow().keyframeVerified()).isTrue();
+    assertThat(session.getPinnedEncoder("1080p")).contains(libx264());
+    assertThat(session.getPinnedEncoder("720p")).contains(libx264());
+    assertThat(session.getPinnedEncoder("1080p").orElseThrow().keyframeVerified()).isTrue();
   }
 
   @Test
@@ -754,7 +754,7 @@ class ProducerLifecycleServiceTest {
 
     var session = startedSession();
 
-    assertThat(session.getPinnedEncoderBackend(StreamSession.defaultVariant())).isEmpty();
+    assertThat(session.getPinnedEncoder(StreamSession.defaultVariant())).isEmpty();
   }
 
   @Test

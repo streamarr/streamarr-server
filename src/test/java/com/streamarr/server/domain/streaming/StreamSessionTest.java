@@ -89,14 +89,14 @@ class StreamSessionTest {
   }
 
   @Test
-  @DisplayName("Should keep the first pinned encoder backend when a later attempt reports another")
-  void shouldKeepTheFirstPinnedEncoderBackendWhenLaterAttemptReportsAnother() {
+  @DisplayName("Should keep the first pinned encoder when a later attempt reports another")
+  void shouldKeepTheFirstPinnedEncoderWhenLaterAttemptReportsAnother() {
     var session = buildActiveSession();
 
-    session.pinEncoderBackend("720p", libx264());
-    session.pinEncoderBackend("720p", h264Nvenc());
+    session.pinEncoder("720p", libx264());
+    session.pinEncoder("720p", h264Nvenc());
 
-    assertThat(session.getPinnedEncoderBackend("720p")).contains(libx264());
-    assertThat(session.getPinnedEncoderBackend("1080p")).isEmpty();
+    assertThat(session.getPinnedEncoder("720p")).contains(libx264());
+    assertThat(session.getPinnedEncoder("1080p")).isEmpty();
   }
 }

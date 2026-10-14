@@ -184,7 +184,7 @@ public class ProducerLifecycleService {
   // Every later job attempt of a pinned variant runs only where its encoder backend runs.
   private Set<ExecutionTargetId> eligibleTargets(StreamSession session, String variantLabel) {
     return session
-        .getPinnedEncoderBackend(variantLabel)
+        .getPinnedEncoder(variantLabel)
         .map(pin -> transcodeExecutor.executionTargets(pin.backend()))
         .orElseGet(() -> transcodeExecutor.executionTargets(session.getTranscodeDecision()));
   }
@@ -606,7 +606,7 @@ public class ProducerLifecycleService {
   private static void installHandle(
       StreamSession session, String variantLabel, TranscodeHandle handle) {
     session.setVariantHandle(variantLabel, handle);
-    handle.encoder().ifPresent(encoder -> session.pinEncoderBackend(variantLabel, encoder));
+    handle.encoder().ifPresent(encoder -> session.pinEncoder(variantLabel, encoder));
   }
 
   private TranscodeRequest.TranscodeRequestBuilder baseRequest(
@@ -617,7 +617,7 @@ public class ProducerLifecycleService {
         .sessionId(session.getSessionId())
         .variantLabel(variantLabel)
         .pinnedEncoderBackend(
-            session.getPinnedEncoderBackend(variantLabel).map(WorkerVerifiedEncoder::backend))
+            session.getPinnedEncoder(variantLabel).map(WorkerVerifiedEncoder::backend))
         .sourcePath(session.getSourcePath())
         .seekPosition(timeline.mediaSegmentStartSeconds(startSequenceNumber))
         .keyframeSeekPosition(timeline.keyframeSeekPosition(startSequenceNumber))

@@ -540,8 +540,8 @@ class HlsPlaylistServiceTest {
     void shouldWriteTagInMultivariantPlaylistWhenEveryVideoVariantComesFromKeyframeVerifiedEncoder(
         String videoCodecFamily, WorkerVerifiedEncoder encoder) {
       var session = encodedLadder(videoCodecFamily);
-      session.pinEncoderBackend("1080p", encoder);
-      session.pinEncoderBackend("720p", encoder);
+      session.pinEncoder("1080p", encoder);
+      session.pinEncoder("720p", encoder);
 
       var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
@@ -560,8 +560,7 @@ class HlsPlaylistServiceTest {
     void
         shouldWriteTagInMultivariantPlaylistWhenOnlyVideoVariantComesFromKeyframeVerifiedEncoder() {
       var session = createSession(TranscodeMode.FULL_TRANSCODE, 120);
-      session.pinEncoderBackend(
-          StreamSession.defaultVariant(), WorkerVerifiedEncoderFixture.libx264());
+      session.pinEncoder(StreamSession.defaultVariant(), WorkerVerifiedEncoderFixture.libx264());
 
       var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
@@ -573,8 +572,8 @@ class HlsPlaylistServiceTest {
         "Should write the tag only in the keyframe-verified variant's media playlist when the ladder mixes encoders")
     void shouldWriteTagOnlyInKeyframeVerifiedVariantsMediaPlaylistWhenLadderMixesEncoders() {
       var session = encodedLadder("h264");
-      session.pinEncoderBackend("1080p", WorkerVerifiedEncoderFixture.libx264());
-      session.pinEncoderBackend("720p", WorkerVerifiedEncoderFixture.h264Nvenc());
+      session.pinEncoder("1080p", WorkerVerifiedEncoderFixture.libx264());
+      session.pinEncoder("720p", WorkerVerifiedEncoderFixture.h264Nvenc());
 
       assertThat(service.generateMultivariantPlaylist(session, "test-token").lines())
           .doesNotContain(INDEPENDENT_SEGMENTS);
@@ -588,7 +587,7 @@ class HlsPlaylistServiceTest {
     void
         shouldWriteTagOnlyInPinnedVariantsMediaPlaylistWhenAnotherVariantHasNoPinnedEncoderBackend() {
       var session = encodedLadder("h264");
-      session.pinEncoderBackend("1080p", WorkerVerifiedEncoderFixture.libx264());
+      session.pinEncoder("1080p", WorkerVerifiedEncoderFixture.libx264());
 
       assertThat(service.generateMultivariantPlaylist(session, "test-token").lines())
           .doesNotContain(INDEPENDENT_SEGMENTS);
@@ -600,8 +599,8 @@ class HlsPlaylistServiceTest {
     @DisplayName("Should write no tag when the variants come from libx265")
     void shouldWriteNoTagWhenVariantsComeFromLibx265() {
       var session = encodedLadder("hevc");
-      session.pinEncoderBackend("1080p", WorkerVerifiedEncoderFixture.libx265());
-      session.pinEncoderBackend("720p", WorkerVerifiedEncoderFixture.libx265());
+      session.pinEncoder("1080p", WorkerVerifiedEncoderFixture.libx265());
+      session.pinEncoder("720p", WorkerVerifiedEncoderFixture.libx265());
 
       assertThat(service.generateMultivariantPlaylist(session, "test-token").lines())
           .doesNotContain(INDEPENDENT_SEGMENTS);

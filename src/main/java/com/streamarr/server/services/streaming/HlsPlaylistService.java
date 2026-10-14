@@ -74,7 +74,7 @@ public class HlsPlaylistService {
   // stream copy and a variant without a pinned backend never qualify.
   private static boolean isKeyframeVerified(StreamSession session, String variantLabel) {
     return session
-        .getPinnedEncoderBackend(variantLabel)
+        .getPinnedEncoder(variantLabel)
         .map(WorkerVerifiedEncoder::keyframeVerified)
         .orElse(false);
   }
