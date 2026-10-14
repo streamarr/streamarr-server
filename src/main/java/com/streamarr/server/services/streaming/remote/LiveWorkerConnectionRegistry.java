@@ -456,13 +456,13 @@ final class LiveWorkerConnectionRegistry {
         return false;
       }
 
-      if (pending.keyframePositionsParts().exceedsContract()) {
+      if (pending.keyframePositionsParts().violatesContract()) {
         pending
             .result()
             .completeExceptionally(
                 new ProbeExecutionException(
                     ItemFailureReason.TEMPORARY,
-                    "Worker probe sent more keyframe positions than the contract allows"));
+                    "Worker probe sent keyframe positions parts that break the contract"));
         return false;
       }
 

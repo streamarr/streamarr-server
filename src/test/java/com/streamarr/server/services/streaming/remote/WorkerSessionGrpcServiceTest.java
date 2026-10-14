@@ -56,8 +56,10 @@ import org.junit.jupiter.params.provider.ValueSource;
 @DisplayName("Worker Session gRPC Service Tests")
 class WorkerSessionGrpcServiceTest {
 
-  // One probe accepts 4,194,304 keyframes: 1,024 parts of the contract's 4,096 entries.
-  private static final int MAXIMUM_KEYFRAME_POSITIONS_PARTS_PER_PROBE = 1_024;
+  // worker_session.proto bounds the keyframe positions of one probe attempt to 1,048,576 entries.
+  private static final int MAXIMUM_KEYFRAME_POSITIONS_PER_PROBE = 1_048_576;
+  // worker_session.proto bounds each list of a keyframe positions part to 4,096 entries.
+  private static final int MAXIMUM_ENTRIES_PER_PART = 4_096;
 
   @Test
   @DisplayName(
@@ -105,7 +107,35 @@ class WorkerSessionGrpcServiceTest {
     probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
 
     assertThat(probe.attempt().get(1, TimeUnit.SECONDS))
-        .isEqualTo(new ProbeAttemptReport(probe.result(), List.of(first, second)));
+        .isEqualTo(
+            new ProbeAttemptReport(
+                probe.result(), List.of(keyframePositionsPart(probe.request(), 3))));
+  }
+
+  @Test
+  @DisplayName(
+      "Should report the same keyframe positions when a worker sends them in 1,025 single-entry parts")
+  void shouldReportSameKeyframePositionsWhenWorkerSendsThemIn1025SingleEntryParts()
+      throws Exception {
+    var onePart = SessionProbe.dispatch();
+    onePart.send(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setProbeKeyframePositionsPart(keyframePositionsPart(onePart.request(), 1_025)));
+    onePart.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(onePart.result()));
+    var singleEntryParts = SessionProbe.dispatch();
+    var singleEntryPart = keyframePositionsPart(singleEntryParts.request(), 1);
+
+    for (var sent = 0; sent < 1_025; sent++) {
+      singleEntryParts.send(
+          EstablishWorkerSessionRequest.newBuilder()
+              .setProbeKeyframePositionsPart(singleEntryPart));
+    }
+
+    singleEntryParts.send(
+        EstablishWorkerSessionRequest.newBuilder().setProbeResult(singleEntryParts.result()));
+
+    assertThat(withoutAttemptIds(singleEntryParts.attempt().get(1, TimeUnit.SECONDS)))
+        .isEqualTo(withoutAttemptIds(onePart.attempt().get(1, TimeUnit.SECONDS)));
   }
 
   @Test
@@ -127,15 +157,21 @@ class WorkerSessionGrpcServiceTest {
 
   @Test
   @DisplayName(
-      "Should fail a probe when a worker sends more keyframe positions parts than one probe allows")
-  void shouldFailProbeWhenWorkerSendsMoreKeyframePositionsPartsThanOneProbeAllows()
-      throws Exception {
+      "Should fail a probe when a worker sends more keyframe positions than one probe allows")
+  void shouldFailProbeWhenWorkerSendsMoreKeyframePositionsThanOneProbeAllows() throws Exception {
     var probe = SessionProbe.dispatch();
-    var part = keyframePositionsPart(probe.request(), 1);
+    var fullPart = keyframePositionsPart(probe.request(), MAXIMUM_ENTRIES_PER_PART);
 
-    for (var sent = 0; sent <= MAXIMUM_KEYFRAME_POSITIONS_PARTS_PER_PROBE; sent++) {
-      probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeKeyframePositionsPart(part));
+    for (var sent = 0;
+        sent < MAXIMUM_KEYFRAME_POSITIONS_PER_PROBE / MAXIMUM_ENTRIES_PER_PART;
+        sent++) {
+      probe.send(
+          EstablishWorkerSessionRequest.newBuilder().setProbeKeyframePositionsPart(fullPart));
     }
+
+    probe.send(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setProbeKeyframePositionsPart(keyframePositionsPart(probe.request(), 1)));
 
     probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
 
@@ -161,6 +197,42 @@ class WorkerSessionGrpcServiceTest {
     assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
         .hasCauseInstanceOf(ProbeExecutionException.class);
+  }
+
+  @Test
+  @DisplayName("Should fail a probe when the lists of one keyframe positions part differ in length")
+  void shouldFailProbeWhenListsOfOneKeyframePositionsPartDifferInLength() throws Exception {
+    var probe = SessionProbe.dispatch();
+    var longerPresentationTimes =
+        ProbeKeyframePositionsPart.newBuilder()
+            .setProbeAttemptId(probe.attemptId())
+            .addPresentationTimeDeltas(90_000)
+            .addPresentationTimeDeltas(90_000)
+            .addDecodeTimeDeltas(90_000);
+    var longerDecodeTimes =
+        ProbeKeyframePositionsPart.newBuilder()
+            .setProbeAttemptId(probe.attemptId())
+            .addPresentationTimeDeltas(90_000)
+            .addDecodeTimeDeltas(90_000)
+            .addDecodeTimeDeltas(90_000);
+
+    probe.send(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setProbeKeyframePositionsPart(longerPresentationTimes));
+    probe.send(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setProbeKeyframePositionsPart(longerDecodeTimes));
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
+
+    assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
+        .isInstanceOf(ExecutionException.class)
+        .hasCauseInstanceOf(ProbeExecutionException.class);
+  }
+
+  private static List<ProbeKeyframePositionsPart> withoutAttemptIds(ProbeAttemptReport report) {
+    return report.keyframePositionsParts().stream()
+        .map(part -> part.toBuilder().clearProbeAttemptId().build())
+        .toList();
   }
 
   private static ProbeKeyframePositionsPart keyframePositionsPart(
