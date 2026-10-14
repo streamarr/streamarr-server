@@ -22,15 +22,12 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
-import com.streamarr.server.fakes.CapturingEventPublisher;
-import com.streamarr.server.fakes.FakeCompanyRepository;
-import com.streamarr.server.fakes.FakeGenreRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
-import com.streamarr.server.fakes.FakePersonRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.fixtures.ArtworkServiceFixture;
+import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.ImageVariantService;
@@ -64,9 +61,6 @@ class MovieServiceTest {
   private FakeTmdbHttpService imageDownloader;
   private ArtworkService artworkService;
   private ArtworkRun artworkRun;
-  private PersonService personService;
-  private GenreService genreService;
-  private CompanyService companyService;
   private MovieService movieService;
 
   @BeforeEach
@@ -81,10 +75,6 @@ class MovieServiceTest {
             .imageDownloader(imageDownloader)
             .build();
     artworkRun = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
-    var eventPublisher = new CapturingEventPublisher();
-    personService = new PersonService(new FakePersonRepository(), eventPublisher);
-    genreService = new GenreService(new FakeGenreRepository());
-    companyService = new CompanyService(new FakeCompanyRepository(), eventPublisher);
     var paginationService = new PaginationService();
     var fileSystem = Jimfs.newFileSystem(Configuration.unix());
     var imageService =
@@ -97,9 +87,7 @@ class MovieServiceTest {
     movieService =
         new MovieService(
             movieRepository,
-            personService,
-            genreService,
-            companyService,
+            CreditServiceFixture.creditServiceBuilder().build(),
             paginationService,
             artworkService,
             imageService,

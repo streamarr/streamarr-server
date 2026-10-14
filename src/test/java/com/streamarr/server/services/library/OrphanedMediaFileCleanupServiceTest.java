@@ -51,8 +51,6 @@ class OrphanedMediaFileCleanupServiceTest {
           null,
           null,
           null,
-          null,
-          null,
           mock(ImageService.class),
           null,
           null,

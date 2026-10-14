@@ -31,8 +31,13 @@ import com.streamarr.server.config.security.PasswordEncoderConfig;
 import com.streamarr.server.controllers.architecturefixture.DirectControllerAccountPasswordMatchFixture;
 import com.streamarr.server.graphql.architecturefixture.PasswordEncodingResolverFixture;
 import com.streamarr.server.repositories.architecturefixture.RepositoryQueryFixture;
+import com.streamarr.server.services.CompanyService;
+import com.streamarr.server.services.CreditService;
+import com.streamarr.server.services.GenreService;
+import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.RootServiceCycleFixture;
 import com.streamarr.server.services.architecturefixture.DirectAccountPasswordMatchFixture;
+import com.streamarr.server.services.architecturefixture.DirectGenreServiceFixture;
 import com.streamarr.server.services.architecturefixture.IncomingHttpServiceFixture;
 import com.streamarr.server.services.architecturefixture.IncomingWebRequestServiceFixture;
 import com.streamarr.server.services.architecturefixture.SubdomainServiceCycleFixture;
@@ -302,6 +307,11 @@ class ArchitectureTest {
   static final ArchRule repositoryMethodsMustNotUseQueryAnnotations =
       repositoryMethodsMustNotUseQueryAnnotations();
 
+  // A media title's people, genres and studios are saved together so that every save inserts
+  // them in the order CreditService defines; a direct caller could insert them in another order.
+  @ArchTest
+  static final ArchRule onlyCreditServiceMaySaveCredits = onlyCreditServiceMaySaveCredits();
+
   // Authenticated Account-password checks share one throttle and timing contract. Login is exempt
   // because no authenticated Account exists yet.
   @ArchTest
@@ -446,6 +456,16 @@ class ArchitectureTest {
                 .evaluate(directDeciderDependency)
                 .hasViolation())
         .isTrue();
+  }
+
+  @Test
+  @DisplayName("Should reject a direct genre save when a service bypasses the credit service")
+  void shouldRejectADirectGenreSaveWhenAServiceBypassesTheCreditService() {
+    var directGenreSave = new ClassFileImporter().importClasses(DirectGenreServiceFixture.class);
+
+    assertThatThrownBy(() -> onlyCreditServiceMaySaveCredits().check(directGenreSave))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("GenreService");
   }
 
   @Test
@@ -620,6 +640,17 @@ class ArchitectureTest {
             "Service domains must form a directed acyclic graph — a cycle means neither domain"
                 + " can be understood, tested, or extracted without the other, and it lets a"
                 + " change in one silently reach back through the other");
+  }
+
+  private static ArchRule onlyCreditServiceMaySaveCredits() {
+    return noClasses()
+        .that()
+        .doNotBelongToAnyOf(
+            CreditService.class, PersonService.class, GenreService.class, CompanyService.class)
+        .should()
+        .dependOnClassesThat()
+        .belongToAnyOf(PersonService.class, GenreService.class, CompanyService.class)
+        .as("Only CreditService may save people, genres and studios");
   }
 
   private static final class ServiceDomainSliceAssignment implements SliceAssignment {

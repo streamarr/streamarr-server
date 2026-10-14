@@ -59,6 +59,7 @@ import com.streamarr.server.fakes.RecordingSeriesMetadataProvider;
 import com.streamarr.server.fakes.SecurityExceptionFileSystem;
 import com.streamarr.server.fakes.ThrowingFileSystemWrapper;
 import com.streamarr.server.fixtures.ArtworkServiceFixture;
+import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.MetadataFixture;
@@ -66,10 +67,8 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.ArtworkService;
-import com.streamarr.server.services.CompanyService;
-import com.streamarr.server.services.GenreService;
+import com.streamarr.server.services.CreditService;
 import com.streamarr.server.services.MovieService;
-import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.Intent;
@@ -152,9 +151,7 @@ class LibraryManagementServiceTest {
   private final FakeLibraryMutationTransaction libraryMutationTransaction =
       new FakeLibraryMutationTransaction();
 
-  private final PersonService personService = mock(PersonService.class);
-  private final GenreService genreService = mock(GenreService.class);
-  private final CompanyService companyService = mock(CompanyService.class);
+  private final CreditService creditService = CreditServiceFixture.creditServiceBuilder().build();
   private final MetadataProvider<Movie> tmdbMovieProvider = mock(TMDBMovieProvider.class);
   private final MovieMetadataProviderResolver fakeMovieMetadataProviderResolver =
       new MovieMetadataProviderResolver(List.of(tmdbMovieProvider));
@@ -185,9 +182,7 @@ class LibraryManagementServiceTest {
   private final MovieService movieService =
       new MovieService(
           fakeMovieRepository,
-          personService,
-          genreService,
-          companyService,
+          creditService,
           null,
           artworkService,
           null,
@@ -950,9 +945,7 @@ class LibraryManagementServiceTest {
     var artworkMovieService =
         new MovieService(
             fakeMovieRepository,
-            personService,
-            genreService,
-            companyService,
+            creditService,
             null,
             artwork,
             null,

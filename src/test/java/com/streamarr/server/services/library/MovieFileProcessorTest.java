@@ -14,19 +14,19 @@ import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
+import com.streamarr.server.fakes.FakePersonRepository;
 import com.streamarr.server.fakes.FakeProbeTaskRequests;
 import com.streamarr.server.fixtures.ArtworkServiceFixture;
+import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.services.ArtworkService;
-import com.streamarr.server.services.CompanyService;
-import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.MovieService;
-import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataProvider;
@@ -59,9 +59,7 @@ class MovieFileProcessorTest {
   private final MetadataProvider<Movie> tmdbMovieProvider = mock(TMDBMovieProvider.class);
   private final MovieMetadataProviderResolver movieMetadataProviderResolver =
       new MovieMetadataProviderResolver(List.of(tmdbMovieProvider));
-  private final PersonService personService = mock(PersonService.class);
-  private final GenreService genreService = mock(GenreService.class);
-  private final CompanyService companyService = mock(CompanyService.class);
+  private final UnavailablePersonRepository personRepository = new UnavailablePersonRepository();
   private final FakeMediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
   private final FakeMovieRepository fakeMovieRepository = new FakeMovieRepository();
   private final ArtworkService artworkService =
@@ -69,9 +67,7 @@ class MovieFileProcessorTest {
   private final MovieService movieService =
       new MovieService(
           fakeMovieRepository,
-          personService,
-          genreService,
-          companyService,
+          CreditServiceFixture.creditServiceBuilder().personRepository(personRepository).build(),
           null,
           artworkService,
           null,
@@ -235,10 +231,13 @@ class MovieFileProcessorTest {
         .thenReturn(
             new MetadataFetchOutcome.Found<>(
                 MetadataFixture.<Movie>metadataResultBuilder()
-                    .entity(Movie.builder().title("About Time").build())
+                    .entity(
+                        Movie.builder()
+                            .title("About Time")
+                            .cast(List.of(Person.builder().name("Lead").sourceId("1").build()))
+                            .build())
                     .build()));
-    when(personService.getOrCreatePersons(any(), any()))
-        .thenThrow(new IllegalStateException("db hiccup"));
+    personRepository.failInsertsWith(new IllegalStateException("db hiccup"));
 
     movieFileProcessor.process(discoveryOf(library), mediaFile);
 
@@ -353,5 +352,23 @@ class MovieFileProcessorTest {
         .fileSystem(FileSystems.getDefault())
         .build()
         .open("scan", library);
+  }
+
+  private static final class UnavailablePersonRepository extends FakePersonRepository {
+
+    private RuntimeException insertFailure;
+
+    void failInsertsWith(RuntimeException failure) {
+      insertFailure = failure;
+    }
+
+    @Override
+    public boolean insertIfAbsent(String sourceId, String name) {
+      if (insertFailure != null) {
+        throw insertFailure;
+      }
+
+      return super.insertIfAbsent(sourceId, name);
+    }
   }
 }
