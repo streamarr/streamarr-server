@@ -13,6 +13,7 @@ import com.github.kagkarlsson.scheduler.jdbc.PostgreSqlJdbcCustomization;
 import com.github.kagkarlsson.scheduler.serializer.Serializer;
 import com.github.kagkarlsson.scheduler.task.Task;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
+import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.library.MediaProbeTask;
 import com.streamarr.server.services.library.ProbeExecution;
 import com.streamarr.server.services.library.ProbeTaskCompletion;
@@ -20,7 +21,6 @@ import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import javax.sql.DataSource;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -76,9 +76,12 @@ public class ProbeSchedulingConfiguration {
       return Optional.of(new SchedulerTransactionDataSource(dataSource));
     }
 
+    // Every scheduler built from this customizer runs its executions, with their completion and
+    // failure handlers, as the System actor. Each call returns a new executor, because a scheduler
+    // shuts down its executor when it stops.
     @Override
     public Optional<ExecutorService> executorService() {
-      return Optional.of(Executors.newVirtualThreadPerTaskExecutor());
+      return Optional.of(SystemWork.newExecutorRunningAsSystemActor("scheduled-task-"));
     }
 
     // The library's single-statement PostgreSQL claim nests its LIMIT inside the UPDATE's IN

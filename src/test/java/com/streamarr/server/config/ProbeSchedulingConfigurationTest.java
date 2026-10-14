@@ -2,11 +2,15 @@ package com.streamarr.server.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
+import com.streamarr.server.config.persistence.SecurityAuditorAware;
+import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -17,18 +21,44 @@ import tools.jackson.databind.json.JsonMapper;
 @DisplayName("Probe scheduling configuration")
 class ProbeSchedulingConfigurationTest {
 
+  private static final long BOUND_SECONDS = 5;
+
   private final ProbeSchedulingConfiguration configuration = new ProbeSchedulingConfiguration();
 
   @Test
   @DisplayName("Should run scheduler executions on virtual threads when customizing db-scheduler")
   void shouldRunSchedulerExecutionsOnVirtualThreadsWhenCustomizingDbScheduler()
       throws InterruptedException, ExecutionException {
-    var customizer =
-        configuration.dbSchedulerCustomizer(
-            configuration.probeTaskSerializer(), new DriverManagerDataSource());
-
-    try (var executor = customizer.executorService().orElseThrow()) {
+    try (var executor = customizer().executorService().orElseThrow()) {
       assertThat(executor.submit(() -> Thread.currentThread().isVirtual()).get()).isTrue();
+    }
+  }
+
+  @Test
+  @DisplayName("Should run scheduler executions as the System actor when customizing db-scheduler")
+  void shouldRunSchedulerExecutionsAsSystemActorWhenCustomizingDbScheduler() throws Exception {
+    try (var executor = customizer().executorService().orElseThrow()) {
+      var auditor = executor.submit(() -> new SecurityAuditorAware().getCurrentAuditor());
+
+      assertThat(auditor.get(BOUND_SECONDS, TimeUnit.SECONDS)).contains(SystemActor.ID);
+    }
+  }
+
+  // Each scheduler shuts down its executor when it stops, so schedulers must not share one.
+  @Test
+  @DisplayName(
+      "Should give each scheduler its own System actor executor when schedulers share a"
+          + " customizer")
+  void shouldGiveEachSchedulerItsOwnSystemActorExecutorWhenSchedulersShareACustomizer()
+      throws Exception {
+    var customizer = customizer();
+    try (var first = customizer.executorService().orElseThrow();
+        var second = customizer.executorService().orElseThrow()) {
+      first.shutdown();
+
+      var auditor = second.submit(() -> new SecurityAuditorAware().getCurrentAuditor());
+
+      assertThat(auditor.get(BOUND_SECONDS, TimeUnit.SECONDS)).contains(SystemActor.ID);
     }
   }
 
@@ -54,5 +84,10 @@ class ProbeSchedulingConfigurationTest {
                 .dbSchedulerCustomizer(serializer, new DriverManagerDataSource())
                 .serializer())
         .contains(serializer);
+  }
+
+  private DbSchedulerCustomizer customizer() {
+    return configuration.dbSchedulerCustomizer(
+        configuration.probeTaskSerializer(), new DriverManagerDataSource());
   }
 }
