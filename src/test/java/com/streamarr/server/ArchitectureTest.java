@@ -45,6 +45,7 @@ import com.streamarr.server.services.auth.AccountPasswordVerifier;
 import com.streamarr.server.services.auth.LoginService;
 import com.streamarr.server.services.auth.PasswordTimingEqualizer;
 import com.streamarr.server.services.auth.ProfilePinVerifier;
+import com.streamarr.server.services.auth.architecturefixture.RequestServiceThreads;
 import com.streamarr.server.services.authorization.AuthorizationDecider;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.DirectAuthorizationDeciderFixture;
@@ -450,6 +451,21 @@ class ArchitectureTest {
         .anySatisfy(detail -> assertThat(detail).contains(fixture.getName()));
   }
 
+  // Requests are not system work, so the rule leaves the threads they start alone.
+  @Test
+  @DisplayName("Should allow an ordinary thread when a request service starts it")
+  void shouldAllowOrdinaryThreadWhenRequestServiceStartsIt() {
+    var classes =
+        new ClassFileImporter().importClasses(RequestServiceThreads.class, SystemWorkThreads.class);
+
+    assertThat(
+            systemWorkMustStartThreadsThroughSystemWork()
+                .evaluate(classes)
+                .getFailureReport()
+                .getDetails())
+        .isEmpty();
+  }
+
   @Test
   @DisplayName("Should allow threads when system work starts them through SystemWork")
   void shouldAllowThreadsWhenSystemWorkStartsThemThroughSystemWork() {
@@ -646,15 +662,15 @@ class ArchitectureTest {
   private static ArchRule systemWorkMustStartThreadsThroughSystemWork() {
     return noClasses()
         .that()
-        .resideInAnyPackage("com.streamarr.server.services..", "com.streamarr.server.config..")
-        .and()
-        .resideOutsideOfPackages("..services.streaming..", "..services.audit..")
+        .resideInAnyPackage(
+            "com.streamarr.server.services",
+            "com.streamarr.server.services.library..",
+            "com.streamarr.server.config..")
         .should()
         .accessTargetWhere(new StartsThreadOutsideSystemWork())
         .as(
-            "Services and configuration start threads through SystemWork, so system work keeps"
-                + " the System actor on every thread it starts. Streaming threads serve requests"
-                + " and workers, not system work");
+            "Scans, refreshes, the file watcher, artwork and scheduled tasks start threads through"
+                + " SystemWork, so system work keeps the System actor on every thread it starts");
   }
 
   private static final class StartsThreadOutsideSystemWork
