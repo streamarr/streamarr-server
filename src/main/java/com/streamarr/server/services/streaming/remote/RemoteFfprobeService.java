@@ -40,7 +40,7 @@ public final class RemoteFfprobeService implements FfprobeService {
           case ProbeDispatch.Refused(var reason) -> throw refusal(reason);
         };
     try {
-      return resultMapper.map(pending.get());
+      return resultMapper.map(pending.get().result());
     } catch (InterruptedException exception) {
       pending.cancel(true);
       Thread.currentThread().interrupt();

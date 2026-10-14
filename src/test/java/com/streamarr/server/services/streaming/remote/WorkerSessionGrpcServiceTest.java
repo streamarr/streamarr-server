@@ -77,7 +77,7 @@ class WorkerSessionGrpcServiceTest {
 
     session.onNext(EstablishWorkerSessionRequest.newBuilder().setProbeResult(result).build());
 
-    assertThat(attempt.get(1, TimeUnit.SECONDS)).isEqualTo(result);
+    assertThat(attempt.get(1, TimeUnit.SECONDS).result()).isEqualTo(result);
   }
 
   @Test

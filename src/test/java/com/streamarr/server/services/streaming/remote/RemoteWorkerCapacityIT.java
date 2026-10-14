@@ -80,7 +80,7 @@ class RemoteWorkerCapacityIT {
                   .until(
                       () -> server.dispatchProbe(nextRequest),
                       ProbeDispatch.Dispatched.class::isInstance));
-      var result = next.get(10, TimeUnit.SECONDS);
+      var result = next.get(10, TimeUnit.SECONDS).result();
 
       assertThat(worker.probeRunning())
           .as("The slot returns only after the cancelled probe stops")

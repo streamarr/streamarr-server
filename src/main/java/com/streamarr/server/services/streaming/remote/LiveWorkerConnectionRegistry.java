@@ -65,7 +65,7 @@ final class LiveWorkerConnectionRegistry {
   }
 
   private final ConcurrentHashMap<UUID, WorkerConnection> connections = new ConcurrentHashMap<>();
-  private final Map<UUID, CompletableFuture<ProbeAttemptResult>> pendingProbes =
+  private final Map<UUID, CompletableFuture<ProbeAttemptReport>> pendingProbes =
       new ConcurrentHashMap<>();
 
   synchronized UUID register(
@@ -440,7 +440,7 @@ final class LiveWorkerConnectionRegistry {
         return false;
       }
 
-      pending.result().complete(result);
+      pending.result().complete(new ProbeAttemptReport(result, List.of()));
       return true;
     }
 
@@ -605,7 +605,7 @@ final class LiveWorkerConnectionRegistry {
 
     private record PendingProbe(
         ProbeRequest request,
-        CompletableFuture<ProbeAttemptResult> result,
+        CompletableFuture<ProbeAttemptReport> result,
         CompletableFuture<Void> terminated) {}
   }
 }
