@@ -88,12 +88,19 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
   }
 
   List<ProbeTaskRequest> requestUnchangedFiles(int count) throws IOException {
+    var requests = createUnchangedFiles(count);
+    requests.forEach(scheduling::request);
+    return requests;
+  }
+
+  /**
+   * Creates media files and returns the probe requests a scan would make, without scheduling them.
+   */
+  List<ProbeTaskRequest> createUnchangedFiles(int count) throws IOException {
     libraryId = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary()).getId();
     var requests = new ArrayList<ProbeTaskRequest>();
     for (var index = 0; index < count; index++) {
-      var request = requestFor(createMediaFile());
-      requests.add(request);
-      scheduling.request(request);
+      requests.add(requestFor(createMediaFile()));
     }
 
     return requests;
