@@ -6,7 +6,6 @@ import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,7 +34,7 @@ public class PersonService {
 
     var savedBySourceId = new HashMap<String, Person>();
     persons.stream()
-        .sorted(Comparator.comparing(Person::getSourceId))
+        .sorted(CreditInsertOrder.bySourceId(Person::getSourceId))
         .forEach(
             person ->
                 savedBySourceId.put(
