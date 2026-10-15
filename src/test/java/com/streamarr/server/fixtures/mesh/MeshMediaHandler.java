@@ -8,6 +8,7 @@ import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.transcode.v1.AudioDecision;
 import com.streamarr.transcode.v1.AudioMode;
 import com.streamarr.transcode.v1.ContainerFormat;
+import com.streamarr.transcode.v1.EncoderPreset;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
@@ -114,7 +115,8 @@ final class MeshMediaHandler implements HttpHandler {
                     .setVariantLabel("default")
                     .setWidth(320)
                     .setHeight(180)
-                    .setBitrateBitsPerSecond(400_000))
+                    .setBitrateBitsPerSecond(400_000)
+                    .setEncoderPreset(EncoderPreset.ENCODER_PRESET_VERYFAST))
             .setExecution(
                 TranscodeExecution.newBuilder()
                     .setTargetSegmentDurationSeconds(
