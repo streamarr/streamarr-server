@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.hardwareEncoder;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.keyframeVerifiedHardwareEncoder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.streamCopyDecision;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
@@ -605,7 +606,9 @@ class LiveWorkerConnectionRegistryTest {
     registry.register(
         WORKER_ID,
         registration(
-            WORKER_ID, hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc")),
+            WORKER_ID,
+            keyframeVerifiedHardwareEncoder(
+                VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc")),
         collecting(nvencResponses));
     var pinned = WorkerVerifiedEncoderFixture.libx264();
     var job = encodeJob("h264");
@@ -683,7 +686,8 @@ class LiveWorkerConnectionRegistryTest {
                     WORKER_ID,
                     registration(
                         WORKER_ID,
-                        hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc")),
+                        keyframeVerifiedHardwareEncoder(
+                            VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc")),
                     collecting(nvencResponses))
                 .toString());
     var libx264Target =
@@ -712,7 +716,9 @@ class LiveWorkerConnectionRegistryTest {
     registry.register(
         WORKER_ID,
         registration(
-            WORKER_ID, hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc")),
+            WORKER_ID,
+            keyframeVerifiedHardwareEncoder(
+                VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc")),
         new CancellableObserver());
     var libx264WorkerSessionId =
         registry.register(

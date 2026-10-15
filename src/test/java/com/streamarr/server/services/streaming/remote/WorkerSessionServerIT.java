@@ -1,7 +1,7 @@
 package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
-import static com.streamarr.server.fixtures.RemoteWorkerFixtures.hardwareEncoder;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.keyframeVerifiedHardwareEncoder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChannelBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
@@ -758,7 +758,8 @@ class WorkerSessionServerIT {
         WorkerCapabilities.newBuilder()
             .addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID))
             .addVideoEncoders(
-                hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc"))
+                keyframeVerifiedHardwareEncoder(
+                    VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc"))
             .build();
     try (var server = server()) {
       server.start();
@@ -846,7 +847,8 @@ class WorkerSessionServerIT {
         WorkerCapabilities.newBuilder()
             .addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID))
             .addVideoEncoders(
-                hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc"))
+                keyframeVerifiedHardwareEncoder(
+                    VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc"))
             .build();
     try (var server = server()) {
       server.start();

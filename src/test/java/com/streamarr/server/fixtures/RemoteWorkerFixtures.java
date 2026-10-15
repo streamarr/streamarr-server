@@ -40,6 +40,11 @@ public final class RemoteWorkerFixtures {
     return workerVerifiedEncoder(codecFamily, encoder, EncoderKind.ENCODER_KIND_HARDWARE);
   }
 
+  public static WorkerVerifiedVideoEncoder keyframeVerifiedHardwareEncoder(
+      VideoCodecFamily codecFamily, String encoder) {
+    return hardwareEncoder(codecFamily, encoder).toBuilder().setKeyframeVerified(true).build();
+  }
+
   private static WorkerVerifiedVideoEncoder workerVerifiedEncoder(
       VideoCodecFamily codecFamily, String encoder, EncoderKind kind) {
     var verified = WorkerVerifiedVideoEncoder.newBuilder();
