@@ -2,12 +2,17 @@ package com.streamarr.server.domain.task;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
+import com.streamarr.server.domain.streaming.KeyframePosition;
+import com.streamarr.server.domain.streaming.KeyframePositionSource;
+import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
@@ -20,14 +25,45 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("Keyframe packet scan publication")
 class KeyframePacketScanPublicationTest {
 
-  @Test
-  @DisplayName("Should accept unavailable keyframes when a packet scan cannot find positions")
-  void shouldAcceptUnavailableKeyframesWhenAPacketScanCannotFindPositions() {
-    var keyframes = new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.NO_KEYFRAMES);
+  private static final SourceFileSnapshot SNAPSHOT = new SourceFileSnapshot(1, Instant.EPOCH);
+  private static final KeyframeKnowledge UNAVAILABLE =
+      new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.NO_KEYFRAMES);
 
+  @ParameterizedTest
+  @MethodSource("keyframesThatAPacketScanReports")
+  @DisplayName("Should accept keyframes when a packet scan reports them")
+  void shouldAcceptKeyframesWhenAPacketScanReportsThem(KeyframeKnowledge keyframes) {
     var publication = builder().keyframes(keyframes).build();
 
     assertThat(publication.keyframes()).isEqualTo(keyframes);
+  }
+
+  @Test
+  @DisplayName("Should reject a publication when its media file is missing")
+  void shouldRejectAPublicationWhenItsMediaFileIsMissing() {
+    assertThatNullPointerException()
+        .isThrownBy(() -> new KeyframePacketScanPublication(null, SNAPSHOT, 3, UNAVAILABLE))
+        .withMessageContaining("mediaFileId");
+  }
+
+  @Test
+  @DisplayName("Should reject a publication when its snapshot is missing")
+  void shouldRejectAPublicationWhenItsSnapshotIsMissing() {
+    var mediaFileId = UUID.randomUUID();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> new KeyframePacketScanPublication(mediaFileId, null, 3, UNAVAILABLE))
+        .withMessageContaining("snapshot");
+  }
+
+  @Test
+  @DisplayName("Should reject a publication when its keyframes are missing")
+  void shouldRejectAPublicationWhenItsKeyframesAreMissing() {
+    var mediaFileId = UUID.randomUUID();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> new KeyframePacketScanPublication(mediaFileId, SNAPSHOT, 3, null))
+        .withMessageContaining("keyframes");
   }
 
   @ParameterizedTest
@@ -41,6 +77,19 @@ class KeyframePacketScanPublicationTest {
         .withMessage("A packet scan stores known or unavailable keyframes");
   }
 
+  private static Stream<KeyframeKnowledge> keyframesThatAPacketScanReports() {
+    return Stream.of(
+        new KeyframeKnowledge.Known(
+            KeyframePositions.builder()
+                .streamIndex(0)
+                .timeBaseNumerator(1)
+                .timeBaseDenominator(90_000)
+                .source(KeyframePositionSource.PACKET_SCAN)
+                .keyframes(List.of(new KeyframePosition(0, 0)))
+                .build()),
+        UNAVAILABLE);
+  }
+
   private static Stream<KeyframeKnowledge> keyframesThatNoPacketScanReports() {
     return Stream.of(
         new KeyframeKnowledge.PacketScanRequired(KeyframePacketScanReason.NO_CONTAINER_INDEX),
@@ -50,7 +99,7 @@ class KeyframePacketScanPublicationTest {
   private static KeyframePacketScanPublication.KeyframePacketScanPublicationBuilder builder() {
     return KeyframePacketScanPublication.builder()
         .mediaFileId(UUID.randomUUID())
-        .snapshot(new SourceFileSnapshot(1, Instant.EPOCH))
+        .snapshot(SNAPSHOT)
         .probeVersion(3);
   }
 }
