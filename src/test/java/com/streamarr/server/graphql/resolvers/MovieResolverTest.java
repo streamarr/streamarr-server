@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
+import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
@@ -83,8 +84,9 @@ class MovieResolverTest {
   @DisplayName("Should return the System actor's id as creator when system work created the movie")
   void shouldReturnSystemActorIdAsCreatorWhenSystemWorkCreatedMovie() {
     var movieId = UUID.randomUUID();
-    var movie = Movie.builder().title("Scanned Movie").createdBy(SystemActor.ID).build();
+    var movie = Movie.builder().title("Scanned Movie").build();
     movie.setId(movieId);
+    AuditFieldSetter.setCreatedBy(movie, SystemActor.ID);
 
     when(movieService.findById(movieId)).thenReturn(Optional.of(movie));
 

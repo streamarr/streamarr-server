@@ -75,7 +75,15 @@ public abstract class BaseAuditableEntity<T extends BaseAuditableEntity<T>> {
       C extends BaseAuditableEntity<T>,
       B extends BaseAuditableEntityBuilder<T, C, B>> {
 
+    private B createdBy(UUID createdBy) {
+      return self();
+    }
+
     private B createdOn(Instant createdOn) {
+      return self();
+    }
+
+    private B lastModifiedBy(UUID lastModifiedBy) {
       return self();
     }
 
