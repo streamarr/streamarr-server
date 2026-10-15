@@ -100,20 +100,21 @@ public class SessionProgressService {
   }
 
   private void markSessionWatched(UUID profileId, PlaybackContext ctx) {
+    var collectableId = resolveCollectableId(ctx.mediaFileId());
     var deleted = sessionProgressRepository.deleteBySessionId(ctx.sessionId());
     var saved =
         watchHistoryRepository.saveStreamSessionCompletion(
             StreamSessionCompletion.builder()
                 .streamSessionId(ctx.sessionId())
                 .profileId(profileId)
-                .collectableId(resolveCollectableId(ctx.mediaFileId()))
+                .collectableId(collectableId)
                 .durationSeconds(ctx.durationSeconds())
                 .build());
     if (deleted + saved == 0) {
       return;
     }
 
-    publishChange(profileId, ctx);
+    publishChange(profileId, collectableId);
   }
 
   private void persistProgress(UUID profileId, PlaybackContext ctx) {
@@ -135,8 +136,11 @@ public class SessionProgressService {
   }
 
   private void publishChange(UUID profileId, PlaybackContext ctx) {
-    eventPublisher.publishEvent(
-        new WatchStateChangedEvent(profileId, Set.of(resolveCollectableId(ctx.mediaFileId()))));
+    publishChange(profileId, resolveCollectableId(ctx.mediaFileId()));
+  }
+
+  private void publishChange(UUID profileId, UUID collectableId) {
+    eventPublisher.publishEvent(new WatchStateChangedEvent(profileId, Set.of(collectableId)));
   }
 
   private UUID resolveCollectableId(UUID mediaFileId) {
