@@ -1,6 +1,5 @@
 package com.streamarr.server.graphql.resolvers;
 
-import static com.streamarr.server.fixtures.PersistedProbeFixture.storedProbeBuilder;
 import static com.streamarr.server.fixtures.ProbeFixture.completeProbe;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -13,6 +12,11 @@ import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
@@ -46,6 +50,7 @@ import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -104,8 +109,11 @@ class AdversarialPlaybackTest {
   void shouldRetainTypedCapacityPayloadWhenRemuxHasNoConnectedWorker() throws Exception {
     var source = Files.writeString(directory.resolve("movie.mkv"), "media");
     var file = saveFile(source);
-    outcomes.store(
-        storedProbeBuilder(file.getId(), completeProbe(defaultProbeBuilder().build())).build());
+    publishProbe(file, defaultProbeBuilder().build());
+    // The decision copies the video only when the stored probe knows the keyframes.
+    assertThat(outcomes.findKeyframeKnowledge(file.getId()))
+        .get()
+        .isInstanceOf(KeyframeKnowledge.Known.class);
 
     assertPayload(file, "TranscodeCapacityUnavailableError");
   }
@@ -116,10 +124,7 @@ class AdversarialPlaybackTest {
   void shouldReturnTypedCapacityPayloadWhenVideoTranscodeHasNoConnectedWorker() throws Exception {
     var source = Files.writeString(directory.resolve("movie.mkv"), "media");
     var file = saveFile(source);
-    outcomes.store(
-        storedProbeBuilder(
-                file.getId(), completeProbe(defaultProbeBuilder().videoCodec("hevc").build()))
-            .build());
+    publishProbe(file, defaultProbeBuilder().videoCodec("hevc").build());
 
     assertPayload(file, "TranscodeCapacityUnavailableError");
   }
@@ -171,6 +176,19 @@ class AdversarialPlaybackTest {
             .filename(source.getFileName().toString())
             .status(MediaFileStatus.MATCHED)
             .build());
+  }
+
+  // Publishing keeps the outcome's keyframe knowledge, which a stored row alone does not carry.
+  private void publishProbe(MediaFile file, MediaProbe probe) {
+    assertThat(
+            outcomes.publish(
+                ProbePublication.builder()
+                    .mediaFileId(file.getId())
+                    .snapshot(new SourceFileSnapshot(1000, Instant.EPOCH))
+                    .probeVersion(ProbeVersion.CURRENT)
+                    .outcome(completeProbe(probe))
+                    .build()))
+        .isTrue();
   }
 
   private void assertPayload(MediaFile file, String errorType) {
