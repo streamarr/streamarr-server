@@ -74,18 +74,26 @@ public abstract class BaseAuditableEntity<T extends BaseAuditableEntity<T>> {
       C extends BaseAuditableEntity<T>,
       B extends BaseAuditableEntityBuilder<T, C, B>> {
 
+    // Lombok generates no builder setter whose name the builder already declares. These private
+    // methods claim the audit column names, so no caller can set a column the audit trigger fills;
+    // only Lombok's generated toBuilder copy calls them, and they discard the copied value.
+
+    @SuppressWarnings("unused")
     private B createdBy(UUID createdBy) {
       return self();
     }
 
+    @SuppressWarnings("unused")
     private B createdOn(Instant createdOn) {
       return self();
     }
 
+    @SuppressWarnings("unused")
     private B lastModifiedBy(UUID lastModifiedBy) {
       return self();
     }
 
+    @SuppressWarnings("unused")
     private B lastModifiedOn(Instant lastModifiedOn) {
       return self();
     }
