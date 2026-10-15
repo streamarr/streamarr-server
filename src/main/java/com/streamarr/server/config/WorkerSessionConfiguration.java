@@ -22,6 +22,7 @@ public class WorkerSessionConfiguration {
             .probeTimeout(properties.probeTimeout())
             .keyframeScanTimeout(properties.keyframeScanTimeout())
             .probeCancellationTimeout(properties.probeCancellationTimeout())
+            .startReportTimeout(properties.startReportTimeout())
             .build();
     return new WorkerSessionServer(configuration, segmentStore, meterRegistry);
   }

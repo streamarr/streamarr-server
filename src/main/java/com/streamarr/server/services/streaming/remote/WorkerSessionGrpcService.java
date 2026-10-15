@@ -6,6 +6,7 @@ import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptFailed;
+import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
@@ -13,6 +14,7 @@ import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.UploadSegmentResponse;
 import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
+import com.streamarr.transcode.v1.WorkerRegistration;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import java.util.Optional;
@@ -148,10 +150,27 @@ final class WorkerSessionGrpcService
         return;
       }
 
+      if (advertisesOneCodecFamilyTwice(request.getRegistration())) {
+        reject(
+            Status.INVALID_ARGUMENT.withDescription(
+                "Worker registration lists more than one encoder for a codec family"));
+        return;
+      }
+
       workerSessionId =
           workerConnections.register(
               authenticatedWorkerId, request.getRegistration(), responseObserver);
       registered = true;
+    }
+
+    // The contract allows one encoder for each codec family: the one that runs every job of it.
+    private static boolean advertisesOneCodecFamilyTwice(WorkerRegistration registration) {
+      var encoders = registration.getCapabilities().getVideoEncodersList();
+      return encoders.stream()
+              .map(encoder -> encoder.getBackend().getCodecFamilyValue())
+              .distinct()
+              .count()
+          < encoders.size();
     }
 
     @Override
@@ -178,11 +197,7 @@ final class WorkerSessionGrpcService
 
     private void handleSessionEvent(EstablishWorkerSessionRequest request) {
       switch (request.getEventCase()) {
-        case JOB_ATTEMPT_STARTED ->
-            log.debug(
-                "Worker {} started job attempt {}",
-                authenticatedWorkerId,
-                fromProto(request.getJobAttemptStarted().getJobAttemptId()));
+        case JOB_ATTEMPT_STARTED -> startJobAttempt(request.getJobAttemptStarted());
         case JOB_ATTEMPT_FAILED -> reportFailedJobAttempt(request.getJobAttemptFailed());
         case JOB_ATTEMPT_COMPLETED ->
             finishOrWarn(request.getJobAttemptCompleted().getJobAttemptId(), "completed");
@@ -197,6 +212,15 @@ final class WorkerSessionGrpcService
                 request.getEventCase(),
                 authenticatedWorkerId);
       }
+    }
+
+    private void startJobAttempt(JobAttemptStarted started) {
+      log.debug(
+          "Worker {} started job attempt {}",
+          authenticatedWorkerId,
+          fromProto(started.getJobAttemptId()));
+      workerConnections.checkReportedEncoderBackend(
+          authenticatedWorkerId, workerSessionId, started);
     }
 
     private void completeProbe(ProbeAttemptResult result) {

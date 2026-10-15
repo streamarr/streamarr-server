@@ -4,12 +4,14 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import java.nio.file.Path;
 import java.util.Set;
 import java.util.UUID;
+import lombok.NonNull;
 
 public final class RemoteTranscodeExecutor implements TranscodeExecutor {
 
@@ -26,24 +28,39 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public TranscodeHandle start(TranscodeRequest request) {
-    if (!workerServer.dispatch(jobMapper.map(request))) {
-      throw new TranscodeException("No connected transcode worker can run this variant");
-    }
-    return handleFor(request);
+    var job = jobMapper.map(request);
+    var dispatched =
+        request
+            .pinnedEncoder()
+            .map(pinned -> workerServer.dispatch(job, pinned))
+            .orElseGet(() -> workerServer.dispatch(job));
+    return dispatched
+        .map(dispatch -> handleFor(request, dispatch))
+        .orElseThrow(
+            () -> new TranscodeException("No connected transcode worker can run this variant"));
   }
 
   @Override
   public TranscodeHandle start(TranscodeRequest request, ExecutionTargetId target) {
-    if (!workerServer.dispatchTo(target, jobMapper.map(request))) {
-      throw new TranscodeException(
-          "Worker connection " + target.value() + " cannot run this variant");
-    }
-    return handleFor(request);
+    var job = jobMapper.map(request);
+    var dispatched =
+        request
+            .pinnedEncoder()
+            .map(pinned -> workerServer.dispatchTo(target, job, pinned))
+            .orElseGet(() -> workerServer.dispatchTo(target, job));
+    return dispatched
+        .map(dispatch -> handleFor(request, dispatch))
+        .orElseThrow(
+            () ->
+                new TranscodeException(
+                    "Worker connection " + target.value() + " cannot run this variant"));
   }
 
-  private static TranscodeHandle handleFor(TranscodeRequest request) {
-    return TranscodeHandle.remoteDispatch(
-        request.attemptId(), TranscodeStatus.ACTIVE, request.startSequenceNumber());
+  private static TranscodeHandle handleFor(TranscodeRequest request, VariantDispatch dispatch) {
+    var handle =
+        TranscodeHandle.remoteDispatch(
+            request.attemptId(), TranscodeStatus.ACTIVE, request.startSequenceNumber());
+    return dispatch.encoder().map(handle::withEncoder).orElse(handle);
   }
 
   @Override
@@ -81,6 +98,11 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   public Set<ExecutionTargetId> executionTargets(TranscodeDecision decision) {
     return workerServer.eligibleWorkers(
         sourceNamespaceId, RemoteVariantJobMapper.decision(decision));
+  }
+
+  @Override
+  public Set<ExecutionTargetId> executionTargets(@NonNull WorkerVerifiedEncoder pinnedEncoder) {
+    return workerServer.eligibleWorkers(sourceNamespaceId, pinnedEncoder);
   }
 
   @Override

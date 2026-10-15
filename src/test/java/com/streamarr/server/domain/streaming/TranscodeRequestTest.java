@@ -14,6 +14,16 @@ import org.junit.jupiter.api.Test;
 class TranscodeRequestTest {
 
   @Test
+  @DisplayName(
+      "Should leave the frame rate and the pinned encoder empty when the builder omits them")
+  void shouldLeaveFrameRateAndPinnedEncoderEmptyWhenBuilderOmitsThem() {
+    var request = requestWithoutEncoderPreset().encoderPreset(EncoderPreset.FASTER).build();
+
+    assertThat(request.framerate()).isEmpty();
+    assertThat(request.pinnedEncoder()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should reject construction when the encoder preset is missing")
   void shouldRejectConstructionWhenTheEncoderPresetIsMissing() {
     var builder = requestWithoutEncoderPreset();
@@ -39,6 +49,38 @@ class TranscodeRequestTest {
     assertThatThrownBy(() -> builder.keyframeSeekPosition(null))
         .isInstanceOf(NullPointerException.class)
         .hasMessageContaining("keyframeSeekPosition");
+  }
+
+  @Test
+  @DisplayName("Should reject construction when the pinned encoder is missing")
+  void shouldRejectConstructionWhenThePinnedEncoderIsMissing() {
+    var request = requestWithoutEncoderPreset().encoderPreset(EncoderPreset.FASTER).build();
+
+    assertThatThrownBy(() -> withoutPinnedEncoder(request))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("pinnedEncoder");
+  }
+
+  // The builder rejects a null pinned encoder before construction, so this calls the
+  // canonical constructor.
+  private static TranscodeRequest withoutPinnedEncoder(TranscodeRequest request) {
+    return new TranscodeRequest(
+        request.sessionId(),
+        request.attemptId(),
+        request.sourcePath(),
+        request.seekPosition(),
+        request.keyframeSeekPosition(),
+        request.targetSegmentDuration(),
+        request.framerate(),
+        request.transcodeDecision(),
+        request.width(),
+        request.height(),
+        request.bitrate(),
+        request.variantLabel(),
+        request.startSequenceNumber(),
+        request.mediaSegmentCount(),
+        request.encoderPreset(),
+        null);
   }
 
   private static TranscodeRequest.TranscodeRequestBuilder requestWithoutEncoderPreset() {

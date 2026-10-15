@@ -19,8 +19,10 @@ import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamSessionFixture;
+import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -231,7 +233,8 @@ class HlsPlaylistServiceTest {
   void shouldIncludeEachFixedTagWhenGeneratingMediaPlaylist(String tag) {
     var session = createSession(TranscodeMode.FULL_TRANSCODE, 30);
 
-    var playlist = service.generateMediaPlaylist(session, "test-token");
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
 
     assertThat(playlist).contains(tag);
   }
@@ -261,7 +264,8 @@ class HlsPlaylistServiceTest {
                     .build())
             .build();
 
-    var playlist = service.generateMediaPlaylist(session, "test-token");
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
 
     assertThat(playlist)
         .contains("#EXTINF:6.500000,\n")
@@ -280,7 +284,10 @@ class HlsPlaylistServiceTest {
             .build();
 
     assertThatIllegalStateException()
-        .isThrownBy(() -> service.generateMediaPlaylist(session, "test-token"));
+        .isThrownBy(
+            () ->
+                service.generateMediaPlaylist(
+                    session, StreamSession.defaultVariant(), "test-token"));
   }
 
   static Stream<Arguments> keyframesThatOpenNoStreamCopy() {
@@ -296,7 +303,8 @@ class HlsPlaylistServiceTest {
   void shouldUseM4sExtensionWhenGeneratingMediaPlaylist() {
     var session = createSession(TranscodeMode.FULL_TRANSCODE, 18);
 
-    var playlist = service.generateMediaPlaylist(session, "test-token");
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
 
     assertThat(playlist)
         .contains("segment0.m4s?t=test-token")
@@ -309,7 +317,8 @@ class HlsPlaylistServiceTest {
   void shouldCalculateCorrectSegmentCountWhenDurationIs18Seconds() {
     var session = createSession(TranscodeMode.FULL_TRANSCODE, 18);
 
-    var playlist = service.generateMediaPlaylist(session, "test-token");
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
 
     assertThat(playlist)
         .contains("segment0.m4s")
@@ -323,7 +332,8 @@ class HlsPlaylistServiceTest {
   void shouldStartMediaPlaylistWithExtm3uWhenGeneratingPlaylist() {
     var session = createSession(TranscodeMode.FULL_TRANSCODE, 30);
 
-    var playlist = service.generateMediaPlaylist(session, "test-token");
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
 
     assertThat(playlist).startsWith("#EXTM3U\n");
   }
@@ -343,7 +353,8 @@ class HlsPlaylistServiceTest {
   void shouldNotContainMultivariantPlaylistTagsWhenGeneratingMediaPlaylist() {
     var session = createSession(TranscodeMode.FULL_TRANSCODE, 30);
 
-    var playlist = service.generateMediaPlaylist(session, "test-token");
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
 
     assertThat(playlist).doesNotContain("#EXT-X-STREAM-INF");
   }
@@ -353,7 +364,8 @@ class HlsPlaylistServiceTest {
   void shouldSetLastSegmentDurationWhenShorterThanTargetDuration() {
     var session = createSession(TranscodeMode.FULL_TRANSCODE, 16);
 
-    var playlist = service.generateMediaPlaylist(session, "test-token");
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
 
     var lines = playlist.lines().toList();
     var extinfLines = lines.stream().filter(l -> l.startsWith("#EXTINF:")).toList();
@@ -369,7 +381,8 @@ class HlsPlaylistServiceTest {
   void shouldIncludeExtraSegmentWhenDurationHasSubSecondRemainder() {
     var session = createSessionWithDuration(TranscodeMode.FULL_TRANSCODE, Duration.ofMillis(18500));
 
-    var playlist = service.generateMediaPlaylist(session, "test-token");
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
 
     var segmentLines =
         playlist
@@ -384,7 +397,8 @@ class HlsPlaylistServiceTest {
   void shouldCalculateLastSegmentDurationWhenDurationHasSubSecondPrecision() {
     var session = createSessionWithDuration(TranscodeMode.FULL_TRANSCODE, Duration.ofMillis(18500));
 
-    var playlist = service.generateMediaPlaylist(session, "test-token");
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
 
     var extinfLines = playlist.lines().filter(l -> l.startsWith("#EXTINF:")).toList();
     assertThat(extinfLines).hasSize(4);
@@ -401,7 +415,8 @@ class HlsPlaylistServiceTest {
     var session = createSession(TranscodeMode.FULL_TRANSCODE, 120);
     session.updatePlaybackState(90, PlaybackState.PLAYING);
 
-    var playlist = service.generateMediaPlaylist(session, "test-token");
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
 
     var segmentLines =
         playlist
@@ -416,7 +431,8 @@ class HlsPlaylistServiceTest {
   void shouldGenerateFullSegmentsWhenSeekPositionIsZero() {
     var session = createSession(TranscodeMode.FULL_TRANSCODE, 120);
 
-    var playlist = service.generateMediaPlaylist(session, "test-token");
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
 
     var segmentLines =
         playlist
@@ -498,6 +514,123 @@ class HlsPlaylistServiceTest {
       for (var line : streamInfLines) {
         assertThat(line).contains("CODECS=");
       }
+    }
+  }
+
+  @Nested
+  @DisplayName("EXT-X-INDEPENDENT-SEGMENTS")
+  class IndependentSegmentsTests {
+
+    private static final String INDEPENDENT_SEGMENTS = "#EXT-X-INDEPENDENT-SEGMENTS";
+
+    private StreamSession encodedLadder(String videoCodecFamily) {
+      return StreamSessionFixture.abrSessionBuilder()
+          .transcodeDecision(StreamSessionFixture.fullTranscodeDecision(videoCodecFamily))
+          .build();
+    }
+
+    private String mediaPlaylist(StreamSession session, String variantLabel) {
+      return service.generateMediaPlaylist(session, variantLabel, "test-token");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("keyframeVerifiedEncoders")
+    @DisplayName(
+        "Should write the tag in the multivariant playlist when every video variant comes from a keyframe-verified encoder")
+    void shouldWriteTagInMultivariantPlaylistWhenEveryVideoVariantComesFromKeyframeVerifiedEncoder(
+        String videoCodecFamily, WorkerVerifiedEncoder encoder) {
+      var session = encodedLadder(videoCodecFamily);
+      session.pinEncoder("1080p", encoder);
+      session.pinEncoder("720p", encoder);
+
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
+
+      assertThat(playlist.lines()).contains(INDEPENDENT_SEGMENTS);
+    }
+
+    @Test
+    @DisplayName(
+        "Should leave the tag out of every media playlist when the multivariant playlist carries it")
+    void shouldLeaveTagOutOfEveryMediaPlaylistWhenMultivariantPlaylistCarriesIt() {
+      var session = encodedLadder("h264");
+      session.pinEncoder("1080p", WorkerVerifiedEncoderFixture.libx264());
+      session.pinEncoder("720p", WorkerVerifiedEncoderFixture.libx264());
+
+      assertThat(service.generateMultivariantPlaylist(session, "test-token").lines())
+          .contains(INDEPENDENT_SEGMENTS);
+      assertThat(mediaPlaylist(session, "1080p").lines()).doesNotContain(INDEPENDENT_SEGMENTS);
+      assertThat(mediaPlaylist(session, "720p").lines()).doesNotContain(INDEPENDENT_SEGMENTS);
+    }
+
+    static Stream<Arguments> keyframeVerifiedEncoders() {
+      return Stream.of(
+          Arguments.of("h264", WorkerVerifiedEncoderFixture.libx264()),
+          Arguments.of("av1", WorkerVerifiedEncoderFixture.libsvtav1()));
+    }
+
+    @Test
+    @DisplayName(
+        "Should write the tag in the multivariant playlist when the only video variant comes from a keyframe-verified encoder")
+    void
+        shouldWriteTagInMultivariantPlaylistWhenOnlyVideoVariantComesFromKeyframeVerifiedEncoder() {
+      var session = createSession(TranscodeMode.FULL_TRANSCODE, 120);
+      session.pinEncoder(StreamSession.defaultVariant(), WorkerVerifiedEncoderFixture.libx264());
+
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
+
+      assertThat(playlist.lines()).contains(INDEPENDENT_SEGMENTS);
+    }
+
+    @Test
+    @DisplayName(
+        "Should write the tag only in the keyframe-verified variant's media playlist when the ladder mixes encoders")
+    void shouldWriteTagOnlyInKeyframeVerifiedVariantsMediaPlaylistWhenLadderMixesEncoders() {
+      var session = encodedLadder("h264");
+      session.pinEncoder("1080p", WorkerVerifiedEncoderFixture.libx264());
+      session.pinEncoder("720p", WorkerVerifiedEncoderFixture.h264Nvenc());
+
+      assertThat(service.generateMultivariantPlaylist(session, "test-token").lines())
+          .doesNotContain(INDEPENDENT_SEGMENTS);
+      assertThat(mediaPlaylist(session, "1080p").lines()).contains(INDEPENDENT_SEGMENTS);
+      assertThat(mediaPlaylist(session, "720p").lines()).doesNotContain(INDEPENDENT_SEGMENTS);
+    }
+
+    @Test
+    @DisplayName(
+        "Should write the tag only in the pinned variant's media playlist when another variant has no pinned encoder backend")
+    void
+        shouldWriteTagOnlyInPinnedVariantsMediaPlaylistWhenAnotherVariantHasNoPinnedEncoderBackend() {
+      var session = encodedLadder("h264");
+      session.pinEncoder("1080p", WorkerVerifiedEncoderFixture.libx264());
+
+      assertThat(service.generateMultivariantPlaylist(session, "test-token").lines())
+          .doesNotContain(INDEPENDENT_SEGMENTS);
+      assertThat(mediaPlaylist(session, "1080p").lines()).contains(INDEPENDENT_SEGMENTS);
+      assertThat(mediaPlaylist(session, "720p").lines()).doesNotContain(INDEPENDENT_SEGMENTS);
+    }
+
+    @Test
+    @DisplayName("Should write no tag when the variants come from libx265")
+    void shouldWriteNoTagWhenVariantsComeFromLibx265() {
+      var session = encodedLadder("hevc");
+      session.pinEncoder("1080p", WorkerVerifiedEncoderFixture.libx265());
+      session.pinEncoder("720p", WorkerVerifiedEncoderFixture.libx265());
+
+      assertThat(service.generateMultivariantPlaylist(session, "test-token").lines())
+          .doesNotContain(INDEPENDENT_SEGMENTS);
+      assertThat(mediaPlaylist(session, "1080p").lines()).doesNotContain(INDEPENDENT_SEGMENTS);
+      assertThat(mediaPlaylist(session, "720p").lines()).doesNotContain(INDEPENDENT_SEGMENTS);
+    }
+
+    @Test
+    @DisplayName("Should write no tag when the stream session copies the video")
+    void shouldWriteNoTagWhenStreamSessionCopiesTheVideo() {
+      var session = StreamSessionFixture.defaultSessionBuilder().build();
+
+      assertThat(service.generateMultivariantPlaylist(session, "test-token").lines())
+          .doesNotContain(INDEPENDENT_SEGMENTS);
+      assertThat(mediaPlaylist(session, StreamSession.defaultVariant()).lines())
+          .doesNotContain(INDEPENDENT_SEGMENTS);
     }
   }
 

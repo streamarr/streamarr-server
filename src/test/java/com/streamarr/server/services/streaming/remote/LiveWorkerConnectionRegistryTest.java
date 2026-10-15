@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.hardwareEncoder;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.keyframeVerifiedHardwareEncoder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.streamCopyDecision;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
@@ -9,12 +10,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
+import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
+import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.TranscodeDecision;
 import com.streamarr.transcode.v1.TranscodeMode;
+import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
 import com.streamarr.transcode.v1.VideoCodecFamily;
@@ -25,13 +30,17 @@ import com.streamarr.transcode.v1.WorkerVerifiedVideoEncoder;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
+import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -97,7 +106,7 @@ class LiveWorkerConnectionRegistryTest {
         .isInstanceOf(RuntimeException.class);
 
     assertThat(registry.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isFalse();
-    assertThat(registry.dispatch(variantJob())).isFalse();
+    assertThat(registry.dispatch(variantJob())).isEmpty();
   }
 
   @Test
@@ -113,7 +122,7 @@ class LiveWorkerConnectionRegistryTest {
         .isInstanceOf(RuntimeException.class);
 
     assertThat(registry.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isTrue();
-    assertThat(registry.dispatch(variantJob())).isTrue();
+    assertThat(registry.dispatch(variantJob())).isPresent();
     assertThat(originalResponses)
         .extracting(EstablishWorkerSessionResponse::getCommandCase)
         .containsExactly(
@@ -140,7 +149,7 @@ class LiveWorkerConnectionRegistryTest {
       assertThat(replacementClosing.await(5, TimeUnit.SECONDS)).isTrue();
       assertThat(replacement).isNotDone();
 
-      assertThat(registry.dispatch(variantJob())).isTrue();
+      assertThat(registry.dispatch(variantJob())).isPresent();
       continueReplacement.countDown();
       replacement.get(5, TimeUnit.SECONDS);
     } finally {
@@ -171,7 +180,7 @@ class LiveWorkerConnectionRegistryTest {
       registry.disconnect(WORKER_ID, workerSessionId);
       observer.dispatchRelease.countDown();
 
-      assertThat(dispatching.get(5, TimeUnit.SECONDS)).isFalse();
+      assertThat(dispatching.get(5, TimeUnit.SECONDS)).isEmpty();
       assertThat(registry.isRunning(streamSessionId, job.getVariant().getVariantLabel())).isFalse();
     }
   }
@@ -188,7 +197,7 @@ class LiveWorkerConnectionRegistryTest {
 
     var dispatched = registry.dispatch(job);
 
-    assertThat(dispatched).isFalse();
+    assertThat(dispatched).isEmpty();
     assertThat(
             registry.isRunning(
                 fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel()))
@@ -223,7 +232,7 @@ class LiveWorkerConnectionRegistryTest {
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(3);
     assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, streamCopyDecision())).hasSize(2);
 
-    assertThat(registry.dispatch(variantJob())).isTrue();
+    assertThat(registry.dispatch(variantJob())).isPresent();
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(2);
   }
 
@@ -242,7 +251,7 @@ class LiveWorkerConnectionRegistryTest {
         collecting(h264OnlyResponses));
     var av1Job = encodeJob("av1");
 
-    assertThat(registry.dispatch(av1Job)).isFalse();
+    assertThat(registry.dispatch(av1Job)).isEmpty();
 
     registry.register(
         av1WorkerId,
@@ -250,7 +259,7 @@ class LiveWorkerConnectionRegistryTest {
             av1WorkerId, softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "libsvtav1")),
         collecting(av1Responses));
 
-    assertThat(registry.dispatch(av1Job)).isTrue();
+    assertThat(registry.dispatch(av1Job)).isPresent();
     assertThat(h264OnlyResponses)
         .extracting(EstablishWorkerSessionResponse::getCommandCase)
         .containsExactly(EstablishWorkerSessionResponse.CommandCase.SESSION_ACCEPTED);
@@ -274,7 +283,7 @@ class LiveWorkerConnectionRegistryTest {
                     .setVideoCodecFamily("av1"))
             .build();
 
-    assertThat(registry.dispatch(copyJob)).isTrue();
+    assertThat(registry.dispatch(copyJob)).isPresent();
   }
 
   @Test
@@ -382,7 +391,7 @@ class LiveWorkerConnectionRegistryTest {
             av1WorkerId, softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "libsvtav1")),
         new CancellableObserver());
 
-    assertThat(registry.dispatch(encodeJob("av1"))).isTrue();
+    assertThat(registry.dispatch(encodeJob("av1"))).isPresent();
 
     assertThat(registry.encodableVideoCodecFamilies(SOURCE_NAMESPACE_ID)).containsOnly("h264");
   }
@@ -402,7 +411,7 @@ class LiveWorkerConnectionRegistryTest {
         registration(WORKER_ID, hardwareEncoder(family, encoder)),
         new CancellableObserver());
 
-    assertThat(registry.dispatch(encodeJob(codecFamilyName))).isFalse();
+    assertThat(registry.dispatch(encodeJob(codecFamilyName))).isEmpty();
   }
 
   @Test
@@ -414,7 +423,7 @@ class LiveWorkerConnectionRegistryTest {
     var observer = new CancellableObserver();
     registry.register(WORKER_ID, registration(), observer);
     var job = variantJob();
-    assertThat(registry.dispatch(job)).isTrue();
+    assertThat(registry.dispatch(job)).isPresent();
     observer.cancel();
     var streamSessionId = fromProto(job.getStreamSessionId());
 
@@ -444,7 +453,7 @@ class LiveWorkerConnectionRegistryTest {
     var workerSessionId =
         registry.register(WORKER_ID, registration, collecting(new CopyOnWriteArrayList<>()));
     var job = variantJob();
-    assertThat(registry.dispatch(job)).isTrue();
+    assertThat(registry.dispatch(job)).isPresent();
 
     var metadata = uploadMetadata(workerSessionId, worker, job);
 
@@ -497,7 +506,7 @@ class LiveWorkerConnectionRegistryTest {
     var workerRegistration = registration();
     var workerSessionId = registry.register(WORKER_ID, workerRegistration, collecting(responses));
     var job = variantJob();
-    assertThat(registry.dispatch(job)).isTrue();
+    assertThat(registry.dispatch(job)).isPresent();
 
     // The disconnect drains the attempt while the refused upload holds the connection monitor.
     var outcome =
@@ -534,7 +543,7 @@ class LiveWorkerConnectionRegistryTest {
     registry.disconnect(WORKER_ID, staleSessionId);
 
     assertThat(registry.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isTrue();
-    assertThat(registry.dispatch(variantJob())).isTrue();
+    assertThat(registry.dispatch(variantJob())).isPresent();
   }
 
   @Test
@@ -545,7 +554,7 @@ class LiveWorkerConnectionRegistryTest {
     var staleSessionId = registry.register(WORKER_ID, registration(), new CancellableObserver());
     registry.register(WORKER_ID, registration(), collecting(new CopyOnWriteArrayList<>()));
     var replacementJob = variantJob();
-    assertThat(registry.dispatch(replacementJob)).isTrue();
+    assertThat(registry.dispatch(replacementJob)).isPresent();
 
     var released =
         registry.releaseJobAttempt(
@@ -558,6 +567,459 @@ class LiveWorkerConnectionRegistryTest {
                 replacementJob.getVariant().getVariantLabel()))
         .isTrue();
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isZero();
+  }
+
+  @Test
+  @DisplayName("Should report the accepting worker's encoder when dispatching an encode")
+  void shouldReportTheAcceptingWorkersEncoderWhenDispatchingAnEncode() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    registry.register(
+        WORKER_ID, registration(WORKER_ID, libx264Encoder()), new CancellableObserver());
+
+    var dispatched = registry.dispatch(encodeJob("h264"));
+
+    assertThat(dispatched)
+        .map(VariantDispatch::encoder)
+        .contains(Optional.of(WorkerVerifiedEncoderFixture.libx264()));
+  }
+
+  @Test
+  @DisplayName("Should report no encoder when dispatching a stream copy")
+  void shouldReportNoEncoderWhenDispatchingAStreamCopy() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    registry.register(
+        WORKER_ID, registration(WORKER_ID, libx264Encoder()), new CancellableObserver());
+
+    var dispatched =
+        registry.dispatch(variantJob().toBuilder().setDecision(streamCopyDecision()).build());
+
+    assertThat(dispatched).map(VariantDispatch::encoder).contains(Optional.empty());
+  }
+
+  @Test
+  @DisplayName(
+      "Should dispatch a pinned encode only to a worker that advertises the pinned encoder backend")
+  void shouldDispatchPinnedEncodeOnlyToWorkerThatAdvertisesPinnedEncoderBackend() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var nvencResponses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    var libx264WorkerId = UUID.randomUUID();
+    registry.register(
+        WORKER_ID,
+        registration(
+            WORKER_ID,
+            keyframeVerifiedHardwareEncoder(
+                VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc")),
+        collecting(nvencResponses));
+    var pinned = WorkerVerifiedEncoderFixture.libx264();
+    var job = encodeJob("h264");
+
+    assertThat(registry.dispatch(job, pinned)).isEmpty();
+
+    registry.register(
+        libx264WorkerId,
+        registration(libx264WorkerId, libx264Encoder()),
+        new CancellableObserver());
+
+    assertThat(registry.dispatch(job, pinned))
+        .map(VariantDispatch::encoder)
+        .contains(Optional.of(WorkerVerifiedEncoderFixture.libx264()));
+    assertThat(nvencResponses).noneMatch(EstablishWorkerSessionResponse::hasStartVariant);
+  }
+
+  @Test
+  @DisplayName(
+      "Should send a keyframe-verified pin only to a worker that advertises the encoder as keyframe-verified")
+  void shouldSendKeyframeVerifiedPinOnlyToWorkerThatAdvertisesEncoderAsKeyframeVerified() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var unverifiedResponses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    var verifiedWorkerId = UUID.randomUUID();
+    registry.register(
+        WORKER_ID,
+        registration(
+            WORKER_ID, softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264")),
+        collecting(unverifiedResponses));
+    var pinned = WorkerVerifiedEncoderFixture.libx264();
+    var job = encodeJob("h264");
+
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, pinned)).isEmpty();
+    assertThat(registry.dispatch(job, pinned)).isEmpty();
+
+    var verifiedWorkerSessionId =
+        registry.register(
+            verifiedWorkerId,
+            registration(verifiedWorkerId, libx264Encoder()),
+            new CancellableObserver());
+
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, pinned))
+        .containsExactly(new ExecutionTargetId(verifiedWorkerSessionId.toString()));
+    assertThat(registry.dispatch(job, pinned))
+        .map(VariantDispatch::encoder)
+        .contains(Optional.of(WorkerVerifiedEncoderFixture.libx264()));
+    assertThat(unverifiedResponses).noneMatch(EstablishWorkerSessionResponse::hasStartVariant);
+  }
+
+  @Test
+  @DisplayName(
+      "Should send a pin without keyframe verification only to a worker that advertises the same flag")
+  void shouldSendPinWithoutKeyframeVerificationOnlyToWorkerThatAdvertisesTheSameFlag() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    registry.register(
+        WORKER_ID, registration(WORKER_ID, libx264Encoder()), new CancellableObserver());
+
+    var pinned = WorkerVerifiedEncoderFixture.libx264NotKeyframeVerified();
+
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, pinned)).isEmpty();
+    assertThat(registry.dispatch(encodeJob("h264"), pinned)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should send a pinned encode to a named target only when the target advertises the pinned encoder")
+  void shouldSendPinnedEncodeToNamedTargetOnlyWhenTargetAdvertisesPinnedEncoder() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var nvencResponses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    var libx264WorkerId = UUID.randomUUID();
+    var nvencTarget =
+        new ExecutionTargetId(
+            registry
+                .register(
+                    WORKER_ID,
+                    registration(
+                        WORKER_ID,
+                        keyframeVerifiedHardwareEncoder(
+                            VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc")),
+                    collecting(nvencResponses))
+                .toString());
+    var libx264Target =
+        new ExecutionTargetId(
+            registry
+                .register(
+                    libx264WorkerId,
+                    registration(libx264WorkerId, libx264Encoder()),
+                    new CancellableObserver())
+                .toString());
+    var pinned = WorkerVerifiedEncoderFixture.libx264();
+
+    assertThat(registry.dispatchTo(nvencTarget, encodeJob("h264"), pinned)).isEmpty();
+    assertThat(registry.dispatchTo(libx264Target, encodeJob("h264"), pinned))
+        .map(VariantDispatch::encoder)
+        .contains(Optional.of(pinned));
+    assertThat(nvencResponses).noneMatch(EstablishWorkerSessionResponse::hasStartVariant);
+  }
+
+  @Test
+  @DisplayName(
+      "Should list only workers that advertise the pinned encoder backend when finding execution targets")
+  void shouldListOnlyWorkersThatAdvertisePinnedEncoderBackendWhenFindingExecutionTargets() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var libx264WorkerId = UUID.randomUUID();
+    registry.register(
+        WORKER_ID,
+        registration(
+            WORKER_ID,
+            keyframeVerifiedHardwareEncoder(
+                VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc")),
+        new CancellableObserver());
+    var libx264WorkerSessionId =
+        registry.register(
+            libx264WorkerId,
+            registration(libx264WorkerId, libx264Encoder()),
+            new CancellableObserver());
+
+    var targets =
+        registry.eligibleWorkers(SOURCE_NAMESPACE_ID, WorkerVerifiedEncoderFixture.libx264());
+
+    assertThat(targets).containsExactly(new ExecutionTargetId(libx264WorkerSessionId.toString()));
+    assertThat(registry.eligibleWorkers(UUID.randomUUID(), WorkerVerifiedEncoderFixture.libx264()))
+        .isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should withdraw the worker's encoder for the codec family when a start report names another backend")
+  void shouldWithdrawWorkersEncoderForCodecFamilyWhenStartReportNamesAnotherBackend() {
+    var encode = RunningEncode.dispatch();
+
+    encode
+        .registry()
+        .checkReportedEncoderBackend(
+            WORKER_ID, encode.workerSessionId(), nvencStarted(encode.job().getJobAttemptId()));
+
+    assertThat(
+            encode
+                .registry()
+                .eligibleWorkers(SOURCE_NAMESPACE_ID, WorkerVerifiedEncoderFixture.libx264()))
+        .isEmpty();
+    assertThat(encode.registry().encodableVideoCodecFamilies(SOURCE_NAMESPACE_ID))
+        .doesNotContain("h264");
+    assertThat(encode.registry().eligibleWorkers(SOURCE_NAMESPACE_ID, streamCopyDecision()))
+        .containsExactly(new ExecutionTargetId(encode.workerSessionId().toString()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop every encode whose start report names another backend after the worker's encoder was withdrawn")
+  void shouldStopEveryEncodeWhoseStartReportNamesAnotherBackendAfterWorkersEncoderWasWithdrawn() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var registration = registration(WORKER_ID, 2).toBuilder();
+    registration.getCapabilitiesBuilder().addVideoEncoders(libx264Encoder());
+    var workerSessionId =
+        registry.register(WORKER_ID, registration.build(), new CancellableObserver());
+    var first = encodeJob("h264");
+    var second = encodeJob("h264");
+    assertThat(registry.dispatch(first)).isPresent();
+    assertThat(registry.dispatch(second)).isPresent();
+
+    registry.checkReportedEncoderBackend(
+        WORKER_ID, workerSessionId, nvencStarted(first.getJobAttemptId()));
+    registry.checkReportedEncoderBackend(
+        WORKER_ID, workerSessionId, nvencStarted(second.getJobAttemptId()));
+
+    assertThat(isRunning(registry, first)).isFalse();
+    assertThat(isRunning(registry, second)).isFalse();
+  }
+
+  private static boolean isRunning(LiveWorkerConnectionRegistry registry, VariantJob job) {
+    return registry.isRunning(
+        fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel());
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a job attempt running when a start report naming another backend comes from an unknown worker")
+  void shouldKeepJobAttemptRunningWhenStartReportNamingAnotherBackendComesFromUnknownWorker() {
+    var encode = RunningEncode.dispatch();
+
+    encode
+        .registry()
+        .checkReportedEncoderBackend(
+            UUID.randomUUID(),
+            encode.workerSessionId(),
+            nvencStarted(encode.job().getJobAttemptId()));
+
+    assertThat(encode.isRunning()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a job attempt running when a start report naming another backend comes from a replaced worker session")
+  void shouldKeepJobAttemptRunningWhenStartReportNamingAnotherBackendComesFromReplacedSession() {
+    var encode = RunningEncode.dispatch();
+
+    encode
+        .registry()
+        .checkReportedEncoderBackend(
+            WORKER_ID, UUID.randomUUID(), nvencStarted(encode.job().getJobAttemptId()));
+
+    assertThat(encode.isRunning()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a job attempt running when a start report naming another backend names an unknown job attempt")
+  void shouldKeepJobAttemptRunningWhenStartReportNamingAnotherBackendNamesUnknownJobAttempt() {
+    var encode = RunningEncode.dispatch();
+
+    encode
+        .registry()
+        .checkReportedEncoderBackend(
+            WORKER_ID, encode.workerSessionId(), nvencStarted(toProto(UUID.randomUUID())));
+
+    assertThat(encode.isRunning()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should publish an encode attempt's upload once its start report names the dispatched encoder backend")
+  void shouldPublishEncodeAttemptsUploadOnceItsStartReportNamesDispatchedEncoderBackend()
+      throws Exception {
+    var encode = RunningEncode.dispatch();
+
+    var published = new AtomicBoolean();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var publication = executor.submit(() -> encode.publishInitializationSegment(published));
+      encode
+          .registry()
+          .checkReportedEncoderBackend(
+              WORKER_ID, encode.workerSessionId(), libx264Started(encode.job().getJobAttemptId()));
+
+      assertThat(publication.get(5, TimeUnit.SECONDS)).contains(SegmentPublication.PUBLISHED);
+    }
+
+    assertThat(published).isTrue();
+    assertThat(encode.isRunning()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse an encode attempt's upload that overtakes a start report naming another backend")
+  void shouldRefuseEncodeAttemptsUploadThatOvertakesStartReportNamingAnotherBackend()
+      throws Exception {
+    var encode = RunningEncode.dispatch();
+    var published = new AtomicBoolean();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var publication = executor.submit(() -> encode.publishInitializationSegment(published));
+      encode
+          .registry()
+          .checkReportedEncoderBackend(
+              WORKER_ID, encode.workerSessionId(), nvencStarted(encode.job().getJobAttemptId()));
+
+      assertThat(publication.get(5, TimeUnit.SECONDS)).isEmpty();
+    }
+
+    assertThat(published).isFalse();
+    assertThat(encode.isRunning()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse an encode attempt's upload when its start report does not arrive in time")
+  void shouldRefuseEncodeAttemptsUploadWhenItsStartReportDoesNotArriveInTime() {
+    var encode =
+        RunningEncode.dispatch(
+            WorkerSessionServerConfiguration.builder()
+                .startReportTimeout(Duration.ofMillis(50))
+                .build());
+    var published = new AtomicBoolean();
+
+    assertThat(encode.publishInitializationSegment(published)).isEmpty();
+
+    assertThat(published).isFalse();
+    assertThat(encode.isRunning()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should release a held upload without waiting for the start report when the encode attempt stops")
+  void shouldReleaseHeldUploadWithoutWaitingForStartReportWhenEncodeAttemptStops()
+      throws Exception {
+    var encode =
+        RunningEncode.dispatch(
+            WorkerSessionServerConfiguration.builder()
+                .startReportTimeout(Duration.ofMinutes(5))
+                .build());
+
+    var published = new AtomicBoolean();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var publication = executor.submit(() -> encode.publishInitializationSegment(published));
+      encode
+          .registry()
+          .stopVariant(
+              fromProto(encode.job().getStreamSessionId()),
+              encode.job().getVariant().getVariantLabel());
+
+      assertThat(publication.get(5, TimeUnit.SECONDS)).isEmpty();
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should release a held upload without waiting for the start report when the worker disconnects")
+  void shouldReleaseHeldUploadWithoutWaitingForStartReportWhenWorkerDisconnects() throws Exception {
+    var encode =
+        RunningEncode.dispatch(
+            WorkerSessionServerConfiguration.builder()
+                .startReportTimeout(Duration.ofMinutes(5))
+                .build());
+
+    var published = new AtomicBoolean();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var publication = executor.submit(() -> encode.publishInitializationSegment(published));
+      encode.registry().disconnect(WORKER_ID, encode.workerSessionId());
+
+      assertThat(publication.get(5, TimeUnit.SECONDS)).isEmpty();
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should release a held upload without waiting for the start report when the worker finishes the attempt")
+  void shouldReleaseHeldUploadWithoutWaitingForStartReportWhenWorkerFinishesAttempt()
+      throws Exception {
+    var encode =
+        RunningEncode.dispatch(
+            WorkerSessionServerConfiguration.builder()
+                .startReportTimeout(Duration.ofMinutes(5))
+                .build());
+
+    var published = new AtomicBoolean();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var publication = executor.submit(() -> encode.publishInitializationSegment(published));
+      encode
+          .registry()
+          .releaseJobAttempt(
+              WORKER_ID, encode.workerSessionId(), fromProto(encode.job().getJobAttemptId()));
+
+      assertThat(publication.get(5, TimeUnit.SECONDS)).isEmpty();
+    }
+  }
+
+  private static JobAttemptStarted libx264Started(Uuid jobAttemptId) {
+    return JobAttemptStarted.newBuilder()
+        .setJobAttemptId(jobAttemptId)
+        .setEncoderBackend(libx264Encoder().getBackend())
+        .build();
+  }
+
+  private static JobAttemptStarted nvencStarted(Uuid jobAttemptId) {
+    return JobAttemptStarted.newBuilder()
+        .setJobAttemptId(jobAttemptId)
+        .setEncoderBackend(
+            hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc").getBackend())
+        .build();
+  }
+
+  @Builder
+  private record RunningEncode(
+      LiveWorkerConnectionRegistry registry,
+      UUID workerSessionId,
+      WorkerIdentity worker,
+      VariantJob job) {
+
+    private static RunningEncode dispatch() {
+      return dispatch(WorkerSessionServerConfiguration.builder().build());
+    }
+
+    private static RunningEncode dispatch(WorkerSessionServerConfiguration configuration) {
+      var registry = new LiveWorkerConnectionRegistry(configuration, new SimpleMeterRegistry());
+      var workerRegistration = registration(WORKER_ID, libx264Encoder());
+      var workerSessionId =
+          registry.register(WORKER_ID, workerRegistration, new CancellableObserver());
+      var job = encodeJob("h264");
+      assertThat(registry.dispatch(job)).isPresent();
+      return RunningEncode.builder()
+          .registry(registry)
+          .workerSessionId(workerSessionId)
+          .worker(workerRegistration.getWorker())
+          .job(job)
+          .build();
+    }
+
+    private boolean isRunning() {
+      return registry.isRunning(
+          fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel());
+    }
+
+    private Optional<SegmentPublication> publishInitializationSegment(AtomicBoolean published) {
+      return registry.publishIfAuthorized(
+          WORKER_ID,
+          uploadMetadata(workerSessionId, worker, job),
+          () -> {
+            published.set(true);
+            return SegmentPublication.PUBLISHED;
+          });
+    }
+  }
+
+  private static WorkerVerifiedVideoEncoder libx264Encoder() {
+    return softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264").toBuilder()
+        .setKeyframeVerified(true)
+        .build();
   }
 
   private static WorkerRegistration registration() {

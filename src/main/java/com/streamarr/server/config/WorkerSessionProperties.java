@@ -10,4 +10,5 @@ public record WorkerSessionProperties(
     @DefaultValue("9090") int port,
     @DefaultValue("1m") Duration probeTimeout,
     @DefaultValue("30m") Duration keyframeScanTimeout,
-    @DefaultValue("5s") Duration probeCancellationTimeout) {}
+    @DefaultValue("5s") Duration probeCancellationTimeout,
+    @DefaultValue("10s") Duration startReportTimeout) {}

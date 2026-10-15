@@ -5,8 +5,12 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
+import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.transcode.v1.ProbeRequest;
+import com.streamarr.transcode.v1.VariantJob;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.UUID;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
@@ -30,11 +34,17 @@ class WorkerSessionServerTest {
     var probeTimeout = defaults.probeTimeout();
     var keyframeScanTimeout = defaults.keyframeScanTimeout();
     var cancellationTimeout = defaults.probeCancellationTimeout();
+    var startReportTimeout = defaults.startReportTimeout();
 
     assertThatThrownBy(
             () ->
                 new WorkerSessionServerConfiguration(
-                    address, 0, probeTimeout, keyframeScanTimeout, cancellationTimeout))
+                    address,
+                    0,
+                    probeTimeout,
+                    keyframeScanTimeout,
+                    cancellationTimeout,
+                    startReportTimeout))
         .hasMessageContaining("address");
   }
 
@@ -91,10 +101,48 @@ class WorkerSessionServerTest {
   void shouldFailFastForEveryCapabilityWhenTheServerHasNotBeenStarted() {
     var server = unstartedServer();
     var sourceNamespaceId = UUID.randomUUID();
+    var job = VariantJob.getDefaultInstance();
+    var pinnedEncoder = WorkerVerifiedEncoderFixture.libx264();
 
     assertNotStarted(() -> server.eligibleWorkers(sourceNamespaceId, streamCopyDecision()));
+    assertNotStarted(() -> server.eligibleWorkers(sourceNamespaceId, pinnedEncoder));
+    assertNotStarted(() -> server.dispatch(job, pinnedEncoder));
     assertNotStarted(() -> server.hasConnectedWorker(sourceNamespaceId));
     assertNotStarted(() -> server.stopVariant(UUID.randomUUID(), "720p"));
+  }
+
+  @Test
+  @DisplayName("Should reject a pinned dispatch when its pinned encoder is missing")
+  void shouldRejectPinnedDispatchWhenItsPinnedEncoderIsMissing() {
+    var server = unstartedServer();
+    var job = VariantJob.getDefaultInstance();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> server.dispatch(job, null))
+        .withMessageContaining("pinnedEncoder");
+  }
+
+  @Test
+  @DisplayName("Should reject a pinned targeted dispatch when its pinned encoder is missing")
+  void shouldRejectPinnedTargetedDispatchWhenItsPinnedEncoderIsMissing() {
+    var server = unstartedServer();
+    var target = new ExecutionTargetId("worker-session");
+    var job = VariantJob.getDefaultInstance();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> server.dispatchTo(target, job, null))
+        .withMessageContaining("pinnedEncoder");
+  }
+
+  @Test
+  @DisplayName("Should reject a pinned eligible-worker lookup when its pinned encoder is missing")
+  void shouldRejectPinnedEligibleWorkerLookupWhenItsPinnedEncoderIsMissing() {
+    var server = unstartedServer();
+    var sourceNamespaceId = UUID.randomUUID();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> server.eligibleWorkers(sourceNamespaceId, (WorkerVerifiedEncoder) null))
+        .withMessageContaining("pinnedEncoder");
   }
 
   @Test

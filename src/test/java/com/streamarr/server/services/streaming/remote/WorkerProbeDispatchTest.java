@@ -94,7 +94,7 @@ class WorkerProbeDispatchTest {
             .setJobAttemptId(toProto(UUID.randomUUID()))
             .setSource(source())
             .build();
-    assertThat(registry.dispatch(job)).isTrue();
+    assertThat(registry.dispatch(job)).isPresent();
     var secondWorker = UUID.randomUUID();
     var secondRegistration = registration();
     secondRegistration.getWorkerBuilder().setWorkerId(toProto(secondWorker));
@@ -241,7 +241,7 @@ class WorkerProbeDispatchTest {
             .setJobAttemptId(toProto(UUID.randomUUID()))
             .setSource(source())
             .build();
-    assertThat(registry.dispatch(job)).isTrue();
+    assertThat(registry.dispatch(job)).isPresent();
     assertThat(responses.values)
         .extracting(EstablishWorkerSessionResponse::getCommandCase)
         .containsExactly(
@@ -302,7 +302,7 @@ class WorkerProbeDispatchTest {
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     registry.register(WORKER_ID, registration.build(), new CapturingResponses());
-    assertThat(registry.dispatch(stream())).isTrue();
+    assertThat(registry.dispatch(stream())).isPresent();
 
     var attempt = registry.dispatchProbe(incompatibleProbe(incompatibility));
 
@@ -340,7 +340,7 @@ class WorkerProbeDispatchTest {
     var accepted =
         probeFirst
             ? registry.dispatchProbe(probe().build()) instanceof ProbeDispatch.Dispatched
-            : registry.dispatch(job);
+            : registry.dispatch(job).isPresent();
     assertThat(accepted).isTrue();
 
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isZero();
@@ -348,7 +348,7 @@ class WorkerProbeDispatchTest {
         .isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.WORKERS_BUSY));
     assertThat(
             registry.dispatch(job.toBuilder().setJobAttemptId(toProto(UUID.randomUUID())).build()))
-        .isFalse();
+        .isEmpty();
   }
 
   @ParameterizedTest(name = "{0}")
@@ -367,7 +367,7 @@ class WorkerProbeDispatchTest {
     incompatible.getCapabilitiesBuilder().addProbeVersions(2);
     registry.register(incompatibleWorker, incompatible.build(), new CapturingResponses());
     assertThat(registry.dispatchTo(new ExecutionTargetId(compatibleSession.toString()), stream()))
-        .isTrue();
+        .isPresent();
 
     var attempt = registry.dispatchProbe(probe().build());
 
@@ -390,7 +390,7 @@ class WorkerProbeDispatchTest {
     free.getCapabilitiesBuilder().addProbeVersions(1);
     registry.register(freeWorker, free.build(), freeResponses);
     assertThat(registry.dispatchTo(new ExecutionTargetId(fullSession.toString()), stream()))
-        .isTrue();
+        .isPresent();
     var request = probe().build();
 
     var attempt = registry.dispatchProbe(request);
@@ -412,7 +412,7 @@ class WorkerProbeDispatchTest {
     registerProbeWorker(registry, unreachableWorker, rejectingStartProbes());
     var fullSession = registerProbeWorker(registry, fullWorker, new CapturingResponses());
     assertThat(registry.dispatchTo(new ExecutionTargetId(fullSession.toString()), stream()))
-        .isTrue();
+        .isPresent();
 
     var attempt = registry.dispatchProbe(probe().build());
 
@@ -624,7 +624,7 @@ class WorkerProbeDispatchTest {
             .setJobAttemptId(toProto(UUID.randomUUID()))
             .setSource(source())
             .build();
-    assertThat(registry.dispatch(job)).isTrue();
+    assertThat(registry.dispatch(job)).isPresent();
     var metadata =
         SegmentUploadMetadata.newBuilder()
             .setWorker(registration.getWorker())

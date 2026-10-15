@@ -4,12 +4,14 @@ import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 
 import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.domain.streaming.EncoderBackend;
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.CancelProbeCommand;
-import com.streamarr.transcode.v1.EncoderKind;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
+import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeRequest;
@@ -21,11 +23,9 @@ import com.streamarr.transcode.v1.TranscodeDecision;
 import com.streamarr.transcode.v1.TranscodeMode;
 import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
-import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerSessionAccepted;
-import com.streamarr.transcode.v1.WorkerVerifiedVideoEncoder;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import io.micrometer.core.instrument.Counter;
@@ -41,6 +41,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import lombok.NonNull;
@@ -51,12 +53,16 @@ final class LiveWorkerConnectionRegistry {
 
   private static final String INITIALIZATION_SEGMENT_MISMATCH_METRIC =
       "streamarr.streaming.initialization_segment_mismatches";
+  private static final String ENCODER_BACKEND_MISMATCH_METRIC =
+      "streamarr.streaming.encoder_backend_mismatches";
   private static final Executor PROBE_DEADLINE_CALLBACKS =
       command -> Thread.ofVirtual().name("worker-probe-deadline").start(command);
   private final long probeTimeoutNanos;
   private final long keyframeScanTimeoutNanos;
   private final long probeCancellationTimeoutNanos;
+  private final long startReportTimeoutNanos;
   private final Counter initializationSegmentMismatches;
+  private final Counter encoderBackendMismatches;
 
   LiveWorkerConnectionRegistry(
       @NonNull WorkerSessionServerConfiguration configuration,
@@ -64,11 +70,18 @@ final class LiveWorkerConnectionRegistry {
     probeTimeoutNanos = configuration.probeTimeout().toNanos();
     keyframeScanTimeoutNanos = configuration.keyframeScanTimeout().toNanos();
     probeCancellationTimeoutNanos = configuration.probeCancellationTimeout().toNanos();
+    startReportTimeoutNanos = configuration.startReportTimeout().toNanos();
     initializationSegmentMismatches =
         Counter.builder(INITIALIZATION_SEGMENT_MISMATCH_METRIC)
             .description(
                 "Initialization segment uploads refused because they differ from the one stored"
                     + " for the variant")
+            .register(meterRegistry);
+    encoderBackendMismatches =
+        Counter.builder(ENCODER_BACKEND_MISMATCH_METRIC)
+            .description(
+                "Job attempts stopped because the worker reported an encoder backend other than"
+                    + " the one pinned for the variant")
             .register(meterRegistry);
   }
 
@@ -131,13 +144,24 @@ final class LiveWorkerConnectionRegistry {
     }
   }
 
-  boolean dispatch(VariantJob job) {
-    for (var connection : connections.values()) {
-      if (tryDispatchUnlessDisconnected(connection, job)) {
-        return true;
+  Optional<VariantDispatch> dispatch(VariantJob job) {
+    return dispatchToFirst(job, _ -> true);
+  }
+
+  // Every later job attempt of a pinned variant runs only where its encoder backend runs.
+  Optional<VariantDispatch> dispatch(VariantJob job, WorkerVerifiedEncoder pinnedEncoder) {
+    return dispatchToFirst(job, connection -> connection.advertises(pinnedEncoder));
+  }
+
+  private Optional<VariantDispatch> dispatchToFirst(
+      VariantJob job, Predicate<WorkerConnection> eligible) {
+    for (var connection : connections.values().stream().filter(eligible).toList()) {
+      var dispatched = tryDispatchUnlessDisconnected(connection, job);
+      if (dispatched.isPresent()) {
+        return dispatched;
       }
     }
-    return false;
+    return Optional.empty();
   }
 
   ProbeDispatch dispatchProbe(ProbeRequest request) {
@@ -184,13 +208,23 @@ final class LiveWorkerConnectionRegistry {
     return connection.acceptKeyframePositionsPart(part);
   }
 
-  boolean dispatchTo(ExecutionTargetId target, VariantJob job) {
-    for (var connection : connections.values()) {
-      if (connection.workerSessionId().toString().equals(target.value())) {
-        return tryDispatchUnlessDisconnected(connection, job);
-      }
-    }
-    return false;
+  Optional<VariantDispatch> dispatchTo(ExecutionTargetId target, VariantJob job) {
+    return dispatchTo(target, job, _ -> true);
+  }
+
+  // The named target must advertise the pin too, whoever chose it.
+  Optional<VariantDispatch> dispatchTo(
+      ExecutionTargetId target, VariantJob job, WorkerVerifiedEncoder pinnedEncoder) {
+    return dispatchTo(target, job, connection -> connection.advertises(pinnedEncoder));
+  }
+
+  private Optional<VariantDispatch> dispatchTo(
+      ExecutionTargetId target, VariantJob job, Predicate<WorkerConnection> eligible) {
+    return connections.values().stream()
+        .filter(connection -> connection.executionTargetId().equals(target))
+        .filter(eligible)
+        .findFirst()
+        .flatMap(connection -> tryDispatchUnlessDisconnected(connection, job));
   }
 
   /**
@@ -198,23 +232,34 @@ final class LiveWorkerConnectionRegistry {
    * that monitor, so the drain can land between the send and the put. The job would then be
    * orphaned: held by a dropped connection, never logged as abandoned.
    */
-  private boolean tryDispatchUnlessDisconnected(WorkerConnection connection, VariantJob job) {
+  private Optional<VariantDispatch> tryDispatchUnlessDisconnected(
+      WorkerConnection connection, VariantJob job) {
     if (!connection.tryDispatch(job)) {
-      return false;
+      return Optional.empty();
     }
     if (!connections.containsValue(connection)) {
       connection.releaseJobAttempt(fromProto(job.getJobAttemptId()));
-      return false;
+      return Optional.empty();
     }
-    return true;
+    return Optional.of(new VariantDispatch(connection.encoderFor(job)));
   }
 
   Set<ExecutionTargetId> eligibleWorkers(UUID sourceNamespaceId, TranscodeDecision decision) {
+    return eligibleWorkers(sourceNamespaceId, connection -> connection.canEncode(decision));
+  }
+
+  Set<ExecutionTargetId> eligibleWorkers(
+      UUID sourceNamespaceId, WorkerVerifiedEncoder pinnedEncoder) {
+    return eligibleWorkers(sourceNamespaceId, connection -> connection.advertises(pinnedEncoder));
+  }
+
+  private Set<ExecutionTargetId> eligibleWorkers(
+      UUID sourceNamespaceId, Predicate<WorkerConnection> eligible) {
     var sourceNamespace = toProto(sourceNamespaceId);
     return connections.values().stream()
         .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
-        .filter(connection -> connection.canEncode(decision))
-        .map(connection -> new ExecutionTargetId(connection.workerSessionId().toString()))
+        .filter(eligible)
+        .map(WorkerConnection::executionTargetId)
         .collect(Collectors.toCollection(LinkedHashSet::new));
   }
 
@@ -257,22 +302,17 @@ final class LiveWorkerConnectionRegistry {
     return connections.values().stream()
         .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
         .filter(connection -> connection.availableSlots() > 0)
-        .flatMap(connection -> connection.encodableVideoCodecFamilies.stream())
+        .flatMap(connection -> connection.countedEncoders.keySet().stream())
         .collect(Collectors.toUnmodifiableSet());
   }
 
-  private static boolean isCountedForEncodes(WorkerVerifiedVideoEncoder encoder) {
-    return encoder.getBackend().getKind() == EncoderKind.ENCODER_KIND_SOFTWARE
-        || encoder.getKeyframeVerified();
+  private static boolean isCountedForEncodes(WorkerVerifiedEncoder encoder) {
+    return encoder.backend().kind() == EncoderBackend.Kind.SOFTWARE || encoder.keyframeVerified();
   }
 
-  private static Optional<String> videoCodecFamilyName(VideoCodecFamily family) {
-    return switch (family) {
-      case VIDEO_CODEC_FAMILY_H264 -> Optional.of("h264");
-      case VIDEO_CODEC_FAMILY_HEVC -> Optional.of("hevc");
-      case VIDEO_CODEC_FAMILY_AV1 -> Optional.of("av1");
-      case VIDEO_CODEC_FAMILY_UNSPECIFIED, UNRECOGNIZED -> Optional.empty();
-    };
+  private static boolean encodesVideo(TranscodeDecision decision) {
+    return decision.getMode() == TranscodeMode.TRANSCODE_MODE_VIDEO_TRANSCODE
+        || decision.getMode() == TranscodeMode.TRANSCODE_MODE_FULL_TRANSCODE;
   }
 
   int availableSlots(UUID sourceNamespaceId) {
@@ -300,6 +340,15 @@ final class LiveWorkerConnectionRegistry {
     return connection.releaseJobAttempt(jobAttemptId);
   }
 
+  void checkReportedEncoderBackend(UUID workerId, UUID workerSessionId, JobAttemptStarted started) {
+    var connection = connections.get(workerId);
+    if (connection == null || !connection.workerSessionId().equals(workerSessionId)) {
+      return;
+    }
+
+    connection.checkReportedEncoderBackend(started);
+  }
+
   boolean authorizesUpload(UUID authenticatedWorkerId, SegmentUploadMetadata metadata) {
     var connection = connections.get(authenticatedWorkerId);
     return connection != null && connection.authorizesUpload(metadata);
@@ -314,7 +363,7 @@ final class LiveWorkerConnectionRegistry {
     // initialization segment, and must not queue behind worker register/disconnect. Stale lookups
     // fail the connection's re-check.
     var connection = connections.get(authenticatedWorkerId);
-    if (connection == null) {
+    if (connection == null || !connection.awaitConfirmedEncoderBackend(metadata)) {
       return Optional.empty();
     }
     return connection.publishIfStillAuthorized(metadata, publish);
@@ -326,11 +375,16 @@ final class LiveWorkerConnectionRegistry {
     private final WorkerIdentity worker;
     private final Set<Uuid> sourceNamespaceIds;
     private final Set<Integer> probeVersions;
-    private final Set<String> encodableVideoCodecFamilies;
+    // The worker-verified encoder that counts for each codec family, keyed by family name. A start
+    // report that names another backend withdraws the family's entry for this worker session.
+    private final Map<String, WorkerVerifiedEncoder> countedEncoders;
     private final int maximumActiveVariants;
     private final StreamObserver<EstablishWorkerSessionResponse> responseObserver;
 
     private final Map<UUID, VariantJob> activeVariants = new ConcurrentHashMap<>();
+    // Each active encode, keyed by job attempt id, with the encoder it was dispatched for. Its
+    // start report must name that encoder's backend before any of its uploads publishes.
+    private final Map<UUID, EncodeAttempt> encodeAttempts = new ConcurrentHashMap<>();
     private final Map<UUID, PendingProbe> activeProbes = new ConcurrentHashMap<>();
 
     private WorkerConnection(
@@ -341,18 +395,25 @@ final class LiveWorkerConnectionRegistry {
       worker = registration.getWorker();
       sourceNamespaceIds = Set.copyOf(registration.getCapabilities().getSourceNamespaceIdsList());
       probeVersions = Set.copyOf(registration.getCapabilities().getProbeVersionsList());
-      encodableVideoCodecFamilies =
-          registration.getCapabilities().getVideoEncodersList().stream()
-              .filter(LiveWorkerConnectionRegistry::isCountedForEncodes)
-              .map(encoder -> videoCodecFamilyName(encoder.getBackend().getCodecFamily()))
-              .flatMap(Optional::stream)
-              .collect(Collectors.toUnmodifiableSet());
+      countedEncoders =
+          new ConcurrentHashMap<>(
+              registration.getCapabilities().getVideoEncodersList().stream()
+                  .map(RemoteEncoderBackendMapper::workerVerifiedEncoder)
+                  .flatMap(Optional::stream)
+                  .filter(LiveWorkerConnectionRegistry::isCountedForEncodes)
+                  .collect(
+                      Collectors.toUnmodifiableMap(
+                          encoder -> encoder.backend().codecFamily(), Function.identity())));
       maximumActiveVariants = registration.getAvailableSlots();
       this.responseObserver = responseObserver;
     }
 
     private UUID workerSessionId() {
       return workerSessionId;
+    }
+
+    private ExecutionTargetId executionTargetId() {
+      return new ExecutionTargetId(workerSessionId.toString());
     }
 
     private synchronized void accept() {
@@ -371,7 +432,13 @@ final class LiveWorkerConnectionRegistry {
       if (!trySend(EstablishWorkerSessionResponse.newBuilder().setStartVariant(command).build())) {
         return false;
       }
-      activeVariants.put(fromProto(job.getJobAttemptId()), job);
+      var jobAttemptId = fromProto(job.getJobAttemptId());
+      activeVariants.put(jobAttemptId, job);
+      encoderFor(job)
+          .ifPresent(
+              encoder ->
+                  encodeAttempts.put(
+                      jobAttemptId, new EncodeAttempt(encoder, new CompletableFuture<>())));
       return true;
     }
 
@@ -559,10 +626,21 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private boolean canEncode(TranscodeDecision decision) {
-      var encodesVideo =
-          decision.getMode() == TranscodeMode.TRANSCODE_MODE_VIDEO_TRANSCODE
-              || decision.getMode() == TranscodeMode.TRANSCODE_MODE_FULL_TRANSCODE;
-      return !encodesVideo || encodableVideoCodecFamilies.contains(decision.getVideoCodecFamily());
+      return !encodesVideo(decision) || countedEncoders.containsKey(decision.getVideoCodecFamily());
+    }
+
+    private Optional<WorkerVerifiedEncoder> encoderFor(VariantJob job) {
+      if (!encodesVideo(job.getDecision())) {
+        return Optional.empty();
+      }
+
+      return Optional.ofNullable(countedEncoders.get(job.getDecision().getVideoCodecFamily()));
+    }
+
+    // The keyframe-verified flag must match too: a playlist that carries
+    // EXT-X-INDEPENDENT-SEGMENTS for the pin needs closed GOPs from every attempt.
+    private boolean advertises(WorkerVerifiedEncoder pinnedEncoder) {
+      return pinnedEncoder.equals(countedEncoders.get(pinnedEncoder.backend().codecFamily()));
     }
 
     private boolean canAccessSourceNamespace(Uuid sourceNamespaceId) {
@@ -570,6 +648,7 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private synchronized boolean tryStop(UUID jobAttemptId) {
+      forgetEncodeAttempt(jobAttemptId);
       if (activeVariants.remove(jobAttemptId) == null) {
         return false;
       }
@@ -607,6 +686,7 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private synchronized Optional<VariantJob> releaseJobAttempt(UUID jobAttemptId) {
+      forgetEncodeAttempt(jobAttemptId);
       return Optional.ofNullable(activeVariants.remove(jobAttemptId));
     }
 
@@ -663,6 +743,70 @@ final class LiveWorkerConnectionRegistry {
       return Optional.of(outcome);
     }
 
+    // Dispatch sends an encode only to a worker that advertises the variant's pinned backend, so
+    // the encoder that the attempt was dispatched for is the pin.
+    private synchronized void checkReportedEncoderBackend(JobAttemptStarted started) {
+      var jobAttemptId = fromProto(started.getJobAttemptId());
+      var job = activeVariants.get(jobAttemptId);
+      if (job == null) {
+        return;
+      }
+
+      var attempt = encodeAttempts.get(jobAttemptId);
+      if (attempt == null) {
+        return;
+      }
+
+      var pinned = attempt.encoder().backend();
+      var reported =
+          Optional.of(started)
+              .filter(JobAttemptStarted::hasEncoderBackend)
+              .map(JobAttemptStarted::getEncoderBackend)
+              .flatMap(RemoteEncoderBackendMapper::encoderBackend);
+      if (reported.equals(Optional.of(pinned))) {
+        attempt.backendConfirmed().complete(true);
+        return;
+      }
+
+      var stopped = tryStop(jobAttemptId);
+      // The worker runs another encoder than it advertised, so no later attempt may rely on the
+      // advertisement, including a replacement attempt of this variant.
+      countedEncoders.remove(job.getDecision().getVideoCodecFamily());
+      encoderBackendMismatches.increment();
+      log.warn(
+          "Stopped job attempt {} for stream session {} variant {} because the worker reported"
+              + " encoder backend {} instead of the pinned {}; attempt stopped: {}",
+          jobAttemptId,
+          fromProto(job.getStreamSessionId()),
+          job.getVariant().getVariantLabel(),
+          reported.map(EncoderBackend::encoder).orElse("none"),
+          pinned.encoder(),
+          stopped);
+    }
+
+    // Unsynchronized: the start report that releases the wait takes this connection's monitor.
+    // A copy, or an attempt this connection no longer runs, needs no wait; publication re-checks
+    // ownership.
+    private boolean awaitConfirmedEncoderBackend(SegmentUploadMetadata metadata) {
+      var attempt = encodeAttempts.get(fromProto(metadata.getJobAttemptId()));
+      if (attempt == null) {
+        return true;
+      }
+
+      return attempt
+          .backendConfirmed()
+          .copy()
+          .completeOnTimeout(false, startReportTimeoutNanos, TimeUnit.NANOSECONDS)
+          .join();
+    }
+
+    private void forgetEncodeAttempt(UUID jobAttemptId) {
+      var attempt = encodeAttempts.remove(jobAttemptId);
+      if (attempt != null) {
+        attempt.backendConfirmed().complete(false);
+      }
+    }
+
     private void refuseDifferingInitialization(SegmentUploadMetadata metadata) {
       // Stopping under the monitor that authorized this upload fences the attempt's later uploads,
       // so recovery finds no running producer and moves on. Workers upload an attempt's
@@ -688,6 +832,7 @@ final class LiveWorkerConnectionRegistry {
     private List<VariantJob> abandonAllJobsWithoutWaiting() {
       var drained = List.copyOf(activeVariants.values());
       activeVariants.clear();
+      List.copyOf(encodeAttempts.keySet()).forEach(this::forgetEncodeAttempt);
       activeProbes.keySet().forEach(attemptId -> failProbe(attemptId, "Worker session ended"));
       return drained;
     }
@@ -702,6 +847,9 @@ final class LiveWorkerConnectionRegistry {
         }
       }
     }
+
+    private record EncodeAttempt(
+        WorkerVerifiedEncoder encoder, CompletableFuture<Boolean> backendConfirmed) {}
 
     private record PendingProbe(
         ProbeRequest request,

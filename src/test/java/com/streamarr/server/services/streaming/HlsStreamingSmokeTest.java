@@ -302,7 +302,9 @@ class HlsStreamingSmokeTest {
   void shouldIncludeRequiredHlsTagsInMediaPlaylistWhenSessionIsActive() {
     var file = seedMediaFile();
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
-    var playlist = playlistService.generateMediaPlaylist(session, "smoke-token");
+    var playlist =
+        playlistService.generateMediaPlaylist(
+            session, StreamSession.defaultVariant(), "smoke-token");
 
     assertThat(playlist)
         .startsWith("#EXTM3U\n")
@@ -320,7 +322,9 @@ class HlsStreamingSmokeTest {
   void shouldGenerateValidSegmentEntriesInMediaPlaylistWhenSessionIsActive() {
     var file = seedMediaFile();
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
-    var playlist = playlistService.generateMediaPlaylist(session, "smoke-token");
+    var playlist =
+        playlistService.generateMediaPlaylist(
+            session, StreamSession.defaultVariant(), "smoke-token");
 
     var extinfLines = playlist.lines().filter(l -> l.startsWith("#EXTINF:")).toList();
     assertThat(extinfLines).isNotEmpty();

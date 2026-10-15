@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.transcode.v1.ProbeRequest;
@@ -9,6 +10,7 @@ import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
@@ -82,9 +84,16 @@ public final class WorkerSessionServer implements AutoCloseable {
     return runtime.server().getPort();
   }
 
-  public synchronized boolean dispatch(VariantJob job) {
+  public synchronized Optional<VariantDispatch> dispatch(VariantJob job) {
     requireStarted();
     return workerConnections.dispatch(job);
+  }
+
+  /** Dispatches only to a worker that advertises the pinned worker-verified encoder. */
+  public synchronized Optional<VariantDispatch> dispatch(
+      VariantJob job, @NonNull WorkerVerifiedEncoder pinnedEncoder) {
+    requireStarted();
+    return workerConnections.dispatch(job, pinnedEncoder);
   }
 
   /**
@@ -101,9 +110,17 @@ public final class WorkerSessionServer implements AutoCloseable {
     return workerConnections.dispatchProbe(request);
   }
 
-  public synchronized boolean dispatchTo(ExecutionTargetId target, VariantJob job) {
+  public synchronized Optional<VariantDispatch> dispatchTo(
+      ExecutionTargetId target, VariantJob job) {
     requireStarted();
     return workerConnections.dispatchTo(target, job);
+  }
+
+  /** Dispatches to the target only when it advertises the pinned worker-verified encoder. */
+  public synchronized Optional<VariantDispatch> dispatchTo(
+      ExecutionTargetId target, VariantJob job, @NonNull WorkerVerifiedEncoder pinnedEncoder) {
+    requireStarted();
+    return workerConnections.dispatchTo(target, job, pinnedEncoder);
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
@@ -111,6 +128,12 @@ public final class WorkerSessionServer implements AutoCloseable {
       UUID sourceNamespaceId, com.streamarr.transcode.v1.TranscodeDecision decision) {
     requireStarted();
     return workerConnections.eligibleWorkers(sourceNamespaceId, decision);
+  }
+
+  public synchronized Set<ExecutionTargetId> eligibleWorkers(
+      UUID sourceNamespaceId, @NonNull WorkerVerifiedEncoder pinnedEncoder) {
+    requireStarted();
+    return workerConnections.eligibleWorkers(sourceNamespaceId, pinnedEncoder);
   }
 
   public synchronized boolean stopVariant(UUID streamSessionId, String variantLabel) {

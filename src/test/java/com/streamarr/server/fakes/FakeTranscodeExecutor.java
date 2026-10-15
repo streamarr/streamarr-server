@@ -4,6 +4,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
@@ -12,6 +13,7 @@ import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -41,6 +43,8 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       new LinkedHashSet<>(Set.of(ExecutionTargetId.LOCAL));
   private final Map<ExecutionTargetId, Set<String>> encodableVideoCodecFamiliesByTarget =
       new ConcurrentHashMap<>();
+  private final Map<ExecutionTargetId, Map<String, WorkerVerifiedEncoder>> encodersByTarget =
+      new ConcurrentHashMap<>();
   private final AtomicLong livenessChecks = new AtomicLong();
   private final Object observationMonitor = new Object();
   private int availableSlots = TranscodeExecutor.UNBOUNDED_SLOTS;
@@ -54,16 +58,53 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     if (failUntargetedStarts) {
       throw new TranscodeException("No connected transcode worker can run this variant");
     }
-    return doStart(request);
+
+    var accepting = acceptingTarget(request);
+    if (request.pinnedEncoder().isPresent() && accepting.isEmpty()) {
+      throw new TranscodeException("No connected transcode worker runs the pinned encoder");
+    }
+
+    var handle = doStart(request);
+    return accepting
+        .flatMap(target -> advertisedEncoder(target, request.transcodeDecision()))
+        .map(handle::withEncoder)
+        .orElse(handle);
+  }
+
+  // The first target, in failover order, that advertises an encoder the request can run on.
+  private Optional<ExecutionTargetId> acceptingTarget(TranscodeRequest request) {
+    var candidates =
+        request
+            .pinnedEncoder()
+            .map(this::executionTargets)
+            .orElseGet(() -> executionTargets(request.transcodeDecision()));
+    return candidates.stream()
+        .filter(target -> advertisedEncoder(target, request.transcodeDecision()).isPresent())
+        .findFirst();
   }
 
   @Override
   public TranscodeHandle start(TranscodeRequest request, ExecutionTargetId target) {
-    if (refusingTargets.contains(target) || !canRun(target, request.transcodeDecision())) {
+    if (refusingTargets.contains(target)
+        || !canRun(target, request.transcodeDecision())
+        || !request.pinnedEncoder().map(pinned -> advertises(target, pinned)).orElse(true)) {
       throw new TranscodeException("Target " + target.value() + " refused the transcode");
     }
     startedTargets.add(target);
-    return doStart(request);
+    var handle = doStart(request);
+    return advertisedEncoder(target, request.transcodeDecision())
+        .map(handle::withEncoder)
+        .orElse(handle);
+  }
+
+  private Optional<WorkerVerifiedEncoder> advertisedEncoder(
+      ExecutionTargetId target, TranscodeDecision decision) {
+    if (!encodesVideo(decision)) {
+      return Optional.empty();
+    }
+
+    return Optional.ofNullable(
+        encodersByTarget.getOrDefault(target, Map.of()).get(decision.videoCodecFamily()));
   }
 
   private TranscodeHandle doStart(TranscodeRequest request) {
@@ -203,6 +244,36 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     return executionTargets.stream()
         .filter(target -> canRun(target, decision))
         .collect(Collectors.toCollection(LinkedHashSet::new));
+  }
+
+  @Override
+  public Set<ExecutionTargetId> executionTargets(WorkerVerifiedEncoder pinnedEncoder) {
+    return executionTargets.stream()
+        .filter(target -> advertises(target, pinnedEncoder))
+        .collect(Collectors.toCollection(LinkedHashSet::new));
+  }
+
+  private boolean advertises(ExecutionTargetId target, WorkerVerifiedEncoder pinnedEncoder) {
+    return pinnedEncoder.equals(
+        encodersByTarget.getOrDefault(target, Map.of()).get(pinnedEncoder.backend().codecFamily()));
+  }
+
+  /**
+   * The target advertises these worker-verified encoders, one for each codec family, and refuses an
+   * encode of any other family. Starts on the target report its encoder for the codec family.
+   */
+  public void setTargetEncoders(ExecutionTargetId target, List<WorkerVerifiedEncoder> encoders) {
+    encodersByTarget.put(
+        target,
+        encoders.stream()
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    encoder -> encoder.backend().codecFamily(), Function.identity())));
+    setTargetEncodableVideoCodecFamilies(
+        target,
+        encoders.stream()
+            .map(encoder -> encoder.backend().codecFamily())
+            .collect(Collectors.toUnmodifiableSet()));
   }
 
   public void setExecutionTargets(List<ExecutionTargetId> targets) {

@@ -5,6 +5,7 @@ import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.DecimalSeconds;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
@@ -20,6 +21,8 @@ public class HlsPlaylistService {
 
   private static final String AUDIO_GROUP_ID = "audio";
   private static final int EXTINF_DIGITS = 6;
+
+  private static final String INDEPENDENT_SEGMENTS_TAG = "#EXT-X-INDEPENDENT-SEGMENTS\n";
 
   // RFC 8216 section 7: EXT-X-MAP in a playlist that is not I-frame-only needs version 6.
   private static final int PLAYLIST_VERSION = 6;
@@ -43,6 +46,9 @@ public class HlsPlaylistService {
 
     var sb = new StringBuilder();
     sb.append("#EXTM3U\n");
+    if (isEveryVideoVariantKeyframeVerified(session)) {
+      sb.append(INDEPENDENT_SEGMENTS_TAG);
+    }
 
     if (hasAudio) {
       appendAudioRendition(sb, audio.channels());
@@ -62,6 +68,24 @@ public class HlsPlaylistService {
     }
 
     return sb.toString();
+  }
+
+  // ADR 0037: the tag is true only for a variant pinned to a keyframe-verified encoder backend. A
+  // stream copy and a variant without a pinned backend never qualify.
+  private static boolean isKeyframeVerified(StreamSession session, String variantLabel) {
+    return session
+        .getPinnedEncoder(variantLabel)
+        .map(WorkerVerifiedEncoder::keyframeVerified)
+        .orElse(false);
+  }
+
+  private static boolean isEveryVideoVariantKeyframeVerified(StreamSession session) {
+    if (session.getVariants().isEmpty()) {
+      return isKeyframeVerified(session, StreamSession.defaultVariant());
+    }
+
+    return session.getVariants().stream()
+        .allMatch(variant -> isKeyframeVerified(session, variant.label()));
   }
 
   private void appendAudioRendition(StringBuilder sb, int audioChannels) {
@@ -106,7 +130,7 @@ public class HlsPlaylistService {
    * time {@code [i * targetSegmentDuration, (i + 1) * targetSegmentDuration)}; a stream copy's
    * segment runs from its opening keyframe to the next one.
    */
-  public String generateMediaPlaylist(StreamSession session, String token) {
+  public String generateMediaPlaylist(StreamSession session, String variantLabel, String token) {
     var timeline = MediaSegmentTimelines.of(session, properties);
     var segmentCount = timeline.mediaSegmentCount();
     var extinfDurations =
@@ -117,6 +141,11 @@ public class HlsPlaylistService {
     var sb = new StringBuilder();
     sb.append("#EXTM3U\n");
     sb.append("#EXT-X-VERSION:").append(PLAYLIST_VERSION).append("\n");
+    if (isKeyframeVerified(session, variantLabel)
+        && !isEveryVideoVariantKeyframeVerified(session)) {
+      sb.append(INDEPENDENT_SEGMENTS_TAG);
+    }
+
     sb.append("#EXT-X-TARGETDURATION:")
         .append(targetDurationSeconds(timeline, extinfDurations))
         .append("\n");

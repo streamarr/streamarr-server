@@ -34,10 +34,13 @@ class WorkerSessionConfigurationTest {
     "keyframe-scan-timeout,0s",
     "keyframe-scan-timeout,-1s",
     "probe-cancellation-timeout,0s",
-    "probe-cancellation-timeout,-1s"
+    "probe-cancellation-timeout,-1s",
+    "start-report-timeout,0s",
+    "start-report-timeout,-1s"
   })
-  @DisplayName("Should reject a nonpositive probe deadline when starting the listener")
-  void shouldRejectNonpositiveProbeDeadlineWhenStartingListener(String property, String value) {
+  @DisplayName("Should reject a nonpositive worker session deadline when starting the listener")
+  void shouldRejectNonpositiveWorkerSessionDeadlineWhenStartingListener(
+      String property, String value) {
     contextRunner
         .withPropertyValues(
             "streaming.worker-session.port=0", "streaming.worker-session." + property + "=" + value)

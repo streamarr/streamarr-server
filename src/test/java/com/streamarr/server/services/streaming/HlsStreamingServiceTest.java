@@ -329,7 +329,8 @@ class HlsStreamingServiceTest {
   }
 
   private static String mediaPlaylist(StreamSession session) {
-    return new HlsPlaylistService(streamingProperties()).generateMediaPlaylist(session, "token");
+    return new HlsPlaylistService(streamingProperties())
+        .generateMediaPlaylist(session, StreamSession.defaultVariant(), "token");
   }
 
   private static List<String> extinfDurations(String playlist) {
@@ -689,7 +690,8 @@ class HlsStreamingServiceTest {
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMediaPlaylist(session, "token");
+        new HlsPlaylistService(streamingProperties())
+            .generateMediaPlaylist(session, StreamSession.defaultVariant(), "token");
     assertThat(playlist.lines().filter(line -> line.startsWith("#EXTINF:"))).hasSize(expectedCount);
     assertThat(transcodeExecutor.getStartedRequests())
         .isNotEmpty()

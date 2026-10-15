@@ -110,7 +110,7 @@ class LoopbackWorkerSessionIT {
                 .setSource(MediaSourceRef.newBuilder().setSourceNamespaceId(toProto(SOURCE_ID)))
                 .setVariant(VariantSpec.newBuilder().setVariantLabel("720p"))
                 .build();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(server.isRunning(streamId, "720p")).isTrue();
 
         var replacement = register(replacementChannel).get(5, TimeUnit.SECONDS);
@@ -126,7 +126,7 @@ class LoopbackWorkerSessionIT {
         assertThat(server.isRunning(streamId, "720p")).isFalse();
         assertThat(server.availableSlots(SOURCE_ID)).isEqualTo(1);
         firstChannel.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
       } finally {
         plaintext.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
         replacementChannel.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);

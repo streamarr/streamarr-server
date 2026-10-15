@@ -363,8 +363,9 @@ class RemotePlaybackIT {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var segmentStore = new PublishingSegmentStore(tempDir.resolve("server-segments"));
     var streamSessionId = UUID.randomUUID();
+    var meterRegistry = new SimpleMeterRegistry();
 
-    try (var server = server(segmentStore);
+    try (var server = server(segmentStore, meterRegistry);
         var worker = workerBuilder(server, mediaRoot).build()) {
       server.start();
       worker.start();
@@ -404,23 +405,38 @@ class RemotePlaybackIT {
           .as("the codec families that the worker image advertises")
           .containsExactlyInAnyOrder("h264", "hevc", "av1");
       assertThat(decision.videoCodecFamily()).isEqualTo("av1");
-      executor.start(
-          TranscodeRequest.builder()
-              .sessionId(streamSessionId)
-              .sourcePath(mediaFile)
-              .targetSegmentDuration(timeline.targetSegmentDurationSeconds())
-              .mediaSegmentCount(timeline.mediaSegmentCount())
-              .framerate(mediaProbe.framerate())
-              .transcodeDecision(decision)
-              .width(mediaProbe.width())
-              .height(mediaProbe.height())
-              .bitrate(1_000_000)
-              .encoderPreset(EncoderPreset.FASTER)
-              .build());
+      var handle =
+          executor.start(
+              TranscodeRequest.builder()
+                  .sessionId(streamSessionId)
+                  .sourcePath(mediaFile)
+                  .targetSegmentDuration(timeline.targetSegmentDurationSeconds())
+                  .mediaSegmentCount(timeline.mediaSegmentCount())
+                  .framerate(mediaProbe.framerate())
+                  .transcodeDecision(decision)
+                  .width(mediaProbe.width())
+                  .height(mediaProbe.height())
+                  .bitrate(1_000_000)
+                  .encoderPreset(EncoderPreset.FASTER)
+                  .build());
 
+      assertThat(handle.encoder())
+          .as("the encoder backend that the variant is pinned to")
+          .hasValueSatisfying(
+              encoder -> {
+                assertThat(encoder.backend().encoder()).isEqualTo("libsvtav1");
+                assertThat(encoder.keyframeVerified()).isTrue();
+              });
       assertThat(segmentStore.publication("segment0.m4s"))
           .as("the first media segment of the AV1 encode")
           .succeedsWithin(Duration.ofSeconds(60));
+      await()
+          .atMost(Duration.ofSeconds(60))
+          .until(() -> !executor.isRunning(streamSessionId, StreamSession.defaultVariant()));
+      assertThat(
+              meterRegistry.get("streamarr.streaming.encoder_backend_mismatches").counter().count())
+          .as("job attempts stopped because the worker ran another encoder backend")
+          .isZero();
       assertThat(
               new String(
                   segmentStore.readSegment(
@@ -588,10 +604,13 @@ class RemotePlaybackIT {
   }
 
   private WorkerSessionServer server(LocalSegmentStore segmentStore) {
+    return server(segmentStore, new SimpleMeterRegistry());
+  }
+
+  private WorkerSessionServer server(
+      LocalSegmentStore segmentStore, SimpleMeterRegistry meterRegistry) {
     return new WorkerSessionServer(
-        serverConfigurationBuilder().address("127.0.0.1").build(),
-        segmentStore,
-        new SimpleMeterRegistry());
+        serverConfigurationBuilder().address("127.0.0.1").build(), segmentStore, meterRegistry);
   }
 
   private WorkerContainerFixture.WorkerContainerFixtureBuilder workerBuilder(

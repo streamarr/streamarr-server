@@ -122,6 +122,7 @@ streaming:
     # A packet scan demuxes the whole source, which is slow on network storage.
     keyframe-scan-timeout: ${STREAMING_WORKER_SESSION_KEYFRAME_SCAN_TIMEOUT:30m}
     probe-cancellation-timeout: ${STREAMING_WORKER_SESSION_PROBE_CANCELLATION_TIMEOUT:5s}
+    start-report-timeout: ${STREAMING_WORKER_SESSION_START_REPORT_TIMEOUT:10s}
   remote:
     source-namespace-id: ${STREAMING_REMOTE_SOURCE_NAMESPACE_ID:}
     source-root: ${STREAMING_REMOTE_SOURCE_ROOT:}

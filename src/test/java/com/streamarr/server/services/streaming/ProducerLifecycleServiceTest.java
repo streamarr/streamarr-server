@@ -6,8 +6,12 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionB
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static com.streamarr.server.fixtures.StreamSessionFixture.sessionWithDurationBuilder;
+import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.h264Nvenc;
+import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libx264;
+import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libx264NotKeyframeVerified;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.EncoderPreset;
@@ -19,6 +23,7 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
@@ -44,6 +49,11 @@ import org.junit.jupiter.params.provider.EnumSource;
 @Tag("UnitTest")
 @DisplayName("Producer Lifecycle Service Tests")
 class ProducerLifecycleServiceTest {
+
+  private static final ExecutionTargetId LIBX264_WORKER = new ExecutionTargetId("libx264-worker");
+  private static final ExecutionTargetId NVENC_WORKER = new ExecutionTargetId("nvenc-worker");
+  private static final ExecutionTargetId UNVERIFIED_LIBX264_WORKER =
+      new ExecutionTargetId("unverified-libx264-worker");
 
   private FakeTranscodeExecutor transcodeExecutor;
   private FakeSegmentStore segmentStore;
@@ -716,6 +726,171 @@ class ProducerLifecycleServiceTest {
             resumed ->
                 assertThat(resumed.encoderPreset())
                     .isEqualTo(firstAttemptPresets.get(resumed.variantLabel())));
+  }
+
+  @Test
+  @DisplayName(
+      "Should pin each variant to the encoder backend of its first job attempt when a stream session starts")
+  void shouldPinEachVariantToEncoderBackendOfItsFirstJobAttemptWhenStreamSessionStarts() {
+    var session = sessionPinnedToLibx264(abrSessionBuilder());
+
+    assertThat(session.getPinnedEncoder("1080p")).contains(libx264());
+    assertThat(session.getPinnedEncoder("720p")).contains(libx264());
+    assertThat(session.getPinnedEncoder("1080p").orElseThrow().keyframeVerified()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should pin no encoder backend when the variant copies the video")
+  void shouldPinNoEncoderBackendWhenVariantCopiesTheVideo() {
+    transcodeExecutor.setTargetEncoders(LIBX264_WORKER, List.of(libx264()));
+    transcodeExecutor.setExecutionTargets(List.of(LIBX264_WORKER));
+
+    var session = startedSession();
+
+    assertThat(session.getPinnedEncoder(StreamSession.defaultVariant())).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should run a replacement attempt only on a worker with the pinned encoder backend when recovering a dead producer")
+  void shouldRunReplacementAttemptOnlyOnWorkerWithPinnedEncoderBackendWhenRecoveringDeadProducer() {
+    var session = sessionPinnedToLibx264(defaultSessionBuilder());
+    transcodeExecutor.setExecutionTargets(List.of(NVENC_WORKER, LIBX264_WORKER));
+    transcodeExecutor.markDead(session.getSessionId());
+
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
+
+    assertThat(transcodeExecutor.getStartedTargets()).containsExactly(LIBX264_WORKER);
+    assertThat(session.getHandle().orElseThrow().encoder()).contains(libx264());
+  }
+
+  @Test
+  @DisplayName(
+      "Should run a replacement attempt only on a keyframe-verified worker when the pinned encoder is keyframe-verified")
+  void
+      shouldRunReplacementAttemptOnlyOnKeyframeVerifiedWorkerWhenPinnedEncoderIsKeyframeVerified() {
+    var session = sessionPinnedToLibx264(defaultSessionBuilder());
+    transcodeExecutor.setTargetEncoders(
+        UNVERIFIED_LIBX264_WORKER, List.of(libx264NotKeyframeVerified()));
+    transcodeExecutor.setExecutionTargets(List.of(UNVERIFIED_LIBX264_WORKER, LIBX264_WORKER));
+    transcodeExecutor.markDead(session.getSessionId());
+
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
+
+    assertThat(transcodeExecutor.getStartedTargets()).containsExactly(LIBX264_WORKER);
+    assertThat(session.getHandle().orElseThrow().encoder()).contains(libx264());
+    assertThat(session.getPinnedEncoder(StreamSession.defaultVariant())).contains(libx264());
+  }
+
+  @Test
+  @DisplayName(
+      "Should exhaust recovery when only a worker without keyframe verification has the pinned encoder backend")
+  void shouldExhaustRecoveryWhenOnlyWorkerWithoutKeyframeVerificationHasPinnedEncoderBackend() {
+    var session = sessionPinnedToLibx264(defaultSessionBuilder());
+    transcodeExecutor.setTargetEncoders(
+        UNVERIFIED_LIBX264_WORKER, List.of(libx264NotKeyframeVerified()));
+    transcodeExecutor.setExecutionTargets(List.of(UNVERIFIED_LIBX264_WORKER));
+    transcodeExecutor.markDead(session.getSessionId());
+
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.EXHAUSTED);
+
+    assertThat(transcodeExecutor.getStartedTargets()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should exhaust recovery without starting an attempt when no worker has the pinned encoder backend")
+  void shouldExhaustRecoveryWithoutStartingAttemptWhenNoWorkerHasPinnedEncoderBackend() {
+    var session = sessionPinnedToLibx264(defaultSessionBuilder());
+    transcodeExecutor.setExecutionTargets(List.of(NVENC_WORKER));
+    transcodeExecutor.markDead(session.getSessionId());
+
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.EXHAUSTED);
+
+    assertThat(transcodeExecutor.getStartedTargets()).isEmpty();
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep an exhausted variant exhausted when only a worker without the pinned encoder backend joins")
+  void shouldKeepExhaustedVariantExhaustedWhenOnlyWorkerWithoutPinnedEncoderBackendJoins() {
+    var session = sessionPinnedToLibx264(defaultSessionBuilder());
+    transcodeExecutor.setExecutionTargets(List.of());
+    transcodeExecutor.markDead(session.getSessionId());
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.EXHAUSTED);
+    transcodeExecutor.setExecutionTargets(List.of(NVENC_WORKER));
+
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.EXHAUSTED);
+
+    assertThat(transcodeExecutor.getStartedTargets()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should relocate a variant only onto its pinned encoder backend")
+  void shouldRelocateVariantOnlyOntoItsPinnedEncoderBackend() {
+    var session = sessionPinnedToLibx264(defaultSessionBuilder());
+    transcodeExecutor.setExecutionTargets(List.of(NVENC_WORKER, LIBX264_WORKER));
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    lifecycle.ensurePositioned(session.getSessionId(), "segment100.m4s");
+
+    assertThat(startedSince(startedBefore))
+        .singleElement()
+        .extracting(TranscodeRequest::pinnedEncoder)
+        .isEqualTo(Optional.of(libx264()));
+    assertThat(session.getHandle().orElseThrow().encoder()).contains(libx264());
+  }
+
+  @Test
+  @DisplayName("Should start no relocation when no worker has the pinned encoder backend")
+  void shouldStartNoRelocationWhenNoWorkerHasPinnedEncoderBackend() {
+    var session = sessionPinnedToLibx264(defaultSessionBuilder());
+    transcodeExecutor.setExecutionTargets(List.of(NVENC_WORKER));
+    var sessionId = session.getSessionId();
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    assertThatThrownBy(() -> lifecycle.ensurePositioned(sessionId, "segment100.m4s"))
+        .isInstanceOf(TranscodeException.class);
+
+    assertThat(startedSince(startedBefore)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should resume a suspended variant only on its pinned encoder backend")
+  void shouldResumeSuspendedVariantOnlyOnItsPinnedEncoderBackend() {
+    var session = sessionPinnedToLibx264(defaultSessionBuilder());
+    lifecycle.suspend(session.getSessionId());
+    transcodeExecutor.setExecutionTargets(List.of(NVENC_WORKER, LIBX264_WORKER));
+
+    lifecycle.ensurePositioned(session.getSessionId(), "segment5.m4s");
+
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getHandle().orElseThrow().encoder()).contains(libx264());
+  }
+
+  @Test
+  @DisplayName(
+      "Should exhaust recovery of a suspended variant when no worker has its pinned encoder backend")
+  void shouldExhaustRecoveryOfSuspendedVariantWhenNoWorkerHasItsPinnedEncoderBackend() {
+    var session = sessionPinnedToLibx264(defaultSessionBuilder());
+    lifecycle.suspend(session.getSessionId());
+    transcodeExecutor.setExecutionTargets(List.of(NVENC_WORKER));
+
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.EXHAUSTED);
+
+    assertThat(transcodeExecutor.getStartedTargets()).isEmpty();
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
+  }
+
+  private StreamSession sessionPinnedToLibx264(StreamSession.StreamSessionBuilder session) {
+    var started = session.transcodeDecision(fullTranscodeDecision("h264")).build();
+    transcodeExecutor.setTargetEncoders(LIBX264_WORKER, List.of(libx264()));
+    transcodeExecutor.setTargetEncoders(NVENC_WORKER, List.of(h264Nvenc()));
+    transcodeExecutor.setExecutionTargets(List.of(LIBX264_WORKER));
+    runtimeRegistry.save(started);
+    lifecycle.startAll(started, 0);
+    return started;
   }
 
   private static Map<String, EncoderPreset> presetsByVariantLabel(List<TranscodeRequest> requests) {

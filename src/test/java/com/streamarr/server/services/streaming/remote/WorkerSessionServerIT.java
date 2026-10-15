@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.keyframeVerifiedHardwareEncoder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChannelBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
@@ -12,8 +13,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import com.google.protobuf.ByteString;
+import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.SubtitleMode;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
@@ -23,9 +26,13 @@ import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.BlockingSegmentStore;
+import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamSessionFixture;
+import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
+import com.streamarr.server.services.streaming.ProducerLifecycleService;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
@@ -126,7 +133,7 @@ class WorkerSessionServerIT {
         var worker = connectProbeWorker(channel, identity);
         var session = worker.nextResponse().getSessionAccepted();
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().hasStartVariant()).isTrue();
         var request =
             ProbeRequest.newBuilder()
@@ -200,7 +207,7 @@ class WorkerSessionServerIT {
         var worker = connectProbeWorker(channel, identity);
         var session = worker.nextResponse().getSessionAccepted();
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().hasStartVariant()).isTrue();
         var request =
             ProbeRequest.newBuilder()
@@ -340,7 +347,7 @@ class WorkerSessionServerIT {
         var worker = connectProbeWorker(channel, workerIdentity(UUID.randomUUID()));
         assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().hasStartVariant()).isTrue();
         var request =
             ProbeRequest.newBuilder()
@@ -549,7 +556,7 @@ class WorkerSessionServerIT {
         assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
         var job = variantJob();
 
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
 
         var command = worker.nextResponse().getStartVariant();
         assertThat(command.getTarget().getWorkerId()).isEqualTo(toProto(AUTHENTICATED_WORKER_ID));
@@ -665,7 +672,7 @@ class WorkerSessionServerIT {
         worker.close();
         worker.awaitClosed();
 
-        assertThat(server.dispatch(variantJob())).isFalse();
+        assertThat(server.dispatch(variantJob())).isEmpty();
       } finally {
         shutdown(channel);
       }
@@ -690,7 +697,7 @@ class WorkerSessionServerIT {
         assertUploadRejected(first::awaitClosed, Status.Code.ABORTED);
         var job = variantJob();
 
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(replacement.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         replacement.close();
       } finally {
@@ -740,6 +747,141 @@ class WorkerSessionServerIT {
     }
   }
 
+  @Test
+  @DisplayName(
+      "Should keep a replacement attempt on the pinned encoder backend when another worker advertises a different H.264 backend")
+  void
+      shouldKeepReplacementAttemptOnPinnedEncoderBackendWhenAnotherWorkerAdvertisesDifferentH264Backend()
+          throws Exception {
+    var nvencWorkerId = UUID.randomUUID();
+    var nvencCapabilities =
+        WorkerCapabilities.newBuilder()
+            .addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID))
+            .addVideoEncoders(
+                keyframeVerifiedHardwareEncoder(
+                    VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc"))
+            .build();
+    try (var server = server()) {
+      server.start();
+      var libx264Channel = workerChannel(server.port());
+      var nvencChannel = plaintextChannelBuilder(server.port(), nvencWorkerId).build();
+
+      try (var libx264Worker = connect(libx264Channel, AUTHENTICATED_WORKER_ID)) {
+        assertThat(libx264Worker.nextResponse().hasSessionAccepted()).isTrue();
+        var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, Path.of("/media"));
+        var runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
+        var session =
+            StreamSessionFixture.defaultSessionBuilder()
+                .transcodeDecision(StreamSessionFixture.fullTranscodeDecision("h264"))
+                .build();
+        runtimeRegistry.save(session);
+        var lifecycle =
+            StreamingRigFixture.streamingRigBuilder()
+                .transcodeExecutor(executor)
+                .segmentStore(new FakeSegmentStore())
+                .properties(StreamingProperties.builder().build())
+                .runtimeRegistry(runtimeRegistry)
+                .build()
+                .lifecycle();
+        lifecycle.startAll(session, 0);
+        var initial = libx264Worker.nextResponse().getStartVariant().getJob();
+
+        try (var nvencWorker =
+            connect(
+                nvencChannel,
+                workerIdentity(nvencWorkerId, UUID.randomUUID()),
+                nvencCapabilities)) {
+          assertThat(nvencWorker.nextResponse().hasSessionAccepted()).isTrue();
+          libx264Worker.send(
+              EstablishWorkerSessionRequest.newBuilder()
+                  .setJobAttemptFailed(
+                      JobAttemptFailed.newBuilder()
+                          .setJobAttemptId(initial.getJobAttemptId())
+                          .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED))
+                  .build());
+          await()
+              .atMost(5, TimeUnit.SECONDS)
+              .until(
+                  () ->
+                      !executor.isRunning(session.getSessionId(), StreamSession.defaultVariant()));
+
+          var recovery =
+              lifecycle.recover(
+                  session.getSessionId(), StreamSession.defaultVariant(), "segment0.m4s");
+
+          assertThat(recovery).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
+          var replacement = libx264Worker.nextResponse().getStartVariant().getJob();
+          assertThat(replacement.getJobAttemptId()).isNotEqualTo(initial.getJobAttemptId());
+          assertThat(fromProto(replacement.getJobAttemptId()))
+              .isEqualTo(session.getHandle().orElseThrow().attemptId());
+          assertThat(session.getPinnedEncoder(StreamSession.defaultVariant()))
+              .map(pin -> pin.backend().encoder())
+              .contains("libx264");
+
+          lifecycle.ensurePositioned(session.getSessionId(), "segment100.m4s");
+
+          assertThat(libx264Worker.nextResponse().hasStopVariant()).isTrue();
+          assertThat(
+                  libx264Worker
+                      .nextResponse()
+                      .getStartVariant()
+                      .getJob()
+                      .getExecution()
+                      .getStartSequenceNumber())
+              .as("the relocation's job attempt")
+              .isEqualTo(100);
+          assertThat(nvencWorker.responses()).isEmpty();
+        }
+      } finally {
+        shutdown(libx264Channel);
+        shutdown(nvencChannel);
+      }
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse a targeted start when the target does not advertise the request's pinned encoder")
+  void shouldRefuseTargetedStartWhenTargetDoesNotAdvertiseRequestsPinnedEncoder() throws Exception {
+    var nvencCapabilities =
+        WorkerCapabilities.newBuilder()
+            .addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID))
+            .addVideoEncoders(
+                keyframeVerifiedHardwareEncoder(
+                    VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc"))
+            .build();
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+
+      try (var nvencWorker =
+          connect(
+              channel,
+              workerIdentity(AUTHENTICATED_WORKER_ID, UUID.randomUUID()),
+              nvencCapabilities)) {
+        assertThat(nvencWorker.nextResponse().hasSessionAccepted()).isTrue();
+        var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, Path.of("/media"));
+        var pinnedRequest =
+            TranscodeRequest.builder()
+                .sessionId(UUID.randomUUID())
+                .sourcePath(Path.of("/media/movie.mkv"))
+                .transcodeDecision(fullTranscodeH264Decision().build())
+                .encoderPreset(EncoderPreset.FASTER)
+                .pinnedEncoder(Optional.of(WorkerVerifiedEncoderFixture.libx264()))
+                .build();
+        var nvencTarget =
+            executor.executionTargets(pinnedRequest.transcodeDecision()).iterator().next();
+
+        assertThatThrownBy(() -> executor.start(pinnedRequest, nvencTarget))
+            .isInstanceOf(TranscodeException.class);
+
+        assertThat(nvencWorker.responses()).isEmpty();
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
   private static TranscodeRequest encodeRequest(
       TranscodeDecision.TranscodeDecisionBuilder decision) {
     return TranscodeRequest.builder()
@@ -756,7 +898,7 @@ class WorkerSessionServerIT {
     try (var server = server()) {
       server.start();
 
-      assertThat(server.dispatch(variantJob())).isFalse();
+      assertThat(server.dispatch(variantJob())).isEmpty();
     }
   }
 
@@ -777,7 +919,7 @@ class WorkerSessionServerIT {
         assertThat(executor.isHealthy()).isFalse();
         assertThat(executor.availableSlots()).isZero();
 
-        assertThat(server.dispatch(variantJob())).isFalse();
+        assertThat(server.dispatch(variantJob())).isEmpty();
       } finally {
         shutdown(channel);
       }
@@ -798,11 +940,11 @@ class WorkerSessionServerIT {
         assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
         var first = variantJob();
         var second = variantJob();
-        assertThat(server.dispatch(first)).isTrue();
+        assertThat(server.dispatch(first)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(first);
         assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isZero();
 
-        assertThat(server.dispatch(second)).isFalse();
+        assertThat(server.dispatch(second)).isEmpty();
 
         worker.send(
             EstablishWorkerSessionRequest.newBuilder()
@@ -812,7 +954,7 @@ class WorkerSessionServerIT {
         await()
             .atMost(5, TimeUnit.SECONDS)
             .until(() -> server.availableSlots(SOURCE_NAMESPACE_ID) == 1);
-        assertThat(server.dispatch(second)).isTrue();
+        assertThat(server.dispatch(second)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(second);
       } finally {
         shutdown(channel);
@@ -834,11 +976,11 @@ class WorkerSessionServerIT {
       try (var worker = connect(channel, identity)) {
         var workerSession = worker.nextResponse().getSessionAccepted();
         assertThat(server.stopVariant(UUID.randomUUID(), "720p")).isFalse();
-        assertThat(server.dispatch(variantJob().toBuilder().clearSource().build())).isFalse();
+        assertThat(server.dispatch(variantJob().toBuilder().clearSource().build())).isEmpty();
         assertThat(server.isRunning(UUID.randomUUID(), "720p")).isFalse();
 
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         assertThat(server.isRunning(fromProto(job.getStreamSessionId()), "missing")).isFalse();
         var metadata =
@@ -881,7 +1023,7 @@ class WorkerSessionServerIT {
         var first = connect(channel, firstIdentity);
         var firstSession = first.nextResponse().getSessionAccepted();
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(first.nextResponse().getStartVariant().getJob()).isEqualTo(job);
 
         var replacement = connect(channel, workerIdentity(UUID.randomUUID()));
@@ -924,7 +1066,7 @@ class WorkerSessionServerIT {
         var workerSession = worker.nextResponse().getSessionAccepted();
         var initial = variantJob();
         var streamSessionId = fromProto(initial.getStreamSessionId());
-        assertThat(server.dispatch(initial)).isTrue();
+        assertThat(server.dispatch(initial)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(initial);
         var initialUpload = segmentMetadata(workerSession, identity, initial);
         upload(
@@ -946,7 +1088,7 @@ class WorkerSessionServerIT {
                 .build());
         await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId, "720p"));
         var replacement = initial.toBuilder().setJobAttemptId(toProto(UUID.randomUUID())).build();
-        assertThat(server.dispatch(replacement)).isTrue();
+        assertThat(server.dispatch(replacement)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(replacement);
 
         var refused =
@@ -998,7 +1140,7 @@ class WorkerSessionServerIT {
         var worker = connect(channel, identity);
         var workerSession = worker.nextResponse().getSessionAccepted();
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         var segmentData = "partial segment".getBytes();
         var metadata =
@@ -1032,7 +1174,7 @@ class WorkerSessionServerIT {
       try (var worker = connect(channel, identity)) {
         var workerSession = worker.nextResponse().getSessionAccepted();
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         var metadata =
             segmentMetadata(workerSession, identity, job).setContentLengthBytes(1).build();
@@ -1108,7 +1250,7 @@ class WorkerSessionServerIT {
       try (var worker = connect(channel, identity)) {
         var workerSession = worker.nextResponse().getSessionAccepted();
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         var segmentData = new byte[128 * 1024];
         var metadata =
@@ -1151,7 +1293,7 @@ class WorkerSessionServerIT {
       try (var worker = connect(channel, identity)) {
         var workerSession = worker.nextResponse().getSessionAccepted();
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         var metadata =
             segmentMetadata(workerSession, identity, job).setContentLengthBytes(1).build();
@@ -1187,7 +1329,7 @@ class WorkerSessionServerIT {
               variantJob().toBuilder()
                   .setVariant(VariantSpec.newBuilder().setVariantLabel(unsafeName))
                   .build();
-          assertThat(server.dispatch(unsafeJob)).isTrue();
+          assertThat(server.dispatch(unsafeJob)).isPresent();
           assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(unsafeJob);
           var unsafe =
               segmentMetadata(workerSession, identity, unsafeJob).setContentLengthBytes(1).build();
@@ -1226,7 +1368,7 @@ class WorkerSessionServerIT {
       try (var worker = connect(channel, identity)) {
         var workerSession = worker.nextResponse().getSessionAccepted();
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         var data = "segment".getBytes();
         var metadata =
@@ -1256,7 +1398,7 @@ class WorkerSessionServerIT {
         var worker = connect(channel, identity);
         var workerSession = worker.nextResponse().getSessionAccepted();
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         var segmentData = ByteString.copyFromUtf8("in flight");
         var upload = beginSegmentUpload(channel);
@@ -1301,7 +1443,7 @@ class WorkerSessionServerIT {
       try (var worker = connect(channel, identity)) {
         var workerSession = worker.nextResponse().getSessionAccepted();
         var job = variantJob();
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         var data = "segment".getBytes();
         var metadata =
@@ -1352,8 +1494,8 @@ class WorkerSessionServerIT {
 
         var job = variantJob();
         assertThat(server.dispatchTo(new ExecutionTargetId(UUID.randomUUID().toString()), job))
-            .isFalse();
-        assertThat(server.dispatchTo(expectedTarget, job)).isTrue();
+            .isEmpty();
+        assertThat(server.dispatchTo(expectedTarget, job)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
       } finally {
         shutdown(channel);
@@ -1403,7 +1545,7 @@ class WorkerSessionServerIT {
         var workerSession = worker.nextResponse().getSessionAccepted();
         var job = variantJob();
         var streamSessionId = fromProto(job.getStreamSessionId());
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
 
         worker.send(
@@ -1443,7 +1585,7 @@ class WorkerSessionServerIT {
         assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
         var completedJob = variantJob();
         var completedSession = fromProto(completedJob.getStreamSessionId());
-        assertThat(server.dispatch(completedJob)).isTrue();
+        assertThat(server.dispatch(completedJob)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(completedJob);
         worker.send(
             EstablishWorkerSessionRequest.newBuilder()
@@ -1457,7 +1599,7 @@ class WorkerSessionServerIT {
 
         var stoppedJob = variantJob();
         var stoppedSession = fromProto(stoppedJob.getStreamSessionId());
-        assertThat(server.dispatch(stoppedJob)).isTrue();
+        assertThat(server.dispatch(stoppedJob)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(stoppedJob);
         assertThat(server.stopVariant(stoppedSession, "720p")).isTrue();
         assertThat(worker.nextResponse().hasStopVariant()).isTrue();
@@ -1491,7 +1633,7 @@ class WorkerSessionServerIT {
         assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
         var job = variantJob();
         var streamSessionId = fromProto(job.getStreamSessionId());
-        assertThat(server.dispatch(job)).isTrue();
+        assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
 
         worker.close();

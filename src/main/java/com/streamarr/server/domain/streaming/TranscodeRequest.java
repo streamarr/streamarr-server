@@ -24,7 +24,8 @@ public record TranscodeRequest(
     String variantLabel,
     int startSequenceNumber,
     int mediaSegmentCount,
-    @NonNull EncoderPreset encoderPreset) {
+    @NonNull EncoderPreset encoderPreset,
+    @NonNull Optional<WorkerVerifiedEncoder> pinnedEncoder) {
 
   /**
    * A stream copy attempt after segment 0 carries {@code keyframeSeekPosition}, the decode time of
@@ -43,9 +44,11 @@ public record TranscodeRequest(
     }
   }
 
-  @SuppressWarnings("java:S1068") // Lombok builder default — field is used by generated code
-  public static class TranscodeRequestBuilder {
-    private OptionalDouble framerate = OptionalDouble.empty();
-    private Optional<Duration> keyframeSeekPosition = Optional.empty();
+  // Lombok skips its own builder() because this one exists.
+  public static TranscodeRequestBuilder builder() {
+    return new TranscodeRequestBuilder()
+        .framerate(OptionalDouble.empty())
+        .keyframeSeekPosition(Optional.empty())
+        .pinnedEncoder(Optional.empty());
   }
 }

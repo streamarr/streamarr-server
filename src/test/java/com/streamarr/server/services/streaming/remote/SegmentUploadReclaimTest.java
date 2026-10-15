@@ -45,7 +45,7 @@ class SegmentUploadReclaimTest {
         workerConnections.register(
             workerId, registration(worker, sourceNamespaceId), noOpResponseObserver());
     var job = variantJob(sourceNamespaceId);
-    assertThat(workerConnections.dispatch(job)).isTrue();
+    assertThat(workerConnections.dispatch(job)).isPresent();
 
     var error = new AtomicReference<Throwable>();
     var observer =

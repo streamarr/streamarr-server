@@ -149,7 +149,9 @@ class HlsPlaylistStructureTest {
                       .keyframes(irregularKeyframes())
                       .build())
               .build();
-      var playlist = MediaPlaylist.parse(service.generateMediaPlaylist(session, TOKEN));
+      var playlist =
+          MediaPlaylist.parse(
+              service.generateMediaPlaylist(session, StreamSession.defaultVariant(), TOKEN));
 
       assertThat(playlist.extinfDurations()).containsExactly(8.5, 3.5, 6.0);
       assertThat(playlist.targetDuration()).hasValue(9);
@@ -174,8 +176,8 @@ class HlsPlaylistStructureTest {
     void shouldBeImmutableVodPlaylistEndingInEndListWhenGeneratingMediaPlaylist() {
       var session = mediaSession(30);
 
-      var first = service.generateMediaPlaylist(session, TOKEN);
-      var second = service.generateMediaPlaylist(session, TOKEN);
+      var first = service.generateMediaPlaylist(session, StreamSession.defaultVariant(), TOKEN);
+      var second = service.generateMediaPlaylist(session, StreamSession.defaultVariant(), TOKEN);
       var playlist = MediaPlaylist.parse(first);
 
       assertThat(playlist.hasPlaylistTypeVod()).isTrue();
@@ -203,7 +205,8 @@ class HlsPlaylistStructureTest {
     }
 
     private String generateMediaPlaylist(int durationSeconds) {
-      return service.generateMediaPlaylist(mediaSession(durationSeconds), TOKEN);
+      return service.generateMediaPlaylist(
+          mediaSession(durationSeconds), StreamSession.defaultVariant(), TOKEN);
     }
   }
 

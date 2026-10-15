@@ -32,6 +32,10 @@ public class StreamSession {
   @Builder.Default
   private final Map<String, TranscodeHandle> variantHandles = new ConcurrentHashMap<>();
 
+  @Getter(lombok.AccessLevel.NONE)
+  @Builder.Default
+  private final Map<String, WorkerVerifiedEncoder> pinnedEncoders = new ConcurrentHashMap<>();
+
   @Builder.Default private final List<QualityVariant> variants = Collections.emptyList();
 
   @Getter(lombok.AccessLevel.NONE)
@@ -80,6 +84,19 @@ public class StreamSession {
 
   public Optional<TranscodeHandle> getVariantHandle(String variantLabel) {
     return Optional.ofNullable(variantHandles.get(variantLabel));
+  }
+
+  /**
+   * Pins the variant to the worker-verified encoder of its first job attempt: the encoder backend
+   * and whether it is keyframe-verified. Every later job attempt of the variant must run on that
+   * encoder, so a later pin never replaces the first.
+   */
+  public void pinEncoder(@NonNull String variantLabel, @NonNull WorkerVerifiedEncoder encoder) {
+    pinnedEncoders.putIfAbsent(variantLabel, encoder);
+  }
+
+  public Optional<WorkerVerifiedEncoder> getPinnedEncoder(String variantLabel) {
+    return Optional.ofNullable(pinnedEncoders.get(variantLabel));
   }
 
   public boolean isSuspended() {
