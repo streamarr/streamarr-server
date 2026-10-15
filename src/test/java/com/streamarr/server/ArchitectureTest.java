@@ -439,6 +439,18 @@ class ArchitectureTest {
           .bePublic()
           .as("Cedar engine types are package-private; only the image self-check is public");
 
+  // Library operations admit tasks through AdaptiveAdmission (ADR 0041). The limiter library stays
+  // behind it, so its listener, which must complete exactly once, has one caller.
+  @ArchTest
+  static final ArchRule onlyTheConcurrencyPackageMayUseConcurrencyLimits =
+      noClasses()
+          .that()
+          .resideOutsideOfPackage("..services.concurrency..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("com.netflix.concurrency.limits..")
+          .as("Only services.concurrency may use Netflix concurrency-limits");
+
   // Read models are named *Details (AccountInvitationDetails, SeasonDetails): they describe the
   // data a client shapes, not a rendered screen.
   @ArchTest
@@ -715,13 +727,15 @@ class ArchitectureTest {
         .that()
         .resideInAnyPackage(
             "com.streamarr.server.services",
+            "com.streamarr.server.services.concurrency..",
             "com.streamarr.server.services.library..",
             "com.streamarr.server.config..")
         .should()
         .accessTargetWhere(new StartsThreadOutsideSystemWork())
         .as(
-            "Scans, refreshes, the file watcher, artwork and scheduled tasks start threads through"
-                + " SystemWork, so system work keeps the System actor on every thread it starts");
+            "Scans, refreshes, their admission, the file watcher, artwork and scheduled tasks start"
+                + " threads through SystemWork, so system work keeps the System actor on every"
+                + " thread it starts");
   }
 
   private static final class StartsThreadOutsideSystemWork
