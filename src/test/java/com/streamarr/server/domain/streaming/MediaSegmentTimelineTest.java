@@ -1,8 +1,12 @@
 package com.streamarr.server.domain.streaming;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -74,5 +78,150 @@ class MediaSegmentTimelineTest {
     assertThat(timeline.targetSegmentDurationSeconds()).isEqualTo(6);
     assertThat(timeline.mediaSegmentCount()).isEqualTo(3);
     assertThat(timeline.mediaSegmentDuration(2)).isEqualTo(Duration.ofSeconds(1));
+  }
+
+  @Test
+  @DisplayName("Should run each stream copy segment from its keyframe to the next one")
+  void shouldRunEachStreamCopySegmentFromItsKeyframeToTheNextOne() {
+    var timeline = streamCopyOver(Duration.ofSeconds(24), 0, 6_500, 12_000, 18_000);
+
+    assertThat(timeline.mediaSegmentCount()).isEqualTo(4);
+    assertThat(durations(timeline))
+        .containsExactly(
+            Duration.ofMillis(6_500),
+            Duration.ofMillis(5_500),
+            Duration.ofSeconds(6),
+            Duration.ofSeconds(6));
+    assertThat(timeline.targetSegmentDurationSeconds()).isEqualTo(6);
+  }
+
+  @Test
+  @DisplayName("Should open no stream copy segment at a keyframe at or after the media end")
+  void shouldOpenNoStreamCopySegmentAtAKeyframeAtOrAfterTheMediaEnd() {
+    var timeline = streamCopyOver(Duration.parse("PT18.0004S"), 0, 6_000, 12_000, 18_000);
+
+    assertThat(timeline.mediaSegmentCount()).isEqualTo(3);
+    assertThat(timeline.mediaSegmentDuration(2)).isEqualTo(Duration.ofSeconds(6));
+  }
+
+  @Test
+  @DisplayName("Should advertise no stream copy segment when the first keyframe follows the end")
+  void shouldAdvertiseNoStreamCopySegmentWhenTheFirstKeyframeFollowsTheEnd() {
+    var timeline = streamCopyOver(Duration.ofMillis(400), 500);
+
+    assertThat(timeline.mediaSegmentCount()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should start the first stream copy segment at zero when its keyframe presents later")
+  void shouldStartTheFirstStreamCopySegmentAtZeroWhenItsKeyframePresentsLater() {
+    var timeline = streamCopyOver(Duration.ofSeconds(12), 500, 6_000);
+
+    assertThat(timeline.segmentStarts()).containsExactly(Duration.ZERO, Duration.ofSeconds(6));
+    assertThat(timeline.mediaSegmentDuration(0)).isEqualTo(Duration.ofSeconds(6));
+  }
+
+  @Test
+  @DisplayName("Should start a stream copy segment at its keyframe's time in the source time base")
+  void shouldStartAStreamCopySegmentAtItsKeyframesTimeInTheSourceTimeBase() {
+    // In a 1001/24000 time base, 144 ticks are 6.006 s.
+    var positions =
+        KeyframePositions.builder()
+            .streamIndex(0)
+            .timeBaseNumerator(1001)
+            .timeBaseDenominator(24_000)
+            .source(KeyframePositionSource.CONTAINER_INDEX)
+            .keyframes(List.of(new KeyframePosition(0, 0), new KeyframePosition(144, 144)))
+            .build();
+    var grid = new MediaSegmentTimeline.PlainGrid(Duration.ofSeconds(12), SIX_SECONDS);
+
+    var timeline = grid.openedAt(positions, new StreamCopySegments.Starts(positions.keyframes()));
+
+    assertThat(timeline.segmentStarts()).containsExactly(Duration.ZERO, Duration.ofMillis(6_006));
+  }
+
+  @Test
+  @DisplayName("Should keep the segment starts it was given when the caller's list changes")
+  void shouldKeepTheSegmentStartsItWasGivenWhenTheCallersListChanges() {
+    var segmentStarts = new ArrayList<>(List.of(Duration.ZERO));
+    var timeline =
+        new MediaSegmentTimeline.StreamCopy(Duration.ofSeconds(6), SIX_SECONDS, segmentStarts);
+
+    segmentStarts.add(Duration.ofSeconds(3));
+
+    assertThat(timeline.segmentStarts()).containsExactly(Duration.ZERO);
+  }
+
+  @Test
+  @DisplayName("Should reject a stream copy timeline without a media duration")
+  void shouldRejectAStreamCopyTimelineWithoutAMediaDuration() {
+    var segmentStarts = List.of(Duration.ZERO);
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> new MediaSegmentTimeline.StreamCopy(null, SIX_SECONDS, segmentStarts));
+  }
+
+  @Test
+  @DisplayName("Should reject a stream copy timeline without a target segment duration")
+  void shouldRejectAStreamCopyTimelineWithoutATargetSegmentDuration() {
+    var segmentStarts = List.of(Duration.ZERO);
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> new MediaSegmentTimeline.StreamCopy(SIX_SECONDS, null, segmentStarts));
+  }
+
+  @Test
+  @DisplayName("Should reject a stream copy timeline without segment starts")
+  void shouldRejectAStreamCopyTimelineWithoutSegmentStarts() {
+    assertThatNullPointerException()
+        .isThrownBy(() -> new MediaSegmentTimeline.StreamCopy(SIX_SECONDS, SIX_SECONDS, null));
+  }
+
+  @Test
+  @DisplayName("Should reject opening a grid without keyframe positions")
+  void shouldRejectOpeningAGridWithoutKeyframePositions() {
+    var grid = new MediaSegmentTimeline.PlainGrid(Duration.ofSeconds(12), SIX_SECONDS);
+    var starts = new StreamCopySegments.Starts(List.of(new KeyframePosition(0, 0)));
+
+    assertThatNullPointerException().isThrownBy(() -> grid.openedAt(null, starts));
+  }
+
+  @Test
+  @DisplayName("Should reject opening a grid without segment starts")
+  void shouldRejectOpeningAGridWithoutSegmentStarts() {
+    var grid = new MediaSegmentTimeline.PlainGrid(Duration.ofSeconds(12), SIX_SECONDS);
+    var positions = millisecondPositions(0);
+
+    assertThatNullPointerException().isThrownBy(() -> grid.openedAt(positions, null));
+  }
+
+  private static MediaSegmentTimeline.StreamCopy streamCopyOver(
+      Duration mediaDuration, long... keyframeMillis) {
+    var positions = millisecondPositions(keyframeMillis);
+    return new MediaSegmentTimeline.PlainGrid(mediaDuration, SIX_SECONDS)
+        .openedAt(positions, new StreamCopySegments.Starts(positions.keyframes()));
+  }
+
+  private static KeyframePositions millisecondPositions(long... keyframeMillis) {
+    return KeyframePositions.builder()
+        .streamIndex(0)
+        .timeBaseNumerator(1)
+        .timeBaseDenominator(1_000)
+        .source(KeyframePositionSource.CONTAINER_INDEX)
+        .keyframes(
+            Arrays.stream(keyframeMillis)
+                .mapToObj(time -> new KeyframePosition(time, time))
+                .toList())
+        .build();
+  }
+
+  private static List<Duration> durations(MediaSegmentTimeline timeline) {
+    var durations = new ArrayList<Duration>();
+    for (var index = 0; index < timeline.mediaSegmentCount(); index++) {
+      durations.add(timeline.mediaSegmentDuration(index));
+    }
+
+    return durations;
   }
 }

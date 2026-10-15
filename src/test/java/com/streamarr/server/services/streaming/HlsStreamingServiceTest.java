@@ -46,6 +46,7 @@ import java.net.URI;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
@@ -246,6 +247,54 @@ class HlsStreamingServiceTest {
 
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(session.getVariants()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should advertise each segment's real duration when the video is copied from an"
+          + " irregular-keyframe source")
+  void shouldAdvertiseEachSegmentsRealDurationWhenTheVideoIsCopiedFromAnIrregularKeyframeSource() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .duration(Duration.ofSeconds(24))
+            .keyframes(keyframesAtMillis(0, 6_500, 12_000, 18_000))
+            .build());
+    var file = seedMediaFile();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var playlist = mediaPlaylist(session);
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(extinfDurations(playlist))
+        .containsExactly("6.500000", "5.500000", "6.000000", "6.000000");
+    // RFC 8216 §4.3.3.1: each EXTINF, rounded to the nearest integer, fits the target duration.
+    assertThat(playlist).contains("#EXT-X-TARGETDURATION:7\n");
+  }
+
+  private static KeyframeKnowledge keyframesAtMillis(long... presentationTimes) {
+    return new KeyframeKnowledge.Known(
+        KeyframePositions.builder()
+            .streamIndex(0)
+            .timeBaseNumerator(1)
+            .timeBaseDenominator(1_000)
+            .source(KeyframePositionSource.CONTAINER_INDEX)
+            .keyframes(
+                Arrays.stream(presentationTimes)
+                    .mapToObj(time -> new KeyframePosition(time, time))
+                    .toList())
+            .build());
+  }
+
+  private static String mediaPlaylist(StreamSession session) {
+    return new HlsPlaylistService(streamingProperties()).generateMediaPlaylist(session, "token");
+  }
+
+  private static List<String> extinfDurations(String playlist) {
+    return playlist
+        .lines()
+        .filter(line -> line.startsWith("#EXTINF:"))
+        .map(line -> line.substring("#EXTINF:".length(), line.indexOf(',')))
+        .toList();
   }
 
   @BeforeEach
