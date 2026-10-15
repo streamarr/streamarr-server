@@ -4,6 +4,10 @@ package com.streamarr.server.services.concurrency;
 @FunctionalInterface
 public interface AdmittedTask<S> {
 
-  /** Runs the task and returns what it reports when it finishes without throwing. */
-  AdmittedTaskReport run(S subject) throws Exception;
+  /**
+   * Runs the task and returns what it reports when it finishes without throwing.
+   *
+   * @throws InterruptedException if the task is interrupted while it waits
+   */
+  AdmittedTaskReport run(S subject) throws InterruptedException;
 }

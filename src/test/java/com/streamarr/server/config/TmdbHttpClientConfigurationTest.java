@@ -15,7 +15,10 @@ import com.streamarr.server.config.http.RateLimitingInterceptor;
 import com.streamarr.server.services.concurrency.AdaptiveAdmission;
 import com.streamarr.server.services.concurrency.AdmissionListener;
 import com.streamarr.server.services.concurrency.AdmittedTaskReport;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
+import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
@@ -211,8 +214,7 @@ class TmdbHttpClientConfigurationTest {
           admission.forkAdmittedTasks(
               List.of(request).iterator(),
               admitted -> {
-                statusCode.set(
-                    client.send(admitted, HttpResponse.BodyHandlers.discarding()).statusCode());
+                statusCode.set(send(client, admitted).statusCode());
                 return AdmittedTaskReport.LATENCY;
               },
               Thread.ofVirtual().factory());
@@ -222,6 +224,16 @@ class TmdbHttpClientConfigurationTest {
 
     assertThat(reports).hasSize(1);
     return new AdmittedRequestOutcome(statusCode.get(), reports.getFirst());
+  }
+
+  // An admitted task may throw only unchecked exceptions and InterruptedException.
+  private static HttpResponse<Void> send(HttpClient client, HttpRequest request)
+      throws InterruptedException {
+    try {
+      return client.send(request, HttpResponse.BodyHandlers.discarding());
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
   }
 
   @Test

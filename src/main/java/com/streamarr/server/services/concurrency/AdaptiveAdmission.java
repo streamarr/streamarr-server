@@ -207,13 +207,13 @@ public final class AdaptiveAdmission implements AutoCloseable {
       }
     }
 
-    private Void runAdmitted(Admission admission, S subject) throws Exception {
+    private Void runAdmitted(Admission admission, S subject) throws InterruptedException {
       var retried = new AtomicBoolean();
       AdmittedTaskReport report;
       try {
         report =
             ScopedValue.where(AdmittedTaskRetries.RETRIED, retried).call(() -> task.run(subject));
-      } catch (Exception | Error failure) {
+      } catch (RuntimeException | InterruptedException | Error failure) {
         // An Error returns its admission too, or the walker could wait for it forever. Admission
         // ends before the admission returns, so the walker that the return wakes stops.
         ended.set(true);
