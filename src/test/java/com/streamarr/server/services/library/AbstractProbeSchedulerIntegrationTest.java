@@ -79,10 +79,7 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
 
   @AfterEach
   void stopSchedulerAndRemoveFiles() {
-    if (scheduler != null) {
-      scheduler.stop();
-    }
-
+    stopScheduler();
     dsl.deleteFrom(DSL.table("scheduled_tasks")).execute();
     mediaFiles.deleteAll(createdFiles);
     if (libraryId != null) {
@@ -112,6 +109,15 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
         ProbeSchedulerStarter.fromContext(applicationContext).start(execution, listener, clock);
     scheduler = started.scheduler();
     return started.client();
+  }
+
+  void stopScheduler() {
+    if (scheduler == null) {
+      return;
+    }
+
+    scheduler.stop();
+    scheduler = null;
   }
 
   static AbstractSchedulerListener countingOk(CountDownLatch completions) {
