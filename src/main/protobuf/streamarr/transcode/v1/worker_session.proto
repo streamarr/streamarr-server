@@ -54,7 +54,11 @@ message WorkerVerifiedVideoEncoder {
 message WorkerCapabilities {
   repeated Uuid source_namespace_ids = 1;
   // Supported nonzero versions of Streamarr's retained probe fields and their interpretation.
-  // These are independent of the installed FFmpeg and ffprobe versions.
+  // These are independent of the installed FFmpeg and ffprobe versions. The probe versions are 1, 3
+  // and 4. Version 3 adds keyframe positions, and version 4 adds the dynamic range, bit depth,
+  // chroma subsampling, rotation and codec string of each stream, the chosen video stream and the
+  // output frame rate. Each version reports every fact of the versions before it. Version 2 is
+  // unused: no server requests it and no worker advertises it.
   repeated uint32 probe_versions = 2;
   // One entry for each codec family the worker can encode: the encoder backend that the worker
   // runs for every job of that codec family. Every entry, hardware or software, passed the worker's
@@ -139,6 +143,73 @@ enum VideoMode {
   VIDEO_MODE_UNSPECIFIED = 0;
   VIDEO_MODE_COPY = 1;
   VIDEO_MODE_ENCODE = 2;
+}
+
+// Whether a dynamic-range feature is present, as ADR 0036 defines it. UNSPECIFIED means that the
+// probe could not check. ABSENT means that the probe checked and found none.
+enum Presence {
+  PRESENCE_UNSPECIFIED = 0;
+  PRESENCE_ABSENT = 1;
+  PRESENCE_PRESENT = 2;
+}
+
+// The standard picture format that a player could use without the advanced HDR information. The
+// probe derives it from the signaled transfer and the Dolby Vision claim. When a Dolby Vision
+// compatibility identifier disagrees with the signaled transfer, the signaled transfer decides.
+enum CompatibleBase {
+  // The probe could not read the transfer and found no Dolby Vision claim.
+  COMPATIBLE_BASE_UNSPECIFIED = 0;
+  // The stream has no standard compatible base. Dolby Vision declares none, or the signaled
+  // transfer is unspecified while Dolby Vision is present, as in Dolby Vision profile 5.
+  COMPATIBLE_BASE_NONE = 1;
+  // A standard-dynamic-range transfer, such as BT.709.
+  COMPATIBLE_BASE_SDR = 2;
+  // SMPTE ST 2084, which covers HDR10 and PQ10.
+  COMPATIBLE_BASE_PQ = 3;
+  // ARIB STD-B67.
+  COMPATIBLE_BASE_HLG = 4;
+}
+
+// The Dolby Vision configuration record (dvcC or dvvC), kept whole. Every value in it is a claim.
+// The worker sets every field that the record holds. The numeric fields have explicit presence,
+// because 0 is a real base-layer compatibility identifier.
+message DolbyVisionConfiguration {
+  // The Dolby Vision profile, which is separate from the codec profile.
+  optional uint32 profile = 1;
+  // The Dolby Vision level, which is separate from the codec level.
+  optional uint32 level = 2;
+  optional uint32 base_layer_compatibility_id = 3;
+  // The record's bl_present_flag.
+  bool base_layer = 4;
+  // The record's el_present_flag.
+  bool enhancement_layer = 5;
+  // The record's rpu_present_flag.
+  bool rpu = 6;
+}
+
+// The probe checked for Dolby Vision and found no configuration record, no Dolby Vision sample
+// entry and no RPU in the samples. A probe that reads no samples never reports this arm.
+message DolbyVisionAbsent {}
+
+// The probe found a Dolby Vision configuration record, a Dolby Vision sample entry or an RPU in the
+// samples.
+message DolbyVisionPresent {
+  // The whole configuration record, or absent when the probe found no record.
+  DolbyVisionConfiguration declared = 1;
+  // Whether the samples hold Dolby Vision RPUs. UNSPECIFIED when the probe read no samples.
+  Presence observed_rpu = 2;
+}
+
+// The dynamic range of one video stream, as ADR 0036 defines it. A source video stream can hold
+// UNSPECIFIED values. A planned output never holds an UNSPECIFIED value.
+message VideoDynamicRange {
+  CompatibleBase compatible_base = 1;
+  Presence hdr10_plus = 2;
+  // No arm set means that Dolby Vision is unspecified: the probe could not check.
+  oneof dolby_vision {
+    DolbyVisionAbsent dolby_vision_absent = 3;
+    DolbyVisionPresent dolby_vision_present = 4;
+  }
 }
 
 // The server computes codec_profile, tier, level and codec_string. The worker never computes them.
@@ -298,8 +369,8 @@ message ProbeRequest {
   uint32 probe_version = 2;
   MediaSourceRef source = 3;
   // When true, the worker finds keyframe positions by scanning every packet of the chosen video
-  // stream instead of reading the container index. Only the probe versions that report keyframe
-  // positions accept this flag. A worker answers the flag under any other probe version with
+  // stream instead of reading the container index. Only probe version 3 and later report keyframe
+  // positions and accept this flag. A worker answers the flag under probe version 1 with
   // PROBE_FAILURE_UNSUPPORTED_VERSION.
   bool scan_keyframe_packets = 4;
 }
@@ -310,6 +381,25 @@ message ProbeContainerInfo {
   optional int64 bitrate_bits_per_second = 3;
 }
 
+// An exact fraction whose terms are both positive. For example, 24000/1001 frames per second, or a
+// time base of 1/90000 seconds.
+message Fraction {
+  uint32 numerator = 1;
+  uint32 denominator = 2;
+}
+
+// How a video stream's pixel format samples chroma.
+enum ChromaSubsampling {
+  // ffprobe reported no pixel format, or a pixel format with another layout, such as an RGB format.
+  CHROMA_SUBSAMPLING_UNSPECIFIED = 0;
+  CHROMA_SUBSAMPLING_420 = 1;
+  CHROMA_SUBSAMPLING_422 = 2;
+  CHROMA_SUBSAMPLING_444 = 3;
+  // The pixel format has no chroma planes, as in gray.
+  CHROMA_SUBSAMPLING_MONOCHROME = 4;
+}
+
+// Only probe version 4 and later report the fields from dynamic_range to codec_string.
 message ProbeStreamInfo {
   uint32 index = 1;
   string codec_type = 2;
@@ -322,6 +412,103 @@ message ProbeStreamInfo {
   optional double framerate = 9;
   bool is_default = 10;
   bool is_forced = 11;
+  // Video streams only. The probe reads the dynamic range from the stream's headers and
+  // configuration records and never reads the samples. So Dolby Vision is never ABSENT, and
+  // observed_rpu and hdr10_plus are UNSPECIFIED. Dolby Vision is unspecified when the probe finds
+  // neither a configuration record nor a Dolby Vision sample entry.
+  VideoDynamicRange dynamic_range = 12;
+  // Video streams only: the bit depth of a luma sample, from the pixel format. For example, 8 for
+  // yuv420p and 10 for yuv420p10le. Absent when ffprobe reports no pixel format.
+  optional uint32 bit_depth = 13;
+  // Video streams only, from the pixel format.
+  ChromaSubsampling chroma_subsampling = 14;
+  // Video streams only: the angle, in whole degrees from -180 to 180, by which the stream's display
+  // matrix rotates the picture counterclockwise, as ffprobe reports it. A phone recording held
+  // upright usually reports -90. The value is 0 when the stream has no display matrix.
+  optional sint32 rotation_degrees = 15;
+  // Video and audio streams only: the exact RFC 6381 codec string that a stream copy of the stream
+  // carries, for example avc1.640028 or mp4a.40.2. The worker computes it from the stream's decoder
+  // configuration record, after the tag rule picks the copy's sample entry. A Dolby Vision copy
+  // with an SDR compatible base carries its base sample entry, so its codec string starts with
+  // hvc1 or avc1. Absent when the worker cannot compute a codec string for the stream's codec.
+  optional string codec_string = 16;
+}
+
+// The order of the fields of an interlaced frame, as ffprobe reports field_order.
+enum FieldOrder {
+  // ffprobe reported unknown or no field order.
+  FIELD_ORDER_UNSPECIFIED = 0;
+  FIELD_ORDER_PROGRESSIVE = 1;
+  // Top field coded first and displayed first (ffprobe's tt).
+  FIELD_ORDER_TT = 2;
+  // Bottom field coded first and displayed first (ffprobe's bb).
+  FIELD_ORDER_BB = 3;
+  // Top field coded first, bottom field displayed first (ffprobe's tb).
+  FIELD_ORDER_TB = 4;
+  // Bottom field coded first, top field displayed first (ffprobe's bt).
+  FIELD_ORDER_BT = 5;
+}
+
+// The basis on which the frame-rate rule of ADR 0037 chose the output frame rate.
+enum OutputFrameRateBasis {
+  OUTPUT_FRAME_RATE_BASIS_UNSPECIFIED = 0;
+  // The declared rates agree on a listed rate, and Matroska's statistics, when present, agree too.
+  // streamarr/streamarr-transcode-worker#24 calls this basis "probe".
+  OUTPUT_FRAME_RATE_BASIS_DECLARED_RATES = 1;
+  // The rule scanned the packets, but Matroska's statistics say that the whole video stream runs
+  // faster than its first 30 s, so the rule kept the declared rate. The issue calls this basis
+  // "probe (tags)".
+  OUTPUT_FRAME_RATE_BASIS_MATROSKA_STATISTICS = 2;
+  // The rule snapped the motion rate that the packet scan measured. The issue calls this basis
+  // "scan".
+  OUTPUT_FRAME_RATE_BASIS_PACKET_SCAN = 3;
+  // The scan found fewer than 2 frames, so the rule snapped the average rate, or the base rate when
+  // the average rate is not usable. The issue calls this basis "fallback".
+  OUTPUT_FRAME_RATE_BASIS_DECLARED_RATE_FALLBACK = 4;
+  // The scan found fewer than 2 frames and neither declared rate is usable. The rule chose no rate.
+  OUTPUT_FRAME_RATE_BASIS_REFUSED = 5;
+}
+
+// Matroska's per-stream statistics tags, NUMBER_OF_FRAMES and DURATION, with any language suffix.
+message MatroskaStatistics {
+  optional uint64 number_of_frames = 1;
+  google.protobuf.Duration duration = 2;
+}
+
+// What the frame-rate rule's packet scan measured over the first 30 s of the chosen video stream.
+message FrameRatePacketScan {
+  // The motion rate in frames per second: the rate at which the video's motion actually runs.
+  // Absent when the scan found fewer than 2 frames.
+  optional double motion_rate = 1;
+  // The number of frames that the scan counted, after it dropped discarded and empty packets and
+  // merged field pairs.
+  uint32 scanned_frame_count = 2;
+  // The media time that the scan covered.
+  google.protobuf.Duration scanned_duration = 3;
+}
+
+// The inputs of the frame-rate rule for the chosen video stream.
+message FrameRateRuleInputs {
+  // ffprobe's r_frame_rate. Absent when ffprobe reports none or 0/0.
+  Fraction base_rate = 1;
+  // ffprobe's avg_frame_rate. Absent when ffprobe reports none or 0/0.
+  Fraction average_rate = 2;
+  FieldOrder field_order = 3;
+  // The stream's time base in seconds.
+  Fraction time_base = 4;
+  // Absent when the stream carries neither statistics tag.
+  MatroskaStatistics matroska_statistics = 5;
+  // Absent when the rule took the declared rates without a scan.
+  FrameRatePacketScan packet_scan = 6;
+}
+
+// The output frame rate that the frame-rate rule chose for the chosen video stream, with its basis
+// and inputs. The probe still succeeds when the rule refuses to choose a rate.
+message FrameRateRuleResult {
+  // Absent only when basis is OUTPUT_FRAME_RATE_BASIS_REFUSED.
+  Fraction output_frame_rate = 1;
+  OutputFrameRateBasis basis = 2;
+  FrameRateRuleInputs inputs = 3;
 }
 
 enum KeyframePositionSource {
@@ -411,8 +598,15 @@ message ProbeKeyframes {
 message ProbeMediaInfo {
   ProbeContainerInfo container = 1;
   repeated ProbeStreamInfo streams = 2;
-  // Present only for the probe versions that report keyframe positions.
+  // Present only for probe version 3 and later.
   ProbeKeyframes keyframes = 3;
+  // The ProbeStreamInfo.index of the chosen video stream: the first video stream that is not an
+  // attached picture, such as embedded cover art. Present only for probe version 4 and later. Under
+  // those versions, a file whose video streams are all attached pictures reports
+  // PROBE_FAILURE_NO_VIDEO_STREAM.
+  optional uint32 chosen_video_stream_index = 4;
+  // Present only for probe version 4 and later.
+  FrameRateRuleResult frame_rate_rule = 5;
 }
 
 message ProbeAttemptResult {

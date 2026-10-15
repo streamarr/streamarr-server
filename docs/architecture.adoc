@@ -278,6 +278,12 @@ It returns a typed not-ready error when no usable outcome exists and a typed fai
 When the video must be encoded and the probe recorded no usable frame rate, it returns a typed frame-rate error instead of starting a stream session, because workers encode at the probed frame rate.
 A stream copy of the same file still plays.
 
+Each probe version reports every fact of the versions before it.
+Version 3 adds the keyframe positions of the chosen video stream.
+Version 4 adds the facts that playing HDR and 10-bit sources as SDR needs: the dynamic range, bit depth, chroma subsampling, rotation and codec string of each stream, the chosen video stream, and the output frame rate.
+Version 2 is unused.
+The worker contract defines version 4, but the server still requests version 3.
+
 https://github.com/streamarr/streamarr-adr/blob/main/adr/0033-transcode-worker-is-a-separate-service.adoc[ADR 0033] requires workers for probing, transcoding, and remuxing.
 Each worker opens an outbound, long-lived gRPC `WorkerSession` over the server's single plaintext listener.
 https://github.com/streamarr/streamarr-adr/blob/main/adr/0035-worker-uses-spring-boot-and-mesh-transport-security.adoc[ADR 0035] keeps colocated connections on loopback and requires mesh mutual TLS and worker ServiceAccount authorization for distributed connections.
