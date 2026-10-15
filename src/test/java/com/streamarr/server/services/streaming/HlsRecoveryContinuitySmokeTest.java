@@ -46,7 +46,8 @@ class HlsRecoveryContinuitySmokeTest {
   private LocalSegmentStore segmentStore;
   private RemoteTranscodeExecutor transcodeExecutor;
   private WorkerStreamingSmokeFixture workerFixture;
-  private FakeRuntimeStreamSessionRegistry runtimeRegistry;
+  private final FakeRuntimeStreamSessionRegistry runtimeRegistry =
+      new FakeRuntimeStreamSessionRegistry();
   private ProducerLifecycleService lifecycle;
   private SegmentDeliveryCoordinator coordinator;
   @TempDir private Path temporaryDirectory;
@@ -70,7 +71,6 @@ class HlsRecoveryContinuitySmokeTest {
             workerFixture.workerSessions(),
             workerFixture.sourceNamespaceId(),
             testVideo.getParent());
-    runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
     var properties =
         StreamingProperties.builder()
             .maxConcurrentTranscodes(3)
@@ -96,23 +96,12 @@ class HlsRecoveryContinuitySmokeTest {
 
   @AfterEach
   void tearDown() {
-    try {
-      if (runtimeRegistry != null) {
-        runtimeRegistry.findAll().stream()
-            .map(StreamSession::getSessionId)
-            .forEach(transcodeExecutor::stop);
-      }
-    } finally {
-      try {
-        if (workerFixture != null) {
-          workerFixture.close();
-        }
-      } finally {
-        if (segmentStore != null) {
-          segmentStore.shutdown();
-        }
-      }
+    if (workerFixture == null) {
+      return;
     }
+
+    workerFixture.stopStreamSessionsAndClose(
+        runtimeRegistry.findAll().stream().map(StreamSession::getSessionId).toList());
   }
 
   @Test

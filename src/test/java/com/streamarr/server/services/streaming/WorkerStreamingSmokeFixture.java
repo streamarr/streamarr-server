@@ -6,6 +6,7 @@ import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
+import java.util.Collection;
 import java.util.UUID;
 import lombok.Builder;
 
@@ -13,10 +14,12 @@ final class WorkerStreamingSmokeFixture implements AutoCloseable {
   private final UUID sourceNamespaceId = UUID.randomUUID();
   private final WorkerSessionServer workerSessions;
   private final WorkerContainerFixture worker;
+  private final LocalSegmentStore segmentStore;
 
   @Builder
   private WorkerStreamingSmokeFixture(
       Path sourceRoot, LocalSegmentStore segmentStore, String ffmpegScript) {
+    this.segmentStore = segmentStore;
     workerSessions =
         new WorkerSessionServer(
             WorkerSessionServerConfiguration.builder().address("127.0.0.1").port(0).build(),
@@ -49,12 +52,28 @@ final class WorkerStreamingSmokeFixture implements AutoCloseable {
     return worker;
   }
 
+  void stopStreamSessionsAndClose(Collection<UUID> streamSessionIds) {
+    try {
+      streamSessionIds.forEach(workerSessions::stopStreamSession);
+    } finally {
+      close();
+    }
+  }
+
   @Override
   public void close() {
     try {
       worker.close();
     } finally {
+      closeSessionServerAndSegmentStore();
+    }
+  }
+
+  private void closeSessionServerAndSegmentStore() {
+    try {
       workerSessions.close();
+    } finally {
+      segmentStore.shutdown();
     }
   }
 }
