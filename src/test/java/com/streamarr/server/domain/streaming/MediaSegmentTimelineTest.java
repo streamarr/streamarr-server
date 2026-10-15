@@ -30,7 +30,7 @@ class MediaSegmentTimelineTest {
       "Should count media segments over the whole milliseconds of the media when sizing the timeline")
   void shouldCountMediaSegmentsOverTheWholeMillisecondsOfTheMediaWhenSizingTheTimeline(
       Duration mediaDuration, int expectedCount) {
-    var timeline = new MediaSegmentTimeline(mediaDuration, SIX_SECONDS);
+    var timeline = new MediaSegmentTimeline.PlainGrid(mediaDuration, SIX_SECONDS);
 
     assertThat(timeline.mediaSegmentCount()).isEqualTo(expectedCount);
   }
@@ -38,7 +38,7 @@ class MediaSegmentTimelineTest {
   @Test
   @DisplayName("Should end the last media segment at the media duration when it runs short")
   void shouldEndTheLastMediaSegmentAtTheMediaDurationWhenItRunsShort() {
-    var timeline = new MediaSegmentTimeline(Duration.parse("PT2M5.5S"), SIX_SECONDS);
+    var timeline = new MediaSegmentTimeline.PlainGrid(Duration.parse("PT2M5.5S"), SIX_SECONDS);
 
     assertThat(timeline.mediaSegmentDuration(0)).isEqualTo(SIX_SECONDS);
     assertThat(timeline.mediaSegmentDuration(19)).isEqualTo(SIX_SECONDS);
@@ -48,7 +48,7 @@ class MediaSegmentTimelineTest {
   @Test
   @DisplayName("Should start each media segment on the zero-based grid when locating it")
   void shouldStartEachMediaSegmentOnTheZeroBasedGridWhenLocatingIt() {
-    var timeline = new MediaSegmentTimeline(Duration.ofHours(2), SIX_SECONDS);
+    var timeline = new MediaSegmentTimeline.PlainGrid(Duration.ofHours(2), SIX_SECONDS);
 
     assertThat(timeline.mediaSegmentStartSeconds(0)).isZero();
     assertThat(timeline.mediaSegmentStartSeconds(900)).isEqualTo(5_400);
@@ -57,7 +57,7 @@ class MediaSegmentTimelineTest {
   @Test
   @DisplayName("Should advertise only the indices inside the timeline when asked about an index")
   void shouldAdvertiseOnlyTheIndicesInsideTheTimelineWhenAskedAboutAnIndex() {
-    var timeline = new MediaSegmentTimeline(Duration.ofSeconds(60), SIX_SECONDS);
+    var timeline = new MediaSegmentTimeline.PlainGrid(Duration.ofSeconds(60), SIX_SECONDS);
 
     assertThat(timeline.advertises(0)).isTrue();
     assertThat(timeline.advertises(9)).isTrue();
@@ -68,7 +68,8 @@ class MediaSegmentTimelineTest {
   @Test
   @DisplayName("Should keep whole seconds of the target when it carries a fraction")
   void shouldKeepWholeSecondsOfTheTargetWhenItCarriesAFraction() {
-    var timeline = new MediaSegmentTimeline(Duration.ofSeconds(13), Duration.ofMillis(6_500));
+    var timeline =
+        new MediaSegmentTimeline.PlainGrid(Duration.ofSeconds(13), Duration.ofMillis(6_500));
 
     assertThat(timeline.targetSegmentDurationSeconds()).isEqualTo(6);
     assertThat(timeline.mediaSegmentCount()).isEqualTo(3);

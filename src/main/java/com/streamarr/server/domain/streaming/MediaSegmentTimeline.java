@@ -4,35 +4,51 @@ import java.time.Duration;
 import lombok.NonNull;
 
 /**
- * The zero-based grid of media segments a variant's playlist advertises: segment {@code N} covers
- * media time {@code [N × target, (N + 1) × target)}, where the target segment duration counts in
- * whole seconds, and the last segment ends at the media duration, counted in whole milliseconds.
+ * The media segments a variant's playlist advertises, numbered from zero on the grid of the target
+ * segment duration: segment {@code N}'s interval starts at {@code N × target}, where the target
+ * counts in whole seconds.
  */
-public record MediaSegmentTimeline(
-    @NonNull Duration mediaDuration, @NonNull Duration targetSegmentDuration) {
+public sealed interface MediaSegmentTimeline {
 
-  public int targetSegmentDurationSeconds() {
-    return (int) targetSegmentDuration.toSeconds();
-  }
+  int targetSegmentDurationSeconds();
 
-  public int mediaSegmentCount() {
-    return Math.toIntExact(Math.ceilDiv(mediaDuration.toMillis(), targetSegmentMillis()));
-  }
+  int mediaSegmentCount();
 
-  public boolean advertises(int index) {
+  Duration mediaSegmentDuration(int index);
+
+  default boolean advertises(int index) {
     return index >= 0 && index < mediaSegmentCount();
   }
 
-  public int mediaSegmentStartSeconds(int index) {
+  default int mediaSegmentStartSeconds(int index) {
     return index * targetSegmentDurationSeconds();
   }
 
-  public Duration mediaSegmentDuration(int index) {
-    var remainingMillis = mediaDuration.toMillis() - index * targetSegmentMillis();
-    return Duration.ofMillis(Math.min(targetSegmentMillis(), remainingMillis));
-  }
+  /**
+   * Segment {@code N} covers media time {@code [N × target, (N + 1) × target)}, and the last
+   * segment ends at the media duration, counted in whole milliseconds.
+   */
+  record PlainGrid(@NonNull Duration mediaDuration, @NonNull Duration targetSegmentDuration)
+      implements MediaSegmentTimeline {
 
-  private long targetSegmentMillis() {
-    return targetSegmentDurationSeconds() * 1000L;
+    @Override
+    public int targetSegmentDurationSeconds() {
+      return (int) targetSegmentDuration.toSeconds();
+    }
+
+    @Override
+    public int mediaSegmentCount() {
+      return Math.toIntExact(Math.ceilDiv(mediaDuration.toMillis(), targetSegmentMillis()));
+    }
+
+    @Override
+    public Duration mediaSegmentDuration(int index) {
+      var remainingMillis = mediaDuration.toMillis() - index * targetSegmentMillis();
+      return Duration.ofMillis(Math.min(targetSegmentMillis(), remainingMillis));
+    }
+
+    private long targetSegmentMillis() {
+      return targetSegmentDurationSeconds() * 1000L;
+    }
   }
 }

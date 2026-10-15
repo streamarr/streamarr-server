@@ -377,7 +377,8 @@ class RemoteRecoveryIT {
   private static TranscodeRequest initialAttempt(
       UUID streamSessionId, Path mediaFile, TranscodeMode mode) {
     var sessionTimeline =
-        new MediaSegmentTimeline(defaultProbeBuilder().build().duration(), Duration.ofSeconds(6));
+        new MediaSegmentTimeline.PlainGrid(
+            defaultProbeBuilder().build().duration(), Duration.ofSeconds(6));
     return TranscodeRequest.builder()
         .sessionId(streamSessionId)
         .sourcePath(mediaFile)

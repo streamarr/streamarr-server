@@ -98,7 +98,7 @@ public class HlsPlaylistService {
    * position and duration match real media time.
    */
   public String generateMediaPlaylist(StreamSession session, String token) {
-    var timeline = MediaSegmentTimelines.of(session.getMediaProbe(), properties);
+    var timeline = MediaSegmentTimelines.of(session, properties);
     var targetSegmentDuration = timeline.targetSegmentDurationSeconds();
     var segmentCount = timeline.mediaSegmentCount();
 

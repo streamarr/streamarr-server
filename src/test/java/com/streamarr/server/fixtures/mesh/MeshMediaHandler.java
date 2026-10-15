@@ -36,7 +36,7 @@ final class MeshMediaHandler implements HttpHandler {
 
   // The mesh fixture is the committed 10.005 s clip, advertised on a 2 s grid.
   private static final MediaSegmentTimeline FIXTURE_TIMELINE =
-      new MediaSegmentTimeline(Duration.ofMillis(10_005), Duration.ofSeconds(2));
+      new MediaSegmentTimeline.PlainGrid(Duration.ofMillis(10_005), Duration.ofSeconds(2));
 
   private final WorkerSessionServer server;
   private final MeshSegmentStore segments;

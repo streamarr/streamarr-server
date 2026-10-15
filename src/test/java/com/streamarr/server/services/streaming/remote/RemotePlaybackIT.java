@@ -67,8 +67,8 @@ class RemotePlaybackIT {
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
   // The committed 10 s clip, and the first 8 s of it that each recording holds, both span two 6 s
   // media segments.
-  private static final MediaSegmentTimeline CLIP_TIMELINE =
-      new MediaSegmentTimeline(Duration.ofSeconds(10), Duration.ofSeconds(6));
+  private static final MediaSegmentTimeline.PlainGrid CLIP_TIMELINE =
+      new MediaSegmentTimeline.PlainGrid(Duration.ofSeconds(10), Duration.ofSeconds(6));
 
   private static final String UNICODE_KEY =
       "東京 Café’s 🎬 %2F ..%2F dir/Ame\u0301lie’s 100%23 #1 한국 𝄞 (2001).mkv";
@@ -404,7 +404,8 @@ class RemotePlaybackIT {
                       .supportedAudioCodecs(List.of("aac", "mp3"))
                       .build());
       assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
-      var timeline = new MediaSegmentTimeline(mediaProbe.duration(), Duration.ofSeconds(6));
+      var timeline =
+          new MediaSegmentTimeline.PlainGrid(mediaProbe.duration(), Duration.ofSeconds(6));
 
       new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot)
           .start(

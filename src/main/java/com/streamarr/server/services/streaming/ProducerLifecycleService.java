@@ -549,7 +549,7 @@ public class ProducerLifecycleService {
   }
 
   private MediaSegmentTimeline timelineOf(StreamSession session) {
-    return MediaSegmentTimelines.of(session.getMediaProbe(), properties);
+    return MediaSegmentTimelines.of(session, properties);
   }
 
   private void doResume(UUID sessionId, String segmentName) {
