@@ -109,8 +109,11 @@ public class DirectoryWatchingService implements InitializingBean, LibraryWatchT
     fileEventProcessor.shutdown();
   }
 
+  // The event loop blocks for the watcher's lifetime. On the common fork-join pool it would hold a
+  // worker that CompletableFuture and the JDK HTTP client need to complete their futures.
   public CompletableFuture<Void> watch() {
-    return watcher.watchAsync();
+    return watcher.watchAsync(
+        eventLoop -> SystemWork.startThreadRunningAsSystemActor("file-watcher-events", eventLoop));
   }
 
   @Override

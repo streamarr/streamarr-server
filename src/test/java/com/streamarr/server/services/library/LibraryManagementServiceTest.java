@@ -76,6 +76,7 @@ import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.events.library.ItemProcessedEvent;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
+import com.streamarr.server.services.events.library.LibraryStatusChangedEvent;
 import com.streamarr.server.services.events.library.RefreshEndedEvent;
 import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
@@ -122,6 +123,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
@@ -1775,6 +1777,7 @@ class LibraryManagementServiceTest {
 
       var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
       assertThat(events).hasSize(1);
+      assertThat(events.getFirst().libraryId()).isEqualTo(savedLibraryId);
       assertThat(events.getFirst().filepathUri()).isEqualTo(expectedFilepath);
       assertThat(events.getFirst().mediaFileIds()).containsExactly(mediaFile.getId());
     }
@@ -2060,6 +2063,104 @@ class LibraryManagementServiceTest {
           .singleElement()
           .extracting(RefreshEndedEvent::libraryId)
           .isEqualTo(savedLibraryId);
+    }
+  }
+
+  @Nested
+  @DisplayName("Library Status Change Tests")
+  class LibraryStatusChangeTests {
+
+    private final StatusObservingEventPublisher statusObserver =
+        new StatusObservingEventPublisher(fakeLibraryRepository);
+    private final LibraryManagementService service =
+        serviceBuilder().eventPublisher(statusObserver).build();
+
+    @Test
+    @DisplayName("Should publish a status change after each saved status when a scan succeeds")
+    void shouldPublishStatusChangeAfterEachSavedStatusWhenScanSucceeds() throws IOException {
+      createRootLibraryDirectory();
+
+      service.scanLibrary(savedLibraryId);
+
+      assertThat(statusObserver.observedChanges())
+          .containsExactly(
+              new ObservedStatus(savedLibraryId, LibraryStatus.SCANNING),
+              new ObservedStatus(savedLibraryId, LibraryStatus.HEALTHY));
+    }
+
+    @Test
+    @DisplayName("Should publish an UNHEALTHY status change when a scan fails")
+    void shouldPublishUnhealthyStatusChangeWhenScanFails() {
+      service.scanLibrary(savedLibraryId);
+
+      assertThat(statusObserver.observedChanges())
+          .containsExactly(
+              new ObservedStatus(savedLibraryId, LibraryStatus.SCANNING),
+              new ObservedStatus(savedLibraryId, LibraryStatus.UNHEALTHY));
+    }
+
+    @Test
+    @DisplayName("Should publish REFRESHING then HEALTHY status changes when a refresh succeeds")
+    void shouldPublishRefreshingThenHealthyStatusChangesWhenRefreshSucceeds() {
+      service.refreshLibrary(savedLibraryId);
+
+      assertThat(statusObserver.observedChanges())
+          .containsExactly(
+              new ObservedStatus(savedLibraryId, LibraryStatus.REFRESHING),
+              new ObservedStatus(savedLibraryId, LibraryStatus.HEALTHY));
+    }
+
+    @Test
+    @DisplayName("Should publish an UNHEALTHY status change when a refresh fails")
+    void shouldPublishUnhealthyStatusChangeWhenRefreshFails() {
+      doThrow(new RuntimeException("simulated refresh failure"))
+          .when(libraryRefreshService)
+          .refreshLibrary(any(Library.class));
+
+      service.refreshLibrary(savedLibraryId);
+
+      assertThat(statusObserver.observedChanges())
+          .containsExactly(
+              new ObservedStatus(savedLibraryId, LibraryStatus.REFRESHING),
+              new ObservedStatus(savedLibraryId, LibraryStatus.UNHEALTHY));
+    }
+
+    @Test
+    @DisplayName("Should publish no status change when a scan is refused because one is running")
+    void shouldPublishNoStatusChangeWhenScanIsRefusedBecauseLibraryIsAlreadyScanning() {
+      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      library.setStatus(LibraryStatus.SCANNING);
+      fakeLibraryRepository.save(library);
+
+      assertThrows(LibraryScanInProgressException.class, () -> service.scanLibrary(savedLibraryId));
+
+      assertThat(statusObserver.observedChanges()).isEmpty();
+    }
+  }
+
+  private record ObservedStatus(UUID libraryId, LibraryStatus status) {}
+
+  // Reads the saved status at the moment each status change is published.
+  private static final class StatusObservingEventPublisher extends CapturingEventPublisher {
+
+    private final LibraryRepository libraries;
+    private final List<ObservedStatus> observedChanges = new CopyOnWriteArrayList<>();
+
+    private StatusObservingEventPublisher(LibraryRepository libraries) {
+      this.libraries = libraries;
+    }
+
+    @Override
+    public void publishEvent(Object event) {
+      super.publishEvent(event);
+      if (event instanceof LibraryStatusChangedEvent(var libraryId)) {
+        var status = libraries.findById(libraryId).orElseThrow().getStatus();
+        observedChanges.add(new ObservedStatus(libraryId, status));
+      }
+    }
+
+    private List<ObservedStatus> observedChanges() {
+      return observedChanges;
     }
   }
 

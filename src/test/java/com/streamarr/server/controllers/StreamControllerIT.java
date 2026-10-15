@@ -160,7 +160,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
         .andExpect(status().isOk());
 
     streamingSessionCleanupListener.onLibraryRemoved(
-        new LibraryRemovedEvent("/media", Set.of(session.getMediaFileId())));
+        new LibraryRemovedEvent(UUID.randomUUID(), "/media", Set.of(session.getMediaFileId())));
 
     mockMvc
         .perform(get("/api/stream/{id}/segment0.m4s", session.getSessionId()).param("t", token))

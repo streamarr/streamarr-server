@@ -37,6 +37,7 @@ See [Developer Setup](docs/dev-setup.adoc) for prerequisites, build instructions
 See [Architecture Overview](docs/architecture.adoc) for how the system is structured, and [Architecture Decision Records](https://github.com/streamarr/streamarr-adr) for key design rationale.
 Playback and media probing require the [standalone transcode worker](https://github.com/streamarr/streamarr-transcode-worker).
 See [Distributed Transcoding](docs/distributed-transcoding.adoc) for Docker Compose and Kubernetes deployments using the checked-in `worker-image.env` pin.
+Live library-administration changes use GraphQL subscriptions over a WebSocket on `/graphql`; a reverse proxy must pass WebSocket upgrades. See [GraphQL Subscriptions](docs/graphql-subscriptions.adoc).
 
 ## Contributing
 

@@ -200,7 +200,12 @@ class AuthorizationParityTest {
       case CREATE_HOUSEHOLD, VIEW_HOUSEHOLDS -> "householdAdministration";
       case ISSUE_ACCOUNT_INVITATION, CANCEL_ACCOUNT_INVITATION, VIEW_ACCOUNT_INVITATIONS ->
           "invitationAdministration";
-      case ADD_LIBRARY, REMOVE_LIBRARY, SCAN_LIBRARY, REFRESH_LIBRARY -> "libraryAdministration";
+      case ADD_LIBRARY,
+          REMOVE_LIBRARY,
+          SCAN_LIBRARY,
+          REFRESH_LIBRARY,
+          VIEW_LIBRARY_ADMINISTRATION ->
+          "libraryAdministration";
       case BLOCK_ESN_SERVER_WIDE, UNBLOCK_ESN_SERVER_WIDE, VIEW_SERVER_DEVICE_ADMINISTRATION ->
           "deviceAdministration";
       case VIEW_SECURITY_AUDIT -> "serverAdministration";
@@ -283,6 +288,7 @@ class AuthorizationParityTest {
         new Intent.RemoveLibrary(libraryId),
         new Intent.ScanLibrary(libraryId),
         new Intent.RefreshLibrary(libraryId),
+        new Intent.ViewLibraryAdministration(),
         new Intent.ViewProfilePicker(),
         new Intent.SelectProfile(id, false),
         new Intent.Playback(),

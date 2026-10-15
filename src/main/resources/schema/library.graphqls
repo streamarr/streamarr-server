@@ -20,6 +20,11 @@ type Library {
     alphabetIndex: [AlphabetIndex!]!
 }
 
+"The receipt for a removed library: the id of the library that no longer exists."
+type LibraryRemoval {
+    libraryId: ID!
+}
+
 enum LibraryStatus {
     SCANNING
     REFRESHING
