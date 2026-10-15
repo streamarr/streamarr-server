@@ -4,7 +4,7 @@ import static com.streamarr.server.jooq.generated.tables.ItemResult.ITEM_RESULT;
 import static com.streamarr.server.repositories.media.MediaEnumMapping.toDomain;
 import static com.streamarr.server.repositories.media.MediaEnumMapping.toJooq;
 
-import com.streamarr.server.config.ArtworkProperties;
+import com.streamarr.server.config.ArtworkRequestLockProperties;
 import com.streamarr.server.domain.media.ArtworkResultCounts;
 import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.ImageEntityType;
@@ -37,7 +37,7 @@ public class JooqItemResultRepository implements ItemResultRepository {
   private final DSLContext dsl;
   private final ItemLocks itemLocks;
   private final PostgresTransactionLocks transactionLocks;
-  private final ArtworkProperties properties;
+  private final ArtworkRequestLockProperties requestLock;
 
   @Override
   @Transactional
@@ -62,7 +62,7 @@ public class JooqItemResultRepository implements ItemResultRepository {
   @Transactional
   public boolean trySaveArtworkResults(ArtworkStepsAttempt attempt, List<ItemResult> results) {
     return transactionLocks.withLockWaitLimit(
-        properties.lockTimeout(),
+        requestLock.timeout(),
         () -> {
           if (!itemLocks.tryLockArtworkGeneration(attempt.target(), attempt.generation())) {
             return false;

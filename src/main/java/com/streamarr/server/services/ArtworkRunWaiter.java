@@ -1,6 +1,6 @@
 package com.streamarr.server.services;
 
-import com.streamarr.server.config.ArtworkProperties;
+import com.streamarr.server.config.ArtworkRunProperties;
 import com.streamarr.server.domain.media.ArtworkCompletionEvidence;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageType;
@@ -34,7 +34,7 @@ public class ArtworkRunWaiter {
   private final ArtworkRequestRepository requests;
   private final Sleeper sleeper;
   private final Clock clock;
-  private final ArtworkProperties properties;
+  private final ArtworkRunProperties properties;
 
   /**
    * Waits until each image type that the closed run awaits has a result of the awaited generation

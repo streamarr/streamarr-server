@@ -2,7 +2,7 @@ package com.streamarr.server.fixtures;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
-import com.streamarr.server.config.ArtworkProperties;
+import com.streamarr.server.config.ArtworkRunProperties;
 import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.fakes.FakeArtworkRequestRepository;
 import com.streamarr.server.fakes.FakeArtworkScheduling;
@@ -96,7 +96,7 @@ public record ArtworkFixture(
             .requests(requests)
             .sleeper(resultSleeper)
             .clock(artworkClock)
-            .properties(ArtworkProperties.builder().resultCheckInterval(CHECK_INTERVAL).build())
+            .properties(ArtworkRunProperties.builder().resultCheckInterval(CHECK_INTERVAL).build())
             .build(),
         stepsRunner,
         new ArtworkProgressReporter(requests, results, artworkClock),

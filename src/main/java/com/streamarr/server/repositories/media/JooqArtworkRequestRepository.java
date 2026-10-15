@@ -6,7 +6,7 @@ import static com.streamarr.server.jooq.generated.tables.ItemResult.ITEM_RESULT;
 import static com.streamarr.server.repositories.media.MediaEnumMapping.toDomain;
 import static com.streamarr.server.repositories.media.MediaEnumMapping.toJooq;
 
-import com.streamarr.server.config.ArtworkProperties;
+import com.streamarr.server.config.ArtworkRequestLockProperties;
 import com.streamarr.server.domain.media.ArtworkBacklog;
 import com.streamarr.server.domain.media.ArtworkCompletionEvidence;
 import com.streamarr.server.domain.media.ArtworkTarget;
@@ -59,14 +59,14 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
 
   private final DSLContext dsl;
   private final PostgresTransactionLocks transactionLocks;
-  private final ArtworkProperties properties;
+  private final ArtworkRequestLockProperties requestLock;
 
   @Override
   @Transactional(propagation = Propagation.MANDATORY)
   public SavedArtworkRequest saveRequest(
       ArtworkSources artwork, ImageRefreshMode refreshMode, Instant requestedAt) {
     return transactionLocks.withLockWaitLimit(
-        properties.lockTimeout(), () -> saveRequestUnderLock(artwork, refreshMode, requestedAt));
+        requestLock.timeout(), () -> saveRequestUnderLock(artwork, refreshMode, requestedAt));
   }
 
   private SavedArtworkRequest saveRequestUnderLock(
@@ -123,7 +123,7 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
   @Transactional(propagation = Propagation.MANDATORY)
   public Optional<Long> lockPendingGeneration(ArtworkTarget target) {
     return transactionLocks.withLockWaitLimit(
-        properties.lockTimeout(),
+        requestLock.timeout(),
         () -> {
           lockRequest(target);
           return dsl.select(ARTWORK_REQUEST.GENERATION)
@@ -138,7 +138,7 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
   @Transactional(propagation = Propagation.MANDATORY)
   public boolean tryCompleteGeneration(ArtworkTarget target, long generation) {
     return transactionLocks.withLockWaitLimit(
-        properties.lockTimeout(), () -> tryCompleteGenerationUnderLock(target, generation));
+        requestLock.timeout(), () -> tryCompleteGenerationUnderLock(target, generation));
   }
 
   private boolean tryCompleteGenerationUnderLock(ArtworkTarget target, long generation) {

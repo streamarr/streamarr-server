@@ -121,7 +121,7 @@ Each item has at most one request, with its sources and refresh mode.
 A request with changed sources or a stronger refresh mode replaces a pending one under a new generation and keeps the stronger mode; an identical request changes nothing.
 
 Movie, series, season, and episode artwork is primary artwork; person and company artwork is background artwork.
-Each priority runs on its own db-scheduler with its own table (`primary_artwork_scheduled_tasks`, `background_artwork_scheduled_tasks`) and thread cap (`artwork.primary-threads`, `artwork.background-threads`), so a backlog of background artwork never takes the threads of primary artwork, and neither takes the threads that run probes.
+Each priority runs on its own db-scheduler with its own table (`primary_artwork_scheduled_tasks`, `background_artwork_scheduled_tasks`) and thread cap (`artwork.scheduling.primary-threads`, `artwork.scheduling.background-threads`), so a backlog of background artwork never takes the threads of primary artwork, and neither takes the threads that run probes.
 Image decoding, resizing, and BlurHash encoding hold one of a bounded set of CPU permits (`cpu.permits`); a freed permit goes to primary work first.
 
 An attempt runs the steps of the request's current generation that have no final result yet, so repeating an attempt is safe.
@@ -129,7 +129,7 @@ A step saves images and records results only while its generation is still the i
 An attempt that a newer request or a deletion made obsolete saves nothing, records nothing, and deletes the files it wrote.
 The scheduled task is removed only together with the request of the attempted generation; a newer generation runs at once.
 A step left to retry waits for the longer of the image host's `Retry-After` and the capped exponential backoff.
-Saving a request, completing a scheduled task, and saving an attempt's results wait at most `artwork.lock-timeout` for the item's request lock and request row; saving images waits at most `image.replacement-lock-timeout`.
+Saving a request, completing a scheduled task, and saving an attempt's results wait at most `artwork.request-lock.timeout` for the item's request lock and request row; saving images waits at most `image.replacement-lock-timeout`.
 A step whose save times out stays pending and its task retries it; a metadata transaction whose request save times out fails.
 A restart resumes pending steps, and db-scheduler revives the execution of a crashed server as a dead execution.
 

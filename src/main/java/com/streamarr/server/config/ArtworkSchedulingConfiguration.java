@@ -32,7 +32,7 @@ public class ArtworkSchedulingConfiguration {
       ArtworkStepsRunner stepsRunner,
       ArtworkRequestRepository requests,
       Clock clock,
-      ArtworkProperties properties,
+      ArtworkSchedulingProperties properties,
       Environment environment) {
     // Each scheduler gets its own builder and settings, because building one changes its settings.
     Supplier<ArtworkScheduler.ArtworkSchedulerBuilder> newScheduler =

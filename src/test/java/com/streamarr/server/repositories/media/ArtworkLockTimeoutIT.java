@@ -38,7 +38,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Artwork Lock Timeout Integration Tests")
-@SpringBootTest(properties = {"image.replacement-lock-timeout=200ms", "artwork.lock-timeout=200ms"})
+@SpringBootTest(
+    properties = {"image.replacement-lock-timeout=200ms", "artwork.request-lock.timeout=200ms"})
 class ArtworkLockTimeoutIT extends AbstractIntegrationTest {
 
   private static final Instant REQUESTED_AT = Instant.parse("2026-10-14T10:00:00Z");

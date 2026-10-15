@@ -54,4 +54,5 @@ probe:
 # Scans and refreshes that wait for primary artwork check its recorded results often, so tests
 # finish soon after a result.
 artwork:
-  result-check-interval: 50ms
+  runs:
+    result-check-interval: 50ms
