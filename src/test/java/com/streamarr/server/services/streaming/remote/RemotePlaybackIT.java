@@ -392,13 +392,18 @@ class RemotePlaybackIT {
           };
       assertThat(mediaProbe.audioCodec()).isEqualTo("mp3");
       var decision =
-          new TranscodeDecisionService()
+          new TranscodeDecisionService(
+                  StreamingProperties.builder()
+                      .targetSegmentDuration(Duration.ofSeconds(6))
+                      .build(),
+                  new SimpleMeterRegistry())
               .decide(
                   mediaProbe,
                   StreamingOptions.builder()
                       .supportedCodecs(List.of("h264"))
                       .supportedAudioCodecs(List.of("aac", "mp3"))
                       .build());
+      assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
       var timeline = new MediaSegmentTimeline(mediaProbe.duration(), Duration.ofSeconds(6));
 
       new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot)

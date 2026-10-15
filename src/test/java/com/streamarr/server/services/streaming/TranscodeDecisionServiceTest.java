@@ -2,32 +2,252 @@ package com.streamarr.server.services.streaming;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
+import com.streamarr.server.domain.streaming.KeyframePosition;
+import com.streamarr.server.domain.streaming.KeyframePositionSource;
+import com.streamarr.server.domain.streaming.KeyframePositions;
+import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
+import com.streamarr.server.fixtures.ProbeFixture;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Transcode Decision Service Tests")
 class TranscodeDecisionServiceTest {
 
-  private final TranscodeDecisionService service = new TranscodeDecisionService();
+  private static final KeyframeKnowledge KEYFRAMES_EVERY_TWO_SECONDS =
+      ProbeFixture.keyframesEvery(Duration.ofSeconds(2), Duration.ofMinutes(120));
+
+  // At the 6 s period, keyframes 10.01 s apart leave the interval [12 s, 18 s) without one.
+  private static final KeyframeKnowledge KEYFRAMES_LEAVING_AN_INTERVAL_EMPTY =
+      ProbeFixture.keyframesEvery(Duration.ofMillis(10_010), Duration.ofMinutes(120));
+
+  private static final String STREAM_COPY_REFUSALS = "streamarr.streaming.stream_copy_refusals";
+
+  private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+
+  private final TranscodeDecisionService service =
+      new TranscodeDecisionService(
+          StreamingProperties.builder().targetSegmentDuration(Duration.ofSeconds(6)).build(),
+          meterRegistry);
+
+  @ParameterizedTest(name = "{1}")
+  @MethodSource("keyframesThatRuleOutAStreamCopy")
+  @DisplayName("Should count a refused stream copy by why the keyframes rule it out")
+  void shouldCountARefusedStreamCopyByWhyTheKeyframesRuleItOut(
+      KeyframeKnowledge keyframes, String reason) {
+    var source =
+        probeBuilder("h264", "aac").duration(Duration.ofSeconds(20)).keyframes(keyframes).build();
+
+    service.decide(source, options(List.of("h264")));
+
+    assertThat(meterRegistry.get(STREAM_COPY_REFUSALS).counters())
+        .singleElement()
+        .satisfies(
+            counter -> {
+              assertThat(counter.getId().getTag("reason")).isEqualTo(reason);
+              assertThat(counter.count()).isEqualTo(1.0);
+            });
+  }
+
+  // Each source lasts 20 s, so the playlist advertises segments at 0, 6, 12 and 18 s.
+  static Stream<Arguments> keyframesThatRuleOutAStreamCopy() {
+    return Stream.of(
+        Arguments.of(new KeyframeKnowledge.NotReported(), "keyframes_not_reported"),
+        Arguments.of(
+            new KeyframeKnowledge.PacketScanRequired(KeyframePacketScanReason.NO_CONTAINER_INDEX),
+            "packet_scan_required"),
+        Arguments.of(
+            new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.NO_KEYFRAMES),
+            "keyframes_unavailable"),
+        Arguments.of(millisecondKeyframes(0, 13_000, 18_000), "interval_without_keyframe"),
+        Arguments.of(millisecondKeyframes(0, 6_000, 12_000), "interval_without_keyframe"),
+        Arguments.of(
+            millisecondKeyframes(0, 7_000, 6_500, 12_000, 18_000), "presentation_time_regressed"),
+        Arguments.of(
+            new KeyframeKnowledge.Known(
+                KeyframePositions.builder()
+                    .streamIndex(0)
+                    .timeBaseNumerator(1001)
+                    .timeBaseDenominator(24_000)
+                    .source(KeyframePositionSource.PACKET_SCAN)
+                    .keyframes(List.of(new KeyframePosition(Long.MAX_VALUE / 1000, 0)))
+                    .build()),
+            "presentation_time_out_of_range"));
+  }
+
+  @Test
+  @DisplayName("Should count no refusal when the keyframes allow a stream copy")
+  void shouldCountNoRefusalWhenTheKeyframesAllowAStreamCopy() {
+    var source =
+        probeBuilder("h264", "aac")
+            .duration(Duration.ofSeconds(20))
+            .keyframes(millisecondKeyframes(0, 6_000, 12_000, 18_000))
+            .build();
+
+    var decision = service.decide(source, options(List.of("h264")));
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(meterRegistry.find(STREAM_COPY_REFUSALS).counters()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should count no refusal when the client cannot play the source's video codec")
+  void shouldCountNoRefusalWhenTheClientCannotPlayTheSourcesVideoCodec() {
+    var source = h264Probe(new KeyframeKnowledge.NotReported(), "aac");
+
+    var decision = service.decide(source, options(List.of("av1")));
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(meterRegistry.find(STREAM_COPY_REFUSALS).counters()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should encode the video when a segment interval of the source holds no keyframe")
+  void shouldEncodeTheVideoWhenASegmentIntervalOfTheSourceHoldsNoKeyframe() {
+    var source = h264Probe(KEYFRAMES_LEAVING_AN_INTERVAL_EMPTY, "aac");
+
+    var decision = service.decide(source, options(List.of("h264")));
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode both streams when the audio needs encoding and an interval holds no keyframe")
+  void shouldEncodeBothStreamsWhenTheAudioNeedsEncodingAndAnIntervalHoldsNoKeyframe() {
+    var source = h264Probe(KEYFRAMES_LEAVING_AN_INTERVAL_EMPTY, "flac");
+
+    var decision = service.decide(source, options(List.of("h264")));
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.FULL_TRANSCODE);
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode with the preferred codec when the source's keyframes rule out a stream copy")
+  void shouldEncodeWithThePreferredCodecWhenTheSourcesKeyframesRuleOutAStreamCopy() {
+    var source = h264Probe(KEYFRAMES_LEAVING_AN_INTERVAL_EMPTY, "aac");
+
+    var decision = service.decide(source, options(List.of("av1", "h264")));
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(decision.videoCodecFamily()).isEqualTo("av1");
+  }
+
+  @Test
+  @DisplayName("Should encode the video when no keyframe opens the final partial segment")
+  void shouldEncodeTheVideoWhenNoKeyframeOpensTheFinalPartialSegment() {
+    // 18.5 s at the 6 s period advertises a fourth segment, [18 s, 18.5 s), that holds no keyframe.
+    var source =
+        probeBuilder("h264", "aac")
+            .duration(Duration.ofMillis(18_500))
+            .keyframes(ProbeFixture.keyframesEvery(Duration.ofSeconds(6), Duration.ofSeconds(12)))
+            .build();
+
+    var decision = service.decide(source, options(List.of("h264")));
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+  }
+
+  @Test
+  @DisplayName("Should copy the video when a keyframe opens the final partial segment")
+  void shouldCopyTheVideoWhenAKeyframeOpensTheFinalPartialSegment() {
+    var source =
+        probeBuilder("h264", "aac")
+            .duration(Duration.ofMillis(18_500))
+            .keyframes(ProbeFixture.keyframesEvery(Duration.ofSeconds(6), Duration.ofSeconds(18)))
+            .build();
+
+    var decision = service.decide(source, options(List.of("h264")));
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+  }
+
+  @ParameterizedTest
+  @MethodSource("keyframesThatAreNotKnown")
+  @DisplayName("Should encode the video when the source's keyframe positions are not known")
+  void shouldEncodeTheVideoWhenTheSourcesKeyframePositionsAreNotKnown(KeyframeKnowledge keyframes) {
+    var source = h264Probe(keyframes, "aac");
+
+    var decision = service.decide(source, options(List.of("h264")));
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+  }
+
+  static Stream<KeyframeKnowledge> keyframesThatAreNotKnown() {
+    return ProbeFixture.keyframesThatAreNotKnown();
+  }
+
+  @Test
+  @DisplayName("Should copy the video when every segment interval holds a keyframe")
+  void shouldCopyTheVideoWhenEverySegmentIntervalHoldsAKeyframe() {
+    var source =
+        h264Probe(
+            ProbeFixture.keyframesEvery(Duration.ofMillis(5_005), Duration.ofMinutes(120)), "aac");
+
+    var decision = service.decide(source, options(List.of("h264")));
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+  }
+
+  // Positions in a millisecond time base, in decode order, each decoded 1 ms after the one before.
+  private static KeyframeKnowledge millisecondKeyframes(long... presentationTimes) {
+    var keyframes = new ArrayList<KeyframePosition>();
+    for (var index = 0; index < presentationTimes.length; index++) {
+      keyframes.add(new KeyframePosition(presentationTimes[index], index));
+    }
+
+    return new KeyframeKnowledge.Known(
+        KeyframePositions.builder()
+            .streamIndex(0)
+            .timeBaseNumerator(1)
+            .timeBaseDenominator(1_000)
+            .source(KeyframePositionSource.PACKET_SCAN)
+            .keyframes(keyframes)
+            .build());
+  }
+
+  private MediaProbe h264Probe(KeyframeKnowledge keyframes, String audioCodec) {
+    return probeBuilder("h264", audioCodec).keyframes(keyframes).build();
+  }
 
   private MediaProbe probe(String videoCodec, String audioCodec) {
-    return probe(videoCodec, audioCodec, 2, 128_000L);
+    return probeBuilder(videoCodec, audioCodec).build();
   }
 
   private MediaProbe probe(
       String videoCodec, String audioCodec, int audioChannels, long audioBitrate) {
+    return probeBuilder(videoCodec, audioCodec)
+        .audioChannels(OptionalInt.of(audioChannels))
+        .audioBitrate(OptionalLong.of(audioBitrate))
+        .build();
+  }
+
+  private MediaProbe.MediaProbeBuilder probeBuilder(String videoCodec, String audioCodec) {
     return MediaProbe.builder()
+        .keyframes(KEYFRAMES_EVERY_TWO_SECONDS)
         .duration(Duration.ofMinutes(120))
         .framerate(OptionalDouble.of(23.976))
         .width(1920)
@@ -35,9 +255,8 @@ class TranscodeDecisionServiceTest {
         .videoCodec(videoCodec)
         .audioCodec(audioCodec)
         .bitrate(5_000_000L)
-        .audioChannels(OptionalInt.of(audioChannels))
-        .audioBitrate(OptionalLong.of(audioBitrate))
-        .build();
+        .audioChannels(OptionalInt.of(2))
+        .audioBitrate(OptionalLong.of(128_000L));
   }
 
   private StreamingOptions options(List<String> supportedCodecs) {
@@ -155,6 +374,7 @@ class TranscodeDecisionServiceTest {
   void shouldDecideAudioModeNoneWhenSourceHasNoAudioStream() {
     var source =
         MediaProbe.builder()
+            .keyframes(KEYFRAMES_EVERY_TWO_SECONDS)
             .duration(Duration.ofMinutes(120))
             .framerate(OptionalDouble.of(23.976))
             .width(1920)
@@ -367,6 +587,7 @@ class TranscodeDecisionServiceTest {
   void shouldDefaultToStereoWhenSourceAudioChannelsAreEmpty() {
     var source =
         MediaProbe.builder()
+            .keyframes(KEYFRAMES_EVERY_TWO_SECONDS)
             .duration(Duration.ofMinutes(120))
             .framerate(OptionalDouble.of(23.976))
             .width(1920)

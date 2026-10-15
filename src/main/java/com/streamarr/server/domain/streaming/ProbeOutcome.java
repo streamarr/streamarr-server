@@ -42,6 +42,7 @@ public sealed interface ProbeOutcome {
           .audioChannels(audio.map(StreamInfo::channels).orElse(OptionalInt.empty()))
           .audioBitrate(audio.map(StreamInfo::bitrate).orElse(OptionalLong.empty()))
           .streams(streams)
+          .keyframes(keyframes)
           .build();
     }
   }

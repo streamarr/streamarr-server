@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.within;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.QualityVariant;
@@ -62,6 +63,7 @@ class HlsPlaylistServiceTest {
             .sourcePath(Path.of("/media/test.mkv"))
             .mediaProbe(
                 MediaProbe.builder()
+                    .keyframes(new KeyframeKnowledge.NotReported())
                     .duration(duration)
                     .framerate(OptionalDouble.of(23.976))
                     .width(1920)
@@ -93,6 +95,7 @@ class HlsPlaylistServiceTest {
             .sourcePath(Path.of("/media/test.mkv"))
             .mediaProbe(
                 MediaProbe.builder()
+                    .keyframes(new KeyframeKnowledge.NotReported())
                     .duration(Duration.ofSeconds(120))
                     .framerate(OptionalDouble.of(23.976))
                     .width(1920)
@@ -148,6 +151,7 @@ class HlsPlaylistServiceTest {
             .sourcePath(Path.of("/media/test.mkv"))
             .mediaProbe(
                 MediaProbe.builder()
+                    .keyframes(new KeyframeKnowledge.NotReported())
                     .duration(Duration.ofSeconds(durationSeconds))
                     .framerate(OptionalDouble.of(23.976))
                     .width(1920)
@@ -527,6 +531,7 @@ class HlsPlaylistServiceTest {
               .sourcePath(Path.of("/media/test.mkv"))
               .mediaProbe(
                   MediaProbe.builder()
+                      .keyframes(new KeyframeKnowledge.NotReported())
                       .duration(Duration.ofSeconds(120))
                       .framerate(OptionalDouble.of(23.976))
                       .width(1920)

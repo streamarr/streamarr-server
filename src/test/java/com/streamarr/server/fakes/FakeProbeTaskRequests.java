@@ -1,6 +1,7 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.task.ProbeAttemptFailure;
 import com.streamarr.server.domain.task.ProbePublication;
@@ -87,6 +88,7 @@ public class FakeProbeTaskRequests implements ProbeTaskRequests {
             .outcome(
                 ProbeFixture.completeProbe(
                     MediaProbe.builder()
+                        .keyframes(new KeyframeKnowledge.NotReported())
                         .duration(Duration.ofMinutes(90))
                         .videoCodec("h264")
                         .width(1920)

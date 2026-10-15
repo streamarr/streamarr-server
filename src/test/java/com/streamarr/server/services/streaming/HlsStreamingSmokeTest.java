@@ -29,6 +29,7 @@ import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.support.OutcomeTestSupport;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -109,7 +110,6 @@ class HlsStreamingSmokeTest {
     probeRepository.setDefaultOutcome(completeProbe);
     var probeReader = new PersistedProbeReader(probeRepository);
 
-    var decisionService = new TranscodeDecisionService();
     var qualityLadderService = new QualityLadderService();
     var properties =
         StreamingProperties.builder()
@@ -117,6 +117,7 @@ class HlsStreamingSmokeTest {
             .targetSegmentDuration(Duration.ofSeconds(6))
             .sessionTimeout(Duration.ofSeconds(60))
             .build();
+    var decisionService = new TranscodeDecisionService(properties, new SimpleMeterRegistry());
 
     mediaFileRepository = new FakeMediaFileRepository();
     var sessionRegistry = new InMemoryStreamSessionRegistry();

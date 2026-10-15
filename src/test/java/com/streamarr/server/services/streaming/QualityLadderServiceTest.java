@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import java.time.Duration;
@@ -152,6 +153,7 @@ class QualityLadderServiceTest {
 
   private MediaProbe buildProbe(int width, int height, long bitrate) {
     return MediaProbe.builder()
+        .keyframes(new KeyframeKnowledge.NotReported())
         .duration(Duration.ofMinutes(120))
         .framerate(OptionalDouble.of(24.0))
         .width(width)

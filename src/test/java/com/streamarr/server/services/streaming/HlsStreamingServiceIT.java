@@ -23,6 +23,7 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
@@ -30,6 +31,7 @@ import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.PersistedProbeFixture;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.library.MediaProbeTask;
@@ -61,6 +63,7 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
 
   @Autowired private StreamingService streamingService;
   @Autowired private ProbeTaskRequests probeTaskRequests;
+  @Autowired private MediaFileContainerInfoRepository probeResults;
   @Autowired private HlsPlaylistService playlistService;
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private LibraryRepository libraryRepository;
@@ -245,12 +248,15 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   }
 
   private void storeOutcome(ProbeOutcome.Success outcome) {
-    var row =
-        PersistedProbeFixture.storedProbeBuilder(savedMediaFile.getId(), outcome)
-            .snapshot(sourceSnapshot)
-            .build();
-    new TransactionTemplate(transactionManager)
-        .executeWithoutResult(_ -> PersistedProbeFixture.storeProbe(entityManager, row));
+    assertThat(
+            probeResults.publish(
+                ProbePublication.builder()
+                    .mediaFileId(savedMediaFile.getId())
+                    .snapshot(sourceSnapshot)
+                    .probeVersion(ProbeVersion.CURRENT)
+                    .outcome(outcome)
+                    .build()))
+        .isTrue();
   }
 
   private Optional<ProbeTaskRequest> scheduledRequest() {

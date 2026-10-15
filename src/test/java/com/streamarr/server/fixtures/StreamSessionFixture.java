@@ -1,6 +1,7 @@
 package com.streamarr.server.fixtures;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.domain.streaming.QualityVariant;
@@ -22,6 +23,12 @@ import java.util.OptionalDouble;
 import java.util.UUID;
 
 public final class StreamSessionFixture {
+
+  private static final Duration DEFAULT_MEDIA_DURATION = Duration.ofMinutes(120);
+
+  // Keyframes every 2 s place one in every interval of any whole-second period of 2 s or more.
+  private static final KeyframeKnowledge DEFAULT_KEYFRAMES =
+      ProbeFixture.keyframesEvery(Duration.ofSeconds(2), DEFAULT_MEDIA_DURATION);
 
   private StreamSessionFixture() {}
 
@@ -57,7 +64,8 @@ public final class StreamSessionFixture {
 
   public static MediaProbe.MediaProbeBuilder defaultProbeBuilder() {
     return MediaProbe.builder()
-        .duration(Duration.ofMinutes(120))
+        .duration(DEFAULT_MEDIA_DURATION)
+        .keyframes(DEFAULT_KEYFRAMES)
         .framerate(OptionalDouble.of(24.0))
         .width(1920)
         .height(1080)
