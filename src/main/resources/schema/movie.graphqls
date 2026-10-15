@@ -22,6 +22,14 @@ type Movie implements BaseCollectable {
     images(type: ImageType): [Image]!
     watchProgress: WatchProgress
     watchStatus: WatchStatus!
+    """
+    When the selected Profile last watched this movie, as an ISO-8601 instant. It is the later of
+    the latest completion or manual mark that has not been dismissed and the latest session
+    progress with a position. Progress older than that completion does not count. The
+    LAST_WATCHED sort orders movies by this value. Null when the Profile has not watched this
+    movie.
+    """
+    lastWatchedAt: String
 }
 
 type ContentRating {

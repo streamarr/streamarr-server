@@ -153,6 +153,12 @@ public class WatchStatusService {
     return result;
   }
 
+  /** Returns the last-watched time of each given item that the Profile has watched. */
+  public Map<UUID, Instant> getLastWatchedAtForItems(
+      UUID profileId, CollectableScope scope, Collection<UUID> itemIds) {
+    return watchHistoryRepository.findLastWatchedByItemIds(profileId, scope, itemIds);
+  }
+
   public Map<UUID, WatchStatus> getWatchStatusForSeasons(
       UUID profileId, Collection<UUID> seasonIds) {
     return aggregateStatusByGroup(

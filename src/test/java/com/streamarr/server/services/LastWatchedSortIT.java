@@ -4,6 +4,7 @@ import static com.streamarr.server.fixtures.PaginationFixture.buildForwardContin
 import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
 import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.entry;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.BaseCollectable;
@@ -14,6 +15,7 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.domain.streaming.WatchHistory;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
@@ -27,6 +29,7 @@ import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.watchprogress.WatchStatusService;
 import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
@@ -50,6 +53,7 @@ class LastWatchedSortIT extends AbstractIntegrationTest {
   private static final Instant BASELINE = Instant.parse("2026-04-01T00:00:00Z");
 
   @Autowired private MovieService movieService;
+  @Autowired private WatchStatusService watchStatusService;
   @Autowired private SeriesService seriesService;
   @Autowired private MovieRepository movieRepository;
   @Autowired private SeriesRepository seriesRepository;
@@ -172,6 +176,70 @@ class LastWatchedSortIT extends AbstractIntegrationTest {
     assertThat(page.items())
         .extracting(item -> item.item().getTitle())
         .containsExactly("Finished", "Paused");
+  }
+
+  @Test
+  @DisplayName("Should give each movie one last-watched time in the sort cursor and in the field")
+  void shouldGiveEachMovieOneLastWatchedTimeInTheSortCursorAndInTheField() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var rewatched = createMovie(library, "Rewatched");
+    var finished = createMovie(library, "Finished");
+    var unwatched = createMovie(library, "Unwatched");
+    saveCompletion(rewatched, minute(1));
+    saveProgress(rewatched, 600, minute(3));
+    saveProgress(finished, 600, minute(1));
+    saveCompletion(finished, minute(2));
+
+    var page =
+        movieService.getMoviesWithFilter(buildForwardOptions(20, lastWatchedFilter(library)));
+    var fieldValues =
+        watchStatusService.getLastWatchedAtForItems(
+            profileId,
+            CollectableScope.DIRECT_MEDIA,
+            List.of(rewatched.getId(), finished.getId(), unwatched.getId()));
+
+    assertThat(page.items())
+        .allSatisfy(
+            item -> assertThat(item.sortValue()).isEqualTo(fieldValues.get(item.item().getId())));
+    assertThat(fieldValues)
+        .containsOnly(entry(rewatched.getId(), minute(3)), entry(finished.getId(), minute(2)));
+  }
+
+  @Test
+  @DisplayName("Should give each series one last-watched time in the sort cursor and in the field")
+  void shouldGiveEachSeriesOneLastWatchedTimeInTheSortCursorAndInTheField() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+    var finished = createEpisodeOfNewSeries(library, "Finished");
+    var paused = createEpisodeOfNewSeries(library, "Paused");
+    saveCompletion(finished, minute(4));
+    saveProgress(paused, 600, minute(2));
+
+    var page =
+        seriesService.getSeriesWithFilter(buildForwardOptions(20, lastWatchedFilter(library)));
+    var seriesIds = page.items().stream().map(item -> item.item().getId()).toList();
+    var fieldValues =
+        watchStatusService.getLastWatchedAtForItems(profileId, CollectableScope.SERIES, seriesIds);
+
+    assertThat(page.items())
+        .allSatisfy(
+            item -> assertThat(item.sortValue()).isEqualTo(fieldValues.get(item.item().getId())));
+    assertThat(fieldValues.values()).containsExactlyInAnyOrder(minute(4), minute(2));
+  }
+
+  @Test
+  @DisplayName("Should give a season the latest last-watched time among its episodes")
+  void shouldGiveASeasonTheLatestLastWatchedTimeAmongItsEpisodes() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+    var episode = createEpisodeOfNewSeries(library, "Season Series");
+    saveProgress(episode, 600, minute(2));
+    saveCompletion(episode, minute(5));
+    var seasonId = episode.getSeason().getId();
+
+    var fieldValues =
+        watchStatusService.getLastWatchedAtForItems(
+            profileId, CollectableScope.SEASON, List.of(seasonId));
+
+    assertThat(fieldValues).containsOnly(entry(seasonId, minute(5)));
   }
 
   private List<UUID> movieIdsByLastWatched(Library library) {

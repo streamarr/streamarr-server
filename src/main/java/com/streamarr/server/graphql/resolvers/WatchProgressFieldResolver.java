@@ -8,11 +8,13 @@ import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.domain.streaming.WatchStatus;
+import com.streamarr.server.graphql.dataloaders.LastWatchedAtLoaderKey;
 import com.streamarr.server.graphql.dataloaders.WatchProgressLoaderKey;
 import com.streamarr.server.graphql.dataloaders.WatchStatusLoaderKey;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.watchprogress.WatchProgressDto;
 import graphql.schema.DataFetchingEnvironment;
+import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +26,7 @@ public class WatchProgressFieldResolver {
 
   private static final String WATCH_PROGRESS_LOADER = "watchProgress";
   private static final String WATCH_STATUS_LOADER = "watchStatus";
+  private static final String LAST_WATCHED_AT_LOADER = "lastWatchedAt";
 
   private final AuthorizationService authorizationService;
 
@@ -75,6 +78,24 @@ public class WatchProgressFieldResolver {
     return loadWatchStatus(dfe, series.getId(), CollectableScope.SERIES);
   }
 
+  @DgsData(parentType = "Movie", field = "lastWatchedAt")
+  public CompletableFuture<String> movieLastWatchedAt(DataFetchingEnvironment dfe) {
+    Movie movie = dfe.getSource();
+    return loadLastWatchedAt(dfe, movie.getId(), CollectableScope.DIRECT_MEDIA);
+  }
+
+  @DgsData(parentType = "Episode", field = "lastWatchedAt")
+  public CompletableFuture<String> episodeLastWatchedAt(DataFetchingEnvironment dfe) {
+    Episode episode = dfe.getSource();
+    return loadLastWatchedAt(dfe, episode.getId(), CollectableScope.DIRECT_MEDIA);
+  }
+
+  @DgsData(parentType = "Series", field = "lastWatchedAt")
+  public CompletableFuture<String> seriesLastWatchedAt(DataFetchingEnvironment dfe) {
+    Series series = dfe.getSource();
+    return loadLastWatchedAt(dfe, series.getId(), CollectableScope.SERIES);
+  }
+
   private CompletableFuture<WatchProgressDto> loadProgress(
       DataFetchingEnvironment dfe, UUID entityId, CollectableScope scope) {
     DataLoader<WatchProgressLoaderKey, WatchProgressDto> loader =
@@ -88,5 +109,13 @@ public class WatchProgressFieldResolver {
     DataLoader<WatchStatusLoaderKey, WatchStatus> loader = dfe.getDataLoader(WATCH_STATUS_LOADER);
     return loader.load(
         new WatchStatusLoaderKey(authorizationService.requireProfile(), entityId, scope));
+  }
+
+  private CompletableFuture<String> loadLastWatchedAt(
+      DataFetchingEnvironment dfe, UUID entityId, CollectableScope scope) {
+    DataLoader<LastWatchedAtLoaderKey, Instant> loader = dfe.getDataLoader(LAST_WATCHED_AT_LOADER);
+    return loader
+        .load(new LastWatchedAtLoaderKey(authorizationService.requireProfile(), entityId, scope))
+        .thenApply(lastWatchedAt -> lastWatchedAt == null ? null : lastWatchedAt.toString());
   }
 }
