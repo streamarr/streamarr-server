@@ -199,6 +199,7 @@ class LastWatchedSortIT extends AbstractIntegrationTest {
             List.of(rewatched.getId(), finished.getId(), unwatched.getId()));
 
     assertThat(page.items())
+        .hasSize(3)
         .allSatisfy(
             item -> assertThat(item.sortValue()).isEqualTo(fieldValues.get(item.item().getId())));
     assertThat(fieldValues)

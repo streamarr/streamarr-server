@@ -294,7 +294,7 @@ class WatchStateParityIT extends AbstractIntegrationTest {
     var expected =
         ids.stream()
             .sorted(
-                Comparator.comparing((UUID id) -> lastWatchedAt.get(id))
+                Comparator.<UUID, Instant>comparing(lastWatchedAt::get)
                     .thenComparing(UUID::toString)
                     .reversed())
             .toList();
