@@ -9,6 +9,7 @@ import static org.jooq.impl.DSL.when;
 import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.jooq.generated.Tables;
+import com.streamarr.server.repositories.LibraryOperationRepository;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.events.library.ItemProcessedEvent;
@@ -31,17 +32,17 @@ public class LibraryMetadataListener {
 
   private final DSLContext context;
   private final TransactionTemplate transactionTemplate;
-  private final ActiveScanChecker activeScanChecker;
+  private final LibraryOperationRepository libraryOperations;
   private final MutexFactory<String> mutexFactory;
 
   public LibraryMetadataListener(
       DSLContext context,
       TransactionTemplate transactionTemplate,
-      ActiveScanChecker activeScanChecker,
+      LibraryOperationRepository libraryOperations,
       MutexFactoryProvider mutexFactoryProvider) {
     this.context = context;
     this.transactionTemplate = transactionTemplate;
-    this.activeScanChecker = activeScanChecker;
+    this.libraryOperations = libraryOperations;
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
 
@@ -54,9 +55,10 @@ public class LibraryMetadataListener {
     }
   }
 
+  // A running scan or refresh recalculates the letter index when it finishes.
   @EventListener
   public void onItemProcessed(ItemProcessedEvent event) {
-    if (activeScanChecker.isActivelyScanning(event.libraryId())) {
+    if (libraryOperations.existsLibraryOperationForLibrary(event.libraryId())) {
       return;
     }
 

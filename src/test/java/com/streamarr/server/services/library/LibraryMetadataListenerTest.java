@@ -4,6 +4,9 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
+import com.streamarr.server.fakes.FakeLibraryOperationRepository;
+import com.streamarr.server.fakes.FakeLibraryRepository;
+import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.events.library.ItemProcessedEvent;
 import com.streamarr.server.services.events.library.ScanCompletedEvent;
@@ -22,11 +25,15 @@ import org.springframework.transaction.support.TransactionTemplate;
 class LibraryMetadataListenerTest {
 
   private final MutexFactoryProvider mutexFactoryProvider = new MutexFactoryProvider();
-  private final UUID libraryId = UUID.randomUUID();
+  private final FakeLibraryRepository libraries = new FakeLibraryRepository();
+  private final FakeLibraryOperationRepository libraryOperations =
+      new FakeLibraryOperationRepository(libraries);
+  private final UUID libraryId = libraries.save(LibraryFixtureCreator.buildFakeLibrary()).getId();
 
   @Test
-  @DisplayName("Should skip recalculation when item processed during active scan")
-  void shouldSkipRecalculationWhenItemProcessedDuringActiveScan() {
+  @DisplayName("Should skip recalculation when an item is processed while a library operation runs")
+  void shouldSkipRecalculationWhenAnItemIsProcessedWhileALibraryOperationRuns() {
+    libraryOperations.storeLibraryOperation(NewLibraryOperation.scan(libraryId));
     var tripwireContext =
         mock(
             DSLContext.class,
@@ -36,15 +43,16 @@ class LibraryMetadataListenerTest {
 
     var listener =
         new LibraryMetadataListener(
-            tripwireContext, noOpTransactionTemplate(), _ -> true, mutexFactoryProvider);
+            tripwireContext, noOpTransactionTemplate(), libraryOperations, mutexFactoryProvider);
 
     assertThatNoException()
         .isThrownBy(() -> listener.onItemProcessed(new ItemProcessedEvent(libraryId)));
   }
 
   @Test
-  @DisplayName("Should recalculate when scan completed during active scan")
-  void shouldRecalculateWhenScanCompletedDuringActiveScan() {
+  @DisplayName("Should recalculate when a scan completes while its library operation runs")
+  void shouldRecalculateWhenAScanCompletesWhileItsLibraryOperationRuns() {
+    libraryOperations.storeLibraryOperation(NewLibraryOperation.scan(libraryId));
     var tripwireContext =
         mock(
             DSLContext.class,
@@ -54,7 +62,7 @@ class LibraryMetadataListenerTest {
 
     var listener =
         new LibraryMetadataListener(
-            tripwireContext, noOpTransactionTemplate(), _ -> true, mutexFactoryProvider);
+            tripwireContext, noOpTransactionTemplate(), libraryOperations, mutexFactoryProvider);
 
     var event = new ScanCompletedEvent(libraryId);
 
@@ -75,7 +83,7 @@ class LibraryMetadataListenerTest {
 
     var listener =
         new LibraryMetadataListener(
-            failingContext, noOpTransactionTemplate(), _ -> false, mutexFactoryProvider);
+            failingContext, noOpTransactionTemplate(), libraryOperations, mutexFactoryProvider);
 
     assertThatNoException()
         .isThrownBy(() -> listener.onScanCompleted(new ScanCompletedEvent(libraryId)));
@@ -93,7 +101,7 @@ class LibraryMetadataListenerTest {
 
     var listener =
         new LibraryMetadataListener(
-            failingContext, noOpTransactionTemplate(), _ -> false, mutexFactoryProvider);
+            failingContext, noOpTransactionTemplate(), libraryOperations, mutexFactoryProvider);
 
     assertThatNoException()
         .isThrownBy(() -> listener.onItemProcessed(new ItemProcessedEvent(libraryId)));

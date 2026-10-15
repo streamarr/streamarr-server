@@ -30,30 +30,27 @@ class LibraryAddedListenersIT extends AbstractIntegrationTest {
 
   @AfterEach
   void clearTriggers() {
-    triggers.scans.clear();
     triggers.watches.clear();
   }
 
   @Test
-  @DisplayName("Should start scanning and watching when the adding transaction commits")
-  void shouldStartScanningAndWatchingWhenAddingTransactionCommits() {
+  @DisplayName("Should start watching when the adding transaction commits")
+  void shouldStartWatchingWhenAddingTransactionCommits() {
     var event = new LibraryAddedEvent(UUID.randomUUID(), "file:///movies");
 
     new TransactionTemplate(transactionManager)
         .executeWithoutResult(
             _ -> {
               eventPublisher.publishEvent(event);
-              assertThat(triggers.scans).isEmpty();
               assertThat(triggers.watches).isEmpty();
             });
 
-    assertThat(triggers.scans).containsExactly(event.libraryId());
     assertThat(triggers.watches).containsExactly(event.filepathUri());
   }
 
   @Test
-  @DisplayName("Should not start scanning or watching when the adding transaction rolls back")
-  void shouldNotStartScanningOrWatchingWhenAddingTransactionRollsBack() {
+  @DisplayName("Should not start watching when the adding transaction rolls back")
+  void shouldNotStartWatchingWhenAddingTransactionRollsBack() {
     var event = new LibraryAddedEvent(UUID.randomUUID(), "file:///movies");
 
     new TransactionTemplate(transactionManager)
@@ -63,7 +60,6 @@ class LibraryAddedListenersIT extends AbstractIntegrationTest {
               status.setRollbackOnly();
             });
 
-    assertThat(triggers.scans).isEmpty();
     assertThat(triggers.watches).isEmpty();
   }
 
@@ -77,15 +73,9 @@ class LibraryAddedListenersIT extends AbstractIntegrationTest {
     }
   }
 
-  static class CapturingLibraryTriggers implements LibraryScanTrigger, LibraryWatchTrigger {
+  static class CapturingLibraryTriggers implements LibraryWatchTrigger {
 
-    final CopyOnWriteArrayList<UUID> scans = new CopyOnWriteArrayList<>();
     final CopyOnWriteArrayList<String> watches = new CopyOnWriteArrayList<>();
-
-    @Override
-    public void triggerAsyncScan(UUID libraryId) {
-      scans.add(libraryId);
-    }
 
     @Override
     public void triggerAsyncWatch(String filepathUri) {

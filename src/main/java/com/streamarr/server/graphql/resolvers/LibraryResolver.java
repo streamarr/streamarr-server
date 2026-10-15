@@ -12,6 +12,9 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.exceptions.InvalidIdException;
+import com.streamarr.server.exceptions.LibraryNotFoundException;
+import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
+import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.CursorValidator;
@@ -29,6 +32,7 @@ import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.library.LibraryAdministrationService;
 import com.streamarr.server.services.library.LibraryManagementService;
+import com.streamarr.server.services.library.LibraryOperationRejection;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptionsResolver;
@@ -80,21 +84,35 @@ public class LibraryResolver {
   public boolean removeLibrary(String id) {
     var libraryId = parseUuid(id);
     var identity = authorizationService.currentIdentity();
-    libraryAdministrationService.removeLibrary(identity, libraryId);
-    return true;
+    return libraryAdministrationService
+        .removeLibrary(identity, libraryId)
+        .fold(_ -> true, rejections -> throwLegacyRejection(libraryId, rejections.getFirst()));
+  }
+
+  // Until removeLibrary returns its ADR 0026 payload, a refusal keeps its earlier exception.
+  private static boolean throwLegacyRejection(UUID libraryId, LibraryOperationRejection rejection) {
+    throw switch (rejection) {
+      case LibraryOperationRejection.LibraryNotFound _ -> new LibraryNotFoundException(libraryId);
+      case LibraryOperationRejection.LibraryBusy(_, var runningKind) ->
+          switch (runningKind) {
+            case SCAN -> new LibraryScanInProgressException(libraryId);
+            case REFRESH -> new LibraryRefreshInProgressException(libraryId);
+          };
+    };
   }
 
   @DgsMutation
   public boolean scanLibrary(String id) {
     var libraryId = parseUuid(id);
-    libraryAdministrationService.scanLibrary(authorizationService.currentIdentity(), libraryId);
+    libraryAdministrationService.startLibraryScan(
+        authorizationService.currentIdentity(), libraryId);
     return true;
   }
 
   @DgsMutation
   public boolean refreshLibrary(String id, @InputArgument ImageRefreshMode imageRefreshMode) {
     var libraryId = parseUuid(id);
-    libraryAdministrationService.refreshLibrary(
+    libraryAdministrationService.startLibraryRefresh(
         authorizationService.currentIdentity(), libraryId, imageRefreshMode);
     return true;
   }

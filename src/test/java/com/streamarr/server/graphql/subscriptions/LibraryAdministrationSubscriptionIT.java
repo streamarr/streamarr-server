@@ -156,7 +156,7 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     var added = nextAddedLibrary(socket);
     assertThat(added.path("id").asString()).isEqualTo(libraryId.toString());
     assertThat(added.path("name").asString()).isEqualTo("Added Library");
-    assertThat(added.path("status").asString()).isEqualTo("HEALTHY");
+    assertThat(added.path("status").asString()).isEqualTo("SCANNING");
     awaitStatus(socket, libraryId, "HEALTHY");
 
     var removed = http.execute(otherSession, removeMutation(libraryId));

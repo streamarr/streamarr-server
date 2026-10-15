@@ -15,6 +15,7 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.support.LibraryOperationDriver;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.nio.file.FileSystems;
@@ -34,7 +35,7 @@ class LibraryFolderCheckIT extends AbstractIntegrationTest {
 
   private static final String FAILURES_METRIC = "streamarr.library.folder_check.failures";
 
-  @Autowired private LibraryManagementService libraryManagementService;
+  @Autowired private LibraryOperationDriver libraryOperationDriver;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MovieRepository movieRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
@@ -53,7 +54,7 @@ class LibraryFolderCheckIT extends AbstractIntegrationTest {
     var failuresBefore = failureCount("empty");
     Files.delete(movieFile);
 
-    libraryManagementService.scanLibrary(library.getId());
+    libraryOperationDriver.scanToEnd(library.getId());
 
     assertThat(mediaFileRepository.findById(mediaFile.getId())).isPresent();
     assertThat(movieRepository.findById(movie.getId())).isPresent();
@@ -72,7 +73,7 @@ class LibraryFolderCheckIT extends AbstractIntegrationTest {
     var failuresBefore = failureCount("missing");
     FileUtils.deleteDirectory(libraryPath.toFile());
 
-    libraryManagementService.scanLibrary(library.getId());
+    libraryOperationDriver.scanToEnd(library.getId());
 
     assertThat(mediaFileRepository.findById(mediaFile.getId())).isPresent();
     assertThat(movieRepository.findById(movie.getId())).isPresent();
@@ -95,7 +96,7 @@ class LibraryFolderCheckIT extends AbstractIntegrationTest {
 
     try {
       assumeFalse(Files.isReadable(libraryPath), "This user reads folders without permission");
-      libraryManagementService.scanLibrary(library.getId());
+      libraryOperationDriver.scanToEnd(library.getId());
     } finally {
       Files.setPosixFilePermissions(libraryPath, readablePermissions);
     }
@@ -111,7 +112,7 @@ class LibraryFolderCheckIT extends AbstractIntegrationTest {
   void shouldStayHealthyWhenALibraryWithNoFileRecordsHasAnEmptyFolder() throws IOException {
     var library = saveLibrary(Files.createDirectory(tempDir.resolve("library")));
 
-    libraryManagementService.scanLibrary(library.getId());
+    libraryOperationDriver.scanToEnd(library.getId());
 
     assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
   }
@@ -127,7 +128,7 @@ class LibraryFolderCheckIT extends AbstractIntegrationTest {
     Files.createFile(libraryPath.resolve("notes.txt"));
     Files.delete(libraryPath.resolve("deleted.mkv"));
 
-    libraryManagementService.scanLibrary(library.getId());
+    libraryOperationDriver.scanToEnd(library.getId());
 
     assertThat(mediaFileRepository.findById(deletedFile.getId())).isEmpty();
     assertThat(movieRepository.findById(movie.getId())).isEmpty();

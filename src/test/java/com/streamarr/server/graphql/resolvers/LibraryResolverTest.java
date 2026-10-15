@@ -34,10 +34,11 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
-import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.AddLibraryRejection;
 import com.streamarr.server.services.library.LibraryAdministrationService;
 import com.streamarr.server.services.library.LibraryManagementService;
+import com.streamarr.server.services.library.LibraryOperationRejection;
+import com.streamarr.server.services.library.LibraryOperationService;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.pagination.MediaPage;
@@ -92,6 +93,9 @@ class LibraryResolverTest {
   private static final FakeLibraryManagementService FAKE_LIBRARY_MANAGEMENT_SERVICE =
       new FakeLibraryManagementService();
 
+  private static final FakeLibraryOperationService FAKE_LIBRARY_OPERATION_SERVICE =
+      new FakeLibraryOperationService();
+
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
   @Autowired private LibraryResolver libraryResolver;
@@ -110,13 +114,20 @@ class LibraryResolverTest {
 
   @MockitoBean private SeriesService seriesService;
 
+  @TestBean private LibraryOperationService libraryOperationService;
+
   static LibraryManagementService libraryManagementService() {
     return FAKE_LIBRARY_MANAGEMENT_SERVICE;
   }
 
+  static LibraryOperationService libraryOperationService() {
+    return FAKE_LIBRARY_OPERATION_SERVICE;
+  }
+
   @BeforeEach
-  void resetLibraryManagementService() {
+  void resetLibraryServices() {
     FAKE_LIBRARY_MANAGEMENT_SERVICE.reset();
+    FAKE_LIBRARY_OPERATION_SERVICE.reset();
   }
 
   @Nested
@@ -263,7 +274,7 @@ class LibraryResolverTest {
               "data.refreshLibrary");
 
       assertThat(result).isTrue();
-      assertThat(FAKE_LIBRARY_MANAGEMENT_SERVICE.refreshRequest())
+      assertThat(FAKE_LIBRARY_OPERATION_SERVICE.refreshRequest())
           .isEqualTo(new RefreshRequest(libraryId, ImageRefreshMode.PRESERVE));
     }
 
@@ -281,7 +292,7 @@ class LibraryResolverTest {
               "data.refreshLibrary");
 
       assertThat(result).isTrue();
-      assertThat(FAKE_LIBRARY_MANAGEMENT_SERVICE.refreshRequest())
+      assertThat(FAKE_LIBRARY_OPERATION_SERVICE.refreshRequest())
           .isEqualTo(new RefreshRequest(libraryId, ImageRefreshMode.REFRESH_IF_CHANGED));
     }
 
@@ -900,24 +911,9 @@ class LibraryResolverTest {
     private Outcome<Library, AddLibraryRejection> addLibraryOutcome;
     private Library addedLibrary;
     private List<LibraryMetadata> alphabetIndex = List.of();
-    private RefreshRequest refreshRequest;
 
     private FakeLibraryManagementService() {
-      super(
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          new MutexFactoryProvider(),
-          null,
-          null,
-          null,
-          null,
-          null,
-          null);
+      super(null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Override
@@ -933,18 +929,9 @@ class LibraryResolverTest {
     }
 
     @Override
-    public void removeLibrary(AuthenticatedIdentity identity, UUID libraryId) {
-      assertThat(libraryId).isNotNull();
-    }
-
-    @Override
-    public void triggerAsyncScan(UUID libraryId) {
-      assertThat(libraryId).isNotNull();
-    }
-
-    @Override
-    public void triggerAsyncRefresh(UUID libraryId, ImageRefreshMode imageRefreshMode) {
-      refreshRequest = new RefreshRequest(libraryId, imageRefreshMode);
+    public Outcome<UUID, LibraryOperationRejection> removeLibrary(
+        AuthenticatedIdentity identity, UUID libraryId) {
+      return Outcome.accepted(libraryId);
     }
 
     @Override
@@ -976,16 +963,41 @@ class LibraryResolverTest {
       alphabetIndex = metadata;
     }
 
-    private RefreshRequest refreshRequest() {
-      return refreshRequest;
-    }
-
     private void reset() {
       addedIdentity = null;
       addLibraryFailure = null;
       addLibraryOutcome = null;
       addedLibrary = null;
       alphabetIndex = List.of();
+    }
+  }
+
+  private static final class FakeLibraryOperationService extends LibraryOperationService {
+
+    private RefreshRequest refreshRequest;
+
+    private FakeLibraryOperationService() {
+      super(null, null, null, null, null, null);
+    }
+
+    @Override
+    public Outcome<Library, LibraryOperationRejection> startLibraryScan(
+        AuthenticatedIdentity identity, UUID libraryId) {
+      return Outcome.accepted(Library.builder().status(LibraryStatus.SCANNING).build());
+    }
+
+    @Override
+    public Outcome<Library, LibraryOperationRejection> startLibraryRefresh(
+        AuthenticatedIdentity identity, UUID libraryId, ImageRefreshMode imageRefreshMode) {
+      refreshRequest = new RefreshRequest(libraryId, imageRefreshMode);
+      return Outcome.accepted(Library.builder().status(LibraryStatus.REFRESHING).build());
+    }
+
+    private RefreshRequest refreshRequest() {
+      return refreshRequest;
+    }
+
+    private void reset() {
       refreshRequest = null;
     }
   }

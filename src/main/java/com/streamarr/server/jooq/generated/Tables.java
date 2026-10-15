@@ -24,6 +24,7 @@ import com.streamarr.server.jooq.generated.tables.Image;
 import com.streamarr.server.jooq.generated.tables.ItemResult;
 import com.streamarr.server.jooq.generated.tables.Library;
 import com.streamarr.server.jooq.generated.tables.LibraryMetadata;
+import com.streamarr.server.jooq.generated.tables.LibraryOperation;
 import com.streamarr.server.jooq.generated.tables.MediaFile;
 import com.streamarr.server.jooq.generated.tables.MediaFileContainerInfo;
 import com.streamarr.server.jooq.generated.tables.MediaFileKeyframePositions;
@@ -163,6 +164,11 @@ public class Tables {
      * The table <code>public.library_metadata</code>.
      */
     public static final LibraryMetadata LIBRARY_METADATA = LibraryMetadata.LIBRARY_METADATA;
+
+    /**
+     * The table <code>public.library_operation</code>.
+     */
+    public static final LibraryOperation LIBRARY_OPERATION = LibraryOperation.LIBRARY_OPERATION;
 
     /**
      * The table <code>public.media_file</code>.

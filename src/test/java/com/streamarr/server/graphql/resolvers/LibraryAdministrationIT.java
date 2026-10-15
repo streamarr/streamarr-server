@@ -46,6 +46,8 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -83,7 +85,7 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
       return endedScans.computeIfAbsent(libraryId, _ -> new CompletableFuture<>());
     }
 
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     void onScanEnded(ScanEndedEvent event) {
       scanEnded(event.libraryId()).complete(null);
     }

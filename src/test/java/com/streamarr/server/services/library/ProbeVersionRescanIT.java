@@ -12,11 +12,19 @@ import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbePublication;
+import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeLibraryMutationTransaction;
+import com.streamarr.server.fakes.FakeLibraryOperationRepository;
+import com.streamarr.server.fakes.FakeLibraryRepository;
+import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.ProbeVersionRescanRepository;
+import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
+import com.streamarr.server.services.mutation.MutationTransactions;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -44,6 +52,26 @@ class ProbeVersionRescanIT extends AbstractIntegrationTest {
 
   // Other test classes can leave libraries in the shared database, so assertions name their own.
   private final List<UUID> scannedLibraries = new CopyOnWriteArrayList<>();
+  private final FakeLibraryRepository scannableLibraries = new FakeLibraryRepository();
+  private final FakeLibraryOperationRepository libraryOperations =
+      new FakeLibraryOperationRepository(scannableLibraries);
+  private final LibraryOperationService libraryOperationService =
+      LibraryOperationService.builder()
+          .libraryOperations(libraryOperations)
+          .scheduling(
+              libraryOperationId ->
+                  scannedLibraries.add(
+                      libraryOperations
+                          .findLibraryOperation(libraryOperationId)
+                          .orElseThrow()
+                          .libraryId()))
+          .mutationTransactions(
+              new MutationTransactions(
+                  new FakeTransactionManager(), new ConstraintViolationTranslator()))
+          .libraryMutationTransaction(new FakeLibraryMutationTransaction())
+          .eventPublisher(new CapturingEventPublisher())
+          .metrics(new LibraryOperationMetrics(new SimpleMeterRegistry()))
+          .build();
   private final List<MediaFile> createdFiles = new ArrayList<>();
   private final List<Library> createdLibraries = new ArrayList<>();
 
@@ -86,6 +114,7 @@ class ProbeVersionRescanIT extends AbstractIntegrationTest {
     request(createMediaFile(movies), EARLIER_VERSION);
 
     rescan().onStartup();
+    endScansWithoutRequestingTheCurrentVersion();
     rescan().onStartup();
 
     assertThat(Collections.frequency(scannedLibraries, movies.getId())).isEqualTo(2);
@@ -100,13 +129,28 @@ class ProbeVersionRescanIT extends AbstractIntegrationTest {
     rescan().onStartup();
 
     request(file, ProbeVersion.CURRENT);
+    endScansWithoutRequestingTheCurrentVersion();
     rescan().onStartup();
 
     assertThat(Collections.frequency(scannedLibraries, movies.getId())).isOne();
   }
 
   private ProbeVersionRescan rescan() {
-    return new ProbeVersionRescan(rescans, scannedLibraries::add);
+    return new ProbeVersionRescan(rescans, libraryOperationService);
+  }
+
+  // A scan that fails, or that never reaches the file, leaves the earlier probe version stored.
+  private void endScansWithoutRequestingTheCurrentVersion() {
+    libraryOperations
+        .libraryOperations()
+        .forEach(
+            operation ->
+                libraryOperations.tryEndLibraryOperation(
+                    LibraryOperationEnd.builder()
+                        .libraryOperationId(operation.id())
+                        .conclusion(LibraryOperationConclusion.FAILED)
+                        .endedAt(Instant.now())
+                        .build()));
   }
 
   private void request(MediaFile file, int probeVersion) {
@@ -129,6 +173,7 @@ class ProbeVersionRescanIT extends AbstractIntegrationTest {
   private Library createLibrary() {
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     createdLibraries.add(library);
+    scannableLibraries.save(library.toBuilder().build());
     return library;
   }
 

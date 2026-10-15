@@ -27,6 +27,7 @@ import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.support.BoundedTask;
+import com.streamarr.server.support.LibraryOperationDriver;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -50,7 +51,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
 
   private static final Duration SCAN_BOUND = Duration.ofSeconds(20);
 
-  @Autowired private LibraryManagementService libraryManagementService;
+  @Autowired private LibraryOperationDriver libraryOperationDriver;
   @Autowired private LibraryRepository libraries;
   @Autowired private MediaFileRepository mediaFiles;
   @Autowired private MediaFileContainerInfoRepository outcomes;
@@ -94,7 +95,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
     try (var scan =
         BoundedTask.start(
             () -> {
-              libraryManagementService.scanLibrary(library.getId());
+              libraryOperationDriver.scanToEnd(library.getId());
               return reader.find(mediaFile.getId()).isPresent();
             })) {
       assertThat(deferred.await(10, TimeUnit.SECONDS)).isTrue();
@@ -153,8 +154,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
     Files.writeString(source, "changed media");
     keepAnotherEntryInTheLibraryFolder();
 
-    try (var scan =
-        BoundedTask.start(() -> libraryManagementService.scanLibrary(library.getId()))) {
+    try (var scan = BoundedTask.start(() -> libraryOperationDriver.scanToEnd(library.getId()))) {
       var changed = snapshotOf(mediaFile);
       await().atMost(Duration.ofSeconds(10)).until(() -> isRequestedAt(mediaFile, changed));
       makeUnreadable(source);
@@ -199,8 +199,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
   @DisplayName("Should finish the scan when a requested source is removed before it is probed")
   void shouldFinishTheScanWhenARequestedSourceIsRemovedBeforeItIsProbed() throws Exception {
     keepAnotherEntryInTheLibraryFolder();
-    try (var scan =
-        BoundedTask.start(() -> libraryManagementService.scanLibrary(library.getId()))) {
+    try (var scan = BoundedTask.start(() -> libraryOperationDriver.scanToEnd(library.getId()))) {
       await().atMost(Duration.ofSeconds(10)).until(() -> isScheduled(mediaFile));
       Files.delete(FilepathCodec.decode(mediaFile.getFilepathUri()));
 
@@ -234,8 +233,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
     Files.writeString(source, "changed media");
     keepAnotherEntryInTheLibraryFolder();
 
-    try (var scan =
-        BoundedTask.start(() -> libraryManagementService.scanLibrary(library.getId()))) {
+    try (var scan = BoundedTask.start(() -> libraryOperationDriver.scanToEnd(library.getId()))) {
       var changed = snapshotOf(mediaFile);
       await().atMost(Duration.ofSeconds(10)).until(() -> isRequestedAt(mediaFile, changed));
       Files.delete(source);
@@ -282,7 +280,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
   }
 
   private void scan(Library scanned) throws Exception {
-    BoundedTask.runWithin(SCAN_BOUND, () -> libraryManagementService.scanLibrary(scanned.getId()));
+    BoundedTask.runWithin(SCAN_BOUND, () -> libraryOperationDriver.scanToEnd(scanned.getId()));
   }
 
   private Library scannedLibrary(Path root) {
