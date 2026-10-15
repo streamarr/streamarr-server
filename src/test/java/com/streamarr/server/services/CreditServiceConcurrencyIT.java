@@ -232,7 +232,7 @@ class CreditServiceConcurrencyIT extends AbstractIntegrationTest {
     var people = saved.getFirst().resultNow().cast().stream().map(Person::getId).toList();
     var studio = saved.getFirst().resultNow().studios().iterator().next().getId();
     assertThat(
-            artworkRequests.findArtworkStates(
+            artworkRequests.findCompletionEvidence(
                 List.of(
                     new ArtworkTarget(people.get(0), ImageEntityType.PERSON),
                     new ArtworkTarget(people.get(1), ImageEntityType.PERSON),

@@ -21,7 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class CompanyService {
 
   private final CompanyRepository companyRepository;
-  private final ArtworkService artworkService;
+  private final ArtworkRequestService artworkRequestService;
 
   @Transactional
   public Set<Company> getOrCreateCompanies(
@@ -77,7 +77,7 @@ public class CompanyService {
       return;
     }
 
-    artworkService.requestBackgroundArtwork(
+    artworkRequestService.requestBackgroundArtwork(
         ArtworkSources.builder()
             .targetId(company.getId())
             .targetType(ImageEntityType.COMPANY)

@@ -36,7 +36,7 @@ class PersonServiceTest {
     personRepository = new FakePersonRepository();
     artwork = ArtworkFixture.builder().build();
     artwork.scheduling().holdScheduledSteps();
-    personService = new PersonService(personRepository, artwork.artworkService());
+    personService = new PersonService(personRepository, artwork.artworkRequestService());
   }
 
   @Test
@@ -164,7 +164,7 @@ class PersonServiceTest {
 
     assertThat(artwork.requests().requests())
         .singleElement()
-        .extracting(PendingArtworkRequest::refreshMode)
+        .extracting(StoredArtworkRequest::refreshMode)
         .isEqualTo(ImageRefreshMode.REFRESH_IF_CHANGED);
   }
 
@@ -259,9 +259,10 @@ class PersonServiceTest {
     var ascendingRepository = new RecordingPersonRepository();
     var descendingRepository = new RecordingPersonRepository();
 
-    new PersonService(ascendingRepository, ArtworkFixture.builder().build().artworkService())
+    new PersonService(ascendingRepository, ArtworkFixture.builder().build().artworkRequestService())
         .getOrCreatePersons(ascending, Map.of(), ImageRefreshMode.PRESERVE);
-    new PersonService(descendingRepository, ArtworkFixture.builder().build().artworkService())
+    new PersonService(
+            descendingRepository, ArtworkFixture.builder().build().artworkRequestService())
         .getOrCreatePersons(ascending.reversed(), Map.of(), ImageRefreshMode.PRESERVE);
 
     assertThat(descendingRepository.processedSourceIds())
@@ -274,7 +275,7 @@ class PersonServiceTest {
     var stubRepository = mock(PersonRepository.class);
     when(stubRepository.findPersonBySourceId("actor-1")).thenReturn(Optional.empty());
     var service =
-        new PersonService(stubRepository, ArtworkFixture.builder().build().artworkService());
+        new PersonService(stubRepository, ArtworkFixture.builder().build().artworkRequestService());
 
     var person = Person.builder().name("Tom Hanks").sourceId("actor-1").build();
     var persons = List.of(person);

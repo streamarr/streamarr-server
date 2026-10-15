@@ -14,7 +14,7 @@ import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.streamarr.server.AbstractWireMockIntegrationTest;
 import com.streamarr.server.config.ArtworkScheduler;
 import com.streamarr.server.config.ArtworkSchedulers;
-import com.streamarr.server.domain.media.ArtworkState;
+import com.streamarr.server.domain.media.ArtworkCompletionEvidence;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
@@ -75,8 +75,8 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
       new TmdbImageSource(ImageType.BACKDROP, "/backdrop.jpg");
 
   @Autowired private ArtworkSchedulers contextSchedulers;
-  @Autowired private ArtworkService artworkService;
-  @Autowired private ArtworkRuns artworkRuns;
+  @Autowired private ArtworkRequestService artworkRequestService;
+  @Autowired private ArtworkRunWaiter artworkRunWaiter;
   @Autowired private ArtworkStepsRunner artworkStepsRunner;
   @Autowired private ImageService imageService;
   @Autowired private TmdbImageDownloader imageDownloader;
@@ -341,7 +341,7 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
     requestMovieArtwork(ImageRefreshMode.PRESERVE, POSTER);
     transactionTemplate.executeWithoutResult(
         _ ->
-            artworkService.requestBackgroundArtwork(
+            artworkRequestService.requestBackgroundArtwork(
                 ArtworkSources.builder()
                     .targetId(personId)
                     .targetType(ImageEntityType.PERSON)
@@ -358,11 +358,11 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   @DisplayName(
       "Should store no request and schedule no steps when the metadata transaction rolls back")
   void shouldStoreNoRequestAndScheduleNoStepsWhenTheMetadataTransactionRollsBack() {
-    var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+    var run = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
 
     transactionTemplate.executeWithoutResult(
         status -> {
-          artworkService.requestPrimaryArtwork(run, movieArtwork(POSTER));
+          artworkRequestService.requestPrimaryArtwork(run, movieArtwork(POSTER));
           status.setRollbackOnly();
         });
 
@@ -386,15 +386,15 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   }
 
   private ArtworkRun requestMovieArtwork(ImageRefreshMode refreshMode, ImageSource... sources) {
-    var run = artworkService.openRun("scan", refreshMode);
+    var run = artworkRequestService.openRun("scan", refreshMode);
     transactionTemplate.executeWithoutResult(
-        _ -> artworkService.requestPrimaryArtwork(run, movieArtwork(sources)));
+        _ -> artworkRequestService.requestPrimaryArtwork(run, movieArtwork(sources)));
     run.close();
     return run;
   }
 
   private ArtworkRunSummary awaitRun(ArtworkRun run) throws Exception {
-    try (var wait = BoundedTask.start(() -> artworkRuns.awaitResults(run))) {
+    try (var wait = BoundedTask.start(() -> artworkRunWaiter.awaitResults(run))) {
       return wait.await(BOUND);
     }
   }
@@ -457,7 +457,7 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
     }
 
     @Override
-    public Optional<PendingArtworkRequest> findRequest(ArtworkTarget target) {
+    public Optional<StoredArtworkRequest> findRequest(ArtworkTarget target) {
       throw failure;
     }
 
@@ -472,8 +472,9 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
     }
 
     @Override
-    public List<ArtworkState> findArtworkStates(Collection<ArtworkTarget> targets) {
-      return delegate.findArtworkStates(targets);
+    public List<ArtworkCompletionEvidence> findCompletionEvidence(
+        Collection<ArtworkTarget> targets) {
+      return delegate.findCompletionEvidence(targets);
     }
 
     @Override

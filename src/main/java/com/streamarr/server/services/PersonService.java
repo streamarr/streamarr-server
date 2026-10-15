@@ -19,7 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class PersonService {
 
   private final PersonRepository personRepository;
-  private final ArtworkService artworkService;
+  private final ArtworkRequestService artworkRequestService;
 
   /**
    * Returns the saved people in the order of {@code persons}. Each distinct source id is saved
@@ -97,7 +97,7 @@ public class PersonService {
       return;
     }
 
-    artworkService.requestBackgroundArtwork(
+    artworkRequestService.requestBackgroundArtwork(
         ArtworkSources.builder()
             .targetId(person.getId())
             .targetType(ImageEntityType.PERSON)

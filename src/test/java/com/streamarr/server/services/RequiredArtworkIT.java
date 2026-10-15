@@ -65,8 +65,8 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
 
   private static final long BOUND_SECONDS = 10;
 
-  @Autowired private ArtworkService artworkService;
-  @Autowired private ArtworkRuns artworkRuns;
+  @Autowired private ArtworkRequestService artworkRequestService;
+  @Autowired private ArtworkRunWaiter artworkRunWaiter;
   @Autowired private ItemResultRepository itemResults;
   @Autowired private MovieService movieService;
   @Autowired private LibraryRepository libraryRepository;
@@ -105,7 +105,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
   @Test
   @DisplayName("Should commit image records before the run reports required artwork finished")
   void shouldCommitImageRecordsBeforeRunReportsRequiredArtworkFinished() throws Exception {
-    var artworkRun = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+    var artworkRun = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
 
     var movie = movieService.createMovieWithAssociations(movieMetadata(), mediaFile(), artworkRun);
     var summary = closeAndAwait(artworkRun);
@@ -117,7 +117,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
   @Test
   @DisplayName("Should withdraw required artwork when the owning transaction rolls back")
   void shouldWithdrawRequiredArtworkWhenOwningTransactionRollsBack() throws Exception {
-    var artworkRun = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+    var artworkRun = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
     var mediaFile = mediaFile();
 
     var movie =
@@ -137,7 +137,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
   @Test
   @DisplayName("Should name the System actor as creator when required artwork saves images")
   void shouldNameSystemActorAsCreatorWhenRequiredArtworkSavesImages() throws Exception {
-    var artworkRun = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+    var artworkRun = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
 
     var movie = movieService.createMovieWithAssociations(movieMetadata(), mediaFile(), artworkRun);
     closeAndAwait(artworkRun);
@@ -167,7 +167,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
             .start(ArtworkPriority.BACKGROUND, completedInto(completed));
     try {
       transactionTemplate.executeWithoutResult(
-          _ -> artworkService.requestBackgroundArtwork(artwork, ImageRefreshMode.PRESERVE));
+          _ -> artworkRequestService.requestBackgroundArtwork(artwork, ImageRefreshMode.PRESERVE));
 
       completed.get(BOUND_SECONDS, TimeUnit.SECONDS);
     } finally {
@@ -222,7 +222,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
             requestBacklogArtwork(backlog.get(index), index);
           }
         });
-    var artworkRun = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+    var artworkRun = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
 
     movieService.createMovieWithAssociations(movieMetadata(), mediaFile(), artworkRun);
     var summary = closeAndAwait(artworkRun);
@@ -268,7 +268,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
             }
           });
       await().atMost(Duration.ofSeconds(BOUND_SECONDS)).until(() -> backgroundWaiters() == 2);
-      var artworkRun = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+      var artworkRun = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
       var movie =
           movieService.createMovieWithAssociations(movieMetadata(), mediaFile(), artworkRun);
       await().atMost(Duration.ofSeconds(BOUND_SECONDS)).until(() -> primaryWaiters() == 1);
@@ -325,7 +325,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
       imageType = ImageType.LOGO;
     }
 
-    artworkService.requestBackgroundArtwork(
+    artworkRequestService.requestBackgroundArtwork(
         ArtworkSources.builder()
             .targetId(target.targetId())
             .targetType(target.targetType())
@@ -355,7 +355,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
 
   private ArtworkRunSummary closeAndAwait(ArtworkRun artworkRun) throws Exception {
     artworkRun.close();
-    try (var wait = BoundedTask.start(() -> artworkRuns.awaitResults(artworkRun))) {
+    try (var wait = BoundedTask.start(() -> artworkRunWaiter.awaitResults(artworkRun))) {
       return wait.await(Duration.ofSeconds(BOUND_SECONDS));
     }
   }

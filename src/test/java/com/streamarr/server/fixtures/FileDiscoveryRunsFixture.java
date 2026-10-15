@@ -46,8 +46,8 @@ public final class FileDiscoveryRunsFixture {
     }
 
     return FileDiscoveryRuns.builder()
-        .artworkService(artwork.artworkService())
-        .artworkRuns(artwork.artworkRuns())
+        .artworkRequestService(artwork.artworkRequestService())
+        .artworkRunWaiter(artwork.artworkRunWaiter())
         .probeRuns(
             ProbeRuns.builder()
                 .scheduler(

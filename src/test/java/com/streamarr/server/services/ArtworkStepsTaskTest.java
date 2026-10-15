@@ -77,14 +77,14 @@ class ArtworkStepsTaskTest {
   }
 
   @Test
-  @DisplayName("Should reject requested artwork when its target or awaited image types are missing")
-  void shouldRejectRequestedArtworkWhenItsTargetOrAwaitedImageTypesAreMissing() {
+  @DisplayName("Should reject awaited artwork when its target or awaited image types are missing")
+  void shouldRejectAwaitedArtworkWhenItsTargetOrAwaitedImageTypesAreMissing() {
     var target = new ArtworkTarget(TARGET_ID, ImageEntityType.MOVIE);
     var awaited = Set.of(ImageType.POSTER);
 
     assertThatNullPointerException().isThrownBy(() -> ArtworkPriority.of(null));
-    assertThatNullPointerException().isThrownBy(() -> new RequestedArtwork(null, 1, awaited));
-    assertThatNullPointerException().isThrownBy(() -> new RequestedArtwork(target, 1, null));
+    assertThatNullPointerException().isThrownBy(() -> new AwaitedArtwork(null, 1, awaited));
+    assertThatNullPointerException().isThrownBy(() -> new AwaitedArtwork(target, 1, null));
   }
 
   private final ArtworkFixture artwork = ArtworkFixture.builder().build();

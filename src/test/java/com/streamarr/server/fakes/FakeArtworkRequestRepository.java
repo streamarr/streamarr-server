@@ -1,6 +1,6 @@
 package com.streamarr.server.fakes;
 
-import com.streamarr.server.domain.media.ArtworkState;
+import com.streamarr.server.domain.media.ArtworkCompletionEvidence;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ItemResult;
@@ -8,7 +8,7 @@ import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.domain.media.PendingArtwork;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.services.ArtworkSources;
-import com.streamarr.server.services.PendingArtworkRequest;
+import com.streamarr.server.services.StoredArtworkRequest;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import java.time.Instant;
@@ -28,7 +28,7 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
   private static final Comparator<ImageSource> SOURCE_ORDER =
       Comparator.comparing(ImageSource::imageType).thenComparing(ImageSource::key);
 
-  private final Map<ArtworkTarget, PendingArtworkRequest> requests = new HashMap<>();
+  private final Map<ArtworkTarget, StoredArtworkRequest> requests = new HashMap<>();
   private final Map<ArtworkTarget, Instant> firstRequestedAt = new HashMap<>();
   private final FakeItemResultRepository itemResults;
   private long lastGeneration;
@@ -40,7 +40,7 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
   }
 
   /** Returns every stored artwork request. */
-  public synchronized List<PendingArtworkRequest> requests() {
+  public synchronized List<StoredArtworkRequest> requests() {
     return List.copyOf(requests.values());
   }
 
@@ -71,7 +71,7 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
     firstRequestedAt.putIfAbsent(artwork.target(), requestedAt);
     requests.put(
         artwork.target(),
-        PendingArtworkRequest.builder()
+        StoredArtworkRequest.builder()
             .artwork(sorted)
             .refreshMode(mode)
             .generation(generation)
@@ -80,13 +80,13 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
   }
 
   @Override
-  public synchronized Optional<PendingArtworkRequest> findRequest(ArtworkTarget target) {
+  public synchronized Optional<StoredArtworkRequest> findRequest(ArtworkTarget target) {
     return Optional.ofNullable(requests.get(target));
   }
 
   @Override
   public synchronized Optional<Long> lockPendingGeneration(ArtworkTarget target) {
-    return findRequest(target).map(PendingArtworkRequest::generation);
+    return findRequest(target).map(StoredArtworkRequest::generation);
   }
 
   @Override
@@ -105,14 +105,15 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
   }
 
   @Override
-  public synchronized List<ArtworkState> findArtworkStates(Collection<ArtworkTarget> targets) {
+  public synchronized List<ArtworkCompletionEvidence> findCompletionEvidence(
+      Collection<ArtworkTarget> targets) {
     return targets.stream()
         .distinct()
         .map(
             target ->
-                new ArtworkState(
+                new ArtworkCompletionEvidence(
                     target,
-                    findRequest(target).map(PendingArtworkRequest::generation),
+                    findRequest(target).map(StoredArtworkRequest::generation),
                     itemResults.findByItem(target.targetId(), target.targetType()).stream()
                         .filter(result -> result.step() == ItemStep.ARTWORK)
                         .toList()))
@@ -131,7 +132,7 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
     return pending;
   }
 
-  private long pendingImagesOf(PendingArtworkRequest request) {
+  private long pendingImagesOf(StoredArtworkRequest request) {
     var target = request.artwork().target();
     var finished =
         itemResults.findByItem(target.targetId(), target.targetType()).stream()
@@ -153,7 +154,7 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
   }
 
   private static boolean covers(
-      PendingArtworkRequest pending, ArtworkSources artwork, ImageRefreshMode refreshMode) {
+      StoredArtworkRequest pending, ArtworkSources artwork, ImageRefreshMode refreshMode) {
     if (!pending.artwork().sources().equals(artwork.sources())) {
       return false;
     }

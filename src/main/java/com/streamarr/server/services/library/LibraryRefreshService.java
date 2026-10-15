@@ -16,9 +16,9 @@ import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.ArtworkRequestService;
 import com.streamarr.server.services.ArtworkRun;
-import com.streamarr.server.services.ArtworkRuns;
-import com.streamarr.server.services.ArtworkService;
+import com.streamarr.server.services.ArtworkRunWaiter;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeasonWithEpisodesRequest;
 import com.streamarr.server.services.SeriesService;
@@ -53,8 +53,8 @@ public class LibraryRefreshService {
   private final MovieService movieService;
   private final SeriesMetadataProviderResolver seriesMetadataProviderResolver;
   private final MovieMetadataProviderResolver movieMetadataProviderResolver;
-  private final ArtworkService artworkService;
-  private final ArtworkRuns artworkRuns;
+  private final ArtworkRequestService artworkRequestService;
+  private final ArtworkRunWaiter artworkRunWaiter;
   private final ItemResultRepository itemResults;
   private final Clock clock;
 
@@ -70,7 +70,8 @@ public class LibraryRefreshService {
    */
   public void refreshLibrary(Library library, ImageRefreshMode imageRefreshMode) {
     var artworkRun =
-        artworkService.openRun("refresh of library '" + library.getName() + "'", imageRefreshMode);
+        artworkRequestService.openRun(
+            "refresh of library '" + library.getName() + "'", imageRefreshMode);
     try (artworkRun) {
       switch (library.getType()) {
         case SERIES -> refreshSeriesLibrary(library, artworkRun);
@@ -84,7 +85,7 @@ public class LibraryRefreshService {
 
   private void awaitPrimaryArtwork(Library library, ArtworkRun artworkRun) {
     try {
-      artworkRuns.awaitResults(artworkRun);
+      artworkRunWaiter.awaitResults(artworkRun);
     } catch (InterruptedException exception) {
       Thread.currentThread().interrupt();
       throw new LibraryRefreshFailedException(library.getName(), exception);

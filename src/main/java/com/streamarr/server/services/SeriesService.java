@@ -40,7 +40,7 @@ public class SeriesService {
   private final SeriesRepository seriesRepository;
   private final CreditService creditService;
   private final PaginationService paginationService;
-  private final ArtworkService artworkService;
+  private final ArtworkRequestService artworkRequestService;
   private final ImageService imageService;
   private final SeasonRepository seasonRepository;
   private final EpisodeRepository episodeRepository;
@@ -79,7 +79,7 @@ public class SeriesService {
 
     var savedSeries = seriesRepository.saveAndFlush(series);
 
-    artworkService.requestPrimaryArtwork(
+    artworkRequestService.requestPrimaryArtwork(
         artworkRun,
         ArtworkSources.builder()
             .targetId(savedSeries.getId())
@@ -106,7 +106,7 @@ public class SeriesService {
                 .library(library)
                 .build());
 
-    artworkService.requestPrimaryArtwork(
+    artworkRequestService.requestPrimaryArtwork(
         request.artworkRun(),
         ArtworkSources.builder()
             .targetId(season.getId())
@@ -155,7 +155,7 @@ public class SeriesService {
         .copyTo(existing);
 
     var saved = seriesRepository.saveAndFlush(existing);
-    artworkService.requestPrimaryArtwork(
+    artworkRequestService.requestPrimaryArtwork(
         artworkRun,
         ArtworkSources.builder()
             .targetId(saved.getId())
@@ -181,7 +181,7 @@ public class SeriesService {
     season.setAirDate(details.airDate());
 
     var savedSeason = seasonRepository.saveAndFlush(season);
-    artworkService.requestPrimaryArtwork(
+    artworkRequestService.requestPrimaryArtwork(
         request.artworkRun(),
         ArtworkSources.builder()
             .targetId(savedSeason.getId())
@@ -224,7 +224,7 @@ public class SeriesService {
           .findFirst()
           .ifPresent(
               details ->
-                  artworkService.requestPrimaryArtwork(
+                  artworkRequestService.requestPrimaryArtwork(
                       request.artworkRun(),
                       ArtworkSources.builder()
                           .targetId(episode.getId())

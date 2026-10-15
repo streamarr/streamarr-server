@@ -66,7 +66,7 @@ import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
-import com.streamarr.server.services.ArtworkService;
+import com.streamarr.server.services.ArtworkRequestService;
 import com.streamarr.server.services.CreditService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
@@ -179,13 +179,13 @@ class LibraryManagementServiceTest {
       new MutationTransactions(transactionManager, new ConstraintViolationTranslator());
   private final FakeImageRepository fakeImageRepository = new FakeImageRepository();
   private final ArtworkFixture artwork = artworkWith(fakeImageRepository);
-  private final ArtworkService artworkService = artwork.artworkService();
+  private final ArtworkRequestService artworkRequestService = artwork.artworkRequestService();
   private final MovieService movieService =
       new MovieService(
           fakeMovieRepository,
           creditService,
           null,
-          artworkService,
+          artworkRequestService,
           null,
           null,
           null,
@@ -963,7 +963,7 @@ class LibraryManagementServiceTest {
             fakeMovieRepository,
             creditService,
             null,
-            artwork.artworkService(),
+            artwork.artworkRequestService(),
             null,
             null,
             null,
@@ -1880,8 +1880,8 @@ class LibraryManagementServiceTest {
               movieService,
               mock(SeriesMetadataProviderResolver.class),
               fakeMovieMetadataProviderResolver,
-              artworkService,
-              artwork.artworkRuns(),
+              artworkRequestService,
+              artwork.artworkRunWaiter(),
               new FakeItemResultRepository(),
               Clock.systemUTC());
       var service = libraryManagementServiceWithRefreshService(refreshService);

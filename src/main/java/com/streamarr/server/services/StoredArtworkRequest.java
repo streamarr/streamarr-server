@@ -9,5 +9,5 @@ import lombok.NonNull;
  * the generation those steps record their results for.
  */
 @Builder
-public record PendingArtworkRequest(
+public record StoredArtworkRequest(
     @NonNull ArtworkSources artwork, @NonNull ImageRefreshMode refreshMode, long generation) {}

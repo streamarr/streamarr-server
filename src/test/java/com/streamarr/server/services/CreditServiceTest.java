@@ -52,13 +52,13 @@ class CreditServiceTest {
             .personRepository(personRepository)
             .genreRepository(genreRepository)
             .companyRepository(companyRepository)
-            .artworkService(artwork.artworkService())
+            .artworkRequestService(artwork.artworkRequestService())
             .build();
   }
 
-  private static PendingArtworkRequest backgroundRequest(
+  private static StoredArtworkRequest backgroundRequest(
       ArtworkSources artwork, ImageRefreshMode mode) {
-    return PendingArtworkRequest.builder().artwork(artwork).refreshMode(mode).generation(0).build();
+    return StoredArtworkRequest.builder().artwork(artwork).refreshMode(mode).generation(0).build();
   }
 
   private static ArtworkSources artworkOf(

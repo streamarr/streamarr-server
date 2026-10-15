@@ -9,7 +9,7 @@ import java.util.Optional;
 
 /**
  * The primary artwork requested by one scan, refresh, or file discovery. The run collects what it
- * requested until it is closed; {@link ArtworkRuns#awaitResults} then waits for the recorded
+ * requested until it is closed; {@link ArtworkRunWaiter#awaitResults} then waits for the recorded
  * results, so a result recorded after a restart counts as well.
  */
 public final class ArtworkRun implements AutoCloseable {
@@ -18,7 +18,7 @@ public final class ArtworkRun implements AutoCloseable {
   private final ImageRefreshMode imageRefreshMode;
   private final Clock clock;
 
-  private final List<RequestedArtwork> requested = new ArrayList<>();
+  private final List<AwaitedArtwork> awaited = new ArrayList<>();
   private int keptImages;
   private Instant firstRequestedAt;
   private boolean closed;
@@ -43,8 +43,8 @@ public final class ArtworkRun implements AutoCloseable {
     closed = true;
   }
 
-  synchronized List<RequestedArtwork> requested() {
-    return List.copyOf(requested);
+  synchronized List<AwaitedArtwork> awaited() {
+    return List.copyOf(awaited);
   }
 
   synchronized int keptImages() {
@@ -56,13 +56,13 @@ public final class ArtworkRun implements AutoCloseable {
   }
 
   /**
-   * Adds an item's requested artwork to the run.
+   * Adds a target's awaited artwork to the run.
    *
    * @throws IllegalStateException if the run is closed to new requests
    */
-  synchronized void register(RequestedArtwork artwork) {
+  synchronized void register(AwaitedArtwork artwork) {
     startRequest();
-    requested.add(artwork);
+    awaited.add(artwork);
   }
 
   /**
@@ -76,8 +76,8 @@ public final class ArtworkRun implements AutoCloseable {
   }
 
   /** Removes artwork whose request rolled back with the transaction that made it. */
-  synchronized void withdraw(RequestedArtwork artwork) {
-    requested.remove(artwork);
+  synchronized void withdraw(AwaitedArtwork artwork) {
+    awaited.remove(artwork);
   }
 
   /** Removes kept images whose request rolled back with the transaction that made it. */

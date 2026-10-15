@@ -10,10 +10,10 @@ import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.services.ArtworkProgress;
+import com.streamarr.server.services.ArtworkRequestService;
 import com.streamarr.server.services.ArtworkRun;
 import com.streamarr.server.services.ArtworkRunSummary;
-import com.streamarr.server.services.ArtworkRuns;
-import com.streamarr.server.services.ArtworkService;
+import com.streamarr.server.services.ArtworkRunWaiter;
 import com.streamarr.server.services.ArtworkStepsRunner;
 import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.concurrency.CpuPermits;
@@ -37,8 +37,8 @@ import lombok.Builder;
  * database's generation guards, and scheduled steps that run on the calling thread.
  */
 public record ArtworkFixture(
-    ArtworkService artworkService,
-    ArtworkRuns artworkRuns,
+    ArtworkRequestService artworkRequestService,
+    ArtworkRunWaiter artworkRunWaiter,
     ArtworkStepsRunner stepsRunner,
     ArtworkProgress progress,
     FakeArtworkScheduling scheduling,
@@ -91,8 +91,8 @@ public record ArtworkFixture(
     var scheduling = new FakeArtworkScheduling();
     scheduling.runStepsWith(stepsRunner, requests, artworkClock);
     return new ArtworkFixture(
-        new ArtworkService(requests, scheduling, imageService, artworkClock),
-        ArtworkRuns.builder()
+        new ArtworkRequestService(requests, scheduling, imageService, artworkClock),
+        ArtworkRunWaiter.builder()
             .requests(requests)
             .sleeper(resultSleeper)
             .clock(artworkClock)
@@ -117,7 +117,7 @@ public record ArtworkFixture(
         CompletableFuture.supplyAsync(
             () -> {
               try {
-                return artworkRuns.awaitResults(run);
+                return artworkRunWaiter.awaitResults(run);
               } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new CompletionException(e);

@@ -62,7 +62,7 @@ class SeriesServiceTest {
   private FakeImageRepository imageRepository;
   private FakeTmdbHttpService imageDownloader;
   private ArtworkFixture artwork;
-  private ArtworkService artworkService;
+  private ArtworkRequestService artworkRequestService;
   private ArtworkRun artworkRun;
   private SeriesService seriesService;
 
@@ -79,8 +79,8 @@ class SeriesServiceTest {
             .imageRepository(imageRepository)
             .imageDownloader(imageDownloader)
             .build();
-    artworkService = artwork.artworkService();
-    artworkRun = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+    artworkRequestService = artwork.artworkRequestService();
+    artworkRun = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
     var paginationService = new PaginationService();
     var fileSystem = Jimfs.newFileSystem(Configuration.unix());
     var imageService =
@@ -95,7 +95,7 @@ class SeriesServiceTest {
             seriesRepository,
             CreditServiceFixture.creditServiceBuilder().build(),
             paginationService,
-            artworkService,
+            artworkRequestService,
             imageService,
             seasonRepository,
             episodeRepository,

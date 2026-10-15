@@ -43,7 +43,7 @@ public class MovieService {
   private final MovieRepository movieRepository;
   private final CreditService creditService;
   private final PaginationService paginationService;
-  private final ArtworkService artworkService;
+  private final ArtworkRequestService artworkRequestService;
   private final ImageService imageService;
   private final MediaFileRepository mediaFileRepository;
   private final PersonRepository personRepository;
@@ -135,7 +135,7 @@ public class MovieService {
 
   private void requestPrimaryArtwork(
       UUID movieId, List<ImageSource> sources, ArtworkRun artworkRun) {
-    artworkService.requestPrimaryArtwork(
+    artworkRequestService.requestPrimaryArtwork(
         artworkRun,
         ArtworkSources.builder()
             .targetId(movieId)

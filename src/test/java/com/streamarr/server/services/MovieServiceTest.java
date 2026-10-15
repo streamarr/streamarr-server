@@ -59,7 +59,7 @@ class MovieServiceTest {
   private FakeImageRepository imageRepository;
   private FakeTmdbHttpService imageDownloader;
   private ArtworkFixture artwork;
-  private ArtworkService artworkService;
+  private ArtworkRequestService artworkRequestService;
   private ArtworkRun artworkRun;
   private MovieService movieService;
 
@@ -74,8 +74,8 @@ class MovieServiceTest {
             .imageRepository(imageRepository)
             .imageDownloader(imageDownloader)
             .build();
-    artworkService = artwork.artworkService();
-    artworkRun = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+    artworkRequestService = artwork.artworkRequestService();
+    artworkRun = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
     var paginationService = new PaginationService();
     var fileSystem = Jimfs.newFileSystem(Configuration.unix());
     var imageService =
@@ -90,7 +90,7 @@ class MovieServiceTest {
             movieRepository,
             CreditServiceFixture.creditServiceBuilder().build(),
             paginationService,
-            artworkService,
+            artworkRequestService,
             imageService,
             null,
             null,
@@ -985,7 +985,7 @@ class MovieServiceTest {
           new MetadataResult<>(
               Movie.builder().title("Inception").build(), imageSources, Map.of(), Map.of());
 
-      var forcedRun = artworkService.openRun("refresh", ImageRefreshMode.FORCE_REFRESH);
+      var forcedRun = artworkRequestService.openRun("refresh", ImageRefreshMode.FORCE_REFRESH);
 
       movieService.refreshMovieMetadata(existing, metadataResult, forcedRun);
 

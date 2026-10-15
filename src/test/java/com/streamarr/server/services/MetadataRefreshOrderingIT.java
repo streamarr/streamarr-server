@@ -26,7 +26,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 @DisplayName("Metadata Refresh Ordering Integration Tests")
 class MetadataRefreshOrderingIT extends AbstractIntegrationTest {
 
-  @Autowired private ArtworkService artworkService;
+  @Autowired private ArtworkRequestService artworkRequestService;
   @Autowired private MovieService movieService;
   @Autowired private MovieRepository movieRepository;
   @Autowired private SeriesService seriesService;
@@ -80,7 +80,7 @@ class MetadataRefreshOrderingIT extends AbstractIntegrationTest {
             .directors(List.of(snapshot(firstDirector), snapshot(secondDirector)))
             .build();
 
-    try (var artworkRun = artworkService.openRun("refresh", ImageRefreshMode.PRESERVE)) {
+    try (var artworkRun = artworkRequestService.openRun("refresh", ImageRefreshMode.PRESERVE)) {
       movieService.refreshMovieMetadata(
           movie, new MetadataResult<>(fresh, List.of(), Map.of(), Map.of()), artworkRun);
     }
@@ -140,7 +140,7 @@ class MetadataRefreshOrderingIT extends AbstractIntegrationTest {
             .directors(List.of(snapshot(firstDirector), snapshot(secondDirector)))
             .build();
 
-    try (var artworkRun = artworkService.openRun("refresh", ImageRefreshMode.PRESERVE)) {
+    try (var artworkRun = artworkRequestService.openRun("refresh", ImageRefreshMode.PRESERVE)) {
       seriesService.refreshSeriesMetadata(
           series, new MetadataResult<>(fresh, List.of(), Map.of(), Map.of()), artworkRun);
     }
@@ -183,7 +183,7 @@ class MetadataRefreshOrderingIT extends AbstractIntegrationTest {
     var fresh =
         Movie.builder().title(movie.getTitle()).cast(List.of()).directors(List.of()).build();
 
-    try (var artworkRun = artworkService.openRun("refresh", ImageRefreshMode.PRESERVE)) {
+    try (var artworkRun = artworkRequestService.openRun("refresh", ImageRefreshMode.PRESERVE)) {
       movieService.refreshMovieMetadata(
           movie, new MetadataResult<>(fresh, List.of(), Map.of(), Map.of()), artworkRun);
     }
@@ -222,7 +222,7 @@ class MetadataRefreshOrderingIT extends AbstractIntegrationTest {
     var fresh =
         Series.builder().title(series.getTitle()).cast(List.of()).directors(List.of()).build();
 
-    try (var artworkRun = artworkService.openRun("refresh", ImageRefreshMode.PRESERVE)) {
+    try (var artworkRun = artworkRequestService.openRun("refresh", ImageRefreshMode.PRESERVE)) {
       seriesService.refreshSeriesMetadata(
           series, new MetadataResult<>(fresh, List.of(), Map.of(), Map.of()), artworkRun);
     }

@@ -107,12 +107,14 @@ class LibraryRefreshServiceTest {
             .imageDownloader(imageDownloader)
             .itemResults(artworkResults)
             .build();
-    var artworkService = artwork.artworkService();
+    var artworkRequestService = artwork.artworkRequestService();
     seriesProviderResolver = mock(SeriesMetadataProviderResolver.class);
     movieProviderResolver = mock(MovieMetadataProviderResolver.class);
 
     var creditService =
-        CreditServiceFixture.creditServiceBuilder().artworkService(artworkService).build();
+        CreditServiceFixture.creditServiceBuilder()
+            .artworkRequestService(artworkRequestService)
+            .build();
     var fileSystem = Jimfs.newFileSystem(Configuration.unix());
     var imageService =
         new ImageService(
@@ -127,7 +129,7 @@ class LibraryRefreshServiceTest {
             seriesRepository,
             creditService,
             new PaginationService(),
-            artworkService,
+            artworkRequestService,
             imageService,
             seasonRepository,
             episodeRepository,
@@ -141,7 +143,7 @@ class LibraryRefreshServiceTest {
             movieRepository,
             creditService,
             new PaginationService(),
-            artworkService,
+            artworkRequestService,
             imageService,
             null,
             null,
@@ -160,8 +162,8 @@ class LibraryRefreshServiceTest {
             movieService,
             seriesProviderResolver,
             movieProviderResolver,
-            artworkService,
-            artwork.artworkRuns(),
+            artworkRequestService,
+            artwork.artworkRunWaiter(),
             itemResults,
             clock);
   }

@@ -2,7 +2,7 @@ package com.streamarr.server.repositories.media;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.domain.media.ArtworkState;
+import com.streamarr.server.domain.media.ArtworkCompletionEvidence;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
@@ -14,7 +14,7 @@ import com.streamarr.server.domain.media.PendingArtwork;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository.SavedArtworkRequest.NewGeneration;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository.SavedArtworkRequest.Unchanged;
 import com.streamarr.server.services.ArtworkSources;
-import com.streamarr.server.services.PendingArtworkRequest;
+import com.streamarr.server.services.StoredArtworkRequest;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
@@ -63,7 +63,7 @@ public interface ArtworkRequestRepositoryContract {
     assertThat(saved).isInstanceOf(NewGeneration.class);
     assertThat(repository().findRequest(movie))
         .contains(
-            PendingArtworkRequest.builder()
+            StoredArtworkRequest.builder()
                 .artwork(artwork(movie, POSTER, BACKDROP))
                 .refreshMode(ImageRefreshMode.PRESERVE)
                 .generation(saved.generation())
@@ -91,7 +91,7 @@ public interface ArtworkRequestRepositoryContract {
 
     assertThat(preserve).isEqualTo(new Unchanged(forced.generation()));
     assertThat(repository().findRequest(movie))
-        .map(PendingArtworkRequest::refreshMode)
+        .map(StoredArtworkRequest::refreshMode)
         .contains(ImageRefreshMode.FORCE_REFRESH);
   }
 
@@ -106,7 +106,7 @@ public interface ArtworkRequestRepositoryContract {
     assertThat(second).isInstanceOf(NewGeneration.class);
     assertThat(second.generation()).isGreaterThan(first.generation());
     assertThat(repository().findRequest(movie))
-        .map(PendingArtworkRequest::artwork)
+        .map(StoredArtworkRequest::artwork)
         .contains(artwork(movie, OTHER_POSTER));
   }
 
@@ -132,7 +132,7 @@ public interface ArtworkRequestRepositoryContract {
 
     assertThat(repository().findRequest(movie))
         .contains(
-            PendingArtworkRequest.builder()
+            StoredArtworkRequest.builder()
                 .artwork(artwork(movie, OTHER_POSTER))
                 .refreshMode(ImageRefreshMode.FORCE_REFRESH)
                 .generation(changed.generation())
@@ -164,7 +164,7 @@ public interface ArtworkRequestRepositoryContract {
 
     assertThat(completed).isFalse();
     assertThat(repository().findRequest(movie))
-        .map(PendingArtworkRequest::generation)
+        .map(StoredArtworkRequest::generation)
         .contains(second.generation());
   }
 
@@ -208,12 +208,12 @@ public interface ArtworkRequestRepositoryContract {
     var result = savedPoster(finished, 7);
     saveResult(result);
 
-    var states = repository().findArtworkStates(List.of(pending, finished));
+    var evidence = repository().findCompletionEvidence(List.of(pending, finished));
 
-    assertThat(states)
+    assertThat(evidence)
         .containsExactlyInAnyOrder(
-            new ArtworkState(pending, Optional.of(saved.generation()), List.of()),
-            new ArtworkState(finished, Optional.empty(), List.of(result)));
+            new ArtworkCompletionEvidence(pending, Optional.of(saved.generation()), List.of()),
+            new ArtworkCompletionEvidence(finished, Optional.empty(), List.of(result)));
   }
 
   @Test

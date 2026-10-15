@@ -20,7 +20,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  */
 @Service
 @RequiredArgsConstructor
-public class ArtworkService {
+public class ArtworkRequestService {
 
   private final ArtworkRequestRepository requests;
   private final ArtworkScheduling scheduling;
@@ -42,27 +42,27 @@ public class ArtworkService {
   @Transactional
   public void requestPrimaryArtwork(ArtworkRun run, ArtworkSources artwork) {
     var plan = plan(artwork, run.imageRefreshMode());
-    var awaited =
+    var awaitedImageTypes =
         plan.images().stream()
             .filter(image -> !(image instanceof PlannedImage.KeepStoredImage))
             .map(PlannedImage::imageType)
             .collect(Collectors.toSet());
-    var kept = plan.images().size() - awaited.size();
+    var kept = plan.images().size() - awaitedImageTypes.size();
     run.countKeptImages(kept);
     afterRollback(() -> run.withdrawKeptImages(kept));
-    if (awaited.isEmpty()) {
+    if (awaitedImageTypes.isEmpty()) {
       return;
     }
 
     var saved = request(artwork, run.imageRefreshMode());
-    var requested =
-        RequestedArtwork.builder()
+    var awaited =
+        AwaitedArtwork.builder()
             .target(artwork.target())
             .generation(saved.generation())
-            .awaitedImageTypes(awaited)
+            .awaitedImageTypes(awaitedImageTypes)
             .build();
-    run.register(requested);
-    afterRollback(() -> run.withdraw(requested));
+    run.register(awaited);
+    afterRollback(() -> run.withdraw(awaited));
   }
 
   /**

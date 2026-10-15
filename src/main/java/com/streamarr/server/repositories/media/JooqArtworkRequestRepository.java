@@ -7,7 +7,7 @@ import static com.streamarr.server.repositories.media.MediaEnumMapping.toDomain;
 import static com.streamarr.server.repositories.media.MediaEnumMapping.toJooq;
 
 import com.streamarr.server.config.ArtworkProperties;
-import com.streamarr.server.domain.media.ArtworkState;
+import com.streamarr.server.domain.media.ArtworkCompletionEvidence;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
@@ -19,7 +19,7 @@ import com.streamarr.server.jooq.generated.enums.ItemResultStep;
 import com.streamarr.server.jooq.generated.tables.records.ArtworkRequestRecord;
 import com.streamarr.server.repositories.PostgresTransactionLocks;
 import com.streamarr.server.services.ArtworkSources;
-import com.streamarr.server.services.PendingArtworkRequest;
+import com.streamarr.server.services.StoredArtworkRequest;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
@@ -115,8 +115,8 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
 
   @Override
   @Transactional(readOnly = true)
-  public Optional<PendingArtworkRequest> findRequest(ArtworkTarget target) {
-    return findRow(target).map(JooqArtworkRequestRepository::toPendingRequest);
+  public Optional<StoredArtworkRequest> findRequest(ArtworkTarget target) {
+    return findRow(target).map(JooqArtworkRequestRepository::toStoredRequest);
   }
 
   @Override
@@ -163,7 +163,7 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
 
   @Override
   @Transactional(readOnly = true)
-  public List<ArtworkState> findArtworkStates(Collection<ArtworkTarget> targets) {
+  public List<ArtworkCompletionEvidence> findCompletionEvidence(Collection<ArtworkTarget> targets) {
     if (targets.isEmpty()) {
       return List.of();
     }
@@ -196,7 +196,7 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
         .distinct()
         .map(
             target ->
-                new ArtworkState(
+                new ArtworkCompletionEvidence(
                     target,
                     Optional.ofNullable(generations.get(target)),
                     results.getOrDefault(target, List.of())))
@@ -290,7 +290,7 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
         List.of(row.getSourceKeys()));
   }
 
-  private static PendingArtworkRequest toPendingRequest(ArtworkRequestRecord row) {
+  private static StoredArtworkRequest toStoredRequest(ArtworkRequestRecord row) {
     var stored = sourcesOf(row);
     var sources =
         IntStream.range(0, stored.imageTypes().size())
@@ -298,7 +298,7 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
                 index ->
                     new TmdbImageSource(stored.imageTypes().get(index), stored.keys().get(index)))
             .toList();
-    return PendingArtworkRequest.builder()
+    return StoredArtworkRequest.builder()
         .artwork(
             ArtworkSources.builder()
                 .targetId(row.getTargetId())

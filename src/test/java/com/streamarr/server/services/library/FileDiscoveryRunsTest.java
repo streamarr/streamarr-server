@@ -27,7 +27,7 @@ import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.services.ArtworkCounts;
-import com.streamarr.server.services.ArtworkService;
+import com.streamarr.server.services.ArtworkRequestService;
 import com.streamarr.server.services.ArtworkSources;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
@@ -62,7 +62,7 @@ class FileDiscoveryRunsTest {
       new GatedImageDownloader(createTestImage(600, 900));
   private final ArtworkFixture artwork =
       ArtworkFixture.builder().imageDownloader(imageDownloader).itemResults(itemResults).build();
-  private final ArtworkService artworkService = artwork.artworkService();
+  private final ArtworkRequestService artworkRequestService = artwork.artworkRequestService();
   private final Library library = LibraryFixtureCreator.buildFakeLibrary();
   private FakeMediaFileContainerInfoRepository outcomes =
       new FakeMediaFileContainerInfoRepository();
@@ -86,12 +86,12 @@ class FileDiscoveryRunsTest {
   @DisplayName("Should report required results when background artwork is still pending")
   void shouldReportRequiredResultsWhenBackgroundArtworkIsStillPending() throws Exception {
     artwork.scheduling().holdBackgroundSteps();
-    artworkService.requestBackgroundArtwork(personArtwork(), ImageRefreshMode.PRESERVE);
+    artworkRequestService.requestBackgroundArtwork(personArtwork(), ImageRefreshMode.PRESERVE);
     var runs = fileDiscoveryRuns();
     var discovery = runs.open("scan of", library);
     try (discovery) {
       discovery.probeRun().request(mediaFile().getId());
-      artworkService.requestPrimaryArtwork(discovery.artworkRun(), movieArtwork());
+      artworkRequestService.requestPrimaryArtwork(discovery.artworkRun(), movieArtwork());
     }
 
     var results = runs.awaitResults(discovery);
@@ -120,7 +120,7 @@ class FileDiscoveryRunsTest {
     var movie = movieArtworkWithBackdrop();
     var discovery = runs.open("scan of", library);
     try (discovery) {
-      retried.artworkService().requestPrimaryArtwork(discovery.artworkRun(), movie);
+      retried.artworkRequestService().requestPrimaryArtwork(discovery.artworkRun(), movie);
     }
 
     try (var scan = BoundedTask.start(() -> runs.awaitResults(discovery))) {
@@ -183,7 +183,9 @@ class FileDiscoveryRunsTest {
     var discovery = runs.open("scan of", library);
     try (discovery) {
       discovery.probeRun().request(mediaFile().getId());
-      timedArtwork.artworkService().requestPrimaryArtwork(discovery.artworkRun(), movieArtwork());
+      timedArtwork
+          .artworkRequestService()
+          .requestPrimaryArtwork(discovery.artworkRun(), movieArtwork());
     }
 
     try (var results = BoundedTask.start(() -> runs.awaitResults(discovery))) {

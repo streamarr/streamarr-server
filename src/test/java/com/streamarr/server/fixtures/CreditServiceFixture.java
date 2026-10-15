@@ -6,7 +6,7 @@ import com.streamarr.server.fakes.FakePersonRepository;
 import com.streamarr.server.repositories.CompanyRepository;
 import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.PersonRepository;
-import com.streamarr.server.services.ArtworkService;
+import com.streamarr.server.services.ArtworkRequestService;
 import com.streamarr.server.services.CompanyService;
 import com.streamarr.server.services.CreditService;
 import com.streamarr.server.services.GenreService;
@@ -23,7 +23,7 @@ public final class CreditServiceFixture {
       PersonRepository personRepository,
       GenreRepository genreRepository,
       CompanyRepository companyRepository,
-      ArtworkService artworkService) {
+      ArtworkRequestService artworkRequestService) {
     var people = personRepository;
     if (people == null) {
       people = new FakePersonRepository();
@@ -39,9 +39,9 @@ public final class CreditServiceFixture {
       companies = new FakeCompanyRepository();
     }
 
-    var artwork = artworkService;
+    var artwork = artworkRequestService;
     if (artwork == null) {
-      artwork = ArtworkFixture.builder().build().artworkService();
+      artwork = ArtworkFixture.builder().build().artworkRequestService();
     }
 
     return new CreditService(

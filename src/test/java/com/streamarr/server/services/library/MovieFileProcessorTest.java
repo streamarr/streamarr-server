@@ -26,7 +26,7 @@ import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.repositories.PersonRepository;
-import com.streamarr.server.services.ArtworkService;
+import com.streamarr.server.services.ArtworkRequestService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.MetadataFetchOutcome;
@@ -63,7 +63,7 @@ class MovieFileProcessorTest {
   private final FakeMediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
   private final FakeMovieRepository fakeMovieRepository = new FakeMovieRepository();
   private final ArtworkFixture artwork = ArtworkFixture.builder().build();
-  private final ArtworkService artworkService = artwork.artworkService();
+  private final ArtworkRequestService artworkRequestService = artwork.artworkRequestService();
   private final MovieFileProcessor movieFileProcessor =
       movieFileProcessorSavingPeopleIn(new FakePersonRepository());
 
@@ -342,7 +342,7 @@ class MovieFileProcessorTest {
             fakeMovieRepository,
             CreditServiceFixture.creditServiceBuilder().personRepository(personRepository).build(),
             null,
-            artworkService,
+            artworkRequestService,
             null,
             null,
             null,

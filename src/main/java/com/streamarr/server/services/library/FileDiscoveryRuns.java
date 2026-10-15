@@ -3,8 +3,8 @@ package com.streamarr.server.services.library;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.exceptions.LibraryScanFailedException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
-import com.streamarr.server.services.ArtworkRuns;
-import com.streamarr.server.services.ArtworkService;
+import com.streamarr.server.services.ArtworkRequestService;
+import com.streamarr.server.services.ArtworkRunWaiter;
 import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.util.concurrent.ExecutionException;
@@ -21,14 +21,14 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class FileDiscoveryRuns {
 
-  private final ArtworkService artworkService;
-  private final ArtworkRuns artworkRuns;
+  private final ArtworkRequestService artworkRequestService;
+  private final ArtworkRunWaiter artworkRunWaiter;
   private final ProbeRuns probeRuns;
   private final MediaFileRepository mediaFiles;
 
   public FileDiscovery open(String operation, Library library) {
     var artworkRun =
-        artworkService.openRun(
+        artworkRequestService.openRun(
             operation + " library '" + library.getName() + "'", ImageRefreshMode.PRESERVE);
     return new FileDiscovery(library, artworkRun, probeRuns.open());
   }
@@ -61,12 +61,12 @@ public class FileDiscoveryRuns {
     try (var executor = SystemWork.newExecutorRunningAsSystemActor("library-scan-probes-")) {
       var probes = executor.submit(() -> probeRuns.awaitResults(discovery.probeRun()));
       try {
-        var artwork = artworkRuns.awaitResults(discovery.artworkRun());
+        var artwork = artworkRunWaiter.awaitResults(discovery.artworkRun());
         return ScanResults.builder()
             .files(mediaFiles.countStatuses(discovery.probeRun().mediaFileIds()))
             .artwork(artwork)
             .probes(probes.get())
-            .backgroundImagesPending(artworkService.pendingBackgroundImages())
+            .backgroundImagesPending(artworkRequestService.pendingBackgroundImages())
             .build();
       } finally {
         probes.cancel(true);

@@ -1,11 +1,11 @@
 package com.streamarr.server.repositories.media;
 
-import com.streamarr.server.domain.media.ArtworkState;
+import com.streamarr.server.domain.media.ArtworkCompletionEvidence;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.PendingArtwork;
 import com.streamarr.server.services.ArtworkSources;
-import com.streamarr.server.services.PendingArtworkRequest;
+import com.streamarr.server.services.StoredArtworkRequest;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.time.Instant;
 import java.util.Collection;
@@ -43,7 +43,7 @@ public interface ArtworkRequestRepository {
   SavedArtworkRequest saveRequest(
       ArtworkSources artwork, ImageRefreshMode refreshMode, Instant requestedAt);
 
-  Optional<PendingArtworkRequest> findRequest(ArtworkTarget target);
+  Optional<StoredArtworkRequest> findRequest(ArtworkTarget target);
 
   /**
    * Locks the target's request until the caller's transaction ends and returns its generation, or
@@ -59,10 +59,10 @@ public interface ArtworkRequestRepository {
   boolean tryCompleteGeneration(ArtworkTarget target, long generation);
 
   /**
-   * Returns one state per target: its pending generation and its artwork results. A deleted target
-   * has neither.
+   * Returns the completion evidence of each target: its pending generation and its artwork results.
+   * A deleted target has neither.
    */
-  List<ArtworkState> findArtworkStates(Collection<ArtworkTarget> targets);
+  List<ArtworkCompletionEvidence> findCompletionEvidence(Collection<ArtworkTarget> targets);
 
   /**
    * Returns, by target type, the images that pending requests still need and when the earliest of

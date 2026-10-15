@@ -1,7 +1,7 @@
 package com.streamarr.server.services;
 
 import com.streamarr.server.config.ArtworkProperties;
-import com.streamarr.server.domain.media.ArtworkState;
+import com.streamarr.server.domain.media.ArtworkCompletionEvidence;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemResult;
@@ -29,7 +29,7 @@ import org.springframework.stereotype.Service;
 @Service
 @Builder
 @RequiredArgsConstructor
-public class ArtworkRuns {
+public class ArtworkRunWaiter {
 
   private final ArtworkRequestRepository requests;
   private final Sleeper sleeper;
@@ -43,9 +43,9 @@ public class ArtworkRuns {
    * run. Counts follow each image's own recorded outcome.
    */
   public ArtworkRunSummary awaitResults(ArtworkRun run) throws InterruptedException {
-    var pending = new HashMap<ArtworkTarget, RequestedArtwork>();
-    run.requested()
-        .forEach(artwork -> pending.merge(artwork.target(), artwork, ArtworkRuns::merge));
+    var pending = new HashMap<ArtworkTarget, AwaitedArtwork>();
+    run.awaited()
+        .forEach(artwork -> pending.merge(artwork.target(), artwork, ArtworkRunWaiter::merge));
     var counts = ArtworkCounts.NONE.plusSkipped(run.keptImages());
     while (!pending.isEmpty()) {
       counts = countFinishedArtwork(pending, counts);
@@ -70,15 +70,15 @@ public class ArtworkRuns {
 
   // Removes each target whose requested artwork is finished from pending, and counts its results.
   private ArtworkCounts countFinishedArtwork(
-      Map<ArtworkTarget, RequestedArtwork> pending, ArtworkCounts counts) {
+      Map<ArtworkTarget, AwaitedArtwork> pending, ArtworkCounts counts) {
     var total = counts;
-    for (var state : requests.findArtworkStates(pending.keySet())) {
-      var finished = finishedResults(state, pending.get(state.target()));
+    for (var evidence : requests.findCompletionEvidence(pending.keySet())) {
+      var finished = finishedResults(evidence, pending.get(evidence.target()));
       if (finished.isEmpty()) {
         continue;
       }
 
-      pending.remove(state.target());
+      pending.remove(evidence.target());
       for (var result : finished.get()) {
         total = total.plus(result.outcome());
       }
@@ -89,30 +89,30 @@ public class ArtworkRuns {
 
   // Returns the results that finish the requested artwork, or nothing while it is still pending.
   private static Optional<List<ItemResult>> finishedResults(
-      ArtworkState state, RequestedArtwork requested) {
+      ArtworkCompletionEvidence evidence, AwaitedArtwork awaited) {
     var resultsByType = new EnumMap<ImageType, ItemResult>(ImageType.class);
-    state.artworkResults().stream()
-        .filter(result -> result.artworkGeneration() >= requested.generation())
-        .filter(result -> requested.awaitedImageTypes().contains(result.imageType()))
+    evidence.artworkResults().stream()
+        .filter(result -> result.artworkGeneration() >= awaited.generation())
+        .filter(result -> awaited.awaitedImageTypes().contains(result.imageType()))
         .forEach(result -> resultsByType.put(result.imageType(), result));
-    if (resultsByType.keySet().containsAll(requested.awaitedImageTypes())) {
+    if (resultsByType.keySet().containsAll(awaited.awaitedImageTypes())) {
       return Optional.of(List.copyOf(resultsByType.values()));
     }
 
-    if (state.pendingGeneration().isPresent()) {
+    if (evidence.pendingGeneration().isPresent()) {
       return Optional.empty();
     }
 
     return Optional.of(List.copyOf(resultsByType.values()));
   }
 
-  private static RequestedArtwork merge(RequestedArtwork earlier, RequestedArtwork later) {
-    var awaited = new HashSet<>(earlier.awaitedImageTypes());
-    awaited.addAll(later.awaitedImageTypes());
-    return RequestedArtwork.builder()
+  private static AwaitedArtwork merge(AwaitedArtwork earlier, AwaitedArtwork later) {
+    var awaitedImageTypes = new HashSet<>(earlier.awaitedImageTypes());
+    awaitedImageTypes.addAll(later.awaitedImageTypes());
+    return AwaitedArtwork.builder()
         .target(earlier.target())
         .generation(Math.max(earlier.generation(), later.generation()))
-        .awaitedImageTypes(awaited)
+        .awaitedImageTypes(awaitedImageTypes)
         .build();
   }
 

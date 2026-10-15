@@ -11,10 +11,10 @@ import lombok.NonNull;
  * for each awaited image type.
  */
 @Builder
-public record RequestedArtwork(
+public record AwaitedArtwork(
     @NonNull ArtworkTarget target, long generation, @NonNull Set<ImageType> awaitedImageTypes) {
 
-  public RequestedArtwork {
+  public AwaitedArtwork {
     awaitedImageTypes = Set.copyOf(awaitedImageTypes);
   }
 }

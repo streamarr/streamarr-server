@@ -38,7 +38,7 @@ class CompanyServiceTest {
     companyRepository = new FakeCompanyRepository();
     artwork = ArtworkFixture.builder().build();
     artwork.scheduling().holdScheduledSteps();
-    companyService = new CompanyService(companyRepository, artwork.artworkService());
+    companyService = new CompanyService(companyRepository, artwork.artworkRequestService());
   }
 
   @Test
@@ -51,7 +51,8 @@ class CompanyServiceTest {
     companies.add(Company.builder().name("Company 100").sourceId("100").build());
     companies.add(Company.builder().name("Company 200").sourceId("200").build());
 
-    new CompanyService(insertOrderRepository, ArtworkFixture.builder().build().artworkService())
+    new CompanyService(
+            insertOrderRepository, ArtworkFixture.builder().build().artworkRequestService())
         .getOrCreateCompanies(companies, Map.of(), ImageRefreshMode.PRESERVE);
 
     assertThat(insertOrderRepository.insertedSourceIds()).containsExactly("100", "200", "300");
@@ -183,7 +184,7 @@ class CompanyServiceTest {
 
     assertThat(artwork.requests().requests())
         .singleElement()
-        .extracting(PendingArtworkRequest::refreshMode)
+        .extracting(StoredArtworkRequest::refreshMode)
         .isEqualTo(ImageRefreshMode.FORCE_REFRESH);
   }
 
@@ -227,7 +228,8 @@ class CompanyServiceTest {
     var stubRepository = mock(CompanyRepository.class);
     when(stubRepository.findBySourceId("wb-123")).thenReturn(Optional.empty());
     var service =
-        new CompanyService(stubRepository, ArtworkFixture.builder().build().artworkService());
+        new CompanyService(
+            stubRepository, ArtworkFixture.builder().build().artworkRequestService());
 
     var company = Company.builder().name("Warner Bros.").sourceId("wb-123").build();
     var companies = Set.of(company);
