@@ -7,6 +7,6 @@ package com.streamarr.server.exceptions;
 public class LibraryOperationNotStartedException extends RuntimeException {
 
   public LibraryOperationNotStartedException(Throwable cause) {
-    super("The library operation could not be started; try again shortly.", cause);
+    super("No library scan or refresh started. Try again shortly.", cause);
   }
 }

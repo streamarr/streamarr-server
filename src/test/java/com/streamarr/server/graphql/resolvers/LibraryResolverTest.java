@@ -18,6 +18,7 @@ import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.WatchStatus;
+import com.streamarr.server.exceptions.LibraryOperationNotStartedException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
@@ -68,6 +69,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
@@ -239,6 +241,32 @@ class LibraryResolverTest {
           .singleElement()
           .satisfies(error -> assertThat(error.getExtensions()).containsEntry("code", "FORBIDDEN"));
       // Boolean! cannot be null, so the denial nulls the whole data envelope.
+      assertThat(result.<Map<String, Object>>getData()).isNull();
+    }
+
+    @Test
+    @DisplayName(
+        "Should return LIBRARY_OPERATION_NOT_STARTED with a requestId when the scan does not start")
+    void shouldReturnLibraryOperationNotStartedWithRequestIdWhenScanDoesNotStart() {
+      FAKE_LIBRARY_OPERATION_SERVICE.throwWhenStarted(
+          new LibraryOperationNotStartedException(
+              new CannotAcquireLockException("connection to db.internal:5432 lost")));
+
+      var result =
+          dgsQueryExecutor.execute(
+              String.format("mutation { scanLibrary(id: \"%s\") }", UUID.randomUUID()));
+
+      assertThat(result.getErrors())
+          .singleElement()
+          .satisfies(
+              error -> {
+                assertThat(error.getMessage())
+                    .isEqualTo("No library scan or refresh started. Try again shortly.");
+                assertThat(error.getExtensions())
+                    .containsEntry("errorType", "UNAVAILABLE")
+                    .containsEntry("code", "LIBRARY_OPERATION_NOT_STARTED")
+                    .containsOnlyKeys("errorType", "code", "requestId");
+              });
       assertThat(result.<Map<String, Object>>getData()).isNull();
     }
 
@@ -975,6 +1003,7 @@ class LibraryResolverTest {
   private static final class FakeLibraryOperationService extends LibraryOperationService {
 
     private RefreshRequest refreshRequest;
+    private RuntimeException startFailure;
 
     private FakeLibraryOperationService() {
       super(null, null, null, null, null, null);
@@ -983,6 +1012,10 @@ class LibraryResolverTest {
     @Override
     public Outcome<Library, LibraryOperationRejection> startLibraryScan(
         AuthenticatedIdentity identity, UUID libraryId) {
+      if (startFailure != null) {
+        throw startFailure;
+      }
+
       return Outcome.accepted(Library.builder().status(LibraryStatus.SCANNING).build());
     }
 
@@ -997,8 +1030,13 @@ class LibraryResolverTest {
       return refreshRequest;
     }
 
+    private void throwWhenStarted(RuntimeException exception) {
+      startFailure = exception;
+    }
+
     private void reset() {
       refreshRequest = null;
+      startFailure = null;
     }
   }
 
