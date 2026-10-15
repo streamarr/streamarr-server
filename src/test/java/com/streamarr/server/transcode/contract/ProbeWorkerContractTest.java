@@ -150,6 +150,7 @@ class ProbeWorkerContractTest {
         .isEqualTo(ChromaSubsampling.CHROMA_SUBSAMPLING_UNSPECIFIED);
     assertThat(unknown.hasRotationDegrees()).isFalse();
     assertThat(unknown.hasCodecString()).isFalse();
+    assertThat(unknown.hasEndTime()).isFalse();
   }
 
   @Test
@@ -355,6 +356,62 @@ class ProbeWorkerContractTest {
     assertThat(decoded.getChosenVideoStreamIndex()).isEqualTo(1);
     assertThat(ProbeMediaInfo.getDefaultInstance().hasChosenVideoStreamIndex()).isFalse();
     assertThat(ProbeMediaInfo.getDefaultInstance().hasFrameRateRule()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry the end time of each audio and video stream when the container header states it in a probe version 4 result")
+  void shouldCarryEndTimeOfEachAudioAndVideoStreamWhenContainerHeaderStatesItInProbeVersion4Result()
+      throws Exception {
+    var videoEnd = Duration.newBuilder().setSeconds(6_000).setNanos(48_000_000).build();
+    var earlyAudioEnd = Duration.newBuilder().setSeconds(5_964).setNanos(500_000_000).build();
+    var video =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(0)
+            .setCodecType("video")
+            .setCodec("h264")
+            .setEndTime(videoEnd);
+    var audio =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(1)
+            .setCodecType("audio")
+            .setCodec("ac3")
+            .setEndTime(earlyAudioEnd);
+    var subtitle = ProbeStreamInfo.newBuilder().setIndex(2).setCodecType("subtitle");
+
+    var decoded =
+        ProbeAttemptResult.parseFrom(
+                probeVersion4Result(
+                        ProbeMediaInfo.newBuilder()
+                            .addStreams(video)
+                            .addStreams(audio)
+                            .addStreams(subtitle))
+                    .toByteArray())
+            .getMedia();
+
+    assertThat(decoded.getStreams(0).getEndTime()).isEqualTo(videoEnd);
+    assertThat(decoded.getStreams(1).getEndTime()).isEqualTo(earlyAudioEnd);
+    assertThat(decoded.getStreams(2).hasEndTime()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell a stated end time of zero apart from a missing end time when decoding a stream")
+  void shouldTellStatedEndTimeOfZeroApartFromMissingEndTimeWhenDecodingStream() throws Exception {
+    var statedZero =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(1)
+            .setCodecType("audio")
+            .setEndTime(Duration.getDefaultInstance())
+            .build();
+    var unstated = ProbeStreamInfo.newBuilder().setIndex(1).setCodecType("audio").build();
+
+    var decodedStatedZero = ProbeStreamInfo.parseFrom(statedZero.toByteArray());
+    var decodedUnstated = ProbeStreamInfo.parseFrom(unstated.toByteArray());
+
+    assertThat(decodedStatedZero.hasEndTime()).isTrue();
+    assertThat(decodedStatedZero.getEndTime()).isEqualTo(Duration.getDefaultInstance());
+    assertThat(decodedUnstated.hasEndTime()).isFalse();
   }
 
   @Test

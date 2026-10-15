@@ -281,6 +281,7 @@ A stream copy of the same file still plays.
 Each probe version reports every fact of the versions before it.
 Version 3 adds the keyframe positions of the chosen video stream.
 Version 4 adds the facts that playing HDR and 10-bit sources as SDR needs: the dynamic range, bit depth, chroma subsampling, rotation and codec string of each stream, the chosen video stream, and the output frame rate.
+Version 4 also adds the end time of each audio and video stream, where the container header states the end time.
 Version 2 is unused.
 The worker contract defines version 4, but the server still requests version 3.
 

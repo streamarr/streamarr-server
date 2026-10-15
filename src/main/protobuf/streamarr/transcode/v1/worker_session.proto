@@ -420,7 +420,7 @@ enum ChromaSubsampling {
   CHROMA_SUBSAMPLING_MONOCHROME = 4;
 }
 
-// Only probe version 4 and later report the fields from dynamic_range to codec_string.
+// Only probe version 4 and later report the fields from dynamic_range to end_time.
 message ProbeStreamInfo {
   uint32 index = 1;
   string codec_type = 2;
@@ -453,6 +453,13 @@ message ProbeStreamInfo {
   // with an SDR compatible base carries its base sample entry, so its codec string starts with
   // hvc1 or avc1. Absent when the worker cannot compute a codec string for the stream's codec.
   optional string codec_string = 16;
+  // Video and audio streams only: the media time at which the stream ends, where the container
+  // header states the stream's duration. The end time is the stream's start time plus that
+  // duration, measured from the container's start time, on the timeline of
+  // ProbeKeyframePositionsPart. Absent when the header states no duration for the stream. The
+  // worker never reports an estimate, such as a duration derived from the bitrate.
+  // streamarr/streamarr-server#511 uses the end time to find a stream that ends early.
+  google.protobuf.Duration end_time = 17;
 }
 
 // The order of the fields of an interlaced frame, as ffprobe reports field_order.
