@@ -370,13 +370,13 @@ public class HouseholdDeletionService {
             share -> {
               shareRepository.tryEndActive(share.getId(), now);
               authSessionRepository.clearProfileSelectionFromLiveSessions(
-                  share.getProfileId(), householdId, now);
+                  share.getProfileId(), householdId);
               userAccountRepository
                   .findByPersonalProfileId(share.getProfileId())
                   .ifPresent(
                       visitor -> {
                         authSessionRepository.clearHouseholdContextFromAccountSessions(
-                            visitor.getId(), householdId, now);
+                            visitor.getId(), householdId);
                         registrationLifecycle.revokeAllByAccountAndHousehold(
                             visitor.getId(), householdId, HOUSEHOLD_DELETED_REASON, now);
                       });

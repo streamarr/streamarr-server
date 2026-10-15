@@ -65,7 +65,7 @@ public class DeviceAuthorizationRepositoryCustomImpl
 
   @Override
   @Transactional
-  public void updateCadence(UUID id, int pollIntervalSeconds, Instant nextPollAt, Instant now) {
+  public void updateCadence(UUID id, int pollIntervalSeconds, Instant nextPollAt) {
     dsl.update(DEVICE_AUTHORIZATION)
         .set(DEVICE_AUTHORIZATION.POLL_INTERVAL_SECONDS, pollIntervalSeconds)
         .set(DEVICE_AUTHORIZATION.NEXT_POLL_AT, offsetOf(nextPollAt))
@@ -75,7 +75,7 @@ public class DeviceAuthorizationRepositoryCustomImpl
 
   @Override
   @Transactional
-  public void markConsumed(UUID id, Instant now) {
+  public void markConsumed(UUID id) {
     dsl.update(DEVICE_AUTHORIZATION)
         .set(DEVICE_AUTHORIZATION.STATUS, DeviceAuthorizationStatus.CONSUMED)
         .where(DEVICE_AUTHORIZATION.ID.eq(id))

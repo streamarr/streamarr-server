@@ -91,7 +91,7 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
   }
 
   @Override
-  public boolean updateSelectionIfLive(AuthSession session, Instant now) {
+  public boolean updateSelectionIfLive(AuthSession session) {
     return dsl.update(AUTH_SESSION)
             .set(AUTH_SESSION.CONTEXT_HOUSEHOLD_ID, session.getContextHouseholdId())
             .set(AUTH_SESSION.SELECTED_PROFILE_ID, session.getSelectedProfileId())
@@ -102,7 +102,7 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
   }
 
   @Override
-  public int clearProfileSelectionFromLiveSessions(UUID profileId, UUID householdId, Instant now) {
+  public int clearProfileSelectionFromLiveSessions(UUID profileId, UUID householdId) {
     return dsl.update(AUTH_SESSION)
         .setNull(AUTH_SESSION.SELECTED_PROFILE_ID)
         .where(AUTH_SESSION.SELECTED_PROFILE_ID.eq(profileId))
@@ -112,8 +112,7 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
   }
 
   @Override
-  public int clearHouseholdContextFromAccountSessions(
-      UUID accountId, UUID householdId, Instant now) {
+  public int clearHouseholdContextFromAccountSessions(UUID accountId, UUID householdId) {
     return dsl.update(AUTH_SESSION)
         .setNull(AUTH_SESSION.CONTEXT_HOUSEHOLD_ID)
         .setNull(AUTH_SESSION.SELECTED_PROFILE_ID)

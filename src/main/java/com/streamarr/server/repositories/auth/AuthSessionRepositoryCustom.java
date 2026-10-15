@@ -26,14 +26,14 @@ public interface AuthSessionRepositoryCustom {
    * under that context Household: the Profile stopped being available there (ADR 0024 §Profile
    * sharing).
    */
-  int clearProfileSelectionFromLiveSessions(UUID profileId, UUID householdId, Instant now);
+  int clearProfileSelectionFromLiveSessions(UUID profileId, UUID householdId);
 
   /**
    * Nulls context_household_id and selected_profile_id on the Account's live sessions whose context
    * is that Household: the visitor's presence there ended. A NULL context resolves to the
    * membership Household at the next token issuance.
    */
-  int clearHouseholdContextFromAccountSessions(UUID accountId, UUID householdId, Instant now);
+  int clearHouseholdContextFromAccountSessions(UUID accountId, UUID householdId);
 
   /** Revoking a Device registration ends its sessions' refresh authority immediately. */
   int revokeAllForRegistrations(
@@ -44,7 +44,7 @@ public interface AuthSessionRepositoryCustom {
    * live. Returns false when the session is missing or revoked; revocation fields are never written
    * from the supplied entity.
    */
-  boolean updateSelectionIfLive(AuthSession session, Instant now);
+  boolean updateSelectionIfLive(AuthSession session);
 
   /**
    * Asks the database whether the row exists, so a conditional update that matched nothing can say

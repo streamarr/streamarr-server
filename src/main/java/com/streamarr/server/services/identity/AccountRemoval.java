@@ -83,8 +83,8 @@ class AccountRemoval {
     var profileId = transfer.profileId();
     var sourceHouseholdId = transfer.sourceHouseholdId();
     var now = transfer.now();
-    shareRepository.convertMembershipShareToVisitorShare(profileId, sourceHouseholdId, now);
-    authSessionRepository.clearProfileSelectionFromLiveSessions(profileId, sourceHouseholdId, now);
+    shareRepository.convertMembershipShareToVisitorShare(profileId, sourceHouseholdId);
+    authSessionRepository.clearProfileSelectionFromLiveSessions(profileId, sourceHouseholdId);
   }
 
   /**
@@ -125,7 +125,7 @@ class AccountRemoval {
     var now = deletion.now();
     // The preserved Profile needs its replacement anchor before the person leaves it behind.
     profileManagerRepository.tryGrantDirectManagement(replacementManagerAccountId, profileId);
-    shareRepository.convertMembershipShareToVisitorShare(profileId, sourceHouseholdId, now);
+    shareRepository.convertMembershipShareToVisitorShare(profileId, sourceHouseholdId);
     deleteAccountRow(account);
     if (sourceHouseholdId.equals(destinationHouseholdId)) {
       return;
@@ -137,7 +137,7 @@ class AccountRemoval {
             profileId, sourceHouseholdId, ProfileShareStatus.ACTIVE)
         .ifPresent(share -> shareRepository.tryEndActive(share.getId(), now));
     shareRepository.ensureActiveMembershipShare(profileId, destinationHouseholdId, now);
-    shareRepository.convertMembershipShareToVisitorShare(profileId, destinationHouseholdId, now);
+    shareRepository.convertMembershipShareToVisitorShare(profileId, destinationHouseholdId);
   }
 
   private void rehomeProfile(UUID profileId, UUID sourceHouseholdId, UUID destinationHouseholdId) {
@@ -156,7 +156,7 @@ class AccountRemoval {
         .forEach(
             share ->
                 authSessionRepository.clearProfileSelectionFromLiveSessions(
-                    profileId, share.getHouseholdId(), now));
+                    profileId, share.getHouseholdId()));
     profileRepository.deleteById(profileId);
     profileRepository.flush();
   }
@@ -170,9 +170,8 @@ class AccountRemoval {
         .findByProfileIdAndHouseholdIdAndStatus(
             profileId, sourceHouseholdId, ProfileShareStatus.ACTIVE)
         .ifPresent(share -> shareRepository.tryEndActive(share.getId(), now));
-    authSessionRepository.clearProfileSelectionFromLiveSessions(profileId, sourceHouseholdId, now);
-    authSessionRepository.clearHouseholdContextFromAccountSessions(
-        accountId, sourceHouseholdId, now);
+    authSessionRepository.clearProfileSelectionFromLiveSessions(profileId, sourceHouseholdId);
+    authSessionRepository.clearHouseholdContextFromAccountSessions(accountId, sourceHouseholdId);
     registrationLifecycle.revokeAllByAccountAndHousehold(
         accountId, sourceHouseholdId, "old Household access ended", now);
   }

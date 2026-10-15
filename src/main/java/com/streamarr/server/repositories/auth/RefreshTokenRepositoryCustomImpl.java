@@ -50,7 +50,7 @@ public class RefreshTokenRepositoryCustomImpl implements RefreshTokenRepositoryC
   }
 
   @Override
-  public void revokeAllForSession(UUID sessionId, Instant now) {
+  public void revokeAllForSession(UUID sessionId) {
     dsl.update(REFRESH_TOKEN)
         .set(REFRESH_TOKEN.STATUS, RefreshTokenStatus.REVOKED)
         .where(REFRESH_TOKEN.SESSION_ID.eq(sessionId))

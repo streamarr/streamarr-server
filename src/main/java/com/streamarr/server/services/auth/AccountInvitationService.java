@@ -381,7 +381,7 @@ public class AccountInvitationService {
       }
 
       authSessionRepository.clearProfileSelectionFromLiveSessions(
-          profileId, share.getHouseholdId(), now);
+          profileId, share.getHouseholdId());
     }
   }
 

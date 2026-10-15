@@ -23,10 +23,10 @@ public interface DeviceAuthorizationRepositoryCustom {
   int decide(DeviceAuthorizationDecisionCommand command);
 
   /** Advances the poll cadence, and with it the interval a caller that polled early must adopt. */
-  void updateCadence(UUID id, int pollIntervalSeconds, Instant nextPollAt, Instant now);
+  void updateCadence(UUID id, int pollIntervalSeconds, Instant nextPollAt);
 
   /** Marks the row consumed once a poll has won it and the session exists. */
-  void markConsumed(UUID id, Instant now);
+  void markConsumed(UUID id);
 
   /** Counts outstanding pending codes to enforce the issuance limit across server instances. */
   int countOutstanding(Instant now);

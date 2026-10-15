@@ -16,7 +16,6 @@ import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
-import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
@@ -41,8 +40,7 @@ class SessionContextServiceTest {
   private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
   private final LiveSessions liveSessions = new LiveSessions(accounts, sessions);
   private final SessionContextService service =
-      new SessionContextService(
-          liveSessions, accounts, profiles, sessions, shares, new MutableClock());
+      new SessionContextService(liveSessions, accounts, profiles, sessions, shares);
   private final HouseholdContextService households =
       new HouseholdContextService(liveSessions, accounts, service);
 

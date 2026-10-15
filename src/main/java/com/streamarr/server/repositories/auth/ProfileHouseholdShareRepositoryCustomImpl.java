@@ -236,7 +236,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
-  public void convertMembershipShareToVisitorShare(UUID profileId, UUID householdId, Instant now) {
+  public void convertMembershipShareToVisitorShare(UUID profileId, UUID householdId) {
     dsl.update(PROFILE_HOUSEHOLD_SHARE)
         .set(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL, false)
         .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
