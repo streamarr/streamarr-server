@@ -24,9 +24,8 @@ import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.fixtures.StreamSessionFixture;
-import com.streamarr.server.services.watchprogress.events.ItemWatchedEvent;
-import com.streamarr.server.services.watchprogress.events.SessionProgressChangedEvent;
-import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
+import com.streamarr.server.services.watchprogress.events.WatchStateChangedEvent;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
@@ -273,6 +272,7 @@ class SessionProgressServiceTest {
       var session = addSession();
       service.reportStreamSessionTimeline(
           PROFILE_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
+      eventPublisher.clear();
 
       var sessionId = session.getSessionId();
       var otherProfileId = UUID.randomUUID();
@@ -284,7 +284,7 @@ class SessionProgressServiceTest {
 
       assertThat(sessionProgressRepository.findBySessionId(session.getSessionId())).isPresent();
       assertThat(watchHistoryRepository.count()).isZero();
-      assertThat(eventPublisher.getEventsOfType(ItemWatchedEvent.class)).isEmpty();
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class)).isEmpty();
     }
 
     @Test
@@ -303,7 +303,7 @@ class SessionProgressServiceTest {
 
       assertThat(sessionProgressRepository.count()).isZero();
       assertThat(watchHistoryRepository.count()).isZero();
-      assertThat(eventPublisher.getEventsOfType(ItemWatchedEvent.class)).isEmpty();
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class)).isEmpty();
     }
 
     @Test
@@ -445,81 +445,89 @@ class SessionProgressServiceTest {
   }
 
   @Nested
-  @DisplayName("Watch Progress Events")
-  class WatchProgressEvents {
+  @DisplayName("Watch State Changed Events")
+  class WatchStateChangedEvents {
 
     @Test
-    @DisplayName("Should publish SessionProgressChangedEvent when stopped")
-    void shouldPublishSessionProgressChangedEventWhenStopped() {
+    @DisplayName("Should publish one change naming the movie when a stop marks the movie watched")
+    void shouldPublishOneChangeNamingTheMovieWhenAStopMarksTheMovieWatched() {
       var session = addSession();
-
       service.reportStreamSessionTimeline(
-          PROFILE_ID, session.getSessionId(), 3600, PlaybackState.STOPPED);
+          PROFILE_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
+      eventPublisher.clear();
 
-      var events = eventPublisher.getEventsOfType(SessionProgressChangedEvent.class);
-      assertThat(events).hasSize(1);
-      assertThat(events.getFirst().mediaFileId()).isEqualTo(session.getMediaFileId());
-      assertThat(events.getFirst().positionSeconds()).isEqualTo(3600);
-      assertThat(events.getFirst().state()).isEqualTo(PlaybackState.STOPPED);
+      markAsWatched(session);
+
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class))
+          .containsExactly(new WatchStateChangedEvent(PROFILE_ID, Set.of(itemIdOf(session))));
     }
 
     @Test
-    @DisplayName("Should publish SessionProgressChangedEvent when playing")
-    void shouldPublishSessionProgressChangedEventWhenPlaying() {
+    @DisplayName("Should publish a change naming the item when a playing report moves the position")
+    void shouldPublishAChangeNamingTheItemWhenAPlayingReportMovesThePosition() {
       var session = addSession();
 
       service.reportStreamSessionTimeline(
           PROFILE_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
 
-      var events = eventPublisher.getEventsOfType(SessionProgressChangedEvent.class);
-      assertThat(events).hasSize(1);
-      assertThat(events.getFirst().positionSeconds()).isEqualTo(3600);
-      assertThat(events.getFirst().state()).isEqualTo(PlaybackState.PLAYING);
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class))
+          .containsExactly(new WatchStateChangedEvent(PROFILE_ID, Set.of(itemIdOf(session))));
     }
 
     @Test
-    @DisplayName("Should publish ItemWatchedEvent when marked watched")
-    void shouldPublishItemWatchedEventWhenMarkedWatched() {
+    @DisplayName("Should publish a change naming the item when a stop keeps the progress")
+    void shouldPublishAChangeNamingTheItemWhenAStopKeepsTheProgress() {
       var session = addSession();
-      var mediaFile = mediaFileRepository.findById(session.getMediaFileId()).orElseThrow();
 
-      // Stop at 95% to trigger watched
       service.reportStreamSessionTimeline(
-          PROFILE_ID, session.getSessionId(), (int) (7200 * 0.95), PlaybackState.STOPPED);
+          PROFILE_ID, session.getSessionId(), 3600, PlaybackState.STOPPED);
 
-      var events = eventPublisher.getEventsOfType(ItemWatchedEvent.class);
-      assertThat(events).hasSize(1);
-      assertThat(events.getFirst().collectableId()).isEqualTo(mediaFile.getMediaId());
-      assertThat(events.getFirst().sessionId()).isEqualTo(session.getSessionId());
-      assertThat(events.getFirst().mediaFileId()).isEqualTo(session.getMediaFileId());
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class))
+          .containsExactly(new WatchStateChangedEvent(PROFILE_ID, Set.of(itemIdOf(session))));
     }
 
     @Test
-    @DisplayName("Should publish WatchStatusChangedEvent when marked watched")
-    void shouldPublishWatchStatusChangedEventWhenMarkedWatched() {
+    @DisplayName("Should publish nothing when a paused report repeats the stored position")
+    void shouldPublishNothingWhenAPausedReportRepeatsTheStoredPosition() {
       var session = addSession();
-      var mediaFile = mediaFileRepository.findById(session.getMediaFileId()).orElseThrow();
-
-      // Stop at 95% to trigger watched
       service.reportStreamSessionTimeline(
-          PROFILE_ID, session.getSessionId(), (int) (7200 * 0.95), PlaybackState.STOPPED);
+          PROFILE_ID, session.getSessionId(), 3600, PlaybackState.PAUSED);
+      eventPublisher.clear();
 
-      var events = eventPublisher.getEventsOfType(WatchStatusChangedEvent.class);
-      assertThat(events).hasSize(1);
-      assertThat(events.getFirst().collectableId()).isEqualTo(mediaFile.getMediaId());
+      service.reportStreamSessionTimeline(
+          PROFILE_ID, session.getSessionId(), 3600, PlaybackState.PAUSED);
+
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class)).isEmpty();
     }
 
     @Test
-    @DisplayName("Should not publish events when progress discarded below threshold")
-    void shouldNotPublishEventsWhenProgressDiscardedBelowThreshold() {
+    @DisplayName("Should publish a change when a discard deletes the session's progress")
+    void shouldPublishAChangeWhenADiscardDeletesTheSessionsProgress() {
       var session = addSession();
+      service.reportStreamSessionTimeline(
+          PROFILE_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
+      eventPublisher.clear();
 
-      // Stop at 1% — below min threshold, deletes progress, no state change for other UIs
       service.reportStreamSessionTimeline(
           PROFILE_ID, session.getSessionId(), 72, PlaybackState.STOPPED);
 
-      assertThat(eventPublisher.getEventsOfType(SessionProgressChangedEvent.class)).isEmpty();
-      assertThat(eventPublisher.getEventsOfType(ItemWatchedEvent.class)).isEmpty();
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class))
+          .containsExactly(new WatchStateChangedEvent(PROFILE_ID, Set.of(itemIdOf(session))));
+    }
+
+    @Test
+    @DisplayName("Should publish nothing when a discard finds no progress for the session")
+    void shouldPublishNothingWhenADiscardFindsNoProgressForTheSession() {
+      var session = addSession();
+
+      service.reportStreamSessionTimeline(
+          PROFILE_ID, session.getSessionId(), 72, PlaybackState.STOPPED);
+
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class)).isEmpty();
+    }
+
+    private UUID itemIdOf(StreamSession session) {
+      return mediaFileRepository.findById(session.getMediaFileId()).orElseThrow().getMediaId();
     }
   }
 

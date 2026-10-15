@@ -9,8 +9,8 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.streaming.SaveWatchProgress;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
-import com.streamarr.server.services.watchprogress.events.ItemWatchedEvent;
-import com.streamarr.server.services.watchprogress.events.SessionProgressChangedEvent;
+import com.streamarr.server.services.watchprogress.events.WatchStateChangedEvent;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -68,7 +68,7 @@ public class SessionProgressService {
       return;
     }
 
-    persistProgress(profileId, context, state);
+    persistProgress(profileId, context);
   }
 
   private record PlaybackContext(
@@ -84,48 +84,53 @@ public class SessionProgressService {
         evaluateStopDecision(ctx.percentComplete(), remainingSeconds, ctx.durationSeconds());
 
     switch (decision) {
-      case DISCARD -> sessionProgressRepository.deleteBySessionId(ctx.sessionId());
+      case DISCARD -> discardProgress(profileId, ctx);
       case MARK_WATCHED -> markSessionWatched(profileId, ctx);
-      case PERSIST -> persistProgress(profileId, ctx, PlaybackState.STOPPED);
+      case PERSIST -> persistProgress(profileId, ctx);
     }
   }
 
+  private void discardProgress(UUID profileId, PlaybackContext ctx) {
+    if (sessionProgressRepository.deleteBySessionId(ctx.sessionId()) == 0) {
+      return;
+    }
+
+    publishChange(profileId, ctx);
+  }
+
+  // WatchStatusService.markWatched publishes one change for this whole write, including the
+  // deleted session progress.
   private void markSessionWatched(UUID profileId, PlaybackContext ctx) {
     sessionProgressRepository.deleteBySessionId(ctx.sessionId());
 
-    var collectableId = resolveCollectableId(ctx.mediaFileId());
     watchStatusService.markWatched(
-        profileId, collectableId, CollectableScope.DIRECT_MEDIA, ctx.durationSeconds());
-
-    eventPublisher.publishEvent(
-        ItemWatchedEvent.builder()
-            .sessionId(ctx.sessionId())
-            .profileId(profileId)
-            .mediaFileId(ctx.mediaFileId())
-            .collectableId(collectableId)
-            .build());
+        profileId,
+        resolveCollectableId(ctx.mediaFileId()),
+        CollectableScope.DIRECT_MEDIA,
+        ctx.durationSeconds());
   }
 
-  private void persistProgress(UUID profileId, PlaybackContext ctx, PlaybackState state) {
-    sessionProgressRepository.upsertProgress(
-        SaveWatchProgress.builder()
-            .sessionId(ctx.sessionId())
-            .profileId(profileId)
-            .mediaFileId(ctx.mediaFileId())
-            .positionSeconds(ctx.positionSeconds())
-            .percentComplete(ctx.percentComplete())
-            .durationSeconds(ctx.durationSeconds())
-            .build());
+  private void persistProgress(UUID profileId, PlaybackContext ctx) {
+    var changed =
+        sessionProgressRepository.upsertProgress(
+            SaveWatchProgress.builder()
+                .sessionId(ctx.sessionId())
+                .profileId(profileId)
+                .mediaFileId(ctx.mediaFileId())
+                .positionSeconds(ctx.positionSeconds())
+                .percentComplete(ctx.percentComplete())
+                .durationSeconds(ctx.durationSeconds())
+                .build());
+    if (!changed) {
+      return;
+    }
 
+    publishChange(profileId, ctx);
+  }
+
+  private void publishChange(UUID profileId, PlaybackContext ctx) {
     eventPublisher.publishEvent(
-        SessionProgressChangedEvent.builder()
-            .sessionId(ctx.sessionId())
-            .profileId(profileId)
-            .mediaFileId(ctx.mediaFileId())
-            .positionSeconds(ctx.positionSeconds())
-            .percentComplete(ctx.percentComplete())
-            .state(state)
-            .build());
+        new WatchStateChangedEvent(profileId, Set.of(resolveCollectableId(ctx.mediaFileId()))));
   }
 
   private UUID resolveCollectableId(UUID mediaFileId) {

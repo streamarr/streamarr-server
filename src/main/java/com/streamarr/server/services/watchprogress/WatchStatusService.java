@@ -16,7 +16,7 @@ import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
+import com.streamarr.server.services.watchprogress.events.WatchStateChangedEvent;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.Comparator;
@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.BinaryOperator;
 import java.util.function.Function;
@@ -67,9 +68,9 @@ public class WatchStatusService {
   private void markWatchedInternal(
       UUID profileId, UUID collectableId, CollectableScope scope, int durationSeconds) {
     var leafIds = resolveLeafCollectableIds(collectableId, scope);
-    watchHistoryRepository.batchInsert(profileId, leafIds, durationSeconds);
+    var stored = watchHistoryRepository.batchInsert(profileId, leafIds, durationSeconds);
 
-    eventPublisher.publishEvent(new WatchStatusChangedEvent(profileId, collectableId));
+    publishWhenChanged(profileId, leafIds, stored);
   }
 
   @Transactional
@@ -91,14 +92,23 @@ public class WatchStatusService {
 
   private void markUnwatchedInternal(UUID profileId, UUID collectableId, CollectableScope scope) {
     var leafIds = resolveLeafCollectableIds(collectableId, scope);
-    watchHistoryRepository.dismissAll(profileId, leafIds);
+    var dismissed = watchHistoryRepository.dismissAll(profileId, leafIds);
 
+    var deleted = 0;
     var mediaFileIds = mediaFileRepository.findMediaFileIdsByMediaIds(leafIds);
     if (!mediaFileIds.isEmpty()) {
-      sessionProgressRepository.deleteByProfileIdAndMediaFileIds(profileId, mediaFileIds);
+      deleted = sessionProgressRepository.deleteByProfileIdAndMediaFileIds(profileId, mediaFileIds);
     }
 
-    eventPublisher.publishEvent(new WatchStatusChangedEvent(profileId, collectableId));
+    publishWhenChanged(profileId, leafIds, dismissed + deleted);
+  }
+
+  private void publishWhenChanged(UUID profileId, Collection<UUID> leafIds, int changedRows) {
+    if (changedRows == 0) {
+      return;
+    }
+
+    eventPublisher.publishEvent(new WatchStateChangedEvent(profileId, Set.copyOf(leafIds)));
   }
 
   private Optional<BaseCollectable<?>> findItem(UUID itemId) {

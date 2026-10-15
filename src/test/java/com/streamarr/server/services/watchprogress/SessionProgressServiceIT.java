@@ -383,11 +383,36 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
 
       entityManager.clear();
 
-      sessionProgressRepository.deleteBySessionId(sessionId);
+      var deleted = sessionProgressRepository.deleteBySessionId(sessionId);
+      var deletedAgain = sessionProgressRepository.deleteBySessionId(sessionId);
 
       entityManager.clear();
 
       assertThat(sessionProgressRepository.findBySessionId(sessionId)).isEmpty();
+      assertThat(deleted).isEqualTo(1);
+      assertThat(deletedAgain).isZero();
+    }
+
+    @Test
+    @Transactional
+    @DisplayName("Should count the profile's progress rows deleted for the media files")
+    void shouldCountTheProfilesProgressRowsDeletedForTheMediaFiles() {
+      var fixture = createMovieWithFile();
+      sessionProgressRepository.saveAndFlush(
+          progressBuilder(profileId, fixture.mediaFileId()).positionSeconds(100).build());
+      sessionProgressRepository.saveAndFlush(
+          progressBuilder(profileId, fixture.mediaFileId()).positionSeconds(200).build());
+      entityManager.clear();
+
+      var deleted =
+          sessionProgressRepository.deleteByProfileIdAndMediaFileIds(
+              profileId, Set.of(fixture.mediaFileId()));
+      var deletedAgain =
+          sessionProgressRepository.deleteByProfileIdAndMediaFileIds(
+              profileId, Set.of(fixture.mediaFileId()));
+
+      assertThat(deleted).isEqualTo(2);
+      assertThat(deletedAgain).isZero();
     }
   }
 

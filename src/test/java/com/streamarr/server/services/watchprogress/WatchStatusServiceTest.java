@@ -21,8 +21,10 @@ import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.watchprogress.events.WatchStateChangedEvent;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -179,6 +181,75 @@ class WatchStatusServiceTest {
 
       assertThat(service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId())))
           .containsEntry(movie.getId(), WatchStatus.IN_PROGRESS);
+    }
+  }
+
+  @Nested
+  @DisplayName("Watch State Changed Events")
+  class WatchStateChangedEvents {
+
+    @Test
+    @DisplayName("Should publish every episode id once when a series is marked watched")
+    void shouldPublishEveryEpisodeIdOnceWhenASeriesIsMarkedWatched() {
+      var series = seriesRepository.save(buildSeries());
+      var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
+      var s2 = seasonRepository.save(Season.builder().seasonNumber(2).series(series).build());
+      var first = episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
+      var second = episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
+
+      service.markWatched(PROFILE_ID, series.getId());
+
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class))
+          .containsExactly(
+              new WatchStateChangedEvent(PROFILE_ID, Set.of(first.getId(), second.getId())));
+    }
+
+    @Test
+    @DisplayName("Should publish a change naming the movie when the movie is marked unwatched")
+    void shouldPublishAChangeNamingTheMovieWhenTheMovieIsMarkedUnwatched() {
+      var movie = movieRepository.save(buildMovie());
+      mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
+      service.markWatched(PROFILE_ID, movie.getId());
+      eventPublisher.clear();
+
+      service.markUnwatched(PROFILE_ID, movie.getId());
+
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class))
+          .containsExactly(new WatchStateChangedEvent(PROFILE_ID, Set.of(movie.getId())));
+    }
+
+    @Test
+    @DisplayName("Should publish a change when marking unwatched deletes only progress")
+    void shouldPublishAChangeWhenMarkingUnwatchedDeletesOnlyProgress() {
+      var movie = movieRepository.save(buildMovie());
+      var file = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
+      saveProgress(file.getId(), 600, EARLIER);
+
+      service.markUnwatched(PROFILE_ID, movie.getId());
+
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class))
+          .containsExactly(new WatchStateChangedEvent(PROFILE_ID, Set.of(movie.getId())));
+    }
+
+    @Test
+    @DisplayName("Should publish nothing when an unwatched movie is marked unwatched")
+    void shouldPublishNothingWhenAnUnwatchedMovieIsMarkedUnwatched() {
+      var movie = movieRepository.save(buildMovie());
+      mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
+
+      service.markUnwatched(PROFILE_ID, movie.getId());
+
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should publish nothing when marking a season with no episodes watched")
+    void shouldPublishNothingWhenMarkingASeasonWithNoEpisodesWatched() {
+      var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
+
+      service.markWatched(PROFILE_ID, season.getId(), CollectableScope.SEASON, 0);
+
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class)).isEmpty();
     }
   }
 

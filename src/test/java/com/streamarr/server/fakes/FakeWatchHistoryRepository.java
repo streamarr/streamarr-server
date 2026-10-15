@@ -36,7 +36,7 @@ public class FakeWatchHistoryRepository extends FakeJpaRepository<WatchHistory>
   }
 
   @Override
-  public void batchInsert(UUID profileId, Collection<UUID> collectableIds, int durationSeconds) {
+  public int batchInsert(UUID profileId, Collection<UUID> collectableIds, int durationSeconds) {
     var watchedAt = Instant.now();
     for (var collectableId : collectableIds) {
       save(
@@ -47,18 +47,23 @@ public class FakeWatchHistoryRepository extends FakeJpaRepository<WatchHistory>
               .durationSeconds(durationSeconds)
               .build());
     }
+
+    return collectableIds.size();
   }
 
   @Override
-  public void dismissAll(UUID profileId, Collection<UUID> collectableIds) {
+  public int dismissAll(UUID profileId, Collection<UUID> collectableIds) {
     var now = Instant.now();
-    database.values().stream()
-        .filter(
-            wh ->
-                profileId.equals(wh.getProfileId())
-                    && collectableIds.contains(wh.getCollectableId())
-                    && wh.getDismissedAt() == null)
-        .forEach(wh -> wh.setDismissedAt(now));
+    var dismissed =
+        database.values().stream()
+            .filter(
+                wh ->
+                    profileId.equals(wh.getProfileId())
+                        && collectableIds.contains(wh.getCollectableId())
+                        && wh.getDismissedAt() == null)
+            .toList();
+    dismissed.forEach(wh -> wh.setDismissedAt(now));
+    return dismissed.size();
   }
 
   @Override

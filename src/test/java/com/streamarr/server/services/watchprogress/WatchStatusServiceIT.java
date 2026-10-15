@@ -106,6 +106,40 @@ class WatchStatusServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should count only the completions stored when one transaction repeats a mark")
+  void shouldCountOnlyTheCompletionsStoredWhenOneTransactionRepeatsAMark() {
+    var season = createSeason(createSeries("Counted Series"), 1);
+    var episodeIds = List.of(createEpisode(season, 1).getId(), createEpisode(season, 2).getId());
+
+    var counts =
+        transactionTemplate.execute(
+            _ ->
+                List.of(
+                    watchHistoryRepository.batchInsert(profileId, episodeIds, 0),
+                    watchHistoryRepository.batchInsert(profileId, episodeIds, 0)));
+
+    assertThat(counts).containsExactly(2, 0);
+  }
+
+  @Test
+  @DisplayName("Should count only the completions dismissed when a dismissal repeats")
+  void shouldCountOnlyTheCompletionsDismissedWhenADismissalRepeats() {
+    var season = createSeason(createSeries("Dismissed Series"), 1);
+    var episodeIds = List.of(createEpisode(season, 1).getId(), createEpisode(season, 2).getId());
+    transactionTemplate.executeWithoutResult(
+        _ -> watchHistoryRepository.batchInsert(profileId, episodeIds, 0));
+
+    var counts =
+        transactionTemplate.execute(
+            _ ->
+                List.of(
+                    watchHistoryRepository.dismissAll(profileId, episodeIds),
+                    watchHistoryRepository.dismissAll(profileId, episodeIds)));
+
+    assertThat(counts).containsExactly(2, 0);
+  }
+
+  @Test
   @DisplayName(
       "Should stamp a completion and session progress with one clock when one transaction writes"
           + " both")

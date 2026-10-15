@@ -23,9 +23,9 @@ public class WatchHistoryRepositoryCustomImpl implements WatchHistoryRepositoryC
   private final DSLContext dsl;
 
   @Override
-  public void batchInsert(UUID profileId, Collection<UUID> collectableIds, int durationSeconds) {
+  public int batchInsert(UUID profileId, Collection<UUID> collectableIds, int durationSeconds) {
     if (collectableIds.isEmpty()) {
-      return;
+      return 0;
     }
 
     var rows =
@@ -39,7 +39,7 @@ public class WatchHistoryRepositoryCustomImpl implements WatchHistoryRepositoryC
                         val(durationSeconds)))
             .toList();
 
-    dsl.insertInto(
+    return dsl.insertInto(
             WATCH_HISTORY,
             WATCH_HISTORY.PROFILE_ID,
             WATCH_HISTORY.COLLECTABLE_ID,
@@ -53,8 +53,8 @@ public class WatchHistoryRepositoryCustomImpl implements WatchHistoryRepositoryC
   }
 
   @Override
-  public void dismissAll(UUID profileId, Collection<UUID> collectableIds) {
-    dsl.update(WATCH_HISTORY)
+  public int dismissAll(UUID profileId, Collection<UUID> collectableIds) {
+    return dsl.update(WATCH_HISTORY)
         .set(WATCH_HISTORY.DISMISSED_AT, currentOffsetDateTime())
         .where(WATCH_HISTORY.PROFILE_ID.eq(profileId))
         .and(WATCH_HISTORY.COLLECTABLE_ID.in(collectableIds))

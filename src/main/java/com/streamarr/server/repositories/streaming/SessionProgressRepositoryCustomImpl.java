@@ -50,13 +50,15 @@ public class SessionProgressRepositoryCustomImpl implements SessionProgressRepos
   }
 
   @Override
-  public void deleteBySessionId(UUID sessionId) {
-    dsl.deleteFrom(SESSION_PROGRESS).where(SESSION_PROGRESS.SESSION_ID.eq(sessionId)).execute();
+  public int deleteBySessionId(UUID sessionId) {
+    return dsl.deleteFrom(SESSION_PROGRESS)
+        .where(SESSION_PROGRESS.SESSION_ID.eq(sessionId))
+        .execute();
   }
 
   @Override
-  public void deleteByProfileIdAndMediaFileIds(UUID profileId, Collection<UUID> mediaFileIds) {
-    dsl.deleteFrom(SESSION_PROGRESS)
+  public int deleteByProfileIdAndMediaFileIds(UUID profileId, Collection<UUID> mediaFileIds) {
+    return dsl.deleteFrom(SESSION_PROGRESS)
         .where(SESSION_PROGRESS.PROFILE_ID.eq(profileId))
         .and(SESSION_PROGRESS.MEDIA_FILE_ID.in(mediaFileIds))
         .execute();

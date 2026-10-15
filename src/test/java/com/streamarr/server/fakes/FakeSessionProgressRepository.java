@@ -8,6 +8,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProgress>
     implements SessionProgressRepository {
@@ -35,13 +36,11 @@ public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProg
   }
 
   @Override
-  public void deleteByProfileIdAndMediaFileIds(UUID profileId, Collection<UUID> mediaFileIds) {
-    database
-        .entrySet()
-        .removeIf(
-            entry ->
-                profileId.equals(entry.getValue().getProfileId())
-                    && mediaFileIds.contains(entry.getValue().getMediaFileId()));
+  public int deleteByProfileIdAndMediaFileIds(UUID profileId, Collection<UUID> mediaFileIds) {
+    return removeWhere(
+        progress ->
+            profileId.equals(progress.getProfileId())
+                && mediaFileIds.contains(progress.getMediaFileId()));
   }
 
   @Override
@@ -78,8 +77,14 @@ public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProg
   }
 
   @Override
-  public void deleteBySessionId(UUID sessionId) {
-    database.entrySet().removeIf(entry -> sessionId.equals(entry.getValue().getSessionId()));
+  public int deleteBySessionId(UUID sessionId) {
+    return removeWhere(progress -> sessionId.equals(progress.getSessionId()));
+  }
+
+  private int removeWhere(Predicate<SessionProgress> matches) {
+    var sizeBefore = database.size();
+    database.entrySet().removeIf(entry -> matches.test(entry.getValue()));
+    return sizeBefore - database.size();
   }
 
   @Override
