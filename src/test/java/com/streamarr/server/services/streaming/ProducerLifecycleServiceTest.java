@@ -15,6 +15,7 @@ import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
+import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
@@ -712,24 +713,36 @@ class ProducerLifecycleServiceTest {
         LongStream.iterate(0, time -> time <= 7_200_000, time -> time + 5_005)
             .mapToObj(time -> new KeyframePosition(time + 42, time))
             .toList();
-    var session =
-        defaultSessionBuilder()
-            .mediaProbe(
-                defaultProbeBuilder()
-                    .keyframes(
-                        new KeyframeKnowledge.Known(
-                            KeyframePositions.builder()
-                                .streamIndex(0)
-                                .timeBaseNumerator(1)
-                                .timeBaseDenominator(1_000)
-                                .source(KeyframePositionSource.CONTAINER_INDEX)
-                                .keyframes(keyframes)
-                                .build()))
-                    .build())
-            .build();
+    return startedCopySession(defaultProbeBuilder().keyframes(knownKeyframes(keyframes)));
+  }
+
+  // A 20 s source with keyframes at 0, 6 and 12 s: the grid's last interval, [18 s, 20 s), holds
+  // no keyframe and joins segment 2, so the copy advertises 6, 6 and 8 s.
+  private StreamSession startedCopySessionWhoseLastSegmentAbsorbsTheFinalGridInterval() {
+    var keyframes =
+        LongStream.of(0, 6_000, 12_000).mapToObj(time -> new KeyframePosition(time, time)).toList();
+    return startedCopySession(
+        defaultProbeBuilder()
+            .duration(Duration.ofSeconds(20))
+            .keyframes(knownKeyframes(keyframes)));
+  }
+
+  private StreamSession startedCopySession(MediaProbe.MediaProbeBuilder probe) {
+    var session = defaultSessionBuilder().mediaProbe(probe.build()).build();
     runtimeRegistry.save(session);
     lifecycle.startAll(session, 0);
     return session;
+  }
+
+  private static KeyframeKnowledge.Known knownKeyframes(List<KeyframePosition> keyframes) {
+    return new KeyframeKnowledge.Known(
+        KeyframePositions.builder()
+            .streamIndex(0)
+            .timeBaseNumerator(1)
+            .timeBaseDenominator(1_000)
+            .source(KeyframePositionSource.CONTAINER_INDEX)
+            .keyframes(keyframes)
+            .build());
   }
 
   @Test
@@ -779,6 +792,53 @@ class ProducerLifecycleServiceTest {
     var request = transcodeExecutor.getStartedRequests().getLast();
     assertThat(request.startSequenceNumber()).isEqualTo(5);
     assertThat(request.keyframeSeekPosition()).hasValue(Duration.ofMillis(30_030));
+  }
+
+  @Test
+  @DisplayName(
+      "Should start a replacement copy attempt at its first keyframe when its segment absorbs the final grid interval")
+  void
+      shouldStartAReplacementCopyAttemptAtItsFirstKeyframeWhenItsSegmentAbsorbsTheFinalGridInterval() {
+    var session = startedCopySessionWhoseLastSegmentAbsorbsTheFinalGridInterval();
+    transcodeExecutor.markDead(session.getSessionId());
+
+    recover(session);
+
+    var request = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(request.startSequenceNumber()).isEqualTo(2);
+    assertThat(request.keyframeSeekPosition()).hasValue(Duration.ofSeconds(12));
+    assertThat(request.mediaSegmentCount()).isEqualTo(3);
+  }
+
+  @Test
+  @DisplayName(
+      "Should resume a suspended copy session at its first keyframe when its segment absorbs the final grid interval")
+  void
+      shouldResumeASuspendedCopySessionAtItsFirstKeyframeWhenItsSegmentAbsorbsTheFinalGridInterval() {
+    var session = startedCopySessionWhoseLastSegmentAbsorbsTheFinalGridInterval();
+    suspendHandle(session);
+
+    lifecycle.ensurePositioned(session.getSessionId(), "segment2.m4s");
+
+    var request = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(request.startSequenceNumber()).isEqualTo(2);
+    assertThat(request.keyframeSeekPosition()).hasValue(Duration.ofSeconds(12));
+    assertThat(request.mediaSegmentCount()).isEqualTo(3);
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse a request for the absorbed final grid interval as an unadvertised copy segment")
+  void shouldRefuseARequestForTheAbsorbedFinalGridIntervalAsAnUnadvertisedCopySegment() {
+    var session = startedCopySessionWhoseLastSegmentAbsorbsTheFinalGridInterval();
+    transcodeExecutor.markDead(session.getSessionId());
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    var result =
+        lifecycle.recover(session.getSessionId(), StreamSession.defaultVariant(), "segment3.m4s");
+
+    assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.SEGMENT_NOT_ADVERTISED);
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
   }
 
   @Test
