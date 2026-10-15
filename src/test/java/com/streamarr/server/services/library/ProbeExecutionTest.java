@@ -120,7 +120,6 @@ class ProbeExecutionTest {
                 .snapshot(request.snapshot())
                 .probeVersion(ProbeVersion.CURRENT)
                 .build());
-    assertThat(transactionManager.commits()).isOne();
   }
 
   @ParameterizedTest

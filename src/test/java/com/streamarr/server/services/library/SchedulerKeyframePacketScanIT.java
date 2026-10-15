@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
@@ -270,6 +271,24 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
 
     assertThat(scanCompletions.poll(30, TimeUnit.SECONDS)).isNotNull();
     assertThat(storedKeyframes(request)).isEqualTo(SCANNED);
+  }
+
+  @Test
+  @DisplayName("Should store no outcome when the packet scan the outcome needs cannot be requested")
+  void shouldStoreNoOutcomeWhenThePacketScanTheOutcomeNeedsCannotBeRequested() throws Exception {
+    var request = requestUnchangedFiles(1).getFirst();
+    var probe =
+        packetScanRequiredProbe().toBuilder()
+            .packetScans(
+                _ -> {
+                  throw new IllegalStateException("The scan table is unavailable");
+                })
+            .build();
+
+    assertThatIllegalStateException().isThrownBy(() -> probe.execute(request));
+
+    assertThat(reader.find(request.mediaFileId())).isEmpty();
+    assertThat(outcomes.findKeyframeKnowledge(request.mediaFileId())).isEmpty();
   }
 
   private ProbeExecution packetScanRequiredProbe() {
