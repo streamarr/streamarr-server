@@ -1030,6 +1030,27 @@ class HlsStreamingServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should list the variant nearest 2000 kb/s first and the others from highest to lowest when an Auto stream session encodes")
+  void shouldListTheVariantNearest2000KbpsFirstWhenAnAutoStreamSessionEncodes() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .framerate(OptionalDouble.of(23.976))
+            .videoCodec("hevc")
+            .width(1280)
+            .height(720)
+            .build());
+    var file = seedMediaFile();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(playlist.lines().filter(line -> line.endsWith("/stream.m3u8?t=t")))
+        .containsExactly("480p/stream.m3u8?t=t", "720p/stream.m3u8?t=t", "360p/stream.m3u8?t=t");
+  }
+
+  @Test
   @DisplayName("Should roll back the session when the first transcode startup fails")
   void shouldRollbackSessionWhenFirstTranscodeStartupFails() {
     var failingExecutor = new FailingStartupTranscodeExecutor(0, segmentStore);

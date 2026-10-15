@@ -77,7 +77,9 @@ public class HlsStreamingService implements StreamingService {
 
     var variants = resolveVariants(probe, options, decision);
     try {
-      variants = enforceCapacityLimits(decision, variants);
+      variants =
+          MultivariantPlaylistOrder.of(
+              enforceCapacityLimits(decision, variants), decision.audioDecision().bitrate());
     } catch (MaxConcurrentTranscodesException _) {
       return Outcome.rejected(
           new CreateStreamSessionRejection.TranscodeCapacityUnavailable(
