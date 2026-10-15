@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.support.AuthTestSupport;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
@@ -87,6 +88,6 @@ class EncoderPresetSettingIT extends AbstractIntegrationTest {
 
     var stored = dsl.selectFrom(SERVER_SETTINGS).fetchSingle();
     assertThat(stored.getEncoderPreset()).isEqualTo("AUTOMATIC");
-    assertThat(stored.getLastModifiedBy()).isNull();
+    assertThat(stored.getLastModifiedBy()).isEqualTo(SystemActor.ID);
   }
 }

@@ -25,4 +25,10 @@ CREATE TABLE server_settings
     ))
 );
 
+CREATE TRIGGER fill_audit_columns BEFORE INSERT OR UPDATE ON server_settings
+    FOR EACH ROW EXECUTE FUNCTION fill_audit_columns();
+
+-- The System actor creates the one row.
+SELECT set_config('streamarr.actor_id', 'b634c755-3c6a-4ff1-a0a7-3e812d0ed1b9', true);
+
 INSERT INTO server_settings DEFAULT VALUES;
