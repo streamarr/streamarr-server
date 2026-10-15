@@ -30,18 +30,17 @@ public final class ArtworkRun implements AutoCloseable {
   private boolean closed;
 
   ArtworkRun(String description, ImageRefreshMode imageRefreshMode, Clock clock) {
-    this(description, imageRefreshMode, clock, Optional.empty());
-  }
-
-  private ArtworkRun(
-      String description,
-      ImageRefreshMode imageRefreshMode,
-      Clock clock,
-      Optional<ArtworkRun> operationRun) {
     this.description = description;
     this.imageRefreshMode = imageRefreshMode;
     this.clock = clock;
-    this.operationRun = operationRun;
+    this.operationRun = Optional.empty();
+  }
+
+  private ArtworkRun(ArtworkRun operationRun) {
+    this.description = operationRun.description;
+    this.imageRefreshMode = operationRun.imageRefreshMode;
+    this.clock = operationRun.clock;
+    this.operationRun = Optional.of(operationRun);
   }
 
   /**
@@ -49,7 +48,7 @@ public final class ArtworkRun implements AutoCloseable {
    * it will request no more artwork; this run stays open.
    */
   public ArtworkRun openTaskRun() {
-    return new ArtworkRun(description, imageRefreshMode, clock, Optional.of(this));
+    return new ArtworkRun(this);
   }
 
   public ImageRefreshMode imageRefreshMode() {
