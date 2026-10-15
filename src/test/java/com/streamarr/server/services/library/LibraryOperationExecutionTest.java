@@ -1573,6 +1573,46 @@ class LibraryOperationExecutionTest {
       assertThat(executions(LibraryOperationKind.REFRESH, "interrupted")).isOne();
     }
 
+    @Test
+    @DisplayName(
+        "Should end without publishing or timing the end when another execution already ended the"
+            + " operation")
+    void shouldEndWithoutPublishingOrTimingTheEndWhenAnotherExecutionAlreadyEndedTheOperation()
+        throws IOException {
+      createRootLibraryDirectory();
+      var endedElsewhere =
+          serviceBuilder()
+              .executionLibraryOperations(
+                  new FakeLibraryOperationRepository(fakeLibraryRepository) {
+                    @Override
+                    public Optional<LibraryOperation> findLibraryOperation(UUID id) {
+                      return libraryOperations.findLibraryOperation(id);
+                    }
+
+                    @Override
+                    public boolean tryEndLibraryOperation(LibraryOperationEnd end) {
+                      assertThat(libraryOperations.tryEndLibraryOperation(end)).isTrue();
+                      return libraryOperations.tryEndLibraryOperation(end);
+                    }
+                  })
+              .build();
+      endedElsewhere.service().startLibraryScan(identity, savedLibraryId);
+      var libraryOperationId = endedElsewhere.scheduling().scheduledExecutions().getLast();
+
+      var result = endedElsewhere.execution().execute(libraryOperationId);
+
+      assertThat(result).isEqualTo(new LibraryOperationExecutionResult.Ended());
+      assertThat(libraryOperations.libraryOperations()).isEmpty();
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+      assertThat(capturingEventPublisher.getEventsOfType(ScanEndedEvent.class)).isEmpty();
+      assertThat(capturingEventPublisher.getEventsOfType(LibraryStatusChangedEvent.class))
+          .as("only the start published a status change")
+          .hasSize(1);
+      assertThat(executions(LibraryOperationKind.SCAN, "ended")).isOne();
+      assertThat(durations(LibraryOperationKind.SCAN, LibraryOperationConclusion.FINISHED))
+          .isZero();
+    }
+
     private double executions(LibraryOperationKind kind, String result) {
       var counter =
           meterRegistry
