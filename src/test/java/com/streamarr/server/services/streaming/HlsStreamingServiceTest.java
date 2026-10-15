@@ -41,6 +41,7 @@ import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.probe.PersistedProbeReader;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.URI;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -285,7 +286,8 @@ class HlsStreamingServiceTest {
         .segmentStore(segmentStore)
         .playbackProbeService(
             new PlaybackProbeService(new PersistedProbeReader(probeResults), probeEvents))
-        .transcodeDecisionService(new TranscodeDecisionService(properties))
+        .transcodeDecisionService(
+            new TranscodeDecisionService(properties, new SimpleMeterRegistry()))
         .qualityLadderService(new QualityLadderService())
         .properties(properties)
         .authorityGate(authorityGate)
@@ -1023,7 +1025,8 @@ class HlsStreamingServiceTest {
             .segmentStore(segmentStore)
             .playbackProbeService(
                 new PlaybackProbeService(new PersistedProbeReader(probeResults), probeEvents))
-            .transcodeDecisionService(new TranscodeDecisionService(properties))
+            .transcodeDecisionService(
+                new TranscodeDecisionService(properties, new SimpleMeterRegistry()))
             .qualityLadderService(new QualityLadderService())
             .properties(properties)
             .authorityGate(authorityGate)

@@ -395,7 +395,8 @@ class RemotePlaybackIT {
           new TranscodeDecisionService(
                   StreamingProperties.builder()
                       .targetSegmentDuration(Duration.ofSeconds(6))
-                      .build())
+                      .build(),
+                  new SimpleMeterRegistry())
               .decide(
                   mediaProbe,
                   StreamingOptions.builder()

@@ -13,8 +13,11 @@ import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.SubtitleMode;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -25,13 +28,15 @@ import org.springframework.stereotype.Service;
 public class TranscodeDecisionService {
 
   private static final List<String> CODEC_PREFERENCE = List.of("av1", "h264");
+  private static final String STREAM_COPY_REFUSALS_METRIC =
+      "streamarr.streaming.stream_copy_refusals";
 
   private final StreamingProperties properties;
+  private final MeterRegistry meterRegistry;
 
   public TranscodeDecision decide(MediaProbe source, StreamingOptions clientOptions) {
     var supportedCodecs = clientOptions.supportedCodecs();
-    boolean videoCopyable =
-        supportedCodecs.contains(source.videoCodec()) && keyframesOpenEverySegment(source);
+    boolean videoCopyable = decideVideoCopy(source, supportedCodecs);
 
     var videoCodecFamily =
         videoCopyable ? source.videoCodec() : selectPreferredCodec(supportedCodecs);
@@ -48,25 +53,63 @@ public class TranscodeDecisionService {
         .build();
   }
 
+  private boolean decideVideoCopy(MediaProbe source, List<String> supportedCodecs) {
+    if (!supportedCodecs.contains(source.videoCodec())) {
+      return false;
+    }
+
+    var refusal = streamCopyRefusal(source);
+    refusal.ifPresent(this::countStreamCopyRefusal);
+    return refusal.isEmpty();
+  }
+
   // A stream copy's segments can start only at source keyframes (ADR 0037), so the video is copied
   // only when the known keyframes open every segment the playlist advertises.
-  private boolean keyframesOpenEverySegment(MediaProbe source) {
+  private Optional<StreamCopyRefusal> streamCopyRefusal(MediaProbe source) {
     return switch (source.keyframes()) {
       case KeyframeKnowledge.Known(var positions) ->
-          keyframesOpenEverySegment(positions, MediaSegmentTimelines.of(source, properties));
-      case KeyframeKnowledge.PacketScanRequired _,
-          KeyframeKnowledge.Unavailable _,
-          KeyframeKnowledge.NotReported _ ->
-          false;
+          streamCopyRefusal(positions, MediaSegmentTimelines.of(source, properties));
+      case KeyframeKnowledge.PacketScanRequired _ ->
+          Optional.of(StreamCopyRefusal.PACKET_SCAN_REQUIRED);
+      case KeyframeKnowledge.Unavailable _ -> Optional.of(StreamCopyRefusal.KEYFRAMES_UNAVAILABLE);
+      case KeyframeKnowledge.NotReported _ -> Optional.of(StreamCopyRefusal.KEYFRAMES_NOT_REPORTED);
     };
   }
 
-  private static boolean keyframesOpenEverySegment(
+  private static Optional<StreamCopyRefusal> streamCopyRefusal(
       KeyframePositions positions, MediaSegmentTimeline timeline) {
-    return KeyframeSegmentBoundaries.forStreamCopy(
-                positions, timeline.targetSegmentDurationSeconds())
-            instanceof StreamCopySegments.Starts(var starts)
-        && starts.size() >= timeline.mediaSegmentCount();
+    return switch (KeyframeSegmentBoundaries.forStreamCopy(
+        positions, timeline.targetSegmentDurationSeconds())) {
+      case StreamCopySegments.Starts(var starts)
+          when starts.size() < timeline.mediaSegmentCount() ->
+          Optional.of(StreamCopyRefusal.INTERVAL_WITHOUT_KEYFRAME);
+      case StreamCopySegments.Starts _ -> Optional.empty();
+      case StreamCopySegments.IntervalWithoutKeyframe _ ->
+          Optional.of(StreamCopyRefusal.INTERVAL_WITHOUT_KEYFRAME);
+      case StreamCopySegments.PresentationTimeRegressed _ ->
+          Optional.of(StreamCopyRefusal.PRESENTATION_TIME_REGRESSED);
+      case StreamCopySegments.PresentationTimeOutOfRange _ ->
+          Optional.of(StreamCopyRefusal.PRESENTATION_TIME_OUT_OF_RANGE);
+    };
+  }
+
+  private void countStreamCopyRefusal(StreamCopyRefusal refusal) {
+    Counter.builder(STREAM_COPY_REFUSALS_METRIC)
+        .description(
+            "Stream copies of a video codec the client plays, refused because the source's"
+                + " keyframes are not known or cannot open every advertised segment")
+        .tag("reason", refusal.name().toLowerCase(Locale.ROOT))
+        .register(meterRegistry)
+        .increment();
+  }
+
+  private enum StreamCopyRefusal {
+    KEYFRAMES_NOT_REPORTED,
+    PACKET_SCAN_REQUIRED,
+    KEYFRAMES_UNAVAILABLE,
+    INTERVAL_WITHOUT_KEYFRAME,
+    PRESENTATION_TIME_REGRESSED,
+    PRESENTATION_TIME_OUT_OF_RANGE
   }
 
   private TranscodeMode resolveTranscodeMode(
