@@ -462,8 +462,8 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
     }
 
     @Override
-    public Optional<Long> lockPendingGeneration(ArtworkTarget target) {
-      return delegate.lockPendingGeneration(target);
+    public Optional<PendingArtworkRequest> lockPendingRequest(ArtworkTarget target) {
+      return delegate.lockPendingRequest(target);
     }
 
     @Override

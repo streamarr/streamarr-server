@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.media;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.domain.media.ArtworkBacklog;
 import com.streamarr.server.domain.media.ArtworkCompletionEvidence;
@@ -12,9 +13,11 @@ import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository.SavedArtworkRequest.NewGeneration;
+import com.streamarr.server.repositories.media.ArtworkRequestRepository.SavedArtworkRequest.TakenOver;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository.SavedArtworkRequest.Unchanged;
 import com.streamarr.server.services.ArtworkSources;
 import com.streamarr.server.services.NewArtworkRequest;
+import com.streamarr.server.services.PendingArtworkRequest;
 import com.streamarr.server.services.StoredArtworkRequest;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
@@ -23,6 +26,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -178,15 +182,15 @@ public interface ArtworkRequestRepositoryContract {
   }
 
   @Test
-  @DisplayName("Should lock and return the pending generation when a request is pending")
-  default void shouldLockAndReturnThePendingGenerationWhenARequestIsPending() {
+  @DisplayName("Should lock and return the pending request when a request is pending")
+  default void shouldLockAndReturnThePendingRequestWhenARequestIsPending() {
     var movie = createMovie();
     var saved = save(movie, ImageRefreshMode.PRESERVE, POSTER);
     var other = createMovie();
 
-    assertThat(inTransaction(() -> repository().lockPendingGeneration(movie)))
-        .contains(saved.generation());
-    assertThat(inTransaction(() -> repository().lockPendingGeneration(other))).isEmpty();
+    assertThat(inTransaction(() -> repository().lockPendingRequest(movie)))
+        .contains(new PendingArtworkRequest(saved.generation(), Optional.empty()));
+    assertThat(inTransaction(() -> repository().lockPendingRequest(other))).isEmpty();
   }
 
   @Test
@@ -282,6 +286,207 @@ public interface ArtworkRequestRepositoryContract {
 
     assertThat(repository().findArtworkBacklogByTargetType())
         .containsEntry(ImageEntityType.MOVIE, new ArtworkBacklog(2, REQUESTED_AT));
+  }
+
+  @Test
+  @DisplayName("Should carry the library operation's id when an operation requests artwork first")
+  default void shouldCarryTheLibraryOperationsIdWhenAnOperationRequestsArtworkFirst() {
+    var movie = createMovie();
+    var operation = UUID.randomUUID();
+
+    var saved = saveFor(movie, operation, ImageRefreshMode.PRESERVE, POSTER);
+
+    assertThat(saved).isInstanceOf(NewGeneration.class);
+    assertThat(repository().findRequest(movie))
+        .flatMap(StoredArtworkRequest::libraryOperationId)
+        .contains(operation);
+    assertThat(inTransaction(() -> repository().lockPendingRequest(movie)))
+        .contains(new PendingArtworkRequest(saved.generation(), Optional.of(operation)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the pending request's library operation id when a request from outside an"
+          + " operation changes the sources")
+  default void shouldKeepThePendingLibraryOperationIdWhenARequestFromOutsideChangesTheSources() {
+    var movie = createMovie();
+    var operation = UUID.randomUUID();
+    var first = saveFor(movie, operation, ImageRefreshMode.PRESERVE, POSTER);
+
+    var second = save(movie, ImageRefreshMode.PRESERVE, OTHER_POSTER);
+
+    assertThat(second.generation()).isGreaterThan(first.generation());
+    assertThat(repository().findRequest(movie))
+        .flatMap(StoredArtworkRequest::libraryOperationId)
+        .contains(operation);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the request unchanged when a request from outside an operation matches a"
+          + " request that an operation waits for")
+  default void shouldKeepTheRequestUnchangedWhenARequestFromOutsideMatchesAnOperationsRequest() {
+    var movie = createMovie();
+    var operation = UUID.randomUUID();
+    var first = saveFor(movie, operation, ImageRefreshMode.PRESERVE, POSTER);
+
+    var second = save(movie, ImageRefreshMode.PRESERVE, POSTER);
+
+    assertThat(second).isEqualTo(new Unchanged(first.generation()));
+    assertThat(repository().findRequest(movie))
+        .flatMap(StoredArtworkRequest::libraryOperationId)
+        .contains(operation);
+  }
+
+  @Test
+  @DisplayName(
+      "Should take over the pending generation when an operation requests artwork that a request"
+          + " from outside an operation already covers")
+  default void shouldTakeOverThePendingGenerationWhenAnOperationRequestsCoveredArtwork() {
+    var movie = createMovie();
+    var watcherRequest = save(movie, ImageRefreshMode.FORCE_REFRESH, POSTER);
+    var operation = UUID.randomUUID();
+
+    var saved = saveFor(movie, operation, ImageRefreshMode.PRESERVE, POSTER);
+
+    assertThat(saved).isEqualTo(new TakenOver(watcherRequest.generation()));
+    assertThat(repository().findRequest(movie))
+        .flatMap(StoredArtworkRequest::libraryOperationId)
+        .contains(operation);
+  }
+
+  @Test
+  @DisplayName(
+      "Should take over the pending generation when an operation requests artwork that an ended"
+          + " operation requested")
+  default void shouldTakeOverThePendingGenerationWhenAnOperationRequestsAnEndedOperationsArtwork() {
+    var movie = createMovie();
+    var endedOperation = saveFor(movie, UUID.randomUUID(), ImageRefreshMode.PRESERVE, POSTER);
+    var operation = UUID.randomUUID();
+
+    var saved = saveFor(movie, operation, ImageRefreshMode.PRESERVE, POSTER);
+
+    assertThat(saved).isEqualTo(new TakenOver(endedOperation.generation()));
+    assertThat(repository().findRequest(movie))
+        .flatMap(StoredArtworkRequest::libraryOperationId)
+        .contains(operation);
+  }
+
+  @Test
+  @DisplayName("Should keep the request unchanged when the same operation requests it again")
+  default void shouldKeepTheRequestUnchangedWhenTheSameOperationRequestsItAgain() {
+    var movie = createMovie();
+    var operation = UUID.randomUUID();
+    var first = saveFor(movie, operation, ImageRefreshMode.PRESERVE, POSTER);
+
+    var second = saveFor(movie, operation, ImageRefreshMode.PRESERVE, POSTER);
+
+    assertThat(second).isEqualTo(new Unchanged(first.generation()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should give the taking-over operation's id to a final result of the pending generation and"
+          + " leave a result that waits to retry with its id")
+  default void shouldGiveTheTakingOverOperationsIdToAFinalResultAndLeaveAResultThatWaitsToRetry() {
+    var movie = createMovie();
+    var endedOperation = UUID.randomUUID();
+    var pending = saveFor(movie, endedOperation, ImageRefreshMode.PRESERVE, POSTER, BACKDROP);
+    saveResult(savedPoster(movie, pending.generation()));
+    saveResult(
+        savedPoster(movie, pending.generation()).toBuilder()
+            .imageType(ImageType.BACKDROP)
+            .outcome(new ItemOutcome.Failed(ItemFailureReason.TEMPORARY, "timeout"))
+            .build());
+    var operation = UUID.randomUUID();
+
+    saveFor(movie, operation, ImageRefreshMode.PRESERVE, POSTER, BACKDROP);
+
+    assertThat(artworkResultsOf(movie))
+        .extracting(ItemResult::imageType, ItemResult::libraryOperationId)
+        .containsExactlyInAnyOrder(
+            tuple(ImageType.POSTER, Optional.of(operation)),
+            tuple(ImageType.BACKDROP, Optional.of(endedOperation)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should leave a final result of an older generation with its id when an operation takes over"
+          + " the pending generation")
+  default void shouldLeaveAFinalResultOfAnOlderGenerationWithItsIdWhenAnOperationTakesOver() {
+    var movie = createMovie();
+    var endedOperation = UUID.randomUUID();
+    var older = saveFor(movie, endedOperation, ImageRefreshMode.PRESERVE, POSTER);
+    saveResult(
+        savedPoster(movie, older.generation()).toBuilder()
+            .imageType(ImageType.BACKDROP)
+            .outcome(new ItemOutcome.Unavailable())
+            .sourceKey(null)
+            .build());
+    var pending = save(movie, ImageRefreshMode.PRESERVE, OTHER_POSTER);
+    saveResult(savedPoster(movie, pending.generation()));
+    var operation = UUID.randomUUID();
+
+    saveFor(movie, operation, ImageRefreshMode.PRESERVE, OTHER_POSTER);
+
+    assertThat(artworkResultsOf(movie))
+        .extracting(ItemResult::imageType, ItemResult::libraryOperationId)
+        .containsExactlyInAnyOrder(
+            tuple(ImageType.POSTER, Optional.of(operation)),
+            tuple(ImageType.BACKDROP, Optional.of(endedOperation)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should save an artwork result with the library operation id that its request carries")
+  default void shouldSaveAnArtworkResultWithTheLibraryOperationIdThatItsRequestCarries() {
+    var movie = createMovie();
+    var operation = UUID.randomUUID();
+    var saved = saveFor(movie, operation, ImageRefreshMode.PRESERVE, POSTER);
+
+    saveResult(savedPoster(movie, saved.generation()));
+
+    assertThat(artworkResultsOf(movie))
+        .extracting(ItemResult::libraryOperationId)
+        .containsExactly(Optional.of(operation));
+  }
+
+  @Test
+  @DisplayName(
+      "Should save an artwork result without a library operation id when its request carries none")
+  default void shouldSaveAnArtworkResultWithoutALibraryOperationIdWhenItsRequestCarriesNone() {
+    var movie = createMovie();
+    var saved = save(movie, ImageRefreshMode.PRESERVE, POSTER);
+
+    saveResult(
+        savedPoster(movie, saved.generation()).toBuilder()
+            .libraryOperationId(Optional.of(UUID.randomUUID()))
+            .build());
+
+    assertThat(artworkResultsOf(movie))
+        .extracting(ItemResult::libraryOperationId)
+        .containsExactly(Optional.empty());
+  }
+
+  private List<ItemResult> artworkResultsOf(ArtworkTarget target) {
+    return repository().findCompletionEvidence(List.of(target)).getFirst().artworkResults();
+  }
+
+  private ArtworkRequestRepository.SavedArtworkRequest saveFor(
+      ArtworkTarget target,
+      UUID libraryOperationId,
+      ImageRefreshMode refreshMode,
+      ImageSource... sources) {
+    return inTransaction(
+        () ->
+            repository()
+                .saveRequest(
+                    NewArtworkRequest.builder()
+                        .artwork(artwork(target, sources))
+                        .refreshMode(refreshMode)
+                        .requestedAt(REQUESTED_AT)
+                        .libraryOperationId(Optional.of(libraryOperationId))
+                        .build()));
   }
 
   private ArtworkRequestRepository.SavedArtworkRequest saveAt(

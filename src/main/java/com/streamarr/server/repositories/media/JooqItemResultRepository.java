@@ -1,5 +1,6 @@
 package com.streamarr.server.repositories.media;
 
+import static com.streamarr.server.jooq.generated.tables.ArtworkRequest.ARTWORK_REQUEST;
 import static com.streamarr.server.jooq.generated.tables.ItemResult.ITEM_RESULT;
 import static com.streamarr.server.repositories.media.MediaEnumMapping.toDomain;
 import static com.streamarr.server.repositories.media.MediaEnumMapping.toJooq;
@@ -10,6 +11,7 @@ import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
+import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.enums.ItemResultFailureReason;
 import com.streamarr.server.jooq.generated.enums.ItemResultOutcome;
@@ -25,6 +27,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
+import org.jooq.Field;
 import org.jooq.InsertOnDuplicateSetMoreStep;
 import org.jooq.impl.DSL;
 import org.springframework.stereotype.Repository;
@@ -119,8 +122,10 @@ public class JooqItemResultRepository implements ItemResultRepository {
   private InsertOnDuplicateSetMoreStep<ItemResultRecord> upsert(ItemResult result) {
     return dsl.insertInto(ITEM_RESULT)
         .set(toRecord(result))
+        .set(ITEM_RESULT.LIBRARY_OPERATION_ID, libraryOperationIdOf(result))
         .onConflictOnConstraint(Keys.ITEM_RESULT_IDENTITY)
         .doUpdate()
+        .set(ITEM_RESULT.LIBRARY_OPERATION_ID, DSL.excluded(ITEM_RESULT.LIBRARY_OPERATION_ID))
         .set(ITEM_RESULT.OUTCOME, DSL.excluded(ITEM_RESULT.OUTCOME))
         .set(ITEM_RESULT.FAILURE_REASON, DSL.excluded(ITEM_RESULT.FAILURE_REASON))
         .set(ITEM_RESULT.DETAIL, DSL.excluded(ITEM_RESULT.DETAIL))
@@ -128,6 +133,20 @@ public class JooqItemResultRepository implements ItemResultRepository {
         .set(ITEM_RESULT.ARTWORK_GENERATION, DSL.excluded(ITEM_RESULT.ARTWORK_GENERATION))
         .set(ITEM_RESULT.ATTEMPTED_AT, DSL.excluded(ITEM_RESULT.ATTEMPTED_AT))
         .set(ITEM_RESULT.RECORDED_AT, DSL.currentOffsetDateTime());
+  }
+
+  // An artwork result carries the id that its request carries as the result is saved. Its writers
+  // hold the request's row, so the id cannot change before the transaction ends.
+  private Field<UUID> libraryOperationIdOf(ItemResult result) {
+    if (result.step() != ItemStep.ARTWORK) {
+      return DSL.val(result.libraryOperationId().orElse(null), ITEM_RESULT.LIBRARY_OPERATION_ID);
+    }
+
+    return DSL.field(
+        DSL.select(ARTWORK_REQUEST.LIBRARY_OPERATION_ID)
+            .from(ARTWORK_REQUEST)
+            .where(ARTWORK_REQUEST.TARGET_ID.eq(result.itemId()))
+            .and(ARTWORK_REQUEST.TARGET_TYPE.eq(toJooq(result.itemType()))));
   }
 
   @Override

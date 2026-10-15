@@ -9,6 +9,7 @@ import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.services.ArtworkSources;
 import com.streamarr.server.services.NewArtworkRequest;
+import com.streamarr.server.services.PendingArtworkRequest;
 import com.streamarr.server.services.StoredArtworkRequest;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
@@ -20,6 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Keeps artwork requests in memory, under the rules of {@code ArtworkRequestRepositoryContract}.
@@ -40,6 +42,11 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
   public FakeArtworkRequestRepository(FakeItemResultRepository itemResults) {
     this.itemResults = itemResults;
     itemResults.checkArtworkGenerationsWith(this::isPendingGeneration);
+    itemResults.stampArtworkResultsWith(this::libraryOperationIdOf);
+  }
+
+  private synchronized Optional<UUID> libraryOperationIdOf(ArtworkTarget target) {
+    return findRequest(target).flatMap(StoredArtworkRequest::libraryOperationId);
   }
 
   /** Fails the next read of the artwork completion evidence with {@code failure}. */
@@ -73,7 +80,7 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
             .build();
     var pending = requests.get(artwork.target());
     if (pending != null && covers(pending, sorted, refreshMode)) {
-      return new SavedArtworkRequest.Unchanged(pending.generation());
+      return keepGeneration(pending, request);
     }
 
     var mode = refreshMode;
@@ -89,8 +96,38 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
             .artwork(sorted)
             .refreshMode(mode)
             .generation(generation)
+            .libraryOperationId(
+                request
+                    .libraryOperationId()
+                    .or(
+                        () ->
+                            Optional.ofNullable(pending)
+                                .flatMap(StoredArtworkRequest::libraryOperationId)))
             .build());
     return new SavedArtworkRequest.NewGeneration(generation);
+  }
+
+  private SavedArtworkRequest keepGeneration(
+      StoredArtworkRequest pending, NewArtworkRequest request) {
+    var takingOver =
+        request
+            .libraryOperationId()
+            .filter(id -> !pending.libraryOperationId().equals(Optional.of(id)));
+    if (takingOver.isEmpty()) {
+      return new SavedArtworkRequest.Unchanged(pending.generation());
+    }
+
+    var target = pending.artwork().target();
+    requests.put(
+        target,
+        StoredArtworkRequest.builder()
+            .artwork(pending.artwork())
+            .refreshMode(pending.refreshMode())
+            .generation(pending.generation())
+            .libraryOperationId(takingOver)
+            .build());
+    itemResults.takeOverFinalArtworkResults(target, pending.generation(), takingOver.get());
+    return new SavedArtworkRequest.TakenOver(pending.generation());
   }
 
   @Override
@@ -99,8 +136,11 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
   }
 
   @Override
-  public synchronized Optional<Long> lockPendingGeneration(ArtworkTarget target) {
-    return findRequest(target).map(StoredArtworkRequest::generation);
+  public synchronized Optional<PendingArtworkRequest> lockPendingRequest(ArtworkTarget target) {
+    return findRequest(target)
+        .map(
+            request ->
+                new PendingArtworkRequest(request.generation(), request.libraryOperationId()));
   }
 
   @Override

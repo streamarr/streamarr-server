@@ -20,6 +20,7 @@ import com.streamarr.server.jooq.generated.tables.records.ArtworkRequestRecord;
 import com.streamarr.server.repositories.PostgresTransactionLocks;
 import com.streamarr.server.services.ArtworkSources;
 import com.streamarr.server.services.NewArtworkRequest;
+import com.streamarr.server.services.PendingArtworkRequest;
 import com.streamarr.server.services.StoredArtworkRequest;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
@@ -35,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
@@ -73,7 +75,9 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
     var refreshMode = request.refreshMode();
     var sources = storedSources(artwork);
     var unlocked = findRow(artwork.target());
-    if (unlocked.isPresent() && coversRequest(unlocked.get(), sources, refreshMode)) {
+    if (unlocked.isPresent()
+        && coversRequest(unlocked.get(), sources, refreshMode)
+        && !takesOver(request, unlocked.get())) {
       return new SavedArtworkRequest.Unchanged(unlocked.get().getGeneration());
     }
 
@@ -88,6 +92,7 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
             .set(ARTWORK_REQUEST.IMAGE_COUNT, artwork.requestedImageTypes().size())
             .set(ARTWORK_REQUEST.GENERATION, ARTWORK_REQUEST_GENERATION.nextval())
             .set(ARTWORK_REQUEST.REQUESTED_AT, request.requestedAt().atOffset(ZoneOffset.UTC))
+            .set(ARTWORK_REQUEST.LIBRARY_OPERATION_ID, request.libraryOperationId().orElse(null))
             .onConflict(ARTWORK_REQUEST.TARGET_ID, ARTWORK_REQUEST.TARGET_TYPE)
             .doUpdate()
             .set(
@@ -101,6 +106,11 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
             .set(ARTWORK_REQUEST.SOURCE_KEYS, DSL.excluded(ARTWORK_REQUEST.SOURCE_KEYS))
             .set(ARTWORK_REQUEST.GENERATION, ARTWORK_REQUEST_GENERATION.nextval())
             .set(ARTWORK_REQUEST.IMAGE_COUNT, DSL.excluded(ARTWORK_REQUEST.IMAGE_COUNT))
+            .set(
+                ARTWORK_REQUEST.LIBRARY_OPERATION_ID,
+                DSL.coalesce(
+                    DSL.excluded(ARTWORK_REQUEST.LIBRARY_OPERATION_ID),
+                    ARTWORK_REQUEST.LIBRARY_OPERATION_ID))
             .where(changesPendingRequest())
             .returning(ARTWORK_REQUEST.GENERATION)
             .fetchOptional(ARTWORK_REQUEST.GENERATION);
@@ -109,8 +119,41 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
     }
 
     // The conflicting row covers the request; the upsert locked it, so it is still there.
-    return new SavedArtworkRequest.Unchanged(
-        findRow(artwork.target()).orElseThrow().getGeneration());
+    var pending = findRow(artwork.target()).orElseThrow();
+    if (!takesOver(request, pending)) {
+      return new SavedArtworkRequest.Unchanged(pending.getGeneration());
+    }
+
+    takeOver(pending, request.libraryOperationId().orElseThrow());
+    return new SavedArtworkRequest.TakenOver(pending.getGeneration());
+  }
+
+  // An attempt of the pending generation fetches only images without a final result, so the
+  // results it will not replace take the operation's id here, while the request lock keeps
+  // result writers out.
+  private void takeOver(ArtworkRequestRecord pending, UUID libraryOperationId) {
+    dsl.update(ARTWORK_REQUEST)
+        .set(ARTWORK_REQUEST.LIBRARY_OPERATION_ID, libraryOperationId)
+        .where(ARTWORK_REQUEST.TARGET_ID.eq(pending.getTargetId()))
+        .and(ARTWORK_REQUEST.TARGET_TYPE.eq(pending.getTargetType()))
+        .execute();
+    dsl.update(ITEM_RESULT)
+        .set(ITEM_RESULT.LIBRARY_OPERATION_ID, libraryOperationId)
+        .where(ITEM_RESULT.ITEM_ID.eq(pending.getTargetId()))
+        .and(ITEM_RESULT.ITEM_TYPE.eq(pending.getTargetType()))
+        .and(ITEM_RESULT.STEP.eq(ItemResultStep.ARTWORK))
+        .and(ITEM_RESULT.ARTWORK_GENERATION.ge(pending.getGeneration()))
+        .and(isFinal())
+        .execute();
+  }
+
+  // A library operation takes over a pending request that another operation, or no operation,
+  // waits for.
+  private static boolean takesOver(NewArtworkRequest request, ArtworkRequestRecord pending) {
+    return request
+        .libraryOperationId()
+        .filter(id -> !id.equals(pending.getLibraryOperationId()))
+        .isPresent();
   }
 
   @Override
@@ -121,16 +164,18 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
 
   @Override
   @Transactional(propagation = Propagation.MANDATORY)
-  public Optional<Long> lockPendingGeneration(ArtworkTarget target) {
+  public Optional<PendingArtworkRequest> lockPendingRequest(ArtworkTarget target) {
     return transactionLocks.withLockWaitLimit(
         requestLock.timeout(),
         () -> {
           lockRequest(target);
-          return dsl.select(ARTWORK_REQUEST.GENERATION)
+          return dsl.select(ARTWORK_REQUEST.GENERATION, ARTWORK_REQUEST.LIBRARY_OPERATION_ID)
               .from(ARTWORK_REQUEST)
               .where(identifies(target))
               .forShare()
-              .fetchOptional(ARTWORK_REQUEST.GENERATION);
+              .fetchOptional(
+                  row ->
+                      new PendingArtworkRequest(row.value1(), Optional.ofNullable(row.value2())));
         });
   }
 
@@ -307,6 +352,7 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
                 .build())
         .refreshMode(toDomain(row.getImageRefreshMode()))
         .generation(row.getGeneration())
+        .libraryOperationId(Optional.ofNullable(row.getLibraryOperationId()))
         .build();
   }
 }

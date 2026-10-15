@@ -124,6 +124,7 @@ public class ArtworkRunWaiter {
     evidence.artworkResults().stream()
         .filter(result -> result.artworkGeneration() >= awaited.generation())
         .filter(result -> awaited.awaitedImageTypes().contains(result.imageType()))
+        .filter(result -> isForTheAwaitingLibraryOperation(result, awaited))
         .forEach(result -> resultsByType.put(result.imageType(), result));
     if (resultsByType.keySet().containsAll(awaited.awaitedImageTypes())) {
       return Optional.of(List.copyOf(resultsByType.values()));
@@ -136,6 +137,14 @@ public class ArtworkRunWaiter {
     return Optional.of(List.copyOf(resultsByType.values()));
   }
 
+  // A run of a library operation counts only results saved for the operation, so a result that an
+  // earlier operation left does not release a task's admission.
+  private static boolean isForTheAwaitingLibraryOperation(
+      ItemResult result, AwaitedArtwork awaited) {
+    return awaited.libraryOperationId().isEmpty()
+        || awaited.libraryOperationId().equals(result.libraryOperationId());
+  }
+
   private static AwaitedArtwork merge(AwaitedArtwork earlier, AwaitedArtwork later) {
     var awaitedImageTypes = new HashSet<>(earlier.awaitedImageTypes());
     awaitedImageTypes.addAll(later.awaitedImageTypes());
@@ -143,6 +152,7 @@ public class ArtworkRunWaiter {
         .target(earlier.target())
         .generation(Math.max(earlier.generation(), later.generation()))
         .awaitedImageTypes(awaitedImageTypes)
+        .libraryOperationId(later.libraryOperationId())
         .build();
   }
 

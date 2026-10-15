@@ -10,6 +10,7 @@ import com.streamarr.server.fakes.FakeTaskRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fixtures.ArtworkFixture;
 import java.time.Clock;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -83,8 +84,10 @@ class ArtworkStepsTaskTest {
     var awaited = Set.of(ImageType.POSTER);
 
     assertThatNullPointerException().isThrownBy(() -> ArtworkPriority.of(null));
-    assertThatNullPointerException().isThrownBy(() -> new AwaitedArtwork(null, 1, awaited));
-    assertThatNullPointerException().isThrownBy(() -> new AwaitedArtwork(target, 1, null));
+    assertThatNullPointerException()
+        .isThrownBy(() -> new AwaitedArtwork(null, 1, awaited, Optional.empty()));
+    assertThatNullPointerException()
+        .isThrownBy(() -> new AwaitedArtwork(target, 1, null, Optional.empty()));
   }
 
   private final ArtworkFixture artwork = ArtworkFixture.builder().build();

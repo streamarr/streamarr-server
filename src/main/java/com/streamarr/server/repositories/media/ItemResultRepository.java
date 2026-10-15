@@ -9,6 +9,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * Stores the latest result of each step for each item. An artwork result takes the library
+ * operation id that the target's artwork request carries as the result is saved; any other result
+ * keeps the library operation id it names.
+ */
 public interface ItemResultRepository {
 
   /**

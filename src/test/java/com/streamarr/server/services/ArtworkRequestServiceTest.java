@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
+import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
@@ -24,6 +25,7 @@ import com.streamarr.server.fakes.GatedImageDownloader;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.services.metadata.ImageVariantService;
 import com.streamarr.server.services.metadata.TmdbImageDownloader;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
@@ -37,6 +39,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
@@ -822,6 +825,128 @@ class ArtworkRequestServiceTest {
       artwork.artworkRunWaiter().tryAwaitTaskResults(task);
 
       assertThat(artwork.requests().completionEvidenceReads()).isZero();
+    }
+  }
+
+  @Nested
+  @DisplayName("Library operation runs")
+  class LibraryOperationRuns {
+
+    @Test
+    @DisplayName("Should save each result of an operation's request with the operation's id")
+    void shouldSaveEachResultOfAnOperationsRequestWithTheOperationsId() {
+      var operation = UUID.randomUUID();
+      var run =
+          artworkRequestService.openLibraryOperationRun(
+              "scan", ImageRefreshMode.PRESERVE, operation);
+
+      artworkRequestService.requestPrimaryArtwork(run, movieArtwork(UUID.randomUUID(), POSTER));
+
+      assertThat(itemResults.findAll())
+          .hasSize(2)
+          .extracting(ItemResult::libraryOperationId)
+          .containsOnly(Optional.of(operation));
+    }
+
+    @Test
+    @DisplayName("Should save background artwork results without a library operation id")
+    void shouldSaveBackgroundArtworkResultsWithoutALibraryOperationId() {
+      artworkRequestService.requestBackgroundArtwork(
+          personArtwork("/face.jpg"), ImageRefreshMode.PRESERVE);
+
+      assertThat(itemResults.findAll())
+          .singleElement()
+          .extracting(ItemResult::libraryOperationId)
+          .isEqualTo(Optional.empty());
+    }
+
+    @Test
+    @DisplayName(
+        "Should schedule the steps again when an operation takes over a pending request and not"
+            + " when the same operation requests it again")
+    void shouldScheduleTheStepsAgainWhenAnOperationTakesOverAPendingRequest() {
+      var scheduled = new CopyOnWriteArrayList<ArtworkTarget>();
+      var requestService =
+          new ArtworkRequestService(
+              artwork.requests(),
+              scheduled::add,
+              new ImageService(
+                  imageRepository,
+                  new ImageVariantService(),
+                  new ImageProperties("/data/images"),
+                  artwork.fileSystem(),
+                  itemResults),
+              clock);
+      var movie = movieArtwork(UUID.randomUUID(), POSTER);
+      var operationRun =
+          requestService.openLibraryOperationRun(
+              "refresh", ImageRefreshMode.PRESERVE, UUID.randomUUID());
+
+      requestService.requestPrimaryArtwork(
+          requestService.openRun("file discovery", ImageRefreshMode.PRESERVE), movie);
+      requestService.requestPrimaryArtwork(operationRun, movie);
+      requestService.requestPrimaryArtwork(operationRun, movie);
+
+      assertThat(scheduled).containsExactly(movie.target(), movie.target());
+    }
+
+    @Test
+    @DisplayName(
+        "Should keep an operation's task waiting while the only result of its artwork waits to"
+            + " retry for an earlier operation")
+    void shouldKeepAnOperationsTaskWaitingWhileTheOnlyResultWaitsToRetryForAnEarlierOperation()
+        throws Exception {
+      var sleeper = new CountingSleeper();
+      var waiting =
+          ArtworkFixture.builder()
+              .imageRepository(imageRepository)
+              .imageDownloader(imageDownloader)
+              .itemResults(itemResults)
+              .clock(clock)
+              .sleeper(sleeper)
+              .build();
+      waiting.scheduling().holdScheduledSteps();
+      sleeper.onSleep(_ -> waiting.scheduling().runPendingSteps());
+      var movie = movieArtwork(UUID.randomUUID(), POSTER);
+      var earlierOperation = UUID.randomUUID();
+      var earlierRun =
+          waiting
+              .artworkRequestService()
+              .openLibraryOperationRun("scan", ImageRefreshMode.PRESERVE, earlierOperation);
+      waiting.artworkRequestService().requestPrimaryArtwork(earlierRun, movie);
+      var generation = waiting.requests().findRequest(movie.target()).orElseThrow().generation();
+      itemResults.overwrite(temporaryPosterFailure(movie.target(), generation));
+      itemResults.overwrite(
+          temporaryPosterFailure(movie.target(), generation).toBuilder()
+              .imageType(ImageType.BACKDROP)
+              .build());
+      var operation = UUID.randomUUID();
+      var task =
+          waiting
+              .artworkRequestService()
+              .openLibraryOperationRun("scan", ImageRefreshMode.PRESERVE, operation)
+              .openTaskRun();
+      waiting.artworkRequestService().requestPrimaryArtwork(task, movie);
+      task.close();
+
+      BoundedTask.runWithin(BOUND, () -> waiting.artworkRunWaiter().tryAwaitTaskResults(task));
+
+      assertThat(sleeper.sleeps()).isNotEmpty();
+      assertThat(itemResults.findAll())
+          .extracting(ItemResult::libraryOperationId)
+          .containsOnly(Optional.of(operation));
+    }
+
+    private ItemResult temporaryPosterFailure(ArtworkTarget target, long generation) {
+      return ItemResult.builder()
+          .itemId(target.targetId())
+          .itemType(target.targetType())
+          .step(ItemStep.ARTWORK)
+          .imageType(ImageType.POSTER)
+          .outcome(new ItemOutcome.Failed(ItemFailureReason.TEMPORARY, "timeout"))
+          .attemptedAt(clock.instant())
+          .artworkGeneration(generation)
+          .build();
     }
   }
 

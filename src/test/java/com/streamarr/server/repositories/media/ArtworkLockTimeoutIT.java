@@ -84,7 +84,7 @@ class ArtworkLockTimeoutIT extends AbstractIntegrationTest {
   void shouldGiveUpWithinTheLockTimeoutWhenACompletionWaitsForARequestBeingSaved()
       throws Exception {
     whileAnotherTransactionSavesARequest(
-        () -> transactionTemplate.execute(_ -> requests.lockPendingGeneration(movie)));
+        () -> transactionTemplate.execute(_ -> requests.lockPendingRequest(movie)));
   }
 
   @Test
