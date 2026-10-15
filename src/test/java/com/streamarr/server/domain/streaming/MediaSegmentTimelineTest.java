@@ -113,17 +113,16 @@ class MediaSegmentTimelineTest {
   }
 
   @Test
-  @DisplayName(
-      "Should start the first stream copy segment at zero when its keyframe presents later")
-  void shouldStartTheFirstStreamCopySegmentAtZeroWhenItsKeyframePresentsLater() {
+  @DisplayName("Should open the first stream copy segment at zero when its keyframe presents later")
+  void shouldOpenTheFirstStreamCopySegmentAtZeroWhenItsKeyframePresentsLater() {
     var timeline = streamCopyOver(Duration.ofSeconds(12), 500, 6_000);
 
     assertThat(durations(timeline)).containsExactly(Duration.ofSeconds(6), Duration.ofSeconds(6));
   }
 
   @Test
-  @DisplayName("Should start a stream copy segment at its keyframe's time in the source time base")
-  void shouldStartAStreamCopySegmentAtItsKeyframesTimeInTheSourceTimeBase() {
+  @DisplayName("Should open a stream copy segment at its keyframe's time in the source time base")
+  void shouldOpenAStreamCopySegmentAtItsKeyframesTimeInTheSourceTimeBase() {
     // In a 1001/24000 time base, 144 ticks are 6.006 s.
     var positions =
         KeyframePositions.builder()

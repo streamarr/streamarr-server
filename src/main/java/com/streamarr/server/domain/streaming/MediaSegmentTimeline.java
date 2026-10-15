@@ -90,9 +90,10 @@ public sealed interface MediaSegmentTimeline {
 
   /**
    * A stream copy's segments, which open at source keyframes under ADR 0037's boundary rule.
-   * Segment {@code N} starts at the presentation time of the keyframe that opens it and runs up to
-   * the next segment's start. Segment 0 starts at zero instead, because it also holds the media
-   * that presents before its keyframe. The last segment ends at the media duration.
+   * Segment {@code N} opens at the presentation time of its keyframe and runs until the next
+   * segment opens. Segment 0 opens at zero instead, because it also holds the media that presents
+   * before its keyframe. The last segment runs to the media duration. Each segment's start stays on
+   * the grid.
    */
   record StreamCopy(
       @NonNull Duration mediaDuration,
@@ -113,10 +114,10 @@ public sealed interface MediaSegmentTimeline {
     public Duration mediaSegmentDuration(int index) {
       var end = mediaDuration;
       if (index + 1 < openingKeyframes.size()) {
-        end = mediaSegmentStart(index + 1);
+        end = openingTime(index + 1);
       }
 
-      return end.minus(mediaSegmentStart(index));
+      return end.minus(openingTime(index));
     }
 
     /**
@@ -138,7 +139,7 @@ public sealed interface MediaSegmentTimeline {
       return Optional.of(decodeTime);
     }
 
-    private Duration mediaSegmentStart(int index) {
+    private Duration openingTime(int index) {
       if (index == 0) {
         return Duration.ZERO;
       }
