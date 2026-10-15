@@ -161,7 +161,6 @@ class WatchStateChangedEventIT extends AbstractIntegrationTest {
         profileId, session.getSessionId(), positionSeconds, state);
   }
 
-  /** Registered by @Import as a bean of its own; Spring discovers the listener method on it. */
   @TestConfiguration(proxyBeanMethods = false)
   static class CommittedWatchStateChanges {
 
