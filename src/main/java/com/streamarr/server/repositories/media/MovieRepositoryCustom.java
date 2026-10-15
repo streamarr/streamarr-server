@@ -3,12 +3,8 @@ package com.streamarr.server.repositories.media;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
-import java.time.Instant;
-import java.util.Collection;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
 
 public interface MovieRepositoryCustom {
 
@@ -19,6 +15,4 @@ public interface MovieRepositoryCustom {
   Optional<Movie> findLetterJumpPredecessor(MediaFilter filter);
 
   Optional<Movie> findByTmdbId(String tmdbId);
-
-  Map<UUID, Instant> findLastWatchedByMovieIds(UUID profileId, Collection<UUID> movieIds);
 }

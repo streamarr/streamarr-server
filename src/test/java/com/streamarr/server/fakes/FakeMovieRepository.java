@@ -7,13 +7,10 @@ import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PaginationDirection;
-import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -211,10 +208,5 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
   @Override
   public List<Movie> findWithExternalIdsByLibrary_Id(UUID libraryId) {
     return findByLibrary_Id(libraryId);
-  }
-
-  @Override
-  public Map<UUID, Instant> findLastWatchedByMovieIds(UUID profileId, Collection<UUID> movieIds) {
-    throw new UnsupportedOperationException("LAST_WATCHED not yet implemented in fake");
   }
 }

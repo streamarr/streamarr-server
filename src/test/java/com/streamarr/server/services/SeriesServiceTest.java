@@ -104,6 +104,7 @@ class SeriesServiceTest {
             null,
             null,
             null,
+            null,
             null);
   }
 

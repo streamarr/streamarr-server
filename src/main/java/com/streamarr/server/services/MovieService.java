@@ -8,6 +8,7 @@ import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.domain.metadata.Rating;
 import com.streamarr.server.domain.metadata.Review;
+import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.repositories.CompanyRepository;
 import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.PersonRepository;
@@ -15,6 +16,7 @@ import com.streamarr.server.repositories.RatingRepository;
 import com.streamarr.server.repositories.ReviewRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
@@ -51,6 +53,7 @@ public class MovieService {
   private final CompanyRepository companyRepository;
   private final RatingRepository ratingRepository;
   private final ReviewRepository reviewRepository;
+  private final WatchHistoryRepository watchHistoryRepository;
 
   @Transactional
   public Optional<Movie> addMediaFileToMovieByTmdbId(String id, MediaFile mediaFile) {
@@ -213,8 +216,10 @@ public class MovieService {
     if (filter.getSortBy() != OrderMediaBy.LAST_WATCHED || movies.isEmpty()) {
       return Map.of();
     }
-    return movieRepository.findLastWatchedByMovieIds(
-        filter.getProfileId(), movies.stream().map(Movie::getId).toList());
+    return watchHistoryRepository.findLastWatchedByItemIds(
+        filter.getProfileId(),
+        CollectableScope.DIRECT_MEDIA,
+        movies.stream().map(Movie::getId).toList());
   }
 
   private Object getOrderByValue(

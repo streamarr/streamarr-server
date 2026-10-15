@@ -1,11 +1,13 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.domain.streaming.WatchHistory;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -64,5 +66,11 @@ public class FakeWatchHistoryRepository extends FakeJpaRepository<WatchHistory>
     database.values().stream()
         .filter(wh -> fromProfileId.equals(wh.getProfileId()))
         .forEach(wh -> wh.setProfileId(toProfileId));
+  }
+
+  @Override
+  public Map<UUID, Instant> findLastWatchedByItemIds(
+      UUID profileId, CollectableScope scope, Collection<UUID> itemIds) {
+    throw new UnsupportedOperationException("LAST_WATCHED not yet implemented in fake");
   }
 }

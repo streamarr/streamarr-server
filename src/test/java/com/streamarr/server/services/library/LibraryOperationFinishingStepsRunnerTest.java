@@ -60,6 +60,7 @@ class LibraryOperationFinishingStepsRunnerTest {
           null,
           null,
           null,
+          null,
           null);
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();

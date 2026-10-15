@@ -186,6 +186,7 @@ class LibraryOperationExecutionTest {
           null,
           null,
           null,
+          null,
           null);
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
 
@@ -208,6 +209,7 @@ class LibraryOperationExecutionTest {
           new FakeSeasonRepository(),
           new FakeEpisodeRepository(),
           fakeMediaFileRepository,
+          null,
           null,
           null,
           null);
@@ -1271,6 +1273,7 @@ class LibraryOperationExecutionTest {
             creditService,
             null,
             artwork.artworkRequestService(),
+            null,
             null,
             null,
             null,
