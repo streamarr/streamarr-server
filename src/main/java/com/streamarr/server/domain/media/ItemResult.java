@@ -23,11 +23,13 @@ public record ItemResult(
 
   public ItemResult {
     var artwork = step == ItemStep.ARTWORK;
-    if (artwork != (imageType != null)) {
+    var namesImageType = imageType != null;
+    if (artwork != namesImageType) {
       throw new IllegalArgumentException("Only artwork results name an image type");
     }
 
-    if (artwork != (artworkGeneration != null)) {
+    var namesArtworkGeneration = artworkGeneration != null;
+    if (artwork != namesArtworkGeneration) {
       throw new IllegalArgumentException("Only artwork results name an artwork generation");
     }
   }

@@ -50,11 +50,18 @@ public sealed interface ArtworkFailure {
   }
 
   private static ArtworkFailure classifyAnswer(ImageDownloadException download) {
-    var statusCode = download.getStatusCode();
-    if (statusCode == 408 || statusCode == 429 || statusCode >= 500) {
+    if (isRetryableStatus(download.getStatusCode())) {
       return new Retryable(download.getRetryAfter());
     }
 
     return new Terminal(ItemFailureReason.DOWNLOAD_FAILED);
+  }
+
+  private static boolean isRetryableStatus(int statusCode) {
+    if (statusCode >= 500) {
+      return true;
+    }
+
+    return statusCode == 408 || statusCode == 429;
   }
 }

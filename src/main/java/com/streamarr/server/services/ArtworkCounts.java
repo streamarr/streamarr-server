@@ -1,5 +1,6 @@
 package com.streamarr.server.services;
 
+import com.streamarr.server.domain.media.ArtworkOutcomeTally;
 import com.streamarr.server.domain.media.ItemOutcome;
 import lombok.Builder;
 
@@ -16,6 +17,15 @@ public record ArtworkCounts(int saved, int skipped, int unavailable, int failed)
       case ItemOutcome.Unavailable _ -> toBuilder().unavailable(unavailable + 1).build();
       case ItemOutcome.Failed _ -> toBuilder().failed(failed + 1).build();
     };
+  }
+
+  /** Counts recorded artwork results; a succeeded result counts as saved. */
+  ArtworkCounts plus(ArtworkOutcomeTally tally) {
+    return toBuilder()
+        .saved(saved + Math.toIntExact(tally.succeeded()))
+        .unavailable(unavailable + Math.toIntExact(tally.unavailable()))
+        .failed(failed + Math.toIntExact(tally.failed()))
+        .build();
   }
 
   /** Counts stored images that a run kept without requesting them again. */

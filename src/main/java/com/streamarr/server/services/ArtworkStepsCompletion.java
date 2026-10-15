@@ -3,6 +3,7 @@ package com.streamarr.server.services;
 import com.github.kagkarlsson.scheduler.TaskRepository;
 import com.github.kagkarlsson.scheduler.task.CompletionHandler;
 import com.github.kagkarlsson.scheduler.task.Execution;
+import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.github.kagkarlsson.scheduler.task.ExecutionOperations;
 import com.github.kagkarlsson.scheduler.task.FailureHandler;
 import com.github.kagkarlsson.scheduler.task.RescheduleUpdate;
@@ -32,6 +33,10 @@ public class ArtworkStepsCompletion {
   @NonNull private final TaskRepository artworkTasks;
   @NonNull private final Clock clock;
 
+  /** The execution being completed, with the item it ran the steps of. */
+  private record CompletingExecution(
+      ArtworkItem item, Execution execution, ExecutionOperations<ArtworkItem> operations) {}
+
   /**
    * Returns how the attempt's execution completes. A finished generation removes the task. A step
    * left to retry waits for the longer of the image host's {@code Retry-After} and the capped
@@ -40,7 +45,10 @@ public class ArtworkStepsCompletion {
    */
   public CompletionHandler<ArtworkItem> handlerFor(ArtworkItem item, ArtworkStepsOutcome outcome) {
     return (complete, operations) ->
-        inTransaction(() -> complete(item, outcome, complete.getExecution(), operations));
+        inTransaction(
+            () ->
+                complete(
+                    new CompletingExecution(item, complete.getExecution(), operations), outcome));
   }
 
   /**
@@ -51,8 +59,7 @@ public class ArtworkStepsCompletion {
     return (complete, operations) ->
         inTransaction(
             () -> {
-              var item = (ArtworkItem) complete.getExecution().taskInstance.getData();
-              if (requests.lockPendingGeneration(item).isEmpty()) {
+              if (requests.lockPendingGeneration(artworkItemOf(complete)).isEmpty()) {
                 operations.remove();
                 return;
               }
@@ -61,49 +68,64 @@ public class ArtworkStepsCompletion {
             });
   }
 
-  private void complete(
-      ArtworkItem item,
-      ArtworkStepsOutcome outcome,
-      Execution execution,
-      ExecutionOperations<ArtworkItem> operations) {
-    if (outcome instanceof ArtworkStepsOutcome.Finished(var generation)) {
-      completeGeneration(item, generation, execution, operations);
-      return;
-    }
+  // The task is created as a Task<ArtworkItem>, so every execution it completes carries an item.
+  private static ArtworkItem artworkItemOf(ExecutionComplete complete) {
+    return (ArtworkItem) complete.getExecution().taskInstance.getData();
+  }
 
-    var pending = requests.lockPendingGeneration(item);
-    if (pending.isEmpty()) {
-      operations.remove();
-      return;
-    }
-
-    var pendingGeneration = pending.get();
+  private void complete(CompletingExecution completing, ArtworkStepsOutcome outcome) {
     switch (outcome) {
-      case ArtworkStepsOutcome.Unfinished(var generation, var retryAfter)
-          when generation == pendingGeneration ->
-          retryAfterFailure(execution, retryAfter);
-      case ArtworkStepsOutcome.Interrupted(var generation) when generation == pendingGeneration ->
-          artworkTasks.reschedule(
-              execution, RescheduleUpdate.toExecutionTime(clock.instant()).build());
-      case ArtworkStepsOutcome.NotRequested _,
-          ArtworkStepsOutcome.Finished _,
-          ArtworkStepsOutcome.Unfinished _,
-          ArtworkStepsOutcome.Interrupted _ ->
-          runNewGeneration(execution);
+      case ArtworkStepsOutcome.Finished(var generation) ->
+          completeGeneration(completing, generation);
+      case ArtworkStepsOutcome.Unfinished(var generation, var retryAfter) ->
+          actOnPendingGeneration(
+              completing, generation, () -> retryAfterFailure(completing.execution(), retryAfter));
+      case ArtworkStepsOutcome.Interrupted(var generation) ->
+          actOnPendingGeneration(
+              completing,
+              generation,
+              () ->
+                  artworkTasks.reschedule(
+                      completing.execution(),
+                      RescheduleUpdate.toExecutionTime(clock.instant()).build()));
+      case ArtworkStepsOutcome.NotRequested _ -> removeUnlessRequested(completing);
     }
   }
 
-  private void completeGeneration(
-      ArtworkItem item,
-      long generation,
-      Execution execution,
-      ExecutionOperations<ArtworkItem> operations) {
-    if (requests.tryCompleteGeneration(item, generation)) {
-      operations.remove();
+  private void completeGeneration(CompletingExecution completing, long generation) {
+    if (requests.tryCompleteGeneration(completing.item(), generation)) {
+      completing.operations().remove();
       return;
     }
 
-    runNewGeneration(execution);
+    runNewGeneration(completing.execution());
+  }
+
+  // Acts on the attempt only while its generation is still pending: a newer generation runs at
+  // once, and an item without a request has its task removed.
+  private void actOnPendingGeneration(
+      CompletingExecution completing, long attemptedGeneration, Runnable action) {
+    var pending = requests.lockPendingGeneration(completing.item());
+    if (pending.isEmpty()) {
+      completing.operations().remove();
+      return;
+    }
+
+    if (pending.get() == attemptedGeneration) {
+      action.run();
+      return;
+    }
+
+    runNewGeneration(completing.execution());
+  }
+
+  private void removeUnlessRequested(CompletingExecution completing) {
+    if (requests.lockPendingGeneration(completing.item()).isEmpty()) {
+      completing.operations().remove();
+      return;
+    }
+
+    runNewGeneration(completing.execution());
   }
 
   private void runNewGeneration(Execution execution) {

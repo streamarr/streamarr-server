@@ -12,6 +12,7 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
@@ -45,19 +46,7 @@ public class ArtworkRuns {
     run.requested().forEach(artwork -> pending.merge(artwork.item(), artwork, ArtworkRuns::merge));
     var counts = ArtworkCounts.NONE.plusSkipped(run.keptImages());
     while (!pending.isEmpty()) {
-      for (var state : requests.findArtworkStates(pending.keySet())) {
-        var requested = pending.get(state.item());
-        var finished = finishedResults(state, requested);
-        if (finished.isEmpty()) {
-          continue;
-        }
-
-        pending.remove(state.item());
-        for (var result : finished.get()) {
-          counts = counts.plus(result.outcome());
-        }
-      }
-
+      counts = countFinishedArtwork(pending, counts);
       if (!pending.isEmpty()) {
         sleeper.sleep(properties.resultCheckInterval());
       }
@@ -75,6 +64,25 @@ public class ArtworkRuns {
             .build();
     logCompleted(summary);
     return summary;
+  }
+
+  // Removes each item whose requested artwork is finished from pending, and counts its results.
+  private ArtworkCounts countFinishedArtwork(
+      Map<ArtworkItem, RequestedArtwork> pending, ArtworkCounts counts) {
+    var total = counts;
+    for (var state : requests.findArtworkStates(pending.keySet())) {
+      var finished = finishedResults(state, pending.get(state.item()));
+      if (finished.isEmpty()) {
+        continue;
+      }
+
+      pending.remove(state.item());
+      for (var result : finished.get()) {
+        total = total.plus(result.outcome());
+      }
+    }
+
+    return total;
   }
 
   // Returns the results that finish the requested artwork, or nothing while it is still pending.

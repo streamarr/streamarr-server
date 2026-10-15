@@ -1,6 +1,5 @@
 package com.streamarr.server.services;
 
-import com.streamarr.server.domain.media.ArtworkOutcomeTally;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
 import java.time.Clock;
@@ -90,19 +89,11 @@ public class ArtworkProgress {
     var counts = ArtworkCounts.NONE;
     for (var entry : itemResults.countArtworkOutcomesRecordedSince(since).entrySet()) {
       if (ArtworkPriority.of(entry.getKey()) == priority) {
-        counts = plus(counts, entry.getValue());
+        counts = counts.plus(entry.getValue());
       }
     }
 
     return counts;
-  }
-
-  private static ArtworkCounts plus(ArtworkCounts counts, ArtworkOutcomeTally tally) {
-    return counts.toBuilder()
-        .saved(counts.saved() + (int) tally.succeeded())
-        .unavailable(counts.unavailable() + (int) tally.unavailable())
-        .failed(counts.failed() + (int) tally.failed())
-        .build();
   }
 
   private static void log(ArtworkProgressReport report) {

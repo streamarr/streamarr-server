@@ -41,7 +41,7 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
-@Builder(toBuilder = true)
+@Builder
 @RequiredArgsConstructor
 public class ArtworkSteps {
 
@@ -183,12 +183,7 @@ public class ArtworkSteps {
 
     var processed = download.processedImage().resultNow();
     try {
-      if (planned.replacesStoredImage()) {
-        imageService.replaceImages(processed, attempt);
-      } else {
-        imageService.saveImages(processed.images(), attempt);
-      }
-
+      storeImages(attempt, planned, processed);
       return new StepOutcome.Saved();
     } catch (ObsoleteArtworkAttemptException _) {
       imageService.deleteFiles(processed.writtenFiles());
@@ -197,6 +192,16 @@ public class ArtworkSteps {
       imageService.deleteFiles(processed.writtenFiles());
       return failed(attempt, planned, e);
     }
+  }
+
+  private void storeImages(
+      ArtworkAttempt attempt, DownloadImage planned, ProcessedImage processed) {
+    if (planned.replacesStoredImage()) {
+      imageService.replaceImages(processed, attempt);
+      return;
+    }
+
+    imageService.saveImages(processed.images(), attempt);
   }
 
   private StepOutcome failed(ArtworkAttempt attempt, DownloadImage planned, Throwable cause) {
@@ -239,23 +244,21 @@ public class ArtworkSteps {
             .filter(StepOutcome.ResultToStore.class::isInstance)
             .map(StepOutcome.ResultToStore.class::cast)
             .toList();
-    switch (storeResults(attempt, unsaved)) {
-      case OBSOLETE -> {
-        return new ArtworkStepsOutcome.Finished(attempt.generation());
-      }
-      case NOT_STORED -> {
-        return new ArtworkStepsOutcome.Unfinished(attempt.generation(), Optional.empty());
-      }
-      case STORED -> {
-        // Each step's result is stored; what remains depends on the outcomes.
-      }
-    }
+    return switch (storeResults(attempt, unsaved)) {
+      case OBSOLETE -> new ArtworkStepsOutcome.Finished(attempt.generation());
+      case NOT_STORED -> new ArtworkStepsOutcome.Unfinished(attempt.generation(), Optional.empty());
+      case STORED -> outcomeOfStoredAttempt(attempt, unsaved, interrupted);
+    };
+  }
 
+  // Each step's result is stored; what remains depends on the outcomes.
+  private static ArtworkStepsOutcome outcomeOfStoredAttempt(
+      ArtworkAttempt attempt, List<StepOutcome.ResultToStore> stored, boolean interrupted) {
     if (interrupted) {
       return new ArtworkStepsOutcome.Interrupted(attempt.generation());
     }
 
-    var retryable = unsaved.stream().filter(StepOutcome.ResultToStore::isRetryable).toList();
+    var retryable = stored.stream().filter(StepOutcome.ResultToStore::isRetryable).toList();
     if (retryable.isEmpty()) {
       return new ArtworkStepsOutcome.Finished(attempt.generation());
     }
