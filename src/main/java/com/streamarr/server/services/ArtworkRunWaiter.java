@@ -18,6 +18,7 @@ import java.util.Optional;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 /**
@@ -59,12 +60,26 @@ public class ArtworkRunWaiter {
   }
 
   /**
-   * Waits as {@link #awaitResults} does for the artwork that one closed task run awaits, and checks
-   * more often, because an admitted task holds its admission while it waits. A task that awaits no
-   * artwork returns at once without reading any result.
+   * Tries to wait as {@link #awaitResults} does for the artwork that one closed task run awaits,
+   * and checks more often, because an admitted task holds its admission while it waits. A task that
+   * awaits no artwork returns at once without reading any result.
+   *
+   * <p>A failed read stops the task's wait instead of failing the task. The operation's run holds
+   * the same artwork, and {@link #awaitResults} reads its results again when the operation ends.
+   *
+   * @return true when the task's artwork has results; false when a read of the results failed
    */
-  public void awaitTaskResults(ArtworkRun taskRun) throws InterruptedException {
-    awaitFinishedArtwork(taskRun, properties.taskResultCheckInterval());
+  public boolean tryAwaitTaskResults(ArtworkRun taskRun) throws InterruptedException {
+    try {
+      awaitFinishedArtwork(taskRun, properties.taskResultCheckInterval());
+      return true;
+    } catch (DataAccessException failure) {
+      log.warn(
+          "Stopped waiting for one task's primary artwork in the {}, which waits for it at its end.",
+          taskRun.description(),
+          failure);
+      return false;
+    }
   }
 
   private FinishedImageCounts awaitFinishedArtwork(ArtworkRun run, Duration checkInterval)

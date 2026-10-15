@@ -68,6 +68,7 @@ import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
+import java.sql.SQLTransientConnectionException;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
@@ -83,6 +84,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.jdbc.CannotGetJdbcConnectionException;
 
 @Tag("UnitTest")
 @DisplayName("Library Refresh Service Tests")
@@ -201,6 +203,17 @@ class LibraryRefreshServiceTest {
         .sum();
   }
 
+  private double refreshReports(String report) {
+    return meterRegistry
+        .find("streamarr.library.admission.reports")
+        .tag("operation", "refresh")
+        .tag("report", report)
+        .counters()
+        .stream()
+        .mapToDouble(Counter::count)
+        .sum();
+  }
+
   private double refreshAdmissions() {
     var admitted =
         meterRegistry
@@ -296,6 +309,29 @@ class LibraryRefreshServiceTest {
 
       assertThat(inFlightWhilePosterPending).hasValue(1.0);
       assertThat(heldArtwork.scheduling().pendingTargets()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should refresh every movie when a refresh task cannot read its artwork results")
+    void shouldRefreshEveryMovieWhenARefreshTaskCannotReadItsArtworkResults() throws Exception {
+      var library = buildMovieLibrary();
+      var first = saveMovieWithTmdbId("Inception", "27205", library);
+      var second = saveMovieWithTmdbId("Interstellar", "157336", library);
+      stubMovieMetadataWithPoster("27205", library);
+      stubMovieMetadataWithPoster("157336", library);
+      artwork
+          .requests()
+          .failNextArtworkStateReadWith(
+              new CannotGetJdbcConnectionException(
+                  "simulated pool timeout",
+                  new SQLTransientConnectionException("connection not available")));
+      var service = refreshServiceWith(artwork, admissionsWith(new FixedLimitAdmissions(1)));
+
+      BoundedTask.runWithin(Duration.ofSeconds(5), () -> service.refreshLibrary(library));
+
+      assertThat(itemResults.findByItem(first.getId(), ImageEntityType.MOVIE)).isNotEmpty();
+      assertThat(itemResults.findByItem(second.getId(), ImageEntityType.MOVIE)).isNotEmpty();
+      assertThat(refreshReports("drop")).isEqualTo(1);
     }
 
     @Test

@@ -116,6 +116,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.spi.FileSystemProvider;
+import java.sql.SQLTransientConnectionException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -142,6 +143,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.jdbc.CannotGetJdbcConnectionException;
 
 @Tag("UnitTest")
 @ExtendWith(MockitoExtension.class)
@@ -1103,6 +1105,34 @@ class LibraryManagementServiceTest {
       assertThat(inFlightWhilePosterPending).hasValue(1.0);
       assertThat(heldArtwork.scheduling().pendingTargets()).isEmpty();
       assertThat(scanReports("latency")).isEqualTo(1);
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+    }
+
+    @Test
+    @DisplayName(
+        "Should match every file and finish healthy when a file task cannot read its artwork results")
+    void shouldMatchEveryFileAndFinishHealthyWhenAFileTaskCannotReadItsArtworkResults()
+        throws Exception {
+      var root = createRootLibraryDirectory();
+      var firstPath = createMovieFile(root, "A First", "About Time (2013).mkv");
+      var secondPath = createMovieFile(root, "B Second", "About Time (2013) Remux.mkv");
+      var imageDownloader = new FakeTmdbHttpService();
+      imageDownloader.setImageData(createTestImage(600, 900));
+      var posterArtwork = ArtworkFixture.builder().imageDownloader(imageDownloader).build();
+      posterArtwork
+          .requests()
+          .failNextArtworkStateReadWith(
+              new CannotGetJdbcConnectionException(
+                  "simulated pool timeout",
+                  new SQLTransientConnectionException("connection not available")));
+      var service = libraryManagementServiceWithArtwork(posterArtwork);
+      matchMovieWithPoster("About Time");
+
+      BoundedTask.runWithin(SCAN_BOUND, () -> service.scanLibrary(savedLibraryId));
+
+      assertThat(mediaFileStatus(firstPath)).isEqualTo(MediaFileStatus.MATCHED);
+      assertThat(mediaFileStatus(secondPath)).isEqualTo(MediaFileStatus.MATCHED);
+      assertThat(scanReports("drop")).isEqualTo(1);
       assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
     }
 

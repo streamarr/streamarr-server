@@ -6,6 +6,9 @@ public enum AdmittedTaskReport {
   LATENCY,
   /** The task returned without real processing, so its latency says nothing about capacity. */
   IGNORED,
-  /** The task hit a retry or a timeout. The limit reads its latency as an ordinary sample. */
+  /**
+   * The task hit a retry or a timeout, or could not read its artwork results. The limit reads its
+   * latency as an ordinary sample.
+   */
   DROP
 }

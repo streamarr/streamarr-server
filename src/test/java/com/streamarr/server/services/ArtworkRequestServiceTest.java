@@ -31,6 +31,7 @@ import com.streamarr.server.support.BoundedTask;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.SQLTransientConnectionException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +48,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("UnitTest")
@@ -720,7 +722,8 @@ class ArtworkRequestServiceTest {
       artworkRequestService.requestPrimaryArtwork(
           pendingTask, movieArtwork(UUID.randomUUID(), POSTER));
 
-      BoundedTask.runWithin(BOUND, () -> artwork.artworkRunWaiter().awaitTaskResults(finishedTask));
+      BoundedTask.runWithin(
+          BOUND, () -> artwork.artworkRunWaiter().tryAwaitTaskResults(finishedTask));
 
       assertThat(artwork.scheduling().pendingTargets()).hasSize(1);
     }
@@ -739,13 +742,36 @@ class ArtworkRequestServiceTest {
               .build();
       waiting.scheduling().holdScheduledSteps();
       sleeper.onSleep(_ -> waiting.scheduling().runPendingSteps());
-      var task = waiting.artworkService().openRun("scan", ImageRefreshMode.PRESERVE).openTaskRun();
-      waiting.artworkService().requestPrimaryArtwork(task, movieArtwork(UUID.randomUUID(), POSTER));
+      var task =
+          waiting.artworkRequestService().openRun("scan", ImageRefreshMode.PRESERVE).openTaskRun();
+      waiting
+          .artworkRequestService()
+          .requestPrimaryArtwork(task, movieArtwork(UUID.randomUUID(), POSTER));
       task.close();
 
-      BoundedTask.runWithin(BOUND, () -> waiting.artworkRuns().awaitTaskResults(task));
+      BoundedTask.runWithin(BOUND, () -> waiting.artworkRunWaiter().tryAwaitTaskResults(task));
 
       assertThat(sleeper.sleeps()).isNotEmpty().containsOnly(Duration.ofMillis(100));
+    }
+
+    @Test
+    @DisplayName(
+        "Should stop a task run's wait and leave its artwork to the operation's run when a read fails")
+    void shouldStopATaskRunsWaitAndLeaveItsArtworkToTheOperationsRunWhenAReadFails()
+        throws Exception {
+      var operation = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
+      var task = operation.openTaskRun();
+      artworkRequestService.requestPrimaryArtwork(task, movieArtwork(UUID.randomUUID(), POSTER));
+      task.close();
+      artwork.requests().failNextArtworkStateReadWith(poolTimeout());
+
+      try (var wait =
+          BoundedTask.start(() -> artwork.artworkRunWaiter().tryAwaitTaskResults(task))) {
+        assertThat(wait.await(BOUND)).isFalse();
+      }
+
+      assertThat(artwork.closeAndAwait(operation).counts())
+          .isEqualTo(FinishedImageCounts.builder().saved(1).unavailable(1).build());
     }
 
     @Test
@@ -793,7 +819,7 @@ class ArtworkRequestServiceTest {
       var task = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE).openTaskRun();
       task.close();
 
-      artwork.artworkRunWaiter().awaitTaskResults(task);
+      artwork.artworkRunWaiter().tryAwaitTaskResults(task);
 
       assertThat(artwork.requests().artworkStateReads()).isZero();
     }
@@ -890,6 +916,11 @@ class ArtworkRequestServiceTest {
         .attemptedAt(clock.instant())
         .artworkGeneration(generation)
         .build();
+  }
+
+  private static CannotGetJdbcConnectionException poolTimeout() {
+    return new CannotGetJdbcConnectionException(
+        "simulated pool timeout", new SQLTransientConnectionException("connection not available"));
   }
 
   private ArtworkFixture artworkWith(TmdbImageDownloader downloader) {

@@ -154,7 +154,10 @@ public class LibraryFileWalk {
       outcome = processListedFile(taskDiscovery, listed);
     }
 
-    artworkRunWaiter.awaitTaskResults(taskDiscovery.artworkRun());
+    if (!artworkRunWaiter.tryAwaitTaskResults(taskDiscovery.artworkRun())) {
+      return AdmittedTaskReport.DROP;
+    }
+
     return AdmissionReports.forMatching(outcome);
   }
 

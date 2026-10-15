@@ -187,7 +187,10 @@ public class LibraryRefreshService {
       outcome = refresh.refresh(mediaTitle, taskRun);
     }
 
-    artworkRunWaiter.awaitTaskResults(taskRun);
+    if (!artworkRunWaiter.tryAwaitTaskResults(taskRun)) {
+      return AdmittedTaskReport.DROP;
+    }
+
     return AdmissionReports.forRefresh(outcome);
   }
 

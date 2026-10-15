@@ -33,11 +33,17 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
   private final FakeItemResultRepository itemResults;
   private long lastGeneration;
   private int artworkStateReads;
+  private RuntimeException nextArtworkStateReadFailure;
 
   /** Holds the fake item results to this repository's generations, as the database does. */
   public FakeArtworkRequestRepository(FakeItemResultRepository itemResults) {
     this.itemResults = itemResults;
     itemResults.checkArtworkGenerationsWith(this::isPendingGeneration);
+  }
+
+  /** Fails the next read of the recorded artwork states with {@code failure}. */
+  public synchronized void failNextArtworkStateReadWith(RuntimeException failure) {
+    nextArtworkStateReadFailure = failure;
   }
 
   /** Returns how many times the recorded artwork states were read. */
@@ -114,6 +120,12 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
   public synchronized List<ArtworkCompletionEvidence> findCompletionEvidence(
       Collection<ArtworkTarget> targets) {
     artworkStateReads++;
+    var failure = nextArtworkStateReadFailure;
+    if (failure != null) {
+      nextArtworkStateReadFailure = null;
+      throw failure;
+    }
+
     return targets.stream()
         .distinct()
         .map(

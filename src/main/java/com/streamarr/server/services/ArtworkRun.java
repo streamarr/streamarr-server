@@ -14,7 +14,7 @@ import java.util.Optional;
  *
  * <p>A task run collects what one admitted task of the operation requests. Everything it collects
  * or withdraws is also collected or withdrawn by the operation's run, so the operation still counts
- * all of its artwork, and {@link ArtworkRunWaiter#awaitTaskResults} waits for the task's artwork
+ * all of its artwork, and {@link ArtworkRunWaiter#tryAwaitTaskResults} waits for the task's artwork
  * alone.
  */
 public final class ArtworkRun implements AutoCloseable {
