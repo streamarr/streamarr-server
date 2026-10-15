@@ -105,18 +105,6 @@ public final class AdaptiveAdmission implements AutoCloseable {
     }
   }
 
-  // BlockingLimiter grants a free admission without checking the interrupt. An interrupted or
-  // timed-out wait returns nothing, with the interrupt restored, so each pass checks it first.
-  private Admission acquire() throws InterruptedException {
-    while (true) {
-      throwIfInterrupted();
-      var granted = blockingLimiter.acquire(null);
-      if (granted.isPresent()) {
-        return new Admission(granted.get());
-      }
-    }
-  }
-
   private static void throwIfInterrupted() throws InterruptedException {
     if (Thread.interrupted()) {
       throw new InterruptedException("Interrupted while admitting tasks");
@@ -134,11 +122,6 @@ public final class AdaptiveAdmission implements AutoCloseable {
   private static boolean hasTimeoutCause(Throwable failure) {
     return ExceptionUtils.getThrowableList(failure).stream()
         .anyMatch(cause -> TIMEOUTS.stream().anyMatch(timeout -> timeout.isInstance(cause)));
-  }
-
-  private void report(Admission admission, AdmittedTaskReport report) {
-    admission.complete(report);
-    listener.onReported(report);
   }
 
   /** Returns the current limit. */
@@ -187,6 +170,18 @@ public final class AdaptiveAdmission implements AutoCloseable {
       }
     }
 
+    // BlockingLimiter grants a free admission without checking the interrupt. An interrupted or
+    // timed-out wait returns nothing, with the interrupt restored, so each pass checks it first.
+    private Admission acquire() throws InterruptedException {
+      while (true) {
+        throwIfInterrupted();
+        var granted = blockingLimiter.acquire(null);
+        if (granted.isPresent()) {
+          return new Admission(granted.get());
+        }
+      }
+    }
+
     // Returns the admission unused when the executor cannot start the task's thread.
     private Future<?> fork(Admission admission, S subject) {
       try {
@@ -232,6 +227,11 @@ public final class AdaptiveAdmission implements AutoCloseable {
 
       report(admission, report);
       return null;
+    }
+
+    private void report(Admission admission, AdmittedTaskReport report) {
+      admission.complete(report);
+      listener.onReported(report);
     }
 
     private List<Throwable> joinInAdmissionOrder() throws InterruptedException {
