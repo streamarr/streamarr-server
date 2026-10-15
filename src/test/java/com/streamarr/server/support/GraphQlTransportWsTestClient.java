@@ -193,7 +193,7 @@ public final class GraphQlTransportWsTestClient implements AutoCloseable {
       if (!webSocket.isOutputClosed()) {
         webSocket.sendClose(WebSocket.NORMAL_CLOSURE, "").get(1, TimeUnit.SECONDS);
       }
-    } catch (InterruptedException e) {
+    } catch (InterruptedException _) {
       Thread.currentThread().interrupt();
     } catch (ExecutionException | TimeoutException _) {
       // The server already closed the socket; abort below releases it either way.
