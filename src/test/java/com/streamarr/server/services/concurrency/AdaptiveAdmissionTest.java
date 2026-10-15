@@ -297,6 +297,26 @@ class AdaptiveAdmissionTest {
   }
 
   @Test
+  @DisplayName("Should return the admission of a task that throws an error when the limit is full")
+  void shouldReturnAdmissionOfTaskThatThrowsErrorWhenLimitIsFull() throws Exception {
+    var admission = admissionWith(FixedLimit.of(1));
+    var error = new StackOverflowError("task overflowed");
+
+    try (var walk =
+        startWalk(
+            admission,
+            new CountingSubjects(2),
+            _ -> {
+              throw error;
+            })) {
+      assertThat(walk.await(BOUND)).containsExactly(error);
+    }
+
+    assertThat(admission.inFlight()).isZero();
+    assertThat(listener.reports()).containsExactly(AdmittedTaskReport.IGNORED);
+  }
+
+  @Test
   @DisplayName("Should return task failures in admission order")
   void shouldReturnTaskFailuresInAdmissionOrder() throws Exception {
     var admission = admissionWith(FixedLimit.of(2));

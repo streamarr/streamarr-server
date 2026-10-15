@@ -207,6 +207,7 @@ public final class AdaptiveAdmission implements AutoCloseable {
       }
     }
 
+    @SuppressWarnings("java:S1181") // An Error must return its admission like any failure.
     private Void runAdmitted(Admission admission, S subject) throws InterruptedException {
       var retried = new AtomicBoolean();
       AdmittedTaskReport report;
