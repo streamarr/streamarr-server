@@ -46,6 +46,7 @@ import java.net.URI;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
@@ -174,13 +175,39 @@ class HlsStreamingServiceTest {
 
   @Test
   @DisplayName(
-      "Should encode the video when the playlist advertises a segment after the last keyframe")
-  void shouldEncodeTheVideoWhenThePlaylistAdvertisesASegmentAfterTheLastKeyframe() {
-    // The playlist advertises four 6 s segments for 20 s, but no keyframe opens [18 s, 20 s).
+      "Should end the copy playlist at the last keyframe's segment when no keyframe opens the"
+          + " final grid interval")
+  void shouldEndTheCopyPlaylistAtTheLastKeyframesSegmentWhenNoKeyframeOpensTheFinalGridInterval() {
+    // The 6 s grid divides 20 s into four intervals. No keyframe opens [18 s, 20 s), so that
+    // interval joins the segment that the keyframe at 12 s opens.
     probeResults.setDefaultProbe(
         defaultProbeBuilder()
             .duration(Duration.ofSeconds(20))
             .keyframes(ProbeFixture.keyframesEvery(Duration.ofSeconds(6), Duration.ofSeconds(12)))
+            .build());
+    var file = seedMediaFile();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var playlist = mediaPlaylist(session);
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(extinfDurations(playlist)).containsExactly("6.000000", "6.000000", "8.000000");
+    // RFC 8216 §4.3.3.1: each EXTINF, rounded to the nearest integer, fits the target duration.
+    assertThat(playlist).contains("#EXT-X-TARGETDURATION:8\n");
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(TranscodeRequest::mediaSegmentCount)
+        .isEqualTo(3);
+  }
+
+  @Test
+  @DisplayName("Should encode the video when the source's keyframes stop long before the media end")
+  void shouldEncodeTheVideoWhenTheSourcesKeyframesStopLongBeforeTheMediaEnd() {
+    // A copy would advertise one final segment from 6 s to the end of the 2 h source.
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .duration(Duration.ofMinutes(120))
+            .keyframes(keyframesAtMillis(0, 6_000))
             .build());
     var file = seedMediaFile();
 
@@ -190,28 +217,42 @@ class HlsStreamingServiceTest {
         .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
   }
 
-  @Test
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("keyframeTimesTooLargeToPlace")
   @DisplayName("Should encode the video when a stored keyframe time is too large to place")
-  void shouldEncodeTheVideoWhenAStoredKeyframeTimeIsTooLargeToPlace() {
+  void shouldEncodeTheVideoWhenAStoredKeyframeTimeIsTooLargeToPlace(
+      String description, KeyframePosition keyframe) {
     var positions =
         KeyframePositions.builder()
             .streamIndex(0)
             .timeBaseNumerator(1001)
             .timeBaseDenominator(24_000)
             .source(KeyframePositionSource.PACKET_SCAN)
-            .keyframes(
-                List.of(
-                    new KeyframePosition(0, 0),
-                    new KeyframePosition(Long.MAX_VALUE / 1000, Long.MAX_VALUE / 1000)))
+            .keyframes(List.of(new KeyframePosition(0, 0), keyframe))
             .build();
     probeResults.setDefaultProbe(
-        defaultProbeBuilder().keyframes(new KeyframeKnowledge.Known(positions)).build());
+        defaultProbeBuilder()
+            .duration(Duration.ofSeconds(12))
+            .keyframes(new KeyframeKnowledge.Known(positions))
+            .build());
     var file = seedMediaFile();
 
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     assertThat(session.getTranscodeDecision().transcodeMode())
         .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+  }
+
+  // In a 1001/24000 time base, 144 ticks present at 6.006 s, so that keyframe opens segment 1 of
+  // the 12 s source.
+  static Stream<Arguments> keyframeTimesTooLargeToPlace() {
+    return Stream.of(
+        Arguments.of(
+            "presentation time",
+            new KeyframePosition(Long.MAX_VALUE / 1000, Long.MAX_VALUE / 1000)),
+        Arguments.of(
+            "decode time of an opening keyframe",
+            new KeyframePosition(144, Long.MAX_VALUE / 1000)));
   }
 
   @ParameterizedTest
@@ -246,6 +287,54 @@ class HlsStreamingServiceTest {
 
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(session.getVariants()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should advertise each segment's real duration when the video is copied from an"
+          + " irregular-keyframe source")
+  void shouldAdvertiseEachSegmentsRealDurationWhenTheVideoIsCopiedFromAnIrregularKeyframeSource() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .duration(Duration.ofSeconds(24))
+            .keyframes(keyframesAtMillis(0, 6_500, 12_000, 18_000))
+            .build());
+    var file = seedMediaFile();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var playlist = mediaPlaylist(session);
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(extinfDurations(playlist))
+        .containsExactly("6.500000", "5.500000", "6.000000", "6.000000");
+    // RFC 8216 §4.3.3.1: each EXTINF, rounded to the nearest integer, fits the target duration.
+    assertThat(playlist).contains("#EXT-X-TARGETDURATION:7\n");
+  }
+
+  private static KeyframeKnowledge keyframesAtMillis(long... presentationTimes) {
+    return new KeyframeKnowledge.Known(
+        KeyframePositions.builder()
+            .streamIndex(0)
+            .timeBaseNumerator(1)
+            .timeBaseDenominator(1_000)
+            .source(KeyframePositionSource.CONTAINER_INDEX)
+            .keyframes(
+                Arrays.stream(presentationTimes)
+                    .mapToObj(time -> new KeyframePosition(time, time))
+                    .toList())
+            .build());
+  }
+
+  private static String mediaPlaylist(StreamSession session) {
+    return new HlsPlaylistService(streamingProperties()).generateMediaPlaylist(session, "token");
+  }
+
+  private static List<String> extinfDurations(String playlist) {
+    return playlist
+        .lines()
+        .filter(line -> line.startsWith("#EXTINF:"))
+        .map(line -> line.substring("#EXTINF:".length(), line.indexOf(',')))
+        .toList();
   }
 
   @BeforeEach

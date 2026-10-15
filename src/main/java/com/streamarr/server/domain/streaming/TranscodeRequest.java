@@ -1,6 +1,8 @@
 package com.streamarr.server.domain.streaming;
 
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.UUID;
 import lombok.Builder;
@@ -12,6 +14,7 @@ public record TranscodeRequest(
     UUID attemptId,
     @NonNull Path sourcePath,
     int seekPosition,
+    @NonNull Optional<Duration> keyframeSeekPosition,
     int targetSegmentDuration,
     @NonNull OptionalDouble framerate,
     @NonNull TranscodeDecision transcodeDecision,
@@ -23,6 +26,11 @@ public record TranscodeRequest(
     int mediaSegmentCount,
     @NonNull EncoderPreset encoderPreset) {
 
+  /**
+   * A stream copy attempt after segment 0 carries {@code keyframeSeekPosition}, the decode time of
+   * the source keyframe that opens its first segment, and the worker seeks there instead of to
+   * {@code seekPosition} seconds. Every other attempt carries none.
+   */
   public TranscodeRequest {
     if (variantLabel == null) {
       variantLabel = StreamSession.defaultVariant();
@@ -38,5 +46,6 @@ public record TranscodeRequest(
   @SuppressWarnings("java:S1068") // Lombok builder default — field is used by generated code
   public static class TranscodeRequestBuilder {
     private OptionalDouble framerate = OptionalDouble.empty();
+    private Optional<Duration> keyframeSeekPosition = Optional.empty();
   }
 }

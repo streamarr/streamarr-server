@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import static com.streamarr.server.fixtures.StreamSessionFixture.abrSessionBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
@@ -10,6 +11,11 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePosition;
+import com.streamarr.server.domain.streaming.KeyframePositionSource;
+import com.streamarr.server.domain.streaming.KeyframePositions;
+import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
@@ -22,8 +28,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.LongStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -67,21 +75,21 @@ class ProducerLifecycleServiceTest {
   private StreamSession startedSession() {
     var session = defaultSessionBuilder().build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 0, 0);
+    lifecycle.startAll(session, 0);
     return session;
   }
 
   private StreamSession startedAbrSession() {
     var session = abrSessionBuilder().build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 0, 0);
+    lifecycle.startAll(session, 0);
     return session;
   }
 
   private StreamSession midTimelineSession() {
     var session = defaultSessionBuilder().build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 5400, 900);
+    lifecycle.startAll(session, 900);
     return session;
   }
 
@@ -389,7 +397,7 @@ class ProducerLifecycleServiceTest {
   void shouldAdvertiseTheWholeTimelineMediaSegmentCountWhenInstallingReplacementAttempt() {
     var sixtySecondSession = sessionWithDurationBuilder(60).build();
     runtimeRegistry.save(sixtySecondSession);
-    lifecycle.startAll(sixtySecondSession, 0, 0);
+    lifecycle.startAll(sixtySecondSession, 0);
     transcodeExecutor.markDead(sixtySecondSession.getSessionId());
 
     recover(sixtySecondSession);
@@ -405,7 +413,7 @@ class ProducerLifecycleServiceTest {
   void shouldLeaveRunningProducerInPlaceWhenRequestNamesMediaSegmentPastTheAdvertisedTimeline() {
     var sixtySecondSession = sessionWithDurationBuilder(60).build();
     runtimeRegistry.save(sixtySecondSession);
-    lifecycle.startAll(sixtySecondSession, 0, 0);
+    lifecycle.startAll(sixtySecondSession, 0);
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
     var result =
@@ -423,7 +431,7 @@ class ProducerLifecycleServiceTest {
   void shouldInstallNoReplacementAttemptWhenRequestNamesMediaSegmentPastTheAdvertisedTimeline() {
     var sixtySecondSession = sessionWithDurationBuilder(60).build();
     runtimeRegistry.save(sixtySecondSession);
-    lifecycle.startAll(sixtySecondSession, 0, 0);
+    lifecycle.startAll(sixtySecondSession, 0);
     transcodeExecutor.markDead(sixtySecondSession.getSessionId());
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
@@ -612,7 +620,7 @@ class ProducerLifecycleServiceTest {
     var session =
         abrSessionBuilder().transcodeDecision(fullTranscodeDecision(videoCodecFamily)).build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 0, 0);
+    lifecycle.startAll(session, 0);
     return session;
   }
 
@@ -695,5 +703,155 @@ class ProducerLifecycleServiceTest {
   private List<TranscodeRequest> startedSince(int startedBefore) {
     var started = transcodeExecutor.getStartedRequests();
     return started.subList(startedBefore, started.size());
+  }
+
+  // Keyframes every 5.005 s present 42 ms after they decode, so a segment's first keyframe lies
+  // inside its interval but never at its grid start. Segment 2, [12 s, 18 s), opens at the keyframe
+  // that decodes at 15.015 s; segment 5 at 30.03 s; segment 100 at 600.6 s.
+  private StreamSession startedIrregularCopySession() {
+    var keyframes =
+        LongStream.iterate(0, time -> time <= 7_200_000, time -> time + 5_005)
+            .mapToObj(time -> new KeyframePosition(time + 42, time))
+            .toList();
+    return startedCopySession(defaultProbeBuilder().keyframes(knownKeyframes(keyframes)));
+  }
+
+  // A 20 s source with keyframes at 0, 6 and 12 s: the grid's last interval, [18 s, 20 s), holds
+  // no keyframe and joins segment 2, so the copy advertises 6, 6 and 8 s.
+  private StreamSession startedCopySessionWhoseLastSegmentAbsorbsTheFinalGridInterval() {
+    var keyframes =
+        LongStream.of(0, 6_000, 12_000).mapToObj(time -> new KeyframePosition(time, time)).toList();
+    return startedCopySession(
+        defaultProbeBuilder()
+            .duration(Duration.ofSeconds(20))
+            .keyframes(knownKeyframes(keyframes)));
+  }
+
+  private StreamSession startedCopySession(MediaProbe.MediaProbeBuilder probe) {
+    var session = defaultSessionBuilder().mediaProbe(probe.build()).build();
+    runtimeRegistry.save(session);
+    lifecycle.startAll(session, 0);
+    return session;
+  }
+
+  private static KeyframeKnowledge.Known knownKeyframes(List<KeyframePosition> keyframes) {
+    return new KeyframeKnowledge.Known(
+        KeyframePositions.builder()
+            .streamIndex(0)
+            .timeBaseNumerator(1)
+            .timeBaseDenominator(1_000)
+            .source(KeyframePositionSource.CONTAINER_INDEX)
+            .keyframes(keyframes)
+            .build());
+  }
+
+  @Test
+  @DisplayName("Should start a copy attempt at segment 0 without a keyframe seek")
+  void shouldStartACopyAttemptAtSegment0WithoutAKeyframeSeek() {
+    startedIrregularCopySession();
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(TranscodeRequest::keyframeSeekPosition)
+        .isEqualTo(Optional.empty());
+  }
+
+  @Test
+  @DisplayName("Should start a relocated copy attempt at its segment's first keyframe")
+  void shouldStartARelocatedCopyAttemptAtItsSegmentsFirstKeyframe() {
+    var session = startedIrregularCopySession();
+
+    lifecycle.ensurePositioned(session.getSessionId(), "segment100.m4s");
+
+    var request = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(request.startSequenceNumber()).isEqualTo(100);
+    assertThat(request.keyframeSeekPosition()).hasValue(Duration.ofMillis(600_600));
+  }
+
+  @Test
+  @DisplayName("Should start a replacement copy attempt at its segment's first keyframe")
+  void shouldStartAReplacementCopyAttemptAtItsSegmentsFirstKeyframe() {
+    var session = startedIrregularCopySession();
+    transcodeExecutor.markDead(session.getSessionId());
+
+    recover(session);
+
+    var request = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(request.startSequenceNumber()).isEqualTo(2);
+    assertThat(request.keyframeSeekPosition()).hasValue(Duration.ofMillis(15_015));
+  }
+
+  @Test
+  @DisplayName("Should resume a suspended copy session at its requested segment's first keyframe")
+  void shouldResumeASuspendedCopySessionAtItsRequestedSegmentsFirstKeyframe() {
+    var session = startedIrregularCopySession();
+    suspendHandle(session);
+
+    lifecycle.ensurePositioned(session.getSessionId(), "segment5.m4s");
+
+    var request = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(request.startSequenceNumber()).isEqualTo(5);
+    assertThat(request.keyframeSeekPosition()).hasValue(Duration.ofMillis(30_030));
+  }
+
+  @Test
+  @DisplayName(
+      "Should start a replacement copy attempt at its first keyframe when its segment absorbs the final grid interval")
+  void
+      shouldStartAReplacementCopyAttemptAtItsFirstKeyframeWhenItsSegmentAbsorbsTheFinalGridInterval() {
+    var session = startedCopySessionWhoseLastSegmentAbsorbsTheFinalGridInterval();
+    transcodeExecutor.markDead(session.getSessionId());
+
+    recover(session);
+
+    var request = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(request.startSequenceNumber()).isEqualTo(2);
+    assertThat(request.keyframeSeekPosition()).hasValue(Duration.ofSeconds(12));
+    assertThat(request.mediaSegmentCount()).isEqualTo(3);
+  }
+
+  @Test
+  @DisplayName(
+      "Should resume a suspended copy session at its first keyframe when its segment absorbs the final grid interval")
+  void
+      shouldResumeASuspendedCopySessionAtItsFirstKeyframeWhenItsSegmentAbsorbsTheFinalGridInterval() {
+    var session = startedCopySessionWhoseLastSegmentAbsorbsTheFinalGridInterval();
+    suspendHandle(session);
+
+    lifecycle.ensurePositioned(session.getSessionId(), "segment2.m4s");
+
+    var request = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(request.startSequenceNumber()).isEqualTo(2);
+    assertThat(request.keyframeSeekPosition()).hasValue(Duration.ofSeconds(12));
+    assertThat(request.mediaSegmentCount()).isEqualTo(3);
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse a request for the absorbed final grid interval as an unadvertised copy segment")
+  void shouldRefuseARequestForTheAbsorbedFinalGridIntervalAsAnUnadvertisedCopySegment() {
+    var session = startedCopySessionWhoseLastSegmentAbsorbsTheFinalGridInterval();
+    transcodeExecutor.markDead(session.getSessionId());
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    var result =
+        lifecycle.recover(session.getSessionId(), StreamSession.defaultVariant(), "segment3.m4s");
+
+    assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.SEGMENT_NOT_ADVERTISED);
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
+  }
+
+  @Test
+  @DisplayName("Should send no keyframe seek position when a relocated attempt encodes the video")
+  void shouldSendNoKeyframeSeekPositionWhenARelocatedAttemptEncodesTheVideo() {
+    var session = startedTranscodeSession("h264");
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    lifecycle.ensurePositioned(session.getSessionId(), "1080p/segment100.m4s");
+
+    assertThat(startedSince(startedBefore))
+        .isNotEmpty()
+        .extracting(TranscodeRequest::keyframeSeekPosition)
+        .containsOnly(Optional.empty());
   }
 }

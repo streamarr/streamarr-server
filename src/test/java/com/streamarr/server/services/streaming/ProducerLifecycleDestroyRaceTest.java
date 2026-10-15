@@ -53,7 +53,7 @@ class ProducerLifecycleDestroyRaceTest {
             .build();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var start = executor.submit(() -> lifecycle.startAll(session, 0, 0));
+      var start = executor.submit(() -> lifecycle.startAll(session, 0));
       transcodeExecutor.awaitSecondStart();
 
       var destroy =

@@ -1,5 +1,9 @@
 package com.streamarr.server.domain.streaming;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.math.RoundingMode;
+import java.time.Duration;
 import java.util.List;
 import lombok.Builder;
 import lombok.NonNull;
@@ -27,5 +31,20 @@ public record KeyframePositions(
     }
 
     keyframes = List.copyOf(keyframes);
+  }
+
+  /**
+   * The time that this many ticks of the time base span, rounded to whole nanoseconds.
+   *
+   * @throws ArithmeticException when the time does not fit a {@link Duration}
+   */
+  public Duration timeOf(long ticks, @NonNull RoundingMode rounding) {
+    var seconds =
+        new BigDecimal(BigInteger.valueOf(ticks).multiply(BigInteger.valueOf(timeBaseNumerator)))
+            .divide(
+                BigDecimal.valueOf(timeBaseDenominator),
+                DecimalSeconds.NANOSECOND_DIGITS,
+                rounding);
+    return DecimalSeconds.toDuration(seconds);
   }
 }

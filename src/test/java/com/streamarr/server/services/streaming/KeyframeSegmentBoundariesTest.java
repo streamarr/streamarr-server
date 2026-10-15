@@ -54,7 +54,7 @@ class KeyframeSegmentBoundariesTest {
 
     var segments = KeyframeSegmentBoundaries.forStreamCopy(positions, fixture.periodSeconds());
 
-    assertThat(segments).isEqualTo(new StreamCopySegments.Starts(fixture.segmentStarts()));
+    assertThat(segments).isEqualTo(startsAt(fixture.segmentStarts()));
   }
 
   @Test
@@ -88,7 +88,7 @@ class KeyframeSegmentBoundariesTest {
 
     var segments = KeyframeSegmentBoundaries.forStreamCopy(positions, 6);
 
-    assertThat(segments).isEqualTo(new StreamCopySegments.Starts(List.of(0L, 6_000L)));
+    assertThat(segments).isEqualTo(startsAt(List.of(0L, 6_000L)));
   }
 
   @Test
@@ -142,6 +142,46 @@ class KeyframeSegmentBoundariesTest {
     assertThat(segments).isEqualTo(new StreamCopySegments.PresentationTimeOutOfRange(0));
   }
 
+  @ParameterizedTest
+  @ValueSource(longs = {Long.MAX_VALUE / 1000, Long.MIN_VALUE / 1000})
+  @DisplayName(
+      "Should refuse the positions when an opening keyframe's decode time in seconds overflows a"
+          + " long")
+  void shouldRefuseThePositionsWhenAnOpeningKeyframesDecodeTimeInSecondsOverflowsALong(
+      long decodeTime) {
+    var positions =
+        KeyframePositions.builder()
+            .streamIndex(0)
+            .timeBaseNumerator(1001)
+            .timeBaseDenominator(24_000)
+            .source(KeyframePositionSource.PACKET_SCAN)
+            .keyframes(List.of(new KeyframePosition(0, 0), new KeyframePosition(144, decodeTime)))
+            .build();
+
+    var segments = KeyframeSegmentBoundaries.forStreamCopy(positions, 6);
+
+    assertThat(segments).isEqualTo(new StreamCopySegments.DecodeTimeOutOfRange(1));
+  }
+
+  @Test
+  @DisplayName("Should ignore the decode time of a keyframe that opens no segment")
+  void shouldIgnoreTheDecodeTimeOfAKeyframeThatOpensNoSegment() {
+    var positions =
+        KeyframePositions.builder()
+            .streamIndex(0)
+            .timeBaseNumerator(1001)
+            .timeBaseDenominator(24_000)
+            .source(KeyframePositionSource.PACKET_SCAN)
+            .keyframes(
+                List.of(new KeyframePosition(0, 0), new KeyframePosition(24, Long.MAX_VALUE)))
+            .build();
+
+    var segments = KeyframeSegmentBoundaries.forStreamCopy(positions, 6);
+
+    assertThat(segments)
+        .isEqualTo(new StreamCopySegments.Starts(List.of(new KeyframePosition(0, 0))));
+  }
+
   @Test
   @DisplayName("Should place a keyframe by its time in seconds when the time base is not 1/n")
   void shouldPlaceAKeyframeByItsTimeInSecondsWhenTheTimeBaseIsNotOneOverN() {
@@ -157,7 +197,7 @@ class KeyframeSegmentBoundariesTest {
 
     var segments = KeyframeSegmentBoundaries.forStreamCopy(positions, 6);
 
-    assertThat(segments).isEqualTo(new StreamCopySegments.Starts(List.of(0L)));
+    assertThat(segments).isEqualTo(startsAt(List.of(0L)));
   }
 
   @Test
@@ -198,6 +238,10 @@ class KeyframeSegmentBoundariesTest {
     }
   }
 
+  private static StreamCopySegments.Starts startsAt(List<Long> presentationTimes) {
+    return new StreamCopySegments.Starts(keyframesAt(presentationTimes));
+  }
+
   // The rule reads presentation times only. The recordings hold no decode times, and these
   // keyframes carry none of their own, so each position repeats its presentation time.
   private static KeyframePositions positions(int timescale, List<Long> presentationTimes) {
@@ -206,8 +250,11 @@ class KeyframeSegmentBoundariesTest {
         .timeBaseNumerator(1)
         .timeBaseDenominator(timescale)
         .source(KeyframePositionSource.CONTAINER_INDEX)
-        .keyframes(
-            presentationTimes.stream().map(time -> new KeyframePosition(time, time)).toList())
+        .keyframes(keyframesAt(presentationTimes))
         .build();
+  }
+
+  private static List<KeyframePosition> keyframesAt(List<Long> presentationTimes) {
+    return presentationTimes.stream().map(time -> new KeyframePosition(time, time)).toList();
   }
 }

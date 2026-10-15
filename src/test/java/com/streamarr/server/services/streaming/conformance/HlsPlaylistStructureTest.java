@@ -3,6 +3,10 @@ package com.streamarr.server.services.streaming.conformance;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePosition;
+import com.streamarr.server.domain.streaming.KeyframePositionSource;
+import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
@@ -128,6 +132,27 @@ class HlsPlaylistStructureTest {
             .as("EXTINF %s rounds within TARGETDURATION %s", extinf, targetDuration)
             .isLessThanOrEqualTo(targetDuration);
       }
+    }
+
+    // RFC 8216 §4.3.3.1 holds for a stream copy too, whose segments run between source keyframes
+    // and can outlast the target segment duration.
+    @Test
+    @DisplayName(
+        "Should keep every stream copy EXTINF within TARGETDURATION when rounded (§4.3.3.1)")
+    void shouldKeepEveryStreamCopyExtinfWithinTargetDurationWhenRounded() {
+      // Keyframes at 0, 8.5 and 12 s over 18 s give segments of 8.5, 3.5 and 6 s.
+      var session =
+          StreamSessionFixture.defaultSessionBuilder()
+              .mediaProbe(
+                  StreamSessionFixture.defaultProbeBuilder()
+                      .duration(Duration.ofSeconds(18))
+                      .keyframes(irregularKeyframes())
+                      .build())
+              .build();
+      var playlist = MediaPlaylist.parse(service.generateMediaPlaylist(session, TOKEN));
+
+      assertThat(playlist.extinfDurations()).containsExactly(8.5, 3.5, 6.0);
+      assertThat(playlist.targetDuration()).hasValue(9);
     }
 
     // RFC 8216 §4.3.3.2: EXT-X-MEDIA-SEQUENCE indicates the Media Sequence Number of the first
@@ -316,5 +341,20 @@ class HlsPlaylistStructureTest {
       }
       return OptionalLong.of(Long.parseLong(matcher.group(1)));
     }
+  }
+
+  private static KeyframeKnowledge irregularKeyframes() {
+    return new KeyframeKnowledge.Known(
+        KeyframePositions.builder()
+            .streamIndex(0)
+            .timeBaseNumerator(1)
+            .timeBaseDenominator(1_000)
+            .source(KeyframePositionSource.CONTAINER_INDEX)
+            .keyframes(
+                List.of(
+                    new KeyframePosition(0, 0),
+                    new KeyframePosition(8_500, 8_500),
+                    new KeyframePosition(12_000, 12_000)))
+            .build());
   }
 }

@@ -15,6 +15,7 @@ import com.streamarr.transcode.v1.TranscodeExecution;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.UUID;
 
 // Domain and protobuf contracts intentionally share simple names.
@@ -98,7 +99,20 @@ final class RemoteVariantJobMapper {
             .setStartSequenceNumber(request.startSequenceNumber())
             .setMediaSegmentCount(request.mediaSegmentCount());
     request.framerate().ifPresent(execution::setFramerate);
+    request
+        .keyframeSeekPosition()
+        .ifPresent(position -> execution.setSeekPosition(protobufDuration(position)));
     return execution.build();
+  }
+
+  // The keyframe seek position is never negative, so its seconds and nanoseconds share a sign as
+  // protobuf's Duration requires.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static com.google.protobuf.Duration protobufDuration(Duration duration) {
+    return com.google.protobuf.Duration.newBuilder()
+        .setSeconds(duration.getSeconds())
+        .setNanos(duration.getNano())
+        .build();
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")

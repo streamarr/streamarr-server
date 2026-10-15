@@ -287,16 +287,16 @@ public class ProducerLifecycleService {
     record SessionGone() implements ReplaceResult {}
   }
 
-  public void startAll(StreamSession session, int seekPosition, int startSequenceNumber) {
+  public void startAll(StreamSession session, int startSequenceNumber) {
     withSessionLock(
         session.getSessionId(),
         () -> {
           if (session.getVariants().isEmpty()) {
-            startSingleTranscode(session, seekPosition, startSequenceNumber);
+            startSingleTranscode(session, startSequenceNumber);
             return;
           }
 
-          startVariantTranscodes(session, session.getVariants(), seekPosition, startSequenceNumber);
+          startVariantTranscodes(session, session.getVariants(), startSequenceNumber);
         });
   }
 
@@ -444,10 +444,7 @@ public class ProducerLifecycleService {
 
   private TranscodeRequest replacementRequest(
       StreamSession session, ReplaceProducerCommand command) {
-    var seekPosition = timelineOf(session).mediaSegmentStartSeconds(command.segmentIndex());
-    var request =
-        baseRequest(session, seekPosition, command.segmentIndex())
-            .variantLabel(command.variantLabel());
+    var request = baseRequest(session, command.segmentIndex()).variantLabel(command.variantLabel());
 
     var variant =
         session.getVariants().stream()
@@ -508,7 +505,7 @@ public class ProducerLifecycleService {
 
     var segmentIndex = requestedIndex(session, segmentName);
     transcodeExecutor.stop(sessionId);
-    startAll(session, timelineOf(session).mediaSegmentStartSeconds(segmentIndex), segmentIndex);
+    startAll(session, segmentIndex);
     session.setLastAccessedAt(Instant.now());
     runtimeRegistry.save(session);
 
@@ -552,7 +549,7 @@ public class ProducerLifecycleService {
   }
 
   private MediaSegmentTimeline timelineOf(StreamSession session) {
-    return MediaSegmentTimelines.of(session.getMediaProbe(), properties);
+    return MediaSegmentTimelines.of(session, properties);
   }
 
   private void doResume(UUID sessionId, String segmentName) {
@@ -562,24 +559,18 @@ public class ProducerLifecycleService {
     }
 
     var segmentIndex = requestedIndex(session, segmentName);
-    var resumeSeek = timelineOf(session).mediaSegmentStartSeconds(segmentIndex);
 
-    startAll(session, resumeSeek, segmentIndex);
+    startAll(session, segmentIndex);
     session.setLastAccessedAt(Instant.now());
     runtimeRegistry.save(session);
 
-    log.info(
-        "Resumed suspended session {} at segment {} (seek {}s)",
-        sessionId,
-        segmentIndex,
-        resumeSeek);
+    log.info("Resumed suspended session {} at segment {}", sessionId, segmentIndex);
   }
 
-  private void startSingleTranscode(
-      StreamSession session, int seekPosition, int startSequenceNumber) {
+  private void startSingleTranscode(StreamSession session, int startSequenceNumber) {
     var probe = session.getMediaProbe();
     var request =
-        baseRequest(session, seekPosition, startSequenceNumber)
+        baseRequest(session, startSequenceNumber)
             .width(probe.width())
             .height(probe.height())
             .bitrate(probe.bitrate())
@@ -591,13 +582,10 @@ public class ProducerLifecycleService {
   }
 
   private void startVariantTranscodes(
-      StreamSession session,
-      List<QualityVariant> variants,
-      int seekPosition,
-      int startSequenceNumber) {
+      StreamSession session, List<QualityVariant> variants, int startSequenceNumber) {
     for (var variant : variants) {
       var request =
-          baseRequest(session, seekPosition, startSequenceNumber)
+          baseRequest(session, startSequenceNumber)
               .width(variant.width())
               .height(variant.height())
               .bitrate(variant.videoBitrate())
@@ -610,13 +598,14 @@ public class ProducerLifecycleService {
   }
 
   private TranscodeRequest.TranscodeRequestBuilder baseRequest(
-      StreamSession session, int seekPosition, int startSequenceNumber) {
+      StreamSession session, int startSequenceNumber) {
     var probe = session.getMediaProbe();
     var timeline = timelineOf(session);
     return TranscodeRequest.builder()
         .sessionId(session.getSessionId())
         .sourcePath(session.getSourcePath())
-        .seekPosition(seekPosition)
+        .seekPosition(timeline.mediaSegmentStartSeconds(startSequenceNumber))
+        .keyframeSeekPosition(timeline.keyframeSeekPosition(startSequenceNumber))
         .targetSegmentDuration(timeline.targetSegmentDurationSeconds())
         .framerate(probe.framerate())
         .transcodeDecision(session.getTranscodeDecision())

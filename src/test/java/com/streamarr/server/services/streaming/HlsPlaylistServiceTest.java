@@ -1,11 +1,15 @@
 package com.streamarr.server.services.streaming;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 import static org.assertj.core.api.Assertions.within;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePosition;
+import com.streamarr.server.domain.streaming.KeyframePositionSource;
+import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.QualityVariant;
@@ -15,6 +19,7 @@ import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -229,6 +234,61 @@ class HlsPlaylistServiceTest {
     var playlist = service.generateMediaPlaylist(session, "test-token");
 
     assertThat(playlist).contains(tag);
+  }
+
+  @Test
+  @DisplayName(
+      "Should raise the target duration when a stream copy segment prints at the half second")
+  void shouldRaiseTheTargetDurationWhenAStreamCopySegmentPrintsAtTheHalfSecond() {
+    // In a 1/1,000,000,000 time base, the second keyframe presents at 6.4999995 s.
+    var positions =
+        KeyframePositions.builder()
+            .streamIndex(0)
+            .timeBaseNumerator(1)
+            .timeBaseDenominator(1_000_000_000)
+            .source(KeyframePositionSource.CONTAINER_INDEX)
+            .keyframes(
+                List.of(
+                    new KeyframePosition(0, 0),
+                    new KeyframePosition(6_499_999_500L, 6_499_999_500L)))
+            .build();
+    var session =
+        StreamSessionFixture.defaultSessionBuilder()
+            .mediaProbe(
+                StreamSessionFixture.defaultProbeBuilder()
+                    .duration(Duration.ofSeconds(12))
+                    .keyframes(new KeyframeKnowledge.Known(positions))
+                    .build())
+            .build();
+
+    var playlist = service.generateMediaPlaylist(session, "test-token");
+
+    assertThat(playlist)
+        .contains("#EXTINF:6.500000,\n")
+        .contains("#EXTINF:5.500001,\n")
+        .contains("#EXT-X-TARGETDURATION:7\n");
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("keyframesThatOpenNoStreamCopy")
+  @DisplayName("Should refuse a stream copy playlist when the keyframes cannot open every segment")
+  void shouldRefuseAStreamCopyPlaylistWhenTheKeyframesCannotOpenEverySegment(
+      String description, KeyframeKnowledge keyframes) {
+    var session =
+        StreamSessionFixture.defaultSessionBuilder()
+            .mediaProbe(StreamSessionFixture.defaultProbeBuilder().keyframes(keyframes).build())
+            .build();
+
+    assertThatIllegalStateException()
+        .isThrownBy(() -> service.generateMediaPlaylist(session, "test-token"));
+  }
+
+  static Stream<Arguments> keyframesThatOpenNoStreamCopy() {
+    return Stream.of(
+        Arguments.of("not reported", new KeyframeKnowledge.NotReported()),
+        Arguments.of(
+            "a keyframe every 10.01 s",
+            ProbeFixture.keyframesEvery(Duration.ofMillis(10_010), Duration.ofMinutes(120))));
   }
 
   @Test

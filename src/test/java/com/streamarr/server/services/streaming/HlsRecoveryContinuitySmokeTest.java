@@ -191,7 +191,7 @@ class HlsRecoveryContinuitySmokeTest {
             .transcodeDecision(decision)
             .build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 0, 0);
+    lifecycle.startAll(session, 0);
     return session;
   }
 

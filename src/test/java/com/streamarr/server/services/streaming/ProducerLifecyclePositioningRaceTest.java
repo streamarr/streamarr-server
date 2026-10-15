@@ -190,7 +190,7 @@ class ProducerLifecyclePositioningRaceTest {
   private StreamSession startedSession() {
     var session = defaultSessionBuilder().build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 0, 0);
+    lifecycle.startAll(session, 0);
     return session;
   }
 

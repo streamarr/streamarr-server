@@ -2,8 +2,15 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.DecimalSeconds;
+import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.StreamSession;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Duration;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -12,6 +19,7 @@ import org.springframework.stereotype.Service;
 public class HlsPlaylistService {
 
   private static final String AUDIO_GROUP_ID = "audio";
+  private static final int EXTINF_DIGITS = 6;
 
   // RFC 8216 section 7: EXT-X-MAP in a playlist that is not I-frame-only needs version 6.
   private static final int PLAYLIST_VERSION = 6;
@@ -93,19 +101,25 @@ public class HlsPlaylistService {
   }
 
   /**
-   * The playlist always covers the full media duration on an absolute timeline: segment {@code i}
-   * is media time {@code [i * targetSegmentDuration, (i + 1) * targetSegmentDuration)}, so player
-   * position and duration match real media time.
+   * The playlist always covers the full media duration on an absolute timeline that starts at zero,
+   * so player position and duration match real media time. An encoded segment {@code i} is media
+   * time {@code [i * targetSegmentDuration, (i + 1) * targetSegmentDuration)}; a stream copy's
+   * segment runs from its opening keyframe to the next one.
    */
   public String generateMediaPlaylist(StreamSession session, String token) {
-    var timeline = MediaSegmentTimelines.of(session.getMediaProbe(), properties);
-    var targetSegmentDuration = timeline.targetSegmentDurationSeconds();
+    var timeline = MediaSegmentTimelines.of(session, properties);
     var segmentCount = timeline.mediaSegmentCount();
+    var extinfDurations =
+        IntStream.range(0, segmentCount)
+            .mapToObj(index -> extinfSeconds(timeline.mediaSegmentDuration(index)))
+            .toList();
 
     var sb = new StringBuilder();
     sb.append("#EXTM3U\n");
     sb.append("#EXT-X-VERSION:").append(PLAYLIST_VERSION).append("\n");
-    sb.append("#EXT-X-TARGETDURATION:").append(targetSegmentDuration).append("\n");
+    sb.append("#EXT-X-TARGETDURATION:")
+        .append(targetDurationSeconds(timeline, extinfDurations))
+        .append("\n");
     sb.append("#EXT-X-MEDIA-SEQUENCE:0\n");
     sb.append("#EXT-X-PLAYLIST-TYPE:VOD\n");
     sb.append("#EXT-X-MAP:URI=\"")
@@ -115,13 +129,29 @@ public class HlsPlaylistService {
         .append("\"\n");
 
     for (int i = 0; i < segmentCount; i++) {
-      var durationMs = timeline.mediaSegmentDuration(i).toMillis();
-      sb.append("#EXTINF:").append(String.format("%.6f", durationMs / 1000.0)).append(",\n");
+      sb.append("#EXTINF:").append(extinfDurations.get(i).toPlainString()).append(",\n");
       sb.append(SegmentNames.mediaSegmentName(i)).append("?t=").append(token).append("\n");
     }
 
     sb.append("#EXT-X-ENDLIST\n");
 
     return sb.toString();
+  }
+
+  private static BigDecimal extinfSeconds(Duration duration) {
+    return DecimalSeconds.of(duration).setScale(EXTINF_DIGITS, RoundingMode.HALF_UP);
+  }
+
+  // RFC 8216 §4.3.3.1: every EXTINF, rounded to the nearest integer, must not exceed the target
+  // duration. A stream copy's segment can run longer than the target segment duration.
+  private static int targetDurationSeconds(
+      MediaSegmentTimeline timeline, List<BigDecimal> extinfDurations) {
+    var targetDuration = timeline.targetSegmentDurationSeconds();
+    for (var extinf : extinfDurations) {
+      targetDuration =
+          Math.max(targetDuration, extinf.setScale(0, RoundingMode.HALF_UP).intValueExact());
+    }
+
+    return targetDuration;
   }
 }

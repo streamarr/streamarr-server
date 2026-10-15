@@ -79,7 +79,7 @@ class TranscodeDecisionServiceTest {
             new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.NO_KEYFRAMES),
             "keyframes_unavailable"),
         Arguments.of(millisecondKeyframes(0, 13_000, 18_000), "interval_without_keyframe"),
-        Arguments.of(millisecondKeyframes(0, 6_000, 12_000), "interval_without_keyframe"),
+        Arguments.of(millisecondKeyframes(0, 6_000), "interval_without_keyframe"),
         Arguments.of(
             millisecondKeyframes(0, 7_000, 6_500, 12_000, 18_000), "presentation_time_regressed"),
         Arguments.of(
@@ -91,7 +91,17 @@ class TranscodeDecisionServiceTest {
                     .source(KeyframePositionSource.PACKET_SCAN)
                     .keyframes(List.of(new KeyframePosition(Long.MAX_VALUE / 1000, 0)))
                     .build()),
-            "presentation_time_out_of_range"));
+            "presentation_time_out_of_range"),
+        Arguments.of(
+            new KeyframeKnowledge.Known(
+                KeyframePositions.builder()
+                    .streamIndex(0)
+                    .timeBaseNumerator(1001)
+                    .timeBaseDenominator(24_000)
+                    .source(KeyframePositionSource.PACKET_SCAN)
+                    .keyframes(List.of(new KeyframePosition(0, Long.MIN_VALUE / 1000)))
+                    .build()),
+            "decode_time_out_of_range"));
   }
 
   @Test
@@ -157,9 +167,10 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("Should encode the video when no keyframe opens the final partial segment")
-  void shouldEncodeTheVideoWhenNoKeyframeOpensTheFinalPartialSegment() {
-    // 18.5 s at the 6 s period advertises a fourth segment, [18 s, 18.5 s), that holds no keyframe.
+  @DisplayName("Should copy the video when no keyframe opens the final partial segment")
+  void shouldCopyTheVideoWhenNoKeyframeOpensTheFinalPartialSegment() {
+    // The grid interval [18 s, 18.5 s) holds no keyframe. It joins the copy segment that the
+    // keyframe at 12 s opens, which runs to 18.5 s.
     var source =
         probeBuilder("h264", "aac")
             .duration(Duration.ofMillis(18_500))
@@ -168,7 +179,45 @@ class TranscodeDecisionServiceTest {
 
     var decision = service.decide(source, options(List.of("h264")));
 
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(meterRegistry.find(STREAM_COPY_REFUSALS).counters()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should encode the video when the two final grid intervals hold no keyframe")
+  void shouldEncodeTheVideoWhenTheTwoFinalGridIntervalsHoldNoKeyframe() {
+    // Over 20 s, neither [12 s, 18 s) nor [18 s, 20 s) holds a keyframe. A copy segment opened at
+    // 6 s would run 14 s, more than twice the 6 s period.
+    var source =
+        probeBuilder("h264", "aac")
+            .duration(Duration.ofSeconds(20))
+            .keyframes(millisecondKeyframes(0, 6_000))
+            .build();
+
+    var decision = service.decide(source, options(List.of("h264")));
+
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+  }
+
+  @Test
+  @DisplayName("Should encode the video when no keyframe presents before the media end")
+  void shouldEncodeTheVideoWhenNoKeyframePresentsBeforeTheMediaEnd() {
+    var source =
+        probeBuilder("h264", "aac")
+            .duration(Duration.ofMillis(400))
+            .keyframes(millisecondKeyframes(500))
+            .build();
+
+    var decision = service.decide(source, options(List.of("h264")));
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(
+            meterRegistry
+                .get(STREAM_COPY_REFUSALS)
+                .tag("reason", "interval_without_keyframe")
+                .counter()
+                .count())
+        .isEqualTo(1.0);
   }
 
   @Test

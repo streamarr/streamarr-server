@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.StreamCopySegments;
 import java.util.ArrayList;
@@ -20,39 +21,43 @@ final class KeyframeSegmentBoundaries {
     }
 
     var keyframes = positions.keyframes();
-    var starts = new ArrayList<Long>();
+    var openingKeyframes = new ArrayList<KeyframePosition>();
     for (var index = 0; index < keyframes.size(); index++) {
       var presentationTime = keyframes.get(index).presentationTime();
       if (index > 0 && presentationTime < keyframes.get(index - 1).presentationTime()) {
         return new StreamCopySegments.PresentationTimeRegressed(index);
       }
 
-      if (isOutOfRange(presentationTime, positions)) {
+      if (isOutOfRange(presentationTime, positions.timeBaseNumerator())) {
         return new StreamCopySegments.PresentationTimeOutOfRange(index);
       }
 
       var segmentNumber = segmentNumberOf(presentationTime, positions, periodSeconds);
-      if (segmentNumber > starts.size()) {
-        return new StreamCopySegments.IntervalWithoutKeyframe(starts.size());
+      if (segmentNumber > openingKeyframes.size()) {
+        return new StreamCopySegments.IntervalWithoutKeyframe(openingKeyframes.size());
       }
 
       // A lower number joins the open segment, or lies before zero, where no segment opens.
-      if (segmentNumber == starts.size()) {
-        starts.add(presentationTime);
+      if (segmentNumber < openingKeyframes.size()) {
+        continue;
       }
+
+      if (isOutOfRange(keyframes.get(index).decodeTime(), positions.timeBaseNumerator())) {
+        return new StreamCopySegments.DecodeTimeOutOfRange(index);
+      }
+
+      openingKeyframes.add(keyframes.get(index));
     }
 
-    if (starts.isEmpty()) {
+    if (openingKeyframes.isEmpty()) {
       return new StreamCopySegments.IntervalWithoutKeyframe(0);
     }
 
-    return new StreamCopySegments.Starts(starts);
+    return new StreamCopySegments.Starts(openingKeyframes);
   }
 
-  private static boolean isOutOfRange(long presentationTime, KeyframePositions positions) {
-    var numerator = positions.timeBaseNumerator();
-    return presentationTime > Long.MAX_VALUE / numerator
-        || presentationTime < Long.MIN_VALUE / numerator;
+  private static boolean isOutOfRange(long ticks, int timeBaseNumerator) {
+    return ticks > Long.MAX_VALUE / timeBaseNumerator || ticks < Long.MIN_VALUE / timeBaseNumerator;
   }
 
   private static long segmentNumberOf(

@@ -10,13 +10,13 @@ import lombok.NonNull;
 public sealed interface StreamCopySegments {
 
   /**
-   * Segment N opens at the keyframe presentation time at index N, in ticks of the keyframe
-   * positions' time base. The last segment holds the source's last keyframe.
+   * Segment N opens at the keyframe at index N, whose times count ticks of the keyframe positions'
+   * time base. The last segment holds the source's last keyframe.
    */
-  record Starts(@NonNull List<Long> presentationTimes) implements StreamCopySegments {
+  record Starts(@NonNull List<KeyframePosition> openingKeyframes) implements StreamCopySegments {
 
     public Starts {
-      presentationTimes = List.copyOf(presentationTimes);
+      openingKeyframes = List.copyOf(openingKeyframes);
     }
   }
 
@@ -34,4 +34,10 @@ public sealed interface StreamCopySegments {
    * times the time base numerator overflows a {@code long}. No real source reaches such a time.
    */
   record PresentationTimeOutOfRange(int keyframeIndex) implements StreamCopySegments {}
+
+  /**
+   * The keyframe at this index opens a segment, but its decode time lies too far from zero for a
+   * copy attempt to seek to: that time times the time base numerator overflows a {@code long}.
+   */
+  record DecodeTimeOutOfRange(int keyframeIndex) implements StreamCopySegments {}
 }
