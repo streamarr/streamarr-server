@@ -29,11 +29,11 @@ class ProbeWorkerContractTest {
   @DisplayName("Should retain supported probe versions when serializing worker capabilities")
   void shouldRetainSupportedProbeVersionsWhenSerializingWorkerCapabilities() throws Exception {
     var capabilities =
-        WorkerCapabilities.newBuilder().addProbeVersions(1).addProbeVersions(2).build();
+        WorkerCapabilities.newBuilder().addProbeVersions(1).addProbeVersions(3).build();
 
     var decoded = WorkerCapabilities.parseFrom(capabilities.toByteArray());
 
-    assertThat(decoded.getProbeVersionsList()).containsExactly(1, 2);
+    assertThat(decoded.getProbeVersionsList()).containsExactly(1, 3);
     assertThat(WorkerCapabilities.getDefaultInstance().getProbeVersionsList()).isEmpty();
   }
 
@@ -59,7 +59,7 @@ class ProbeWorkerContractTest {
                     .setRequest(
                         ProbeRequest.newBuilder()
                             .setProbeAttemptId(attemptId)
-                            .setProbeVersion(2)
+                            .setProbeVersion(3)
                             .setSource(source)))
             .build();
 
@@ -67,7 +67,7 @@ class ProbeWorkerContractTest {
 
     assertThat(decoded.getTarget()).isEqualTo(worker);
     assertThat(decoded.getRequest().getProbeAttemptId()).isEqualTo(attemptId);
-    assertThat(decoded.getRequest().getProbeVersion()).isEqualTo(2);
+    assertThat(decoded.getRequest().getProbeVersion()).isEqualTo(3);
     assertThat(decoded.getRequest().getSource()).isEqualTo(source);
   }
 
@@ -111,7 +111,7 @@ class ProbeWorkerContractTest {
     var result =
         ProbeAttemptResult.newBuilder()
             .setProbeAttemptId(toProto(UUID.randomUUID()))
-            .setProbeVersion(2)
+            .setProbeVersion(3)
             .setMedia(media)
             .build();
     var event = EstablishWorkerSessionRequest.newBuilder().setProbeResult(result).build();
