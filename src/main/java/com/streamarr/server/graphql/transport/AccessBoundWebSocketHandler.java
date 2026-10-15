@@ -88,15 +88,6 @@ class AccessBoundWebSocketHandler extends WebSocketHandlerDecorator {
     super.afterConnectionClosed(bound, closeStatus);
   }
 
-  // WebSocketAuthorityHandshakeInterceptor accepts no handshake without recording the expiry.
-  private static Instant accessExpiresAt(WebSocketSession session) {
-    if (session.getAttributes().get(ACCESS_EXPIRES_AT) instanceof Instant expiresAt) {
-      return expiresAt;
-    }
-
-    throw new IllegalStateException("The WebSocket handshake recorded no access-token expiry.");
-  }
-
   // The one session object the GraphQL handler sees; it refuses to send after expiry.
   private static final class AccessBoundSession extends WebSocketSessionDecorator {
 
@@ -110,6 +101,15 @@ class AccessBoundWebSocketHandler extends WebSocketHandlerDecorator {
       this.clock = clock;
       this.expiryTimer =
           taskScheduler.schedule(() -> closeForExpiry(session), this.accessExpiresAt);
+    }
+
+    // WebSocketAuthorityHandshakeInterceptor accepts no handshake without recording the expiry.
+    private static Instant accessExpiresAt(WebSocketSession session) {
+      if (session.getAttributes().get(ACCESS_EXPIRES_AT) instanceof Instant expiresAt) {
+        return expiresAt;
+      }
+
+      throw new IllegalStateException("The WebSocket handshake recorded no access-token expiry.");
     }
 
     private boolean isExpired() {
