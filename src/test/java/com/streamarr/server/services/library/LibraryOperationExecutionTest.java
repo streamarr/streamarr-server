@@ -7,11 +7,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.awaitility.Awaitility.await;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
@@ -31,6 +26,7 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.exceptions.LibraryScanFailedException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.CountingSleeper;
+import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeLibraryMutationTransaction;
@@ -41,6 +37,7 @@ import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeProbeTaskRequests;
+import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.fakes.FakeTransactionManager;
@@ -72,17 +69,21 @@ import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.MetadataResult;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
-import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.parsers.show.EpisodePathMetadataParser;
+import com.streamarr.server.services.parsers.show.SeasonPathMetadataParser;
+import com.streamarr.server.services.parsers.show.SeriesFolderNameParser;
+import com.streamarr.server.services.parsers.show.regex.EpisodeRegexFixtures;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
@@ -118,16 +119,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
-import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.CannotGetJdbcConnectionException;
 
 @Tag("UnitTest")
-@ExtendWith(MockitoExtension.class)
 @DisplayName("Library Operation Execution Tests")
 class LibraryOperationExecutionTest {
 
@@ -138,7 +136,8 @@ class LibraryOperationExecutionTest {
       new FakeLibraryMutationTransaction();
 
   private final CreditService creditService = CreditServiceFixture.creditServiceBuilder().build();
-  private final MetadataProvider<Movie> tmdbMovieProvider = mock(TMDBMovieProvider.class);
+  private final ScriptedMovieMetadataProvider tmdbMovieProvider =
+      new ScriptedMovieMetadataProvider();
   private final MovieMetadataProviderResolver fakeMovieMetadataProviderResolver =
       new MovieMetadataProviderResolver(List.of(tmdbMovieProvider));
   private final LibraryRepository fakeLibraryRepository = new FakeLibraryRepository();
@@ -197,10 +196,36 @@ class LibraryOperationExecutionTest {
           fakeMediaFileRepository,
           new MutexFactoryProvider());
 
-  private final SeriesFileProcessor seriesFileProcessor = mock(SeriesFileProcessor.class);
-  private final SeriesService seriesService = mock(SeriesService.class);
+  private final SeriesService seriesService =
+      new SeriesService(
+          new FakeSeriesRepository(),
+          creditService,
+          null,
+          artworkRequestService,
+          null,
+          new FakeSeasonRepository(),
+          new FakeEpisodeRepository(),
+          fakeMediaFileRepository,
+          null,
+          null,
+          null);
+  private final SeriesMetadataProviderResolver seriesMetadataProviderResolver =
+      new SeriesMetadataProviderResolver(List.of());
+  private final SeriesFileProcessor seriesFileProcessor =
+      new SeriesFileProcessor(
+          new EpisodePathMetadataParser(new EpisodeRegexFixtures()),
+          new SeasonPathMetadataParser(),
+          new SeriesFolderNameParser(),
+          seriesMetadataProviderResolver,
+          new DateBasedEpisodeResolver(seriesMetadataProviderResolver),
+          seriesService,
+          fakeMediaFileRepository,
+          new FakeSeasonRepository(),
+          new FakeEpisodeRepository(),
+          new MutexFactoryProvider());
 
-  private final LibraryRefreshService libraryRefreshService = mock(LibraryRefreshService.class);
+  private final ScriptedLibraryRefreshService libraryRefreshService =
+      new ScriptedLibraryRefreshService();
 
   private final FakeMediaFileContainerInfoRepository probeOutcomes =
       new FakeMediaFileContainerInfoRepository();
@@ -235,9 +260,7 @@ class LibraryOperationExecutionTest {
     var rootPath = createRootLibraryDirectory();
     var moviePath = createMovieFile(rootPath, "Failing Movie", "Failing Movie (2024).mkv");
 
-    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenThrow(new RuntimeException("simulated search failure"));
+    tmdbMovieProvider.failSearchesWith(new RuntimeException("simulated search failure"));
 
     operations.scanLibrary(savedLibraryId);
 
@@ -287,15 +310,12 @@ class LibraryOperationExecutionTest {
 
   private void failEverySearchOnceBothFilesSearch() {
     var failuresReady = new CountDownLatch(2);
-    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenAnswer(
-            invocation -> {
-              var parsedFile = invocation.getArgument(0, VideoFileParserResult.class);
-              failuresReady.countDown();
-              assertThat(failuresReady.await(5, TimeUnit.SECONDS)).isTrue();
-              throw new IllegalStateException("simulated failure: " + parsedFile.title());
-            });
+    tmdbMovieProvider.answerSearchesWith(
+        parsedFile -> {
+          failuresReady.countDown();
+          assertThat(failuresReady.await(5, TimeUnit.SECONDS)).isTrue();
+          throw new IllegalStateException("simulated failure: " + parsedFile.title());
+        });
   }
 
   @Test
@@ -316,21 +336,18 @@ class LibraryOperationExecutionTest {
           .containsExactly(failingMoviePath, completingMoviePath);
     }
 
-    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenAnswer(
-            invocation -> {
-              var parsedFile = invocation.getArgument(0, VideoFileParserResult.class);
-              if (parsedFile.title().equals("Completing Movie")) {
-                completingTaskStarted.countDown();
-                releaseCompletingTask.await();
-                return new NotFound();
-              }
+    tmdbMovieProvider.answerSearchesWith(
+        parsedFile -> {
+          if (parsedFile.title().equals("Completing Movie")) {
+            completingTaskStarted.countDown();
+            releaseCompletingTask.await();
+            return new NotFound();
+          }
 
-              assertThat(completingTaskStarted.await(5, TimeUnit.SECONDS)).isTrue();
-              failingTaskFinished.countDown();
-              throw new RuntimeException("simulated search failure");
-            });
+          assertThat(completingTaskStarted.await(5, TimeUnit.SECONDS)).isTrue();
+          failingTaskFinished.countDown();
+          throw new RuntimeException("simulated search failure");
+        });
 
     var scanThread = Thread.ofPlatform().start(() -> operations.scanLibrary(savedLibraryId));
 
@@ -366,20 +383,18 @@ class LibraryOperationExecutionTest {
     var workerInterrupted = new AtomicBoolean();
     var result = new AtomicReference<LibraryOperationExecutionResult>();
 
-    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenAnswer(
-            _ -> {
-              processingStarted.countDown();
-              try {
-                releaseProcessing.await();
-              } catch (InterruptedException exception) {
-                workerInterrupted.set(true);
-                throw exception;
-              }
+    tmdbMovieProvider.answerSearchesWith(
+        _ -> {
+          processingStarted.countDown();
+          try {
+            releaseProcessing.await();
+          } catch (InterruptedException exception) {
+            workerInterrupted.set(true);
+            throw exception;
+          }
 
-              return new NotFound();
-            });
+          return new NotFound();
+        });
 
     var scanThread =
         Thread.ofPlatform()
@@ -559,22 +574,18 @@ class LibraryOperationExecutionTest {
     var rootPath = createRootLibraryDirectory();
     var moviePath = createMovieFile(rootPath, movieFolder, movieFilename);
 
-    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+    tmdbMovieProvider.returnFromSearches(
+        new Found(
+            RemoteSearchResult.builder()
+                .title("Inception")
+                .externalId("27205")
+                .externalSourceType(ExternalSourceType.TMDB)
+                .build()));
 
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenReturn(
-            new Found(
-                RemoteSearchResult.builder()
-                    .title("Inception")
-                    .externalId("27205")
-                    .externalSourceType(ExternalSourceType.TMDB)
-                    .build()));
-
-    when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
-        .thenReturn(
-            new MetadataFetchOutcome.Found<>(
-                new MetadataResult<>(
-                    Movie.builder().title("Inception").build(), List.of(), Map.of(), Map.of())));
+    tmdbMovieProvider.returnMetadata(
+        new MetadataFetchOutcome.Found<>(
+            new MetadataResult<>(
+                Movie.builder().title("Inception").build(), List.of(), Map.of(), Map.of())));
 
     operations.scanLibrary(savedLibraryId);
 
@@ -896,18 +907,15 @@ class LibraryOperationExecutionTest {
               throw new DataAccessResourceFailureException("simulated media file failure");
             }
           };
-      when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-      when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-          .thenAnswer(
-              invocation ->
-                  switch (invocation.getArgument(0, VideoFileParserResult.class).title()) {
-                    case "Alpha" -> foundMovie("Alpha");
-                    case "Delta" ->
-                        new TemporarilyUnavailable(new HttpTimeoutException("search timed out"));
-                    default -> new NotFound();
-                  });
-      when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
-          .thenReturn(movieMetadata("Alpha"));
+      tmdbMovieProvider.answerSearchesWith(
+          parsedFile ->
+              switch (parsedFile.title()) {
+                case "Alpha" -> foundMovie("Alpha");
+                case "Delta" ->
+                    new TemporarilyUnavailable(new HttpTimeoutException("search timed out"));
+                default -> new NotFound();
+              });
+      tmdbMovieProvider.returnMetadata(movieMetadata("Alpha"));
 
       scan();
 
@@ -929,19 +937,17 @@ class LibraryOperationExecutionTest {
       var admissions = new FixedLimitAdmissions(2);
       var heldSearching = new CountDownLatch(1);
       var releaseHeld = new CountDownLatch(1);
-      when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-      when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-          .thenAnswer(
-              invocation -> {
-                if (invocation.getArgument(0, VideoFileParserResult.class).title().equals("Held")) {
-                  heldSearching.countDown();
-                  assertThat(releaseHeld.await(5, TimeUnit.SECONDS)).isTrue();
-                  return new NotFound();
-                }
+      tmdbMovieProvider.answerSearchesWith(
+          parsedFile -> {
+            if (parsedFile.title().equals("Held")) {
+              heldSearching.countDown();
+              assertThat(releaseHeld.await(5, TimeUnit.SECONDS)).isTrue();
+              return new NotFound();
+            }
 
-                assertThat(heldSearching.await(5, TimeUnit.SECONDS)).isTrue();
-                throw new IllegalStateException("simulated search failure");
-              });
+            assertThat(heldSearching.await(5, TimeUnit.SECONDS)).isTrue();
+            throw new IllegalStateException("simulated search failure");
+          });
       var service =
           serviceBuilder()
               .libraryFileWalk(
@@ -967,8 +973,7 @@ class LibraryOperationExecutionTest {
     @DisplayName("Should finish the scan healthy when a file task records a matching failure")
     void shouldFinishTheScanHealthyWhenAFileTaskRecordsAMatchingFailure() throws Exception {
       var path = createMovieFile(createRootLibraryDirectory(), "Unknown", "Unknown (2001).mkv");
-      when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-      when(tmdbMovieProvider.search(any(VideoFileParserResult.class))).thenReturn(new NotFound());
+      tmdbMovieProvider.returnFromSearches(new NotFound());
 
       scan();
 
@@ -1099,22 +1104,19 @@ class LibraryOperationExecutionTest {
   }
 
   private void matchMovieWithPoster(String title) {
-    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenReturn(
-            new Found(
-                RemoteSearchResult.builder()
-                    .title(title)
-                    .externalId("123")
-                    .externalSourceType(ExternalSourceType.TMDB)
-                    .build()));
-    when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
-        .thenReturn(
-            new MetadataFetchOutcome.Found<>(
-                MetadataFixture.<Movie>metadataResultBuilder()
-                    .entity(Movie.builder().title(title).titleSort(title).build())
-                    .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))
-                    .build()));
+    tmdbMovieProvider.returnFromSearches(
+        new Found(
+            RemoteSearchResult.builder()
+                .title(title)
+                .externalId("123")
+                .externalSourceType(ExternalSourceType.TMDB)
+                .build()));
+    tmdbMovieProvider.returnMetadata(
+        new MetadataFetchOutcome.Found<>(
+            MetadataFixture.<Movie>metadataResultBuilder()
+                .entity(Movie.builder().title(title).titleSort(title).build())
+                .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))
+                .build()));
   }
 
   private record ScanState(LibraryStatus status, int completedEvents) {}
@@ -1185,22 +1187,18 @@ class LibraryOperationExecutionTest {
     var rootPath = createRootLibraryDirectory();
     var moviePath = createMovieFile(rootPath, movieFolder, movieFilename);
 
-    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+    tmdbMovieProvider.returnFromSearches(
+        new Found(
+            RemoteSearchResult.builder()
+                .title(movieFolder)
+                .externalId("123")
+                .externalSourceType(ExternalSourceType.TMDB)
+                .build()));
 
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenReturn(
-            new Found(
-                RemoteSearchResult.builder()
-                    .title(movieFolder)
-                    .externalId("123")
-                    .externalSourceType(ExternalSourceType.TMDB)
-                    .build()));
-
-    when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
-        .thenReturn(
-            new MetadataFetchOutcome.Found<>(
-                new MetadataResult<>(
-                    Movie.builder().title(movieFolder).build(), List.of(), Map.of(), Map.of())));
+    tmdbMovieProvider.returnMetadata(
+        new MetadataFetchOutcome.Found<>(
+            new MetadataResult<>(
+                Movie.builder().title(movieFolder).build(), List.of(), Map.of(), Map.of())));
 
     operations.scanLibrary(savedLibraryId);
 
@@ -1232,15 +1230,12 @@ class LibraryOperationExecutionTest {
                 .status(retryableStatus)
                 .build());
 
-    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenReturn(
-            new Found(RemoteSearchResult.builder().title(movieFolder).externalId("123").build()));
+    tmdbMovieProvider.returnFromSearches(
+        new Found(RemoteSearchResult.builder().title(movieFolder).externalId("123").build()));
 
-    when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
-        .thenReturn(
-            new MetadataFetchOutcome.Found<>(
-                new MetadataResult<>(Movie.builder().build(), List.of(), Map.of(), Map.of())));
+    tmdbMovieProvider.returnMetadata(
+        new MetadataFetchOutcome.Found<>(
+            new MetadataResult<>(Movie.builder().build(), List.of(), Map.of(), Map.of())));
 
     operations.scanLibrary(savedLibraryId);
 
@@ -1258,9 +1253,7 @@ class LibraryOperationExecutionTest {
     var moviePath = createMovieFile(rootPath, "Cop Land", "Cop Land (1997).mkv");
     var timeout = new IOException("Connection timed out");
 
-    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenReturn(new TemporarilyUnavailable(timeout));
+    tmdbMovieProvider.returnFromSearches(new TemporarilyUnavailable(timeout));
 
     operations.scanLibrary(savedLibraryId);
 
@@ -1332,21 +1325,19 @@ class LibraryOperationExecutionTest {
                   .externalSourceType(ExternalSourceType.TMDB)
                   .externalId("27205")
                   .build());
-      when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-      when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
-          .thenReturn(
-              new MetadataFetchOutcome.Found<>(
-                  MetadataFixture.<Movie>metadataResultBuilder()
-                      .entity(Movie.builder().title("Refreshed").titleSort("refreshed").build())
-                      .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))
-                      .build()));
+      tmdbMovieProvider.returnMetadata(
+          new MetadataFetchOutcome.Found<>(
+              MetadataFixture.<Movie>metadataResultBuilder()
+                  .entity(Movie.builder().title("Refreshed").titleSort("refreshed").build())
+                  .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))
+                  .build()));
       var refreshService =
           LibraryRefreshService.builder()
               .seriesRepository(new FakeSeriesRepository())
               .movieRepository(fakeMovieRepository)
               .seriesService(seriesService)
               .movieService(movieService)
-              .seriesMetadataProviderResolver(mock(SeriesMetadataProviderResolver.class))
+              .seriesMetadataProviderResolver(seriesMetadataProviderResolver)
               .movieMetadataProviderResolver(fakeMovieMetadataProviderResolver)
               .artworkRequestService(artworkRequestService)
               .artworkRunWaiter(artwork.artworkRunWaiter())
@@ -1376,10 +1367,8 @@ class LibraryOperationExecutionTest {
 
     @Test
     @DisplayName("Should transition library to UNHEALTHY when refresh fails")
-    void shouldTransitionToUnhealthyWhenRefreshFails() throws Exception {
-      doThrow(new RuntimeException("simulated refresh failure"))
-          .when(libraryRefreshService)
-          .refreshLibrary(any(Library.class), any(ImageRefreshMode.class));
+    void shouldTransitionToUnhealthyWhenRefreshFails() {
+      libraryRefreshService.failWith(new RuntimeException("simulated refresh failure"));
 
       operations.refreshLibrary(savedLibraryId);
 
@@ -1399,10 +1388,8 @@ class LibraryOperationExecutionTest {
 
     @Test
     @DisplayName("Should publish RefreshEndedEvent when refresh fails")
-    void shouldPublishRefreshEndedEventWhenRefreshFails() throws Exception {
-      doThrow(new RuntimeException("simulated refresh failure"))
-          .when(libraryRefreshService)
-          .refreshLibrary(any(Library.class), any(ImageRefreshMode.class));
+    void shouldPublishRefreshEndedEventWhenRefreshFails() {
+      libraryRefreshService.failWith(new RuntimeException("simulated refresh failure"));
 
       operations.refreshLibrary(savedLibraryId);
 
@@ -1427,12 +1414,9 @@ class LibraryOperationExecutionTest {
     @Test
     @DisplayName("Should pass the operation's image refresh mode to the refresh")
     void shouldPassTheOperationsImageRefreshModeToTheRefresh() {
-      var recordingRefreshService = new RecordingLibraryRefreshService();
-      var service = libraryManagementServiceWithRefreshService(recordingRefreshService);
+      operations.refreshLibrary(savedLibraryId, ImageRefreshMode.REFRESH_IF_CHANGED);
 
-      service.refreshLibrary(savedLibraryId, ImageRefreshMode.REFRESH_IF_CHANGED);
-
-      assertThat(recordingRefreshService.imageRefreshMode())
+      assertThat(libraryRefreshService.imageRefreshMode())
           .isEqualTo(ImageRefreshMode.REFRESH_IF_CHANGED);
       assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
           .isEqualTo(LibraryStatus.HEALTHY);
@@ -1488,10 +1472,8 @@ class LibraryOperationExecutionTest {
 
     @Test
     @DisplayName("Should publish an UNHEALTHY status change when a refresh fails")
-    void shouldPublishUnhealthyStatusChangeWhenRefreshFails() throws Exception {
-      doThrow(new RuntimeException("simulated refresh failure"))
-          .when(libraryRefreshService)
-          .refreshLibrary(any(Library.class), any(ImageRefreshMode.class));
+    void shouldPublishUnhealthyStatusChangeWhenRefreshFails() {
+      libraryRefreshService.failWith(new RuntimeException("simulated refresh failure"));
 
       service.refreshLibrary(savedLibraryId);
 
@@ -1570,16 +1552,12 @@ class LibraryOperationExecutionTest {
     @Test
     @DisplayName(
         "Should keep the operation stored when a refresh fails on a thread a shutdown interrupted")
-    void shouldKeepTheOperationStoredWhenARefreshFailsOnAThreadAShutdownInterrupted()
-        throws Exception {
-      doAnswer(
-              _ -> {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException(
-                    "the connection pool refused an interrupted thread");
-              })
-          .when(libraryRefreshService)
-          .refreshLibrary(any(Library.class), any(ImageRefreshMode.class));
+    void shouldKeepTheOperationStoredWhenARefreshFailsOnAThreadAShutdownInterrupted() {
+      libraryRefreshService.answerRefreshesWith(
+          () -> {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("the connection pool refused an interrupted thread");
+          });
 
       try {
         var result = operations.refreshLibrary(savedLibraryId);
@@ -1650,21 +1628,88 @@ class LibraryOperationExecutionTest {
     }
   }
 
-  private static final class RecordingLibraryRefreshService extends LibraryRefreshService {
+  // Captures the image refresh mode of each refresh, then runs the answer the test sets.
+  private static final class ScriptedLibraryRefreshService extends LibraryRefreshService {
 
     private final AtomicReference<ImageRefreshMode> imageRefreshMode = new AtomicReference<>();
+    private volatile Runnable refreshAnswer = () -> {};
 
-    private RecordingLibraryRefreshService() {
+    private ScriptedLibraryRefreshService() {
       super(null, null, null, null, null, null, null, null, null, null, null);
+    }
+
+    private void failWith(RuntimeException failure) {
+      answerRefreshesWith(
+          () -> {
+            throw failure;
+          });
+    }
+
+    private void answerRefreshesWith(Runnable answer) {
+      refreshAnswer = answer;
     }
 
     @Override
     public void refreshLibrary(Library library, ImageRefreshMode requestedImageRefreshMode) {
       imageRefreshMode.set(requestedImageRefreshMode);
+      refreshAnswer.run();
     }
 
     private ImageRefreshMode imageRefreshMode() {
       return imageRefreshMode.get();
+    }
+  }
+
+  @FunctionalInterface
+  private interface SearchAnswer {
+    MetadataSearchOutcome answer(VideoFileParserResult parsedFile) throws InterruptedException;
+  }
+
+  // A TMDB movie provider whose search and metadata answers each test sets.
+  private static final class ScriptedMovieMetadataProvider implements MetadataProvider<Movie> {
+
+    private volatile SearchAnswer searchAnswer = _ -> new NotFound();
+    private volatile MetadataFetchOutcome<MetadataResult<Movie>> metadata =
+        new MetadataFetchOutcome.NotFound<>();
+
+    private void answerSearchesWith(SearchAnswer answer) {
+      searchAnswer = answer;
+    }
+
+    private void returnFromSearches(MetadataSearchOutcome outcome) {
+      answerSearchesWith(_ -> outcome);
+    }
+
+    private void failSearchesWith(RuntimeException failure) {
+      answerSearchesWith(
+          _ -> {
+            throw failure;
+          });
+    }
+
+    private void returnMetadata(MetadataFetchOutcome<MetadataResult<Movie>> outcome) {
+      metadata = outcome;
+    }
+
+    @Override
+    public MetadataSearchOutcome search(VideoFileParserResult parsedFile) {
+      try {
+        return searchAnswer.answer(parsedFile);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new IllegalStateException("The search was interrupted", e);
+      }
+    }
+
+    @Override
+    public MetadataFetchOutcome<MetadataResult<Movie>> getMetadata(
+        RemoteSearchResult remoteSearchResult, Library library) {
+      return metadata;
+    }
+
+    @Override
+    public ExternalAgentStrategy getAgentStrategy() {
+      return ExternalAgentStrategy.TMDB;
     }
   }
 
