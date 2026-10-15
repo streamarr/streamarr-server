@@ -2,25 +2,21 @@ package com.streamarr.server.repositories.media;
 
 import static com.streamarr.server.jooq.generated.tables.BaseCollectable.BASE_COLLECTABLE;
 import static com.streamarr.server.jooq.generated.tables.ExternalIdentifier.EXTERNAL_IDENTIFIER;
-import static com.streamarr.server.jooq.generated.tables.MediaFile.MEDIA_FILE;
 import static com.streamarr.server.jooq.generated.tables.Movie.MOVIE;
 import static com.streamarr.server.jooq.generated.tables.MovieCompany.MOVIE_COMPANY;
 import static com.streamarr.server.jooq.generated.tables.MovieDirector.MOVIE_DIRECTOR;
 import static com.streamarr.server.jooq.generated.tables.MovieGenre.MOVIE_GENRE;
 import static com.streamarr.server.jooq.generated.tables.MoviePerson.MOVIE_PERSON;
-import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
-import static com.streamarr.server.jooq.generated.tables.WatchHistory.WATCH_HISTORY;
-import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.not;
-import static org.jooq.impl.DSL.select;
 
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.jooq.generated.enums.ExternalSourceType;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import com.streamarr.server.repositories.LastWatchedExpression;
+import com.streamarr.server.repositories.WatchStateConditions;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
@@ -227,29 +223,8 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
 
     var profileId = requireProfileId(filter.getProfileId());
 
-    var isWatched =
-        exists(
-            select(WATCH_HISTORY.ID)
-                .from(WATCH_HISTORY)
-                .where(
-                    WATCH_HISTORY
-                        .COLLECTABLE_ID
-                        .eq(BASE_COLLECTABLE.ID)
-                        .and(WATCH_HISTORY.PROFILE_ID.eq(profileId))
-                        .and(WATCH_HISTORY.DISMISSED_AT.isNull())));
-
-    var hasProgress =
-        exists(
-            select(SESSION_PROGRESS.ID)
-                .from(SESSION_PROGRESS)
-                .innerJoin(MEDIA_FILE)
-                .on(SESSION_PROGRESS.MEDIA_FILE_ID.eq(MEDIA_FILE.ID))
-                .where(
-                    MEDIA_FILE
-                        .MEDIA_ID
-                        .eq(BASE_COLLECTABLE.ID)
-                        .and(SESSION_PROGRESS.PROFILE_ID.eq(profileId))
-                        .and(SESSION_PROGRESS.POSITION_SECONDS.greaterThan(0))));
+    var isWatched = WatchStateConditions.hasCompletion(profileId, BASE_COLLECTABLE.ID);
+    var hasProgress = WatchStateConditions.hasProgress(profileId, BASE_COLLECTABLE.ID);
 
     return switch (watchStatus) {
       case WATCHED -> isWatched;
