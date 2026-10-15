@@ -68,6 +68,58 @@ Library Scan
 
 The metadata provider abstraction (`MetadataProvider<T>`) allows swapping TMDB for another source without changing the scan pipeline.
 
+=== Admission
+
+A scan admits one task per media file, and a refresh admits one task per series or movie (https://github.com/streamarr/streamarr-adr/blob/main/adr/0041-scans-and-refreshes-admit-tasks-through-an-adaptive-limit.adoc[ADR 0041]).
+An adaptive concurrency limit decides how many tasks run at once.
+The limit uses Netflix concurrency-limits' Gradient2 algorithm: it rises while task latency holds steady and falls when latency rises.
+The connection pool is not a queue for library work.
+
+The thread that walks the library acquires an admission before it pulls the next file, so the walk never runs ahead of admission.
+Ignored files and files without a supported video extension take no admission, and neither does a title without a TMDB id.
+Each admitted task forks on a virtual thread that runs as the System actor, and the tasks join in the order they were admitted.
+
+Each admitted task reports exactly one outcome, which returns its admission:
+
+* A task that called the metadata provider reports its latency.
+* A task that returned without real processing reports that it was ignored. This covers a file that was already matched, a file whose name could not be parsed, a misconfigured provider, and an interrupted task. Ignored reports do not move the limit.
+* A task that hit a TMDB retry, recorded a temporary failure, or threw because of a timeout reports a drop. Gradient2 reads a drop as an ordinary latency sample.
+
+A task keeps its admission until the primary artwork it requested has recorded results, so its latency includes that artwork.
+A series file task waits for every series, season and episode image it requested.
+The task checks its results every `artwork.task-result-check-interval` (100 ms by default), and a task that requested no artwork reads nothing.
+
+A recorded failure does not fail the operation.
+A task that throws ends admission: the admitted tasks finish, files or titles that were not admitted yet are not processed in that operation, and the operation fails.
+One task's failure never cancels another task.
+
+Each scan and refresh starts with a fresh limit.
+The tuning lives in `AdaptiveAdmission.learnedLimit()`: initial limit 16, minimum 1, maximum 200, queue size 1 and RTT tolerance 1.0.
+The initial limit is high enough that an unchanged rescan, whose tasks all report ignored, runs about as fast as it did without admission.
+
+Admission publishes these metrics:
+
+[cols="2,1,3"]
+|===
+|Metric |Tags |Meaning
+
+|`streamarr.library.admission.limit`
+|`operation`, `library`
+|The current limit of a running scan or refresh. The gauge is removed when the operation ends.
+
+|`streamarr.library.admission.in_flight`
+|`operation`, `library`
+|Admitted tasks that have not reported yet. The gauge is removed when the operation ends.
+
+|`streamarr.library.admission.admitted`
+|`operation`
+|Tasks admitted.
+
+|`streamarr.library.admission.reports`
+|`operation`, `report`
+|Reports by kind: `latency`, `ignored` or `drop`.
+|===
+
 === Item Failures
 
 A scan or refresh finishes even when individual items fail, and the database keeps why each one failed.
