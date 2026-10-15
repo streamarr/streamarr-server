@@ -26,9 +26,10 @@ public interface ItemResultRepository {
 
   /**
    * Stores the artwork results of one attempt together, so they commit all or none. A result never
-   * replaces one that a later attempt of the same generation stored. Returns {@code false} without
-   * writing when the attempt's generation is no longer the item's pending artwork request or the
-   * item no longer exists.
+   * replaces one that a later attempt of the same generation stored, and a failure never replaces a
+   * saved image's result of the same generation. Returns {@code false} without writing when the
+   * attempt's generation is no longer the item's pending artwork request or the item no longer
+   * exists.
    */
   boolean trySaveArtworkResults(ArtworkAttempt attempt, List<ItemResult> results);
 

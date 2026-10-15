@@ -113,7 +113,19 @@ public class FakeItemResultRepository implements ItemResultRepository {
       return true;
     }
 
-    return !stored.attemptedAt().isAfter(result.attemptedAt());
+    if (stored.attemptedAt().isAfter(result.attemptedAt())) {
+      return false;
+    }
+
+    return !isSavedImageReplacedByFailure(stored, result);
+  }
+
+  private static boolean isSavedImageReplacedByFailure(ItemResult stored, ItemResult result) {
+    if (!(stored.outcome() instanceof ItemOutcome.Succeeded)) {
+      return false;
+    }
+
+    return !(result.outcome() instanceof ItemOutcome.Succeeded);
   }
 
   @Override

@@ -21,6 +21,7 @@ import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
+import com.streamarr.server.exceptions.ImageDownloadException;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -28,19 +29,28 @@ import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.concurrency.CpuPermits;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.services.metadata.TmdbImageDownloader;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import com.streamarr.server.support.TestFixtureWork;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import javax.sql.DataSource;
@@ -67,6 +77,9 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DataSource dataSource;
   @Autowired private ImageProperties imageProperties;
+  @Autowired private ImageService imageService;
+  @Autowired private TmdbImageDownloader imageDownloader;
+  @Autowired private CpuPermits cpuPermits;
 
   private UUID entityId;
   private ArtworkItem movie;
@@ -234,16 +247,23 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should store the image once when two attempts run the same steps at once")
-  void shouldStoreTheImageOnceWhenTwoAttemptsRunTheSameStepsAtOnce() throws Exception {
+  @DisplayName("Should store the image once when two attempts download it before either saves it")
+  void shouldStoreTheImageOnceWhenTwoAttemptsDownloadItBeforeEitherSavesIt() throws Exception {
     stubImage("/poster.jpg");
     var generation = request("/poster.jpg", ImageRefreshMode.PRESERVE);
-    var start = new CountDownLatch(1);
+    var bothDownloaded = new CyclicBarrier(2);
+    var steps =
+        stepsDownloadingWith(
+            key -> {
+              var image = imageDownloader.downloadImage(key);
+              awaitBarrier(bothDownloaded);
+              return image;
+            },
+            Clock.systemUTC());
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var first = executor.submit(() -> runStepsAfter(start));
-      var second = executor.submit(() -> runStepsAfter(start));
-      start.countDown();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
+      var first = executor.submit(() -> steps.runSteps(movie));
+      var second = executor.submit(() -> steps.runSteps(movie));
 
       assertThat(List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
           .containsOnly(new ArtworkStepsOutcome.Finished(generation));
@@ -252,6 +272,50 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
     assertThat(storedPosterKeys()).hasSize(ImageSize.values().length).containsOnly("/poster.jpg");
     assertThat(posterResult().outcome()).isEqualTo(new ItemOutcome.Succeeded());
     assertThat(storedArtworkFiles()).hasSize(ImageSize.values().length);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the saved image's result when a later overlapping attempt of the same"
+          + " generation fails to download it")
+  void shouldKeepTheSavedImagesResultWhenALaterOverlappingAttemptFailsToDownloadIt()
+      throws Exception {
+    stubImage("/poster.jpg");
+    var generation = request("/poster.jpg", ImageRefreshMode.PRESERVE);
+    var clock = new MutableClock(new AtomicReference<>(Instant.parse("2026-10-14T10:00:00Z")));
+    var earlierDownloading = new CountDownLatch(1);
+    var laterDownloading = new CountDownLatch(1);
+    var earlierFinished = new CountDownLatch(1);
+    var downloads = new AtomicInteger();
+    var steps =
+        stepsDownloadingWith(
+            key -> {
+              if (downloads.incrementAndGet() == 1) {
+                earlierDownloading.countDown();
+                awaitLatch(laterDownloading);
+                return imageDownloader.downloadImage(key);
+              }
+
+              laterDownloading.countDown();
+              awaitLatch(earlierFinished);
+              throw new ImageDownloadException(404, key, Optional.empty());
+            },
+            clock);
+
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
+      var earlier = executor.submit(() -> steps.runSteps(movie));
+      assertThat(earlierDownloading.await(10, TimeUnit.SECONDS)).isTrue();
+      clock.advance(Duration.ofSeconds(1));
+      var later = executor.submit(() -> steps.runSteps(movie));
+
+      assertThat(earlier.get(10, TimeUnit.SECONDS))
+          .isEqualTo(new ArtworkStepsOutcome.Finished(generation));
+      earlierFinished.countDown();
+      later.get(10, TimeUnit.SECONDS);
+    }
+
+    assertThat(storedPosterKeys()).hasSize(ImageSize.values().length);
+    assertThat(posterResult().outcome()).isEqualTo(new ItemOutcome.Succeeded());
   }
 
   @Test
@@ -272,9 +336,23 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
         .satisfies(report -> assertThat(report.pending()).isPositive());
   }
 
-  private ArtworkStepsOutcome runStepsAfter(CountDownLatch start) throws InterruptedException {
-    start.await();
-    return artworkSteps.runSteps(movie);
+  private ArtworkSteps stepsDownloadingWith(TmdbImageDownloader downloader, Clock clock) {
+    return ArtworkSteps.builder()
+        .requests(requests)
+        .itemResults(itemResults)
+        .imageService(imageService)
+        .imageDownloader(downloader)
+        .cpuPermits(cpuPermits)
+        .clock(clock)
+        .build();
+  }
+
+  private static void awaitBarrier(CyclicBarrier barrier) throws InterruptedException {
+    try {
+      barrier.await(10, TimeUnit.SECONDS);
+    } catch (BrokenBarrierException | TimeoutException e) {
+      throw new IllegalStateException("The other attempt never downloaded the image", e);
+    }
   }
 
   private long request(String key, ImageRefreshMode refreshMode) {

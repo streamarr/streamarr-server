@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.InsertOnDuplicateSetMoreStep;
 import org.jooq.impl.DSL;
@@ -60,17 +61,7 @@ public class JooqItemResultRepository implements ItemResultRepository {
       return false;
     }
 
-    // A later attempt of the same generation may already have stored its result, for example
-    // an image saved together with its result; an earlier attempt never replaces it.
-    results.forEach(
-        result ->
-            upsert(result)
-                .where(
-                    ITEM_RESULT
-                        .ARTWORK_GENERATION
-                        .lt(DSL.excluded(ITEM_RESULT.ARTWORK_GENERATION))
-                        .or(ITEM_RESULT.ATTEMPTED_AT.le(DSL.excluded(ITEM_RESULT.ATTEMPTED_AT))))
-                .execute());
+    results.forEach(result -> upsert(result).where(replacesStoredArtworkResult()).execute());
     return true;
   }
 
@@ -100,6 +91,21 @@ public class JooqItemResultRepository implements ItemResultRepository {
                     byOutcome.getOrDefault(ItemResultOutcome.UNAVAILABLE, 0L),
                     byOutcome.getOrDefault(ItemResultOutcome.FAILED, 0L))));
     return tallies;
+  }
+
+  // A result replaces one of an older generation. Within one generation it replaces only an
+  // earlier attempt's result, and never a saved image's result with a failure: overlapping
+  // attempts can store their results in either order.
+  private static Condition replacesStoredArtworkResult() {
+    var ofOlderGeneration =
+        ITEM_RESULT.ARTWORK_GENERATION.lt(DSL.excluded(ITEM_RESULT.ARTWORK_GENERATION));
+    var ofEarlierAttempt = ITEM_RESULT.ATTEMPTED_AT.le(DSL.excluded(ITEM_RESULT.ATTEMPTED_AT));
+    var replacesSavedImageWithFailure =
+        ITEM_RESULT
+            .OUTCOME
+            .eq(ItemResultOutcome.SUCCEEDED)
+            .and(DSL.excluded(ITEM_RESULT.OUTCOME).ne(ItemResultOutcome.SUCCEEDED));
+    return ofOlderGeneration.or(ofEarlierAttempt.andNot(replacesSavedImageWithFailure));
   }
 
   private InsertOnDuplicateSetMoreStep<ItemResultRecord> upsert(ItemResult result) {
