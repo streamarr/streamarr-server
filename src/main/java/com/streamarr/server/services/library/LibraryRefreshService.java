@@ -42,8 +42,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * Refreshes each movie or series from its provider and records the metadata result for that item.
- * Each title's task is admitted through the refresh's adaptive limit (ADR 0041). An item failure
- * does not stop the refresh; a result that cannot be recorded fails it and ends admission.
+ * Each media title's task is admitted through the refresh's adaptive limit (ADR 0041). An item
+ * failure does not stop the refresh; a result that cannot be recorded fails it and ends admission.
  */
 @Slf4j
 @Service
@@ -102,27 +102,28 @@ public class LibraryRefreshService {
   private record RefreshOperation(
       Library library, ArtworkRun artworkRun, AdaptiveAdmission admission) {}
 
-  private record TitleToRefresh<T>(T entity, String tmdbId) {}
+  private record MediaTitleToRefresh<T>(T entity, String tmdbId) {}
 
   @FunctionalInterface
-  private interface TitleRefresh<T> {
-    ItemOutcome refresh(TitleToRefresh<T> title, ArtworkRun taskRun);
+  private interface MediaTitleRefresh<T> {
+    ItemOutcome refresh(MediaTitleToRefresh<T> mediaTitle, ArtworkRun taskRun);
   }
 
   @Builder
   private record AdmittedRefreshes<T>(
-      List<TitleToRefresh<T>> titles, TitleRefresh<T> refresh, String threadNamePrefix) {}
+      List<MediaTitleToRefresh<T>> mediaTitles,
+      MediaTitleRefresh<T> refresh,
+      String threadNamePrefix) {}
 
   private void refreshSeriesLibrary(RefreshOperation operation) {
     var library = operation.library();
     forkAdmittedRefreshes(
         operation,
         AdmittedRefreshes.<Series>builder()
-            .titles(
-                titlesWithTmdbIds(
+            .mediaTitles(
+                mediaTitlesWithTmdbIds(
                     seriesRepository.findWithExternalIdsByLibrary_Id(library.getId()), "series"))
-            .refresh(
-                (title, taskRun) -> refreshSeries(title.entity(), title.tmdbId(), library, taskRun))
+            .refresh((mediaTitle, taskRun) -> refreshSeries(mediaTitle, library, taskRun))
             .threadNamePrefix("library-refresh-series-")
             .build());
   }
@@ -132,27 +133,26 @@ public class LibraryRefreshService {
     forkAdmittedRefreshes(
         operation,
         AdmittedRefreshes.<Movie>builder()
-            .titles(
-                titlesWithTmdbIds(
+            .mediaTitles(
+                mediaTitlesWithTmdbIds(
                     movieRepository.findWithExternalIdsByLibrary_Id(library.getId()), "movie"))
-            .refresh(
-                (title, taskRun) -> refreshMovie(title.entity(), title.tmdbId(), library, taskRun))
+            .refresh((mediaTitle, taskRun) -> refreshMovie(mediaTitle, library, taskRun))
             .threadNamePrefix("library-refresh-movie-")
             .build());
   }
 
-  // A title without a TMDB id cannot be refreshed, so it takes no admission.
-  private <T extends BaseCollectable<?>> List<TitleToRefresh<T>> titlesWithTmdbIds(
-      List<T> titles, String kind) {
-    var withTmdbIds = new ArrayList<TitleToRefresh<T>>();
-    for (var title : titles) {
-      var tmdbId = findTmdbId(title);
+  // A media title without a TMDB id cannot be refreshed, so it takes no admission.
+  private <T extends BaseCollectable<?>> List<MediaTitleToRefresh<T>> mediaTitlesWithTmdbIds(
+      List<T> mediaTitles, String kind) {
+    var withTmdbIds = new ArrayList<MediaTitleToRefresh<T>>();
+    for (var mediaTitle : mediaTitles) {
+      var tmdbId = findTmdbId(mediaTitle);
       if (tmdbId.isEmpty()) {
-        log.warn("No TMDB ID for {} '{}', skipping refresh", kind, title.getTitle());
+        log.warn("No TMDB ID for {} '{}', skipping refresh", kind, mediaTitle.getTitle());
         continue;
       }
 
-      withTmdbIds.add(new TitleToRefresh<>(title, tmdbId.get()));
+      withTmdbIds.add(new MediaTitleToRefresh<>(mediaTitle, tmdbId.get()));
     }
 
     return withTmdbIds;
@@ -167,8 +167,9 @@ public class LibraryRefreshService {
           operation
               .admission()
               .forkAdmittedTasks(
-                  refreshes.titles().iterator(),
-                  title -> refreshAdmittedTitle(operation, refreshes.refresh(), title),
+                  refreshes.mediaTitles().iterator(),
+                  mediaTitle ->
+                      refreshAdmittedMediaTitle(operation, refreshes.refresh(), mediaTitle),
                   SystemWork.newThreadFactoryRunningAsSystemActor(refreshes.threadNamePrefix()));
       throwIfAnyRefreshTaskFailed(library, failures);
     } catch (InterruptedException exception) {
@@ -177,13 +178,13 @@ public class LibraryRefreshService {
     }
   }
 
-  private <T> AdmittedTaskReport refreshAdmittedTitle(
-      RefreshOperation operation, TitleRefresh<T> refresh, TitleToRefresh<T> title)
+  private <T> AdmittedTaskReport refreshAdmittedMediaTitle(
+      RefreshOperation operation, MediaTitleRefresh<T> refresh, MediaTitleToRefresh<T> mediaTitle)
       throws InterruptedException {
     var taskRun = operation.artworkRun().openTaskRun();
     ItemOutcome outcome;
     try (taskRun) {
-      outcome = refresh.refresh(title, taskRun);
+      outcome = refresh.refresh(mediaTitle, taskRun);
     }
 
     artworkRunWaiter.awaitTaskResults(taskRun);
@@ -191,7 +192,9 @@ public class LibraryRefreshService {
   }
 
   private ItemOutcome refreshSeries(
-      Series series, String tmdbId, Library library, ArtworkRun artworkRun) {
+      MediaTitleToRefresh<Series> mediaTitle, Library library, ArtworkRun artworkRun) {
+    var series = mediaTitle.entity();
+    var tmdbId = mediaTitle.tmdbId();
     var attemptedAt = clock.instant();
     var outcome = refreshSeriesMetadata(series, tmdbId, library, artworkRun);
 
@@ -288,7 +291,9 @@ public class LibraryRefreshService {
   }
 
   private ItemOutcome refreshMovie(
-      Movie movie, String tmdbId, Library library, ArtworkRun artworkRun) {
+      MediaTitleToRefresh<Movie> mediaTitle, Library library, ArtworkRun artworkRun) {
+    var movie = mediaTitle.entity();
+    var tmdbId = mediaTitle.tmdbId();
     var attemptedAt = clock.instant();
     var outcome = refreshMovieMetadata(movie, tmdbId, library, artworkRun);
 
