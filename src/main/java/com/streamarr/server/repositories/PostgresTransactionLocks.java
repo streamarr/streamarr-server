@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories;
 
 import java.time.Duration;
+import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
 import org.jooq.Field;
@@ -35,6 +36,29 @@ public final class PostgresTransactionLocks {
   /** Bounds every lock wait in the current transaction, not just the advisory lock's. */
   public void limitLockWait(Duration lockTimeout) {
     dsl.setLocal(DSL.name("lock_timeout"), DSL.inline(lockTimeout.toMillis() + "ms")).execute();
+  }
+
+  /**
+   * Bounds every lock wait of {@code work}, then restores the transaction's earlier bound, so the
+   * rest of the caller's transaction keeps its own. When {@code work} throws, the bound stays until
+   * the transaction ends.
+   */
+  public <T> T withLockWaitLimit(Duration lockTimeout, Supplier<T> work) {
+    var earlierLockTimeout =
+        dsl.select(DSL.function("current_setting", String.class, DSL.inline("lock_timeout")))
+            .fetchSingle()
+            .value1();
+    limitLockWait(lockTimeout);
+    var result = work.get();
+    dsl.select(
+            DSL.function(
+                "set_config",
+                String.class,
+                DSL.inline("lock_timeout"),
+                DSL.val(earlierLockTimeout),
+                DSL.inline(true)))
+        .execute();
+    return result;
   }
 
   private void acquire(Field<?>... keys) {

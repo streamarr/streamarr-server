@@ -2,8 +2,10 @@ package com.streamarr.server.repositories.media;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.fixtures.ArtworkAttemptFixture;
 import com.streamarr.server.fixtures.ImageFixture;
+import com.streamarr.server.repositories.PostgresTransactionLocks;
 import java.util.List;
 import java.util.UUID;
 import org.jooq.SQLDialect;
@@ -44,7 +46,11 @@ class ImageRepositoryCustomImplTest {
     try (var connection = new MockConnection(ImageRepositoryCustomImplTest::lockedOrInserted)) {
       var dsl = DSL.using(connection, SQLDialect.POSTGRES);
       var repository =
-          new ImageRepositoryCustomImpl(dsl, null, null, new ItemLocks(dsl));
+          new ImageRepositoryCustomImpl(
+              dsl,
+              new ImageProperties("/data/images"),
+              new PostgresTransactionLocks(dsl),
+              new ItemLocks(dsl));
 
       assertThat(
               repository.insertAllIfAbsent(
@@ -53,7 +59,7 @@ class ImageRepositoryCustomImplTest {
     }
   }
 
-  // Each lock query finds its row, and the insert reports one inserted row.
+  // Each lock query finds its row, and every other statement reports one changed row.
   private static MockResult[] lockedOrInserted(MockExecuteContext context) {
     if (!context.sql().toLowerCase().startsWith("select")) {
       return new MockResult[] {new MockResult(1)};

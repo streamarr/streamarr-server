@@ -96,7 +96,7 @@ public record ArtworkFixture(
             .requests(requests)
             .sleeper(resultSleeper)
             .clock(artworkClock)
-            .properties(new ArtworkProperties(null, null, CHECK_INTERVAL))
+            .properties(ArtworkProperties.builder().resultCheckInterval(CHECK_INTERVAL).build())
             .build(),
         steps,
         new ArtworkProgress(requests, results, artworkClock),

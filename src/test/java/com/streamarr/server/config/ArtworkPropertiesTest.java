@@ -28,9 +28,16 @@ class ArtworkPropertiesTest {
   @Test
   @DisplayName("Should run sixteen primary and four background threads when nothing is configured")
   void shouldRunSixteenPrimaryAndFourBackgroundThreadsWhenNothingIsConfigured() {
-    var properties = new ArtworkProperties(null, null, null);
+    var properties = ArtworkProperties.builder().build();
 
-    assertThat(properties).isEqualTo(new ArtworkProperties(16, 4, Duration.ofSeconds(2)));
+    assertThat(properties)
+        .isEqualTo(
+            ArtworkProperties.builder()
+                .primaryThreads(16)
+                .backgroundThreads(4)
+                .resultCheckInterval(Duration.ofSeconds(2))
+                .lockTimeout(Duration.ofSeconds(5))
+                .build());
   }
 
   @Test
@@ -41,29 +48,45 @@ class ArtworkPropertiesTest {
         .withPropertyValues(
             "ARTWORK_PRIMARY_THREADS=8",
             "ARTWORK_BACKGROUND_THREADS=2",
-            "ARTWORK_RESULT_CHECK_INTERVAL=500ms")
+            "ARTWORK_RESULT_CHECK_INTERVAL=500ms",
+            "ARTWORK_LOCK_TIMEOUT=250ms")
         .run(
             context ->
                 assertThat(context.getBean(ArtworkProperties.class))
-                    .isEqualTo(new ArtworkProperties(8, 2, Duration.ofMillis(500))));
+                    .isEqualTo(
+                        ArtworkProperties.builder()
+                            .primaryThreads(8)
+                            .backgroundThreads(2)
+                            .resultCheckInterval(Duration.ofMillis(500))
+                            .lockTimeout(Duration.ofMillis(250))
+                            .build()));
   }
 
   @Test
   @DisplayName("Should reject the settings when the primary scheduler has no thread")
   void shouldRejectTheSettingsWhenThePrimarySchedulerHasNoThread() {
-    assertThatIllegalArgumentException().isThrownBy(() -> new ArtworkProperties(0, 4, null));
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> ArtworkProperties.builder().primaryThreads(0).build());
   }
 
   @Test
   @DisplayName("Should reject the settings when the background scheduler has no thread")
   void shouldRejectTheSettingsWhenTheBackgroundSchedulerHasNoThread() {
-    assertThatIllegalArgumentException().isThrownBy(() -> new ArtworkProperties(16, 0, null));
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> ArtworkProperties.builder().backgroundThreads(0).build());
   }
 
   @Test
   @DisplayName("Should reject the settings when the result check interval is not positive")
   void shouldRejectTheSettingsWhenTheResultCheckIntervalIsNotPositive() {
     assertThatIllegalArgumentException()
-        .isThrownBy(() -> new ArtworkProperties(16, 4, Duration.ZERO));
+        .isThrownBy(() -> ArtworkProperties.builder().resultCheckInterval(Duration.ZERO).build());
+  }
+
+  @Test
+  @DisplayName("Should reject the settings when the lock timeout is shorter than a millisecond")
+  void shouldRejectTheSettingsWhenTheLockTimeoutIsShorterThanAMillisecond() {
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> ArtworkProperties.builder().lockTimeout(Duration.ofNanos(1)).build());
   }
 }

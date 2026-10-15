@@ -42,6 +42,7 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
       return Set.of();
     }
 
+    transactionLocks.limitLockWait(imageProperties.replacementLockTimeout());
     lockArtworkGeneration(attempt);
 
     return images.stream()

@@ -83,6 +83,10 @@ artwork:
   # How often a scan or refresh that waits for primary artwork checks its recorded results.
   result-check-interval: ${ARTWORK_RESULT_CHECK_INTERVAL:2s}
   progress-log-interval: ${ARTWORK_PROGRESS_LOG_INTERVAL:30s}
+  # How long saving an artwork request or an attempt's artwork results waits for the item's request
+  # lock and request row before it fails. A failed save is retried by the item's scheduled task, or
+  # fails the metadata transaction that requested the artwork.
+  lock-timeout: ${ARTWORK_LOCK_TIMEOUT:5s}
 
 streaming:
   max-concurrent-transcodes: ${STREAMING_MAX_CONCURRENT_TRANSCODES:8}

@@ -4,6 +4,7 @@ import static com.streamarr.server.jooq.generated.tables.ItemResult.ITEM_RESULT;
 import static com.streamarr.server.repositories.media.MediaEnumMapping.toDomain;
 import static com.streamarr.server.repositories.media.MediaEnumMapping.toJooq;
 
+import com.streamarr.server.config.ArtworkProperties;
 import com.streamarr.server.domain.media.ArtworkAttempt;
 import com.streamarr.server.domain.media.ArtworkOutcomeTally;
 import com.streamarr.server.domain.media.ImageEntityType;
@@ -14,6 +15,7 @@ import com.streamarr.server.jooq.generated.enums.ItemResultFailureReason;
 import com.streamarr.server.jooq.generated.enums.ItemResultOutcome;
 import com.streamarr.server.jooq.generated.enums.ItemResultStep;
 import com.streamarr.server.jooq.generated.tables.records.ItemResultRecord;
+import com.streamarr.server.repositories.PostgresTransactionLocks;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.EnumMap;
@@ -34,6 +36,8 @@ public class JooqItemResultRepository implements ItemResultRepository {
 
   private final DSLContext dsl;
   private final ItemLocks itemLocks;
+  private final PostgresTransactionLocks transactionLocks;
+  private final ArtworkProperties properties;
 
   @Override
   @Transactional
@@ -57,12 +61,16 @@ public class JooqItemResultRepository implements ItemResultRepository {
   @Override
   @Transactional
   public boolean trySaveArtworkResults(ArtworkAttempt attempt, List<ItemResult> results) {
-    if (!itemLocks.tryLockArtworkGeneration(attempt.item(), attempt.generation())) {
-      return false;
-    }
+    return transactionLocks.withLockWaitLimit(
+        properties.lockTimeout(),
+        () -> {
+          if (!itemLocks.tryLockArtworkGeneration(attempt.item(), attempt.generation())) {
+            return false;
+          }
 
-    results.forEach(result -> upsert(result).where(replacesStoredArtworkResult()).execute());
-    return true;
+          results.forEach(result -> upsert(result).where(replacesStoredArtworkResult()).execute());
+          return true;
+        });
   }
 
   @Override

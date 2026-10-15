@@ -36,7 +36,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Image Replacement Lock Timeout Integration Tests")
-@SpringBootTest(properties = "image.replacement-lock-timeout=200ms")
+// The same properties as ArtworkLockTimeoutIT, so both share one cached context.
+@SpringBootTest(properties = {"image.replacement-lock-timeout=200ms", "artwork.lock-timeout=200ms"})
 class ImageReplacementLockTimeoutIT extends AbstractIntegrationTest {
 
   @Autowired private TransactionTemplate transactionTemplate;

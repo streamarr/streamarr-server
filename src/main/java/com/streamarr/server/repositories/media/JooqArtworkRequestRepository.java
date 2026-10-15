@@ -6,6 +6,7 @@ import static com.streamarr.server.jooq.generated.tables.ItemResult.ITEM_RESULT;
 import static com.streamarr.server.repositories.media.MediaEnumMapping.toDomain;
 import static com.streamarr.server.repositories.media.MediaEnumMapping.toJooq;
 
+import com.streamarr.server.config.ArtworkProperties;
 import com.streamarr.server.domain.media.ArtworkItem;
 import com.streamarr.server.domain.media.ArtworkState;
 import com.streamarr.server.domain.media.ImageEntityType;
@@ -55,10 +56,17 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
 
   private final DSLContext dsl;
   private final PostgresTransactionLocks transactionLocks;
+  private final ArtworkProperties properties;
 
   @Override
   @Transactional(propagation = Propagation.MANDATORY)
   public SavedArtworkRequest saveRequest(
+      ArtworkSources artwork, ImageRefreshMode refreshMode, Instant requestedAt) {
+    return transactionLocks.withLockWaitLimit(
+        properties.lockTimeout(), () -> saveRequestUnderLock(artwork, refreshMode, requestedAt));
+  }
+
+  private SavedArtworkRequest saveRequestUnderLock(
       ArtworkSources artwork, ImageRefreshMode refreshMode, Instant requestedAt) {
     var sources = storedSources(artwork);
     var unlocked = findRow(artwork.item());
@@ -111,17 +119,26 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
   @Override
   @Transactional(propagation = Propagation.MANDATORY)
   public Optional<Long> lockPendingGeneration(ArtworkItem item) {
-    lockRequest(item);
-    return dsl.select(ARTWORK_REQUEST.GENERATION)
-        .from(ARTWORK_REQUEST)
-        .where(identifies(item))
-        .forShare()
-        .fetchOptional(ARTWORK_REQUEST.GENERATION);
+    return transactionLocks.withLockWaitLimit(
+        properties.lockTimeout(),
+        () -> {
+          lockRequest(item);
+          return dsl.select(ARTWORK_REQUEST.GENERATION)
+              .from(ARTWORK_REQUEST)
+              .where(identifies(item))
+              .forShare()
+              .fetchOptional(ARTWORK_REQUEST.GENERATION);
+        });
   }
 
   @Override
   @Transactional(propagation = Propagation.MANDATORY)
   public boolean tryCompleteGeneration(ArtworkItem item, long generation) {
+    return transactionLocks.withLockWaitLimit(
+        properties.lockTimeout(), () -> tryCompleteGenerationUnderLock(item, generation));
+  }
+
+  private boolean tryCompleteGenerationUnderLock(ArtworkItem item, long generation) {
     lockRequest(item);
     var pending =
         dsl.select(ARTWORK_REQUEST.GENERATION)

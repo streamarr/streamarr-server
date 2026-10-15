@@ -103,6 +103,7 @@ A run that keeps every stored image of an item requests nothing for it and count
 
 Each row stores when its attempt started.
 A failure or unavailable result never replaces a result from a later attempt, so a stale failure cannot overwrite a successful retry.
+Within one artwork generation, a failure never replaces a saved image's result either, so an overlapping attempt that fails cannot mark a saved image as failed.
 A saved image's result is written in the same transaction as the image, so it always describes the stored artwork; concurrent replacements still follow the last-committer-wins rule in https://github.com/streamarr/streamarr-adr/blob/main/adr/0031-transaction-scoped-artwork-replacement-locking.adoc[ADR 0031].
 An artwork step's failed, unavailable, and kept results are written together in one transaction, so a failed write leaves all of them pending rather than some written and some lost.
 Matching failures are written only while the file is not `MATCHED`.
@@ -128,6 +129,8 @@ A step saves images and records results only while its generation is still the i
 An attempt that a newer request or a deletion made obsolete saves nothing, records nothing, and deletes the files it wrote.
 The scheduled task is removed only together with the request of the attempted generation; a newer generation runs at once.
 A step left to retry waits for the longer of the image host's `Retry-After` and the capped exponential backoff.
+Saving a request, completing a scheduled task, and saving an attempt's results wait at most `artwork.lock-timeout` for the item's request lock and request row; saving images waits at most `image.replacement-lock-timeout`.
+A step whose save times out stays pending and its task retries it; a metadata transaction whose request save times out fails.
 A restart resumes pending steps, and db-scheduler revives the execution of a crashed server as a dead execution.
 
 A scan or refresh waits for primary artwork by reading recorded results, never an in-process signal, so a result recorded after a restart counts.
