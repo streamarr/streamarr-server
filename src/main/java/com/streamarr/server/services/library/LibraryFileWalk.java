@@ -19,12 +19,9 @@ import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
 import java.util.function.Consumer;
 import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
@@ -46,6 +43,7 @@ public class LibraryFileWalk {
   private final MediaFileRepository mediaFileRepository;
   private final FileSystem fileSystem;
   private final FileDiscoveryRuns fileDiscoveryRuns;
+  private final LibraryOperationAdmissions libraryOperationAdmissions;
   private final MutexFactory<String> mutexFactory;
 
   @Builder
@@ -57,6 +55,7 @@ public class LibraryFileWalk {
       MediaFileRepository mediaFileRepository,
       FileSystem fileSystem,
       FileDiscoveryRuns fileDiscoveryRuns,
+      LibraryOperationAdmissions libraryOperationAdmissions,
       MutexFactoryProvider mutexFactoryProvider) {
     this.ignoredFileValidator = ignoredFileValidator;
     this.videoExtensionValidator = videoExtensionValidator;
@@ -65,12 +64,15 @@ public class LibraryFileWalk {
     this.mediaFileRepository = mediaFileRepository;
     this.fileSystem = fileSystem;
     this.fileDiscoveryRuns = fileDiscoveryRuns;
+    this.libraryOperationAdmissions = libraryOperationAdmissions;
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
 
   /**
    * Walks the library and matches each of its files, then returns the closed discovery whose
-   * results the scan waits for.
+   * results the scan waits for. Each file's task is admitted through the scan's adaptive limit
+   * before the walk pulls the next file. A task that throws ends admission: files that were not
+   * admitted yet are not processed in this scan.
    *
    * @throws LibraryScanFailedException if the library cannot be walked, a file's task fails, or the
    *     walk is interrupted
@@ -78,18 +80,25 @@ public class LibraryFileWalk {
   public FileDiscovery discoverFiles(Library library) {
     var discovery = fileDiscoveryRuns.open("scan of", library);
     try (discovery;
-        var executor = SystemWork.newExecutorRunningAsSystemActor("library-scan-file-");
+        var admission = libraryOperationAdmissions.openScanAdmission(library);
         var stream = Files.walk(FilepathCodec.decode(fileSystem, library.getFilepathUri()))) {
 
-      var tasks =
+      var files =
           stream
               .flatMap(file -> regularFile(file).stream())
               .filter(listed -> !ignoredFileValidator.shouldIgnore(listed.path()))
               .filter(listed -> keepSupportedOrWarn(listed.path()))
-              .map(listed -> executor.submit(() -> processListedFile(discovery, listed)))
-              .toList();
-      awaitFileProcessing(library, tasks);
+              .iterator();
+      var failures =
+          admission.forkAdmittedTasks(
+              files,
+              listed -> AdmissionReports.forMatching(processListedFile(discovery, listed)),
+              SystemWork.newThreadFactoryRunningAsSystemActor("library-scan-file-"));
+      throwIfAnyFileFailed(library, failures);
 
+    } catch (InterruptedException exception) {
+      Thread.currentThread().interrupt();
+      throw new LibraryScanFailedException(library.getName(), exception);
     } catch (IOException | UncheckedIOException | SecurityException | InvalidPathException e) {
       throw new LibraryScanFailedException(library.getName(), e);
     }
@@ -138,20 +147,7 @@ public class LibraryFileWalk {
 
   private record ListedFile(Path path, SourceFileSnapshot snapshot) {}
 
-  private static void awaitFileProcessing(Library library, List<? extends Future<?>> tasks) {
-    var failures = new ArrayList<Throwable>();
-
-    for (var task : tasks) {
-      try {
-        task.get();
-      } catch (InterruptedException exception) {
-        Thread.currentThread().interrupt();
-        throw new LibraryScanFailedException(library.getName(), exception);
-      } catch (ExecutionException exception) {
-        failures.add(exception.getCause());
-      }
-    }
-
+  private static void throwIfAnyFileFailed(Library library, List<Throwable> failures) {
     if (failures.isEmpty()) {
       return;
     }

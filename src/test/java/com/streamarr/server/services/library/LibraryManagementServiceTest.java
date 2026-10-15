@@ -12,11 +12,6 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.classic.spi.ThrowableProxyUtil;
-import ch.qos.logback.core.read.ListAppender;
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.config.LibraryScanProperties;
@@ -53,6 +48,7 @@ import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.fakes.FakeTransactionManager;
+import com.streamarr.server.fakes.FixedLimitAdmissions;
 import com.streamarr.server.fakes.GatedImageDownloader;
 import com.streamarr.server.fakes.RecordingMetadataProvider;
 import com.streamarr.server.fakes.RecordingSeriesMetadataProvider;
@@ -72,6 +68,7 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.services.concurrency.AdaptiveAdmissions;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.events.library.ItemProcessedEvent;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
@@ -107,9 +104,11 @@ import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import com.streamarr.server.support.BoundedTask;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.net.http.HttpTimeoutException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -129,6 +128,7 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -139,7 +139,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessResourceFailureException;
 
 @Tag("UnitTest")
@@ -160,8 +159,15 @@ class LibraryManagementServiceTest {
   private final LibraryRepository fakeLibraryRepository = new FakeLibraryRepository();
   private Runnable beforeProbeSchedulingReadsMediaFile = () -> {};
   private Runnable beforeCountingFileStatuses = () -> {};
+  private Consumer<MediaFile> beforeSavingMediaFile = _ -> {};
   private final MediaFileRepository fakeMediaFileRepository =
       new FakeMediaFileRepository() {
+        @Override
+        public <S extends MediaFile> S save(S mediaFile) {
+          beforeSavingMediaFile.accept(mediaFile);
+          return super.save(mediaFile);
+        }
+
         @Override
         public Optional<MediaFile> findById(UUID id) {
           beforeProbeSchedulingReadsMediaFile.run();
@@ -216,6 +222,7 @@ class LibraryManagementServiceTest {
   private final FakeProbeTaskRequests probeTaskRequests = succeedingProbeRequests(probeOutcomes);
   private final CountingSleeper probeCheckSleeper = new CountingSleeper();
   private final FileDiscoveryRuns fileDiscoveryRuns = fileDiscoveryRunsWith(artwork);
+  private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
 
   private final LibraryManagementService libraryManagementService = serviceBuilder().build();
 
@@ -274,30 +281,12 @@ class LibraryManagementServiceTest {
               throw new RuntimeException("simulated failure: " + parsedFile.title());
             });
 
-    var logger = (Logger) LoggerFactory.getLogger(LibraryManagementService.class);
-    var appender = new ListAppender<ILoggingEvent>();
-    appender.start();
-    logger.addAppender(appender);
-    try {
-      libraryManagementService.scanLibrary(savedLibraryId);
-    } finally {
-      logger.detachAppender(appender);
-      appender.stop();
-    }
+    libraryManagementService.scanLibrary(savedLibraryId);
 
-    assertThat(appender.list)
-        .filteredOn(event -> event.getLevel() == Level.ERROR)
-        .singleElement()
-        .satisfies(
-            event -> {
-              assertThat(event.getFormattedMessage())
-                  .isEqualTo("Failed Test Library library scan.");
-              assertThat(ThrowableProxyUtil.asString(event.getThrowableProxy()))
-                  .contains(
-                      "2 file processing tasks failed",
-                      "simulated failure: First Movie",
-                      "simulated failure: Second Movie");
-            });
+    assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
+    assertThat(scanAdmissions()).isEqualTo(2);
+    assertThat(scanReports("ignored")).isEqualTo(2);
   }
 
   @Test
@@ -950,6 +939,162 @@ class LibraryManagementServiceTest {
                       .entity(Movie.builder().title(title).titleSort(title).build())
                       .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))
                       .build()));
+    }
+  }
+
+  @Nested
+  @DisplayName("Scan admission")
+  class ScanAdmissionTests {
+
+    @Test
+    @DisplayName(
+        "Should return every admission when file tasks match, skip a matched file, record a failure, time out and throw")
+    void shouldReturnEveryAdmissionWhenFileTasksMatchSkipAMatchedFileRecordAFailureTimeOutAndThrow()
+        throws Exception {
+      var root = createRootLibraryDirectory();
+      createMovieFile(root, "A Alpha", "Alpha (2001).mkv");
+      saveMatchedMediaFile(createMovieFile(root, "B Bravo", "Bravo (2002).mkv"));
+      createMovieFile(root, "C Charlie", "Charlie (2003).mkv");
+      createMovieFile(root, "D Delta", "Delta (2004).mkv");
+      createMovieFile(root, "E Echo", "Echo (2005).mkv");
+      beforeSavingMediaFile =
+          mediaFile -> {
+            if (mediaFile.getFilename().startsWith("Echo")) {
+              throw new DataAccessResourceFailureException("simulated media file failure");
+            }
+          };
+      when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+      when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
+          .thenAnswer(
+              invocation ->
+                  switch (invocation.getArgument(0, VideoFileParserResult.class).title()) {
+                    case "Alpha" -> foundMovie("Alpha");
+                    case "Delta" ->
+                        new TemporarilyUnavailable(new HttpTimeoutException("search timed out"));
+                    default -> new NotFound();
+                  });
+      when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
+          .thenReturn(movieMetadata("Alpha"));
+
+      scan();
+
+      assertThat(scanAdmissions()).isEqualTo(5);
+      assertThat(scanReports("latency")).isEqualTo(2);
+      assertThat(scanReports("ignored")).isEqualTo(2);
+      assertThat(scanReports("drop")).isEqualTo(1);
+      assertThat(meterRegistry.find("streamarr.library.admission.in_flight").gauges()).isEmpty();
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+    }
+
+    @Test
+    @DisplayName("Should admit no further file and finish admitted files when a file task throws")
+    void shouldAdmitNoFurtherFileAndFinishAdmittedFilesWhenAFileTaskThrows() throws Exception {
+      var root = createRootLibraryDirectory();
+      var heldPath = createMovieFile(root, "A Held", "Held (2001).mkv");
+      createMovieFile(root, "B Failing", "Failing (2002).mkv");
+      var neverPath = createMovieFile(root, "C Never", "Never (2003).mkv");
+      var admissions = new FixedLimitAdmissions(2);
+      var heldSearching = new CountDownLatch(1);
+      var releaseHeld = new CountDownLatch(1);
+      when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+      when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
+          .thenAnswer(
+              invocation -> {
+                if (invocation.getArgument(0, VideoFileParserResult.class).title().equals("Held")) {
+                  heldSearching.countDown();
+                  assertThat(releaseHeld.await(5, TimeUnit.SECONDS)).isTrue();
+                  return new NotFound();
+                }
+
+                assertThat(heldSearching.await(5, TimeUnit.SECONDS)).isTrue();
+                throw new IllegalStateException("simulated search failure");
+              });
+      var service =
+          serviceBuilder()
+              .libraryFileWalk(
+                  fileWalkBuilder().libraryOperationAdmissions(admissionsWith(admissions)).build())
+              .build();
+
+      try (var scan = BoundedTask.start(() -> service.scanLibrary(savedLibraryId))) {
+        admissions.awaitReports(1, SCAN_BOUND);
+        releaseHeld.countDown();
+        scan.await(SCAN_BOUND);
+      } finally {
+        releaseHeld.countDown();
+      }
+
+      assertThat(mediaFileStatus(heldPath)).isEqualTo(MediaFileStatus.METADATA_NOT_FOUND);
+      assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(neverPath)))
+          .isEmpty();
+      assertThat(scanAdmissions()).isEqualTo(2);
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+    }
+
+    @Test
+    @DisplayName("Should finish the scan healthy when a file task records a matching failure")
+    void shouldFinishTheScanHealthyWhenAFileTaskRecordsAMatchingFailure() throws Exception {
+      var path = createMovieFile(createRootLibraryDirectory(), "Unknown", "Unknown (2001).mkv");
+      when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+      when(tmdbMovieProvider.search(any(VideoFileParserResult.class))).thenReturn(new NotFound());
+
+      scan();
+
+      assertThat(mediaFileStatus(path)).isEqualTo(MediaFileStatus.METADATA_NOT_FOUND);
+      assertThat(scanReports("latency")).isEqualTo(1);
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+    }
+
+    @Test
+    @DisplayName("Should admit no task for a file with an unsupported extension")
+    void shouldAdmitNoTaskForAFileWithAnUnsupportedExtension() throws Exception {
+      var root = createRootLibraryDirectory();
+      createMovieFile(root, "Notes", "notes.txt");
+      saveMatchedMediaFile(createMovieFile(root, "Matched", "Matched (2001).mkv"));
+
+      scan();
+
+      assertThat(scanAdmissions()).isEqualTo(1);
+      assertThat(allScanReports()).isEqualTo(1);
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+    }
+
+    @Test
+    @DisplayName("Should report an already matched file as ignored")
+    void shouldReportAnAlreadyMatchedFileAsIgnored() throws Exception {
+      saveMatchedMediaFile(
+          createMovieFile(createRootLibraryDirectory(), "Matched", "Matched (2001).mkv"));
+
+      scan();
+
+      assertThat(scanReports("ignored")).isEqualTo(1);
+      assertThat(allScanReports()).isEqualTo(1);
+    }
+
+    private void scan() throws Exception {
+      BoundedTask.runWithin(SCAN_BOUND, () -> libraryManagementService.scanLibrary(savedLibraryId));
+    }
+
+    private MediaFileStatus mediaFileStatus(Path path) {
+      return fakeMediaFileRepository
+          .findFirstByFilepathUri(FilepathCodec.encode(path))
+          .orElseThrow()
+          .getStatus();
+    }
+
+    private static Found foundMovie(String title) {
+      return new Found(
+          RemoteSearchResult.builder()
+              .title(title)
+              .externalId(title.toLowerCase())
+              .externalSourceType(ExternalSourceType.TMDB)
+              .build());
+    }
+
+    private static MetadataFetchOutcome<MetadataResult<Movie>> movieMetadata(String title) {
+      return new MetadataFetchOutcome.Found<>(
+          MetadataFixture.<Movie>metadataResultBuilder()
+              .entity(Movie.builder().title(title).titleSort(title).build())
+              .build());
     }
   }
 
@@ -2332,7 +2477,46 @@ class LibraryManagementServiceTest {
         .mediaFileRepository(fakeMediaFileRepository)
         .fileSystem(fileSystem)
         .fileDiscoveryRuns(fileDiscoveryRuns)
-        .mutexFactoryProvider(new MutexFactoryProvider());
+        .mutexFactoryProvider(new MutexFactoryProvider())
+        .libraryOperationAdmissions(admissionsWith(new AdaptiveAdmissions()));
+  }
+
+  private LibraryOperationAdmissions admissionsWith(AdaptiveAdmissions admissions) {
+    return LibraryOperationAdmissions.builder()
+        .meterRegistry(meterRegistry)
+        .admissions(admissions)
+        .build();
+  }
+
+  private double scanAdmissions() {
+    var admitted =
+        meterRegistry
+            .find("streamarr.library.admission.admitted")
+            .tag("operation", "scan")
+            .counter();
+    if (admitted == null) {
+      return 0;
+    }
+
+    return admitted.count();
+  }
+
+  private double scanReports(String report) {
+    var reports =
+        meterRegistry
+            .find("streamarr.library.admission.reports")
+            .tag("operation", "scan")
+            .tag("report", report)
+            .counter();
+    if (reports == null) {
+      return 0;
+    }
+
+    return reports.count();
+  }
+
+  private double allScanReports() {
+    return scanReports("latency") + scanReports("ignored") + scanReports("drop");
   }
 
   private LibraryManagementService serviceWith(FileSystem alternateFileSystem) {
