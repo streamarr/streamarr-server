@@ -31,7 +31,6 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.exceptions.LibraryScanFailedException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.CountingSleeper;
-import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeLibraryMutationTransaction;
@@ -42,7 +41,6 @@ import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeProbeTaskRequests;
-import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.fakes.FakeTransactionManager;
@@ -81,15 +79,10 @@ import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
-import com.streamarr.server.services.metadata.series.SeriesMetadataProvider;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.parsers.show.EpisodePathMetadataParser;
-import com.streamarr.server.services.parsers.show.SeasonPathMetadataParser;
-import com.streamarr.server.services.parsers.show.SeriesFolderNameParser;
-import com.streamarr.server.services.parsers.show.regex.EpisodeRegexFixtures;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
@@ -99,13 +92,10 @@ import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.net.URI;
 import java.net.http.HttpTimeoutException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.BasicFileAttributes;
-import java.nio.file.spi.FileSystemProvider;
 import java.sql.SQLTransientConnectionException;
 import java.time.Clock;
 import java.time.Duration;
@@ -1714,31 +1704,6 @@ class LibraryOperationExecutionTest {
         .build();
   }
 
-  private MovieFileProcessor movieFileProcessorWith(MetadataProvider<Movie> metadataProvider) {
-    return new MovieFileProcessor(
-        new DefaultVideoFileMetadataParser(),
-        new ExternalIdVideoFileMetadataParser(),
-        new MovieMetadataProviderResolver(List.of(metadataProvider)),
-        movieService,
-        fakeMediaFileRepository,
-        new MutexFactoryProvider());
-  }
-
-  private SeriesFileProcessor seriesFileProcessorWith(SeriesMetadataProvider metadataProvider) {
-    var metadataProviderResolver = new SeriesMetadataProviderResolver(List.of(metadataProvider));
-    return new SeriesFileProcessor(
-        new EpisodePathMetadataParser(new EpisodeRegexFixtures()),
-        new SeasonPathMetadataParser(),
-        new SeriesFolderNameParser(),
-        metadataProviderResolver,
-        new DateBasedEpisodeResolver(metadataProviderResolver),
-        seriesService,
-        fakeMediaFileRepository,
-        new FakeSeasonRepository(),
-        new FakeEpisodeRepository(),
-        new MutexFactoryProvider());
-  }
-
   private RunnerBuilder serviceBuilder() {
     return new RunnerBuilder();
   }
@@ -1905,37 +1870,9 @@ class LibraryOperationExecutionTest {
     return new LibraryFolderCheck(libraryFileSystem, fakeMediaFileRepository, meterRegistry);
   }
 
-  private OperationRunner libraryManagementServiceWith(
-      MovieFileProcessor movieProcessor, SeriesFileProcessor seriesProcessor) {
-    return serviceBuilder()
-        .libraryFileWalk(
-            fileWalkBuilder()
-                .movieFileProcessor(movieProcessor)
-                .seriesFileProcessor(seriesProcessor)
-                .build())
-        .build();
-  }
-
   private OperationRunner libraryManagementServiceWithRefreshService(
       LibraryRefreshService refreshService) {
     return serviceBuilder().libraryRefreshService(refreshService).build();
-  }
-
-  private Path pathWithDisplayName(String filepathUri, String displayName) throws IOException {
-    var path = mock(Path.class);
-    var displayedFilename = mock(Path.class);
-    var pathFileSystem = mock(FileSystem.class);
-    var pathProvider = mock(FileSystemProvider.class);
-    var fileAttributes = mock(BasicFileAttributes.class);
-    when(path.getFileName()).thenReturn(displayedFilename);
-    when(displayedFilename.toString()).thenReturn(displayName);
-    when(path.toAbsolutePath()).thenReturn(path);
-    when(path.toUri()).thenReturn(URI.create(filepathUri));
-    when(path.getFileSystem()).thenReturn(pathFileSystem);
-    when(pathFileSystem.provider()).thenReturn(pathProvider);
-    when(pathProvider.readAttributes(path, BasicFileAttributes.class)).thenReturn(fileAttributes);
-    when(fileAttributes.size()).thenReturn(1L);
-    return path;
   }
 
   private Path createMovieFile(Path libraryRoot, String folder, String filename)

@@ -16,7 +16,6 @@ import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
-import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
@@ -45,7 +44,6 @@ import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
-import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
@@ -68,7 +66,6 @@ import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
-import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProvider;
@@ -100,7 +97,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -226,96 +222,6 @@ class LibraryManagementServiceTest {
   @AfterEach
   public void tearDown() throws IOException {
     fileSystem.close();
-  }
-
-  private void failEverySearchOnceBothFilesSearch() {
-    var failuresReady = new CountDownLatch(2);
-    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenAnswer(
-            invocation -> {
-              var parsedFile = invocation.getArgument(0, VideoFileParserResult.class);
-              failuresReady.countDown();
-              assertThat(failuresReady.await(5, TimeUnit.SECONDS)).isTrue();
-              throw new IllegalStateException("simulated failure: " + parsedFile.title());
-            });
-  }
-
-  private void matchMovieWithPoster(String title) {
-    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenReturn(
-            new Found(
-                RemoteSearchResult.builder()
-                    .title(title)
-                    .externalId("123")
-                    .externalSourceType(ExternalSourceType.TMDB)
-                    .build()));
-    when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
-        .thenReturn(
-            new MetadataFetchOutcome.Found<>(
-                MetadataFixture.<Movie>metadataResultBuilder()
-                    .entity(Movie.builder().title(title).titleSort(title).build())
-                    .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))
-                    .build()));
-  }
-
-  private record ScanState(LibraryStatus status, int completedEvents) {}
-
-  private LibraryStatus libraryStatus() {
-    return fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus();
-  }
-
-  private LibraryManagementService libraryManagementServiceWithArtwork(ArtworkFixture artwork) {
-    var artworkMovieService =
-        new MovieService(
-            fakeMovieRepository,
-            creditService,
-            null,
-            artwork.artworkRequestService(),
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null);
-    var artworkFileDiscoveryRuns = fileDiscoveryRunsWith(artwork);
-    return serviceBuilder()
-        .libraryFileWalk(
-            fileWalkBuilder()
-                .movieFileProcessor(
-                    new MovieFileProcessor(
-                        new DefaultVideoFileMetadataParser(),
-                        new ExternalIdVideoFileMetadataParser(),
-                        fakeMovieMetadataProviderResolver,
-                        artworkMovieService,
-                        fakeMediaFileRepository,
-                        new MutexFactoryProvider()))
-                .fileDiscoveryRuns(artworkFileDiscoveryRuns)
-                .artworkRunWaiter(artwork.artworkRunWaiter())
-                .build())
-        .movieService(artworkMovieService)
-        .build();
-  }
-
-  private void saveMatchedMediaFile(Path path) {
-    fakeMediaFileRepository.save(
-        MediaFile.builder()
-            .libraryId(savedLibraryId)
-            .filepathUri(FilepathCodec.encode(path))
-            .filename(path.getFileName().toString())
-            .status(MediaFileStatus.MATCHED)
-            .build());
-  }
-
-  private static void awaitEnqueueRelease(CountDownLatch release) {
-    try {
-      assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
-    } catch (InterruptedException exception) {
-      Thread.currentThread().interrupt();
-      throw new AssertionError(exception);
-    }
   }
 
   @Test
@@ -1153,37 +1059,6 @@ class LibraryManagementServiceTest {
         .meterRegistry(meterRegistry)
         .admissions(admissions)
         .build();
-  }
-
-  private double scanAdmissions() {
-    var admitted =
-        meterRegistry
-            .find("streamarr.library.admission.admitted")
-            .tag("operation", "scan")
-            .counter();
-    if (admitted == null) {
-      return 0;
-    }
-
-    return admitted.count();
-  }
-
-  private double scanReports(String report) {
-    var reports =
-        meterRegistry
-            .find("streamarr.library.admission.reports")
-            .tag("operation", "scan")
-            .tag("report", report)
-            .counter();
-    if (reports == null) {
-      return 0;
-    }
-
-    return reports.count();
-  }
-
-  private double allScanReports() {
-    return scanReports("latency") + scanReports("ignored") + scanReports("drop");
   }
 
   private LibraryManagementService serviceWith(FileSystem alternateFileSystem) {
