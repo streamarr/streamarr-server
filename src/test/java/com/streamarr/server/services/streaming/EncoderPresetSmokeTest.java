@@ -192,7 +192,7 @@ class EncoderPresetSmokeTest {
                     .build())
             .build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 0);
+    lifecycle.startFirstListedVariant(session);
     return session;
   }
 

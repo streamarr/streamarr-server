@@ -3,7 +3,6 @@ package com.streamarr.server.services.streaming;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
-import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
@@ -14,7 +13,6 @@ import com.streamarr.server.services.serversettings.ServerSettingsService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -50,7 +48,10 @@ public class ProducerLifecycleService {
     WAITING,
     EXHAUSTED,
     SESSION_GONE,
-    SEGMENT_NOT_ADVERTISED
+    SEGMENT_NOT_ADVERTISED,
+    // A request for another video variant stopped the variant, or its on-demand start failed.
+    // Only a new request for the variant starts it again (ADR 0019).
+    VARIANT_NOT_RUNNING
   }
 
   private record VariantKey(UUID sessionId, String variantLabel) {}
@@ -79,8 +80,7 @@ public class ProducerLifecycleService {
       return RecoveryResult.SESSION_GONE;
     }
 
-    var handle = session.getVariantHandle(variantLabel).orElse(null);
-    if (handle == null) {
+    if (!session.offersVariant(variantLabel)) {
       return RecoveryResult.SESSION_GONE;
     }
 
@@ -94,8 +94,12 @@ public class ProducerLifecycleService {
       return RecoveryResult.WAITING;
     }
 
-    var positioned = tryEnsurePositioned(session, segmentName);
-    handle = session.getVariantHandle(variantLabel).orElseThrow();
+    if (session.getVariantHandle(variantLabel).isEmpty()) {
+      return RecoveryResult.VARIANT_NOT_RUNNING;
+    }
+
+    var positioned = tryEnsurePositioned(session, variantLabel, segmentName);
+    var handle = session.getVariantHandle(variantLabel).orElseThrow();
     var state =
         recoveryStates.computeIfAbsent(
             new VariantKey(sessionId, variantLabel), _ -> new VariantDeliveryState());
@@ -115,13 +119,14 @@ public class ProducerLifecycleService {
     return attemptRecovery(state, pending, positioned);
   }
 
-  private boolean tryEnsurePositioned(StreamSession session, String segmentName) {
+  private boolean tryEnsurePositioned(
+      StreamSession session, String variantLabel, String segmentName) {
     if (SegmentNames.indexOf(segmentName).isEmpty() && !session.isSuspended()) {
       return true;
     }
 
     try {
-      ensurePositioned(session.getSessionId(), segmentName);
+      ensurePositioned(session.getSessionId(), variantLabel, segmentName);
       return true;
     } catch (TranscodeException e) {
       log.warn(
@@ -298,22 +303,120 @@ public class ProducerLifecycleService {
     record SessionGone() implements ReplaceResult {}
   }
 
-  public void startAll(StreamSession session, int startSequenceNumber) {
+  /**
+   * Starts the variant that the multivariant playlist lists first, at the stream session's current
+   * segment. No other variant starts until the player requests one of its segments (ADR 0019).
+   */
+  public void startFirstListedVariant(StreamSession session) {
     withSessionLock(
         session.getSessionId(),
-        () -> {
-          if (session.getVariants().isEmpty()) {
-            startSingleTranscode(session, startSequenceNumber);
-            return;
-          }
-
-          startVariantTranscodes(session, session.getVariants(), startSequenceNumber);
-        });
+        () -> startVariant(session, firstListedVariant(session), session.getCurrentSegment()));
   }
 
-  public void ensurePositioned(UUID sessionId, String segmentName) {
+  private static String firstListedVariant(StreamSession session) {
+    if (session.getVariants().isEmpty()) {
+      return StreamSession.defaultVariant();
+    }
+
+    return session.getVariants().getFirst().label();
+  }
+
+  /**
+   * Stops the job attempts of every other video variant of the stream session, as a media-segment
+   * request for {@code requestedVariantLabel} requires (ADR 0019). A label that the session does
+   * not offer stops nothing.
+   */
+  public void stopOtherVideoVariants(UUID sessionId, String requestedVariantLabel) {
+    withSessionLock(sessionId, () -> doStopOtherVideoVariants(sessionId, requestedVariantLabel));
+  }
+
+  private void doStopOtherVideoVariants(UUID sessionId, String requestedVariantLabel) {
     var session = runtimeRegistry.findById(sessionId).orElse(null);
-    if (session == null) {
+    if (session == null || !session.offersVariant(requestedVariantLabel)) {
+      return;
+    }
+
+    var otherVariantLabels =
+        session.getVariantHandles().keySet().stream()
+            .filter(label -> !label.equals(requestedVariantLabel))
+            .toList();
+    if (otherVariantLabels.isEmpty()) {
+      return;
+    }
+
+    for (var variantLabel : otherVariantLabels) {
+      stopVariant(session, variantLabel);
+    }
+
+    runtimeRegistry.save(session);
+    log.info(
+        "Stopped variants {} of session {} for a request of variant {}",
+        otherVariantLabels,
+        sessionId,
+        requestedVariantLabel);
+  }
+
+  private void stopVariant(StreamSession session, String variantLabel) {
+    if (transcodeExecutor.isRunning(session.getSessionId(), variantLabel)) {
+      transcodeExecutor.stopVariant(session.getSessionId(), variantLabel);
+    }
+
+    session.removeVariantHandle(variantLabel);
+  }
+
+  /**
+   * Starts a variant that has no job attempt when the player requests one of its segments (ADR
+   * 0019): at the requested media segment, or at the current segment for the initialization
+   * segment. A stored media segment starts nothing. A failed start leaves the variant without a job
+   * attempt, so recovery answers the request as {@link RecoveryResult#VARIANT_NOT_RUNNING}.
+   */
+  public void startVariantOnDemand(UUID sessionId, String variantLabel, String segmentName) {
+    withSessionLock(sessionId, () -> doStartVariantOnDemand(sessionId, variantLabel, segmentName));
+  }
+
+  private void doStartVariantOnDemand(UUID sessionId, String variantLabel, String segmentName) {
+    var session = runtimeRegistry.findById(sessionId).orElse(null);
+    if (session == null || !needsOnDemandStart(session, variantLabel, segmentName)) {
+      return;
+    }
+
+    var startSequenceNumber =
+        SegmentNames.indexOf(segmentName).orElseGet(session::getCurrentSegment);
+    try {
+      startVariant(session, variantLabel, startSequenceNumber);
+    } catch (TranscodeException e) {
+      log.warn(
+          "On-demand start failed for session {} variant {} at segment {}: {}",
+          sessionId,
+          variantLabel,
+          startSequenceNumber,
+          e.getMessage());
+      return;
+    }
+
+    runtimeRegistry.save(session);
+    log.info(
+        "Started variant {} of session {} on demand at segment {}",
+        variantLabel,
+        sessionId,
+        startSequenceNumber);
+  }
+
+  private boolean needsOnDemandStart(
+      StreamSession session, String variantLabel, String segmentName) {
+    if (!session.offersVariant(variantLabel)
+        || session.getVariantHandle(variantLabel).isPresent()
+        || isUnadvertisedMediaSegment(session, segmentName)) {
+      return false;
+    }
+
+    return SegmentNames.indexOf(segmentName).isEmpty()
+        || !segmentStore.segmentExists(session.getSessionId(), segmentName);
+  }
+
+  public void ensurePositioned(UUID sessionId, String variantLabel, String segmentName) {
+    var session = runtimeRegistry.findById(sessionId).orElse(null);
+    if (session == null || !session.offersVariant(variantLabel)) {
       return;
     }
 
@@ -322,15 +425,15 @@ public class ProducerLifecycleService {
     }
 
     if (session.isSuspended()) {
-      resumeWithLock(sessionId, segmentName);
+      resumeWithLock(sessionId, variantLabel, segmentName);
       return;
     }
 
-    if (!requiresRelocation(session, segmentName)) {
+    if (!requiresRelocation(session, variantLabel, segmentName)) {
       return;
     }
 
-    relocateWithLock(sessionId, segmentName);
+    relocateWithLock(sessionId, variantLabel, segmentName);
   }
 
   public void suspend(UUID sessionId) {
@@ -480,23 +583,30 @@ public class ProducerLifecycleService {
     return request.build();
   }
 
-  private void resumeWithLock(UUID sessionId, String segmentName) {
-    withSessionLock(sessionId, () -> doResume(sessionId, segmentName));
+  private void resumeWithLock(UUID sessionId, String variantLabel, String segmentName) {
+    withSessionLock(sessionId, () -> doResume(sessionId, variantLabel, segmentName));
   }
 
   /**
-   * A running encoder produces segments sequentially from its start segment. A requested segment
-   * needs the encoder relocated when it lies behind that start (it will never be produced) or so
-   * far ahead of produced output that waiting would stall the player longer than restarting.
+   * A running encoder produces segments sequentially from its start segment. A requested media
+   * segment needs the variant's encoder relocated when it lies behind that start (it will never be
+   * produced) or so far ahead of produced output that waiting would stall the player longer than
+   * restarting. An initialization segment and a variant without a job attempt never relocate.
    */
-  private boolean requiresRelocation(StreamSession session, String segmentName) {
-    var requestedIndex = requestedIndex(session, segmentName);
-    var startSequenceNumber = activeStartSequenceNumber(session);
-    if (requestedIndex < startSequenceNumber) {
+  private boolean requiresRelocation(
+      StreamSession session, String variantLabel, String segmentName) {
+    var requestedIndex = SegmentNames.indexOf(segmentName);
+    var handle = session.getVariantHandle(variantLabel);
+    if (requestedIndex.isEmpty() || handle.isEmpty()) {
+      return false;
+    }
+
+    var startSequenceNumber = handle.get().startSequenceNumber();
+    if (requestedIndex.getAsInt() < startSequenceNumber) {
       return true;
     }
 
-    var probeIndex = requestedIndex - forwardGapSegments();
+    var probeIndex = requestedIndex.getAsInt() - forwardGapSegments();
     if (probeIndex < startSequenceNumber) {
       return false;
     }
@@ -505,13 +615,14 @@ public class ProducerLifecycleService {
         session.getSessionId(), SegmentNames.siblingName(segmentName, probeIndex));
   }
 
-  private void relocateWithLock(UUID sessionId, String segmentName) {
-    withSessionLock(sessionId, () -> doRelocate(sessionId, segmentName));
+  private void relocateWithLock(UUID sessionId, String variantLabel, String segmentName) {
+    withSessionLock(sessionId, () -> doRelocate(sessionId, variantLabel, segmentName));
   }
 
-  private void doRelocate(UUID sessionId, String segmentName) {
+  // A relocation restarts only the requested variant (ADR 0019).
+  private void doRelocate(UUID sessionId, String variantLabel, String segmentName) {
     var session = runtimeRegistry.findById(sessionId).orElse(null);
-    if (session == null || !requiresRelocation(session, segmentName)) {
+    if (session == null || !requiresRelocation(session, variantLabel, segmentName)) {
       return;
     }
 
@@ -519,30 +630,17 @@ public class ProducerLifecycleService {
       return;
     }
 
-    var segmentIndex = requestedIndex(session, segmentName);
-    transcodeExecutor.stop(sessionId);
-    startAll(session, segmentIndex);
+    var segmentIndex = SegmentNames.indexOf(segmentName).orElseThrow();
+    if (transcodeExecutor.isRunning(sessionId, variantLabel)) {
+      transcodeExecutor.stopVariant(sessionId, variantLabel);
+    }
+
+    startVariant(session, variantLabel, segmentIndex);
     session.setLastAccessedAt(Instant.now());
     runtimeRegistry.save(session);
 
-    log.info("Relocated transcode for session {} to segment {}", sessionId, segmentIndex);
-  }
-
-  /**
-   * The requested segment's timeline index. A name carrying none — {@code init.mp4}, which every
-   * job attempt produces — belongs to the current job attempt, so it resolves to that attempt's
-   * start rather than to segment 0, which would drag a mid-timeline producer back to the top of the
-   * file.
-   */
-  private int requestedIndex(StreamSession session, String segmentName) {
-    return SegmentNames.indexOf(segmentName).orElseGet(() -> activeStartSequenceNumber(session));
-  }
-
-  private int activeStartSequenceNumber(StreamSession session) {
-    return session.getVariantHandles().values().stream()
-        .mapToInt(TranscodeHandle::startSequenceNumber)
-        .max()
-        .orElse(0);
+    log.info(
+        "Relocated variant {} of session {} to segment {}", variantLabel, sessionId, segmentIndex);
   }
 
   private int forwardGapSegments() {
@@ -568,30 +666,23 @@ public class ProducerLifecycleService {
     return MediaSegmentTimelines.of(session, properties);
   }
 
-  private void doResume(UUID sessionId, String segmentName) {
+  private void doResume(UUID sessionId, String variantLabel, String segmentName) {
     var session = runtimeRegistry.findById(sessionId).orElse(null);
     if (session == null || !session.isSuspended()) {
       return;
     }
 
-    var segmentIndex = requestedIndex(session, segmentName);
+    var segmentIndex = SegmentNames.indexOf(segmentName).orElseGet(session::getCurrentSegment);
 
-    startAll(session, segmentIndex);
+    startVariant(session, variantLabel, segmentIndex);
     session.setLastAccessedAt(Instant.now());
     runtimeRegistry.save(session);
 
-    log.info("Resumed suspended session {} at segment {}", sessionId, segmentIndex);
-  }
-
-  private void startSingleTranscode(StreamSession session, int startSequenceNumber) {
-    startVariant(session, StreamSession.defaultVariant(), startSequenceNumber);
-  }
-
-  private void startVariantTranscodes(
-      StreamSession session, List<QualityVariant> variants, int startSequenceNumber) {
-    for (var variant : variants) {
-      startVariant(session, variant.label(), startSequenceNumber);
-    }
+    log.info(
+        "Resumed variant {} of suspended session {} at segment {}",
+        variantLabel,
+        sessionId,
+        segmentIndex);
   }
 
   private void startVariant(StreamSession session, String variantLabel, int startSequenceNumber) {
@@ -599,10 +690,12 @@ public class ProducerLifecycleService {
     installHandle(session, variantLabel, transcodeExecutor.start(request));
   }
 
-  // The first job attempt that reports an encoder pins the variant to that encoder backend.
+  // The first job attempt that reports an encoder pins the variant to that encoder backend. Every
+  // started job attempt moves the current segment to its first media segment (ADR 0019).
   private static void installHandle(
       StreamSession session, String variantLabel, TranscodeHandle handle) {
     session.setVariantHandle(variantLabel, handle);
+    session.setCurrentSegment(handle.startSequenceNumber());
     handle.encoder().ifPresent(encoder -> session.pinEncoder(variantLabel, encoder));
   }
 

@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountScopedBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.abrSessionBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.defaultLadderSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
@@ -13,6 +14,7 @@ import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libx264
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.EncoderPreset;
@@ -37,11 +39,9 @@ import com.streamarr.server.services.serversettings.ServerSettingsService;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -97,21 +97,22 @@ class ProducerLifecycleServiceTest {
   private StreamSession startedSession() {
     var session = defaultSessionBuilder().build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 0);
+    lifecycle.startFirstListedVariant(session);
     return session;
   }
 
-  private StreamSession startedAbrSession() {
-    var session = abrSessionBuilder().build();
+  private StreamSession startedLadderSession() {
+    var session = defaultLadderSessionBuilder().build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 0);
+    lifecycle.startFirstListedVariant(session);
     return session;
   }
 
   private StreamSession midTimelineSession() {
     var session = defaultSessionBuilder().build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 900);
+    session.setCurrentSegment(900);
+    lifecycle.startFirstListedVariant(session);
     return session;
   }
 
@@ -127,7 +128,8 @@ class ProducerLifecycleServiceTest {
     segmentStore.addSegment(session.getSessionId(), "segment0.m4s", new byte[] {1});
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment100.m4s");
+    lifecycle.ensurePositioned(
+        session.getSessionId(), StreamSession.defaultVariant(), "segment100.m4s");
 
     // Segments are addressed on the absolute timeline, so earlier segments stay valid.
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(startsBefore + 1);
@@ -140,7 +142,8 @@ class ProducerLifecycleServiceTest {
     var session = startedSession();
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment0.m4s");
+    lifecycle.ensurePositioned(
+        session.getSessionId(), StreamSession.defaultVariant(), "segment0.m4s");
 
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
   }
@@ -152,7 +155,8 @@ class ProducerLifecycleServiceTest {
     suspendHandle(session);
     segmentStore.addSegment(session.getSessionId(), "segment5.m4s", new byte[] {0x47});
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment5.m4s");
+    lifecycle.ensurePositioned(
+        session.getSessionId(), StreamSession.defaultVariant(), "segment5.m4s");
 
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.SUSPENDED);
   }
@@ -161,7 +165,10 @@ class ProducerLifecycleServiceTest {
   @DisplayName("Should not throw when positioning nonexistent session")
   void shouldNotThrowWhenPositioningNonexistentSession() {
     assertThatNoException()
-        .isThrownBy(() -> lifecycle.ensurePositioned(UUID.randomUUID(), "segment0.m4s"));
+        .isThrownBy(
+            () ->
+                lifecycle.ensurePositioned(
+                    UUID.randomUUID(), StreamSession.defaultVariant(), "segment0.m4s"));
   }
 
   @Test
@@ -172,7 +179,8 @@ class ProducerLifecycleServiceTest {
     session.setLastAccessedAt(Instant.now().minusSeconds(200));
     var oldAccessTime = session.getLastAccessedAt();
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment5.m4s");
+    lifecycle.ensurePositioned(
+        session.getSessionId(), StreamSession.defaultVariant(), "segment5.m4s");
 
     assertThat(session.getLastAccessedAt()).isAfter(oldAccessTime);
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
@@ -191,7 +199,7 @@ class ProducerLifecycleServiceTest {
     var session = startedSession();
     suspendHandle(session);
 
-    lifecycle.ensurePositioned(session.getSessionId(), segmentName);
+    lifecycle.ensurePositioned(session.getSessionId(), StreamSession.defaultVariant(), segmentName);
 
     assertThat(transcodeExecutor.isRunning(session.getSessionId(), StreamSession.defaultVariant()))
         .isTrue();
@@ -208,7 +216,7 @@ class ProducerLifecycleServiceTest {
     var session = midTimelineSession();
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
-    lifecycle.ensurePositioned(session.getSessionId(), "init.mp4");
+    lifecycle.ensurePositioned(session.getSessionId(), StreamSession.defaultVariant(), "init.mp4");
 
     // init.mp4 carries no index; it must never be read as segment 0 and drag the run to the top.
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
@@ -221,7 +229,7 @@ class ProducerLifecycleServiceTest {
     session.setHandle(session.getHandle().orElseThrow().withStatus(TranscodeStatus.SUSPENDED));
     transcodeExecutor.markDead(session.getSessionId());
 
-    lifecycle.ensurePositioned(session.getSessionId(), "init.mp4");
+    lifecycle.ensurePositioned(session.getSessionId(), StreamSession.defaultVariant(), "init.mp4");
 
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.startSequenceNumber()).isEqualTo(900);
@@ -235,7 +243,7 @@ class ProducerLifecycleServiceTest {
     var session = startedSession();
     suspendHandle(session);
 
-    lifecycle.ensurePositioned(session.getSessionId(), "init.mp4");
+    lifecycle.ensurePositioned(session.getSessionId(), StreamSession.defaultVariant(), "init.mp4");
 
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
@@ -244,40 +252,72 @@ class ProducerLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should restart all variant transcodes when ABR session is resumed")
-  void shouldRestartAllVariantTranscodesWhenAbrSessionIsResumed() {
-    var session = startedAbrSession();
-    var variantLabels = session.getVariants().stream().map(v -> v.label()).toList();
-    var previousAttempts =
-        variantLabels.stream()
-            .map(label -> session.getVariantHandle(label).orElseThrow().attemptId())
-            .toList();
+  @DisplayName(
+      "Should resume only the requested variant when a suspended stream session with a ladder is resumed")
+  void shouldResumeOnlyTheRequestedVariantWhenASuspendedStreamSessionWithALadderIsResumed() {
+    var session = startedLadderSession();
+    var suspendedAttempt = session.getVariantHandle("480p").orElseThrow().attemptId();
+    lifecycle.suspend(session.getSessionId());
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
 
-    for (var label : variantLabels) {
-      session.setVariantHandle(label, mintHandle(1L, TranscodeStatus.SUSPENDED));
-      transcodeExecutor.markDead(session.getSessionId(), label);
-    }
+    lifecycle.ensurePositioned(session.getSessionId(), "480p", "480p/segment5.m4s");
 
-    var requestsBefore = transcodeExecutor.getStartedRequests().size();
-    lifecycle.ensurePositioned(session.getSessionId(), "segment5.m4s");
-    var resumeRequests =
-        transcodeExecutor
-            .getStartedRequests()
-            .subList(requestsBefore, transcodeExecutor.getStartedRequests().size());
+    assertThat(startedSince(startedBefore))
+        .singleElement()
+        .satisfies(
+            resumed -> {
+              assertThat(resumed.variantLabel()).isEqualTo("480p");
+              assertThat(resumed.startSequenceNumber()).isEqualTo(5);
+              assertThat(resumed.seekPosition()).isEqualTo(30);
+              assertThat(resumed.attemptId()).isNotEqualTo(suspendedAttempt);
+            });
+    assertThat(session.getVariantHandles()).containsOnlyKeys("480p");
+    assertThat(session.getVariantHandle("480p").orElseThrow().status())
+        .isEqualTo(TranscodeStatus.ACTIVE);
+  }
 
-    assertThat(resumeRequests).hasSize(variantLabels.size());
-    assertThat(resumeRequests).extracting(TranscodeRequest::startSequenceNumber).containsOnly(5);
-    assertThat(resumeRequests).extracting(TranscodeRequest::seekPosition).containsOnly(30);
-    assertThat(resumeRequests)
-        .extracting(TranscodeRequest::variantLabel)
-        .containsExactlyInAnyOrderElementsOf(variantLabels);
-    for (var label : variantLabels) {
-      assertThat(session.getVariantHandle(label).orElseThrow().status())
-          .isEqualTo(TranscodeStatus.ACTIVE);
-    }
-    assertThat(resumeRequests)
-        .extracting(TranscodeRequest::attemptId)
-        .doesNotContainAnyElementsOf(previousAttempts);
+  @Test
+  @DisplayName("Should start nothing when positioning a variant that has no job attempt")
+  void shouldStartNothingWhenPositioningAVariantThatHasNoJobAttempt() {
+    var session = startedLadderSession();
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    lifecycle.ensurePositioned(session.getSessionId(), "720p", "720p/segment100.m4s");
+
+    assertThat(startedSince(startedBefore)).isEmpty();
+    assertThat(session.getVariantHandle("720p")).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should start nothing on demand when the requested media segment lies past the advertised timeline")
+  void shouldStartNothingOnDemandWhenTheRequestedMediaSegmentLiesPastTheAdvertisedTimeline() {
+    var session =
+        defaultLadderSessionBuilder()
+            .mediaProbe(defaultProbeBuilder().duration(Duration.ofSeconds(60)).build())
+            .build();
+    runtimeRegistry.save(session);
+    lifecycle.startFirstListedVariant(session);
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    lifecycle.startVariantOnDemand(session.getSessionId(), "720p", "720p/segment10.m4s");
+
+    assertThat(startedSince(startedBefore)).isEmpty();
+    assertThat(session.getVariantHandle("720p")).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should start nothing when positioning a variant that the stream session does not offer")
+  void shouldStartNothingWhenPositioningAVariantThatTheStreamSessionDoesNotOffer() {
+    var session = startedLadderSession();
+    lifecycle.suspend(session.getSessionId());
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    lifecycle.ensurePositioned(session.getSessionId(), "2160p", "2160p/segment5.m4s");
+
+    assertThat(startedSince(startedBefore)).isEmpty();
+    assertThat(session.isSuspended()).isTrue();
   }
 
   @Test
@@ -286,9 +326,11 @@ class ProducerLifecycleServiceTest {
   void shouldRelocateTheTranscodeWhenTheRequestedSegmentIsBehindTheEncoderStart() {
     var session = startedSession();
     // Move the encoder forward first: segment50 is far ahead of fresh output.
-    lifecycle.ensurePositioned(session.getSessionId(), "segment50.m4s");
+    lifecycle.ensurePositioned(
+        session.getSessionId(), StreamSession.defaultVariant(), "segment50.m4s");
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment10.m4s");
+    lifecycle.ensurePositioned(
+        session.getSessionId(), StreamSession.defaultVariant(), "segment10.m4s");
 
     // The encoder started at segment50 and will never produce segment10.
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(3);
@@ -302,7 +344,8 @@ class ProducerLifecycleServiceTest {
   void shouldRelocateTheTranscodeWhenTheRequestedSegmentIsFarAheadOfProgress() {
     var session = startedSession();
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment100.m4s");
+    lifecycle.ensurePositioned(
+        session.getSessionId(), StreamSession.defaultVariant(), "segment100.m4s");
 
     // Nothing near segment100 has been produced; waiting would stall the player.
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(2);
@@ -318,7 +361,8 @@ class ProducerLifecycleServiceTest {
     var attemptBefore = session.getHandle().orElseThrow().attemptId();
     var requestsBefore = transcodeExecutor.getStartedRequests().size();
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment2.m4s");
+    lifecycle.ensurePositioned(
+        session.getSessionId(), StreamSession.defaultVariant(), "segment2.m4s");
 
     // The encoder started at segment0 and will reach segment2 shortly.
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(requestsBefore);
@@ -333,7 +377,8 @@ class ProducerLifecycleServiceTest {
     var attemptBefore = session.getHandle().orElseThrow().attemptId();
     var requestsBefore = transcodeExecutor.getStartedRequests().size();
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment100.m4s");
+    lifecycle.ensurePositioned(
+        session.getSessionId(), StreamSession.defaultVariant(), "segment100.m4s");
 
     // segment96 exists, so the encoder is close behind the request.
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(requestsBefore);
@@ -347,7 +392,8 @@ class ProducerLifecycleServiceTest {
     segmentStore.addSegment(session.getSessionId(), "segment10.m4s", new byte[] {1});
     var requestsBefore = transcodeExecutor.getStartedRequests().size();
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment10.m4s");
+    lifecycle.ensurePositioned(
+        session.getSessionId(), StreamSession.defaultVariant(), "segment10.m4s");
 
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(requestsBefore);
   }
@@ -419,7 +465,7 @@ class ProducerLifecycleServiceTest {
   void shouldAdvertiseTheWholeTimelineMediaSegmentCountWhenInstallingReplacementAttempt() {
     var sixtySecondSession = sessionWithDurationBuilder(60).build();
     runtimeRegistry.save(sixtySecondSession);
-    lifecycle.startAll(sixtySecondSession, 0);
+    lifecycle.startFirstListedVariant(sixtySecondSession);
     transcodeExecutor.markDead(sixtySecondSession.getSessionId());
 
     recover(sixtySecondSession);
@@ -435,7 +481,7 @@ class ProducerLifecycleServiceTest {
   void shouldLeaveRunningProducerInPlaceWhenRequestNamesMediaSegmentPastTheAdvertisedTimeline() {
     var sixtySecondSession = sessionWithDurationBuilder(60).build();
     runtimeRegistry.save(sixtySecondSession);
-    lifecycle.startAll(sixtySecondSession, 0);
+    lifecycle.startFirstListedVariant(sixtySecondSession);
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
     var result =
@@ -453,7 +499,7 @@ class ProducerLifecycleServiceTest {
   void shouldInstallNoReplacementAttemptWhenRequestNamesMediaSegmentPastTheAdvertisedTimeline() {
     var sixtySecondSession = sessionWithDurationBuilder(60).build();
     runtimeRegistry.save(sixtySecondSession);
-    lifecycle.startAll(sixtySecondSession, 0);
+    lifecycle.startFirstListedVariant(sixtySecondSession);
     transcodeExecutor.markDead(sixtySecondSession.getSessionId());
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
@@ -521,19 +567,32 @@ class ProducerLifecycleServiceTest {
   @Test
   @DisplayName("Should retain the variant geometry when recovering one ABR producer")
   void shouldRetainVariantGeometryWhenRecoveringOneAbrProducer() {
-    var session = startedAbrSession();
-    transcodeExecutor.markDead(session.getSessionId(), "720p");
+    var session = startedLadderSession();
+    transcodeExecutor.markDead(session.getSessionId(), "480p");
 
-    var result = lifecycle.recover(session.getSessionId(), "720p", "720p/segment2.m4s");
+    var result = lifecycle.recover(session.getSessionId(), "480p", "480p/segment2.m4s");
 
     assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
     var request = transcodeExecutor.getStartedRequests().getLast();
-    assertThat(request.variantLabel()).isEqualTo("720p");
-    assertThat(request.width()).isEqualTo(1280);
-    assertThat(request.height()).isEqualTo(720);
-    assertThat(request.bitrate()).isEqualTo(3_000_000L);
+    assertThat(request.variantLabel()).isEqualTo("480p");
+    assertThat(request.width()).isEqualTo(854);
+    assertThat(request.height()).isEqualTo(480);
+    assertThat(request.bitrate()).isEqualTo(1_500_000L);
     assertThat(request.attemptId())
-        .isEqualTo(session.getVariantHandle("720p").orElseThrow().attemptId());
+        .isEqualTo(session.getVariantHandle("480p").orElseThrow().attemptId());
+  }
+
+  @Test
+  @DisplayName(
+      "Should report the variant not running when recovery finds a variant without a job attempt")
+  void shouldReportTheVariantNotRunningWhenRecoveryFindsAVariantWithoutAJobAttempt() {
+    var session = startedLadderSession();
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    var result = lifecycle.recover(session.getSessionId(), "720p", "720p/segment2.m4s");
+
+    assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.VARIANT_NOT_RUNNING);
+    assertThat(startedSince(startedBefore)).isEmpty();
   }
 
   @Test
@@ -578,8 +637,9 @@ class ProducerLifecycleServiceTest {
   @Test
   @DisplayName("Should recover a suspended variant when its siblings keep the session live")
   void shouldRecoverSuspendedVariantWhenItsSiblingsKeepSessionLive() {
-    var session = startedAbrSession();
-    var sibling = session.getVariantHandle("720p").orElseThrow();
+    var session = startedLadderSession();
+    lifecycle.startVariantOnDemand(session.getSessionId(), "1080p", "1080p/init.mp4");
+    var sibling = session.getVariantHandle("480p").orElseThrow();
     var suspended =
         session.getVariantHandle("1080p").orElseThrow().withStatus(TranscodeStatus.SUSPENDED);
     session.setVariantHandle("1080p", suspended);
@@ -590,7 +650,7 @@ class ProducerLifecycleServiceTest {
     assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
     assertThat(session.getVariantHandle("1080p").orElseThrow().status())
         .isEqualTo(TranscodeStatus.ACTIVE);
-    assertThat(session.getVariantHandle("720p")).contains(sibling);
+    assertThat(session.getVariantHandle("480p")).contains(sibling);
   }
 
   @Test
@@ -615,7 +675,7 @@ class ProducerLifecycleServiceTest {
   void shouldKeepAnExhaustedEncodeExhaustedWhenTheOnlyNewTargetCannotEncodeItsCodecFamily() {
     var session = defaultSessionBuilder().transcodeDecision(fullTranscodeDecision("av1")).build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 0);
+    lifecycle.startFirstListedVariant(session);
     recover(session);
     clock.advance(Duration.ofSeconds(16));
     recover(session);
@@ -664,7 +724,7 @@ class ProducerLifecycleServiceTest {
     var session =
         abrSessionBuilder().transcodeDecision(fullTranscodeDecision(videoCodecFamily)).build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 0);
+    lifecycle.startFirstListedVariant(session);
     return session;
   }
 
@@ -702,52 +762,46 @@ class ProducerLifecycleServiceTest {
   @DisplayName("Should carry the first attempt's preset when a replacement attempt starts")
   void shouldCarryTheFirstAttemptsPresetWhenReplacementAttemptStarts() {
     var session = startedTranscodeSession("hevc");
-    var firstAttemptPresets = presetsByVariantLabel(transcodeExecutor.getStartedRequests());
-    transcodeExecutor.markDead(session.getSessionId(), "720p");
+    var firstAttemptPreset = transcodeExecutor.getStartedRequests().getFirst().encoderPreset();
+    transcodeExecutor.markDead(session.getSessionId(), "1080p");
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
-    lifecycle.recover(session.getSessionId(), "720p", "720p/segment2.m4s");
-    lifecycle.ensurePositioned(session.getSessionId(), "1080p/segment100.m4s");
+    lifecycle.recover(session.getSessionId(), "1080p", "1080p/segment2.m4s");
+    lifecycle.ensurePositioned(session.getSessionId(), "1080p", "1080p/segment100.m4s");
 
     assertThat(startedSince(startedBefore))
-        .hasSizeGreaterThan(1)
-        .allSatisfy(
-            replacement ->
-                assertThat(replacement.encoderPreset())
-                    .isEqualTo(firstAttemptPresets.get(replacement.variantLabel())));
+        .hasSize(2)
+        .extracting(TranscodeRequest::encoderPreset)
+        .containsOnly(firstAttemptPreset);
   }
 
   @Test
   @DisplayName("Should carry the first attempt's preset when a suspended session resumes")
   void shouldCarryTheFirstAttemptsPresetWhenSuspendedSessionResumes() {
     var session = startedTranscodeSession("hevc");
-    var firstAttemptPresets = presetsByVariantLabel(transcodeExecutor.getStartedRequests());
-    for (var variant : session.getVariants()) {
-      session.setVariantHandle(variant.label(), mintHandle(1L, TranscodeStatus.SUSPENDED));
-      transcodeExecutor.markDead(session.getSessionId(), variant.label());
-    }
-
+    var firstAttemptPreset = transcodeExecutor.getStartedRequests().getFirst().encoderPreset();
+    serverSettings.changeEncoderPreset(serverAdmin, "SLOWER");
+    lifecycle.suspend(session.getSessionId());
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment5.m4s");
+    lifecycle.ensurePositioned(session.getSessionId(), "1080p", "1080p/segment5.m4s");
 
     assertThat(startedSince(startedBefore))
-        .hasSize(session.getVariants().size())
-        .allSatisfy(
-            resumed ->
-                assertThat(resumed.encoderPreset())
-                    .isEqualTo(firstAttemptPresets.get(resumed.variantLabel())));
+        .singleElement()
+        .extracting(TranscodeRequest::encoderPreset)
+        .isEqualTo(firstAttemptPreset);
   }
 
   @Test
   @DisplayName(
-      "Should pin each variant to the encoder backend of its first job attempt when a stream session starts")
-  void shouldPinEachVariantToEncoderBackendOfItsFirstJobAttemptWhenStreamSessionStarts() {
+      "Should pin only the first-listed variant to the encoder backend of its first job attempt when a stream session starts")
+  void
+      shouldPinOnlyTheFirstListedVariantToTheEncoderBackendOfItsFirstJobAttemptWhenSessionStarts() {
     var session = sessionPinnedToLibx264(abrSessionBuilder());
 
     assertThat(session.getPinnedEncoder("1080p")).contains(libx264());
-    assertThat(session.getPinnedEncoder("720p")).contains(libx264());
     assertThat(session.getPinnedEncoder("1080p").orElseThrow().keyframeVerified()).isTrue();
+    assertThat(session.getPinnedEncoder("720p")).isEmpty();
   }
 
   @Test
@@ -844,7 +898,8 @@ class ProducerLifecycleServiceTest {
     transcodeExecutor.setExecutionTargets(List.of(NVENC_WORKER, LIBX264_WORKER));
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment100.m4s");
+    lifecycle.ensurePositioned(
+        session.getSessionId(), StreamSession.defaultVariant(), "segment100.m4s");
 
     assertThat(startedSince(startedBefore))
         .singleElement()
@@ -861,7 +916,10 @@ class ProducerLifecycleServiceTest {
     var sessionId = session.getSessionId();
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
-    assertThatThrownBy(() -> lifecycle.ensurePositioned(sessionId, "segment100.m4s"))
+    assertThatThrownBy(
+            () ->
+                lifecycle.ensurePositioned(
+                    sessionId, StreamSession.defaultVariant(), "segment100.m4s"))
         .isInstanceOf(TranscodeException.class);
 
     assertThat(startedSince(startedBefore)).isEmpty();
@@ -874,7 +932,8 @@ class ProducerLifecycleServiceTest {
     lifecycle.suspend(session.getSessionId());
     transcodeExecutor.setExecutionTargets(List.of(NVENC_WORKER, LIBX264_WORKER));
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment5.m4s");
+    lifecycle.ensurePositioned(
+        session.getSessionId(), StreamSession.defaultVariant(), "segment5.m4s");
 
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
     assertThat(session.getHandle().orElseThrow().encoder()).contains(libx264());
@@ -900,7 +959,7 @@ class ProducerLifecycleServiceTest {
     transcodeExecutor.setTargetEncoders(NVENC_WORKER, List.of(h264Nvenc()));
     transcodeExecutor.setExecutionTargets(List.of(LIBX264_WORKER));
     runtimeRegistry.save(started);
-    lifecycle.startAll(started, 0);
+    lifecycle.startFirstListedVariant(started);
     return started;
   }
 
@@ -923,14 +982,14 @@ class ProducerLifecycleServiceTest {
   void shouldKeepFirstPresetWhenReplacementAttemptStartsAfterChange() {
     var session = startedTranscodeSession("h264");
     serverSettings.changeEncoderPreset(serverAdmin, "SLOWER");
-    transcodeExecutor.markDead(session.getSessionId(), "720p");
+    transcodeExecutor.markDead(session.getSessionId(), "1080p");
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
-    lifecycle.recover(session.getSessionId(), "720p", "720p/segment2.m4s");
-    lifecycle.ensurePositioned(session.getSessionId(), "1080p/segment100.m4s");
+    lifecycle.recover(session.getSessionId(), "1080p", "1080p/segment2.m4s");
+    lifecycle.ensurePositioned(session.getSessionId(), "1080p", "1080p/segment100.m4s");
 
     assertThat(startedSince(startedBefore))
-        .hasSizeGreaterThan(1)
+        .hasSize(2)
         .extracting(TranscodeRequest::encoderPreset)
         .containsOnly(EncoderPreset.FASTER);
   }
@@ -950,9 +1009,38 @@ class ProducerLifecycleServiceTest {
         .containsOnly(EncoderPreset.SLOWER);
   }
 
-  private static Map<String, EncoderPreset> presetsByVariantLabel(List<TranscodeRequest> requests) {
-    return requests.stream()
-        .collect(Collectors.toMap(TranscodeRequest::variantLabel, TranscodeRequest::encoderPreset));
+  @Test
+  @DisplayName(
+      "Should pin a later variant at its own first job attempt and reuse each pin when a stopped variant starts again")
+  void
+      shouldPinALaterVariantAtItsOwnFirstJobAttemptAndReuseEachPinWhenAStoppedVariantStartsAgain() {
+    transcodeExecutor.setTargetEncoders(LIBX264_WORKER, List.of(libx264()));
+    transcodeExecutor.setTargetEncoders(NVENC_WORKER, List.of(h264Nvenc()));
+    transcodeExecutor.setExecutionTargets(List.of(LIBX264_WORKER));
+    var session = defaultLadderSessionBuilder().build();
+    var sessionId = session.getSessionId();
+    runtimeRegistry.save(session);
+    lifecycle.startFirstListedVariant(session);
+    serverSettings.changeEncoderPreset(serverAdmin, "SLOWER");
+    transcodeExecutor.setExecutionTargets(List.of(NVENC_WORKER, LIBX264_WORKER));
+
+    lifecycle.stopOtherVideoVariants(sessionId, "720p");
+    lifecycle.startVariantOnDemand(sessionId, "720p", "720p/segment3.m4s");
+    lifecycle.stopOtherVideoVariants(sessionId, "480p");
+    lifecycle.startVariantOnDemand(sessionId, "480p", "480p/segment9.m4s");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(
+            TranscodeRequest::variantLabel,
+            TranscodeRequest::startSequenceNumber,
+            TranscodeRequest::encoderPreset,
+            TranscodeRequest::pinnedEncoder)
+        .containsExactly(
+            tuple("480p", 0, EncoderPreset.FASTER, Optional.empty()),
+            tuple("720p", 3, EncoderPreset.SLOWER, Optional.empty()),
+            tuple("480p", 9, EncoderPreset.FASTER, Optional.of(libx264())));
+    assertThat(session.getPinnedEncoder("720p")).contains(h264Nvenc());
+    assertThat(session.getVariantHandles()).containsOnlyKeys("480p");
   }
 
   private List<TranscodeRequest> startedSince(int startedBefore) {
@@ -985,7 +1073,7 @@ class ProducerLifecycleServiceTest {
   private StreamSession startedCopySession(MediaProbe.MediaProbeBuilder probe) {
     var session = defaultSessionBuilder().mediaProbe(probe.build()).build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 0);
+    lifecycle.startFirstListedVariant(session);
     return session;
   }
 
@@ -1016,7 +1104,8 @@ class ProducerLifecycleServiceTest {
   void shouldStartARelocatedCopyAttemptAtItsSegmentsFirstKeyframe() {
     var session = startedIrregularCopySession();
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment100.m4s");
+    lifecycle.ensurePositioned(
+        session.getSessionId(), StreamSession.defaultVariant(), "segment100.m4s");
 
     var request = transcodeExecutor.getStartedRequests().getLast();
     assertThat(request.startSequenceNumber()).isEqualTo(100);
@@ -1042,7 +1131,8 @@ class ProducerLifecycleServiceTest {
     var session = startedIrregularCopySession();
     suspendHandle(session);
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment5.m4s");
+    lifecycle.ensurePositioned(
+        session.getSessionId(), StreamSession.defaultVariant(), "segment5.m4s");
 
     var request = transcodeExecutor.getStartedRequests().getLast();
     assertThat(request.startSequenceNumber()).isEqualTo(5);
@@ -1073,7 +1163,8 @@ class ProducerLifecycleServiceTest {
     var session = startedCopySessionWhoseLastSegmentAbsorbsTheFinalGridInterval();
     suspendHandle(session);
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment2.m4s");
+    lifecycle.ensurePositioned(
+        session.getSessionId(), StreamSession.defaultVariant(), "segment2.m4s");
 
     var request = transcodeExecutor.getStartedRequests().getLast();
     assertThat(request.startSequenceNumber()).isEqualTo(2);
@@ -1102,7 +1193,7 @@ class ProducerLifecycleServiceTest {
     var session = startedTranscodeSession("h264");
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
-    lifecycle.ensurePositioned(session.getSessionId(), "1080p/segment100.m4s");
+    lifecycle.ensurePositioned(session.getSessionId(), "1080p", "1080p/segment100.m4s");
 
     assertThat(startedSince(startedBefore))
         .isNotEmpty()

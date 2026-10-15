@@ -110,15 +110,17 @@ class RemotePlaybackIT {
                 assertThat(outcome.mediaProbe().height()).isEqualTo(180);
               });
 
-      executor.start(transcodeRequest(streamSessionId, mediaFile));
+      var handle = executor.start(transcodeRequest(streamSessionId, mediaFile));
       segmentStore.publication("segment1.m4s").get(10, TimeUnit.SECONDS);
-      var streamController =
-          rig(PlaybackRigConfiguration.builder()
+      var playback =
+          rig(
+              PlaybackRigConfiguration.builder()
                   .streamSessionId(streamSessionId)
                   .segmentStore(segmentStore)
                   .executor(executor)
-                  .build())
-              .controller();
+                  .build());
+      playback.session().setHandle(handle);
+      var streamController = playback.controller();
       var responses =
           List.of(
               streamController.getInitSegment(streamSessionId),

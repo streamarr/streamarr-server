@@ -5,7 +5,6 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultVariantB
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.StreamingProperties;
-import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
@@ -33,7 +32,7 @@ class ProducerLifecycleDestroyRaceTest {
   @DisplayName("Should not leave a producer running when destroy interleaves initial startup")
   void shouldNotLeaveProducerRunningWhenDestroyInterleavesInitialStartup() throws Exception {
     var raceGate = new DestroyRaceGate();
-    var transcodeExecutor = new SecondStartGatingExecutor(raceGate);
+    var transcodeExecutor = new StartGatingExecutor(raceGate);
     var lifecycle = lifecycleWith(transcodeExecutor, raceGate.mutexFactory());
     var session =
         defaultSessionBuilder()
@@ -54,20 +53,20 @@ class ProducerLifecycleDestroyRaceTest {
             .build();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var start = executor.submit(() -> lifecycle.startAll(session, 0));
-      transcodeExecutor.awaitSecondStart();
+      var start = executor.submit(() -> lifecycle.startFirstListedVariant(session));
+      transcodeExecutor.awaitStart();
 
       var destroy =
           executor.submit(
               () -> raceGate.runDestroy(() -> lifecycle.stopForDestroy(session.getSessionId())));
       raceGate.awaitDestroyReady();
 
-      transcodeExecutor.releaseSecondStart();
+      transcodeExecutor.releaseStart();
       start.get(5, TimeUnit.SECONDS);
       destroy.get(5, TimeUnit.SECONDS);
     }
 
-    assertThat(transcodeExecutor.isRunning(session.getSessionId(), StreamSession.defaultVariant()))
+    assertThat(transcodeExecutor.isRunning(session.getSessionId(), "1080p"))
         .as("a destroyed session must not retain an orphaned producer")
         .isFalse();
   }
@@ -89,21 +88,21 @@ class ProducerLifecycleDestroyRaceTest {
         .build();
   }
 
-  private static final class SecondStartGatingExecutor extends FakeTranscodeExecutor {
+  private static final class StartGatingExecutor extends FakeTranscodeExecutor {
 
     private final DestroyRaceGate raceGate;
-    private final CountDownLatch reachedSecondStart = new CountDownLatch(1);
-    private final CountDownLatch releaseSecondStart = new CountDownLatch(1);
+    private final CountDownLatch reachedStart = new CountDownLatch(1);
+    private final CountDownLatch releaseStart = new CountDownLatch(1);
     private final AtomicInteger starts = new AtomicInteger();
 
-    private SecondStartGatingExecutor(DestroyRaceGate raceGate) {
+    private StartGatingExecutor(DestroyRaceGate raceGate) {
       this.raceGate = raceGate;
     }
 
     @Override
     public TranscodeHandle start(TranscodeRequest request) {
-      if (starts.incrementAndGet() == 2) {
-        reachedSecondStart.countDown();
+      if (starts.incrementAndGet() == 1) {
+        reachedStart.countDown();
         awaitRelease();
       }
 
@@ -116,20 +115,20 @@ class ProducerLifecycleDestroyRaceTest {
       raceGate.destroyStoppedProducers();
     }
 
-    private void awaitSecondStart() throws InterruptedException {
-      assertThat(reachedSecondStart.await(5, TimeUnit.SECONDS))
-          .as("initial startup must reach the second variant")
+    private void awaitStart() throws InterruptedException {
+      assertThat(reachedStart.await(5, TimeUnit.SECONDS))
+          .as("initial startup must reach the first-listed variant's start")
           .isTrue();
     }
 
-    private void releaseSecondStart() {
-      releaseSecondStart.countDown();
+    private void releaseStart() {
+      releaseStart.countDown();
     }
 
     private void awaitRelease() {
       try {
-        if (!releaseSecondStart.await(10, TimeUnit.SECONDS)) {
-          throw new IllegalStateException("Second-start gate was never released");
+        if (!releaseStart.await(10, TimeUnit.SECONDS)) {
+          throw new IllegalStateException("Start gate was never released");
         }
       } catch (InterruptedException _) {
         Thread.currentThread().interrupt();

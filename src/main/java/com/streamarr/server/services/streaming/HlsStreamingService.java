@@ -8,9 +8,9 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
+import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
-import com.streamarr.server.exceptions.MaxConcurrentTranscodesException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.mutation.Outcome;
@@ -75,16 +75,13 @@ public class HlsStreamingService implements StreamingService {
       return Outcome.rejected(new CreateStreamSessionRejection.FrameRateUnknown());
     }
 
-    var variants = resolveVariants(probe, options, decision);
-    try {
-      variants =
-          MultivariantPlaylistOrder.of(
-              enforceCapacityLimits(decision, variants), decision.audioDecision().bitrate());
-    } catch (MaxConcurrentTranscodesException _) {
+    if (!hasCapacityFor(decision)) {
       return Outcome.rejected(
           new CreateStreamSessionRejection.TranscodeCapacityUnavailable(
               properties.maxConcurrentTranscodes()));
     }
+
+    var variants = resolveVariants(probe, options, decision);
 
     var sessionId = UUID.randomUUID();
     var now = Instant.now();
@@ -104,7 +101,7 @@ public class HlsStreamingService implements StreamingService {
 
     try {
       runtimeRegistry.save(session);
-      producerLifecycle.startAll(session, 0);
+      producerLifecycle.startFirstListedVariant(session);
       runtimeRegistry.save(session);
     } catch (RuntimeException startupFailure) {
       rollbackFailedStartup(sessionId, startupFailure);
@@ -207,7 +204,8 @@ public class HlsStreamingService implements StreamingService {
       return List.of();
     }
 
-    return qualityLadderService.generateVariants(probe, options);
+    return MultivariantPlaylistOrder.of(
+        qualityLadderService.generateVariants(probe, options), decision.audioDecision().bitrate());
   }
 
   private boolean requiresVideoTranscode(TranscodeMode mode) {
@@ -218,55 +216,34 @@ public class HlsStreamingService implements StreamingService {
     return options.quality() == null || options.quality() == VideoQuality.AUTO;
   }
 
-  private List<QualityVariant> enforceCapacityLimits(
-      TranscodeDecision decision, List<QualityVariant> variants) {
+  // Creating a stream session starts one job attempt, so a session needs one free slot whatever
+  // the size of its ladder.
+  private boolean hasCapacityFor(TranscodeDecision decision) {
     if (transcodeExecutor.availableSlots(decision) <= 0) {
-      throw new MaxConcurrentTranscodesException(properties.maxConcurrentTranscodes());
+      return false;
     }
 
-    if (!variants.isEmpty()) {
-      return capVariantsToAvailableSlots(decision, variants);
-    }
-
-    if (requiresTranscode(decision.transcodeMode())) {
-      enforceTranscodeLimit(decision);
-    }
-
-    return variants;
+    return !requiresTranscode(decision.transcodeMode()) || availableTranscodeSlots(decision) > 0;
   }
 
-  private List<QualityVariant> capVariantsToAvailableSlots(
-      TranscodeDecision decision, List<QualityVariant> variants) {
-    var slotsAvailable = availableTranscodeSlots(decision);
-    if (slotsAvailable <= 0) {
-      throw new MaxConcurrentTranscodesException(properties.maxConcurrentTranscodes());
-    }
-
-    if (variants.size() > slotsAvailable) {
-      return variants.subList(0, slotsAvailable);
-    }
-
-    return variants;
-  }
-
+  // Only running job attempts count against the limit: a suspended or stopped variant has none.
   private int availableTranscodeSlots(TranscodeDecision decision) {
-    var activeTranscodes =
+    var runningJobAttempts =
         runtimeRegistry.findAll().stream()
-            .filter(s -> !s.isSuspended())
             .filter(s -> requiresTranscode(s.getTranscodeDecision().transcodeMode()))
-            .mapToInt(s -> Math.max(1, s.getVariants().size()))
+            .mapToLong(HlsStreamingService::countRunningJobAttempts)
             .sum();
-    var configuredSlots = properties.maxConcurrentTranscodes() - activeTranscodes;
-    return Math.min(configuredSlots, transcodeExecutor.availableSlots(decision));
+    var configuredSlots = properties.maxConcurrentTranscodes() - runningJobAttempts;
+    return (int) Math.min(configuredSlots, transcodeExecutor.availableSlots(decision));
+  }
+
+  private static long countRunningJobAttempts(StreamSession session) {
+    return session.getVariantHandles().values().stream()
+        .filter(handle -> handle.status() == TranscodeStatus.ACTIVE)
+        .count();
   }
 
   private boolean requiresTranscode(TranscodeMode mode) {
     return mode != TranscodeMode.REMUX;
-  }
-
-  private void enforceTranscodeLimit(TranscodeDecision decision) {
-    if (availableTranscodeSlots(decision) <= 0) {
-      throw new MaxConcurrentTranscodesException(properties.maxConcurrentTranscodes());
-    }
   }
 }

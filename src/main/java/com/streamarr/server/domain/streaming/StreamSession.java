@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import lombok.Builder;
@@ -42,6 +43,10 @@ public class StreamSession {
   private final Map<String, EncoderPreset> variantEncoderPresets = new ConcurrentHashMap<>();
 
   @Builder.Default private final List<QualityVariant> variants = Collections.emptyList();
+
+  @Getter(lombok.AccessLevel.NONE)
+  @Builder.Default
+  private final AtomicInteger currentSegment = new AtomicInteger();
 
   @Getter(lombok.AccessLevel.NONE)
   @Builder.Default
@@ -89,6 +94,34 @@ public class StreamSession {
 
   public Optional<TranscodeHandle> getVariantHandle(String variantLabel) {
     return Optional.ofNullable(variantHandles.get(variantLabel));
+  }
+
+  public void removeVariantHandle(String variantLabel) {
+    variantHandles.remove(variantLabel);
+  }
+
+  /**
+   * Whether the stream session offers this variant: a variant of its ladder, or the default variant
+   * when the session has no ladder.
+   */
+  public boolean offersVariant(String variantLabel) {
+    if (variants.isEmpty()) {
+      return DEFAULT_VARIANT.equals(variantLabel);
+    }
+
+    return variants.stream().anyMatch(variant -> variant.label().equals(variantLabel));
+  }
+
+  /**
+   * The current segment (ADR 0019): the first media segment of the most recently started job
+   * attempt, or the segment at which the stream session starts before any job attempt starts.
+   */
+  public int getCurrentSegment() {
+    return currentSegment.get();
+  }
+
+  public void setCurrentSegment(int mediaSegmentIndex) {
+    currentSegment.set(mediaSegmentIndex);
   }
 
   /**

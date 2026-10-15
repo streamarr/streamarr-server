@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.exceptions.TranscodeException;
 import java.time.Duration;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
@@ -16,7 +17,23 @@ public class SegmentDeliveryCoordinator {
 
   @Builder.Default private final Duration pollInterval = Duration.ofMillis(100);
 
+  /**
+   * Answers one segment request. Before the wait, the request applies the on-demand rules of ADR
+   * 0019 once: a media-segment request stops the other video variants, and a request for a variant
+   * without a job attempt starts that variant. Later passes never start the variant again, so a
+   * held request whose variant another request stopped ends instead of restarting it.
+   */
   public SegmentDelivery deliver(UUID sessionId, String variantLabel, String segmentName) {
+    var refusal = refusal(sessionId, segmentName);
+    if (refusal.isPresent()) {
+      return refusal.get();
+    }
+
+    if (SegmentNames.indexOf(segmentName).isPresent()) {
+      producerLifecycle.stopOtherVideoVariants(sessionId, variantLabel);
+    }
+
+    producerLifecycle.startVariantOnDemand(sessionId, variantLabel, segmentName);
     while (true) {
       var outcome = deliverOnce(sessionId, variantLabel, segmentName);
       if (outcome != null) {
@@ -31,11 +48,7 @@ public class SegmentDeliveryCoordinator {
     }
   }
 
-  /**
-   * One delivery pass. Returns a terminal {@link SegmentDelivery} outcome, or {@code null} to mean
-   * "re-observe after one poll interval".
-   */
-  private SegmentDelivery deliverOnce(UUID sessionId, String variantLabel, String segmentName) {
+  private Optional<SegmentDelivery> refusal(UUID sessionId, String segmentName) {
     if (!SegmentNames.matchesNamingScheme(segmentName)) {
       // Waiting on a name no run can produce would misread the frontier and stall-kill a healthy
       // producer; an unknown name is a 404, never a recovery trigger.
@@ -43,22 +56,30 @@ public class SegmentDeliveryCoordinator {
           "Rejected segment request matching no naming scheme: session {} name {}",
           sessionId,
           segmentName);
-      return new SegmentDelivery.SessionEnded();
+      return Optional.of(new SegmentDelivery.SessionEnded());
     }
 
     // Media that outlasts its probed duration can leave segments past the advertised count in the
     // store; the playlist never lists them, so they are not found rather than served.
     if (producerLifecycle.isUnadvertisedMediaSegment(sessionId, segmentName)) {
-      return new SegmentDelivery.SessionEnded();
+      return Optional.of(new SegmentDelivery.SessionEnded());
     }
 
+    return Optional.empty();
+  }
+
+  /**
+   * One delivery pass. Returns a terminal {@link SegmentDelivery} outcome, or {@code null} to mean
+   * "re-observe after one poll interval".
+   */
+  private SegmentDelivery deliverOnce(UUID sessionId, String variantLabel, String segmentName) {
     var ready = tryRead(sessionId, segmentName);
     if (ready != null) {
       return ready;
     }
 
     return switch (producerLifecycle.recover(sessionId, variantLabel, segmentName)) {
-      case EXHAUSTED -> exhaustedDelivery(sessionId, segmentName);
+      case EXHAUSTED, VARIANT_NOT_RUNNING -> exhaustedDelivery(sessionId, segmentName);
       case SESSION_GONE, SEGMENT_NOT_ADVERTISED -> new SegmentDelivery.SessionEnded();
       case WAITING -> null;
     };

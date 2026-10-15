@@ -11,6 +11,7 @@ import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
+import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.WorkerCapabilities;
@@ -18,12 +19,16 @@ import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import io.grpc.ManagedChannel;
 import io.grpc.stub.StreamObserver;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * A worker that registers over a real worker session with one libx264 encoder and eight job slots.
@@ -31,8 +36,11 @@ import java.util.concurrent.TimeUnit;
  */
 final class LoopbackWorker implements AutoCloseable {
 
+  private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(5);
+
   private final StreamObserver<EstablishWorkerSessionRequest> requests;
   private final BlockingQueue<EstablishWorkerSessionResponse> responses;
+  private final Map<Uuid, VariantJob> runningJobs = new LinkedHashMap<>();
 
   private LoopbackWorker(
       StreamObserver<EstablishWorkerSessionRequest> requests,
@@ -66,7 +74,7 @@ final class LoopbackWorker implements AutoCloseable {
   }
 
   EstablishWorkerSessionResponse nextResponse() throws InterruptedException {
-    var response = responses.poll(5, TimeUnit.SECONDS);
+    var response = responses.poll(RESPONSE_TIMEOUT.toNanos(), TimeUnit.NANOSECONDS);
     assertThat(response).as("worker session response must arrive").isNotNull();
     return response;
   }
@@ -82,6 +90,46 @@ final class LoopbackWorker implements AutoCloseable {
     }
 
     return jobs;
+  }
+
+  /**
+   * Applies the start and stop commands that the server sends until the running job attempts are
+   * exactly one for each given variant, starting at the given media segment.
+   */
+  void awaitRunningJobs(Map<String, Integer> startSegmentByVariant) throws InterruptedException {
+    var deadline = System.nanoTime() + RESPONSE_TIMEOUT.toNanos();
+    while (!runningStartSegments().equals(startSegmentByVariant)) {
+      var response = responses.poll(deadline - System.nanoTime(), TimeUnit.NANOSECONDS);
+      if (response == null) {
+        break;
+      }
+
+      applyJobCommand(response);
+    }
+
+    assertThat(runningStartSegments())
+        .as("running job attempts by variant and start segment")
+        .isEqualTo(startSegmentByVariant);
+  }
+
+  private void applyJobCommand(EstablishWorkerSessionResponse response) {
+    if (response.hasStartVariant()) {
+      var job = response.getStartVariant().getJob();
+      runningJobs.put(job.getJobAttemptId(), job);
+      return;
+    }
+
+    if (response.hasStopVariant()) {
+      runningJobs.remove(response.getStopVariant().getJobAttemptId());
+    }
+  }
+
+  private Map<String, Integer> runningStartSegments() {
+    return runningJobs.values().stream()
+        .collect(
+            Collectors.toMap(
+                job -> job.getVariant().getVariantLabel(),
+                job -> job.getExecution().getStartSequenceNumber()));
   }
 
   void reportFailed(VariantJob job) {

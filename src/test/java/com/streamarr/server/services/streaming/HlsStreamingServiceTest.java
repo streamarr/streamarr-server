@@ -21,6 +21,7 @@ import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
@@ -79,6 +80,7 @@ class HlsStreamingServiceTest {
   private FakePlaybackAuthorityGate authorityGate;
   private FakeRuntimeStreamSessionRegistry runtimeRegistry;
   private HlsStreamingService service;
+  private SegmentDeliveryCoordinator coordinator;
 
   @Test
   @DisplayName("Should reject session creation when the media file has no persisted probe outcome")
@@ -373,6 +375,7 @@ class HlsStreamingServiceTest {
             .properties(properties)
             .runtimeRegistry(registry)
             .build();
+    coordinator = rig.coordinator();
     return HlsStreamingService.builder()
         .mediaFileRepository(mediaFileRepository)
         .transcodeExecutor(executor)
@@ -542,8 +545,8 @@ class HlsStreamingServiceTest {
 
   @Test
   @DisplayName(
-      "Should size the ladder to the AV1 encode slots when workers that encode only H.264 have more free slots")
-  void shouldSizeTheLadderToTheAv1EncodeSlotsWhenWorkersThatEncodeOnlyH264HaveMoreFreeSlots() {
+      "Should encode AV1 with the whole ladder when one AV1 encode slot is free and workers that encode only H.264 have more")
+  void shouldEncodeAv1WithTheWholeLadderWhenOneAv1EncodeSlotIsFree() {
     transcodeExecutor.setAvailableSlots(4);
     transcodeExecutor.setEncodeSlots(Map.of("h264", 3, "av1", 1));
     probeResults.setDefaultProbe(
@@ -557,7 +560,7 @@ class HlsStreamingServiceTest {
     var session = createSession(file.getId(), UUID.randomUUID(), av1AndH264AutoOptions());
 
     assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo("av1");
-    assertThat(session.getVariants()).hasSize(1);
+    assertThat(session.getVariants()).hasSize(4);
     assertThat(transcodeExecutor.getStartedRequests())
         .singleElement()
         .extracting(request -> request.transcodeDecision().videoCodecFamily())
@@ -583,9 +586,9 @@ class HlsStreamingServiceTest {
     assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo("h264");
     assertThat(session.getVariants()).hasSizeGreaterThan(1);
     assertThat(transcodeExecutor.getStartedRequests())
-        .hasSameSizeAs(session.getVariants())
+        .singleElement()
         .extracting(request -> request.transcodeDecision().videoCodecFamily())
-        .containsOnly("h264");
+        .isEqualTo("h264");
   }
 
   @Test
@@ -1011,22 +1014,30 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should start multiple variants when auto quality with full transcode")
-  void shouldStartMultipleVariantsWhenAutoQualityWithFullTranscode() {
+  @DisplayName(
+      "Should start only the 480p variant when an Auto stream session uses the default ladder")
+  void shouldStartOnlyThe480pVariantWhenAnAutoStreamSessionUsesTheDefaultLadder() {
     probeResults.setDefaultProbe(
         defaultProbeBuilder()
             .framerate(OptionalDouble.of(23.976))
             .videoCodec("hevc")
             .bitrate(8_000_000L)
             .build());
-
     var file = seedMediaFile();
-    var options = defaultOptions();
 
-    var session = createSession(file.getId(), UUID.randomUUID(), options);
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
-    assertThat(session.getVariants()).hasSizeGreaterThan(1);
-    assertThat(session.getVariantHandles()).hasSizeGreaterThan(1);
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label)
+        .containsExactly("480p", "1080p", "720p", "360p");
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.variantLabel()).isEqualTo("480p");
+              assertThat(request.startSequenceNumber()).isZero();
+            });
+    assertThat(session.getVariantHandles()).containsOnlyKeys("480p");
   }
 
   @Test
@@ -1053,7 +1064,7 @@ class HlsStreamingServiceTest {
   @Test
   @DisplayName("Should roll back the session when the first transcode startup fails")
   void shouldRollbackSessionWhenFirstTranscodeStartupFails() {
-    var failingExecutor = new FailingStartupTranscodeExecutor(0, segmentStore);
+    var failingExecutor = new FailingStartupTranscodeExecutor(segmentStore);
     service = serviceWith(failingExecutor, runtimeRegistry);
     var file = seedMediaFile();
 
@@ -1062,35 +1073,13 @@ class HlsStreamingServiceTest {
         .isInstanceOf(TranscodeException.class)
         .hasMessage("Simulated transcode startup failure");
 
-    assertStartupRolledBack(failingExecutor);
-  }
-
-  @Test
-  @DisplayName("Should roll back running transcodes when a later variant startup fails")
-  void shouldRollbackRunningTranscodesWhenLaterVariantStartupFails() {
-    probeResults.setDefaultProbe(
-        defaultProbeBuilder()
-            .framerate(OptionalDouble.of(23.976))
-            .videoCodec("hevc")
-            .bitrate(8_000_000L)
-            .build());
-    var failingExecutor = new FailingStartupTranscodeExecutor(1, segmentStore);
-    service = serviceWith(failingExecutor, runtimeRegistry);
-    var file = seedMediaFile();
-
-    var command = createStreamSessionCommand(file.getId(), UUID.randomUUID(), defaultOptions());
-    assertThatThrownBy(() -> service.createSession(command))
-        .isInstanceOf(TranscodeException.class)
-        .hasMessage("Simulated transcode startup failure");
-
-    assertThat(failingExecutor.getAttemptedRequests()).hasSize(2);
     assertStartupRolledBack(failingExecutor);
   }
 
   @Test
   @DisplayName("Should preserve the startup failure when rollback cleanup fails")
   void shouldPreserveStartupFailureWhenRollbackCleanupFails() {
-    var failingExecutor = new FailingStartupTranscodeExecutor(0, segmentStore);
+    var failingExecutor = new FailingStartupTranscodeExecutor(segmentStore);
     failingExecutor.failOnStop();
     service = serviceWith(failingExecutor, runtimeRegistry);
     var file = seedMediaFile();
@@ -1151,28 +1140,6 @@ class HlsStreamingServiceTest {
 
     assertThat(session.getVariants()).isEmpty();
     assertThat(session.getHandle()).isPresent();
-  }
-
-  @Test
-  @DisplayName(
-      "Should pass variant label to transcode request for ABR session when managing a session")
-  void shouldPassVariantLabelToTranscodeRequestForAbrSessionWhenManagingSession() {
-    probeResults.setDefaultProbe(
-        defaultProbeBuilder()
-            .framerate(OptionalDouble.of(23.976))
-            .videoCodec("hevc")
-            .bitrate(8_000_000L)
-            .build());
-
-    var file = seedMediaFile();
-    var options = defaultOptions();
-
-    var session = createSession(file.getId(), UUID.randomUUID(), options);
-
-    assertThat(session.getVariants()).hasSizeGreaterThan(1);
-    assertThat(transcodeExecutor.getStartedVariants())
-        .containsExactlyInAnyOrderElementsOf(
-            session.getVariants().stream().map(v -> v.label()).toList());
   }
 
   @Test
@@ -1245,62 +1212,10 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should truncate variants when exceeding available slots")
-  void shouldTruncateVariantsWhenExceedingAvailableSlots() {
-    var properties =
-        StreamingProperties.builder()
-            .maxConcurrentTranscodes(2)
-            .targetSegmentDuration(Duration.ofSeconds(6))
-            .sessionTimeout(Duration.ofSeconds(60))
-            .build();
-    var limitedExecutor = new FakeTranscodeExecutor();
-    var limitedRegistry = new FakeRuntimeStreamSessionRegistry();
-    var limitedRig =
-        StreamingRigFixture.streamingRigBuilder()
-            .transcodeExecutor(limitedExecutor)
-            .segmentStore(segmentStore)
-            .properties(properties)
-            .runtimeRegistry(limitedRegistry)
-            .build();
-    var limitedService =
-        HlsStreamingService.builder()
-            .mediaFileRepository(mediaFileRepository)
-            .transcodeExecutor(limitedExecutor)
-            .segmentStore(segmentStore)
-            .playbackProbeService(
-                new PlaybackProbeService(new PersistedProbeReader(probeResults), probeEvents))
-            .transcodeDecisionService(
-                new TranscodeDecisionService(properties, new SimpleMeterRegistry()))
-            .qualityLadderService(new QualityLadderService())
-            .properties(properties)
-            .authorityGate(authorityGate)
-            .runtimeRegistry(limitedRegistry)
-            .producerLifecycle(limitedRig.lifecycle())
-            .deliveryCoordinator(limitedRig.coordinator())
-            .build();
-
-    probeResults.setDefaultProbe(
-        defaultProbeBuilder()
-            .framerate(OptionalDouble.of(23.976))
-            .videoCodec("hevc")
-            .bitrate(8_000_000L)
-            .build());
-
-    var file = seedMediaFile();
-    var options = defaultOptions();
-
-    var session =
-        accepted(
-            limitedService.createSession(
-                createStreamSessionCommand(file.getId(), UUID.randomUUID(), options)));
-
-    assertThat(session.getVariants()).hasSize(2);
-  }
-
-  @Test
-  @DisplayName("Should truncate variants to executor slots available now when managing a session")
-  void shouldTruncateVariantsToExecutorSlotsAvailableNowWhenManagingSession() {
-    transcodeExecutor.setAvailableSlots(2);
+  @DisplayName(
+      "Should offer every variant of the ladder when fewer job slots are free than the ladder has variants")
+  void shouldOfferEveryVariantOfTheLadderWhenFewerJobSlotsAreFreeThanTheLadderHasVariants() {
+    transcodeExecutor.setAvailableSlots(1);
     probeResults.setDefaultProbe(
         defaultProbeBuilder()
             .framerate(OptionalDouble.of(23.976))
@@ -1308,17 +1223,19 @@ class HlsStreamingServiceTest {
             .bitrate(8_000_000L)
             .build());
     var file = seedMediaFile();
-    var options = defaultOptions();
 
-    var session = createSession(file.getId(), UUID.randomUUID(), options);
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
-    assertThat(session.getVariants()).hasSize(2);
-    assertThat(transcodeExecutor.getStartedVariants()).containsExactlyInAnyOrder("1080p", "720p");
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label)
+        .containsExactly("480p", "1080p", "720p", "360p");
+    assertThat(transcodeExecutor.getStartedVariants()).containsExactly("480p");
   }
 
   @Test
-  @DisplayName("Should truncate to one variant when only one slot is available")
-  void shouldTruncateToOneVariantWhenOnlyOneSlotAvailable() {
+  @DisplayName(
+      "Should count only running job attempts against the transcode limit when stream sessions offer a ladder")
+  void shouldCountOnlyRunningJobAttemptsAgainstTheTranscodeLimitWhenStreamSessionsOfferALadder() {
     probeResults.setDefaultProbe(
         defaultProbeBuilder()
             .framerate(OptionalDouble.of(23.976))
@@ -1326,23 +1243,42 @@ class HlsStreamingServiceTest {
             .bitrate(8_000_000L)
             .build());
 
-    var singleVariantOptions =
-        StreamingOptions.builder()
-            .quality(VideoQuality.FULL_HD_1080P)
-            .supportedCodecs(List.of("h264"))
-            .build();
-
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < 3; i++) {
       var file = seedMediaFile();
-      createSession(file.getId(), UUID.randomUUID(), singleVariantOptions);
+      assertThat(createSession(file.getId(), UUID.randomUUID(), defaultOptions()).getVariants())
+          .hasSize(4);
     }
 
-    var abrOptions = defaultOptions();
-    var file = seedMediaFile();
+    var oneMore =
+        createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    assertThat(service.createSession(oneMore))
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+  }
 
-    var session = createSession(file.getId(), UUID.randomUUID(), abrOptions);
+  @Test
+  @DisplayName(
+      "Should count a variant that a request started against the transcode limit when another stream session is created")
+  void shouldCountAVariantThatARequestStartedAgainstTheTranscodeLimitWhenAnotherSessionIsCreated() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .framerate(OptionalDouble.of(23.976))
+            .videoCodec("hevc")
+            .bitrate(8_000_000L)
+            .build());
+    var first = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    segmentStore.addSegment(first.getSessionId(), "1080p/init.mp4", new byte[] {1});
 
-    assertThat(session.getVariants()).hasSize(1);
+    assertThat(coordinator.deliver(first.getSessionId(), "1080p", "1080p/init.mp4"))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+
+    assertThat(first.getVariantHandles()).containsOnlyKeys("480p", "1080p");
+    var oneMore =
+        createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    assertThat(service.createSession(oneMore))
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
   }
 
   @Test
@@ -1374,13 +1310,11 @@ class HlsStreamingServiceTest {
 
   private static final class FailingStartupTranscodeExecutor extends FakeTranscodeExecutor {
 
-    private final int successfulStarts;
     private final FakeSegmentStore segmentStore;
     private boolean failOnStop;
     private final List<TranscodeRequest> attemptedRequests = new ArrayList<>();
 
-    private FailingStartupTranscodeExecutor(int successfulStarts, FakeSegmentStore segmentStore) {
-      this.successfulStarts = successfulStarts;
+    private FailingStartupTranscodeExecutor(FakeSegmentStore segmentStore) {
       this.segmentStore = segmentStore;
     }
 
@@ -1388,10 +1322,7 @@ class HlsStreamingServiceTest {
     public TranscodeHandle start(TranscodeRequest request) {
       attemptedRequests.add(request);
       segmentStore.addSegment(request.sessionId(), "startup.m4s", new byte[] {1});
-      if (attemptedRequests.size() > successfulStarts) {
-        throw new TranscodeException("Simulated transcode startup failure");
-      }
-      return super.start(request);
+      throw new TranscodeException("Simulated transcode startup failure");
     }
 
     @Override

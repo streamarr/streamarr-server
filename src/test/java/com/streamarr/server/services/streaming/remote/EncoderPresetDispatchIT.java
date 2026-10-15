@@ -20,12 +20,10 @@ import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.ProducerLifecycleService;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.transcode.v1.EncoderPreset;
-import com.streamarr.transcode.v1.VariantJob;
 import io.grpc.ManagedChannel;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import org.jooq.DSLContext;
@@ -104,33 +102,34 @@ class EncoderPresetDispatchIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should keep the first preset for a replacement attempt and send the new preset to a later variant when the setting changes")
+      "Should keep the first preset for a replacement attempt and send the new preset to a variant that starts later when the setting changes")
   void shouldKeepFirstPresetForReplacementAndSendNewPresetToLaterVariantWhenSettingChanges()
       throws Exception {
     var running = startedSession();
-    var firstJobs = worker.nextJobs(running.getVariants().size());
-    assertThat(firstJobs)
-        .extracting(job -> job.getVariant().getEncoderPreset())
-        .containsOnly(EncoderPreset.ENCODER_PRESET_FASTER);
+    var firstJob = worker.nextJobs(1).getFirst();
+    assertThat(firstJob.getVariant().getVariantLabel()).isEqualTo("1080p");
+    assertThat(firstJob.getVariant().getEncoderPreset())
+        .isEqualTo(EncoderPreset.ENCODER_PRESET_FASTER);
 
     serverSettingsService.changeEncoderPreset(authTestSupport.identityOf(serverAdmin), "MEDIUM");
-    var failed = jobFor(firstJobs, "720p");
-    worker.reportFailed(failed);
+    worker.reportFailed(firstJob);
     await()
         .atMost(Duration.ofSeconds(5))
-        .until(() -> !server.isRunning(running.getSessionId(), "720p"));
-    lifecycle.recover(running.getSessionId(), "720p", "720p/segment2.m4s");
+        .until(() -> !server.isRunning(running.getSessionId(), "1080p"));
+    lifecycle.recover(running.getSessionId(), "1080p", "1080p/segment2.m4s");
 
     var replacement = worker.nextJobs(1).getFirst();
-    assertThat(replacement.getVariant().getVariantLabel()).isEqualTo("720p");
-    assertThat(replacement.getJobAttemptId()).isNotEqualTo(failed.getJobAttemptId());
+    assertThat(replacement.getVariant().getVariantLabel()).isEqualTo("1080p");
+    assertThat(replacement.getJobAttemptId()).isNotEqualTo(firstJob.getJobAttemptId());
     assertThat(replacement.getVariant().getEncoderPreset())
         .isEqualTo(EncoderPreset.ENCODER_PRESET_FASTER);
 
-    var later = startedSession();
-    assertThat(worker.nextJobs(later.getVariants().size()))
-        .extracting(job -> job.getVariant().getEncoderPreset())
-        .containsOnly(EncoderPreset.ENCODER_PRESET_MEDIUM);
+    lifecycle.startVariantOnDemand(running.getSessionId(), "720p", "720p/segment2.m4s");
+
+    var later = worker.nextJobs(1).getFirst();
+    assertThat(later.getVariant().getVariantLabel()).isEqualTo("720p");
+    assertThat(later.getVariant().getEncoderPreset())
+        .isEqualTo(EncoderPreset.ENCODER_PRESET_MEDIUM);
   }
 
   private StreamSession startedSession() {
@@ -141,14 +140,7 @@ class EncoderPresetDispatchIT extends AbstractIntegrationTest {
             .transcodeDecision(fullTranscodeDecision("h264"))
             .build();
     registry.save(session);
-    lifecycle.startAll(session, 0);
+    lifecycle.startFirstListedVariant(session);
     return session;
-  }
-
-  private static VariantJob jobFor(List<VariantJob> jobs, String variantLabel) {
-    return jobs.stream()
-        .filter(job -> job.getVariant().getVariantLabel().equals(variantLabel))
-        .findFirst()
-        .orElseThrow();
   }
 }
