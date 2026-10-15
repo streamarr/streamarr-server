@@ -93,36 +93,15 @@ public final class AdaptiveAdmission implements AutoCloseable {
   public <S> List<Throwable> forkAdmittedTasks(
       @NonNull Iterator<S> subjects, @NonNull AdmittedTask<S> task, @NonNull ThreadFactory threads)
       throws InterruptedException {
-    var ended = new AtomicBoolean();
-    var forked = new ArrayList<Future<?>>();
     try (var executor = Executors.newThreadPerTaskExecutor(threads)) {
+      var loop = new AdmissionLoop<>(subjects, task, executor);
       try {
-        forkWhileAdmitted(subjects, task, executor, ended, forked);
-        return joinInAdmissionOrder(forked);
+        loop.forkWhileAdmitted();
+        return loop.joinInAdmissionOrder();
       } catch (InterruptedException interrupted) {
         executor.shutdownNow();
         throw interrupted;
       }
-    }
-  }
-
-  private <S> void forkWhileAdmitted(
-      Iterator<S> subjects,
-      AdmittedTask<S> task,
-      ExecutorService executor,
-      AtomicBoolean ended,
-      List<Future<?>> forked)
-      throws InterruptedException {
-    while (!ended.get()) {
-      var admission = acquire();
-      var subject = nextSubject(subjects, admission, ended);
-      if (subject.isEmpty()) {
-        return;
-      }
-
-      listener.onAdmitted();
-      var value = subject.get();
-      forked.add(executor.submit(() -> runAdmitted(admission, task, value, ended)));
     }
   }
 
@@ -138,44 +117,6 @@ public final class AdaptiveAdmission implements AutoCloseable {
         throw new InterruptedException("Interrupted while waiting for an admission");
       }
     }
-  }
-
-  // Returns the admission unused when admission ended or no subject follows.
-  private static <S> Optional<S> nextSubject(
-      Iterator<S> subjects, Admission admission, AtomicBoolean ended) {
-    try {
-      if (ended.get() || !subjects.hasNext()) {
-        admission.returnUnused();
-        return Optional.empty();
-      }
-
-      return Optional.of(subjects.next());
-    } catch (RuntimeException unreadable) {
-      admission.returnUnused();
-      throw unreadable;
-    }
-  }
-
-  private <S> Void runAdmitted(
-      Admission admission, AdmittedTask<S> task, S subject, AtomicBoolean ended) throws Exception {
-    var retried = new AtomicBoolean();
-    AdmittedTaskReport report;
-    try {
-      report =
-          ScopedValue.where(AdmittedTaskRetries.RETRIED, retried).call(() -> task.run(subject));
-    } catch (Exception | Error failure) {
-      // Admission ends before the admission returns, so the walker that the return wakes stops.
-      ended.set(true);
-      report(admission, failureReport(failure, retried));
-      throw failure;
-    }
-
-    if (retried.get()) {
-      report = AdmittedTaskReport.DROP;
-    }
-
-    report(admission, report);
-    return null;
   }
 
   private static AdmittedTaskReport failureReport(Throwable failure, AtomicBoolean retried) {
@@ -196,20 +137,6 @@ public final class AdaptiveAdmission implements AutoCloseable {
     listener.onReported(report);
   }
 
-  private static List<Throwable> joinInAdmissionOrder(List<Future<?>> forked)
-      throws InterruptedException {
-    var failures = new ArrayList<Throwable>();
-    for (var task : forked) {
-      try {
-        task.get();
-      } catch (ExecutionException failure) {
-        failures.add(failure.getCause());
-      }
-    }
-
-    return List.copyOf(failures);
-  }
-
   /** Returns the current limit. */
   public int limit() {
     return limiter.getLimit();
@@ -225,6 +152,86 @@ public final class AdaptiveAdmission implements AutoCloseable {
   public void close() {
     if (closed.compareAndSet(false, true)) {
       listener.onClosed();
+    }
+  }
+
+  /** The subjects, task and forked tasks of one call to {@link #forkAdmittedTasks}. */
+  private final class AdmissionLoop<S> {
+
+    private final Iterator<S> subjects;
+    private final AdmittedTask<S> task;
+    private final ExecutorService executor;
+    private final AtomicBoolean ended = new AtomicBoolean();
+    private final List<Future<?>> forked = new ArrayList<>();
+
+    private AdmissionLoop(Iterator<S> subjects, AdmittedTask<S> task, ExecutorService executor) {
+      this.subjects = subjects;
+      this.task = task;
+      this.executor = executor;
+    }
+
+    private void forkWhileAdmitted() throws InterruptedException {
+      while (!ended.get()) {
+        var admission = acquire();
+        var subject = nextSubject(admission);
+        if (subject.isEmpty()) {
+          return;
+        }
+
+        listener.onAdmitted();
+        var value = subject.get();
+        forked.add(executor.submit(() -> runAdmitted(admission, value)));
+      }
+    }
+
+    // Returns the admission unused when admission ended or no subject follows.
+    private Optional<S> nextSubject(Admission admission) {
+      try {
+        if (ended.get() || !subjects.hasNext()) {
+          admission.returnUnused();
+          return Optional.empty();
+        }
+
+        return Optional.of(subjects.next());
+      } catch (RuntimeException unreadable) {
+        admission.returnUnused();
+        throw unreadable;
+      }
+    }
+
+    private Void runAdmitted(Admission admission, S subject) throws Exception {
+      var retried = new AtomicBoolean();
+      AdmittedTaskReport report;
+      try {
+        report =
+            ScopedValue.where(AdmittedTaskRetries.RETRIED, retried).call(() -> task.run(subject));
+      } catch (Exception | Error failure) {
+        // An Error returns its admission too, or the walker could wait for it forever. Admission
+        // ends before the admission returns, so the walker that the return wakes stops.
+        ended.set(true);
+        report(admission, failureReport(failure, retried));
+        throw failure;
+      }
+
+      if (retried.get()) {
+        report = AdmittedTaskReport.DROP;
+      }
+
+      report(admission, report);
+      return null;
+    }
+
+    private List<Throwable> joinInAdmissionOrder() throws InterruptedException {
+      var failures = new ArrayList<Throwable>();
+      for (var forkedTask : forked) {
+        try {
+          forkedTask.get();
+        } catch (ExecutionException failure) {
+          failures.add(failure.getCause());
+        }
+      }
+
+      return List.copyOf(failures);
     }
   }
 
