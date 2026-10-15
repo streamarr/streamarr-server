@@ -3,19 +3,26 @@ package com.streamarr.server.transcode.contract;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.protobuf.Descriptors.Descriptor;
+import com.streamarr.transcode.v1.CompatibleBase;
+import com.streamarr.transcode.v1.DolbyVisionAbsent;
 import com.streamarr.transcode.v1.EncoderKind;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
+import com.streamarr.transcode.v1.Fraction;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.MediaSourceRef;
+import com.streamarr.transcode.v1.Presence;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.StartVariantCommand;
+import com.streamarr.transcode.v1.TranscodeDecision;
+import com.streamarr.transcode.v1.TranscodeExecution;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.VideoDecision;
+import com.streamarr.transcode.v1.VideoDynamicRange;
 import com.streamarr.transcode.v1.VideoEncoderBackend;
 import com.streamarr.transcode.v1.VideoMode;
 import com.streamarr.transcode.v1.WorkerCapabilities;
@@ -211,6 +218,87 @@ class TranscodeWorkerContractTest {
     assertThat(parsedCopy.getMode()).isEqualTo(VideoMode.VIDEO_MODE_COPY);
     assertThat(parsedEncode).isNotEqualTo(parsedCopy);
     assertThat(parsedCopy.hasLevel()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry the source and planned output dynamic range when an encode converts an HDR source to SDR")
+  void shouldCarrySourceAndPlannedOutputDynamicRangeWhenEncodeConvertsHdrSourceToSdr()
+      throws Exception {
+    var hdr10 =
+        VideoDynamicRange.newBuilder()
+            .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
+            .setHdr10Plus(Presence.PRESENCE_UNSPECIFIED)
+            .build();
+    var sdr =
+        VideoDynamicRange.newBuilder()
+            .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
+            .setHdr10Plus(Presence.PRESENCE_ABSENT)
+            .setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance())
+            .build();
+    var encode =
+        VideoDecision.newBuilder()
+            .setMode(VideoMode.VIDEO_MODE_ENCODE)
+            .setCodecFamily(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264)
+            .setCodecString("avc1.64002A")
+            .setSourceDynamicRange(hdr10)
+            .setOutputDynamicRange(sdr)
+            .build();
+
+    var decoded = VideoDecision.parseFrom(encode.toByteArray());
+
+    assertThat(decoded.getSourceDynamicRange().getCompatibleBase())
+        .isEqualTo(CompatibleBase.COMPATIBLE_BASE_PQ);
+    assertThat(decoded.getSourceDynamicRange().getDolbyVisionCase())
+        .isEqualTo(VideoDynamicRange.DolbyVisionCase.DOLBYVISION_NOT_SET);
+    assertThat(decoded.getOutputDynamicRange()).isEqualTo(sdr);
+  }
+
+  @Test
+  @DisplayName("Should leave the planned output dynamic range absent when the job copies the video")
+  void shouldLeavePlannedOutputDynamicRangeAbsentWhenJobCopiesVideo() throws Exception {
+    var copy =
+        VideoDecision.newBuilder()
+            .setMode(VideoMode.VIDEO_MODE_COPY)
+            .setCodecFamily(VideoCodecFamily.VIDEO_CODEC_FAMILY_HEVC)
+            .setCodecString("hvc1.2.4.L153.B0")
+            .setSourceDynamicRange(VideoDynamicRange.getDefaultInstance())
+            .build();
+
+    var decoded = VideoDecision.parseFrom(copy.toByteArray());
+
+    assertThat(decoded.hasSourceDynamicRange()).isTrue();
+    assertThat(decoded.getSourceDynamicRange().getCompatibleBase())
+        .isEqualTo(CompatibleBase.COMPATIBLE_BASE_UNSPECIFIED);
+    assertThat(decoded.hasOutputDynamicRange()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should name the chosen video stream and the exact output frame rate when a job encodes the video")
+  void shouldNameChosenVideoStreamAndExactOutputFrameRateWhenJobEncodesVideo() throws Exception {
+    var job =
+        VariantJob.newBuilder()
+            .setDecision(
+                TranscodeDecision.newBuilder()
+                    .setVideo(
+                        VideoDecision.newBuilder()
+                            .setMode(VideoMode.VIDEO_MODE_ENCODE)
+                            .setStreamIndex(1)))
+            .setExecution(
+                TranscodeExecution.newBuilder()
+                    .setOutputFrameRate(
+                        Fraction.newBuilder().setNumerator(24_000).setDenominator(1_001)))
+            .build();
+
+    var decoded = VariantJob.parseFrom(job.toByteArray());
+
+    assertThat(decoded.getDecision().getVideo().hasStreamIndex()).isTrue();
+    assertThat(decoded.getDecision().getVideo().getStreamIndex()).isEqualTo(1);
+    assertThat(decoded.getExecution().getOutputFrameRate().getNumerator()).isEqualTo(24_000);
+    assertThat(decoded.getExecution().getOutputFrameRate().getDenominator()).isEqualTo(1_001);
+    assertThat(VideoDecision.getDefaultInstance().hasStreamIndex()).isFalse();
+    assertThat(TranscodeExecution.getDefaultInstance().hasOutputFrameRate()).isFalse();
   }
 
   @Test

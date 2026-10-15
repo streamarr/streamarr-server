@@ -223,6 +223,14 @@ message VideoDynamicRange {
 // tier or level. A copy's codec_string is the one that the probe computed for the source stream.
 // The worker fails the job attempt with JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH when the codec string
 // of an initialization segment that it produces differs from codec_string.
+//
+// The worker chooses how to convert the picture from source_dynamic_range and
+// output_dynamic_range, as ADR 0013 decides, and never chooses a conversion on its own. The worker
+// fails the job attempt with JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION in these cases:
+// - an encode lacks source_dynamic_range or output_dynamic_range;
+// - output_dynamic_range holds an UNSPECIFIED compatible base, an UNSPECIFIED hdr10_plus, or no
+//   Dolby Vision arm;
+// - a copy carries output_dynamic_range.
 message VideoDecision {
   VideoMode mode = 6;
   VideoCodecFamily codec_family = 1;
@@ -232,6 +240,14 @@ message VideoDecision {
   optional uint32 level = 4;
   // The RFC 6381 codec string that the variant's playlist advertises, for example avc1.64002A.
   string codec_string = 5;
+  // The dynamic range of the chosen video stream, as the probe stored it.
+  VideoDynamicRange source_dynamic_range = 7;
+  // The dynamic range of the planned output. Only an encode carries it. A copy carries none until
+  // streamarr/streamarr-server#396 settles the planned output of a copy.
+  VideoDynamicRange output_dynamic_range = 8;
+  // The ProbeStreamInfo.index of the chosen video stream: its index in the container. The worker
+  // maps that stream. Until the server sets the field, the worker maps the first video stream.
+  optional uint32 stream_index = 9;
 }
 
 message TranscodeDecision {
@@ -296,6 +312,11 @@ message TranscodeExecution {
   // copies video, the server sends the decode time of the first source keyframe of the attempt's
   // first media segment. This version of the server sets the field for no other attempt.
   google.protobuf.Duration seek_position = 6;
+  // The output frame rate that the probe stored for the chosen video stream. The worker passes the
+  // exact fraction to FFmpeg and never converts it to a decimal. A job that copies the video
+  // carries none. output_frame_rate replaces framerate once the server sets it. When a job carries
+  // both, the worker uses output_frame_rate.
+  Fraction output_frame_rate = 7;
 }
 
 message VariantJob {
