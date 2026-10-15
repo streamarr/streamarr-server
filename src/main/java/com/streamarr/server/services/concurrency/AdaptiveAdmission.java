@@ -105,17 +105,21 @@ public final class AdaptiveAdmission implements AutoCloseable {
     }
   }
 
+  // BlockingLimiter grants a free admission without checking the interrupt. An interrupted or
+  // timed-out wait returns nothing, with the interrupt restored, so each pass checks it first.
   private Admission acquire() throws InterruptedException {
     while (true) {
+      throwIfInterrupted();
       var granted = blockingLimiter.acquire(null);
       if (granted.isPresent()) {
         return new Admission(granted.get());
       }
+    }
+  }
 
-      // BlockingLimiter restores the interrupt flag and returns nothing when it is interrupted.
-      if (Thread.interrupted()) {
-        throw new InterruptedException("Interrupted while waiting for an admission");
-      }
+  private static void throwIfInterrupted() throws InterruptedException {
+    if (Thread.interrupted()) {
+      throw new InterruptedException("Interrupted while admitting tasks");
     }
   }
 
@@ -224,6 +228,8 @@ public final class AdaptiveAdmission implements AutoCloseable {
     private List<Throwable> joinInAdmissionOrder() throws InterruptedException {
       var failures = new ArrayList<Throwable>();
       for (var forkedTask : forked) {
+        // Future.get returns a finished task's result without checking the interrupt.
+        throwIfInterrupted();
         try {
           forkedTask.get();
         } catch (ExecutionException failure) {

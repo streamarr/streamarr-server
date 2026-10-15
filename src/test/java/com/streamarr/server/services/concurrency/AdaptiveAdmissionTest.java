@@ -410,6 +410,88 @@ class AdaptiveAdmissionTest {
   }
 
   @Test
+  @DisplayName(
+      "Should admit no further task when the walking thread is interrupted with admissions free")
+  void shouldAdmitNoFurtherTaskWhenTheWalkingThreadIsInterruptedWithAdmissionsFree()
+      throws Exception {
+    var admission = admissionWith(FixedLimit.of(10));
+    var pulled = new AtomicInteger();
+    Iterator<Integer> subjects =
+        new Iterator<>() {
+          @Override
+          public boolean hasNext() {
+            return pulled.get() < 3;
+          }
+
+          @Override
+          public Integer next() {
+            Thread.currentThread().interrupt();
+            return pulled.getAndIncrement();
+          }
+        };
+
+    try (var walk =
+        BoundedTask.start(
+            () ->
+                admission.forkAdmittedTasks(subjects, _ -> AdmittedTaskReport.LATENCY, THREADS))) {
+      assertThatThrownBy(() -> walk.await(BOUND)).isInstanceOf(InterruptedException.class);
+    }
+
+    assertThat(pulled).hasValue(1);
+    assertThat(admission.inFlight()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should rethrow the interrupt when the walking thread is interrupted after its tasks finished")
+  void shouldRethrowTheInterruptWhenTheWalkingThreadIsInterruptedAfterItsTasksFinished()
+      throws Exception {
+    var admission = admissionWith(FixedLimit.of(3));
+    var tasksFinished = new CountDownLatch(2);
+    ThreadFactory threadsThatSignalTheirEnd =
+        runnable ->
+            THREADS.newThread(
+                () -> {
+                  try {
+                    runnable.run();
+                  } finally {
+                    tasksFinished.countDown();
+                  }
+                });
+    var pulled = new AtomicInteger();
+    Iterator<Integer> subjects =
+        new Iterator<>() {
+          @Override
+          public boolean hasNext() {
+            if (pulled.get() < 2) {
+              return true;
+            }
+
+            awaitWithinBound(tasksFinished);
+            Thread.currentThread().interrupt();
+            return false;
+          }
+
+          @Override
+          public Integer next() {
+            return pulled.getAndIncrement();
+          }
+        };
+
+    try (var walk =
+        BoundedTask.start(
+            () ->
+                admission.forkAdmittedTasks(
+                    subjects, _ -> AdmittedTaskReport.LATENCY, threadsThatSignalTheirEnd))) {
+      assertThatThrownBy(() -> walk.await(BOUND)).isInstanceOf(InterruptedException.class);
+    }
+
+    assertThat(listener.reports())
+        .containsExactly(AdmittedTaskReport.LATENCY, AdmittedTaskReport.LATENCY);
+    assertThat(admission.inFlight()).isZero();
+  }
+
+  @Test
   @DisplayName("Should tell the listener once when the admission closes")
   void shouldTellTheListenerOnceWhenTheAdmissionCloses() {
     var admission = admissionWith(FixedLimit.of(1));
@@ -462,6 +544,15 @@ class AdaptiveAdmissionTest {
     assertThatNullPointerException()
         .isThrownBy(() -> admission.forkAdmittedTasks(subjects, task, null))
         .withMessageContaining("threads");
+  }
+
+  private static void awaitWithinBound(CountDownLatch latch) {
+    try {
+      assertThat(latch.await(BOUND.toNanos(), TimeUnit.NANOSECONDS)).isTrue();
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+      throw new AssertionError(interrupted);
+    }
   }
 
   private AdaptiveAdmission learnedAdmission() {
