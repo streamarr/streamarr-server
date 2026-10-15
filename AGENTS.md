@@ -107,7 +107,7 @@ Choose the simplest mechanism that fits the operation:
   express the required atomic operation through repository contracts. See [ADR 0031](https://github.com/streamarr/streamarr-adr/blob/main/adr/0031-transaction-scoped-artwork-replacement-locking.adoc).
 - **Outbound HTTP throttling/retry**: use the client's native interceptors (Methanol `RetryInterceptor` + `RateLimitingInterceptor`) — never a hand-rolled `Semaphore` + sleep loop. Never hold a permit, lock, or database connection across a retry backoff sleep; that pattern caused cascading Hikari pool exhaustion (four fix PRs in ten days).
 - **Virtual threads are the async model**: virtual-thread executors in try-with-resources, plus `spring.threads.virtual.enabled: true`. System work takes them from `SystemWork` (next rule); request code uses `Executors.newVirtualThreadPerTaskExecutor()`. No `@Async`, no reactive/actor frameworks.
-- **System work runs as the System actor**: scans, refreshes, the file watcher, artwork and scheduled tasks record the System actor in audit columns. A thread does not inherit that binding, so the root `services` package, `services.library` and `config`, where system work runs, take every thread from `SystemWork` (`newExecutorRunningAsSystemActor`, `newThreadFactoryRunningAsSystemActor`, `startThreadRunningAsSystemActor`) (`ArchitectureTest`). Request code in other packages starts ordinary threads. Every db-scheduler built from the `DbSchedulerCustomizer` bean already runs as the System actor.
+- **System work runs as the System actor**: scans, refreshes, the file watcher, artwork and scheduled tasks record the System actor in audit columns. A thread does not inherit that binding, so the root `services` package, `services.library` and `config`, where system work runs, take every thread from `SystemWork` (`newExecutorRunningAsSystemActor`, `newThreadFactoryRunningAsSystemActor`, `startThreadRunningAsSystemActor`) (`ArchitectureTest`). Request code in other packages starts ordinary threads. Every db-scheduler built from the `DbSchedulerCustomizer` bean already runs as the System actor. Start system work outside any transaction, after-commit callbacks included: `runAsSystemActor` throws `SystemWorkInsideTransactionException` inside one.
 - **Async boundary policy**: library-mutating GraphQL mutations (scan/refresh) are async and return immediately. Apply this uniformly — don't flip individual mutations between sync and async.
 
 **Anti-pattern:** reading a row, checking a condition in Java, then writing back is a
@@ -232,8 +232,12 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 
 ## Persistence (JPA + jOOQ Hybrid)
 - Spring Data JPA repositories own CRUD; complex or conflict-handling queries use jOOQ via the Spring Data fragment convention: `{Repository}Custom` interface + `{Repository}CustomImpl` class with an injected `DSLContext` — Spring Data auto-discovers the implementation by naming convention
-- **Audit columns**: the `fill_audit_columns` trigger (`V079`) fills all four from the actor the
-  transaction names and rejects a write without one, so never set them in code
+- **Audit columns**: the `fill_audit_columns` trigger (`V079`) fills `created_by`, `created_on`,
+  `last_modified_by` and `last_modified_on` from the actor each read-write Spring transaction names
+  as it begins, and rejects a write when none is named. Leave those columns to the trigger and make
+  every audited write inside a read-write transaction. A migration that adds an audited table
+  attaches the trigger (`AuditColumnCatalogIT`); one that writes audited rows first runs
+  `set_config('streamarr.actor_id', '<System actor id>', true)`
 - **No `@Query` JPQL**: every repository query is either a derived method (`findBySeriesIdOrderBySeasonNumber`) or jOOQ on the `{Repository}Custom` fragment. JPQL strings break silently on entity refactors; derived signatures are validated at startup and jOOQ at compile time
 - **Reads**: jOOQ builds the SQL, but execute through `JooqQueryHelper.nativeQuery(…)` (JPA `EntityManager` native query) so results map to JPA entities — don't `context.fetch*()` for entity reads
 - **Writes**: execute jOOQ DSL directly (`context.update(…).returning()`, `INSERT … ON CONFLICT`) and map records to entities manually
