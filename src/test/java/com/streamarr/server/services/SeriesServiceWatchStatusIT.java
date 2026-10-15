@@ -80,8 +80,8 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
               .build());
     }
 
-    // Watched-With-Residual-Progress Series: all episodes watched AND one has session_progress.
-    // Exercises the WATCHED rule precedence over IN_PROGRESS.
+    // Watched-With-Residual-Progress Series: all episodes watched AND one has session_progress
+    // from before its completion. Progress older than the completion does not count.
     var watchedWithProgress = createSeriesWithEpisodes("Watched With Residual Progress", 2);
     for (var episodeId : watchedWithProgress.episodeIds()) {
       watchHistoryRepository.saveAndFlush(
@@ -101,6 +101,10 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
             .percentComplete(2.0)
             .durationSeconds(3600)
             .build());
+    auditColumns.overwriteLastModifiedOn(
+        SESSION_PROGRESS,
+        SESSION_PROGRESS.MEDIA_FILE_ID.eq(watchedWithProgress.firstEpisodeFileId()),
+        Instant.parse("2026-01-01T00:00:00Z"));
 
     // In-Progress Series (via session_progress): one episode has progress, none in watch_history
     var sessionInProgress = createSeriesWithEpisodes("Session In Progress Series", 2);

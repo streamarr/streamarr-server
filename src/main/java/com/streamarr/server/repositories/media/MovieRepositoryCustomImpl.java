@@ -9,7 +9,6 @@ import static com.streamarr.server.jooq.generated.tables.MovieGenre.MOVIE_GENRE;
 import static com.streamarr.server.jooq.generated.tables.MoviePerson.MOVIE_PERSON;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.noCondition;
-import static org.jooq.impl.DSL.not;
 
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.streaming.CollectableScope;
@@ -223,14 +222,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
 
     var profileId = requireProfileId(filter.getProfileId());
 
-    var isWatched = WatchStateConditions.hasCompletion(profileId, BASE_COLLECTABLE.ID);
-    var hasProgress = WatchStateConditions.hasProgress(profileId, BASE_COLLECTABLE.ID);
-
-    return switch (watchStatus) {
-      case WATCHED -> isWatched;
-      case IN_PROGRESS -> not(isWatched).and(hasProgress);
-      case UNWATCHED -> not(isWatched).and(not(hasProgress));
-    };
+    return WatchStateConditions.watchStatusIs(profileId, BASE_COLLECTABLE.ID, watchStatus);
   }
 
   private static Field<OffsetDateTime> lastWatchedAt(MediaFilter filter) {

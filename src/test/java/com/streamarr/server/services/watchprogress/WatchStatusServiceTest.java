@@ -10,6 +10,7 @@ import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.streaming.CollectableScope;
+import com.streamarr.server.domain.streaming.WatchHistory;
 import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
@@ -44,6 +45,8 @@ class WatchStatusServiceTest {
   private WatchStatusService service;
 
   private static final UUID PROFILE_ID = UUID.randomUUID();
+  private static final Instant EARLIER = Instant.parse("2026-01-01T00:00:00Z");
+  private static final Instant LATER = Instant.parse("2026-02-01T00:00:00Z");
 
   @BeforeEach
   void setUp() {
@@ -124,19 +127,58 @@ class WatchStatusServiceTest {
     }
 
     @Test
-    @DisplayName("Should keep watched status during re-watch with active session progress")
-    void shouldKeepWatchedStatusDuringReWatchWithActiveSessionProgress() {
+    @DisplayName("Should show a rewatch in progress when progress is newer than the completion")
+    void shouldShowRewatchInProgressWhenProgressIsNewerThanTheCompletion() {
       var movie = buildMovie();
       var mf = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
+      saveCompletion(movie.getId(), EARLIER);
+      saveProgress(mf.getId(), 1800, LATER);
 
-      service.markWatched(PROFILE_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, 7200);
+      assertThat(service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId())))
+          .containsEntry(movie.getId(), WatchStatus.IN_PROGRESS);
+      assertThat(service.getProgressForDirectMedia(PROFILE_ID, List.of(movie.getId())))
+          .extractingByKey(movie.getId())
+          .extracting(WatchProgressDto::positionSeconds)
+          .isEqualTo(1800);
+    }
 
-      // Simulate active re-watch session
-      sessionProgressRepository.save(
-          progressBuilder(PROFILE_ID, mf.getId()).positionSeconds(1800).build());
+    @Test
+    @DisplayName("Should show the movie watched without progress when the completion is newer")
+    void shouldShowMovieWatchedWithoutProgressWhenTheCompletionIsNewer() {
+      var movie = buildMovie();
+      var mf = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
+      saveProgress(mf.getId(), 1800, EARLIER);
+      saveCompletion(movie.getId(), LATER);
 
-      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId()));
-      assertThat(result).containsEntry(movie.getId(), WatchStatus.WATCHED);
+      assertThat(service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId())))
+          .containsEntry(movie.getId(), WatchStatus.WATCHED);
+      assertThat(service.getProgressForDirectMedia(PROFILE_ID, List.of(movie.getId())))
+          .doesNotContainKey(movie.getId());
+    }
+
+    @Test
+    @DisplayName("Should show the movie watched when progress and completion share one time")
+    void shouldShowMovieWatchedWhenProgressAndCompletionShareOneTime() {
+      var movie = buildMovie();
+      var mf = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
+      saveProgress(mf.getId(), 1800, EARLIER);
+      saveCompletion(movie.getId(), EARLIER);
+
+      assertThat(service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId())))
+          .containsEntry(movie.getId(), WatchStatus.WATCHED);
+    }
+
+    @Test
+    @DisplayName("Should count older progress again when the newer completion is dismissed")
+    void shouldCountOlderProgressAgainWhenTheNewerCompletionIsDismissed() {
+      var movie = buildMovie();
+      var mf = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
+      saveProgress(mf.getId(), 1800, EARLIER);
+      var completion = saveCompletion(movie.getId(), LATER);
+      completion.setDismissedAt(LATER);
+
+      assertThat(service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId())))
+          .containsEntry(movie.getId(), WatchStatus.IN_PROGRESS);
     }
   }
 
@@ -475,22 +517,54 @@ class WatchStatusServiceTest {
     }
 
     @Test
-    @DisplayName("Should prefer most recent session when duplicate progress rows share media file")
-    void shouldPreferMostRecentSessionWhenDuplicateProgressRowsShareMediaFile() {
+    @DisplayName(
+        "Should resume at the latest session with a position when the newest session has none")
+    void shouldResumeAtLatestSessionWithAPositionWhenTheNewestSessionHasNone() {
       var movie = buildMovie();
       var file = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
+      saveProgress(file.getId(), 900, EARLIER);
+      saveProgress(file.getId(), 0, LATER);
 
-      var stale =
-          sessionProgressRepository.save(
-              progressBuilder(PROFILE_ID, file.getId()).positionSeconds(900).build());
-      AuditFieldSetter.setLastModifiedOn(stale, Instant.parse("2026-01-01T00:00:00Z"));
-      var latest =
-          sessionProgressRepository.save(
-              progressBuilder(PROFILE_ID, file.getId()).positionSeconds(0).build());
-      AuditFieldSetter.setLastModifiedOn(latest, Instant.parse("2026-02-01T00:00:00Z"));
+      assertThat(service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId())))
+          .containsEntry(movie.getId(), WatchStatus.IN_PROGRESS);
+      assertThat(service.getProgressForDirectMedia(PROFILE_ID, List.of(movie.getId())))
+          .extractingByKey(movie.getId())
+          .extracting(WatchProgressDto::positionSeconds)
+          .isEqualTo(900);
+    }
 
-      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId()));
-      assertThat(result).containsEntry(movie.getId(), WatchStatus.UNWATCHED);
+    @Test
+    @DisplayName("Should show the season in progress when a watched episode is being rewatched")
+    void shouldShowSeasonInProgressWhenAWatchedEpisodeIsBeingRewatched() {
+      var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
+      var episode =
+          episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+      var file = mediaFileRepository.save(buildMatchedMediaFile(episode.getId()));
+      saveCompletion(episode.getId(), EARLIER);
+      saveProgress(file.getId(), 600, LATER);
+
+      assertThat(service.getWatchStatusForSeasons(PROFILE_ID, List.of(season.getId())))
+          .containsEntry(season.getId(), WatchStatus.IN_PROGRESS);
+      assertThat(service.getAggregateProgressForSeasons(PROFILE_ID, List.of(season.getId())))
+          .extractingByKey(season.getId())
+          .extracting(WatchProgressDto::positionSeconds)
+          .isEqualTo(600);
+    }
+
+    @Test
+    @DisplayName("Should show the season watched without progress when completions are newer")
+    void shouldShowSeasonWatchedWithoutProgressWhenCompletionsAreNewer() {
+      var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
+      var episode =
+          episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+      var file = mediaFileRepository.save(buildMatchedMediaFile(episode.getId()));
+      saveProgress(file.getId(), 600, EARLIER);
+      saveCompletion(episode.getId(), LATER);
+
+      assertThat(service.getWatchStatusForSeasons(PROFILE_ID, List.of(season.getId())))
+          .containsEntry(season.getId(), WatchStatus.WATCHED);
+      assertThat(service.getAggregateProgressForSeasons(PROFILE_ID, List.of(season.getId())))
+          .doesNotContainKey(season.getId());
     }
   }
 
@@ -571,5 +645,22 @@ class WatchStatusServiceTest {
           .containsEntry(series1.getId(), WatchStatus.IN_PROGRESS)
           .containsEntry(series2.getId(), WatchStatus.UNWATCHED);
     }
+  }
+
+  private void saveProgress(UUID mediaFileId, int positionSeconds, Instant lastModifiedOn) {
+    var progress =
+        sessionProgressRepository.save(
+            progressBuilder(PROFILE_ID, mediaFileId).positionSeconds(positionSeconds).build());
+    AuditFieldSetter.setLastModifiedOn(progress, lastModifiedOn);
+  }
+
+  private WatchHistory saveCompletion(UUID collectableId, Instant watchedAt) {
+    return watchHistoryRepository.save(
+        WatchHistory.builder()
+            .profileId(PROFILE_ID)
+            .collectableId(collectableId)
+            .watchedAt(watchedAt)
+            .durationSeconds(7200)
+            .build());
   }
 }

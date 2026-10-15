@@ -3,7 +3,6 @@ package com.streamarr.server.repositories.streaming;
 import static com.streamarr.server.jooq.generated.tables.MediaFile.MEDIA_FILE;
 import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
 import static org.jooq.impl.DSL.max;
-import static org.jooq.impl.DSL.not;
 
 import com.streamarr.server.repositories.WatchStateConditions;
 import java.util.List;
@@ -23,8 +22,6 @@ public class ContinueWatchingRepositoryImpl implements ContinueWatchingRepositor
   public List<UUID> findCollectableIds(UUID profileId, int limit) {
     var lastActivity = max(SESSION_PROGRESS.LAST_MODIFIED_ON);
 
-    var isWatched = WatchStateConditions.hasCompletion(profileId, MEDIA_FILE.MEDIA_ID);
-
     return dsl.select(MEDIA_FILE.MEDIA_ID, lastActivity)
         .from(SESSION_PROGRESS)
         .innerJoin(MEDIA_FILE)
@@ -34,7 +31,7 @@ public class ContinueWatchingRepositoryImpl implements ContinueWatchingRepositor
                 .PROFILE_ID
                 .eq(profileId)
                 .and(SESSION_PROGRESS.POSITION_SECONDS.greaterThan(0))
-                .and(not(isWatched)))
+                .and(WatchStateConditions.hasResumePosition(profileId, MEDIA_FILE.MEDIA_ID)))
         .groupBy(MEDIA_FILE.MEDIA_ID)
         .orderBy(lastActivity.sort(SortOrder.DESC))
         .limit(limit)

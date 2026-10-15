@@ -1,5 +1,7 @@
 package com.streamarr.server.repositories.media;
 
+import static com.streamarr.server.domain.streaming.WatchStatus.UNWATCHED;
+import static com.streamarr.server.domain.streaming.WatchStatus.WATCHED;
 import static com.streamarr.server.jooq.generated.tables.BaseCollectable.BASE_COLLECTABLE;
 import static com.streamarr.server.jooq.generated.tables.Episode.EPISODE;
 import static com.streamarr.server.jooq.generated.tables.ExternalIdentifier.EXTERNAL_IDENTIFIER;
@@ -17,6 +19,7 @@ import static org.jooq.impl.DSL.select;
 
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.CollectableScope;
+import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.jooq.generated.enums.ExternalSourceType;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import com.streamarr.server.repositories.LastWatchedExpression;
@@ -228,13 +231,13 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
 
     var profileId = requireProfileId(filter.getProfileId());
 
-    var fullyWatched = seriesHasEpisodes().and(not(seriesHasUnwatchedEpisode(profileId)));
-    var hasAnyWatchActivity = anyEpisodeWatched(profileId).or(anyEpisodeHasProgress(profileId));
+    var fullyWatched = seriesHasEpisodes().and(not(anyEpisodeOfSeriesIsNot(profileId, WATCHED)));
+    var fullyUnwatched = not(anyEpisodeOfSeriesIsNot(profileId, UNWATCHED));
 
     return switch (watchStatus) {
       case WATCHED -> fullyWatched;
-      case IN_PROGRESS -> hasAnyWatchActivity.and(not(fullyWatched));
-      case UNWATCHED -> not(hasAnyWatchActivity);
+      case IN_PROGRESS -> not(fullyWatched).and(not(fullyUnwatched));
+      case UNWATCHED -> fullyUnwatched;
     };
   }
 
@@ -242,16 +245,9 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
     return anyEpisodeOfSeries(noCondition());
   }
 
-  private static Condition seriesHasUnwatchedEpisode(UUID profileId) {
-    return anyEpisodeOfSeries(not(WatchStateConditions.hasCompletion(profileId, EPISODE.ID)));
-  }
-
-  private static Condition anyEpisodeWatched(UUID profileId) {
-    return anyEpisodeOfSeries(WatchStateConditions.hasCompletion(profileId, EPISODE.ID));
-  }
-
-  private static Condition anyEpisodeHasProgress(UUID profileId) {
-    return anyEpisodeOfSeries(WatchStateConditions.hasProgress(profileId, EPISODE.ID));
+  private static Condition anyEpisodeOfSeriesIsNot(UUID profileId, WatchStatus status) {
+    return anyEpisodeOfSeries(
+        not(WatchStateConditions.watchStatusIs(profileId, EPISODE.ID, status)));
   }
 
   private static Condition anyEpisodeOfSeries(Condition episodeCondition) {

@@ -17,15 +17,16 @@ import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
+import java.util.function.BinaryOperator;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -44,18 +45,6 @@ public class WatchStatusService {
   private final SeasonRepository seasonRepository;
   private final SeriesRepository seriesRepository;
   private final ApplicationEventPublisher eventPublisher;
-
-  private Map<UUID, SessionProgress> getProgressForMediaFiles(
-      UUID profileId, Collection<UUID> mediaFileIds) {
-    return sessionProgressRepository
-        .findByProfileIdAndMediaFileIdIn(profileId, mediaFileIds)
-        .stream()
-        .collect(
-            Collectors.toMap(
-                SessionProgress::getMediaFileId,
-                sp -> sp,
-                (a, b) -> a.getLastModifiedOn().isAfter(b.getLastModifiedOn()) ? a : b));
-  }
 
   @Transactional
   public Outcome<BaseCollectable<?>, MarkWatchedRejection> markWatched(
@@ -142,17 +131,25 @@ public class WatchStatusService {
 
   public Map<UUID, WatchStatus> getWatchStatusForDirectMedia(
       UUID profileId, Collection<UUID> collectableIds) {
-    var data = fetchCollectableMediaData(profileId, collectableIds);
+    var states = fetchItemWatchStates(profileId, collectableIds);
 
     var result = new HashMap<UUID, WatchStatus>();
     for (var collectableId : collectableIds) {
-      if (data.watchedIds().contains(collectableId)) {
-        result.put(collectableId, WatchStatus.WATCHED);
-        continue;
-      }
-      var fileIds = collectMediaFileIds(List.of(collectableId), data);
-      result.put(collectableId, deriveProgressStatus(fileIds, data.progressMap()));
+      result.put(collectableId, states.get(collectableId).status());
     }
+    return result;
+  }
+
+  public Map<UUID, WatchProgressDto> getProgressForDirectMedia(
+      UUID profileId, Collection<UUID> collectableIds) {
+    var result = new HashMap<UUID, WatchProgressDto>();
+    fetchItemWatchStates(profileId, collectableIds)
+        .forEach(
+            (collectableId, state) ->
+                state
+                    .resumePosition()
+                    .ifPresent(
+                        progress -> result.put(collectableId, WatchProgressDto.from(progress))));
     return result;
   }
 
@@ -164,57 +161,7 @@ public class WatchStatusService {
 
   public Map<UUID, WatchStatus> getWatchStatusForSeries(
       UUID profileId, Collection<UUID> seriesIds) {
-    var seasonIdsBySeriesId = seasonRepository.findSeasonIdsBySeriesIds(seriesIds);
-    if (seasonIdsBySeriesId.isEmpty()) {
-      return Map.of();
-    }
-
-    var episodeIdsBySeasonId =
-        episodeRepository.findEpisodeIdsBySeasonIds(flatten(seasonIdsBySeriesId));
-    if (episodeIdsBySeasonId.isEmpty()) {
-      return Map.of();
-    }
-
-    var episodeIdsBySeriesId = new HashMap<UUID, List<UUID>>();
-    for (var entry : seasonIdsBySeriesId.entrySet()) {
-      episodeIdsBySeriesId.put(
-          entry.getKey(),
-          entry.getValue().stream()
-              .flatMap(seasonId -> episodeIdsBySeasonId.getOrDefault(seasonId, List.of()).stream())
-              .toList());
-    }
-    return aggregateStatusByGroup(profileId, episodeIdsBySeriesId);
-  }
-
-  private Map<UUID, WatchStatus> aggregateStatusByGroup(
-      UUID profileId, Map<UUID, List<UUID>> episodeIdsByGroup) {
-    if (episodeIdsByGroup.isEmpty()) {
-      return Map.of();
-    }
-
-    var data = fetchCollectableMediaData(profileId, flatten(episodeIdsByGroup));
-
-    var result = new HashMap<UUID, WatchStatus>();
-    for (var entry : episodeIdsByGroup.entrySet()) {
-      var episodeIds = entry.getValue();
-      var mediaFileIds = collectMediaFileIds(episodeIds, data);
-      result.put(
-          entry.getKey(),
-          deriveAggregateStatus(episodeIds, data.watchedIds(), mediaFileIds, data.progressMap()));
-    }
-    return result;
-  }
-
-  public Map<UUID, WatchProgressDto> getProgressForDirectMedia(
-      UUID profileId, Collection<UUID> collectableIds) {
-    var data = fetchCollectableMediaData(profileId, collectableIds);
-
-    var result = new HashMap<UUID, WatchProgressDto>();
-    for (var collectableId : collectableIds) {
-      var mediaFileIds = collectMediaFileIds(List.of(collectableId), data);
-      result.put(collectableId, pickLatestProgress(mediaFileIds, data.progressMap()));
-    }
-    return result;
+    return aggregateStatusByGroup(profileId, findEpisodeIdsBySeriesIds(seriesIds));
   }
 
   public Map<UUID, WatchProgressDto> getAggregateProgressForSeasons(
@@ -225,6 +172,10 @@ public class WatchStatusService {
 
   public Map<UUID, WatchProgressDto> getAggregateProgressForSeries(
       UUID profileId, Collection<UUID> seriesIds) {
+    return aggregateProgressByGroup(profileId, findEpisodeIdsBySeriesIds(seriesIds));
+  }
+
+  private Map<UUID, List<UUID>> findEpisodeIdsBySeriesIds(Collection<UUID> seriesIds) {
     var seasonIdsBySeriesId = seasonRepository.findSeasonIdsBySeriesIds(seriesIds);
     if (seasonIdsBySeriesId.isEmpty()) {
       return Map.of();
@@ -244,7 +195,37 @@ public class WatchStatusService {
               .flatMap(seasonId -> episodeIdsBySeasonId.getOrDefault(seasonId, List.of()).stream())
               .toList());
     }
-    return aggregateProgressByGroup(profileId, episodeIdsBySeriesId);
+    return episodeIdsBySeriesId;
+  }
+
+  private Map<UUID, WatchStatus> aggregateStatusByGroup(
+      UUID profileId, Map<UUID, List<UUID>> episodeIdsByGroup) {
+    if (episodeIdsByGroup.isEmpty()) {
+      return Map.of();
+    }
+
+    var states = fetchItemWatchStates(profileId, flatten(episodeIdsByGroup));
+
+    var result = new HashMap<UUID, WatchStatus>();
+    for (var entry : episodeIdsByGroup.entrySet()) {
+      var episodeStatuses =
+          entry.getValue().stream().map(episodeId -> states.get(episodeId).status()).toList();
+      result.put(entry.getKey(), aggregateStatus(episodeStatuses));
+    }
+    return result;
+  }
+
+  private static WatchStatus aggregateStatus(List<WatchStatus> episodeStatuses) {
+    if (!episodeStatuses.isEmpty()
+        && episodeStatuses.stream().allMatch(WatchStatus.WATCHED::equals)) {
+      return WatchStatus.WATCHED;
+    }
+
+    if (episodeStatuses.stream().anyMatch(status -> status != WatchStatus.UNWATCHED)) {
+      return WatchStatus.IN_PROGRESS;
+    }
+
+    return WatchStatus.UNWATCHED;
   }
 
   private Map<UUID, WatchProgressDto> aggregateProgressByGroup(
@@ -253,97 +234,88 @@ public class WatchStatusService {
       return Map.of();
     }
 
-    var data = fetchCollectableMediaData(profileId, flatten(episodeIdsByGroup));
+    var states = fetchItemWatchStates(profileId, flatten(episodeIdsByGroup));
 
     var result = new HashMap<UUID, WatchProgressDto>();
     for (var entry : episodeIdsByGroup.entrySet()) {
-      var mediaFileIds = collectMediaFileIds(entry.getValue(), data);
-      result.put(entry.getKey(), pickLatestProgress(mediaFileIds, data.progressMap()));
+      entry.getValue().stream()
+          .flatMap(episodeId -> states.get(episodeId).resumePosition().stream())
+          .max(Comparator.comparing(SessionProgress::getLastModifiedOn))
+          .ifPresent(progress -> result.put(entry.getKey(), WatchProgressDto.from(progress)));
     }
     return result;
   }
 
-  private static WatchProgressDto pickLatestProgress(
-      List<UUID> mediaFileIds, Map<UUID, SessionProgress> progressMap) {
-    return mediaFileIds.stream()
-        .map(progressMap::get)
-        .filter(Objects::nonNull)
-        .max(Comparator.comparing(SessionProgress::getLastModifiedOn))
-        .map(WatchProgressDto::from)
-        .orElse(null);
+  private record ItemWatchState(boolean completed, Optional<SessionProgress> resumePosition) {
+
+    WatchStatus status() {
+      if (resumePosition.isPresent()) {
+        return WatchStatus.IN_PROGRESS;
+      }
+
+      if (completed) {
+        return WatchStatus.WATCHED;
+      }
+
+      return WatchStatus.UNWATCHED;
+    }
   }
 
-  private record CollectableMediaData(
-      Set<UUID> watchedIds,
-      Map<UUID, List<MediaFile>> mediaFilesByCollectableId,
-      Map<UUID, SessionProgress> progressMap) {}
-
-  private CollectableMediaData fetchCollectableMediaData(
+  // Progress counts only when the database stamped the progress after the latest completion that
+  // has not been dismissed. When one device pauses and another device then finishes the title,
+  // the title shows no resume position until the paused device plays again.
+  private Map<UUID, ItemWatchState> fetchItemWatchStates(
       UUID profileId, Collection<UUID> collectableIds) {
-    var watchedIds = findWatchedCollectableIds(profileId, collectableIds);
-    var mediaFiles = mediaFileRepository.findByMediaIdIn(collectableIds);
-    var mediaFilesByCollectableId =
-        mediaFiles.stream().collect(Collectors.groupingBy(MediaFile::getMediaId));
-    var progressMap =
-        getProgressForMediaFiles(profileId, mediaFiles.stream().map(MediaFile::getId).toList());
-    return new CollectableMediaData(watchedIds, mediaFilesByCollectableId, progressMap);
+    var latestCompletionById = findLatestCompletions(profileId, collectableIds);
+    var latestProgressById = findLatestProgressWithPosition(profileId, collectableIds);
+
+    var result = new HashMap<UUID, ItemWatchState>();
+    for (var collectableId : collectableIds) {
+      var completion = latestCompletionById.get(collectableId);
+      var resumePosition =
+          Optional.ofNullable(latestProgressById.get(collectableId))
+              .filter(
+                  progress ->
+                      completion == null || progress.getLastModifiedOn().isAfter(completion));
+      result.put(collectableId, new ItemWatchState(completion != null, resumePosition));
+    }
+    return result;
   }
 
-  private static List<UUID> collectMediaFileIds(
-      List<UUID> collectableIds, CollectableMediaData data) {
-    return collectableIds.stream()
-        .flatMap(id -> data.mediaFilesByCollectableId().getOrDefault(id, List.of()).stream())
-        .map(MediaFile::getId)
-        .toList();
+  private Map<UUID, Instant> findLatestCompletions(
+      UUID profileId, Collection<UUID> collectableIds) {
+    return watchHistoryRepository
+        .findByProfileIdAndCollectableIdIn(profileId, collectableIds)
+        .stream()
+        .filter(history -> history.getDismissedAt() == null)
+        .collect(
+            Collectors.toMap(
+                WatchHistory::getCollectableId,
+                WatchHistory::getWatchedAt,
+                BinaryOperator.maxBy(Comparator.naturalOrder())));
+  }
+
+  private Map<UUID, SessionProgress> findLatestProgressWithPosition(
+      UUID profileId, Collection<UUID> collectableIds) {
+    var collectableIdByMediaFileId =
+        mediaFileRepository.findByMediaIdIn(collectableIds).stream()
+            .collect(Collectors.toMap(MediaFile::getId, MediaFile::getMediaId));
+    if (collectableIdByMediaFileId.isEmpty()) {
+      return Map.of();
+    }
+
+    return sessionProgressRepository
+        .findByProfileIdAndMediaFileIdIn(profileId, collectableIdByMediaFileId.keySet())
+        .stream()
+        .filter(progress -> progress.getPositionSeconds() > 0)
+        .collect(
+            Collectors.toMap(
+                progress -> collectableIdByMediaFileId.get(progress.getMediaFileId()),
+                Function.identity(),
+                BinaryOperator.maxBy(Comparator.comparing(SessionProgress::getLastModifiedOn))));
   }
 
   private static List<UUID> flatten(Map<UUID, List<UUID>> idsByGroup) {
     return idsByGroup.values().stream().flatMap(Collection::stream).toList();
-  }
-
-  private Set<UUID> findWatchedCollectableIds(UUID profileId, Collection<UUID> collectableIds) {
-    return watchHistoryRepository
-        .findByProfileIdAndCollectableIdIn(profileId, collectableIds)
-        .stream()
-        .filter(wh -> wh.getDismissedAt() == null)
-        .map(WatchHistory::getCollectableId)
-        .collect(Collectors.toSet());
-  }
-
-  private static WatchStatus deriveAggregateStatus(
-      List<UUID> collectableIds,
-      Set<UUID> watchedCollectableIds,
-      List<UUID> mediaFileIds,
-      Map<UUID, SessionProgress> progressMap) {
-    var watchedCount =
-        (int) collectableIds.stream().filter(watchedCollectableIds::contains).count();
-    var inProgressCount = countInProgress(mediaFileIds, progressMap);
-    var totalItems = collectableIds.size();
-
-    if (totalItems > 0 && watchedCount == totalItems) {
-      return WatchStatus.WATCHED;
-    }
-
-    if (watchedCount > 0 || inProgressCount > 0) {
-      return WatchStatus.IN_PROGRESS;
-    }
-
-    return WatchStatus.UNWATCHED;
-  }
-
-  private static WatchStatus deriveProgressStatus(
-      List<UUID> mediaFileIds, Map<UUID, SessionProgress> progressMap) {
-    return countInProgress(mediaFileIds, progressMap) > 0
-        ? WatchStatus.IN_PROGRESS
-        : WatchStatus.UNWATCHED;
-  }
-
-  private static int countInProgress(
-      List<UUID> mediaFileIds, Map<UUID, SessionProgress> progressMap) {
-    return (int)
-        mediaFileIds.stream()
-            .map(progressMap::get)
-            .filter(sp -> sp != null && sp.getPositionSeconds() > 0)
-            .count();
   }
 }
