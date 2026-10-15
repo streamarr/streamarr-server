@@ -38,6 +38,7 @@ import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
 import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.StreamingService;
+import com.streamarr.server.services.watchprogress.MarkUnwatchedRejection;
 import com.streamarr.server.services.watchprogress.MarkWatchedRejection;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
@@ -62,6 +63,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -266,7 +268,7 @@ class StreamingResolverTest {
       BaseCollectable<?> item, String typename) {
     STUB_WATCH_STATUS.setMarkWatchedOutcome(Outcome.accepted(item));
 
-    var context = markWatched(item.getId().toString());
+    var context = mark("markWatched", item.getId().toString());
 
     assertThat(context.read("data.markWatched.item['__typename']", String.class))
         .isEqualTo(typename);
@@ -315,7 +317,7 @@ class StreamingResolverTest {
     STUB_WATCH_STATUS.setMarkWatchedOutcome(
         Outcome.rejected(new MarkWatchedRejection.ItemNotFound(itemId)));
 
-    var context = markWatched(itemId.toString());
+    var context = mark("markWatched", itemId.toString());
 
     assertThat(context.read("data.markWatched.item", Object.class)).isNull();
     List<Map<String, Object>> errors = context.read("data.markWatched.userErrors");
@@ -328,12 +330,51 @@ class StreamingResolverTest {
   }
 
   @Test
-  @DisplayName("Should return an invalid-ID error without marking when the item ID is malformed")
-  void shouldReturnAnInvalidIdErrorWithoutMarkingWhenTheItemIdIsMalformed() {
-    var context = markWatched("not-a-uuid");
+  @DisplayName("Should return the marked item when the service accepts markUnwatched")
+  void shouldReturnTheMarkedItemWhenTheServiceAcceptsMarkUnwatched() {
+    var movie = buildMovie("Movie");
+    STUB_WATCH_STATUS.setMarkUnwatchedOutcome(Outcome.accepted(movie));
 
-    assertThat(context.read("data.markWatched.item", Object.class)).isNull();
-    List<Map<String, Object>> errors = context.read("data.markWatched.userErrors");
+    var context = mark("markUnwatched", movie.getId().toString());
+
+    assertThat(context.read("data.markUnwatched.item['__typename']", String.class))
+        .isEqualTo("Movie");
+    assertThat(context.read("data.markUnwatched.item.id", String.class))
+        .isEqualTo(movie.getId().toString());
+    List<Object> errors = context.read("data.markUnwatched.userErrors");
+    assertThat(errors).isEmpty();
+    assertThat(STUB_WATCH_STATUS.getLastMarkedProfileId())
+        .isEqualTo(TestIdentityConstants.PROFILE_ID);
+    assertThat(STUB_WATCH_STATUS.getLastMarkedItemId()).isEqualTo(movie.getId());
+  }
+
+  @Test
+  @DisplayName("Should return an item-not-found error when markUnwatched finds no item")
+  void shouldReturnAnItemNotFoundErrorWhenMarkUnwatchedFindsNoItem() {
+    var itemId = UUID.randomUUID();
+    STUB_WATCH_STATUS.setMarkUnwatchedOutcome(
+        Outcome.rejected(new MarkUnwatchedRejection.ItemNotFound(itemId)));
+
+    var context = mark("markUnwatched", itemId.toString());
+
+    assertThat(context.read("data.markUnwatched.item", Object.class)).isNull();
+    List<Map<String, Object>> errors = context.read("data.markUnwatched.userErrors");
+    assertThat(errors)
+        .containsExactly(
+            Map.of(
+                "__typename", "ItemNotFoundError",
+                "message", "This item no longer exists.",
+                "inputPath", List.of("itemId")));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @ValueSource(strings = {"markWatched", "markUnwatched"})
+  @DisplayName("Should return an invalid-ID error without marking when the item ID is malformed")
+  void shouldReturnAnInvalidIdErrorWithoutMarkingWhenTheItemIdIsMalformed(String mutation) {
+    var context = mark(mutation, "not-a-uuid");
+
+    assertThat(context.read("data.%s.item".formatted(mutation), Object.class)).isNull();
+    List<Map<String, Object>> errors = context.read("data.%s.userErrors".formatted(mutation));
     assertThat(errors)
         .containsExactly(
             Map.of(
@@ -343,11 +384,11 @@ class StreamingResolverTest {
     assertThat(STUB_WATCH_STATUS.getLastMarkedItemId()).isNull();
   }
 
-  private DocumentContext markWatched(String itemId) {
+  private DocumentContext mark(String mutation, String itemId) {
     return dgsQueryExecutor.executeAndGetDocumentContext(
         """
         mutation {
-          markWatched(input: {itemId: "%s"}) {
+          %s(input: {itemId: "%s"}) {
             item {
               __typename
               ... on Movie { id }
@@ -363,7 +404,7 @@ class StreamingResolverTest {
           }
         }
         """
-            .formatted(itemId));
+            .formatted(mutation, itemId));
   }
 
   private DocumentContext requestSession(String mediaFileId) {
@@ -564,9 +605,7 @@ class StreamingResolverTest {
         Arguments.of(
             "reportStreamSessionTimeline",
             "mutation { reportStreamSessionTimeline(sessionId: \"%s\", positionSeconds: 300, state: PLAYING) }",
-            "data.reportStreamSessionTimeline"),
-        Arguments.of(
-            "markUnwatched", "mutation { markUnwatched(id: \"%s\") }", "data.markUnwatched"));
+            "data.reportStreamSessionTimeline"));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -593,13 +632,6 @@ class StreamingResolverTest {
             """
             mutation {
               reportStreamSessionTimeline(sessionId: "bad-id", positionSeconds: 300, state: PLAYING)
-            }
-            """),
-        Arguments.of(
-            "markUnwatched",
-            """
-            mutation {
-              markUnwatched(id: "bad-id")
             }
             """));
   }
@@ -698,6 +730,7 @@ class StreamingResolverTest {
   private static class StubWatchStatusService extends WatchStatusService {
 
     private Outcome<BaseCollectable<?>, MarkWatchedRejection> markWatchedOutcome;
+    private Outcome<BaseCollectable<?>, MarkUnwatchedRejection> markUnwatchedOutcome;
     private UUID lastMarkedProfileId;
     private UUID lastMarkedItemId;
 
@@ -707,12 +740,17 @@ class StreamingResolverTest {
 
     void reset() {
       markWatchedOutcome = null;
+      markUnwatchedOutcome = null;
       lastMarkedProfileId = null;
       lastMarkedItemId = null;
     }
 
     void setMarkWatchedOutcome(Outcome<BaseCollectable<?>, MarkWatchedRejection> outcome) {
       markWatchedOutcome = outcome;
+    }
+
+    void setMarkUnwatchedOutcome(Outcome<BaseCollectable<?>, MarkUnwatchedRejection> outcome) {
+      markUnwatchedOutcome = outcome;
     }
 
     UUID getLastMarkedProfileId() {
@@ -732,8 +770,11 @@ class StreamingResolverTest {
     }
 
     @Override
-    public void markUnwatched(UUID profileId, UUID collectableId) {
-      // no-op for test fake
+    public Outcome<BaseCollectable<?>, MarkUnwatchedRejection> markUnwatched(
+        UUID profileId, UUID itemId) {
+      lastMarkedProfileId = profileId;
+      lastMarkedItemId = itemId;
+      return markUnwatchedOutcome;
     }
   }
 }

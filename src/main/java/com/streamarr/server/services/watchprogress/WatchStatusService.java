@@ -93,9 +93,15 @@ public class WatchStatusService {
   }
 
   @Transactional
-  public void markUnwatched(UUID profileId, UUID collectableId) {
-    var scope = resolveCollectableScope(collectableId);
-    markUnwatchedInternal(profileId, collectableId, scope);
+  public Outcome<BaseCollectable<?>, MarkUnwatchedRejection> markUnwatched(
+      UUID profileId, UUID itemId) {
+    var item = findItem(itemId);
+    if (item.isEmpty()) {
+      return Outcome.rejected(new MarkUnwatchedRejection.ItemNotFound(itemId));
+    }
+
+    markUnwatchedInternal(profileId, itemId, scopeOf(item.get()));
+    return Outcome.accepted(item.get());
   }
 
   @Transactional
@@ -130,16 +136,6 @@ public class WatchStatusService {
       case Series _ -> CollectableScope.SERIES;
       default -> CollectableScope.DIRECT_MEDIA;
     };
-  }
-
-  private CollectableScope resolveCollectableScope(UUID collectableId) {
-    if (!episodeRepository.findEpisodeIdsBySeasonIds(List.of(collectableId)).isEmpty()) {
-      return CollectableScope.SEASON;
-    }
-    if (!seasonRepository.findSeasonIdsBySeriesIds(List.of(collectableId)).isEmpty()) {
-      return CollectableScope.SERIES;
-    }
-    return CollectableScope.DIRECT_MEDIA;
   }
 
   private List<UUID> resolveLeafCollectableIds(UUID collectableId, CollectableScope scope) {

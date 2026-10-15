@@ -22,6 +22,9 @@ import com.streamarr.server.graphql.mutation.MutationPayloads;
 import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionError;
 import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionInput;
 import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionPayload;
+import com.streamarr.server.graphql.mutation.watchprogress.MarkUnwatchedError;
+import com.streamarr.server.graphql.mutation.watchprogress.MarkUnwatchedInput;
+import com.streamarr.server.graphql.mutation.watchprogress.MarkUnwatchedPayload;
 import com.streamarr.server.graphql.mutation.watchprogress.MarkWatchedError;
 import com.streamarr.server.graphql.mutation.watchprogress.MarkWatchedInput;
 import com.streamarr.server.graphql.mutation.watchprogress.MarkWatchedPayload;
@@ -30,6 +33,7 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
 import com.streamarr.server.services.streaming.StreamingService;
+import com.streamarr.server.services.watchprogress.MarkUnwatchedRejection;
 import com.streamarr.server.services.watchprogress.MarkWatchedRejection;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
@@ -163,10 +167,26 @@ public class StreamingResolver {
   }
 
   @DgsMutation
-  public boolean markUnwatched(@InputArgument String id) {
-    watchStatusService.markUnwatched(authorizationService.requireProfile(), parseUuid(id));
+  public MarkUnwatchedPayload markUnwatched(@InputArgument MarkUnwatchedInput input) {
+    var profileId = authorizationService.requireProfile();
+    return MutationPayloads.withUuid(
+        input.itemId(),
+        itemId ->
+            MutationPayloads.payload(
+                watchStatusService.markUnwatched(profileId, itemId),
+                this::markUnwatchedError,
+                MarkUnwatchedPayload::new),
+        () ->
+            MutationPayloads.inputError(
+                new MarkUnwatchedError.InvalidIdError(INVALID_ITEM_ID, InputPath.of(ITEM_ID)),
+                MarkUnwatchedPayload::new));
+  }
 
-    return true;
+  private MarkUnwatchedError markUnwatchedError(MarkUnwatchedRejection rejection) {
+    return switch (rejection) {
+      case MarkUnwatchedRejection.ItemNotFound _ ->
+          new MarkUnwatchedError.ItemNotFoundError(ITEM_NOT_FOUND, InputPath.of(ITEM_ID));
+    };
   }
 
   @DgsTypeResolver(name = "WatchStateItem")

@@ -325,6 +325,31 @@ class WatchStatusServiceTest {
     }
 
     @Test
+    @DisplayName("Should return the movie when marking a stored movie unwatched by ID")
+    void shouldReturnTheMovieWhenMarkingAStoredMovieUnwatchedById() {
+      var movie = movieRepository.save(buildMovie());
+      service.markWatched(PROFILE_ID, movie.getId());
+
+      var outcome = service.markUnwatched(PROFILE_ID, movie.getId());
+
+      assertThat(outcome).isEqualTo(Outcome.accepted(movie));
+      assertThat(service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId())))
+          .containsEntry(movie.getId(), WatchStatus.UNWATCHED);
+    }
+
+    @Test
+    @DisplayName("Should reject with item not found when marking an unknown ID unwatched")
+    void shouldRejectWithItemNotFoundWhenMarkingAnUnknownIdUnwatched() {
+      var unknownId = UUID.randomUUID();
+
+      var outcome = service.markUnwatched(PROFILE_ID, unknownId);
+
+      assertThat(outcome)
+          .isEqualTo(Outcome.rejected(new MarkUnwatchedRejection.ItemNotFound(unknownId)));
+      assertThat(eventPublisher.getEventsOfType(Object.class)).isEmpty();
+    }
+
+    @Test
     @DisplayName("Should mark every episode when marking a stored series watched by ID")
     void shouldMarkEveryEpisodeWhenMarkingAStoredSeriesWatchedById() {
       var series = seriesRepository.save(buildSeries());

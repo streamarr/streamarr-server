@@ -27,10 +27,10 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -40,10 +40,13 @@ import org.springframework.test.web.servlet.ResultActions;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class WatchStateMutationIT extends AbstractIntegrationTest {
 
-  private static final String MARK_WATCHED =
+  private static final String MARK_WATCHED = "markWatched";
+  private static final String MARK_UNWATCHED = "markUnwatched";
+
+  private static final String MARK_MUTATION =
       """
       mutation {
-        markWatched(input: {itemId: "%s"}) {
+        %s(input: {itemId: "%s"}) {
           item {
             __typename
             ... on Movie { id watchStatus }
@@ -89,60 +92,59 @@ class WatchStateMutationIT extends AbstractIntegrationTest {
   void shouldReturnTheItemAsWatchedWhenTheProfileMarksItWatched(ItemKind kind) throws Exception {
     var itemId = createItem(kind);
 
-    markWatched(itemId.toString())
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.markWatched.item['__typename']").value(kind.typename()))
-        .andExpect(jsonPath("$.data.markWatched.item.id").value(itemId.toString()))
-        .andExpect(jsonPath("$.data.markWatched.item.watchStatus").value("WATCHED"))
-        .andExpect(jsonPath("$.data.markWatched.userErrors").isEmpty());
+    expectMarkedItem(mark(MARK_WATCHED, itemId), MARK_WATCHED, kind, itemId)
+        .andExpect(jsonPath("$.data.markWatched.item.watchStatus").value("WATCHED"));
   }
 
-  @Test
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(ItemKind.class)
+  @DisplayName(
+      "Should return the item as unwatched when the Profile marks a watched item unwatched")
+  void shouldReturnTheItemAsUnwatchedWhenTheProfileMarksAWatchedItemUnwatched(ItemKind kind)
+      throws Exception {
+    var itemId = createItem(kind);
+    mark(MARK_WATCHED, itemId).andExpect(jsonPath("$.data.markWatched.userErrors").isEmpty());
+
+    expectMarkedItem(mark(MARK_UNWATCHED, itemId), MARK_UNWATCHED, kind, itemId)
+        .andExpect(jsonPath("$.data.markUnwatched.item.watchStatus").value("UNWATCHED"));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @ValueSource(strings = {MARK_WATCHED, MARK_UNWATCHED})
   @DisplayName("Should return an item-not-found error when no item has the ID")
-  void shouldReturnAnItemNotFoundErrorWhenNoItemHasTheId() throws Exception {
+  void shouldReturnAnItemNotFoundErrorWhenNoItemHasTheId(String mutation) throws Exception {
     var unknownId = UUID.randomUUID();
 
-    markWatched(unknownId.toString())
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.markWatched.item").value(nullValue()))
+    expectInputError(mark(mutation, unknownId), mutation, "ItemNotFoundError")
         .andExpect(
-            jsonPath("$.data.markWatched.userErrors[0].__typename").value("ItemNotFoundError"))
-        .andExpect(
-            jsonPath("$.data.markWatched.userErrors[0].message")
-                .value("This item no longer exists."))
-        .andExpect(
-            jsonPath("$.data.markWatched.userErrors[0].inputPath").value(contains("itemId")));
+            jsonPath("$.data.%s.userErrors[0].message", mutation)
+                .value("This item no longer exists."));
     assertThat(
             watchHistoryRepository.findByProfileIdAndCollectableIdIn(
                 identity.profile().getId(), List.of(unknownId)))
         .isEmpty();
   }
 
-  @Test
+  @ParameterizedTest(name = "{0}")
+  @ValueSource(strings = {MARK_WATCHED, MARK_UNWATCHED})
   @DisplayName("Should return an invalid-ID error when the item ID is malformed")
-  void shouldReturnAnInvalidIdErrorWhenTheItemIdIsMalformed() throws Exception {
-    markWatched("not-a-uuid")
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.markWatched.item").value(nullValue()))
-        .andExpect(jsonPath("$.data.markWatched.userErrors[0].__typename").value("InvalidIdError"))
+  void shouldReturnAnInvalidIdErrorWhenTheItemIdIsMalformed(String mutation) throws Exception {
+    expectInputError(mark(mutation, "not-a-uuid"), mutation, "InvalidIdError")
         .andExpect(
-            jsonPath("$.data.markWatched.userErrors[0].message").value("Enter a valid item ID."))
-        .andExpect(
-            jsonPath("$.data.markWatched.userErrors[0].inputPath").value(contains("itemId")));
+            jsonPath("$.data.%s.userErrors[0].message", mutation).value("Enter a valid item ID."));
   }
 
-  @Test
-  @DisplayName("Should refuse to mark the item watched when no Profile is selected")
-  void shouldRefuseToMarkTheItemWatchedWhenNoProfileIsSelected() throws Exception {
+  @ParameterizedTest(name = "{0}")
+  @ValueSource(strings = {MARK_WATCHED, MARK_UNWATCHED})
+  @DisplayName("Should refuse to mark the item when no Profile is selected")
+  void shouldRefuseToMarkTheItemWhenNoProfileIsSelected(String mutation) throws Exception {
     var movieId = createItem(ItemKind.MOVIE);
 
     mockMvc
         .perform(
             graphqlRequest(
-                authTestSupport.accountBearer(identity), MARK_WATCHED.formatted(movieId)))
+                authTestSupport.accountBearer(identity),
+                MARK_MUTATION.formatted(mutation, movieId)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors[0].extensions.code").value("PROFILE_REQUIRED"));
     assertThat(
@@ -151,9 +153,31 @@ class WatchStateMutationIT extends AbstractIntegrationTest {
         .isEmpty();
   }
 
-  private ResultActions markWatched(String itemId) throws Exception {
+  private ResultActions mark(String mutation, Object itemId) throws Exception {
     return mockMvc.perform(
-        graphqlRequest(authTestSupport.profileBearer(identity), MARK_WATCHED.formatted(itemId)));
+        graphqlRequest(
+            authTestSupport.profileBearer(identity), MARK_MUTATION.formatted(mutation, itemId)));
+  }
+
+  private static ResultActions expectMarkedItem(
+      ResultActions result, String mutation, ItemKind kind, UUID itemId) throws Exception {
+    return result
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.%s.item['__typename']", mutation).value(kind.typename()))
+        .andExpect(jsonPath("$.data.%s.item.id", mutation).value(itemId.toString()))
+        .andExpect(jsonPath("$.data.%s.userErrors", mutation).isEmpty());
+  }
+
+  private static ResultActions expectInputError(
+      ResultActions result, String mutation, String errorType) throws Exception {
+    return result
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.%s.item", mutation).value(nullValue()))
+        .andExpect(jsonPath("$.data.%s.userErrors[0].__typename", mutation).value(errorType))
+        .andExpect(
+            jsonPath("$.data.%s.userErrors[0].inputPath", mutation).value(contains("itemId")));
   }
 
   private UUID createItem(ItemKind kind) {

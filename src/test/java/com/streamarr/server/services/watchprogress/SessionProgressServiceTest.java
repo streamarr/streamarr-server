@@ -1,6 +1,7 @@
 package com.streamarr.server.services.watchprogress;
 
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildMatchedMediaFile;
+import static com.streamarr.server.fixtures.MediaEntityFixture.buildMovie;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeries;
 import static com.streamarr.server.fixtures.SessionProgressFixture.progressBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -96,7 +97,7 @@ class SessionProgressServiceTest {
   }
 
   private void saveMediaFileForSession(StreamSession session) {
-    var mediaFile = buildMatchedMediaFile(UUID.randomUUID());
+    var mediaFile = buildMatchedMediaFile(movieRepository.save(buildMovie()).getId());
     mediaFile.setId(session.getMediaFileId());
     mediaFileRepository.save(mediaFile);
   }
@@ -551,7 +552,7 @@ class SessionProgressServiceTest {
     @Test
     @DisplayName("Should delete all progress when resetting movie")
     void shouldDeleteAllProgressWhenResettingMovie() {
-      var movieId = UUID.randomUUID();
+      var movieId = movieRepository.save(buildMovie()).getId();
       mediaFileRepository.save(buildMatchedMediaFile(movieId));
       var mediaFile = mediaFileRepository.findByMediaId(movieId).getFirst();
 
@@ -588,7 +589,7 @@ class SessionProgressServiceTest {
     @Test
     @DisplayName("Should delete all episode progress when resetting series")
     void shouldDeleteAllEpisodeProgressWhenResettingSeries() {
-      var series = buildSeries();
+      var series = seriesRepository.save(buildSeries());
       var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
       var s2 = seasonRepository.save(Season.builder().seasonNumber(2).series(series).build());
       var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
