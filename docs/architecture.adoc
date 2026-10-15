@@ -113,7 +113,7 @@ Admission publishes these metrics:
 
 |`streamarr.library.admission.in_flight`
 |`operation`, `library`
-|Admitted tasks that have not reported yet. The gauge is removed when the operation ends.
+|Admissions held: admitted tasks that have not reported yet, plus the admission the walking thread holds while it pulls the next subject. The gauge is removed when the operation ends.
 
 |`streamarr.library.admission.admitted`
 |`operation`

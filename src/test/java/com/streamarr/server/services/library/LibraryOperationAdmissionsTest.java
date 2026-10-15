@@ -9,8 +9,10 @@ import com.streamarr.server.services.concurrency.AdaptiveAdmissions;
 import com.streamarr.server.services.concurrency.AdmittedTask;
 import com.streamarr.server.services.concurrency.AdmittedTaskReport;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
@@ -30,25 +32,49 @@ class LibraryOperationAdmissionsTest {
   private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
 
   @Test
-  @DisplayName("Should publish the current limit and tasks in flight while a scan admits tasks")
-  void shouldPublishTheCurrentLimitAndTasksInFlightWhileAScanAdmitsTasks() throws Exception {
+  @DisplayName(
+      "Should count the walker's admission in flight when it pulls a subject after an admitted task")
+  void shouldCountTheWalkersAdmissionInFlightWhenItPullsASubjectAfterAnAdmittedTask()
+      throws Exception {
     var admissions = admissionsWith(new AdaptiveAdmissions());
     var library = library();
-    var inFlightWhileRunning = new AtomicReference<Double>();
+    var secondPull = new CountDownLatch(1);
+    var inFlightAtSecondPull = new AtomicReference<Double>();
+    var subjects =
+        new Iterator<String>() {
+          private boolean pulled;
+
+          @Override
+          public boolean hasNext() {
+            if (!pulled) {
+              return true;
+            }
+
+            inFlightAtSecondPull.set(gauge(IN_FLIGHT, "scan", library));
+            secondPull.countDown();
+            return false;
+          }
+
+          @Override
+          public String next() {
+            pulled = true;
+            return "file";
+          }
+        };
 
     try (var admission = admissions.openScanAdmission(library)) {
       assertThat(gauge(LIMIT, "scan", library)).isEqualTo(16.0);
       assertThat(gauge(IN_FLIGHT, "scan", library)).isZero();
 
       admission.forkAdmittedTasks(
-          List.of("file").iterator(),
+          subjects,
           _ -> {
-            inFlightWhileRunning.set(gauge(IN_FLIGHT, "scan", library));
+            secondPull.await();
             return AdmittedTaskReport.IGNORED;
           },
           THREADS);
 
-      assertThat(inFlightWhileRunning).hasValue(1.0);
+      assertThat(inFlightAtSecondPull).hasValue(2.0);
       assertThat(gauge(IN_FLIGHT, "scan", library)).isZero();
     }
   }

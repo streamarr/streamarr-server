@@ -129,7 +129,10 @@ public final class AdaptiveAdmission implements AutoCloseable {
     return limiter.getLimit();
   }
 
-  /** Returns how many admitted tasks have not reported yet. */
+  /**
+   * Returns how many admissions are held: the admitted tasks that have not reported yet, plus the
+   * admission the walking thread holds while it pulls the next subject.
+   */
   public int inFlight() {
     return limiter.getInflight();
   }
