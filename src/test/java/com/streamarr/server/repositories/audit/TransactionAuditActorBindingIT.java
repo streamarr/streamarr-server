@@ -1,43 +1,44 @@
 package com.streamarr.server.repositories.audit;
 
 import static com.streamarr.server.jooq.generated.tables.Genre.GENRE;
+import static com.streamarr.server.support.TestFixtureAuditActorConfiguration.TEST_FIXTURE_ACTOR_ID;
 import static com.streamarr.server.support.security.SignedInAccount.callSignedInAs;
 import static com.streamarr.server.support.security.SignedInAccount.runSignedInAs;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.config.persistence.AuditActorTransactionListener;
-import com.streamarr.server.config.persistence.SecurityAuditActorSource;
 import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.support.AuditActorSetting;
+import com.streamarr.server.support.TestFixtureWork;
 import com.streamarr.server.support.security.AnonymousRequestAuthentication;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Duration;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
-import javax.sql.DataSource;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.support.JdbcTransactionManager;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Transaction Audit Actor Binding Integration Tests")
 class TransactionAuditActorBindingIT extends AbstractIntegrationTest {
 
+  private static final Duration THREAD_TIMEOUT = Duration.ofSeconds(10);
+
   @Autowired private DSLContext dsl;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private PlatformTransactionManager transactionManager;
-  @Autowired private TransactionAuditActorBinder auditActorBinder;
-  @Autowired private DataSource dataSource;
 
   @AfterEach
   void clearSecurityContext() {
@@ -97,30 +98,44 @@ class TransactionAuditActorBindingIT extends AbstractIntegrationTest {
     assertThat(actorSetting).isEqualTo(accountId.toString());
   }
 
-  @Test
+  @ParameterizedTest(name = "{0} thread")
+  @EnumSource(ThreadKind.class)
   @DisplayName(
-      "Should reject an audited write when a thread with neither an account nor system work"
+      "Should reject an audited write when a thread the test did not start as the fixture actor"
           + " begins a transaction")
-  void shouldRejectAnAuditedWriteWhenAThreadWithNeitherAnAccountNorSystemWorkBeginsATransaction() {
+  void shouldRejectAnAuditedWriteWhenAThreadTheTestDidNotStartAsTheFixtureActorBeginsATransaction(
+      ThreadKind threadKind) {
     var sourceId = "unattributed-" + UUID.randomUUID();
-    var transactions = transactionsResolvingTheProductionActor();
 
-    assertThatThrownBy(() -> transactions.executeWithoutResult(_ -> insertGenre(sourceId)))
-        .hasStackTraceContaining("names no audit actor");
+    var write =
+        runOnNewThread(
+            threadKind, () -> transactionTemplate.executeWithoutResult(_ -> insertGenre(sourceId)));
 
+    assertThat(write)
+        .failsWithin(THREAD_TIMEOUT)
+        .withThrowableThat()
+        .withStackTraceContaining("names no audit actor");
     assertThat(dsl.fetchExists(GENRE, GENRE.SOURCE_ID.eq(sourceId))).isFalse();
   }
 
   @Test
-  @DisplayName("Should store the signed-in account when the production actor source resolves it")
-  void shouldStoreTheSignedInAccountWhenTheProductionActorSourceResolvesIt() {
+  @DisplayName(
+      "Should store the signed-in account when a thread the test did not start as the fixture"
+          + " actor signs in")
+  void shouldStoreTheSignedInAccountWhenAThreadTheTestDidNotStartAsTheFixtureActorSignsIn() {
     var sourceId = "attributed-" + UUID.randomUUID();
     var accountId = UUID.randomUUID();
-    var transactions = transactionsResolvingTheProductionActor();
 
     try {
-      runSignedInAs(accountId, () -> transactions.executeWithoutResult(_ -> insertGenre(sourceId)));
+      var write =
+          runOnNewThread(
+              ThreadKind.VIRTUAL,
+              () ->
+                  runSignedInAs(
+                      accountId,
+                      () -> transactionTemplate.executeWithoutResult(_ -> insertGenre(sourceId))));
 
+      assertThat(write).succeedsWithin(THREAD_TIMEOUT);
       assertThat(dsl.fetchSingle(GENRE, GENRE.SOURCE_ID.eq(sourceId)).getCreatedBy())
           .isEqualTo(accountId);
     } finally {
@@ -128,14 +143,60 @@ class TransactionAuditActorBindingIT extends AbstractIntegrationTest {
     }
   }
 
-  // The integration tests' shared context names a test fixture actor on threads that have no
-  // actor. A separate transaction manager with the production source shows what production does.
-  private TransactionTemplate transactionsResolvingTheProductionActor() {
-    var manager = new JdbcTransactionManager(dataSource);
-    manager.addListener(
-        new AuditActorTransactionListener(
-            new SecurityAuditActorSource(), auditActorBinder, new SimpleMeterRegistry()));
-    return new TransactionTemplate(manager);
+  @Test
+  @DisplayName("Should expose the test fixture actor when the test thread begins a transaction")
+  void shouldExposeTheTestFixtureActorWhenTheTestThreadBeginsATransaction() {
+    assertThat(actorSettingIn(transactionTemplate)).isEqualTo(TEST_FIXTURE_ACTOR_ID.toString());
+  }
+
+  @Test
+  @DisplayName(
+      "Should expose the test fixture actor when a thread the test starts runs as the fixture actor")
+  void shouldExposeTheTestFixtureActorWhenAThreadTheTestStartsRunsAsTheFixtureActor() {
+    var actorSetting = new AtomicReference<String>();
+
+    var read =
+        runOnNewThread(
+            ThreadKind.VIRTUAL,
+            () ->
+                TestFixtureWork.runAsTestFixtureActor(
+                    () -> actorSetting.set(actorSettingIn(transactionTemplate))));
+
+    assertThat(read).succeedsWithin(THREAD_TIMEOUT);
+    assertThat(actorSetting).hasValue(TEST_FIXTURE_ACTOR_ID.toString());
+  }
+
+  @Test
+  @Transactional
+  @DisplayName(
+      "Should expose the test fixture actor when the test framework begins the transaction")
+  void shouldExposeTheTestFixtureActorWhenTheTestFrameworkBeginsTheTransaction() {
+    assertThat(actorSetting(dsl)).isEqualTo(TEST_FIXTURE_ACTOR_ID.toString());
+  }
+
+  enum ThreadKind {
+    PLATFORM(Thread.ofPlatform()),
+    VIRTUAL(Thread.ofVirtual());
+
+    private final Thread.Builder builder;
+
+    ThreadKind(Thread.Builder builder) {
+      this.builder = builder;
+    }
+  }
+
+  private static CompletableFuture<Void> runOnNewThread(ThreadKind threadKind, Runnable work) {
+    var outcome = new CompletableFuture<Void>();
+    threadKind.builder.start(
+        () -> {
+          try {
+            work.run();
+            outcome.complete(null);
+          } catch (RuntimeException failure) {
+            outcome.completeExceptionally(failure);
+          }
+        });
+    return outcome;
   }
 
   private void insertGenre(String sourceId) {

@@ -14,10 +14,13 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Names the test fixture actor in a transaction that a test begins outside any request or system
- * work, so fixtures can write audited rows. The id differs from the System actor's and from an
- * empty actor, so tests of either cannot pass by accident. Writes outside a transaction still name
- * no actor and are rejected, as in production.
+ * Names the test fixture actor in a transaction that test code begins outside any request or system
+ * work while it runs as that actor through {@link TestFixtureWork}, so fixtures can write audited
+ * rows. {@link TestFixtureActorExtension} runs each test's own methods that way. Every other thread
+ * resolves its actor as in production, so a production thread that writes audited rows without
+ * system work or a request is rejected in tests too. The id differs from the System actor's and
+ * from an empty actor, so tests of either cannot pass by accident. Writes outside a transaction
+ * still name no actor and are rejected, as in production.
  */
 @TestConfiguration(proxyBeanMethods = false)
 public class TestFixtureAuditActorConfiguration {
@@ -42,9 +45,14 @@ public class TestFixtureAuditActorConfiguration {
   @Primary
   AuditActorSource testFixtureAuditActorSource() {
     var production = new SecurityAuditActorSource();
-    return () ->
-        production
-            .currentActor()
-            .or(() -> Optional.of(new AuditActor.Account(TEST_FIXTURE_ACTOR_ID)));
+    return () -> production.currentActor().or(TestFixtureAuditActorConfiguration::testFixtureActor);
+  }
+
+  private static Optional<AuditActor> testFixtureActor() {
+    if (!TestFixtureWork.isRunningAsTestFixtureActor()) {
+      return Optional.empty();
+    }
+
+    return Optional.of(new AuditActor.Account(TEST_FIXTURE_ACTOR_ID));
   }
 }
