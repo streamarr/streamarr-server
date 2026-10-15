@@ -22,6 +22,7 @@ import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource
 import com.streamarr.server.support.HeldCreditInsert;
 import com.streamarr.server.support.HeldCreditInsert.CreditTable;
 import com.streamarr.server.support.OrderedSourceIds;
+import com.streamarr.server.support.TestFixtureWork;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -29,7 +30,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -213,7 +213,7 @@ class CreditServiceConcurrencyIT extends AbstractIntegrationTest {
     var start = new CountDownLatch(1);
 
     var saved = new ArrayList<Future<MediaTitleCredits>>();
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       for (var mediaTitle = 0; mediaTitle < mediaTitles; mediaTitle++) {
         saved.add(
             executor.submit(
