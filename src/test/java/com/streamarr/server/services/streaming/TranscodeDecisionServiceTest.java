@@ -172,6 +172,27 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
+  @DisplayName("Should encode the video when no keyframe presents before the media end")
+  void shouldEncodeTheVideoWhenNoKeyframePresentsBeforeTheMediaEnd() {
+    var source =
+        probeBuilder("h264", "aac")
+            .duration(Duration.ofMillis(400))
+            .keyframes(millisecondKeyframes(500))
+            .build();
+
+    var decision = service.decide(source, options(List.of("h264")));
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(
+            meterRegistry
+                .get(STREAM_COPY_REFUSALS)
+                .tag("reason", "interval_without_keyframe")
+                .counter()
+                .count())
+        .isEqualTo(1.0);
+  }
+
+  @Test
   @DisplayName("Should copy the video when a keyframe opens the final partial segment")
   void shouldCopyTheVideoWhenAKeyframeOpensTheFinalPartialSegment() {
     var source =

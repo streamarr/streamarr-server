@@ -64,7 +64,7 @@ public class TranscodeDecisionService {
   }
 
   // A stream copy's segments can start only at source keyframes (ADR 0037), so the video is copied
-  // only when the known keyframes open every segment the playlist advertises.
+  // only when the known keyframes open every segment of the grid.
   private Optional<StreamCopyRefusal> streamCopyRefusal(MediaProbe source) {
     return switch (source.keyframes()) {
       case KeyframeKnowledge.Known(var positions) ->
@@ -77,11 +77,10 @@ public class TranscodeDecisionService {
   }
 
   private static Optional<StreamCopyRefusal> streamCopyRefusal(
-      KeyframePositions positions, MediaSegmentTimeline timeline) {
+      KeyframePositions positions, MediaSegmentTimeline.PlainGrid grid) {
     return switch (KeyframeSegmentBoundaries.forStreamCopy(
-        positions, timeline.targetSegmentDurationSeconds())) {
-      case StreamCopySegments.Starts(var starts)
-          when starts.size() < timeline.mediaSegmentCount() ->
+        positions, grid.targetSegmentDurationSeconds())) {
+      case StreamCopySegments.Starts starts when !opensEverySegment(grid, positions, starts) ->
           Optional.of(StreamCopyRefusal.INTERVAL_WITHOUT_KEYFRAME);
       case StreamCopySegments.Starts _ -> Optional.empty();
       case StreamCopySegments.IntervalWithoutKeyframe _ ->
@@ -91,6 +90,13 @@ public class TranscodeDecisionService {
       case StreamCopySegments.PresentationTimeOutOfRange _ ->
           Optional.of(StreamCopyRefusal.PRESENTATION_TIME_OUT_OF_RANGE);
     };
+  }
+
+  private static boolean opensEverySegment(
+      MediaSegmentTimeline.PlainGrid grid,
+      KeyframePositions positions,
+      StreamCopySegments.Starts starts) {
+    return grid.openedAt(positions, starts).mediaSegmentCount() == grid.mediaSegmentCount();
   }
 
   private void countStreamCopyRefusal(StreamCopyRefusal refusal) {
