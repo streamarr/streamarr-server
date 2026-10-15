@@ -2,7 +2,6 @@ package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
-import com.streamarr.server.exceptions.LibraryScanFailedException;
 import com.streamarr.server.repositories.LibraryOperationRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.events.library.LibraryStatusChangedEvent;
@@ -26,10 +25,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  * One execution of a stored library operation, independent of the scheduler that runs the
  * execution. Every execution walks the library from the start. A shutdown that interrupts the
  * execution leaves the operation stored, so the operation runs again when a scheduler starts.
- * Otherwise one transaction ends the operation: it gives the library its final status, deletes the
- * operation, and publishes the status change and the end of the scan or refresh for listeners that
- * run after the commit. An end that cannot be saved escapes, so the scheduler runs the operation
- * again with backoff.
+ * Otherwise one transaction ends the operation, as failed when the scan or refresh threw (ADR 0027)
+ * and as finished when it returned: it gives the library its final status, deletes the operation,
+ * and publishes the status change and the end of the scan or refresh for listeners that run after
+ * the commit. An end that cannot be saved escapes, so the scheduler runs the operation again with
+ * backoff.
  */
 @Slf4j
 @Service
@@ -109,7 +109,7 @@ public class LibraryOperationExecution {
       eventPublisher.publishEvent(new ScanCompletedEvent(library.getId()));
       log.info("Finished {} library scan: {}.", library.getName(), results.describe());
       return LibraryOperationConclusion.FINISHED;
-    } catch (LibraryScanFailedException e) {
+    } catch (RuntimeException e) {
       log.error("Failed {} library scan.", library.getName(), e);
       return LibraryOperationConclusion.FAILED;
     }

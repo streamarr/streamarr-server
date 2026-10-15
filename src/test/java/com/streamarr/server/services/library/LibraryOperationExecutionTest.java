@@ -475,6 +475,26 @@ class LibraryOperationExecutionTest {
   }
 
   @Test
+  @DisplayName(
+      "Should end the scan and set library status to unhealthy when the file walk throws an"
+          + " unexpected exception")
+  void shouldEndTheScanUnhealthyWhenTheFileWalkThrowsAnUnexpectedException() throws IOException {
+    var rootPath = createRootLibraryDirectory();
+    createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
+    var throwingFileSystem =
+        new ThrowingFileSystemWrapper(
+            fileSystem, () -> new IllegalStateException("Simulated defect during traversal"));
+
+    var result = serviceWith(throwingFileSystem).scanLibrary(savedLibraryId);
+
+    assertThat(result).isInstanceOf(LibraryOperationExecutionResult.Ended.class);
+    assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+    assertThat(libraryOperations.libraryOperations()).isEmpty();
+    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
+    assertThat(capturingEventPublisher.getEventsOfType(ScanEndedEvent.class)).hasSize(1);
+  }
+
+  @Test
   @DisplayName("Should set library status to healthy when the library filepath can be accessed")
   void shouldSetLibraryStatusToHealthyWhenLibraryFilepathAccessible() throws IOException {
     createRootLibraryDirectory();
