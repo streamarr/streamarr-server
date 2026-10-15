@@ -49,6 +49,7 @@ final class LiveWorkerConnectionRegistry {
   private static final Executor PROBE_DEADLINE_CALLBACKS =
       command -> Thread.ofVirtual().name("worker-probe-deadline").start(command);
   private final long probeTimeoutNanos;
+  private final long keyframeScanTimeoutNanos;
   private final long probeCancellationTimeoutNanos;
   private final Counter initializationSegmentMismatches;
 
@@ -56,6 +57,7 @@ final class LiveWorkerConnectionRegistry {
       @NonNull WorkerSessionServerConfiguration configuration,
       @NonNull MeterRegistry meterRegistry) {
     probeTimeoutNanos = configuration.probeTimeout().toNanos();
+    keyframeScanTimeoutNanos = configuration.keyframeScanTimeout().toNanos();
     probeCancellationTimeoutNanos = configuration.probeCancellationTimeout().toNanos();
     initializationSegmentMismatches =
         Counter.builder(INITIALIZATION_SEGMENT_MISMATCH_METRIC)
@@ -372,7 +374,15 @@ final class LiveWorkerConnectionRegistry {
       }
 
       return new ProbeDispatch.Dispatched(
-          pending.result().orTimeout(probeTimeoutNanos, TimeUnit.NANOSECONDS));
+          pending.result().orTimeout(timeoutNanos(request), TimeUnit.NANOSECONDS));
+    }
+
+    private long timeoutNanos(ProbeRequest request) {
+      if (request.getScanKeyframePackets()) {
+        return keyframeScanTimeoutNanos;
+      }
+
+      return probeTimeoutNanos;
     }
 
     private void cancelProbeIfRequested(PendingProbe pending) {

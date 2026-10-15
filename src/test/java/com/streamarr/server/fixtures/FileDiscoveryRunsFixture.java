@@ -1,6 +1,7 @@
 package com.streamarr.server.fixtures;
 
 import com.streamarr.server.config.ProbeSchedulingProperties;
+import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeProbeTaskRequests;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -55,12 +56,13 @@ public final class FileDiscoveryRunsFixture {
                         .mediaFileRepository(mediaFiles)
                         .reader(new PersistedProbeReader(outcomes))
                         .probeTaskRequests(probeTaskRequests)
+                        .packetScans(new CapturingKeyframePacketScanRequests())
                         .fileSystem(fileSystem)
                         .build())
                 .outcomes(outcomes)
                 .sleeper(probeSleeper)
                 .clock(probeClock)
-                .properties(new ProbeSchedulingProperties(null, CHECK_INTERVAL))
+                .properties(new ProbeSchedulingProperties(null, CHECK_INTERVAL, null))
                 .build())
         .mediaFiles(mediaFiles)
         .build();

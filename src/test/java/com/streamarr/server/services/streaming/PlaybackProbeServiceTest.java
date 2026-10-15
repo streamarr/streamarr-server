@@ -7,9 +7,15 @@ import com.streamarr.server.domain.media.MediaFileContainerInfo;
 import com.streamarr.server.domain.media.MediaFileStreamInfo;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
+import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
+import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.domain.task.ProbeInputs;
+import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.services.events.library.MediaFileProbeTaskRequested;
@@ -127,6 +133,61 @@ class PlaybackProbeServiceTest {
     assertThat(probe.width()).isEqualTo(1920);
     assertThat(probe.height()).isEqualTo(1080);
     assertThat(events.getEventsOfType(MediaFileProbeTaskRequested.class)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should keep playing a file's earlier outcome until its new outcome is stored")
+  void shouldKeepPlayingAFilesEarlierOutcomeUntilItsNewOutcomeIsStored() {
+    var mediaFileId = UUID.randomUUID();
+    var snapshot = new SourceFileSnapshot(1000, Instant.EPOCH);
+    var earlierVersion = 1;
+    var outcomes =
+        storing(
+            MediaFileContainerInfo.builder()
+                .mediaFileId(mediaFileId)
+                .snapshot(snapshot)
+                .probeVersion(earlierVersion)
+                .container(ProbeContainer.builder().build())
+                .streams(List.of(videoStream(mediaFileId, "h264")))
+                .build());
+    outcomes.trySaveProbeRequest(mediaFileId, new ProbeInputs(snapshot, ProbeVersion.CURRENT));
+    var service =
+        new PlaybackProbeService(new PersistedProbeReader(outcomes), new CapturingEventPublisher());
+
+    var beforeReprobe = videoCodec(service.read(mediaFileId));
+    outcomes.publish(
+        ProbePublication.builder()
+            .mediaFileId(mediaFileId)
+            .snapshot(snapshot)
+            .probeVersion(ProbeVersion.CURRENT)
+            .outcome(
+                new ProbeOutcome.Success(
+                    ProbeContainer.builder().build(),
+                    List.of(
+                        StreamInfo.builder().codecType("video").codec(Optional.of("hevc")).build()),
+                    new KeyframeKnowledge.PacketScanRequired(
+                        KeyframePacketScanReason.NO_CONTAINER_INDEX)))
+            .build());
+    var afterReprobe = videoCodec(service.read(mediaFileId));
+
+    assertThat(earlierVersion).isLessThan(ProbeVersion.CURRENT);
+    assertThat(beforeReprobe).isEqualTo("h264");
+    assertThat(afterReprobe).isEqualTo("hevc");
+  }
+
+  private static MediaFileStreamInfo videoStream(UUID mediaFileId, String codec) {
+    return MediaFileStreamInfo.builder().stream(
+            mediaFileId,
+            StreamInfo.builder().index(0).codecType("video").codec(Optional.of(codec)).build())
+        .build();
+  }
+
+  private static String videoCodec(Outcome<MediaProbe, CreateStreamSessionRejection> read) {
+    return read.fold(
+        MediaProbe::videoCodec,
+        rejections -> {
+          throw new AssertionError("Expected playback readiness: " + rejections);
+        });
   }
 
   private static FakeMediaFileContainerInfoRepository storing(MediaFileContainerInfo row) {

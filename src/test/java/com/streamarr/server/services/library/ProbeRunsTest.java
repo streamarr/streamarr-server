@@ -12,6 +12,7 @@ import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.domain.task.RequestedProbeResult;
+import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fakes.CountingSleeper;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
@@ -56,12 +57,13 @@ class ProbeRunsTest {
                     .mediaFileRepository(mediaFiles)
                     .reader(new PersistedProbeReader(outcomes))
                     .probeTaskRequests(requests)
+                    .packetScans(new CapturingKeyframePacketScanRequests())
                     .fileSystem(fileSystem)
                     .build())
             .outcomes(outcomes)
             .sleeper(sleeper)
             .clock(clock)
-            .properties(new ProbeSchedulingProperties(null, CHECK_INTERVAL))
+            .properties(new ProbeSchedulingProperties(null, CHECK_INTERVAL, null))
             .build();
   }
 

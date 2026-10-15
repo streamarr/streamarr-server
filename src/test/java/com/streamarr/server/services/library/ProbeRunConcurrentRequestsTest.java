@@ -8,6 +8,7 @@ import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
+import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeProbeTaskRequests;
@@ -75,6 +76,7 @@ class ProbeRunConcurrentRequestsTest {
                 .mediaFileRepository(mediaFiles)
                 .reader(new PersistedProbeReader(outcomes))
                 .probeTaskRequests(probeTaskRequests)
+                .packetScans(new CapturingKeyframePacketScanRequests())
                 .fileSystem(fileSystem)
                 .build())
         .outcomes(outcomes)
@@ -83,7 +85,7 @@ class ProbeRunConcurrentRequestsTest {
               throw new AssertionError("every requested probe already has its outcome");
             })
         .clock(clock)
-        .properties(new ProbeSchedulingProperties(null, Duration.ofSeconds(2)))
+        .properties(new ProbeSchedulingProperties(null, Duration.ofSeconds(2), null))
         .build();
   }
 

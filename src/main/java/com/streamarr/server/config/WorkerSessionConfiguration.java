@@ -20,6 +20,7 @@ public class WorkerSessionConfiguration {
             .address(properties.address())
             .port(properties.port())
             .probeTimeout(properties.probeTimeout())
+            .keyframeScanTimeout(properties.keyframeScanTimeout())
             .probeCancellationTimeout(properties.probeCancellationTimeout())
             .build();
     return new WorkerSessionServer(configuration, segmentStore, meterRegistry);

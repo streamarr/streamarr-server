@@ -13,6 +13,7 @@ import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
@@ -246,6 +247,7 @@ class AdversarialPlaybackTest {
           .mediaFileRepository(files)
           .reader(reader)
           .probeTaskRequests(requests)
+          .packetScans(new CapturingKeyframePacketScanRequests())
           .fileSystem(sourceFileSystem)
           .build();
     }

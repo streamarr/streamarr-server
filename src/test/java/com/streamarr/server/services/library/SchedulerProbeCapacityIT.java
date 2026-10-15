@@ -9,6 +9,7 @@ import com.streamarr.server.config.LibraryWatcherProperties;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.exceptions.ProbeCancelledException;
+import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -27,6 +28,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.PlatformTransactionManager;
 
 @Tag("IntegrationTest")
 @DisplayName("Configured probe concurrency")
@@ -35,6 +37,7 @@ class SchedulerProbeCapacityIT extends AbstractProbeSchedulerIntegrationTest {
   @Autowired private MediaFileContainerInfoRepository outcomes;
   @Autowired private MediaFileRepository mediaFiles;
   @Autowired private LibraryWatcherProperties watcherProperties;
+  @Autowired private PlatformTransactionManager transactionManager;
 
   private final BlockedProducer producer = new BlockedProducer();
 
@@ -92,6 +95,8 @@ class SchedulerProbeCapacityIT extends AbstractProbeSchedulerIntegrationTest {
             .producer(producer)
             .fileSystem(FileSystems.getDefault())
             .outcomes(outcomes)
+            .packetScans(new CapturingKeyframePacketScanRequests())
+            .transactionManager(transactionManager)
             .build();
     var client = startScheduler(execution, listener);
 

@@ -87,13 +87,17 @@ public final class WorkerContainerFixture implements AutoCloseable {
             .waitingFor(Wait.forHttp("/actuator/health/readiness").forPort(9091))
             .withStartupTimeout(Duration.ofMinutes(2));
     // The worker names the job attempt in STREAMARR_JOB_ATTEMPT_ID; the script keys its command and
-    // process files by it.
+    // process files by it. A keyframe packet scan runs FFmpeg outside any job attempt, so the
+    // script passes that run straight to FFmpeg.
     var script =
         """
         #!/bin/bash
+        if [[ -z ${STREAMARR_JOB_ATTEMPT_ID:-} ]]; then
+          exec ffmpeg "$@"
+        fi
         for argument in "$@"; do
           if [[ $argument == /media/* ]]; then
-            attempt=${STREAMARR_JOB_ATTEMPT_ID:?the worker names the job attempt}
+            attempt=$STREAMARR_JOB_ATTEMPT_ID
             printf '%s\\0' "$@" > "/tmp/command-$attempt"
             printf '%s' "$$" > "/tmp/producer-$attempt.tmp"
             mv "/tmp/producer-$attempt.tmp" "/tmp/producer-$attempt"

@@ -6,5 +6,8 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class ProbeVersion {
 
-  public static final int CURRENT = 1;
+  // Version 3 adds the chosen video stream's keyframe positions. ADR 0032 defines version 2 as the
+  // dynamic range facts of streamarr/streamarr-server#501, and each version includes the facts of
+  // every earlier version.
+  public static final int CURRENT = 3;
 }

@@ -9,6 +9,7 @@ import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.github.kagkarlsson.scheduler.task.TaskInstanceId;
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.config.KeyframePacketScanScheduler;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
@@ -58,7 +59,7 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
 
   @BeforeEach
   void clearScheduledTasks() {
-    dsl.deleteFrom(DSL.table("scheduled_tasks")).execute();
+    deleteScheduledTasks();
   }
 
   // Statistics gathered at one row make PostgreSQL join the claim's LIMIT subquery as a rescanned
@@ -79,24 +80,33 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
 
   @AfterEach
   void stopSchedulerAndRemoveFiles() {
-    if (scheduler != null) {
-      scheduler.stop();
-    }
-
-    dsl.deleteFrom(DSL.table("scheduled_tasks")).execute();
+    stopScheduler();
+    deleteScheduledTasks();
     mediaFiles.deleteAll(createdFiles);
     if (libraryId != null) {
       libraries.deleteById(libraryId);
     }
   }
 
+  private void deleteScheduledTasks() {
+    dsl.deleteFrom(DSL.table("scheduled_tasks")).execute();
+    dsl.deleteFrom(DSL.table(KeyframePacketScanScheduler.TABLE_NAME)).execute();
+  }
+
   List<ProbeTaskRequest> requestUnchangedFiles(int count) throws IOException {
+    var requests = createUnchangedFiles(count);
+    requests.forEach(scheduling::request);
+    return requests;
+  }
+
+  /**
+   * Creates media files and returns the probe requests a scan would make, without scheduling them.
+   */
+  List<ProbeTaskRequest> createUnchangedFiles(int count) throws IOException {
     libraryId = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary()).getId();
     var requests = new ArrayList<ProbeTaskRequest>();
     for (var index = 0; index < count; index++) {
-      var request = requestFor(createMediaFile());
-      requests.add(request);
-      scheduling.request(request);
+      requests.add(requestFor(createMediaFile()));
     }
 
     return requests;
@@ -112,6 +122,15 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
         ProbeSchedulerStarter.fromContext(applicationContext).start(execution, listener, clock);
     scheduler = started.scheduler();
     return started.client();
+  }
+
+  void stopScheduler() {
+    if (scheduler == null) {
+      return;
+    }
+
+    scheduler.stop();
+    scheduler = null;
   }
 
   static AbstractSchedulerListener countingOk(CountDownLatch completions) {

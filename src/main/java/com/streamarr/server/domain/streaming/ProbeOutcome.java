@@ -8,6 +8,12 @@ import lombok.NonNull;
 
 public sealed interface ProbeOutcome {
 
+  /** Whether a worker must scan the source's packets to find its keyframe positions. */
+  default boolean needsKeyframePacketScan() {
+    return this instanceof Success success
+        && success.keyframes() instanceof KeyframeKnowledge.PacketScanRequired;
+  }
+
   record Failure(@NonNull ProbeError error) implements ProbeOutcome {}
 
   record Success(

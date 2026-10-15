@@ -5,6 +5,7 @@ import com.github.kagkarlsson.scheduler.SystemClock;
 import com.github.kagkarlsson.scheduler.TaskRepository;
 import com.github.kagkarlsson.scheduler.TaskResolver;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
+import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerProperties;
 import com.github.kagkarlsson.scheduler.event.SchedulerListeners;
 import com.github.kagkarlsson.scheduler.jdbc.AutodetectJdbcCustomization;
 import com.github.kagkarlsson.scheduler.jdbc.JdbcCustomization;
@@ -13,7 +14,9 @@ import com.github.kagkarlsson.scheduler.jdbc.PostgreSqlJdbcCustomization;
 import com.github.kagkarlsson.scheduler.serializer.Serializer;
 import com.github.kagkarlsson.scheduler.task.Task;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
+import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.audit.SystemWork;
+import com.streamarr.server.services.library.KeyframePacketScanExecution;
 import com.streamarr.server.services.library.MediaProbeTask;
 import com.streamarr.server.services.library.ProbeExecution;
 import com.streamarr.server.services.library.ProbeTaskCompletion;
@@ -23,8 +26,12 @@ import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import javax.sql.DataSource;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
+import org.springframework.transaction.PlatformTransactionManager;
 
 @Configuration(proxyBeanMethods = false)
 public class ProbeSchedulingConfiguration {
@@ -44,6 +51,38 @@ public class ProbeSchedulingConfiguration {
   public Task<ProbeTaskRequest> mediaProbeTask(
       ProbeExecution execution, ProbeTaskCompletion completion, Clock clock) {
     return MediaProbeTask.create(execution, completion, clock);
+  }
+
+  /**
+   * Runs keyframe packet scans on their own scheduler, which starts with the application only while
+   * db-scheduler is enabled.
+   */
+  @Bean
+  @SuppressWarnings("java:S107") // Spring injects each collaborator by type.
+  public KeyframePacketScanScheduler keyframePacketScanScheduler(
+      DbSchedulerCustomizer dbSchedulerCustomizer,
+      DataSource dataSource,
+      PlatformTransactionManager transactionManager,
+      KeyframePacketScanExecution execution,
+      MediaFileContainerInfoRepository outcomes,
+      ProbeSchedulingProperties properties,
+      Clock clock,
+      Environment environment) {
+    var schedulerProperties =
+        Binder.get(environment)
+            .bind("db-scheduler", Bindable.of(DbSchedulerProperties.class))
+            .orElseGet(DbSchedulerProperties::new);
+    return KeyframePacketScanScheduler.builder()
+        .schedulerProperties(schedulerProperties)
+        .customizer(dbSchedulerCustomizer)
+        .dataSource(dataSource)
+        .transactionManager(transactionManager)
+        .execution(execution)
+        .outcomes(outcomes)
+        .properties(properties)
+        .clock(clock)
+        .autoStartup(schedulerProperties.isEnabled())
+        .build();
   }
 
   /**

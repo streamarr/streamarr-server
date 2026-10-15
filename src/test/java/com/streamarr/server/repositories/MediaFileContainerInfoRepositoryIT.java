@@ -11,6 +11,7 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaFileStreamId;
 import com.streamarr.server.domain.media.MediaFileStreamInfo;
 import com.streamarr.server.domain.media.PersistedProbeOutcome;
+import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeContainer;
@@ -237,7 +238,7 @@ class MediaFileContainerInfoRepositoryIT extends AbstractIntegrationTest {
     var file = createMediaFile();
     entityManager.persist(
         outcomeBuilder(file.getId())
-            .probeVersion(2)
+            .probeVersion(ProbeVersion.CURRENT + 1)
             .probeError(ProbeError.NO_VIDEO_STREAM)
             .build());
     flushAndClear();

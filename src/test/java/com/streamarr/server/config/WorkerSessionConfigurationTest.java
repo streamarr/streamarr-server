@@ -31,6 +31,8 @@ class WorkerSessionConfigurationTest {
   @CsvSource({
     "probe-timeout,0s",
     "probe-timeout,-1s",
+    "keyframe-scan-timeout,0s",
+    "keyframe-scan-timeout,-1s",
     "probe-cancellation-timeout,0s",
     "probe-cancellation-timeout,-1s"
   })

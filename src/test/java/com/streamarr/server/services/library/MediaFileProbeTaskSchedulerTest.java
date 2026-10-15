@@ -11,10 +11,18 @@ import com.streamarr.server.domain.media.MediaFileContainerInfo;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
+import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
+import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
+import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
 import com.streamarr.server.exceptions.ProbeTaskSchedulingException;
+import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeProbeTaskRequests;
@@ -28,6 +36,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -47,6 +56,8 @@ class MediaFileProbeTaskSchedulerTest {
   private final FakeMediaFileContainerInfoRepository outcomes =
       new FakeMediaFileContainerInfoRepository();
   private final FakeProbeTaskRequests requests = new FakeProbeTaskRequests(outcomes);
+  private final CapturingKeyframePacketScanRequests packetScans =
+      new CapturingKeyframePacketScanRequests();
   private FileSystem fileSystem;
   private Path path;
   private MediaFile mediaFile;
@@ -134,6 +145,37 @@ class MediaFileProbeTaskSchedulerTest {
   }
 
   @Test
+  @DisplayName("Should request a packet scan when the matching outcome still needs one")
+  void shouldRequestAPacketScanWhenTheMatchingOutcomeStillNeedsOne() {
+    var snapshot = new SourceFileSnapshot(5, MODIFIED_AT);
+    outcomes.publish(
+        ProbePublication.builder()
+            .mediaFileId(mediaFile.getId())
+            .snapshot(snapshot)
+            .probeVersion(ProbeVersion.CURRENT)
+            .outcome(
+                new ProbeOutcome.Success(
+                    ProbeContainer.builder().build(),
+                    List.of(StreamInfo.builder().index(0).codecType("video").build()),
+                    new KeyframeKnowledge.PacketScanRequired(
+                        KeyframePacketScanReason.NO_CONTAINER_INDEX)))
+            .build());
+    var scheduler = schedulerBuilder().build();
+
+    scheduler.schedule(mediaFile.getId());
+
+    assertThat(requests.requests()).isEmpty();
+    assertThat(packetScans.requests())
+        .containsExactly(
+            KeyframePacketScanTaskRequest.builder()
+                .mediaFileId(mediaFile.getId())
+                .filepathUri(mediaFile.getFilepathUri())
+                .snapshot(snapshot)
+                .probeVersion(ProbeVersion.CURRENT)
+                .build());
+  }
+
+  @Test
   @DisplayName("Should reject scheduling without enqueue when the media row no longer exists")
   void shouldRejectSchedulingWithoutEnqueueWhenMediaRowNoLongerExists() {
     files.deleteById(mediaFile.getId());
@@ -176,6 +218,7 @@ class MediaFileProbeTaskSchedulerTest {
         .mediaFileRepository(files)
         .reader(new PersistedProbeReader(outcomes))
         .probeTaskRequests(requests)
+        .packetScans(packetScans)
         .fileSystem(fileSystem);
   }
 }

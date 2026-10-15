@@ -148,6 +148,10 @@ Item failures never change the library's status.
 |Probe
 |Terminal errors in `media_file_container_info.probe_error` with the source snapshot and probe version; the reason of the latest failed attempt at the requested inputs in `media_file_probe_task_request`
 |db-scheduler, with backoff capped at five minutes, for failed attempts
+
+|Keyframe packet scan
+|`media_file_container_info.keyframe_status` and `media_file_keyframe_positions` on the outcome that asked for the scan; `PACKET_SCAN_FAILED` after three scans that timed out or reported no keyframes; other failures in the `media-file-keyframe-scan` task in `keyframe_scan_scheduled_tasks`
+|A db-scheduler of its own, with backoff capped at five minutes; the next library scan requests a scan that the outcome still needs
 |===
 
 An `item_result` row holds the latest attempt's outcome: `SUCCEEDED`, `UNAVAILABLE` when the provider has nothing, or `FAILED` with a reason.

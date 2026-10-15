@@ -10,15 +10,26 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
+import com.streamarr.server.domain.streaming.KeyframePosition;
+import com.streamarr.server.domain.streaming.KeyframePositionSource;
+import com.streamarr.server.domain.streaming.KeyframePositions;
+import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
+import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
+import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
+import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import java.io.IOException;
@@ -28,13 +39,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
@@ -47,6 +61,9 @@ class ProbeExecutionTest {
   private final FakeMediaFileContainerInfoRepository outcomes =
       new FakeMediaFileContainerInfoRepository();
   private final FakeFfprobeService producer = new FakeFfprobeService();
+  private final CapturingKeyframePacketScanRequests packetScans =
+      new CapturingKeyframePacketScanRequests();
+  private final FakeTransactionManager transactionManager = new FakeTransactionManager();
   private Path source;
   private MediaFile mediaFile;
 
@@ -82,6 +99,83 @@ class ProbeExecutionTest {
               assertThat(publication.probeVersion()).isEqualTo(ProbeVersion.CURRENT);
               assertThat(publication.outcome()).isEqualTo(producer.probe(anyRequestFor(source)));
             });
+  }
+
+  @Test
+  @DisplayName("Should request a packet scan when the published outcome needs one")
+  void shouldRequestAPacketScanWhenThePublishedOutcomeNeedsOne() {
+    var request = request(ProbeVersion.CURRENT);
+    producer.answerWith(
+        success(
+            new KeyframeKnowledge.PacketScanRequired(KeyframePacketScanReason.NO_CONTAINER_INDEX)));
+
+    var result = execution().execute(request);
+
+    assertThat(result).isEqualTo(new ProbeExecutionResult.Completed());
+    assertThat(packetScans.requests())
+        .containsExactly(
+            KeyframePacketScanTaskRequest.builder()
+                .mediaFileId(mediaFile.getId())
+                .filepathUri(mediaFile.getFilepathUri())
+                .snapshot(request.snapshot())
+                .probeVersion(ProbeVersion.CURRENT)
+                .build());
+  }
+
+  @ParameterizedTest
+  @MethodSource("outcomesThatNeedNoPacketScan")
+  @DisplayName("Should request no packet scan when the published outcome needs none")
+  void shouldRequestNoPacketScanWhenThePublishedOutcomeNeedsNone(ProbeOutcome outcome) {
+    producer.answerWith(outcome);
+
+    execution().execute(request(ProbeVersion.CURRENT));
+
+    assertThat(outcomes.publications()).singleElement();
+    assertThat(packetScans.requests()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should request no packet scan when a newer request refuses the publication")
+  void shouldRequestNoPacketScanWhenANewerRequestRefusesThePublication() {
+    var request = request(ProbeVersion.CURRENT);
+    producer.answerWith(
+        success(
+            new KeyframeKnowledge.PacketScanRequired(KeyframePacketScanReason.NO_CONTAINER_INDEX)));
+    producer.runDuringProbe(
+        () ->
+            outcomes.trySaveProbeRequest(
+                mediaFile.getId(),
+                new ProbeInputs(
+                    new SourceFileSnapshot(99, request.snapshot().modifiedAt()),
+                    ProbeVersion.CURRENT)));
+
+    execution().execute(request);
+
+    assertThat(outcomes.publications()).isEmpty();
+    assertThat(packetScans.requests()).isEmpty();
+  }
+
+  private static Stream<ProbeOutcome> outcomesThatNeedNoPacketScan() {
+    return Stream.of(
+        new ProbeOutcome.Failure(ProbeError.INVALID_MEDIA),
+        success(new KeyframeKnowledge.NotReported()),
+        success(new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.NO_KEYFRAMES)),
+        success(
+            new KeyframeKnowledge.Known(
+                KeyframePositions.builder()
+                    .streamIndex(0)
+                    .timeBaseNumerator(1)
+                    .timeBaseDenominator(1_000)
+                    .source(KeyframePositionSource.CONTAINER_INDEX)
+                    .keyframes(List.of(new KeyframePosition(0, 0)))
+                    .build())));
+  }
+
+  private static ProbeOutcome.Success success(KeyframeKnowledge keyframes) {
+    return new ProbeOutcome.Success(
+        ProbeContainer.builder().build(),
+        List.of(StreamInfo.builder().codecType("video").build()),
+        keyframes);
   }
 
   @Test
@@ -287,6 +381,8 @@ class ProbeExecutionTest {
         .producer(producer)
         .fileSystem(FileSystems.getDefault())
         .outcomes(outcomes)
+        .packetScans(packetScans)
+        .transactionManager(transactionManager)
         .build();
   }
 
