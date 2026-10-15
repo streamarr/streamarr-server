@@ -108,7 +108,7 @@ public class ProducerLifecycleService {
             .sessionId(sessionId)
             .variantLabel(variantLabel)
             .segmentName(segmentName)
-            .requestedIndex(SegmentNames.indexOf(segmentName).orElse(handle.startSequenceNumber()))
+            .requestedIndex(SegmentNames.indexOf(segmentName).orElseGet(session::getCurrentSegment))
             .build();
     if (handle.status() == TranscodeStatus.FAILED
         && !state.resetForFreshTargets(

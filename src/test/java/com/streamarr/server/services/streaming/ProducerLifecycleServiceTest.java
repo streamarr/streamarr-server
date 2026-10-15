@@ -596,6 +596,29 @@ class ProducerLifecycleServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should replace a dead variant at the current segment when its initialization segment is requested")
+  void shouldReplaceADeadVariantAtTheCurrentSegmentWhenItsInitializationSegmentIsRequested() {
+    var session = startedLadderSession();
+    var sessionId = session.getSessionId();
+    lifecycle.startVariantOnDemand(sessionId, "1080p", "1080p/init.mp4");
+    lifecycle.ensurePositioned(sessionId, "480p", "480p/segment50.m4s");
+    transcodeExecutor.markDead(sessionId, "1080p");
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    var result = lifecycle.recover(sessionId, "1080p", "1080p/init.mp4");
+
+    assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
+    assertThat(startedSince(startedBefore))
+        .singleElement()
+        .satisfies(
+            replacement -> {
+              assertThat(replacement.variantLabel()).isEqualTo("1080p");
+              assertThat(replacement.startSequenceNumber()).isEqualTo(50);
+            });
+  }
+
+  @Test
   @DisplayName("Should report session gone when recovery follows destruction")
   void shouldReportSessionGoneWhenRecoveryFollowsDestruction() {
     var session = startedSession();
