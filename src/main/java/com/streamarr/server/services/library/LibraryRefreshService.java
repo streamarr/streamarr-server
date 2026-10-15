@@ -23,6 +23,8 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeasonWithEpisodesRequest;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.audit.SystemWork;
+import com.streamarr.server.services.concurrency.AdaptiveAdmission;
+import com.streamarr.server.services.concurrency.AdmittedTaskReport;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
@@ -33,17 +35,19 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.Future;
+import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
  * Refreshes each movie or series from its provider and records the metadata result for that item.
- * An item failure does not stop the refresh; a result that cannot be recorded fails it.
+ * Each title's task is admitted through the refresh's adaptive limit (ADR 0041). An item failure
+ * does not stop the refresh; a result that cannot be recorded fails it and ends admission.
  */
 @Slf4j
 @Service
+@Builder
 @RequiredArgsConstructor
 public class LibraryRefreshService {
 
@@ -57,6 +61,7 @@ public class LibraryRefreshService {
   private final ArtworkRunWaiter artworkRunWaiter;
   private final ItemResultRepository itemResults;
   private final Clock clock;
+  private final LibraryOperationAdmissions libraryOperationAdmissions;
 
   public void refreshLibrary(Library library) {
     refreshLibrary(library, ImageRefreshMode.PRESERVE);
@@ -72,10 +77,12 @@ public class LibraryRefreshService {
     var artworkRun =
         artworkRequestService.openRun(
             "refresh of library '" + library.getName() + "'", imageRefreshMode);
-    try (artworkRun) {
+    try (artworkRun;
+        var admission = libraryOperationAdmissions.openRefreshAdmission(library)) {
+      var refresh = new RefreshOperation(library, artworkRun, admission);
       switch (library.getType()) {
-        case SERIES -> refreshSeriesLibrary(library, artworkRun);
-        case MOVIE -> refreshMovieLibrary(library, artworkRun);
+        case SERIES -> refreshSeriesLibrary(refresh);
+        case MOVIE -> refreshMovieLibrary(refresh);
         case OTHER -> throw new UnsupportedMediaTypeException(library.getType().name());
       }
     }
@@ -92,23 +99,95 @@ public class LibraryRefreshService {
     }
   }
 
-  private void refreshSeriesLibrary(Library library, ArtworkRun artworkRun) {
-    var seriesList = seriesRepository.findWithExternalIdsByLibrary_Id(library.getId());
-    var tasks = new ArrayList<Future<?>>();
+  private record RefreshOperation(
+      Library library, ArtworkRun artworkRun, AdaptiveAdmission admission) {}
 
-    try (var executor = SystemWork.newExecutorRunningAsSystemActor("library-refresh-series-")) {
-      for (var series : seriesList) {
-        var tmdbId = findTmdbId(series);
-        if (tmdbId.isEmpty()) {
-          log.warn("No TMDB ID for series '{}', skipping refresh", series.getTitle());
-          continue;
-        }
-        var id = tmdbId.get();
-        tasks.add(executor.submit(() -> refreshSeries(series, id, library, artworkRun)));
+  private record TitleToRefresh<T>(T entity, String tmdbId) {}
+
+  @FunctionalInterface
+  private interface TitleRefresh<T> {
+    ItemOutcome refresh(TitleToRefresh<T> title, ArtworkRun taskRun);
+  }
+
+  @Builder
+  private record AdmittedRefreshes<T>(
+      List<TitleToRefresh<T>> titles, TitleRefresh<T> refresh, String threadNamePrefix) {}
+
+  private void refreshSeriesLibrary(RefreshOperation operation) {
+    var library = operation.library();
+    forkAdmittedRefreshes(
+        operation,
+        AdmittedRefreshes.<Series>builder()
+            .titles(
+                titlesWithTmdbIds(
+                    seriesRepository.findWithExternalIdsByLibrary_Id(library.getId()), "series"))
+            .refresh(
+                (title, taskRun) -> refreshSeries(title.entity(), title.tmdbId(), library, taskRun))
+            .threadNamePrefix("library-refresh-series-")
+            .build());
+  }
+
+  private void refreshMovieLibrary(RefreshOperation operation) {
+    var library = operation.library();
+    forkAdmittedRefreshes(
+        operation,
+        AdmittedRefreshes.<Movie>builder()
+            .titles(
+                titlesWithTmdbIds(
+                    movieRepository.findWithExternalIdsByLibrary_Id(library.getId()), "movie"))
+            .refresh(
+                (title, taskRun) -> refreshMovie(title.entity(), title.tmdbId(), library, taskRun))
+            .threadNamePrefix("library-refresh-movie-")
+            .build());
+  }
+
+  // A title without a TMDB id cannot be refreshed, so it takes no admission.
+  private <T extends BaseCollectable<?>> List<TitleToRefresh<T>> titlesWithTmdbIds(
+      List<T> titles, String kind) {
+    var withTmdbIds = new ArrayList<TitleToRefresh<T>>();
+    for (var title : titles) {
+      var tmdbId = findTmdbId(title);
+      if (tmdbId.isEmpty()) {
+        log.warn("No TMDB ID for {} '{}', skipping refresh", kind, title.getTitle());
+        continue;
       }
+
+      withTmdbIds.add(new TitleToRefresh<>(title, tmdbId.get()));
     }
 
-    throwIfAnyRefreshTaskFailed(library, tasks);
+    return withTmdbIds;
+  }
+
+  // Each task keeps its admission until the primary artwork it requested has recorded results.
+  private <T> void forkAdmittedRefreshes(
+      RefreshOperation operation, AdmittedRefreshes<T> refreshes) {
+    var library = operation.library();
+    try {
+      var failures =
+          operation
+              .admission()
+              .forkAdmittedTasks(
+                  refreshes.titles().iterator(),
+                  title -> refreshAdmittedTitle(operation, refreshes.refresh(), title),
+                  SystemWork.newThreadFactoryRunningAsSystemActor(refreshes.threadNamePrefix()));
+      throwIfAnyRefreshTaskFailed(library, failures);
+    } catch (InterruptedException exception) {
+      Thread.currentThread().interrupt();
+      throw new LibraryRefreshFailedException(library.getName(), exception);
+    }
+  }
+
+  private <T> AdmittedTaskReport refreshAdmittedTitle(
+      RefreshOperation operation, TitleRefresh<T> refresh, TitleToRefresh<T> title)
+      throws InterruptedException {
+    var taskRun = operation.artworkRun().openTaskRun();
+    ItemOutcome outcome;
+    try (taskRun) {
+      outcome = refresh.refresh(title, taskRun);
+    }
+
+    artworkRunWaiter.awaitTaskResults(taskRun);
+    return AdmissionReports.forRefresh(outcome);
   }
 
   private ItemOutcome refreshSeries(
@@ -208,25 +287,6 @@ public class LibraryRefreshService {
         failure.reason(), "Season %d: %s".formatted(seasonNumber, failure.detail()));
   }
 
-  private void refreshMovieLibrary(Library library, ArtworkRun artworkRun) {
-    var movies = movieRepository.findWithExternalIdsByLibrary_Id(library.getId());
-    var tasks = new ArrayList<Future<?>>();
-
-    try (var executor = SystemWork.newExecutorRunningAsSystemActor("library-refresh-movie-")) {
-      for (var movie : movies) {
-        var tmdbId = findTmdbId(movie);
-        if (tmdbId.isEmpty()) {
-          log.warn("No TMDB ID for movie '{}', skipping refresh", movie.getTitle());
-          continue;
-        }
-        var id = tmdbId.get();
-        tasks.add(executor.submit(() -> refreshMovie(movie, id, library, artworkRun)));
-      }
-    }
-
-    throwIfAnyRefreshTaskFailed(library, tasks);
-  }
-
   private ItemOutcome refreshMovie(
       Movie movie, String tmdbId, Library library, ArtworkRun artworkRun) {
     var attemptedAt = clock.instant();
@@ -278,12 +338,7 @@ public class LibraryRefreshService {
     return ItemResult.builder().itemId(itemId).itemType(itemType).step(ItemStep.METADATA);
   }
 
-  private static void throwIfAnyRefreshTaskFailed(Library library, List<Future<?>> tasks) {
-    var failures =
-        tasks.stream()
-            .filter(task -> task.state() == Future.State.FAILED)
-            .map(Future::exceptionNow)
-            .toList();
+  private static void throwIfAnyRefreshTaskFailed(Library library, List<Throwable> failures) {
     if (failures.isEmpty()) {
       return;
     }

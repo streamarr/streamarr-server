@@ -2066,17 +2066,19 @@ class LibraryManagementServiceTest {
                       .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))
                       .build()));
       var refreshService =
-          new LibraryRefreshService(
-              new FakeSeriesRepository(),
-              fakeMovieRepository,
-              seriesService,
-              movieService,
-              mock(SeriesMetadataProviderResolver.class),
-              fakeMovieMetadataProviderResolver,
-              artworkRequestService,
-              artwork.artworkRunWaiter(),
-              new FakeItemResultRepository(),
-              Clock.systemUTC());
+          LibraryRefreshService.builder()
+              .seriesRepository(new FakeSeriesRepository())
+              .movieRepository(fakeMovieRepository)
+              .seriesService(seriesService)
+              .movieService(movieService)
+              .seriesMetadataProviderResolver(mock(SeriesMetadataProviderResolver.class))
+              .movieMetadataProviderResolver(fakeMovieMetadataProviderResolver)
+              .artworkRequestService(artworkRequestService)
+              .artworkRunWaiter(artwork.artworkRunWaiter())
+              .itemResults(new FakeItemResultRepository())
+              .clock(Clock.systemUTC())
+              .libraryOperationAdmissions(admissionsWith(new AdaptiveAdmissions()))
+              .build();
       var service = libraryManagementServiceWithRefreshService(refreshService);
 
       service.refreshLibrary(savedLibraryId, ImageRefreshMode.FORCE_REFRESH);
@@ -2378,7 +2380,7 @@ class LibraryManagementServiceTest {
     private final AtomicReference<Thread> executingThread = new AtomicReference<>();
 
     private BlockingLibraryRefreshService() {
-      super(null, null, null, null, null, null, null, null, null, null);
+      super(null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Override
@@ -2417,7 +2419,7 @@ class LibraryManagementServiceTest {
     private final AtomicReference<ImageRefreshMode> imageRefreshMode = new AtomicReference<>();
 
     private RecordingLibraryRefreshService() {
-      super(null, null, null, null, null, null, null, null, null, null);
+      super(null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Override
