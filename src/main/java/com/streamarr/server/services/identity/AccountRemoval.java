@@ -82,7 +82,6 @@ class AccountRemoval {
 
     var profileId = transfer.profileId();
     var sourceHouseholdId = transfer.sourceHouseholdId();
-    var now = transfer.now();
     shareRepository.convertMembershipShareToVisitorShare(profileId, sourceHouseholdId);
     authSessionRepository.clearProfileSelectionFromLiveSessions(profileId, sourceHouseholdId);
   }

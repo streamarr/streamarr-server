@@ -2,8 +2,6 @@ package com.streamarr.server.repositories.streaming;
 
 import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
 
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.Collection;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -16,8 +14,6 @@ public class SessionProgressRepositoryCustomImpl implements SessionProgressRepos
 
   @Override
   public boolean upsertProgress(SaveWatchProgress progress) {
-    var now = OffsetDateTime.now(ZoneOffset.UTC);
-
     var rowsAffected =
         dsl.insertInto(SESSION_PROGRESS)
             .set(SESSION_PROGRESS.SESSION_ID, progress.sessionId())
