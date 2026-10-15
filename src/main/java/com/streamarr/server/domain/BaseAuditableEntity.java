@@ -30,7 +30,6 @@ public abstract class BaseAuditableEntity<T extends BaseAuditableEntity<T>> {
   private UUID id;
 
   // The audit trigger fills these columns from the transaction's actor; Hibernate only reads them.
-  // The protected setters exist for test fakes that play the database.
   @Generated
   @Column(insertable = false, updatable = false)
   @Setter(value = AccessLevel.PROTECTED)
@@ -43,7 +42,7 @@ public abstract class BaseAuditableEntity<T extends BaseAuditableEntity<T>> {
 
   @Generated(event = {EventType.INSERT, EventType.UPDATE})
   @Column(insertable = false, updatable = false)
-  @Setter(value = AccessLevel.PROTECTED)
+  @Setter(value = AccessLevel.NONE)
   private UUID lastModifiedBy;
 
   @Generated(event = {EventType.INSERT, EventType.UPDATE})

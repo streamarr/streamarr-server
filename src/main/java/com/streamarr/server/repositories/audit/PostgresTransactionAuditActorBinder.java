@@ -14,8 +14,8 @@ public class PostgresTransactionAuditActorBinder implements TransactionAuditActo
 
   // fill_audit_columns (V079) reads this transaction-local setting. It stores the setting's
   // account id, and stores an empty actor for REQUEST_WITHOUT_ACCOUNT.
-  static final String ACTOR_SETTING = "streamarr.actor_id";
-  static final String REQUEST_WITHOUT_ACCOUNT = "request-without-account";
+  private static final String ACTOR_SETTING = "streamarr.actor_id";
+  private static final String REQUEST_WITHOUT_ACCOUNT = "request-without-account";
 
   private final DSLContext dsl;
 
