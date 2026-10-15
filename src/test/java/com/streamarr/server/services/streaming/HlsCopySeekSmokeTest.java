@@ -12,6 +12,7 @@ import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
+import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -188,6 +189,9 @@ class HlsCopySeekSmokeTest {
     var sessionId = session.getSessionId();
 
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(gridIntervalCount(session))
+        .as("the AAC tail forms a grid interval past the last keyframe")
+        .isEqualTo(copySegmentSeconds.size() + 1);
     assertThat(extinfSeconds(playlistService.generateMediaPlaylist(session, "smoke-token")))
         .zipSatisfy(
             copySegmentSeconds,
@@ -313,6 +317,12 @@ class HlsCopySeekSmokeTest {
             Files.createTempFile(temporaryDirectory, "segment", ".mp4"),
             Fmp4Fixture.withInitializationSegment(segmentStore, sessionId, SEEK_SEGMENT_NAME));
     return workerFixture.worker().packetTimestamps(media);
+  }
+
+  private static int gridIntervalCount(StreamSession session) {
+    return new MediaSegmentTimeline.PlainGrid(
+            session.getMediaProbe().duration(), Duration.ofSeconds(SEGMENT_SECONDS))
+        .mediaSegmentCount();
   }
 
   private static List<Double> extinfSeconds(String playlist) {
