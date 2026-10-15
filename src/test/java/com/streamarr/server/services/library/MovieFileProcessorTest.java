@@ -11,6 +11,7 @@ import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.domain.media.MatchingFailure;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
@@ -108,6 +109,29 @@ class MovieFileProcessorTest {
       // Clear the interrupt flag so it doesn't affect other tests
       Thread.interrupted();
     }
+  }
+
+  @Test
+  @DisplayName("Should return a parsing failure without searching when the filename has no title")
+  void shouldReturnAParsingFailureWithoutSearchingWhenTheFilenameHasNoTitle() {
+    var library = LibraryFixtureCreator.buildFakeLibrary();
+    var mediaFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .filepathUri("file:///library/---/---")
+                .filename("---")
+                .status(MediaFileStatus.UNMATCHED)
+                .build());
+
+    var outcome = movieFileProcessor.process(discoveryOf(library), mediaFile);
+
+    assertThat(outcome)
+        .isEqualTo(
+            new MatchingOutcome.NotMatched(
+                MatchingFailure.of(MediaFileStatus.METADATA_PARSING_FAILED)));
+    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
+        .isEqualTo(MediaFileStatus.METADATA_PARSING_FAILED);
   }
 
   @Test

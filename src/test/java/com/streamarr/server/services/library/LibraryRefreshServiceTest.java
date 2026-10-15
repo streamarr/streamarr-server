@@ -323,6 +323,26 @@ class LibraryRefreshServiceTest {
     }
 
     @Test
+    @DisplayName(
+        "Should fail the refresh and keep the interrupt when the refreshing thread is interrupted")
+    void shouldFailTheRefreshAndKeepTheInterruptWhenTheRefreshingThreadIsInterrupted() {
+      var library = buildMovieLibrary();
+      saveMovieWithTmdbId("Inception", "27205", library);
+      stubMovieMetadata("27205", library);
+
+      try {
+        Thread.currentThread().interrupt();
+
+        assertThatThrownBy(() -> refreshService.refreshLibrary(library))
+            .isInstanceOf(LibraryRefreshFailedException.class)
+            .hasCauseInstanceOf(InterruptedException.class);
+        assertThat(Thread.currentThread().isInterrupted()).isTrue();
+      } finally {
+        Thread.interrupted();
+      }
+    }
+
+    @Test
     @DisplayName("Should take no admission for a title without a TMDB id")
     void shouldTakeNoAdmissionForATitleWithoutATmdbId() {
       var library = buildMovieLibrary();
