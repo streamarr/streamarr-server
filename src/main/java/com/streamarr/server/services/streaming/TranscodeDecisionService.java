@@ -89,6 +89,8 @@ public class TranscodeDecisionService {
           Optional.of(StreamCopyRefusal.PRESENTATION_TIME_REGRESSED);
       case StreamCopySegments.PresentationTimeOutOfRange _ ->
           Optional.of(StreamCopyRefusal.PRESENTATION_TIME_OUT_OF_RANGE);
+      case StreamCopySegments.DecodeTimeOutOfRange _ ->
+          Optional.of(StreamCopyRefusal.DECODE_TIME_OUT_OF_RANGE);
     };
   }
 
@@ -115,7 +117,8 @@ public class TranscodeDecisionService {
     KEYFRAMES_UNAVAILABLE,
     INTERVAL_WITHOUT_KEYFRAME,
     PRESENTATION_TIME_REGRESSED,
-    PRESENTATION_TIME_OUT_OF_RANGE
+    PRESENTATION_TIME_OUT_OF_RANGE,
+    DECODE_TIME_OUT_OF_RANGE
   }
 
   private TranscodeMode resolveTranscodeMode(

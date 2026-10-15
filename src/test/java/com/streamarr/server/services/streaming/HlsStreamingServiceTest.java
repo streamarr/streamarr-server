@@ -191,28 +191,42 @@ class HlsStreamingServiceTest {
         .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
   }
 
-  @Test
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("keyframeTimesTooLargeToPlace")
   @DisplayName("Should encode the video when a stored keyframe time is too large to place")
-  void shouldEncodeTheVideoWhenAStoredKeyframeTimeIsTooLargeToPlace() {
+  void shouldEncodeTheVideoWhenAStoredKeyframeTimeIsTooLargeToPlace(
+      String description, KeyframePosition keyframe) {
     var positions =
         KeyframePositions.builder()
             .streamIndex(0)
             .timeBaseNumerator(1001)
             .timeBaseDenominator(24_000)
             .source(KeyframePositionSource.PACKET_SCAN)
-            .keyframes(
-                List.of(
-                    new KeyframePosition(0, 0),
-                    new KeyframePosition(Long.MAX_VALUE / 1000, Long.MAX_VALUE / 1000)))
+            .keyframes(List.of(new KeyframePosition(0, 0), keyframe))
             .build();
     probeResults.setDefaultProbe(
-        defaultProbeBuilder().keyframes(new KeyframeKnowledge.Known(positions)).build());
+        defaultProbeBuilder()
+            .duration(Duration.ofSeconds(12))
+            .keyframes(new KeyframeKnowledge.Known(positions))
+            .build());
     var file = seedMediaFile();
 
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     assertThat(session.getTranscodeDecision().transcodeMode())
         .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+  }
+
+  // In a 1001/24000 time base, 144 ticks present at 6.006 s, so that keyframe opens segment 1 of
+  // the 12 s source.
+  static Stream<Arguments> keyframeTimesTooLargeToPlace() {
+    return Stream.of(
+        Arguments.of(
+            "presentation time",
+            new KeyframePosition(Long.MAX_VALUE / 1000, Long.MAX_VALUE / 1000)),
+        Arguments.of(
+            "decode time of an opening keyframe",
+            new KeyframePosition(144, Long.MAX_VALUE / 1000)));
   }
 
   @ParameterizedTest

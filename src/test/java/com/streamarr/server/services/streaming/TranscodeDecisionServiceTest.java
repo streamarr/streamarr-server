@@ -91,7 +91,17 @@ class TranscodeDecisionServiceTest {
                     .source(KeyframePositionSource.PACKET_SCAN)
                     .keyframes(List.of(new KeyframePosition(Long.MAX_VALUE / 1000, 0)))
                     .build()),
-            "presentation_time_out_of_range"));
+            "presentation_time_out_of_range"),
+        Arguments.of(
+            new KeyframeKnowledge.Known(
+                KeyframePositions.builder()
+                    .streamIndex(0)
+                    .timeBaseNumerator(1001)
+                    .timeBaseDenominator(24_000)
+                    .source(KeyframePositionSource.PACKET_SCAN)
+                    .keyframes(List.of(new KeyframePosition(0, Long.MIN_VALUE / 1000)))
+                    .build()),
+            "decode_time_out_of_range"));
   }
 
   @Test

@@ -34,4 +34,10 @@ public sealed interface StreamCopySegments {
    * times the time base numerator overflows a {@code long}. No real source reaches such a time.
    */
   record PresentationTimeOutOfRange(int keyframeIndex) implements StreamCopySegments {}
+
+  /**
+   * The keyframe at this index opens a segment, but its decode time lies too far from zero for a
+   * copy attempt to seek to: that time times the time base numerator overflows a {@code long}.
+   */
+  record DecodeTimeOutOfRange(int keyframeIndex) implements StreamCopySegments {}
 }

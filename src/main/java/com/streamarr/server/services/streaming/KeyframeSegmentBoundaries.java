@@ -28,7 +28,7 @@ final class KeyframeSegmentBoundaries {
         return new StreamCopySegments.PresentationTimeRegressed(index);
       }
 
-      if (isOutOfRange(presentationTime, positions)) {
+      if (isOutOfRange(presentationTime, positions.timeBaseNumerator())) {
         return new StreamCopySegments.PresentationTimeOutOfRange(index);
       }
 
@@ -38,9 +38,15 @@ final class KeyframeSegmentBoundaries {
       }
 
       // A lower number joins the open segment, or lies before zero, where no segment opens.
-      if (segmentNumber == openingKeyframes.size()) {
-        openingKeyframes.add(keyframes.get(index));
+      if (segmentNumber < openingKeyframes.size()) {
+        continue;
       }
+
+      if (isOutOfRange(keyframes.get(index).decodeTime(), positions.timeBaseNumerator())) {
+        return new StreamCopySegments.DecodeTimeOutOfRange(index);
+      }
+
+      openingKeyframes.add(keyframes.get(index));
     }
 
     if (openingKeyframes.isEmpty()) {
@@ -50,10 +56,8 @@ final class KeyframeSegmentBoundaries {
     return new StreamCopySegments.Starts(openingKeyframes);
   }
 
-  private static boolean isOutOfRange(long presentationTime, KeyframePositions positions) {
-    var numerator = positions.timeBaseNumerator();
-    return presentationTime > Long.MAX_VALUE / numerator
-        || presentationTime < Long.MIN_VALUE / numerator;
+  private static boolean isOutOfRange(long ticks, int timeBaseNumerator) {
+    return ticks > Long.MAX_VALUE / timeBaseNumerator || ticks < Long.MIN_VALUE / timeBaseNumerator;
   }
 
   private static long segmentNumberOf(
