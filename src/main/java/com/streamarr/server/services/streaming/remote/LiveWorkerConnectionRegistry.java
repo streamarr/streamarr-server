@@ -261,12 +261,9 @@ final class LiveWorkerConnectionRegistry {
         .collect(Collectors.toUnmodifiableSet());
   }
 
-  // Any H.264 encoder counts, so the H.264 fallback stays dispatchable on every worker.
   private static boolean isCountedForEncodes(WorkerVerifiedVideoEncoder encoder) {
-    var backend = encoder.getBackend();
-    return backend.getKind() == EncoderKind.ENCODER_KIND_SOFTWARE
-        || encoder.getKeyframeVerified()
-        || backend.getCodecFamily() == VideoCodecFamily.VIDEO_CODEC_FAMILY_H264;
+    return encoder.getBackend().getKind() == EncoderKind.ENCODER_KIND_SOFTWARE
+        || encoder.getKeyframeVerified();
   }
 
   private static Optional<String> videoCodecFamilyName(VideoCodecFamily family) {

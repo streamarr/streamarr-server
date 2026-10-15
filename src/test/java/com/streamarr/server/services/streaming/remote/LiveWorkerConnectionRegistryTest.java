@@ -35,6 +35,8 @@ import java.util.function.Supplier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 @Tag("UnitTest")
 @DisplayName("Live Worker Connection Registry Tests")
@@ -277,8 +279,8 @@ class LiveWorkerConnectionRegistryTest {
 
   @Test
   @DisplayName(
-      "Should count software, keyframe-verified and H.264 encoders when reporting the codec families that workers encode")
-  void shouldCountSoftwareKeyframeVerifiedAndH264EncodersWhenReportingEncodableCodecFamilies() {
+      "Should count only software and keyframe-verified encoders when reporting the codec families that workers encode")
+  void shouldCountOnlySoftwareAndKeyframeVerifiedEncodersWhenReportingEncodableCodecFamilies() {
     var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var otherWorkerId = UUID.randomUUID();
     registry.register(
@@ -299,12 +301,12 @@ class LiveWorkerConnectionRegistryTest {
                 .setKeyframeVerified(true));
     var unreachableNamespace = UUID.randomUUID();
 
-    assertThat(registry.encodableVideoCodecFamilies(SOURCE_NAMESPACE_ID)).containsOnly("h264");
+    assertThat(registry.encodableVideoCodecFamilies(SOURCE_NAMESPACE_ID)).isEmpty();
 
     registry.register(otherWorkerId, otherWorker.build(), new CancellableObserver());
 
     assertThat(registry.encodableVideoCodecFamilies(SOURCE_NAMESPACE_ID))
-        .containsExactlyInAnyOrder("h264", "hevc", "av1");
+        .containsExactlyInAnyOrder("hevc", "av1");
     assertThat(registry.encodableVideoCodecFamilies(unreachableNamespace)).isEmpty();
   }
 
@@ -385,18 +387,22 @@ class LiveWorkerConnectionRegistryTest {
     assertThat(registry.encodableVideoCodecFamilies(SOURCE_NAMESPACE_ID)).containsOnly("h264");
   }
 
-  @Test
+  @ParameterizedTest(name = "{2} encode with only {1}")
+  @CsvSource({
+    "VIDEO_CODEC_FAMILY_AV1, av1_nvenc, av1",
+    "VIDEO_CODEC_FAMILY_H264, h264_nvenc, h264"
+  })
   @DisplayName(
       "Should refuse an encode for a worker whose only encoder for the codec family is unverified hardware")
-  void shouldRefuseAnEncodeForAWorkerWhoseOnlyEncoderForTheCodecFamilyIsUnverifiedHardware() {
+  void shouldRefuseAnEncodeForAWorkerWhoseOnlyEncoderForTheCodecFamilyIsUnverifiedHardware(
+      VideoCodecFamily family, String encoder, String codecFamilyName) {
     var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     registry.register(
         WORKER_ID,
-        registration(
-            WORKER_ID, hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "av1_nvenc")),
+        registration(WORKER_ID, hardwareEncoder(family, encoder)),
         new CancellableObserver());
 
-    assertThat(registry.dispatch(encodeJob("av1"))).isFalse();
+    assertThat(registry.dispatch(encodeJob(codecFamilyName))).isFalse();
   }
 
   @Test
