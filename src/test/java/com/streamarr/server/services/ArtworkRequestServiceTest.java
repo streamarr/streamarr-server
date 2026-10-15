@@ -699,6 +699,84 @@ class ArtworkRequestServiceTest {
   }
 
   @Nested
+  @DisplayName("Task runs")
+  class TaskRuns {
+
+    private final TransactionTemplate transactionTemplate =
+        new TransactionTemplate(new FakeTransactionManager());
+
+    @Test
+    @DisplayName(
+        "Should finish a task run's wait when only the artwork that the task requested is recorded")
+    void shouldFinishATaskRunsWaitWhenOnlyTheArtworkThatTheTaskRequestedIsRecorded()
+        throws Exception {
+      var operation = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
+      var finishedTask = operation.openTaskRun();
+      artworkRequestService.requestPrimaryArtwork(
+          finishedTask, movieArtwork(UUID.randomUUID(), POSTER));
+      finishedTask.close();
+      artwork.scheduling().holdScheduledSteps();
+      var pendingTask = operation.openTaskRun();
+      artworkRequestService.requestPrimaryArtwork(
+          pendingTask, movieArtwork(UUID.randomUUID(), POSTER));
+
+      BoundedTask.runWithin(BOUND, () -> artwork.artworkRunWaiter().awaitTaskResults(finishedTask));
+
+      assertThat(artwork.scheduling().pendingTargets()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("Should count a task run's requests in the operation's run")
+    void shouldCountATaskRunsRequestsInTheOperationsRun() {
+      var operation = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
+      var keptMovieId = UUID.randomUUID();
+      imageRepository.save(imageBuilder(keptMovieId).key("/poster.jpg").path("movie/p").build());
+
+      try (var task = operation.openTaskRun()) {
+        artworkRequestService.requestPrimaryArtwork(
+            task, movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
+        artworkRequestService.requestPrimaryArtwork(task, movieArtwork(keptMovieId, POSTER));
+      }
+
+      assertThat(artwork.closeAndAwait(operation).counts())
+          .isEqualTo(FinishedImageCounts.builder().saved(2).skipped(1).unavailable(1).build());
+    }
+
+    @Test
+    @DisplayName(
+        "Should withdraw a task run's request from the operation's run when its transaction rolls back")
+    void shouldWithdrawATaskRunsRequestFromTheOperationsRunWhenItsTransactionRollsBack() {
+      artwork.scheduling().holdScheduledSteps();
+      var operation = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
+      var task = operation.openTaskRun();
+      var keptMovieId = UUID.randomUUID();
+      imageRepository.save(imageBuilder(keptMovieId).key("/poster.jpg").path("movie/p").build());
+
+      transactionTemplate.executeWithoutResult(
+          status -> {
+            status.setRollbackOnly();
+            artworkRequestService.requestPrimaryArtwork(
+                task, movieArtwork(UUID.randomUUID(), POSTER));
+            artworkRequestService.requestPrimaryArtwork(task, movieArtwork(keptMovieId, POSTER));
+          });
+      task.close();
+
+      assertThat(artwork.closeAndAwait(operation).counts()).isEqualTo(FinishedImageCounts.NONE);
+    }
+
+    @Test
+    @DisplayName("Should return at once without reading results when the task requested no artwork")
+    void shouldReturnAtOnceWithoutReadingResultsWhenTheTaskRequestedNoArtwork() throws Exception {
+      var task = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE).openTaskRun();
+      task.close();
+
+      artwork.artworkRunWaiter().awaitTaskResults(task);
+
+      assertThat(artwork.requests().artworkStateReads()).isZero();
+    }
+  }
+
+  @Nested
   @DisplayName("Owning transactions")
   class OwningTransactions {
 

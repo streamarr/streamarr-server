@@ -98,6 +98,9 @@ artwork:
   runs:
     # How often a scan or refresh that waits for primary artwork checks its recorded results.
     result-check-interval: ${ARTWORK_RESULT_CHECK_INTERVAL:2s}
+    # How often an admitted scan or refresh task checks the recorded results of the primary artwork
+    # it requested. The task holds its admission while it waits, so the wait counts in its latency.
+    task-result-check-interval: ${ARTWORK_TASK_RESULT_CHECK_INTERVAL:100ms}
   progress-log-interval: ${ARTWORK_PROGRESS_LOG_INTERVAL:30s}
   request-lock:
     # How long saving an artwork request or an attempt's artwork results waits for the target's

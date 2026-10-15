@@ -25,6 +25,8 @@ import java.util.Optional;
  */
 public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
 
+  private int artworkStateReads;
+
   private static final Comparator<ImageSource> SOURCE_ORDER =
       Comparator.comparing(ImageSource::imageType).thenComparing(ImageSource::key);
 
@@ -37,6 +39,11 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
   public FakeArtworkRequestRepository(FakeItemResultRepository itemResults) {
     this.itemResults = itemResults;
     itemResults.checkArtworkGenerationsWith(this::isPendingGeneration);
+  }
+
+  /** Returns how many times the recorded artwork states were read. */
+  public synchronized int artworkStateReads() {
+    return artworkStateReads;
   }
 
   /** Returns every stored artwork request. */
@@ -107,6 +114,7 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
   @Override
   public synchronized List<ArtworkCompletionEvidence> findCompletionEvidence(
       Collection<ArtworkTarget> targets) {
+    artworkStateReads++;
     return targets.stream()
         .distinct()
         .map(

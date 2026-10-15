@@ -6,7 +6,9 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.exceptions.LibraryScanFailedException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.services.ArtworkRunWaiter;
 import com.streamarr.server.services.audit.SystemWork;
+import com.streamarr.server.services.concurrency.AdmittedTaskReport;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.filepath.FilepathCodec;
@@ -44,6 +46,7 @@ public class LibraryFileWalk {
   private final FileSystem fileSystem;
   private final FileDiscoveryRuns fileDiscoveryRuns;
   private final LibraryOperationAdmissions libraryOperationAdmissions;
+  private final ArtworkRunWaiter artworkRunWaiter;
   private final MutexFactory<String> mutexFactory;
 
   @Builder
@@ -56,6 +59,7 @@ public class LibraryFileWalk {
       FileSystem fileSystem,
       FileDiscoveryRuns fileDiscoveryRuns,
       LibraryOperationAdmissions libraryOperationAdmissions,
+      ArtworkRunWaiter artworkRunWaiter,
       MutexFactoryProvider mutexFactoryProvider) {
     this.ignoredFileValidator = ignoredFileValidator;
     this.videoExtensionValidator = videoExtensionValidator;
@@ -65,6 +69,7 @@ public class LibraryFileWalk {
     this.fileSystem = fileSystem;
     this.fileDiscoveryRuns = fileDiscoveryRuns;
     this.libraryOperationAdmissions = libraryOperationAdmissions;
+    this.artworkRunWaiter = artworkRunWaiter;
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
 
@@ -92,7 +97,7 @@ public class LibraryFileWalk {
       var failures =
           admission.forkAdmittedTasks(
               files,
-              listed -> AdmissionReports.forMatching(processListedFile(discovery, listed)),
+              listed -> processAdmittedFile(discovery, listed),
               SystemWork.newThreadFactoryRunningAsSystemActor("library-scan-file-"));
       throwIfAnyFileFailed(library, failures);
 
@@ -134,6 +139,22 @@ public class LibraryFileWalk {
     } catch (IOException _) {
       return Optional.empty();
     }
+  }
+
+  // The task keeps its admission until the primary artwork it requested has recorded results, so
+  // its latency includes that artwork.
+  private AdmittedTaskReport processAdmittedFile(FileDiscovery discovery, ListedFile listed)
+      throws InterruptedException {
+    var taskDiscovery =
+        new FileDiscovery(
+            discovery.library(), discovery.artworkRun().openTaskRun(), discovery.probeRun());
+    MatchingOutcome outcome;
+    try (taskDiscovery) {
+      outcome = processListedFile(taskDiscovery, listed);
+    }
+
+    artworkRunWaiter.awaitTaskResults(taskDiscovery.artworkRun());
+    return AdmissionReports.forMatching(outcome);
   }
 
   // The probe is requested with the snapshot the listing observed, so a source that becomes

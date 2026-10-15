@@ -921,25 +921,6 @@ class LibraryManagementServiceTest {
           libraryStatus(),
           capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class).size());
     }
-
-    private void matchMovieWithPoster(String title) {
-      when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-      when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-          .thenReturn(
-              new Found(
-                  RemoteSearchResult.builder()
-                      .title(title)
-                      .externalId("123")
-                      .externalSourceType(ExternalSourceType.TMDB)
-                      .build()));
-      when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
-          .thenReturn(
-              new MetadataFetchOutcome.Found<>(
-                  MetadataFixture.<Movie>metadataResultBuilder()
-                      .entity(Movie.builder().title(title).titleSort(title).build())
-                      .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))
-                      .build()));
-    }
   }
 
   @Nested
@@ -1059,8 +1040,8 @@ class LibraryManagementServiceTest {
     }
 
     @Test
-    @DisplayName("Should report an already matched file as ignored")
-    void shouldReportAnAlreadyMatchedFileAsIgnored() throws Exception {
+    @DisplayName("Should report an already matched file as ignored without reading artwork results")
+    void shouldReportAnAlreadyMatchedFileAsIgnoredWithoutReadingArtworkResults() throws Exception {
       saveMatchedMediaFile(
           createMovieFile(createRootLibraryDirectory(), "Matched", "Matched (2001).mkv"));
 
@@ -1068,6 +1049,45 @@ class LibraryManagementServiceTest {
 
       assertThat(scanReports("ignored")).isEqualTo(1);
       assertThat(allScanReports()).isEqualTo(1);
+      assertThat(artwork.requests().artworkStateReads()).isZero();
+    }
+
+    @Test
+    @DisplayName("Should hold a file task's admission until its poster result is recorded")
+    void shouldHoldAFileTasksAdmissionUntilItsPosterResultIsRecorded() throws Exception {
+      createMovieFile(createRootLibraryDirectory(), "About Time", "About Time (2013).mkv");
+      var resultCheckSleeper = new CountingSleeper();
+      var imageDownloader = new FakeTmdbHttpService();
+      imageDownloader.setImageData(createTestImage(600, 900));
+      var heldArtwork =
+          ArtworkFixture.builder()
+              .imageDownloader(imageDownloader)
+              .sleeper(resultCheckSleeper)
+              .build();
+      heldArtwork.scheduling().holdScheduledSteps();
+      var inFlightWhilePosterPending = new AtomicReference<Double>();
+      resultCheckSleeper.onSleep(
+          _ -> {
+            inFlightWhilePosterPending.compareAndSet(null, scanTasksInFlight());
+            heldArtwork.scheduling().runPendingSteps();
+          });
+      var service = libraryManagementServiceWithArtwork(heldArtwork);
+      matchMovieWithPoster("About Time");
+
+      BoundedTask.runWithin(SCAN_BOUND, () -> service.scanLibrary(savedLibraryId));
+
+      assertThat(inFlightWhilePosterPending).hasValue(1.0);
+      assertThat(heldArtwork.scheduling().pendingTargets()).isEmpty();
+      assertThat(scanReports("latency")).isEqualTo(1);
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+    }
+
+    private double scanTasksInFlight() {
+      return meterRegistry
+          .get("streamarr.library.admission.in_flight")
+          .tag("operation", "scan")
+          .gauge()
+          .value();
     }
 
     private void scan() throws Exception {
@@ -1096,6 +1116,25 @@ class LibraryManagementServiceTest {
               .entity(Movie.builder().title(title).titleSort(title).build())
               .build());
     }
+  }
+
+  private void matchMovieWithPoster(String title) {
+    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
+        .thenReturn(
+            new Found(
+                RemoteSearchResult.builder()
+                    .title(title)
+                    .externalId("123")
+                    .externalSourceType(ExternalSourceType.TMDB)
+                    .build()));
+    when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
+        .thenReturn(
+            new MetadataFetchOutcome.Found<>(
+                MetadataFixture.<Movie>metadataResultBuilder()
+                    .entity(Movie.builder().title(title).titleSort(title).build())
+                    .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))
+                    .build()));
   }
 
   private record ScanState(LibraryStatus status, int completedEvents) {}
@@ -1131,6 +1170,7 @@ class LibraryManagementServiceTest {
                         fakeMediaFileRepository,
                         new MutexFactoryProvider()))
                 .fileDiscoveryRuns(artworkFileDiscoveryRuns)
+                .artworkRunWaiter(artwork.artworkRunWaiter())
                 .build())
         .movieService(artworkMovieService)
         .fileDiscoveryRuns(artworkFileDiscoveryRuns)
@@ -2478,7 +2518,8 @@ class LibraryManagementServiceTest {
         .fileSystem(fileSystem)
         .fileDiscoveryRuns(fileDiscoveryRuns)
         .mutexFactoryProvider(new MutexFactoryProvider())
-        .libraryOperationAdmissions(admissionsWith(new AdaptiveAdmissions()));
+        .libraryOperationAdmissions(admissionsWith(new AdaptiveAdmissions()))
+        .artworkRunWaiter(artwork.artworkRunWaiter());
   }
 
   private LibraryOperationAdmissions admissionsWith(AdaptiveAdmissions admissions) {

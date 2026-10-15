@@ -43,17 +43,7 @@ public class ArtworkRunWaiter {
    * run. Counts follow each image's own recorded outcome.
    */
   public ArtworkRunSummary awaitResults(ArtworkRun run) throws InterruptedException {
-    var pending = new HashMap<ArtworkTarget, AwaitedArtwork>();
-    run.awaited()
-        .forEach(artwork -> pending.merge(artwork.target(), artwork, ArtworkRunWaiter::merge));
-    var counts = FinishedImageCounts.NONE.plusSkipped(run.keptImages());
-    while (!pending.isEmpty()) {
-      counts = countFinishedArtwork(pending, counts);
-      if (!pending.isEmpty()) {
-        sleeper.sleep(properties.resultCheckInterval());
-      }
-    }
-
+    var counts = awaitFinishedArtwork(run, properties.resultCheckInterval());
     var elapsed =
         run.firstRequestedAt()
             .map(requestedAt -> Duration.between(requestedAt, clock.instant()))
@@ -66,6 +56,31 @@ public class ArtworkRunWaiter {
             .build();
     logCompleted(summary);
     return summary;
+  }
+
+  /**
+   * Waits as {@link #awaitResults} does for the artwork that one closed task run awaits, and checks
+   * more often, because an admitted task holds its admission while it waits. A task that awaits no
+   * artwork returns at once without reading any result.
+   */
+  public void awaitTaskResults(ArtworkRun taskRun) throws InterruptedException {
+    awaitFinishedArtwork(taskRun, properties.taskResultCheckInterval());
+  }
+
+  private FinishedImageCounts awaitFinishedArtwork(ArtworkRun run, Duration checkInterval)
+      throws InterruptedException {
+    var pending = new HashMap<ArtworkTarget, AwaitedArtwork>();
+    run.awaited()
+        .forEach(artwork -> pending.merge(artwork.target(), artwork, ArtworkRunWaiter::merge));
+    var counts = FinishedImageCounts.NONE.plusSkipped(run.keptImages());
+    while (!pending.isEmpty()) {
+      counts = countFinishedArtwork(pending, counts);
+      if (!pending.isEmpty()) {
+        sleeper.sleep(checkInterval);
+      }
+    }
+
+    return counts;
   }
 
   // Removes each target whose awaited artwork is finished from pending, and counts its results.
