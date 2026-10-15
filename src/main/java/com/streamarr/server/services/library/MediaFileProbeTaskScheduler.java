@@ -3,6 +3,8 @@ package com.streamarr.server.services.library;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
@@ -30,6 +32,7 @@ public class MediaFileProbeTaskScheduler {
   private final MediaFileRepository mediaFileRepository;
   private final PersistedProbeReader reader;
   private final ProbeTaskRequests probeTaskRequests;
+  private final KeyframePacketScanRequests packetScans;
   private final FileSystem fileSystem;
 
   @EventListener
@@ -39,8 +42,9 @@ public class MediaFileProbeTaskScheduler {
 
   /**
    * Requests a probe of the media file unless its stored outcome already matches the source, and
-   * retries a failed attempt at once. Returns the inputs whose outcome the file needs, or nothing
-   * when its source no longer exists.
+   * retries a failed attempt at once. A matching outcome that still needs a keyframe packet scan
+   * gets one, so a scan that ended while the source was missing runs again. Returns the inputs
+   * whose outcome the file needs, or nothing when its source no longer exists.
    */
   public Optional<ProbeInputs> schedule(UUID mediaFileId) {
     return schedule(mediaFileId, probeTaskRequests::requestRetryingFailure);
@@ -59,10 +63,12 @@ public class MediaFileProbeTaskScheduler {
   private ProbeInputs request(
       MediaFile mediaFile, SourceFileSnapshot observed, Consumer<ProbeTaskRequest> requests) {
     var inputs = new ProbeInputs(observed, ProbeVersion.CURRENT);
-    if (reader
-        .find(mediaFile.getId())
-        .filter(outcome -> outcome.matches(inputs.snapshot(), inputs.probeVersion()))
-        .isPresent()) {
+    var stored =
+        reader
+            .find(mediaFile.getId())
+            .filter(outcome -> outcome.matches(inputs.snapshot(), inputs.probeVersion()));
+    if (stored.isPresent()) {
+      requestPacketScanIfNeeded(mediaFile, inputs, stored.get().outcome());
       return inputs;
     }
 
@@ -75,6 +81,22 @@ public class MediaFileProbeTaskScheduler {
             .probeVersion(inputs.probeVersion())
             .build());
     return inputs;
+  }
+
+  // Scheduling is idempotent per media file, so a pending or running scan is left alone.
+  private void requestPacketScanIfNeeded(
+      MediaFile mediaFile, ProbeInputs inputs, ProbeOutcome outcome) {
+    if (!outcome.needsKeyframePacketScan()) {
+      return;
+    }
+
+    packetScans.request(
+        KeyframePacketScanTaskRequest.builder()
+            .mediaFileId(mediaFile.getId())
+            .filepathUri(mediaFile.getFilepathUri())
+            .snapshot(inputs.snapshot())
+            .probeVersion(inputs.probeVersion())
+            .build());
   }
 
   private MediaFile mediaFile(UUID mediaFileId) {

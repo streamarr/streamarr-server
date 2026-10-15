@@ -81,6 +81,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
   @Autowired private DataSource dataSource;
   @Autowired private Environment environment;
   @Autowired private DSLContext dsl;
+  @Autowired private MediaFileProbeTaskScheduler probeTaskScheduler;
 
   private final BlockingQueue<ExecutionComplete> scanCompletions = new LinkedBlockingQueue<>();
   private KeyframePacketScanScheduler scanScheduler;
@@ -250,6 +251,25 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
         .isEqualTo(
             new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_FAILED));
     assertThat(scheduledScans()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should scan a source again when it returns unchanged after its scan found it missing")
+  void shouldScanASourceAgainWhenItReturnsUnchangedAfterItsScanFoundItMissing() throws Exception {
+    var request = requestUnchangedFiles(1).getFirst();
+    packetScanRequiredProbe().execute(request);
+    var source = FilepathCodec.decode(request.filepathUri());
+    var away = Files.move(source, source.resolveSibling(source.getFileName() + ".away"));
+    startScanScheduler(_ -> success(SCANNED), Clock.systemUTC());
+    assertThat(scanCompletions.poll(30, TimeUnit.SECONDS)).isNotNull();
+    assertThat(storedKeyframes(request)).isEqualTo(PACKET_SCAN_REQUIRED.keyframes());
+
+    Files.move(away, source);
+    probeTaskScheduler.schedule(request.mediaFileId());
+
+    assertThat(scanCompletions.poll(30, TimeUnit.SECONDS)).isNotNull();
+    assertThat(storedKeyframes(request)).isEqualTo(SCANNED);
   }
 
   private ProbeExecution packetScanRequiredProbe() {
