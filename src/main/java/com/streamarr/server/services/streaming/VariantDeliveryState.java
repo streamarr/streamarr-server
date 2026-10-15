@@ -39,8 +39,13 @@ final class VariantDeliveryState {
   }
 
   boolean hasStalled(Duration stallThreshold, Duration startupThreshold, Instant now) {
+    return !now.isBefore(stallDeadline(stallThreshold, startupThreshold));
+  }
+
+  /** The moment the tracked job attempt counts as stalled unless it publishes again first. */
+  Instant stallDeadline(Duration stallThreshold, Duration startupThreshold) {
     var budget = frontier > runStart ? stallThreshold : startupThreshold;
-    return Duration.between(lastProgressAt, now).compareTo(budget) >= 0;
+    return lastProgressAt.plus(budget);
   }
 
   List<ExecutionTargetId> attemptedTargets() {

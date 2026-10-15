@@ -260,9 +260,11 @@ public class ProducerLifecycleService {
 
   private boolean hasStalled(VariantDeliveryState state) {
     return state.hasStalled(
-        properties.producerStallThreshold(),
-        properties.producerStallThreshold().plus(properties.targetSegmentDuration()),
-        clock.instant());
+        properties.producerStallThreshold(), startupStallThreshold(), clock.instant());
+  }
+
+  private Duration startupStallThreshold() {
+    return properties.producerStallThreshold().plus(properties.targetSegmentDuration());
   }
 
   private static ReplacementReason replacementReason(
