@@ -10,6 +10,7 @@ import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.UUID;
 import lombok.Builder;
 
 public final class StreamingRigFixture {
@@ -24,14 +25,15 @@ public final class StreamingRigFixture {
       RuntimeStreamSessionRegistry runtimeRegistry,
       Clock clock,
       Duration pollInterval,
-      ServerSettingsService serverSettings) {
+      ServerSettingsService serverSettings,
+      MutexFactory<UUID> sessionMutex) {
     var lifecycle =
         ProducerLifecycleService.builder()
             .transcodeExecutor(transcodeExecutor)
             .segmentStore(segmentStore)
             .properties(properties)
             .runtimeRegistry(runtimeRegistry)
-            .sessionMutex(new MutexFactory<>())
+            .sessionMutex(sessionMutex == null ? new MutexFactory<>() : sessionMutex)
             .clock(clock == null ? Clock.systemUTC() : clock)
             .serverSettings(
                 serverSettings == null
