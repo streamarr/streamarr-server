@@ -177,9 +177,10 @@ class WatchStateParityIT extends AbstractIntegrationTest {
 
     var status =
         watchStatusService
-            .getWatchStatusForDirectMedia(profileId, List.of(movie.getId()))
+            .getWatchStatusForMoviesAndEpisodes(profileId, List.of(movie.getId()))
             .get(movie.getId());
-    var progress = watchStatusService.getProgressForDirectMedia(profileId, List.of(movie.getId()));
+    var progress =
+        watchStatusService.getProgressForMoviesAndEpisodes(profileId, List.of(movie.getId()));
 
     assertThat(status).isEqualTo(movieCase.expectedStatus());
     for (var candidate : WatchStatus.values()) {
@@ -289,7 +290,8 @@ class WatchStateParityIT extends AbstractIntegrationTest {
 
     var ids = continueWatchingIds();
     var lastWatchedAt =
-        watchStatusService.getLastWatchedAtForItems(profileId, CollectableScope.DIRECT_MEDIA, ids);
+        watchStatusService.getLastWatchedAtForItems(
+            profileId, CollectableScope.MOVIE_OR_EPISODE, ids);
     // PostgreSQL orders uuid values byte by byte, which matches their text order.
     var expected =
         ids.stream()

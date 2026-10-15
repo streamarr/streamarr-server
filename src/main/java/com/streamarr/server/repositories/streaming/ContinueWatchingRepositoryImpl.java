@@ -22,7 +22,7 @@ public class ContinueWatchingRepositoryImpl implements ContinueWatchingRepositor
   public List<UUID> findCollectableIds(UUID profileId, int limit) {
     var itemId = MEDIA_FILE.MEDIA_ID;
     var lastWatchedAt =
-        LastWatchedExpression.lastWatchedAt(profileId, CollectableScope.DIRECT_MEDIA, itemId);
+        LastWatchedExpression.lastWatchedAt(profileId, CollectableScope.MOVIE_OR_EPISODE, itemId);
 
     return dsl.select(itemId)
         .from(SESSION_PROGRESS)

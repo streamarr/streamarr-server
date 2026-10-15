@@ -118,7 +118,7 @@ class WatchStateChangedEventIT extends AbstractIntegrationTest {
     transactionTemplate.executeWithoutResult(
         status -> {
           watchStatusService.markWatched(
-              profileId, movie.getId(), CollectableScope.DIRECT_MEDIA, 0);
+              profileId, movie.getId(), CollectableScope.MOVIE_OR_EPISODE, 0);
           status.setRollbackOnly();
         });
 

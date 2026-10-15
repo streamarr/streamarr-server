@@ -33,13 +33,13 @@ public class WatchProgressFieldResolver {
   @DgsData(parentType = "Movie", field = "watchProgress")
   public CompletableFuture<WatchProgressDto> movieWatchProgress(DataFetchingEnvironment dfe) {
     Movie movie = dfe.getSource();
-    return loadProgress(dfe, movie.getId(), CollectableScope.DIRECT_MEDIA);
+    return loadProgress(dfe, movie.getId(), CollectableScope.MOVIE_OR_EPISODE);
   }
 
   @DgsData(parentType = "Episode", field = "watchProgress")
   public CompletableFuture<WatchProgressDto> episodeWatchProgress(DataFetchingEnvironment dfe) {
     Episode episode = dfe.getSource();
-    return loadProgress(dfe, episode.getId(), CollectableScope.DIRECT_MEDIA);
+    return loadProgress(dfe, episode.getId(), CollectableScope.MOVIE_OR_EPISODE);
   }
 
   @DgsData(parentType = "Series", field = "watchProgress")
@@ -57,13 +57,13 @@ public class WatchProgressFieldResolver {
   @DgsData(parentType = "Movie", field = "watchStatus")
   public CompletableFuture<WatchStatus> movieWatchStatus(DataFetchingEnvironment dfe) {
     Movie movie = dfe.getSource();
-    return loadWatchStatus(dfe, movie.getId(), CollectableScope.DIRECT_MEDIA);
+    return loadWatchStatus(dfe, movie.getId(), CollectableScope.MOVIE_OR_EPISODE);
   }
 
   @DgsData(parentType = "Episode", field = "watchStatus")
   public CompletableFuture<WatchStatus> episodeWatchStatus(DataFetchingEnvironment dfe) {
     Episode episode = dfe.getSource();
-    return loadWatchStatus(dfe, episode.getId(), CollectableScope.DIRECT_MEDIA);
+    return loadWatchStatus(dfe, episode.getId(), CollectableScope.MOVIE_OR_EPISODE);
   }
 
   @DgsData(parentType = "Season", field = "watchStatus")
@@ -81,13 +81,13 @@ public class WatchProgressFieldResolver {
   @DgsData(parentType = "Movie", field = "lastWatchedAt")
   public CompletableFuture<String> movieLastWatchedAt(DataFetchingEnvironment dfe) {
     Movie movie = dfe.getSource();
-    return loadLastWatchedAt(dfe, movie.getId(), CollectableScope.DIRECT_MEDIA);
+    return loadLastWatchedAt(dfe, movie.getId(), CollectableScope.MOVIE_OR_EPISODE);
   }
 
   @DgsData(parentType = "Episode", field = "lastWatchedAt")
   public CompletableFuture<String> episodeLastWatchedAt(DataFetchingEnvironment dfe) {
     Episode episode = dfe.getSource();
-    return loadLastWatchedAt(dfe, episode.getId(), CollectableScope.DIRECT_MEDIA);
+    return loadLastWatchedAt(dfe, episode.getId(), CollectableScope.MOVIE_OR_EPISODE);
   }
 
   @DgsData(parentType = "Series", field = "lastWatchedAt")

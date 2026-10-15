@@ -39,7 +39,7 @@ public final class LastWatchedExpression {
   public static Field<OffsetDateTime> lastWatchedAt(
       UUID profileId, CollectableScope scope, Field<UUID> itemId) {
     return switch (scope) {
-      case DIRECT_MEDIA ->
+      case MOVIE_OR_EPISODE ->
           greatest(
               latestCompletionAt(profileId, COMPLETION.COLLECTABLE_ID.eq(itemId)),
               latestProgressAt(profileId, PROGRESS_FILE.MEDIA_ID.eq(itemId)));

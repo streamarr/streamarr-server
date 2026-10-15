@@ -106,7 +106,7 @@ public class SessionProgressService {
     watchStatusService.markWatched(
         profileId,
         resolveCollectableId(ctx.mediaFileId()),
-        CollectableScope.DIRECT_MEDIA,
+        CollectableScope.MOVIE_OR_EPISODE,
         ctx.durationSeconds());
   }
 

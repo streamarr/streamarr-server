@@ -53,7 +53,8 @@ public class WatchProgressDataLoader
   private Map<UUID, WatchProgressDto> loadByScope(
       UUID profileId, CollectableScope scope, List<UUID> entityIds) {
     return switch (scope) {
-      case DIRECT_MEDIA -> watchStatusService.getProgressForDirectMedia(profileId, entityIds);
+      case MOVIE_OR_EPISODE ->
+          watchStatusService.getProgressForMoviesAndEpisodes(profileId, entityIds);
       case SEASON -> watchStatusService.getAggregateProgressForSeasons(profileId, entityIds);
       case SERIES -> watchStatusService.getAggregateProgressForSeries(profileId, entityIds);
     };

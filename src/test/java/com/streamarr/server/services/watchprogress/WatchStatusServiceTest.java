@@ -81,7 +81,7 @@ class WatchStatusServiceTest {
     void shouldCreateWatchHistoryEntryWhenMarkingWatchedExplicitly() {
       var movieId = UUID.randomUUID();
 
-      service.markWatched(PROFILE_ID, movieId, CollectableScope.DIRECT_MEDIA, 7200);
+      service.markWatched(PROFILE_ID, movieId, CollectableScope.MOVIE_OR_EPISODE, 7200);
 
       var history =
           watchHistoryRepository.findFirstByProfileIdAndCollectableIdOrderByWatchedAtDesc(
@@ -109,9 +109,9 @@ class WatchStatusServiceTest {
       var movie = buildMovie();
       mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
-      service.markWatched(PROFILE_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, 7200);
+      service.markWatched(PROFILE_ID, movie.getId(), CollectableScope.MOVIE_OR_EPISODE, 7200);
 
-      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId()));
+      var result = service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId()));
       assertThat(result).containsEntry(movie.getId(), WatchStatus.WATCHED);
     }
 
@@ -121,10 +121,10 @@ class WatchStatusServiceTest {
       var movie = movieRepository.save(buildMovie());
       mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
-      service.markWatched(PROFILE_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, 7200);
+      service.markWatched(PROFILE_ID, movie.getId(), CollectableScope.MOVIE_OR_EPISODE, 7200);
       service.markUnwatched(PROFILE_ID, movie.getId());
 
-      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId()));
+      var result = service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId()));
       assertThat(result).containsEntry(movie.getId(), WatchStatus.UNWATCHED);
     }
 
@@ -136,9 +136,9 @@ class WatchStatusServiceTest {
       saveCompletion(movie.getId(), EARLIER);
       saveProgress(mf.getId(), 1800, LATER);
 
-      assertThat(service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId())))
+      assertThat(service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId())))
           .containsEntry(movie.getId(), WatchStatus.IN_PROGRESS);
-      assertThat(service.getProgressForDirectMedia(PROFILE_ID, List.of(movie.getId())))
+      assertThat(service.getProgressForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId())))
           .extractingByKey(movie.getId())
           .extracting(WatchProgressDto::positionSeconds)
           .isEqualTo(1800);
@@ -152,9 +152,9 @@ class WatchStatusServiceTest {
       saveProgress(mf.getId(), 1800, EARLIER);
       saveCompletion(movie.getId(), LATER);
 
-      assertThat(service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId())))
+      assertThat(service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId())))
           .containsEntry(movie.getId(), WatchStatus.WATCHED);
-      assertThat(service.getProgressForDirectMedia(PROFILE_ID, List.of(movie.getId())))
+      assertThat(service.getProgressForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId())))
           .doesNotContainKey(movie.getId());
     }
 
@@ -166,7 +166,7 @@ class WatchStatusServiceTest {
       saveProgress(mf.getId(), 1800, EARLIER);
       saveCompletion(movie.getId(), EARLIER);
 
-      assertThat(service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId())))
+      assertThat(service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId())))
           .containsEntry(movie.getId(), WatchStatus.WATCHED);
     }
 
@@ -179,7 +179,7 @@ class WatchStatusServiceTest {
       var completion = saveCompletion(movie.getId(), LATER);
       completion.setDismissedAt(LATER);
 
-      assertThat(service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId())))
+      assertThat(service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId())))
           .containsEntry(movie.getId(), WatchStatus.IN_PROGRESS);
     }
   }
@@ -254,8 +254,8 @@ class WatchStatusServiceTest {
   }
 
   @Nested
-  @DisplayName("Batch Watch Status for Direct Media")
-  class BatchWatchStatusForDirectMedia {
+  @DisplayName("Batch Watch Status for Movies and Episodes")
+  class BatchWatchStatusForMoviesAndEpisodes {
 
     @Test
     @DisplayName("Should return in progress when media files have progress")
@@ -270,7 +270,7 @@ class WatchStatusServiceTest {
       sessionProgressRepository.save(
           progressBuilder(PROFILE_ID, mf2.getId()).positionSeconds(600).build());
 
-      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId()));
+      var result = service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId()));
 
       assertThat(result).containsEntry(movie.getId(), WatchStatus.IN_PROGRESS);
     }
@@ -282,7 +282,7 @@ class WatchStatusServiceTest {
 
       mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
-      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId()));
+      var result = service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId()));
 
       assertThat(result).containsEntry(movie.getId(), WatchStatus.UNWATCHED);
     }
@@ -298,7 +298,7 @@ class WatchStatusServiceTest {
       sessionProgressRepository.save(
           progressBuilder(PROFILE_ID, mf1.getId()).positionSeconds(300).build());
 
-      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId()));
+      var result = service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId()));
 
       assertThat(result).hasSize(1).containsEntry(movie.getId(), WatchStatus.IN_PROGRESS);
     }
@@ -316,7 +316,8 @@ class WatchStatusServiceTest {
           progressBuilder(PROFILE_ID, mf1.getId()).positionSeconds(300).build());
 
       var result =
-          service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie1.getId(), movie2.getId()));
+          service.getWatchStatusForMoviesAndEpisodes(
+              PROFILE_ID, List.of(movie1.getId(), movie2.getId()));
 
       assertThat(result)
           .containsEntry(movie1.getId(), WatchStatus.IN_PROGRESS)
@@ -327,7 +328,7 @@ class WatchStatusServiceTest {
     @DisplayName("Should return unwatched when no media files exist")
     void shouldReturnUnwatchedWhenNoMediaFilesExist() {
       var unknownId = UUID.randomUUID();
-      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(unknownId));
+      var result = service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(unknownId));
 
       assertThat(result).containsEntry(unknownId, WatchStatus.UNWATCHED);
     }
@@ -417,7 +418,7 @@ class WatchStatusServiceTest {
       var outcome = service.markWatched(PROFILE_ID, movie.getId());
 
       assertThat(outcome).isEqualTo(Outcome.accepted(movie));
-      assertThat(service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId())))
+      assertThat(service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId())))
           .containsEntry(movie.getId(), WatchStatus.WATCHED);
     }
 
@@ -443,7 +444,7 @@ class WatchStatusServiceTest {
       var outcome = service.markUnwatched(PROFILE_ID, movie.getId());
 
       assertThat(outcome).isEqualTo(Outcome.accepted(movie));
-      assertThat(service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId())))
+      assertThat(service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId())))
           .containsEntry(movie.getId(), WatchStatus.UNWATCHED);
     }
 
@@ -547,7 +548,7 @@ class WatchStatusServiceTest {
           episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
       episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
 
-      service.markWatched(PROFILE_ID, watched.getId(), CollectableScope.DIRECT_MEDIA, 3600);
+      service.markWatched(PROFILE_ID, watched.getId(), CollectableScope.MOVIE_OR_EPISODE, 3600);
 
       var result = service.getWatchStatusForSeries(PROFILE_ID, List.of(series.getId()));
       assertThat(result).containsEntry(series.getId(), WatchStatus.IN_PROGRESS);
@@ -596,9 +597,9 @@ class WatchStatusServiceTest {
       saveProgress(file.getId(), 900, EARLIER);
       saveProgress(file.getId(), 0, LATER);
 
-      assertThat(service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId())))
+      assertThat(service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId())))
           .containsEntry(movie.getId(), WatchStatus.IN_PROGRESS);
-      assertThat(service.getProgressForDirectMedia(PROFILE_ID, List.of(movie.getId())))
+      assertThat(service.getProgressForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId())))
           .extractingByKey(movie.getId())
           .extracting(WatchProgressDto::positionSeconds)
           .isEqualTo(900);

@@ -137,13 +137,13 @@ class WatchStateAcrossDevicesIT extends AbstractIntegrationTest {
 
   private WatchStatus watchStatusOf(Movie movie) {
     return watchStatusService
-        .getWatchStatusForDirectMedia(profileId, List.of(movie.getId()))
+        .getWatchStatusForMoviesAndEpisodes(profileId, List.of(movie.getId()))
         .get(movie.getId());
   }
 
   private WatchProgressDto watchProgressOf(Movie movie) {
     return watchStatusService
-        .getProgressForDirectMedia(profileId, List.of(movie.getId()))
+        .getProgressForMoviesAndEpisodes(profileId, List.of(movie.getId()))
         .get(movie.getId());
   }
 

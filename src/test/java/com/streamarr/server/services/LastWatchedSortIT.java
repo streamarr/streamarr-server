@@ -195,7 +195,7 @@ class LastWatchedSortIT extends AbstractIntegrationTest {
     var fieldValues =
         watchStatusService.getLastWatchedAtForItems(
             profileId,
-            CollectableScope.DIRECT_MEDIA,
+            CollectableScope.MOVIE_OR_EPISODE,
             List.of(rewatched.getId(), finished.getId(), unwatched.getId()));
 
     assertThat(page.items())

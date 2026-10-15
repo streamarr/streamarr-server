@@ -124,13 +124,13 @@ public class WatchStatusService {
     return switch (item) {
       case Season _ -> CollectableScope.SEASON;
       case Series _ -> CollectableScope.SERIES;
-      default -> CollectableScope.DIRECT_MEDIA;
+      default -> CollectableScope.MOVIE_OR_EPISODE;
     };
   }
 
   private List<UUID> resolveLeafCollectableIds(UUID collectableId, CollectableScope scope) {
     return switch (scope) {
-      case DIRECT_MEDIA -> List.of(collectableId);
+      case MOVIE_OR_EPISODE -> List.of(collectableId);
       case SEASON -> flatten(episodeRepository.findEpisodeIdsBySeasonIds(List.of(collectableId)));
       case SERIES -> {
         var seasonIds = flatten(seasonRepository.findSeasonIdsBySeriesIds(List.of(collectableId)));
@@ -139,7 +139,7 @@ public class WatchStatusService {
     };
   }
 
-  public Map<UUID, WatchStatus> getWatchStatusForDirectMedia(
+  public Map<UUID, WatchStatus> getWatchStatusForMoviesAndEpisodes(
       UUID profileId, Collection<UUID> collectableIds) {
     var states = fetchItemWatchStates(profileId, collectableIds);
 
@@ -150,7 +150,7 @@ public class WatchStatusService {
     return result;
   }
 
-  public Map<UUID, WatchProgressDto> getProgressForDirectMedia(
+  public Map<UUID, WatchProgressDto> getProgressForMoviesAndEpisodes(
       UUID profileId, Collection<UUID> collectableIds) {
     var result = new HashMap<UUID, WatchProgressDto>();
     fetchItemWatchStates(profileId, collectableIds)

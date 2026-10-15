@@ -228,7 +228,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
   private static Field<OffsetDateTime> lastWatchedAt(MediaFilter filter) {
     return LastWatchedExpression.lastWatchedAt(
         requireProfileId(filter.getProfileId()),
-        CollectableScope.DIRECT_MEDIA,
+        CollectableScope.MOVIE_OR_EPISODE,
         BASE_COLLECTABLE.ID);
   }
 

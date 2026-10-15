@@ -218,7 +218,7 @@ public class MovieService {
     }
     return watchHistoryRepository.findLastWatchedByItemIds(
         filter.getProfileId(),
-        CollectableScope.DIRECT_MEDIA,
+        CollectableScope.MOVIE_OR_EPISODE,
         movies.stream().map(Movie::getId).toList());
   }
 

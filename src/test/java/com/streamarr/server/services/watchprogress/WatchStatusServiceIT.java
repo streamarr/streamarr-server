@@ -158,7 +158,7 @@ class WatchStatusServiceIT extends AbstractIntegrationTest {
   void shouldReturnNoLastWatchedTimesWhenNoItemsAreRequested() {
     assertThat(
             watchStatusService.getLastWatchedAtForItems(
-                profileId, CollectableScope.DIRECT_MEDIA, List.of()))
+                profileId, CollectableScope.MOVIE_OR_EPISODE, List.of()))
         .isEmpty();
   }
 
@@ -183,7 +183,7 @@ class WatchStatusServiceIT extends AbstractIntegrationTest {
                   .durationSeconds(2400)
                   .build());
           watchStatusService.markWatched(
-              profileId, episode.getId(), CollectableScope.DIRECT_MEDIA, 2400);
+              profileId, episode.getId(), CollectableScope.MOVIE_OR_EPISODE, 2400);
         });
 
     var progress = sessionProgressRepository.findBySessionId(sessionId).orElseThrow();

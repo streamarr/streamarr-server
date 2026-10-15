@@ -78,9 +78,9 @@ class WatchProgressDataLoaderTest {
             .build());
 
     var firstKey =
-        new WatchProgressLoaderKey(PROFILE_ID, first.getId(), CollectableScope.DIRECT_MEDIA);
+        new WatchProgressLoaderKey(PROFILE_ID, first.getId(), CollectableScope.MOVIE_OR_EPISODE);
     var secondKey =
-        new WatchProgressLoaderKey(PROFILE_ID, second.getId(), CollectableScope.DIRECT_MEDIA);
+        new WatchProgressLoaderKey(PROFILE_ID, second.getId(), CollectableScope.MOVIE_OR_EPISODE);
     var result = dataLoader.load(Set.of(firstKey, secondKey)).toCompletableFuture().get();
 
     assertThat(result.get(firstKey).positionSeconds()).isEqualTo(300);
@@ -99,9 +99,11 @@ class WatchProgressDataLoaderTest {
     sessionProgressRepository.save(
         progressBuilder(PROFILE_ID, mediaFile.getId()).positionSeconds(300).build());
 
-    var mine = new WatchProgressLoaderKey(PROFILE_ID, movie.getId(), CollectableScope.DIRECT_MEDIA);
+    var mine =
+        new WatchProgressLoaderKey(PROFILE_ID, movie.getId(), CollectableScope.MOVIE_OR_EPISODE);
     var theirs =
-        new WatchProgressLoaderKey(UUID.randomUUID(), movie.getId(), CollectableScope.DIRECT_MEDIA);
+        new WatchProgressLoaderKey(
+            UUID.randomUUID(), movie.getId(), CollectableScope.MOVIE_OR_EPISODE);
 
     var result = dataLoader.load(Set.of(mine, theirs)).toCompletableFuture().get();
 
@@ -134,7 +136,7 @@ class WatchProgressDataLoaderTest {
         progressBuilder(PROFILE_ID, seriesFile.getId()).positionSeconds(300).build());
 
     var movieKey =
-        new WatchProgressLoaderKey(PROFILE_ID, movie.getId(), CollectableScope.DIRECT_MEDIA);
+        new WatchProgressLoaderKey(PROFILE_ID, movie.getId(), CollectableScope.MOVIE_OR_EPISODE);
     var seasonKey = new WatchProgressLoaderKey(PROFILE_ID, season.getId(), CollectableScope.SEASON);
     var seriesKey = new WatchProgressLoaderKey(PROFILE_ID, series.getId(), CollectableScope.SERIES);
 
@@ -154,7 +156,7 @@ class WatchProgressDataLoaderTest {
     var future =
         loader.load(
             new WatchProgressLoaderKey(
-                PROFILE_ID, UUID.randomUUID(), CollectableScope.DIRECT_MEDIA));
+                PROFILE_ID, UUID.randomUUID(), CollectableScope.MOVIE_OR_EPISODE));
     loader.dispatch();
 
     assertThat(future.get()).isNull();
