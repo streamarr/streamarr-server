@@ -2214,7 +2214,7 @@ class LibraryManagementServiceTest {
 
     @Test
     @DisplayName("Should transition library to UNHEALTHY when refresh fails")
-    void shouldTransitionToUnhealthyWhenRefreshFails() {
+    void shouldTransitionToUnhealthyWhenRefreshFails() throws Exception {
       doThrow(new RuntimeException("simulated refresh failure"))
           .when(libraryRefreshService)
           .refreshLibrary(any(Library.class));
@@ -2272,7 +2272,7 @@ class LibraryManagementServiceTest {
 
     @Test
     @DisplayName("Should publish RefreshEndedEvent when refresh fails")
-    void shouldPublishRefreshEndedEventWhenRefreshFails() {
+    void shouldPublishRefreshEndedEventWhenRefreshFails() throws Exception {
       doThrow(new RuntimeException("simulated refresh failure"))
           .when(libraryRefreshService)
           .refreshLibrary(any(Library.class));
@@ -2417,7 +2417,7 @@ class LibraryManagementServiceTest {
 
     @Test
     @DisplayName("Should publish an UNHEALTHY status change when a refresh fails")
-    void shouldPublishUnhealthyStatusChangeWhenRefreshFails() {
+    void shouldPublishUnhealthyStatusChangeWhenRefreshFails() throws Exception {
       doThrow(new RuntimeException("simulated refresh failure"))
           .when(libraryRefreshService)
           .refreshLibrary(any(Library.class));

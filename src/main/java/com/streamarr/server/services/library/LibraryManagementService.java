@@ -41,7 +41,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
@@ -291,11 +290,16 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
         libraryId, library -> libraryRefreshService.refreshLibrary(library, imageRefreshMode));
   }
 
-  private void refreshLibrary(UUID libraryId, Consumer<Library> refresh) {
+  private void refreshLibrary(UUID libraryId, LibraryRefresh refresh) {
     SystemWork.runAsSystemActor(() -> refreshItemsInLibrary(libraryId, refresh));
   }
 
-  private void refreshItemsInLibrary(UUID libraryId, Consumer<Library> refresh) {
+  @FunctionalInterface
+  private interface LibraryRefresh {
+    void refresh(Library library) throws InterruptedException;
+  }
+
+  private void refreshItemsInLibrary(UUID libraryId, LibraryRefresh refresh) {
     if (!activeRefreshes.add(libraryId)) {
       throw new LibraryRefreshInProgressException(libraryId);
     }
@@ -305,8 +309,12 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
       var startTime = Instant.now();
 
       try {
-        refresh.accept(library);
+        refresh.refresh(library);
         completeRefreshSuccessfully(library, startTime);
+      } catch (InterruptedException ex) {
+        Thread.currentThread().interrupt();
+        log.error("Refresh interrupted for library '{}'", library.getName(), ex);
+        completeRefreshWithFailure(library);
       } catch (Exception ex) {
         log.error("Refresh failed for library '{}'", library.getName(), ex);
         completeRefreshWithFailure(library);
@@ -400,6 +408,9 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
         completeScanSuccessfully(library, startTime, results);
       } catch (LibraryScanFailedException e) {
         completeScanWithFailure(library, e);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        completeScanWithFailure(library, new LibraryScanFailedException(library.getName(), e));
       }
     } finally {
       eventPublisher.publishEvent(new ScanEndedEvent(libraryId));

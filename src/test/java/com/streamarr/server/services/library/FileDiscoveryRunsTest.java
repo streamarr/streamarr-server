@@ -202,8 +202,8 @@ class FileDiscoveryRunsTest {
   }
 
   @Test
-  @DisplayName("Should fail the scan and keep the interrupt when waiting is interrupted")
-  void shouldFailTheScanAndKeepTheInterruptWhenWaitingIsInterrupted() throws IOException {
+  @DisplayName("Should throw InterruptedException when waiting is interrupted")
+  void shouldThrowInterruptedExceptionWhenWaitingIsInterrupted() throws IOException {
     probeTaskRequests.dispatchWith(_ -> {});
     var runs = fileDiscoveryRuns();
     var discovery = runs.open("scan of", library);
@@ -214,9 +214,7 @@ class FileDiscoveryRunsTest {
     Thread.currentThread().interrupt();
     try {
       assertThatThrownBy(() -> runs.awaitResults(discovery))
-          .isInstanceOf(LibraryScanFailedException.class)
-          .hasCauseInstanceOf(InterruptedException.class);
-      assertThat(Thread.currentThread().isInterrupted()).isTrue();
+          .isInstanceOf(InterruptedException.class);
     } finally {
       Thread.interrupted();
     }
