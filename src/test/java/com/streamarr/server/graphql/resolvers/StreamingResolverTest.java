@@ -11,6 +11,7 @@ import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.ProbeError;
@@ -335,6 +336,7 @@ class StreamingResolverTest {
         .sourcePath(Path.of("/media/movie.mkv"))
         .mediaProbe(
             MediaProbe.builder()
+                .keyframes(new KeyframeKnowledge.NotReported())
                 .duration(Duration.ofMinutes(120))
                 .framerate(OptionalDouble.of(24.0))
                 .width(1920)

@@ -1,15 +1,20 @@
 package com.streamarr.server.fixtures;
 
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePosition;
+import com.streamarr.server.domain.streaming.KeyframePositionSource;
+import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
+import java.util.stream.LongStream;
 import lombok.experimental.UtilityClass;
 
 @UtilityClass
@@ -23,7 +28,27 @@ public class ProbeFixture {
             .bitrate(OptionalLong.of(probe.bitrate()))
             .build(),
         streams(probe),
-        new KeyframeKnowledge.NotReported());
+        probe.keyframes());
+  }
+
+  /**
+   * Keyframes from zero through the media duration, one every {@code spacing}, in a millisecond
+   * time base.
+   */
+  public static KeyframeKnowledge keyframesEvery(Duration spacing, Duration mediaDuration) {
+    var keyframes =
+        LongStream.iterate(
+                0, time -> time <= mediaDuration.toMillis(), time -> time + spacing.toMillis())
+            .mapToObj(time -> new KeyframePosition(time, time))
+            .toList();
+    return new KeyframeKnowledge.Known(
+        KeyframePositions.builder()
+            .streamIndex(0)
+            .timeBaseNumerator(1)
+            .timeBaseDenominator(1000)
+            .source(KeyframePositionSource.CONTAINER_INDEX)
+            .keyframes(keyframes)
+            .build());
   }
 
   private static List<StreamInfo> streams(MediaProbe probe) {

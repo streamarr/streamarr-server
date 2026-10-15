@@ -45,6 +45,27 @@ class ProbeOutcomeTest {
   }
 
   @Test
+  @DisplayName("Should carry the outcome's keyframe knowledge in the media probe")
+  void shouldCarryTheOutcomesKeyframeKnowledgeInTheMediaProbe() {
+    var keyframes = new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.NO_KEYFRAMES);
+    var outcome =
+        new ProbeOutcome.Success(
+            ProbeContainer.builder().build(),
+            List.of(streamBuilder("video", "h264").build()),
+            keyframes);
+
+    assertThat(outcome.mediaProbe().keyframes()).isEqualTo(keyframes);
+  }
+
+  @Test
+  @DisplayName("Should reject a media probe without keyframe knowledge")
+  void shouldRejectAMediaProbeWithoutKeyframeKnowledge() {
+    var probe = MediaProbe.builder().videoCodec("h264");
+
+    assertThatNullPointerException().isThrownBy(probe::build);
+  }
+
+  @Test
   @DisplayName("Should leave the playback frame rate unknown when the first video stream has none")
   void shouldLeaveThePlaybackFrameRateUnknownWhenTheFirstVideoStreamHasNone() {
     var firstVideo = streamBuilder("video", "h264").index(0).build();

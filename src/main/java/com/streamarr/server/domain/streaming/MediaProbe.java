@@ -21,7 +21,8 @@ public record MediaProbe(
     OptionalInt audioChannels,
     OptionalLong audioBitrate,
     Optional<String> containerFormat,
-    List<StreamInfo> streams) {
+    List<StreamInfo> streams,
+    @NonNull KeyframeKnowledge keyframes) {
 
   public MediaProbe {
     if (audioChannels == null) {

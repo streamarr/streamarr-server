@@ -1,5 +1,6 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -22,6 +23,7 @@ public class FakeFfprobeService implements FfprobeService {
 
   private MediaProbe defaultProbe =
       MediaProbe.builder()
+          .keyframes(new KeyframeKnowledge.NotReported())
           .duration(Duration.ofMinutes(120))
           .framerate(OptionalDouble.of(23.976))
           .width(1920)

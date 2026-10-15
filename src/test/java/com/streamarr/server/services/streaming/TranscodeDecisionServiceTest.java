@@ -3,9 +3,11 @@ package com.streamarr.server.services.streaming;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
+import com.streamarr.server.fixtures.ProbeFixture;
 import java.time.Duration;
 import java.util.List;
 import java.util.OptionalDouble;
@@ -19,6 +21,9 @@ import org.junit.jupiter.api.Test;
 @DisplayName("Transcode Decision Service Tests")
 class TranscodeDecisionServiceTest {
 
+  private static final KeyframeKnowledge KEYFRAMES_EVERY_TWO_SECONDS =
+      ProbeFixture.keyframesEvery(Duration.ofSeconds(2), Duration.ofMinutes(120));
+
   private final TranscodeDecisionService service = new TranscodeDecisionService();
 
   private MediaProbe probe(String videoCodec, String audioCodec) {
@@ -28,6 +33,7 @@ class TranscodeDecisionServiceTest {
   private MediaProbe probe(
       String videoCodec, String audioCodec, int audioChannels, long audioBitrate) {
     return MediaProbe.builder()
+        .keyframes(KEYFRAMES_EVERY_TWO_SECONDS)
         .duration(Duration.ofMinutes(120))
         .framerate(OptionalDouble.of(23.976))
         .width(1920)
@@ -155,6 +161,7 @@ class TranscodeDecisionServiceTest {
   void shouldDecideAudioModeNoneWhenSourceHasNoAudioStream() {
     var source =
         MediaProbe.builder()
+            .keyframes(KEYFRAMES_EVERY_TWO_SECONDS)
             .duration(Duration.ofMinutes(120))
             .framerate(OptionalDouble.of(23.976))
             .width(1920)
@@ -367,6 +374,7 @@ class TranscodeDecisionServiceTest {
   void shouldDefaultToStereoWhenSourceAudioChannelsAreEmpty() {
     var source =
         MediaProbe.builder()
+            .keyframes(KEYFRAMES_EVERY_TWO_SECONDS)
             .duration(Duration.ofMinutes(120))
             .framerate(OptionalDouble.of(23.976))
             .width(1920)
