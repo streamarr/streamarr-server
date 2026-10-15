@@ -166,6 +166,10 @@ final class IntentPlanner {
           unitPlan(AuthorizationCheck.onHousehold(Action.DELETE_HOUSEHOLD, householdId));
       case Intent.ViewSecurityAudit _ ->
           unitPlan(AuthorizationCheck.onServer(Action.VIEW_SECURITY_AUDIT));
+      case Intent.ViewEncoderPreset _ ->
+          unitPlan(AuthorizationCheck.onServer(Action.VIEW_ENCODER_PRESET));
+      case Intent.ChangeEncoderPreset _ ->
+          unitPlan(AuthorizationCheck.onServer(Action.CHANGE_ENCODER_PRESET));
     };
   }
 

@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountScopedBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.abrSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
@@ -24,11 +25,15 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fakes.FakeServerSettingsRepository;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.serversettings.ServerSettingsService;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -60,10 +65,15 @@ class ProducerLifecycleServiceTest {
   private FakeRuntimeStreamSessionRegistry runtimeRegistry;
   private ProducerLifecycleService lifecycle;
   private MutableClock clock;
+  private final AuthenticatedIdentity serverAdmin = accountScopedBuilder().build();
+  private ServerSettingsService serverSettings;
 
   @BeforeEach
   void setUp() {
     clock = new MutableClock();
+    serverSettings =
+        new ServerSettingsService(
+            new FakeAuthorizationService(serverAdmin), new FakeServerSettingsRepository());
     transcodeExecutor = new FakeTranscodeExecutor();
     segmentStore = new FakeSegmentStore();
     runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
@@ -79,6 +89,7 @@ class ProducerLifecycleServiceTest {
                     .build())
             .clock(clock)
             .runtimeRegistry(runtimeRegistry)
+            .serverSettings(serverSettings)
             .build()
             .lifecycle();
   }
@@ -891,6 +902,52 @@ class ProducerLifecycleServiceTest {
     runtimeRegistry.save(started);
     lifecycle.startAll(started, 0);
     return started;
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry medium when a ServerAdmin sets medium before the next variant job starts")
+  void shouldCarryMediumWhenServerAdminSetsMediumBeforeNextVariantJob() {
+    serverSettings.changeEncoderPreset(serverAdmin, "MEDIUM");
+
+    startedTranscodeSession("h264");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .isNotEmpty()
+        .extracting(TranscodeRequest::encoderPreset)
+        .containsOnly(EncoderPreset.MEDIUM);
+  }
+
+  @Test
+  @DisplayName("Should keep the first preset when a replacement attempt starts after a change")
+  void shouldKeepFirstPresetWhenReplacementAttemptStartsAfterChange() {
+    var session = startedTranscodeSession("h264");
+    serverSettings.changeEncoderPreset(serverAdmin, "SLOWER");
+    transcodeExecutor.markDead(session.getSessionId(), "720p");
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    lifecycle.recover(session.getSessionId(), "720p", "720p/segment2.m4s");
+    lifecycle.ensurePositioned(session.getSessionId(), "1080p/segment100.m4s");
+
+    assertThat(startedSince(startedBefore))
+        .hasSizeGreaterThan(1)
+        .extracting(TranscodeRequest::encoderPreset)
+        .containsOnly(EncoderPreset.FASTER);
+  }
+
+  @Test
+  @DisplayName("Should carry the new preset when a variant starts after a change")
+  void shouldCarryNewPresetWhenVariantStartsAfterChange() {
+    startedTranscodeSession("h264");
+    serverSettings.changeEncoderPreset(serverAdmin, "SLOWER");
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    startedTranscodeSession("h264");
+
+    assertThat(startedSince(startedBefore))
+        .isNotEmpty()
+        .extracting(TranscodeRequest::encoderPreset)
+        .containsOnly(EncoderPreset.SLOWER);
   }
 
   private static Map<String, EncoderPreset> presetsByVariantLabel(List<TranscodeRequest> requests) {

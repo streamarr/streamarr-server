@@ -11,6 +11,7 @@ import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
+import com.streamarr.server.fixtures.ServerSettingsFixture;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import java.time.Duration;
 import java.util.List;
@@ -84,6 +85,7 @@ class ProducerLifecycleDestroyRaceTest {
                 .build())
         .runtimeRegistry(new FakeRuntimeStreamSessionRegistry())
         .sessionMutex(sessionMutex)
+        .serverSettings(ServerSettingsFixture.defaultServerSettings())
         .build();
   }
 

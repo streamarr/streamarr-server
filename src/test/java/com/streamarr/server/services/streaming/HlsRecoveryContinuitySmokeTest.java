@@ -12,6 +12,7 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fixtures.Fmp4Fixture;
+import com.streamarr.server.fixtures.ServerSettingsFixture;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
@@ -45,7 +46,8 @@ class HlsRecoveryContinuitySmokeTest {
   private LocalSegmentStore segmentStore;
   private RemoteTranscodeExecutor transcodeExecutor;
   private WorkerStreamingSmokeFixture workerFixture;
-  private FakeRuntimeStreamSessionRegistry runtimeRegistry;
+  private final FakeRuntimeStreamSessionRegistry runtimeRegistry =
+      new FakeRuntimeStreamSessionRegistry();
   private ProducerLifecycleService lifecycle;
   private SegmentDeliveryCoordinator coordinator;
   @TempDir private Path temporaryDirectory;
@@ -69,7 +71,6 @@ class HlsRecoveryContinuitySmokeTest {
             workerFixture.workerSessions(),
             workerFixture.sourceNamespaceId(),
             testVideo.getParent());
-    runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
     var properties =
         StreamingProperties.builder()
             .maxConcurrentTranscodes(3)
@@ -84,6 +85,7 @@ class HlsRecoveryContinuitySmokeTest {
             .properties(properties)
             .runtimeRegistry(runtimeRegistry)
             .sessionMutex(new MutexFactory<>())
+            .serverSettings(ServerSettingsFixture.defaultServerSettings())
             .build();
     coordinator =
         SegmentDeliveryCoordinator.builder()
@@ -94,23 +96,12 @@ class HlsRecoveryContinuitySmokeTest {
 
   @AfterEach
   void tearDown() {
-    try {
-      if (runtimeRegistry != null) {
-        runtimeRegistry.findAll().stream()
-            .map(StreamSession::getSessionId)
-            .forEach(transcodeExecutor::stop);
-      }
-    } finally {
-      try {
-        if (workerFixture != null) {
-          workerFixture.close();
-        }
-      } finally {
-        if (segmentStore != null) {
-          segmentStore.shutdown();
-        }
-      }
+    if (workerFixture == null) {
+      return;
     }
+
+    workerFixture.stopStreamSessionsAndClose(
+        runtimeRegistry.findAll().stream().map(StreamSession::getSessionId).toList());
   }
 
   @Test
