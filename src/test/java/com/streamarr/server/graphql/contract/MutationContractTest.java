@@ -47,7 +47,6 @@ class MutationContractTest {
           "refreshLibrary",
           "destroyStreamSession",
           "reportStreamSessionTimeline",
-          "markWatched",
           "markUnwatched");
 
   private static final Set<String> INPUT_ERROR_UNIONS = Set.of("AddLibraryError");

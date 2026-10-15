@@ -31,6 +31,12 @@ type MediaFileNotFoundError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
+"No movie, episode, season or series has the given ID."
+type ItemNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
 interface InputMutationError implements MutationError {
     message: String!
     "Path of the offending field relative to the mutation's input object; list indexes are decimal strings."

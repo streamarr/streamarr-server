@@ -2,8 +2,13 @@ package com.streamarr.server.graphql.resolvers;
 
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
+import com.netflix.graphql.dgs.DgsTypeResolver;
 import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.media.Episode;
+import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.media.Season;
+import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -17,11 +22,15 @@ import com.streamarr.server.graphql.mutation.MutationPayloads;
 import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionError;
 import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionInput;
 import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionPayload;
+import com.streamarr.server.graphql.mutation.watchprogress.MarkWatchedError;
+import com.streamarr.server.graphql.mutation.watchprogress.MarkWatchedInput;
+import com.streamarr.server.graphql.mutation.watchprogress.MarkWatchedPayload;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
 import com.streamarr.server.services.streaming.StreamingService;
+import com.streamarr.server.services.watchprogress.MarkWatchedRejection;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.time.Duration;
@@ -32,6 +41,10 @@ import lombok.RequiredArgsConstructor;
 @DgsComponent
 @RequiredArgsConstructor
 public class StreamingResolver {
+
+  private static final String ITEM_ID = "itemId";
+  private static final String INVALID_ITEM_ID = "Enter a valid item ID.";
+  private static final String ITEM_NOT_FOUND = "This item no longer exists.";
 
   private final StreamingService streamingService;
   private final AuthorizationService authorizationService;
@@ -127,10 +140,26 @@ public class StreamingResolver {
   }
 
   @DgsMutation
-  public boolean markWatched(@InputArgument String id) {
-    watchStatusService.markWatched(authorizationService.requireProfile(), parseUuid(id));
+  public MarkWatchedPayload markWatched(@InputArgument MarkWatchedInput input) {
+    var profileId = authorizationService.requireProfile();
+    return MutationPayloads.withUuid(
+        input.itemId(),
+        itemId ->
+            MutationPayloads.payload(
+                watchStatusService.markWatched(profileId, itemId),
+                this::markWatchedError,
+                MarkWatchedPayload::new),
+        () ->
+            MutationPayloads.inputError(
+                new MarkWatchedError.InvalidIdError(INVALID_ITEM_ID, InputPath.of(ITEM_ID)),
+                MarkWatchedPayload::new));
+  }
 
-    return true;
+  private MarkWatchedError markWatchedError(MarkWatchedRejection rejection) {
+    return switch (rejection) {
+      case MarkWatchedRejection.ItemNotFound _ ->
+          new MarkWatchedError.ItemNotFoundError(ITEM_NOT_FOUND, InputPath.of(ITEM_ID));
+    };
   }
 
   @DgsMutation
@@ -138,6 +167,19 @@ public class StreamingResolver {
     watchStatusService.markUnwatched(authorizationService.requireProfile(), parseUuid(id));
 
     return true;
+  }
+
+  @DgsTypeResolver(name = "WatchStateItem")
+  public String resolveWatchStateItem(Object item) {
+    return switch (item) {
+      case Movie _ -> "Movie";
+      case Episode _ -> "Episode";
+      case Season _ -> "Season";
+      case Series _ -> "Series";
+      default ->
+          throw new IllegalArgumentException(
+              "Unknown watch state item type: " + item.getClass().getSimpleName());
+    };
   }
 
   private StreamingOptions mapOptions(StreamingOptionsInput input) {

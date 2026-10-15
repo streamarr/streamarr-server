@@ -1,15 +1,21 @@
 package com.streamarr.server.services.watchprogress;
 
+import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.media.Season;
+import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.domain.streaming.WatchHistory;
 import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
+import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
+import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
 import java.time.Instant;
 import java.util.Collection;
@@ -18,6 +24,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -33,8 +40,10 @@ public class WatchStatusService {
   private final SessionProgressRepository sessionProgressRepository;
   private final WatchHistoryRepository watchHistoryRepository;
   private final MediaFileRepository mediaFileRepository;
+  private final MovieRepository movieRepository;
   private final EpisodeRepository episodeRepository;
   private final SeasonRepository seasonRepository;
+  private final SeriesRepository seriesRepository;
   private final ApplicationEventPublisher eventPublisher;
 
   public Map<UUID, SessionProgress> getProgressForMediaFiles(
@@ -50,9 +59,15 @@ public class WatchStatusService {
   }
 
   @Transactional
-  public void markWatched(UUID profileId, UUID collectableId) {
-    var scope = resolveCollectableScope(collectableId);
-    markWatchedInternal(profileId, collectableId, scope, Instant.now(), 0);
+  public Outcome<BaseCollectable<?>, MarkWatchedRejection> markWatched(
+      UUID profileId, UUID itemId) {
+    var item = findItem(itemId);
+    if (item.isEmpty()) {
+      return Outcome.rejected(new MarkWatchedRejection.ItemNotFound(itemId));
+    }
+
+    markWatchedInternal(profileId, itemId, scopeOf(item.get()), Instant.now(), 0);
+    return Outcome.accepted(item.get());
   }
 
   @Transactional
@@ -98,6 +113,23 @@ public class WatchStatusService {
     }
 
     eventPublisher.publishEvent(new WatchStatusChangedEvent(profileId, collectableId));
+  }
+
+  private Optional<BaseCollectable<?>> findItem(UUID itemId) {
+    return movieRepository
+        .findById(itemId)
+        .<BaseCollectable<?>>map(movie -> movie)
+        .or(() -> episodeRepository.findById(itemId))
+        .or(() -> seasonRepository.findById(itemId))
+        .or(() -> seriesRepository.findById(itemId));
+  }
+
+  private static CollectableScope scopeOf(BaseCollectable<?> item) {
+    return switch (item) {
+      case Season _ -> CollectableScope.SEASON;
+      case Series _ -> CollectableScope.SERIES;
+      default -> CollectableScope.DIRECT_MEDIA;
+    };
   }
 
   private CollectableScope resolveCollectableScope(UUID collectableId) {

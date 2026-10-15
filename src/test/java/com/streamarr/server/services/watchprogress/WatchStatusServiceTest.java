@@ -14,9 +14,12 @@ import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
+import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
+import com.streamarr.server.services.mutation.Outcome;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -33,8 +36,10 @@ class WatchStatusServiceTest {
   private FakeSessionProgressRepository sessionProgressRepository;
   private FakeWatchHistoryRepository watchHistoryRepository;
   private FakeMediaFileRepository mediaFileRepository;
+  private FakeMovieRepository movieRepository;
   private FakeEpisodeRepository episodeRepository;
   private FakeSeasonRepository seasonRepository;
+  private FakeSeriesRepository seriesRepository;
   private CapturingEventPublisher eventPublisher;
   private WatchStatusService service;
 
@@ -45,16 +50,20 @@ class WatchStatusServiceTest {
     sessionProgressRepository = new FakeSessionProgressRepository();
     watchHistoryRepository = new FakeWatchHistoryRepository();
     mediaFileRepository = new FakeMediaFileRepository();
+    movieRepository = new FakeMovieRepository();
     episodeRepository = new FakeEpisodeRepository();
     seasonRepository = new FakeSeasonRepository();
+    seriesRepository = new FakeSeriesRepository();
     eventPublisher = new CapturingEventPublisher();
     service =
         new WatchStatusService(
             sessionProgressRepository,
             watchHistoryRepository,
             mediaFileRepository,
+            movieRepository,
             episodeRepository,
             seasonRepository,
+            seriesRepository,
             eventPublisher);
   }
 
@@ -105,7 +114,7 @@ class WatchStatusServiceTest {
     @Test
     @DisplayName("Should derive unwatched when latest history entry is dismissed")
     void shouldDeriveUnwatchedWhenLatestHistoryEntryIsDismissed() {
-      var movie = buildMovie();
+      var movie = movieRepository.save(buildMovie());
       mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
       service.markWatched(
@@ -289,6 +298,57 @@ class WatchStatusServiceTest {
   @Nested
   @DisplayName("Scope Resolution")
   class ScopeResolution {
+
+    @Test
+    @DisplayName("Should return the movie when marking a stored movie watched by ID")
+    void shouldReturnTheMovieWhenMarkingAStoredMovieWatchedById() {
+      var movie = movieRepository.save(buildMovie());
+
+      var outcome = service.markWatched(PROFILE_ID, movie.getId());
+
+      assertThat(outcome).isEqualTo(Outcome.accepted(movie));
+      assertThat(service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId())))
+          .containsEntry(movie.getId(), WatchStatus.WATCHED);
+    }
+
+    @Test
+    @DisplayName("Should reject with item not found when marking an unknown ID watched")
+    void shouldRejectWithItemNotFoundWhenMarkingAnUnknownIdWatched() {
+      var unknownId = UUID.randomUUID();
+
+      var outcome = service.markWatched(PROFILE_ID, unknownId);
+
+      assertThat(outcome)
+          .isEqualTo(Outcome.rejected(new MarkWatchedRejection.ItemNotFound(unknownId)));
+      assertThat(watchHistoryRepository.count()).isZero();
+      assertThat(eventPublisher.getEventsOfType(Object.class)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should mark every episode when marking a stored series watched by ID")
+    void shouldMarkEveryEpisodeWhenMarkingAStoredSeriesWatchedById() {
+      var series = seriesRepository.save(buildSeries());
+      var season = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
+      episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+      episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+
+      var outcome = service.markWatched(PROFILE_ID, series.getId());
+
+      assertThat(outcome).isEqualTo(Outcome.accepted(series));
+      assertThat(service.getWatchStatusForSeries(PROFILE_ID, List.of(series.getId())))
+          .containsEntry(series.getId(), WatchStatus.WATCHED);
+    }
+
+    @Test
+    @DisplayName("Should write no history when marking a season without episodes watched by ID")
+    void shouldWriteNoHistoryWhenMarkingASeasonWithoutEpisodesWatchedById() {
+      var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
+
+      var outcome = service.markWatched(PROFILE_ID, season.getId());
+
+      assertThat(outcome).isEqualTo(Outcome.accepted(season));
+      assertThat(watchHistoryRepository.count()).isZero();
+    }
 
     @Test
     @DisplayName("Should resolve season scope when marking season watched by id")

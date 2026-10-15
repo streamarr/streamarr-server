@@ -1,15 +1,21 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static com.streamarr.server.fixtures.MediaEntityFixture.buildEpisode;
+import static com.streamarr.server.fixtures.MediaEntityFixture.buildMovie;
+import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeason;
+import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeries;
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackAuthorityFor;
 import static com.streamarr.server.support.TokenTestSupport.decode;
 import static com.streamarr.server.support.TokenTestSupport.tokenProperties;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.jayway.jsonpath.DocumentContext;
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
+import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
@@ -32,6 +38,7 @@ import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
 import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.StreamingService;
+import com.streamarr.server.services.watchprogress.MarkWatchedRejection;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import com.streamarr.server.support.security.TestIdentityConstants;
@@ -252,6 +259,113 @@ class StreamingResolverTest {
     assertThat(STUB_SERVICE.getActiveSessionCount()).isZero();
   }
 
+  @ParameterizedTest(name = "{1}")
+  @MethodSource("watchStateItems")
+  @DisplayName("Should return the marked item when the service accepts markWatched")
+  void shouldReturnTheMarkedItemWhenTheServiceAcceptsMarkWatched(
+      BaseCollectable<?> item, String typename) {
+    STUB_WATCH_STATUS.setMarkWatchedOutcome(Outcome.accepted(item));
+
+    var context = markWatched(item.getId().toString());
+
+    assertThat(context.read("data.markWatched.item['__typename']", String.class))
+        .isEqualTo(typename);
+    assertThat(context.read("data.markWatched.item.id", String.class))
+        .isEqualTo(item.getId().toString());
+    List<Object> errors = context.read("data.markWatched.userErrors");
+    assertThat(errors).isEmpty();
+    assertThat(STUB_WATCH_STATUS.getLastMarkedProfileId())
+        .isEqualTo(TestIdentityConstants.PROFILE_ID);
+    assertThat(STUB_WATCH_STATUS.getLastMarkedItemId()).isEqualTo(item.getId());
+  }
+
+  static Stream<Arguments> watchStateItems() {
+    return Stream.of(
+        Arguments.of(buildMovie("Movie"), "Movie"),
+        Arguments.of(buildEpisode("Pilot", 1), "Episode"),
+        Arguments.of(buildSeason("Season 1", 1), "Season"),
+        Arguments.of(buildSeries("Series"), "Series"));
+  }
+
+  @Test
+  @DisplayName("Should refuse to complete the payload when the marked item has no schema type")
+  void shouldRefuseToCompleteThePayloadWhenTheMarkedItemHasNoSchemaType() {
+    var item = new UnknownItem();
+    item.setId(UUID.randomUUID());
+    STUB_WATCH_STATUS.setMarkWatchedOutcome(Outcome.accepted(item));
+    var mutation =
+        """
+        mutation {
+          markWatched(input: {itemId: "%s"}) {
+            item { __typename }
+          }
+        }
+        """
+            .formatted(item.getId());
+
+    assertThatThrownBy(() -> dgsQueryExecutor.execute(mutation))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Unknown watch state item type: UnknownItem");
+  }
+
+  @Test
+  @DisplayName("Should return an item-not-found error when markWatched finds no item")
+  void shouldReturnAnItemNotFoundErrorWhenMarkWatchedFindsNoItem() {
+    var itemId = UUID.randomUUID();
+    STUB_WATCH_STATUS.setMarkWatchedOutcome(
+        Outcome.rejected(new MarkWatchedRejection.ItemNotFound(itemId)));
+
+    var context = markWatched(itemId.toString());
+
+    assertThat(context.read("data.markWatched.item", Object.class)).isNull();
+    List<Map<String, Object>> errors = context.read("data.markWatched.userErrors");
+    assertThat(errors)
+        .containsExactly(
+            Map.of(
+                "__typename", "ItemNotFoundError",
+                "message", "This item no longer exists.",
+                "inputPath", List.of("itemId")));
+  }
+
+  @Test
+  @DisplayName("Should return an invalid-ID error without marking when the item ID is malformed")
+  void shouldReturnAnInvalidIdErrorWithoutMarkingWhenTheItemIdIsMalformed() {
+    var context = markWatched("not-a-uuid");
+
+    assertThat(context.read("data.markWatched.item", Object.class)).isNull();
+    List<Map<String, Object>> errors = context.read("data.markWatched.userErrors");
+    assertThat(errors)
+        .containsExactly(
+            Map.of(
+                "__typename", "InvalidIdError",
+                "message", "Enter a valid item ID.",
+                "inputPath", List.of("itemId")));
+    assertThat(STUB_WATCH_STATUS.getLastMarkedItemId()).isNull();
+  }
+
+  private DocumentContext markWatched(String itemId) {
+    return dgsQueryExecutor.executeAndGetDocumentContext(
+        """
+        mutation {
+          markWatched(input: {itemId: "%s"}) {
+            item {
+              __typename
+              ... on Movie { id }
+              ... on Episode { id }
+              ... on Season { id }
+              ... on Series { id }
+            }
+            userErrors {
+              __typename
+              ... on MutationError { message }
+              ... on InputMutationError { inputPath }
+            }
+          }
+        }
+        """
+            .formatted(itemId));
+  }
+
   private DocumentContext requestSession(String mediaFileId) {
     return dgsQueryExecutor.executeAndGetDocumentContext(
         """
@@ -270,6 +384,7 @@ class StreamingResolverTest {
   }
 
   private static final StubStreamingService STUB_SERVICE = new StubStreamingService();
+  private static final StubWatchStatusService STUB_WATCH_STATUS = new StubWatchStatusService();
 
   @MockitoBean private UserAccountRepository userAccountRepository;
 
@@ -312,7 +427,7 @@ class StreamingResolverTest {
 
     @Bean
     WatchStatusService watchStatusService() {
-      return new NoopWatchStatusService();
+      return STUB_WATCH_STATUS;
     }
   }
 
@@ -322,6 +437,7 @@ class StreamingResolverTest {
   @BeforeEach
   void resetStubService() {
     STUB_SERVICE.reset();
+    STUB_WATCH_STATUS.reset();
   }
 
   private StreamSession buildSession(UUID sessionId) {
@@ -449,7 +565,6 @@ class StreamingResolverTest {
             "reportStreamSessionTimeline",
             "mutation { reportStreamSessionTimeline(sessionId: \"%s\", positionSeconds: 300, state: PLAYING) }",
             "data.reportStreamSessionTimeline"),
-        Arguments.of("markWatched", "mutation { markWatched(id: \"%s\") }", "data.markWatched"),
         Arguments.of(
             "markUnwatched", "mutation { markUnwatched(id: \"%s\") }", "data.markUnwatched"));
   }
@@ -578,15 +693,42 @@ class StreamingResolverTest {
     }
   }
 
-  private static class NoopWatchStatusService extends WatchStatusService {
+  private static class UnknownItem extends BaseCollectable<UnknownItem> {}
 
-    NoopWatchStatusService() {
-      super(null, null, null, null, null, null);
+  private static class StubWatchStatusService extends WatchStatusService {
+
+    private Outcome<BaseCollectable<?>, MarkWatchedRejection> markWatchedOutcome;
+    private UUID lastMarkedProfileId;
+    private UUID lastMarkedItemId;
+
+    StubWatchStatusService() {
+      super(null, null, null, null, null, null, null, null);
+    }
+
+    void reset() {
+      markWatchedOutcome = null;
+      lastMarkedProfileId = null;
+      lastMarkedItemId = null;
+    }
+
+    void setMarkWatchedOutcome(Outcome<BaseCollectable<?>, MarkWatchedRejection> outcome) {
+      markWatchedOutcome = outcome;
+    }
+
+    UUID getLastMarkedProfileId() {
+      return lastMarkedProfileId;
+    }
+
+    UUID getLastMarkedItemId() {
+      return lastMarkedItemId;
     }
 
     @Override
-    public void markWatched(UUID profileId, UUID collectableId) {
-      // no-op for test fake
+    public Outcome<BaseCollectable<?>, MarkWatchedRejection> markWatched(
+        UUID profileId, UUID itemId) {
+      lastMarkedProfileId = profileId;
+      lastMarkedItemId = itemId;
+      return markWatchedOutcome;
     }
 
     @Override

@@ -16,8 +16,10 @@ import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSeasonRepository;
+import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.fixtures.StreamSessionFixture;
@@ -44,8 +46,10 @@ class SessionProgressServiceTest {
   private FakeSessionProgressRepository sessionProgressRepository;
   private FakeWatchHistoryRepository watchHistoryRepository;
   private FakeMediaFileRepository mediaFileRepository;
+  private FakeMovieRepository movieRepository;
   private FakeEpisodeRepository episodeRepository;
   private FakeSeasonRepository seasonRepository;
+  private FakeSeriesRepository seriesRepository;
   private CapturingEventPublisher eventPublisher;
   private WatchStatusService watchStatusService;
   private SessionProgressService service;
@@ -58,16 +62,20 @@ class SessionProgressServiceTest {
     sessionProgressRepository = new FakeSessionProgressRepository();
     watchHistoryRepository = new FakeWatchHistoryRepository();
     mediaFileRepository = new FakeMediaFileRepository();
+    movieRepository = new FakeMovieRepository();
     episodeRepository = new FakeEpisodeRepository();
     seasonRepository = new FakeSeasonRepository();
+    seriesRepository = new FakeSeriesRepository();
     eventPublisher = new CapturingEventPublisher();
     watchStatusService =
         new WatchStatusService(
             sessionProgressRepository,
             watchHistoryRepository,
             mediaFileRepository,
+            movieRepository,
             episodeRepository,
             seasonRepository,
+            seriesRepository,
             eventPublisher);
     var properties = new WatchProgressProperties(5.0, 90.0, 300);
     service =
