@@ -216,7 +216,7 @@ class LibraryOperationExecutionTest {
   private UUID savedLibraryId;
 
   @BeforeEach
-  public void setup() {
+  void setup() {
     // Fixture uses plain paths because file:// URIs can't round-trip through Jimfs.
     var fakeLibrary = LibraryFixtureCreator.buildFakeLibrary();
     var savedLibrary = fakeLibraryRepository.save(fakeLibrary);
@@ -225,7 +225,7 @@ class LibraryOperationExecutionTest {
   }
 
   @AfterEach
-  public void tearDown() throws IOException {
+  void tearDown() throws IOException {
     fileSystem.close();
   }
 
