@@ -168,6 +168,24 @@ class HlsStreamingServiceTest {
         .containsOnly(TranscodeMode.VIDEO_TRANSCODE);
   }
 
+  @Test
+  @DisplayName(
+      "Should encode the video when the playlist advertises a segment after the last keyframe")
+  void shouldEncodeTheVideoWhenThePlaylistAdvertisesASegmentAfterTheLastKeyframe() {
+    // The playlist advertises four 6 s segments for 20 s, but no keyframe opens [18 s, 20 s).
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .duration(Duration.ofSeconds(20))
+            .keyframes(ProbeFixture.keyframesEvery(Duration.ofSeconds(6), Duration.ofSeconds(12)))
+            .build());
+    var file = seedMediaFile();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+  }
+
   @ParameterizedTest
   @MethodSource("keyframesThatAreNotKnown")
   @DisplayName("Should encode the video when the source's keyframe positions are not known yet")

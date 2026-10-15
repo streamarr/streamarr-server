@@ -72,6 +72,35 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.videoCodecFamily()).isEqualTo("av1");
   }
 
+  @Test
+  @DisplayName("Should encode the video when no keyframe opens the final partial segment")
+  void shouldEncodeTheVideoWhenNoKeyframeOpensTheFinalPartialSegment() {
+    // 18.5 s at the 6 s period advertises a fourth segment, [18 s, 18.5 s), that holds no keyframe.
+    var source =
+        probeBuilder("h264", "aac")
+            .duration(Duration.ofMillis(18_500))
+            .keyframes(ProbeFixture.keyframesEvery(Duration.ofSeconds(6), Duration.ofSeconds(12)))
+            .build();
+
+    var decision = service.decide(source, options(List.of("h264")));
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+  }
+
+  @Test
+  @DisplayName("Should copy the video when a keyframe opens the final partial segment")
+  void shouldCopyTheVideoWhenAKeyframeOpensTheFinalPartialSegment() {
+    var source =
+        probeBuilder("h264", "aac")
+            .duration(Duration.ofMillis(18_500))
+            .keyframes(ProbeFixture.keyframesEvery(Duration.ofSeconds(6), Duration.ofSeconds(18)))
+            .build();
+
+    var decision = service.decide(source, options(List.of("h264")));
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+  }
+
   @ParameterizedTest
   @MethodSource("keyframesThatAreNotKnown")
   @DisplayName("Should encode the video when the source's keyframe positions are not known")

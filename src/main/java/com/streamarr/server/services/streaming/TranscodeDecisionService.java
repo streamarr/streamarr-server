@@ -4,7 +4,9 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.StreamCopySegments;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -47,12 +49,11 @@ public class TranscodeDecisionService {
   }
 
   // A stream copy's segments can start only at source keyframes (ADR 0037), so the video is copied
-  // only when the known keyframes open every segment.
+  // only when the known keyframes open every segment the playlist advertises.
   private boolean keyframesOpenEverySegment(MediaProbe source) {
     return switch (source.keyframes()) {
       case KeyframeKnowledge.Known(var positions) ->
-          KeyframeSegmentBoundaries.forStreamCopy(positions, periodSeconds(source))
-              instanceof StreamCopySegments.Starts;
+          keyframesOpenEverySegment(positions, MediaSegmentTimelines.of(source, properties));
       case KeyframeKnowledge.PacketScanRequired _,
           KeyframeKnowledge.Unavailable _,
           KeyframeKnowledge.NotReported _ ->
@@ -60,8 +61,12 @@ public class TranscodeDecisionService {
     };
   }
 
-  private int periodSeconds(MediaProbe source) {
-    return MediaSegmentTimelines.of(source, properties).targetSegmentDurationSeconds();
+  private static boolean keyframesOpenEverySegment(
+      KeyframePositions positions, MediaSegmentTimeline timeline) {
+    return KeyframeSegmentBoundaries.forStreamCopy(
+                positions, timeline.targetSegmentDurationSeconds())
+            instanceof StreamCopySegments.Starts(var starts)
+        && starts.size() >= timeline.mediaSegmentCount();
   }
 
   private TranscodeMode resolveTranscodeMode(
