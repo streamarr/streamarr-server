@@ -1,12 +1,10 @@
 package com.streamarr.server.graphql.subscriptions;
 
-import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.Builder;
 import lombok.NonNull;
-import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.scheduler.Scheduler;
@@ -20,13 +18,8 @@ import reactor.core.scheduler.Scheduler;
  */
 public final class SubscriptionBroadcaster<T> {
 
-  private static final String ACTIVE_REGISTRATIONS_METRIC =
-      "streamarr.graphql.subscriptions.active";
-
   private final Set<FluxSink<T>> registrations = ConcurrentHashMap.newKeySet();
-  private final String field;
-  private final Scheduler deliveryScheduler;
-  private final int operationBuffer;
+  private final SubscriptionDelivery delivery;
 
   @Builder
   private SubscriptionBroadcaster(
@@ -34,22 +27,13 @@ public final class SubscriptionBroadcaster<T> {
       @NonNull MeterRegistry meterRegistry,
       @NonNull Scheduler deliveryScheduler,
       int operationBuffer) {
-    if (operationBuffer <= 0) {
-      throw new IllegalArgumentException("The operation buffer must be positive.");
-    }
-
-    this.field = field;
-    this.deliveryScheduler = deliveryScheduler;
-    this.operationBuffer = operationBuffer;
-    Gauge.builder(ACTIVE_REGISTRATIONS_METRIC, registrations, Set::size)
-        .description("Subscription operations registered for a GraphQL subscription field")
-        .tag("field", field)
-        .register(meterRegistry);
+    this.delivery = new SubscriptionDelivery(field, deliveryScheduler, operationBuffer);
+    delivery.countRegistrations(meterRegistry, registrations, Set::size);
   }
 
   /** The subscription field this broadcaster serves, as named in the schema. */
   public String field() {
-    return field;
+    return delivery.field();
   }
 
   /**
@@ -58,14 +42,11 @@ public final class SubscriptionBroadcaster<T> {
    * broadcast that finds no outstanding demand overflows the operation at once.
    */
   public Flux<T> register() {
-    return Flux.<T>create(
-            sink -> {
-              registrations.add(sink);
-              sink.onDispose(() -> registrations.remove(sink));
-            },
-            FluxSink.OverflowStrategy.ERROR)
-        .publishOn(deliveryScheduler, false, operationBuffer)
-        .onErrorMap(Exceptions::isOverflow, _ -> new SubscriptionOverflowException(field));
+    return delivery.register(
+        sink -> {
+          registrations.add(sink);
+          sink.onDispose(() -> registrations.remove(sink));
+        });
   }
 
   public void broadcast(T value) {
