@@ -8,17 +8,14 @@ import java.util.Collection;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
-import org.springframework.data.domain.AuditorAware;
 
 @RequiredArgsConstructor
 public class SessionProgressRepositoryCustomImpl implements SessionProgressRepositoryCustom {
 
   private final DSLContext dsl;
-  private final AuditorAware<UUID> auditorAware;
 
   @Override
   public boolean upsertProgress(SaveWatchProgress progress) {
-    var auditUser = auditorAware.getCurrentAuditor().orElse(null);
     var now = OffsetDateTime.now(ZoneOffset.UTC);
 
     var rowsAffected =
@@ -29,17 +26,11 @@ public class SessionProgressRepositoryCustomImpl implements SessionProgressRepos
             .set(SESSION_PROGRESS.POSITION_SECONDS, progress.positionSeconds())
             .set(SESSION_PROGRESS.PERCENT_COMPLETE, progress.percentComplete())
             .set(SESSION_PROGRESS.DURATION_SECONDS, progress.durationSeconds())
-            .set(SESSION_PROGRESS.CREATED_ON, now)
-            .set(SESSION_PROGRESS.CREATED_BY, auditUser)
-            .set(SESSION_PROGRESS.LAST_MODIFIED_ON, now)
-            .set(SESSION_PROGRESS.LAST_MODIFIED_BY, auditUser)
             .onConflict(SESSION_PROGRESS.SESSION_ID)
             .doUpdate()
             .set(SESSION_PROGRESS.POSITION_SECONDS, progress.positionSeconds())
             .set(SESSION_PROGRESS.PERCENT_COMPLETE, progress.percentComplete())
             .set(SESSION_PROGRESS.DURATION_SECONDS, progress.durationSeconds())
-            .set(SESSION_PROGRESS.LAST_MODIFIED_BY, auditUser)
-            .set(SESSION_PROGRESS.LAST_MODIFIED_ON, now)
             .execute();
     return rowsAffected > 0;
   }
@@ -61,8 +52,6 @@ public class SessionProgressRepositoryCustomImpl implements SessionProgressRepos
   public void reassignProfile(UUID fromProfileId, UUID toProfileId) {
     dsl.update(SESSION_PROGRESS)
         .set(SESSION_PROGRESS.PROFILE_ID, toProfileId)
-        .set(SESSION_PROGRESS.LAST_MODIFIED_ON, OffsetDateTime.now(ZoneOffset.UTC))
-        .set(SESSION_PROGRESS.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
         .where(SESSION_PROGRESS.PROFILE_ID.eq(fromProfileId))
         .execute();
   }

@@ -24,14 +24,12 @@ import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.SortOrder;
-import org.springframework.data.domain.AuditorAware;
 
 @RequiredArgsConstructor
 public class AccountInvitationRepositoryCustomImpl implements AccountInvitationRepositoryCustom {
 
   private final DSLContext dsl;
   private final EntityManager entityManager;
-  private final AuditorAware<UUID> auditorAware;
   private final InvitationIssuanceLock invitationIssuanceLock;
 
   @Override
@@ -138,8 +136,6 @@ public class AccountInvitationRepositoryCustomImpl implements AccountInvitationR
     return dsl.update(ACCOUNT_INVITATION)
             .set(ACCOUNT_INVITATION.STATUS, target)
             .set(ACCOUNT_INVITATION.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
-            .set(ACCOUNT_INVITATION.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
-            .set(ACCOUNT_INVITATION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
             .where(ACCOUNT_INVITATION.ID.eq(invitationId))
             .and(pending())
             .and(ACCOUNT_INVITATION.EXPIRES_AT.gt(now.atOffset(ZoneOffset.UTC)))
@@ -192,8 +188,6 @@ public class AccountInvitationRepositoryCustomImpl implements AccountInvitationR
     return dsl.update(ACCOUNT_INVITATION)
         .set(ACCOUNT_INVITATION.STATUS, AccountInvitationStatus.EXPIRED)
         .set(ACCOUNT_INVITATION.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
-        .set(ACCOUNT_INVITATION.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
-        .set(ACCOUNT_INVITATION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
         .where(ACCOUNT_INVITATION.RECIPIENT_EMAIL.equalIgnoreCase(recipientEmail))
         .and(pending())
         .and(ACCOUNT_INVITATION.EXPIRES_AT.le(now.atOffset(ZoneOffset.UTC)))
@@ -205,8 +199,6 @@ public class AccountInvitationRepositoryCustomImpl implements AccountInvitationR
         .set(ACCOUNT_INVITATION.STATUS, AccountInvitationStatus.INVALIDATED)
         .set(ACCOUNT_INVITATION.INVALIDATION_REASON, reason)
         .set(ACCOUNT_INVITATION.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
-        .set(ACCOUNT_INVITATION.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
-        .set(ACCOUNT_INVITATION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
         .where(scope)
         .and(pending())
         .execute();

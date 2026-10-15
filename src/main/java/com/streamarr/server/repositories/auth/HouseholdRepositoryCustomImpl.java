@@ -12,8 +12,6 @@ import com.streamarr.server.repositories.JooqQueryHelper;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import jakarta.persistence.EntityManager;
-import java.time.Clock;
-import java.time.ZoneOffset;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -23,15 +21,12 @@ import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.SortOrder;
-import org.springframework.data.domain.AuditorAware;
 
 @RequiredArgsConstructor
 public class HouseholdRepositoryCustomImpl implements HouseholdRepositoryCustom {
 
   private final DSLContext dsl;
   private final EntityManager entityManager;
-  private final AuditorAware<UUID> auditorAware;
-  private final Clock clock;
 
   @Override
   public void refresh(Household household) {
@@ -104,8 +99,6 @@ public class HouseholdRepositoryCustomImpl implements HouseholdRepositoryCustom 
   public boolean tryRename(UUID householdId, String name) {
     return dsl.update(HOUSEHOLD)
             .set(HOUSEHOLD.NAME, name)
-            .set(HOUSEHOLD.LAST_MODIFIED_ON, clock.instant().atOffset(ZoneOffset.UTC))
-            .set(HOUSEHOLD.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
             .where(HOUSEHOLD.ID.eq(householdId))
             .execute()
         > 0;

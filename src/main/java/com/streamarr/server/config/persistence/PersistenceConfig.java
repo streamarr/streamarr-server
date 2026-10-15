@@ -1,19 +1,12 @@
 package com.streamarr.server.config.persistence;
 
 import com.streamarr.server.repositories.audit.TransactionAuditActor;
-import java.util.UUID;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
-import org.springframework.data.domain.AuditorAware;
 
 @Configuration
 public class PersistenceConfig {
-
-  @Bean
-  public AuditorAware<UUID> auditorAware() {
-    return new SecurityAuditorAware();
-  }
 
   @Bean
   public AuditActorSource auditActorSource() {

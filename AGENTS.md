@@ -80,9 +80,7 @@ Choose the simplest mechanism that fits the operation:
   expressed as a single SQL statement. Push atomicity to the database — no JVM coordination
   needed. Use `ON CONFLICT ... DO NOTHING` for idempotent inserts, `DO UPDATE ... WHERE` when
   the update must be conditional (e.g., guard against regressing state). Return affected-row
-  count to drive post-write logic (event publishing, etc.). When using `DO UPDATE` on tables
-  with audit columns, set `LAST_MODIFIED_ON` and `LAST_MODIFIED_BY` explicitly — jOOQ bypasses
-  JPA's `AuditingEntityListener`.
+  count to drive post-write logic (event publishing, etc.).
   See `GenreRepositoryCustomImpl`, `SessionProgressRepositoryCustomImpl`.
 - **In-memory mutex** (`MutexFactory`): guard multi-step check-then-act sequences that can't
   be expressed as a single SQL statement — e.g., read the database → call an external API → conditionally
@@ -234,6 +232,8 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 
 ## Persistence (JPA + jOOQ Hybrid)
 - Spring Data JPA repositories own CRUD; complex or conflict-handling queries use jOOQ via the Spring Data fragment convention: `{Repository}Custom` interface + `{Repository}CustomImpl` class with an injected `DSLContext` — Spring Data auto-discovers the implementation by naming convention
+- **Audit columns**: the `fill_audit_columns` trigger (`V079`) fills all four from the actor the
+  transaction names and rejects a write without one, so never set them in code
 - **No `@Query` JPQL**: every repository query is either a derived method (`findBySeriesIdOrderBySeasonNumber`) or jOOQ on the `{Repository}Custom` fragment. JPQL strings break silently on entity refactors; derived signatures are validated at startup and jOOQ at compile time
 - **Reads**: jOOQ builds the SQL, but execute through `JooqQueryHelper.nativeQuery(…)` (JPA `EntityManager` native query) so results map to JPA entities — don't `context.fetch*()` for entity reads
 - **Writes**: execute jOOQ DSL directly (`context.update(…).returning()`, `INSERT … ON CONFLICT`) and map records to entities manually

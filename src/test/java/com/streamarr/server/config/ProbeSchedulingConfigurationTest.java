@@ -3,8 +3,8 @@ package com.streamarr.server.config;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
-import com.streamarr.server.config.persistence.SecurityAuditorAware;
-import com.streamarr.server.domain.auth.SystemActor;
+import com.streamarr.server.config.persistence.SecurityAuditActorSource;
+import com.streamarr.server.domain.audit.AuditActor;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import java.time.Instant;
@@ -40,9 +40,9 @@ class ProbeSchedulingConfigurationTest {
   void shouldRunSchedulerExecutionsAsSystemActorWhenCustomizingDbScheduler()
       throws InterruptedException, ExecutionException, TimeoutException {
     try (var executor = customizer().executorService().orElseThrow()) {
-      var auditor = executor.submit(() -> new SecurityAuditorAware().getCurrentAuditor());
+      var actor = executor.submit(() -> new SecurityAuditActorSource().currentActor());
 
-      assertThat(auditor.get(BOUND_SECONDS, TimeUnit.SECONDS)).contains(SystemActor.ID);
+      assertThat(actor.get(BOUND_SECONDS, TimeUnit.SECONDS)).contains(new AuditActor.System());
     }
   }
 

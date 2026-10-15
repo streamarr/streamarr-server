@@ -17,7 +17,6 @@ import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.postgresql.util.PSQLException;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.data.domain.AuditorAware;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,7 +33,6 @@ public class DeviceAuthorizationRepositoryCustomImpl
 
   private final DSLContext dsl;
   private final PostgresTransactionLocks transactionLocks;
-  private final AuditorAware<UUID> auditorAware;
 
   private final EntityManager entityManager;
 
@@ -59,8 +57,6 @@ public class DeviceAuthorizationRepositoryCustomImpl
         .set(DEVICE_AUTHORIZATION.DECIDED_BY_ACCOUNT_ID, command.decidedByAccountId())
         .set(DEVICE_AUTHORIZATION.CHOSEN_HOUSEHOLD_ID, command.chosenHouseholdId())
         .set(DEVICE_AUTHORIZATION.DECIDED_AT, nowOffset)
-        .set(DEVICE_AUTHORIZATION.LAST_MODIFIED_ON, nowOffset)
-        .set(DEVICE_AUTHORIZATION.LAST_MODIFIED_BY, currentAuditor())
         .where(DEVICE_AUTHORIZATION.USER_CODE.eq(command.userCode()))
         .and(DEVICE_AUTHORIZATION.STATUS.eq(DeviceAuthorizationStatus.PENDING))
         .and(DEVICE_AUTHORIZATION.EXPIRES_AT.gt(nowOffset))
@@ -70,13 +66,9 @@ public class DeviceAuthorizationRepositoryCustomImpl
   @Override
   @Transactional
   public void updateCadence(UUID id, int pollIntervalSeconds, Instant nextPollAt, Instant now) {
-    var nowOffset = offsetOf(now);
-
     dsl.update(DEVICE_AUTHORIZATION)
         .set(DEVICE_AUTHORIZATION.POLL_INTERVAL_SECONDS, pollIntervalSeconds)
         .set(DEVICE_AUTHORIZATION.NEXT_POLL_AT, offsetOf(nextPollAt))
-        .set(DEVICE_AUTHORIZATION.LAST_MODIFIED_ON, nowOffset)
-        .set(DEVICE_AUTHORIZATION.LAST_MODIFIED_BY, currentAuditor())
         .where(DEVICE_AUTHORIZATION.ID.eq(id))
         .execute();
   }
@@ -84,12 +76,8 @@ public class DeviceAuthorizationRepositoryCustomImpl
   @Override
   @Transactional
   public void markConsumed(UUID id, Instant now) {
-    var nowOffset = offsetOf(now);
-
     dsl.update(DEVICE_AUTHORIZATION)
         .set(DEVICE_AUTHORIZATION.STATUS, DeviceAuthorizationStatus.CONSUMED)
-        .set(DEVICE_AUTHORIZATION.LAST_MODIFIED_ON, nowOffset)
-        .set(DEVICE_AUTHORIZATION.LAST_MODIFIED_BY, currentAuditor())
         .where(DEVICE_AUTHORIZATION.ID.eq(id))
         .execute();
   }
@@ -107,7 +95,6 @@ public class DeviceAuthorizationRepositoryCustomImpl
       return new DeviceAuthorizationInsertResult(false, outstanding);
     }
 
-    var nowOffset = offsetOf(command.now());
     try {
       dsl.insertInto(DEVICE_AUTHORIZATION)
           .set(DEVICE_AUTHORIZATION.DEVICE_CODE_DIGEST, command.deviceCodeDigest())
@@ -118,10 +105,6 @@ public class DeviceAuthorizationRepositoryCustomImpl
           .set(DEVICE_AUTHORIZATION.EXPIRES_AT, offsetOf(command.expiresAt()))
           .set(DEVICE_AUTHORIZATION.NEXT_POLL_AT, offsetOf(command.nextPollAt()))
           .set(DEVICE_AUTHORIZATION.POLL_INTERVAL_SECONDS, command.pollIntervalSeconds())
-          .set(DEVICE_AUTHORIZATION.CREATED_ON, nowOffset)
-          .set(DEVICE_AUTHORIZATION.CREATED_BY, currentAuditor())
-          .set(DEVICE_AUTHORIZATION.LAST_MODIFIED_ON, nowOffset)
-          .set(DEVICE_AUTHORIZATION.LAST_MODIFIED_BY, currentAuditor())
           .execute();
     } catch (DuplicateKeyException e) {
       if (isDeviceCodeCollision(e)) {
@@ -177,10 +160,6 @@ public class DeviceAuthorizationRepositoryCustomImpl
         .where(DEVICE_AUTHORIZATION.USER_CODE.eq(userCode))
         .fetchOptional(DEVICE_AUTHORIZATION.STATUS)
         .map(DeviceAuthorizationRepositoryCustomImpl::domainStatusOf);
-  }
-
-  private UUID currentAuditor() {
-    return auditorAware.getCurrentAuditor().orElse(null);
   }
 
   private static boolean isUserCodeCollision(DuplicateKeyException exception) {
