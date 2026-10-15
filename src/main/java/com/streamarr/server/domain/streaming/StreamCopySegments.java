@@ -28,4 +28,10 @@ public sealed interface StreamCopySegments {
    * refuses.
    */
   record PresentationTimeRegressed(int keyframeIndex) implements StreamCopySegments {}
+
+  /**
+   * The keyframe at this index lies too far from zero to place in a segment: its presentation time
+   * times the time base numerator overflows a {@code long}. No real source reaches such a time.
+   */
+  record PresentationTimeOutOfRange(int keyframeIndex) implements StreamCopySegments {}
 }

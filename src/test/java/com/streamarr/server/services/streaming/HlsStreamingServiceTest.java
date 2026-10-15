@@ -16,6 +16,9 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePosition;
+import com.streamarr.server.domain.streaming.KeyframePositionSource;
+import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -178,6 +181,30 @@ class HlsStreamingServiceTest {
             .duration(Duration.ofSeconds(20))
             .keyframes(ProbeFixture.keyframesEvery(Duration.ofSeconds(6), Duration.ofSeconds(12)))
             .build());
+    var file = seedMediaFile();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+  }
+
+  @Test
+  @DisplayName("Should encode the video when a stored keyframe time is too large to place")
+  void shouldEncodeTheVideoWhenAStoredKeyframeTimeIsTooLargeToPlace() {
+    var positions =
+        KeyframePositions.builder()
+            .streamIndex(0)
+            .timeBaseNumerator(1001)
+            .timeBaseDenominator(24_000)
+            .source(KeyframePositionSource.PACKET_SCAN)
+            .keyframes(
+                List.of(
+                    new KeyframePosition(0, 0),
+                    new KeyframePosition(Long.MAX_VALUE / 1000, Long.MAX_VALUE / 1000)))
+            .build();
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().keyframes(new KeyframeKnowledge.Known(positions)).build());
     var file = seedMediaFile();
 
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());

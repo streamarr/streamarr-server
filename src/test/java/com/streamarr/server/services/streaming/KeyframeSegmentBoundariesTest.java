@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -121,6 +122,24 @@ class KeyframeSegmentBoundariesTest {
     var segments = KeyframeSegmentBoundaries.forStreamCopy(positions, 6);
 
     assertThat(segments).isEqualTo(new StreamCopySegments.PresentationTimeRegressed(2));
+  }
+
+  @ParameterizedTest
+  @ValueSource(longs = {Long.MAX_VALUE / 1000, Long.MIN_VALUE / 1000})
+  @DisplayName("Should refuse the positions when a keyframe time in seconds overflows a long")
+  void shouldRefuseThePositionsWhenAKeyframeTimeInSecondsOverflowsALong(long presentationTime) {
+    var positions =
+        KeyframePositions.builder()
+            .streamIndex(0)
+            .timeBaseNumerator(1001)
+            .timeBaseDenominator(24_000)
+            .source(KeyframePositionSource.PACKET_SCAN)
+            .keyframes(List.of(new KeyframePosition(presentationTime, 0)))
+            .build();
+
+    var segments = KeyframeSegmentBoundaries.forStreamCopy(positions, 6);
+
+    assertThat(segments).isEqualTo(new StreamCopySegments.PresentationTimeOutOfRange(0));
   }
 
   @Test

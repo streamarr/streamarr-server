@@ -27,6 +27,10 @@ final class KeyframeSegmentBoundaries {
         return new StreamCopySegments.PresentationTimeRegressed(index);
       }
 
+      if (isOutOfRange(presentationTime, positions)) {
+        return new StreamCopySegments.PresentationTimeOutOfRange(index);
+      }
+
       var segmentNumber = segmentNumberOf(presentationTime, positions, periodSeconds);
       if (segmentNumber > starts.size()) {
         return new StreamCopySegments.IntervalWithoutKeyframe(starts.size());
@@ -43,6 +47,12 @@ final class KeyframeSegmentBoundaries {
     }
 
     return new StreamCopySegments.Starts(starts);
+  }
+
+  private static boolean isOutOfRange(long presentationTime, KeyframePositions positions) {
+    var numerator = positions.timeBaseNumerator();
+    return presentationTime > Long.MAX_VALUE / numerator
+        || presentationTime < Long.MIN_VALUE / numerator;
   }
 
   private static long segmentNumberOf(
