@@ -25,6 +25,7 @@ import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupportConfig;
 import com.streamarr.server.support.ConstraintViolations;
+import com.streamarr.server.support.TestFixtureWork;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -33,7 +34,6 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -139,7 +139,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
             .build();
 
     List<Future<Boolean>> attempts;
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       attempts =
           List.of(
               executor.submit(() -> demoteAfter(race, first.account().getId())),
@@ -215,9 +215,11 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
       "Should refuse disabling an Account when it is the last enabled ServerAdmin after bootstrap")
   void shouldRefuseDisablingAccountWhenItIsLastEnabledServerAdminAfterBootstrap() {
     var admin = createServerAdmin();
-    dsl.insertInto(SERVER_BOOTSTRAP)
-        .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, admin.account().getId())
-        .execute();
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            dsl.insertInto(SERVER_BOOTSTRAP)
+                .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, admin.account().getId())
+                .execute());
 
     assertThatThrownBy(
             () ->
@@ -238,9 +240,11 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   void shouldKeepOneEnabledServerAdminWhenCrossHouseholdDemotionsRace() throws Exception {
     var first = createServerAdmin();
     var second = createServerAdmin();
-    dsl.insertInto(SERVER_BOOTSTRAP)
-        .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, first.account().getId())
-        .execute();
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            dsl.insertInto(SERVER_BOOTSTRAP)
+                .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, first.account().getId())
+                .execute());
     var race =
         ServerAdminRace.builder()
             .updatesReady(new CountDownLatch(2))
@@ -249,7 +253,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
             .build();
 
     List<Future<Boolean>> attempts;
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       attempts =
           List.of(
               executor.submit(() -> disableServerAdminAfter(race, first.account().getId())),
@@ -326,7 +330,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
             .build();
 
     List<Future<Boolean>> attempts;
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       attempts =
           List.of(
               executor.submit(

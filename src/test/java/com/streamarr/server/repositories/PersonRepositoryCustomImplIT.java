@@ -3,13 +3,14 @@ package com.streamarr.server.repositories;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.support.security.TestIdentityConstants;
 import com.streamarr.server.support.security.WithProfileContext;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.AuditorAware;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("PersonRepositoryCustomImpl Integration Tests")
@@ -18,21 +19,19 @@ class PersonRepositoryCustomImplIT extends AbstractIntegrationTest {
 
   @Autowired private PersonRepository personRepository;
 
-  @Autowired private AuditorAware<UUID> auditorAware;
+  @Autowired private TransactionTemplate transactionTemplate;
 
   @Test
-  @DisplayName("Should populate audit fields from AuditorAware when inserting via jOOQ")
-  void shouldPopulateAuditFieldsFromAuditorAwareWhenInsertingViaJooq() {
+  @DisplayName("Should name the signed-in Account in the audit columns when inserting via jOOQ")
+  void shouldNameTheSignedInAccountInTheAuditColumnsWhenInsertingViaJooq() {
     var sourceId = "audit-test-" + UUID.randomUUID();
-    var inserted = personRepository.insertIfAbsent(sourceId, "Audit Test Person");
+
+    var inserted = insertIfAbsent(sourceId, "Audit Test Person");
 
     assertThat(inserted).isTrue();
-
     var person = personRepository.findPersonBySourceId(sourceId).orElseThrow();
-    var expectedAuditor = auditorAware.getCurrentAuditor().orElseThrow();
-
-    assertThat(person.getCreatedBy()).isEqualTo(expectedAuditor);
-    assertThat(person.getLastModifiedBy()).isEqualTo(expectedAuditor);
+    assertThat(person.getCreatedBy()).isEqualTo(TestIdentityConstants.ACCOUNT_ID);
+    assertThat(person.getLastModifiedBy()).isEqualTo(TestIdentityConstants.ACCOUNT_ID);
     assertThat(person.getCreatedOn()).isNotNull();
     assertThat(person.getLastModifiedOn()).isNotNull();
   }
@@ -41,14 +40,19 @@ class PersonRepositoryCustomImplIT extends AbstractIntegrationTest {
   @DisplayName("Should return false without inserting when source ID already exists")
   void shouldReturnFalseWithoutInsertingWhenSourceIdAlreadyExists() {
     var sourceId = "conflict-test-" + UUID.randomUUID();
-    var firstInsert = personRepository.insertIfAbsent(sourceId, "Original Name");
+    var firstInsert = insertIfAbsent(sourceId, "Original Name");
 
     assertThat(firstInsert).isTrue();
 
-    var secondInsert = personRepository.insertIfAbsent(sourceId, "Different Name");
+    var secondInsert = insertIfAbsent(sourceId, "Different Name");
 
     assertThat(secondInsert).isFalse();
     var person = personRepository.findPersonBySourceId(sourceId).orElseThrow();
     assertThat(person.getName()).isEqualTo("Original Name");
+  }
+
+  private boolean insertIfAbsent(String sourceId, String name) {
+    return Boolean.TRUE.equals(
+        transactionTemplate.execute(_ -> personRepository.insertIfAbsent(sourceId, name)));
   }
 }

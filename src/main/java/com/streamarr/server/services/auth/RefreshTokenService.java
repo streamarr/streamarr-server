@@ -104,7 +104,7 @@ public class RefreshTokenService {
   private void revokeForLogout(UUID sessionId) {
     var now = clock.instant();
     sessionRepository.revoke(sessionId, SessionRevocationReason.LOGOUT, now);
-    tokenRepository.revokeAllForSession(sessionId, now);
+    tokenRepository.revokeAllForSession(sessionId);
   }
 
   // The family revocation must outlive this method's rollback: TokenReuseRevoker applies it in

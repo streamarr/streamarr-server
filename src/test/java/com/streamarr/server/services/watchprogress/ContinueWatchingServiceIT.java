@@ -22,12 +22,11 @@ import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
+import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.Set;
 import java.util.UUID;
-import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -51,7 +50,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private SessionProgressRepository sessionProgressRepository;
   @Autowired private WatchHistoryRepository watchHistoryRepository;
-  @Autowired private DSLContext dsl;
+  @Autowired private AuditColumnFixtures auditColumns;
 
   private AuthTestSupport.TestIdentity identity;
   private UUID profileId;
@@ -101,10 +100,8 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
   }
 
   private void pinSessionProgressTimestamp(UUID mediaFileId, Instant timestamp) {
-    dsl.update(Tables.SESSION_PROGRESS)
-        .set(Tables.SESSION_PROGRESS.LAST_MODIFIED_ON, timestamp.atOffset(ZoneOffset.UTC))
-        .where(Tables.SESSION_PROGRESS.MEDIA_FILE_ID.eq(mediaFileId))
-        .execute();
+    auditColumns.overwriteLastModifiedOn(
+        Tables.SESSION_PROGRESS, Tables.SESSION_PROGRESS.MEDIA_FILE_ID.eq(mediaFileId), timestamp);
   }
 
   private Movie createMovieWithFile(String title) {

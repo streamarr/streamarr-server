@@ -24,15 +24,14 @@ import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
-import org.jooq.DSLContext;
 import org.jooq.SortOrder;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -56,7 +55,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
   @Autowired private SessionProgressRepository sessionProgressRepository;
   @Autowired private WatchHistoryRepository watchHistoryRepository;
   @Autowired private SeriesService seriesService;
-  @Autowired private DSLContext dsl;
+  @Autowired private AuditColumnFixtures auditColumns;
 
   private AuthTestSupport.TestIdentity identity;
   private UUID profileId;
@@ -298,10 +297,10 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
     }
 
     private void pinSessionProgressTimestamp(UUID mediaFileId, Instant timestamp) {
-      dsl.update(Tables.SESSION_PROGRESS)
-          .set(Tables.SESSION_PROGRESS.LAST_MODIFIED_ON, timestamp.atOffset(ZoneOffset.UTC))
-          .where(Tables.SESSION_PROGRESS.MEDIA_FILE_ID.eq(mediaFileId))
-          .execute();
+      auditColumns.overwriteLastModifiedOn(
+          Tables.SESSION_PROGRESS,
+          Tables.SESSION_PROGRESS.MEDIA_FILE_ID.eq(mediaFileId),
+          timestamp);
     }
 
     private SeriesProgressFixture createSeriesWithSessionProgress(Library lib, String title) {

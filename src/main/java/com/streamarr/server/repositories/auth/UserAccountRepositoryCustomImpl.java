@@ -26,9 +26,7 @@ import com.streamarr.server.repositories.PostgresTransactionLocks;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import jakarta.persistence.EntityManager;
-import java.time.Clock;
 import java.time.Duration;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -45,7 +43,6 @@ import org.jooq.Record2;
 import org.jooq.SortOrder;
 import org.jooq.TableField;
 import org.jooq.impl.DSL;
-import org.springframework.data.domain.AuditorAware;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @RequiredArgsConstructor
@@ -54,8 +51,6 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
   private final DSLContext dsl;
   private final PostgresTransactionLocks transactionLocks;
   private final EntityManager entityManager;
-  private final AuditorAware<UUID> auditorAware;
-  private final Clock clock;
 
   @Override
   public void refresh(UserAccount account) {
@@ -248,8 +243,6 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
       UUID accountId, TableField<UserAccountRecord, V> field, V value, Condition transitionable) {
     return dsl.update(USER_ACCOUNT)
             .set(field, value)
-            .set(USER_ACCOUNT.LAST_MODIFIED_ON, clock.instant().atOffset(ZoneOffset.UTC))
-            .set(USER_ACCOUNT.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
             .where(USER_ACCOUNT.ID.eq(accountId))
             .and(transitionable)
             .execute()
@@ -273,8 +266,6 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
     return dsl.update(USER_ACCOUNT)
             .set(USER_ACCOUNT.HOUSEHOLD_ID, destinationHouseholdId)
             .set(USER_ACCOUNT.HOUSEHOLD_ROLE, valueOf(role.name()))
-            .set(USER_ACCOUNT.LAST_MODIFIED_ON, clock.instant().atOffset(ZoneOffset.UTC))
-            .set(USER_ACCOUNT.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
             .where(USER_ACCOUNT.ID.eq(accountId))
             .and(USER_ACCOUNT.HOUSEHOLD_ID.eq(expectedHouseholdId))
             .execute()

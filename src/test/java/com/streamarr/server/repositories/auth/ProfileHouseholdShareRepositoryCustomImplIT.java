@@ -1,5 +1,6 @@
 package com.streamarr.server.repositories.auth;
 
+import static com.streamarr.server.support.TestFixtureAuditActorConfiguration.TEST_FIXTURE_ACTOR_ID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.awaitility.Awaitility.await;
@@ -11,6 +12,7 @@ import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.TestFixtureWork;
 import com.streamarr.server.support.security.WithAccountContext;
 import java.sql.Connection;
 import java.time.Duration;
@@ -19,14 +21,14 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
+import org.jooq.DSLContext;
+import org.jooq.impl.DSL;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.AuditorAware;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -41,14 +43,14 @@ class ProfileHouseholdShareRepositoryCustomImplIT extends AbstractIntegrationTes
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
-  @Autowired private AuditorAware<UUID> auditorAware;
+  @Autowired private DSLContext dsl;
   @Autowired private TransactionTemplate transactions;
   @Autowired private DataSource dataSource;
   @Autowired private AuthTestSupport authTestSupport;
 
   @Test
-  @DisplayName("Should populate audit fields when inserting a structural home share")
-  void shouldPopulateAuditFieldsWhenInsertingStructuralHomeShare() {
+  @DisplayName("Should fill the audit columns from the transaction when inserting a home share")
+  void shouldFillTheAuditColumnsFromTheTransactionWhenInsertingAHomeShare() {
     var now = Instant.parse("2026-08-21T12:00:00Z");
     var ids =
         transactions.execute(
@@ -64,20 +66,22 @@ class ProfileHouseholdShareRepositoryCustomImplIT extends AbstractIntegrationTes
               shareRepository.ensureActiveMembershipShare(profile.getId(), household.getId(), now);
               return new ProfileHouseholdIds(profile.getId(), household.getId());
             });
+    var transactionTime = dsl.select(DSL.currentOffsetDateTime()).fetchSingle().value1();
 
     var share =
         shareRepository
             .findByProfileIdAndHouseholdIdAndStatus(
                 ids.profileId(), ids.householdId(), ProfileShareStatus.ACTIVE)
             .orElseThrow();
-    var expectedAuditor = auditorAware.getCurrentAuditor().orElseThrow();
 
+    // The test transaction begins before the signed-in context exists, so it names the test
+    // fixture actor.
     assertSoftly(
         softly -> {
-          softly.assertThat(share.getCreatedOn()).isEqualTo(now);
-          softly.assertThat(share.getLastModifiedOn()).isEqualTo(now);
-          softly.assertThat(share.getCreatedBy()).isEqualTo(expectedAuditor);
-          softly.assertThat(share.getLastModifiedBy()).isEqualTo(expectedAuditor);
+          softly.assertThat(share.getCreatedOn()).isEqualTo(transactionTime.toInstant());
+          softly.assertThat(share.getLastModifiedOn()).isEqualTo(transactionTime.toInstant());
+          softly.assertThat(share.getCreatedBy()).isEqualTo(TEST_FIXTURE_ACTOR_ID);
+          softly.assertThat(share.getLastModifiedBy()).isEqualTo(TEST_FIXTURE_ACTOR_ID);
         });
   }
 
@@ -135,8 +139,10 @@ class ProfileHouseholdShareRepositoryCustomImplIT extends AbstractIntegrationTes
                 .build());
 
     try {
-      shareRepository.invalidatePendingOffersByProfileIdAndOffererAccountId(
-          offerer.profile().getId(), offerer.account().getId(), "offerer left", now);
+      transactions.executeWithoutResult(
+          _ ->
+              shareRepository.invalidatePendingOffersByProfileIdAndOffererAccountId(
+                  offerer.profile().getId(), offerer.account().getId(), "offerer left", now));
 
       assertThat(shareRepository.findById(expiredOffer.getId()).orElseThrow())
           .satisfies(
@@ -162,7 +168,7 @@ class ProfileHouseholdShareRepositoryCustomImplIT extends AbstractIntegrationTes
       var failures = Collections.synchronizedList(new ArrayList<Throwable>());
       installMembershipShareInsertBarrier(ids);
 
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+      try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
           var insertBarrier = holdMembershipShareInsertBarrier()) {
         var first = executor.submit(() -> ensureMembershipShare(ids, failures));
         var second = executor.submit(() -> ensureMembershipShare(ids, failures));

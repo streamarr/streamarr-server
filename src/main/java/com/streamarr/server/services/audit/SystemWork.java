@@ -3,6 +3,7 @@ package com.streamarr.server.services.audit;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * Runs work that no user requested as the System actor, so the rows the work writes name the System
@@ -22,8 +23,21 @@ public final class SystemWork {
 
   private SystemWork() {}
 
-  /** Runs {@code work} on the calling thread as the System actor. */
+  /**
+   * Runs {@code work} on the calling thread as the System actor.
+   *
+   * <p>Spring still reports a transaction as open while its after-commit callbacks and {@code
+   * AFTER_COMMIT} event listeners run, so those must hand system work to a thread from {@link
+   * #newExecutorRunningAsSystemActor} instead of calling this method.
+   *
+   * @throws SystemWorkInsideTransactionException if the calling thread has an open transaction,
+   *     because that transaction already named its actor
+   */
   public static void runAsSystemActor(Runnable work) {
+    if (TransactionSynchronizationManager.isActualTransactionActive()) {
+      throw new SystemWorkInsideTransactionException();
+    }
+
     ScopedValue.where(RUNNING_AS_SYSTEM_ACTOR, Boolean.TRUE).run(work);
   }
 

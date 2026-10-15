@@ -240,7 +240,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public void convertMembershipShareToVisitorShare(UUID profileId, UUID householdId, Instant now) {
+  public void convertMembershipShareToVisitorShare(UUID profileId, UUID householdId) {
     database.values().stream()
         .filter(share -> share.getProfileId().equals(profileId))
         .filter(share -> share.getHouseholdId().equals(householdId))

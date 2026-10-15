@@ -7,7 +7,6 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
 import java.util.function.Supplier;
 import javax.sql.DataSource;
 
@@ -70,6 +69,8 @@ public final class HeldCreditInsert implements AutoCloseable {
         statement.execute("SET LOCAL lock_timeout = '10s'");
       }
 
+      TestFixtureAuditActorConfiguration.nameTestFixtureActorIn(connection);
+
       return new HeldCreditInsert(
           dataSource, connection, PostgresLockTestSupport.backendPid(connection));
     } catch (SQLException failure) {
@@ -108,7 +109,7 @@ public final class HeldCreditInsert implements AutoCloseable {
    * does not finish within 15 seconds.
    */
   public <T> T commitAfterSaveWaits(Supplier<T> save, HeldStep lastHeldStep) throws SQLException {
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var saveResult = CompletableFuture.supplyAsync(save, executor);
 
       awaitWaitingTransaction();

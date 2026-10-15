@@ -1,16 +1,22 @@
 package com.streamarr.server.services.audit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.fakes.FakeTransactionManager;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("UnitTest")
 @DisplayName("System Work Tests")
@@ -40,6 +46,45 @@ class SystemWorkTest {
     SystemWork.runAsSystemActor(() -> {});
 
     assertThat(SystemWork.isRunningAsSystemActor()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should reject system work when it starts inside an open transaction")
+  void shouldRejectSystemWorkWhenItStartsInsideAnOpenTransaction() {
+    var ran = new AtomicBoolean();
+
+    TransactionSynchronizationManager.setActualTransactionActive(true);
+    try {
+      assertThatThrownBy(() -> SystemWork.runAsSystemActor(() -> ran.set(true)))
+          .isInstanceOf(SystemWorkInsideTransactionException.class);
+    } finally {
+      TransactionSynchronizationManager.setActualTransactionActive(false);
+    }
+
+    assertThat(ran).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should reject system work when an after-commit callback starts it")
+  void shouldRejectSystemWorkWhenAnAfterCommitCallbackStartsIt() {
+    var rejection = new AtomicReference<Throwable>();
+    var transactions = new TransactionTemplate(new FakeTransactionManager());
+
+    transactions.executeWithoutResult(
+        _ ->
+            TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                  @Override
+                  public void afterCommit() {
+                    try {
+                      SystemWork.runAsSystemActor(() -> {});
+                    } catch (SystemWorkInsideTransactionException exception) {
+                      rejection.set(exception);
+                    }
+                  }
+                }));
+
+    assertThat(rejection).hasValueMatching(SystemWorkInsideTransactionException.class::isInstance);
   }
 
   @Test

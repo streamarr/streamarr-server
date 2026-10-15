@@ -259,7 +259,7 @@ public class DeviceAuthorizationService {
                 .build());
     var accessToken = accessTokenIssuer.issue(TokenContext.of(account, issued.session()));
 
-    authorizationRepository.markConsumed(authorization.getId(), now);
+    authorizationRepository.markConsumed(authorization.getId());
 
     return new DevicePollResult.Success(accessToken, issued.rawToken());
   }
@@ -326,8 +326,7 @@ public class DeviceAuthorizationService {
   }
 
   private void reschedulePoll(UUID id, int intervalSeconds, Instant now) {
-    authorizationRepository.updateCadence(
-        id, intervalSeconds, now.plusSeconds(intervalSeconds), now);
+    authorizationRepository.updateCadence(id, intervalSeconds, now.plusSeconds(intervalSeconds));
   }
 
   /** Format validation happens here, before any attempt is journaled. */

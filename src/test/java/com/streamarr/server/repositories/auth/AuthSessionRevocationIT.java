@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Auth Session Revocation Integration Tests")
@@ -32,6 +33,8 @@ class AuthSessionRevocationIT extends AbstractIntegrationTest {
   @Autowired private AuthSessionRepository authSessionRepository;
 
   @Autowired private RefreshTokenRepository refreshTokenRepository;
+
+  @Autowired private TransactionTemplate transactionTemplate;
 
   private UserAccount account;
 
@@ -71,7 +74,8 @@ class AuthSessionRevocationIT extends AbstractIntegrationTest {
         tokenBuilder(session).status(RefreshTokenStatus.ROTATED).rotatedAt(Instant.now()).build());
     refreshTokenRepository.save(tokenBuilder(session).status(RefreshTokenStatus.ACTIVE).build());
 
-    refreshTokenRepository.revokeAllForSession(session.getId(), Instant.now());
+    transactionTemplate.executeWithoutResult(
+        _ -> refreshTokenRepository.revokeAllForSession(session.getId()));
 
     assertThat(refreshTokenRepository.findAll())
         .filteredOn(token -> session.getId().equals(token.getSessionId()))

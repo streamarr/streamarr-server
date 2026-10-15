@@ -24,6 +24,7 @@ import com.streamarr.server.repositories.RatingRepository;
 import com.streamarr.server.repositories.ReviewRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import java.nio.file.Path;
 import java.time.LocalDate;
@@ -35,7 +36,7 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.annotation.Profile;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Slf4j
 @Component
@@ -52,9 +53,14 @@ public class DevDataInitializer {
   private final ReviewRepository reviewRepository;
   private final MediaFileRepository mediaFileRepository;
 
+  private final TransactionTemplate transactionTemplate;
+
   @EventListener(ApplicationReadyEvent.class)
-  @Transactional
   public void seed() {
+    SystemWork.runAsSystemActor(() -> transactionTemplate.executeWithoutResult(_ -> seedData()));
+  }
+
+  private void seedData() {
     if (libraryRepository.count() > 0) {
       log.info("Database already seeded, skipping DevDataInitializer.");
       return;

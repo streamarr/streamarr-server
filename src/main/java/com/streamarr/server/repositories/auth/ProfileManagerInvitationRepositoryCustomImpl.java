@@ -23,7 +23,6 @@ import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
-import org.springframework.data.domain.AuditorAware;
 
 @RequiredArgsConstructor
 public class ProfileManagerInvitationRepositoryCustomImpl
@@ -31,7 +30,6 @@ public class ProfileManagerInvitationRepositoryCustomImpl
 
   private final DSLContext dsl;
   private final EntityManager entityManager;
-  private final AuditorAware<UUID> auditorAware;
 
   @Override
   public List<ProfileManagerInvitation> findPendingByProfileId(
@@ -126,10 +124,6 @@ public class ProfileManagerInvitationRepositoryCustomImpl
     return dsl.update(PROFILE_MANAGER_INVITATION)
             .set(PROFILE_MANAGER_INVITATION.STATUS, jooqStatus(target))
             .set(PROFILE_MANAGER_INVITATION.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
-            .set(PROFILE_MANAGER_INVITATION.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
-            .set(
-                PROFILE_MANAGER_INVITATION.LAST_MODIFIED_BY,
-                auditorAware.getCurrentAuditor().orElse(null))
             .where(PROFILE_MANAGER_INVITATION.ID.eq(invitationId))
             .and(pending())
             .and(PROFILE_MANAGER_INVITATION.EXPIRES_AT.gt(now.atOffset(ZoneOffset.UTC)))
@@ -205,10 +199,6 @@ public class ProfileManagerInvitationRepositoryCustomImpl
         .set(PROFILE_MANAGER_INVITATION.STATUS, INVALIDATED)
         .set(PROFILE_MANAGER_INVITATION.INVALIDATION_REASON, reason)
         .set(PROFILE_MANAGER_INVITATION.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
-        .set(PROFILE_MANAGER_INVITATION.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
-        .set(
-            PROFILE_MANAGER_INVITATION.LAST_MODIFIED_BY,
-            auditorAware.getCurrentAuditor().orElse(null))
         .where(scope)
         .and(pending())
         .execute();
@@ -219,10 +209,6 @@ public class ProfileManagerInvitationRepositoryCustomImpl
     dsl.update(PROFILE_MANAGER_INVITATION)
         .set(PROFILE_MANAGER_INVITATION.STATUS, jooqStatus(ProfileManagerInvitationStatus.EXPIRED))
         .set(PROFILE_MANAGER_INVITATION.DECIDED_AT, nowUtc)
-        .set(PROFILE_MANAGER_INVITATION.LAST_MODIFIED_ON, nowUtc)
-        .set(
-            PROFILE_MANAGER_INVITATION.LAST_MODIFIED_BY,
-            auditorAware.getCurrentAuditor().orElse(null))
         .where(scope)
         .and(pending())
         .and(PROFILE_MANAGER_INVITATION.EXPIRES_AT.le(nowUtc))

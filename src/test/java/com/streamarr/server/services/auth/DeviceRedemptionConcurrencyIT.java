@@ -20,6 +20,7 @@ import com.streamarr.server.repositories.auth.EsnBlockRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupportConfig;
+import com.streamarr.server.support.TestFixtureWork;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Clock;
@@ -33,7 +34,6 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -260,7 +260,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
     List<DevicePollResult> results = new ArrayList<>();
     var failures = new ArrayList<Throwable>();
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
         gate) {
       var futures =
           List.of(
@@ -300,7 +300,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
     var esnLock = holdEsnLock("blocked-during-poll");
 
     DevicePollResult result;
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
         esnLock) {
       var poll = executor.submit(() -> deviceAuthorizationService.redeem(issued.deviceCode()));
       Awaitility.await()
@@ -327,7 +327,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
     gatedClock.prepareApprovalHold();
 
     DevicePollResult result;
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var approval =
           executor.submit(
               () -> {
@@ -360,7 +360,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
     gatedClock.prepareApprovalHold();
 
     DeviceAuthorizationDetails winningDecision;
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var losingDecision =
           executor.submit(
               () -> {
@@ -459,7 +459,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
     var results = new ArrayList<DevicePollResult>();
     var failures = new ArrayList<Throwable>();
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var futures = executor.invokeAll(attempts, 20, TimeUnit.SECONDS);
       assertThat(futures).noneMatch(Future::isCancelled);
       for (var future : futures) {

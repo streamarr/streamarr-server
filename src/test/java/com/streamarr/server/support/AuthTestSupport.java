@@ -78,8 +78,8 @@ public class AuthTestSupport {
       bootstrapAdmin = createAdminIdentity();
     }
 
-    serverBootstrapRepository.claim(
-        bootstrapAdmin == null ? null : bootstrapAdmin.account().getId());
+    var adminAccountId = bootstrapAdmin == null ? null : bootstrapAdmin.account().getId();
+    transactionTemplate.executeWithoutResult(_ -> serverBootstrapRepository.claim(adminAccountId));
   }
 
   private boolean hasEnabledServerAdmin() {

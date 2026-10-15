@@ -111,8 +111,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep an empty auditor when device pairing starts")
-  void shouldKeepEmptyAuditorWhenDevicePairingStarts() throws Exception {
+  @DisplayName("Should keep an empty actor when device pairing starts")
+  void shouldKeepEmptyActorWhenDevicePairingStarts() throws Exception {
     issueCode("Apple TV");
 
     assertThat(authorizationRepository.findAll())

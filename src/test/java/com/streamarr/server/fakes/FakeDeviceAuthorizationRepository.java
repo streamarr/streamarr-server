@@ -72,8 +72,7 @@ public class FakeDeviceAuthorizationRepository extends FakeJpaRepository<DeviceA
   }
 
   @Override
-  public synchronized void updateCadence(
-      UUID id, int pollIntervalSeconds, Instant nextPollAt, Instant now) {
+  public synchronized void updateCadence(UUID id, int pollIntervalSeconds, Instant nextPollAt) {
     findById(id)
         .ifPresent(
             authorization -> {
@@ -83,7 +82,7 @@ public class FakeDeviceAuthorizationRepository extends FakeJpaRepository<DeviceA
   }
 
   @Override
-  public synchronized void markConsumed(UUID id, Instant now) {
+  public synchronized void markConsumed(UUID id) {
     findById(id).ifPresent(a -> a.setStatus(DeviceAuthorizationStatus.CONSUMED));
   }
 

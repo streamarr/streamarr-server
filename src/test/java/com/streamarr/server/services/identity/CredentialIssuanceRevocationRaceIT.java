@@ -33,12 +33,12 @@ import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInv
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
+import com.streamarr.server.support.TestFixtureWork;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.jooq.DSLContext;
@@ -102,7 +102,7 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
     revoker = authTestSupport.createAdminIdentity();
     var blocker = saveBlockingResetCode();
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
         var lock = lockRow(rowLock("password_reset_code", blocker.getId()))) {
       var issuance =
           executor.submit(
@@ -163,7 +163,7 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
     var recipientEmail = "issuance-race@example.com";
     var blocker = saveBlockingInvitation(recipientEmail);
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
         var lock = lockRow(rowLock("account_invitation", blocker.getId()))) {
       var issuance =
           executor.submit(
@@ -217,7 +217,7 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
 
     var lockAcquired = new CompletableFuture<Integer>();
     var releaseLock = new CountDownLatch(1);
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var blocker =
           executor.submit(
               () -> {
@@ -279,7 +279,7 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
                 "recover access"));
 
     try (var lockConnection = dataSource.getConnection();
-        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       lockConnection.setAutoCommit(false);
       lockAccountRow(lockConnection, issuer.account().getId());
       var holderPid = backendPid(lockConnection);

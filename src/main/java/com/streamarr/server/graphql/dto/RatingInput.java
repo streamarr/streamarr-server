@@ -11,7 +11,6 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class RatingInput {
 
-  private String userId;
   private String source;
   private String value;
 }
