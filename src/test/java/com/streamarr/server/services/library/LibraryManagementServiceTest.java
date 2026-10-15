@@ -3,6 +3,7 @@ package com.streamarr.server.services.library;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.defaultIdentityBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -91,6 +92,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.spi.FileSystemProvider;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
@@ -100,6 +102,7 @@ import java.util.UUID;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -110,6 +113,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 @Tag("UnitTest")
 @ExtendWith(MockitoExtension.class)
@@ -126,7 +130,15 @@ class LibraryManagementServiceTest {
   private final MetadataProvider<Movie> tmdbMovieProvider = mock(TMDBMovieProvider.class);
   private final MovieMetadataProviderResolver fakeMovieMetadataProviderResolver =
       new MovieMetadataProviderResolver(List.of(tmdbMovieProvider));
-  private final LibraryRepository fakeLibraryRepository = new FakeLibraryRepository();
+  private Consumer<Library> beforeDeletingLibrary = _ -> {};
+  private final LibraryRepository fakeLibraryRepository =
+      new FakeLibraryRepository() {
+        @Override
+        public void delete(Library library) {
+          beforeDeletingLibrary.accept(library);
+          super.delete(library);
+        }
+      };
   private Runnable beforeProbeSchedulingReadsMediaFile = () -> {};
   private Runnable beforeCountingFileStatuses = () -> {};
   private Consumer<MediaFile> beforeSavingMediaFile = _ -> {};
@@ -958,6 +970,29 @@ class LibraryManagementServiceTest {
               Outcome.rejected(
                   new LibraryOperationRejection.LibraryBusy(
                       runningKind.busyStatus(), runningKind)));
+      assertThat(fakeLibraryRepository.findById(savedLibraryId)).isPresent();
+      assertThat(capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class)).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+        "Should let the failure escape and keep the library when the removal breaks a foreign key")
+    void shouldLetTheFailureEscapeAndKeepTheLibraryWhenTheRemovalBreaksAForeignKey() {
+      var message = "update or delete on table \"library\" violates foreign key constraint";
+      var violation =
+          new DataIntegrityViolationException(
+              message,
+              new ConstraintViolationException(
+                  message, new SQLException(message, "23503"), "fk_library"));
+      beforeDeletingLibrary =
+          _ -> {
+            throw violation;
+          };
+
+      var thrown =
+          catchThrowable(() -> libraryManagementService.removeLibrary(identity, savedLibraryId));
+
+      assertThat(thrown).isSameAs(violation);
       assertThat(fakeLibraryRepository.findById(savedLibraryId)).isPresent();
       assertThat(capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class)).isEmpty();
     }
