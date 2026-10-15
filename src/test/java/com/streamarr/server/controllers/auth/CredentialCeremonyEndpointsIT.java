@@ -700,8 +700,8 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep an empty auditor when a password reset is redeemed")
-  void shouldKeepEmptyAuditorWhenPasswordResetIsRedeemed() throws Exception {
+  @DisplayName("Should keep an empty actor when a password reset is redeemed")
+  void shouldKeepEmptyActorWhenPasswordResetIsRedeemed() throws Exception {
     var resetting = authTestSupport.createIdentity();
     try {
       var accountId = resetting.account().getId();

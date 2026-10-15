@@ -30,11 +30,7 @@ public class TestFixtureAuditActorConfiguration {
    * write audited rows through their own JDBC connection.
    */
   public static void nameTestFixtureActorIn(Connection connection) throws SQLException {
-    try (var statement = connection.prepareStatement("SELECT set_config(?, ?, true)")) {
-      statement.setString(1, "streamarr.actor_id");
-      statement.setString(2, TEST_FIXTURE_ACTOR_ID.toString());
-      statement.execute();
-    }
+    AuditActorSetting.nameActorIn(connection, TEST_FIXTURE_ACTOR_ID.toString());
   }
 
   @Bean

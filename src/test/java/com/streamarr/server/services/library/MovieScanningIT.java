@@ -133,7 +133,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     var library = createLibraryWithMatchingMovieFile();
     stubTmdbMovieMetadata("27205", "Inception");
     libraryManagementService.processDiscoveredFile(library.id(), library.movieFile());
-    clearAuditors();
+    clearActors();
     stubTmdbMovieMetadata("27205", "Inception Remastered");
 
     libraryManagementService.refreshLibrary(library.id());
@@ -156,7 +156,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     var library = createLibraryWithMatchingMovieFile();
     stubTmdbMovieMetadata("27205", "Inception");
     libraryManagementService.processDiscoveredFile(library.id(), library.movieFile());
-    clearAuditors();
+    clearActors();
     stubTmdbMovieMetadata(inception().overview("A thief returns for one last job.").build());
 
     libraryManagementService.refreshLibrary(library.id());
@@ -256,7 +256,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   }
 
   // Rows written before the System actor existed have empty audit columns.
-  private void clearAuditors() {
+  private void clearActors() {
     auditColumns.clearActors(
         BASE_COLLECTABLE, BASE_COLLECTABLE.ID.in(DSL.select(MOVIE.ID).from(MOVIE)));
     auditColumns.clearActors(LIBRARY, DSL.trueCondition());

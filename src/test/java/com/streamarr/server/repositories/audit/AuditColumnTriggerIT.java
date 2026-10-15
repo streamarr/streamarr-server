@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.jooq.generated.tables.records.GenreRecord;
+import com.streamarr.server.support.AuditActorSetting;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
@@ -19,7 +20,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/** The audit trigger's contract, exercised with jOOQ writes that set no audit column themselves. */
 @Tag("IntegrationTest")
 @DisplayName("Audit Column Trigger Integration Tests")
 class AuditColumnTriggerIT extends AbstractIntegrationTest {
@@ -147,7 +147,8 @@ class AuditColumnTriggerIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should store empty actor columns when the transaction is a request without account")
   void shouldStoreEmptyActorColumnsWhenTransactionIsARequestWithoutAccount() {
-    var transactionTime = inTransactionNaming("request-without-account", this::insertGenre);
+    var transactionTime =
+        inTransactionNaming(AuditActorSetting.REQUEST_WITHOUT_ACCOUNT, this::insertGenre);
 
     var genre = storedGenre();
     assertThat(genre.getCreatedBy()).isNull();
@@ -172,7 +173,7 @@ class AuditColumnTriggerIT extends AbstractIntegrationTest {
                   DSL.function(
                       "set_config",
                       String.class,
-                      DSL.val("streamarr.actor_id"),
+                      DSL.val(AuditActorSetting.NAME),
                       DSL.val(actorSetting),
                       DSL.val(true)))
               .execute();

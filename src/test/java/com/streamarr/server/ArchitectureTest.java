@@ -439,7 +439,7 @@ class ArchitectureTest {
                   + " use the View suffix");
 
   // A thread does not inherit the System actor binding of the thread that starts it, so a thread
-  // that system work starts any other way writes rows with an empty auditor.
+  // that system work starts any other way names no actor, and its audited writes are rejected.
   @ArchTest
   static final ArchRule systemWorkMustStartThreadsThroughSystemWork =
       systemWorkMustStartThreadsThroughSystemWork();

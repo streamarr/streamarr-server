@@ -11,6 +11,7 @@ import com.streamarr.server.config.persistence.AuditActorTransactionListener;
 import com.streamarr.server.config.persistence.SecurityAuditActorSource;
 import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.services.audit.SystemWork;
+import com.streamarr.server.support.AuditActorSetting;
 import com.streamarr.server.support.security.AnonymousRequestAuthentication;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -67,7 +68,8 @@ class TransactionAuditActorBindingIT extends AbstractIntegrationTest {
   void shouldExposeTheRequestWithoutAccountMarkerWhenAnAnonymousRequestBegins() {
     SecurityContextHolder.getContext().setAuthentication(AnonymousRequestAuthentication.token());
 
-    assertThat(actorSettingIn(transactionTemplate)).isEqualTo("request-without-account");
+    assertThat(actorSettingIn(transactionTemplate))
+        .isEqualTo(AuditActorSetting.REQUEST_WITHOUT_ACCOUNT);
   }
 
   @Test
@@ -146,7 +148,7 @@ class TransactionAuditActorBindingIT extends AbstractIntegrationTest {
     return context
         .select(
             DSL.function(
-                "current_setting", String.class, DSL.val("streamarr.actor_id"), DSL.val(true)))
+                "current_setting", String.class, DSL.val(AuditActorSetting.NAME), DSL.val(true)))
         .fetchSingle()
         .value1();
   }

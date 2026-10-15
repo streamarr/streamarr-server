@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
-/** Checks the migrated schema, so a table added later cannot skip the audit trigger. */
+// Checks the migrated schema, so a table added later cannot skip the audit trigger.
 @Tag("IntegrationTest")
 @DisplayName("Audit Column Catalog Integration Tests")
 class AuditColumnCatalogIT extends AbstractIntegrationTest {

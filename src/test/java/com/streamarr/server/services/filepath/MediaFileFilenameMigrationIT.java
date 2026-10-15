@@ -10,6 +10,7 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.support.AuditActorSetting;
 import com.streamarr.server.support.AuditColumnFixtures;
 import db.migration.V049__Derive_Media_File_Filename_From_Filepath_Uri;
 import jakarta.persistence.EntityManager;
@@ -135,16 +136,12 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
         .isEqualTo("Café Meridian (2001).mkv");
   }
 
-  // A migration that writes audited rows names the System actor, as Flyway runs it outside any
-  // request.
+  // V049 ran before the audit trigger existed, so it names no actor. The trigger exists in this
+  // database, so the test names the System actor for it.
   private void migrate() throws Exception {
     try (var connection = dataSource.getConnection()) {
       connection.setAutoCommit(false);
-      try (var nameActor = connection.prepareStatement("SELECT set_config(?, ?, true)")) {
-        nameActor.setString(1, "streamarr.actor_id");
-        nameActor.setString(2, SystemActor.ID.toString());
-        nameActor.execute();
-      }
+      AuditActorSetting.nameActorIn(connection, SystemActor.ID.toString());
       new V049__Derive_Media_File_Filename_From_Filepath_Uri()
           .migrate(new MigrationContext(connection));
       connection.commit();

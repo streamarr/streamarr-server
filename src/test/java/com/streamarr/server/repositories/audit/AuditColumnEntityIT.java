@@ -34,7 +34,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/** Managed entities see the audit columns the trigger wrote, within the writing transaction. */
 @Tag("IntegrationTest")
 @DisplayName("Audit Column Entity Integration Tests")
 class AuditColumnEntityIT extends AbstractIntegrationTest {

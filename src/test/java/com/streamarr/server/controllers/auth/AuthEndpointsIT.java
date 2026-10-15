@@ -181,8 +181,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep an empty auditor when sign-in creates a session")
-  void shouldKeepEmptyAuditorWhenSignInCreatesSession() throws Exception {
+  @DisplayName("Should keep an empty actor when sign-in creates a session")
+  void shouldKeepEmptyActorWhenSignInCreatesSession() throws Exception {
     seedSingleProfileIdentity();
     var seededSessionIds =
         dsl.select(AUTH_SESSION.ID)
@@ -205,9 +205,9 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                 .fetch())
         .singleElement()
         .satisfies(
-            auditors -> {
-              assertThat(auditors.value1()).isNull();
-              assertThat(auditors.value2()).isNull();
+            actors -> {
+              assertThat(actors.value1()).isNull();
+              assertThat(actors.value2()).isNull();
             });
   }
 
@@ -270,8 +270,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep an empty auditor when setup creates the first administrator")
-  void shouldKeepEmptyAuditorWhenSetupCreatesTheFirstAdministrator() throws Exception {
+  @DisplayName("Should keep an empty actor when setup creates the first administrator")
+  void shouldKeepEmptyActorWhenSetupCreatesTheFirstAdministrator() throws Exception {
     setupEmail = "setup-" + UUID.randomUUID() + "@example.com";
 
     mockMvc
