@@ -6,7 +6,9 @@ import com.github.mizosoft.methanol.RetryInterceptor;
 import com.github.mizosoft.methanol.RetryInterceptor.BackoffStrategy;
 import com.streamarr.server.config.health.TmdbHealthProperties;
 import com.streamarr.server.config.http.RateLimitingInterceptor;
+import com.streamarr.server.services.concurrency.AdmittedTaskRetries;
 import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
 import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -33,6 +35,7 @@ public class TmdbHttpClientConfiguration {
                 BackoffStrategy.retryAfterOr(
                     BackoffStrategy.exponential(Duration.ofSeconds(2), Duration.ofSeconds(32))
                         .withJitter()))
+            .listener(new AdmittedTaskRetryListener())
             .build();
 
     var rateLimitingInterceptor = new RateLimitingInterceptor(requestsPerSecond);
@@ -45,6 +48,16 @@ public class TmdbHttpClientConfiguration {
         .interceptor(retryInterceptor)
         .interceptor(rateLimitingInterceptor)
         .build();
+  }
+
+  // TMDB requests run on the admitted task's own thread, so the task sees the mark (ADR 0041).
+  private static final class AdmittedTaskRetryListener implements RetryInterceptor.Listener {
+
+    @Override
+    public void onRetry(
+        RetryInterceptor.Context<?> context, HttpRequest nextRequest, Duration delay) {
+      AdmittedTaskRetries.markRetried();
+    }
   }
 
   @Bean("tmdbHealth")
