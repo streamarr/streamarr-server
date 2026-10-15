@@ -1,11 +1,11 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.media.ArtworkBacklog;
 import com.streamarr.server.domain.media.ArtworkCompletionEvidence;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
-import com.streamarr.server.domain.media.PendingArtwork;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.services.ArtworkSources;
 import com.streamarr.server.services.StoredArtworkRequest;
@@ -121,15 +121,15 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
   }
 
   @Override
-  public synchronized Map<ImageEntityType, PendingArtwork> findPendingArtworkByItemType() {
-    var pending = new EnumMap<ImageEntityType, PendingArtwork>(ImageEntityType.class);
+  public synchronized Map<ImageEntityType, ArtworkBacklog> findArtworkBacklogByTargetType() {
+    var backlog = new EnumMap<ImageEntityType, ArtworkBacklog>(ImageEntityType.class);
     requests.forEach(
         (target, request) ->
-            pending.merge(
+            backlog.merge(
                 target.targetType(),
-                new PendingArtwork(pendingImagesOf(request), firstRequestedAt.get(target)),
-                PendingArtwork::plus));
-    return pending;
+                new ArtworkBacklog(pendingImagesOf(request), firstRequestedAt.get(target)),
+                ArtworkBacklog::plus));
+    return backlog;
   }
 
   private long pendingImagesOf(StoredArtworkRequest request) {

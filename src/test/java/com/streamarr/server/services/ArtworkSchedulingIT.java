@@ -12,8 +12,9 @@ import com.github.kagkarlsson.scheduler.CurrentlyExecuting;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.streamarr.server.AbstractWireMockIntegrationTest;
+import com.streamarr.server.config.ArtworkPrioritySchedulers;
 import com.streamarr.server.config.ArtworkScheduler;
-import com.streamarr.server.config.ArtworkSchedulers;
+import com.streamarr.server.domain.media.ArtworkBacklog;
 import com.streamarr.server.domain.media.ArtworkCompletionEvidence;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.Image;
@@ -23,7 +24,6 @@ import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
-import com.streamarr.server.domain.media.PendingArtwork;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -74,7 +74,7 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   private static final ImageSource BACKDROP =
       new TmdbImageSource(ImageType.BACKDROP, "/backdrop.jpg");
 
-  @Autowired private ArtworkSchedulers contextSchedulers;
+  @Autowired private ArtworkPrioritySchedulers contextSchedulers;
   @Autowired private ArtworkRequestService artworkRequestService;
   @Autowired private ArtworkRunWaiter artworkRunWaiter;
   @Autowired private ArtworkStepsRunner artworkStepsRunner;
@@ -148,7 +148,7 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
 
     var summary = awaitRun(run);
 
-    assertThat(summary.counts()).isEqualTo(ArtworkCounts.builder().saved(2).build());
+    assertThat(summary.counts()).isEqualTo(FinishedImageCounts.builder().saved(2).build());
     assertThat(artworkOutcomes())
         .containsOnly(new ItemOutcome.Succeeded(), new ItemOutcome.Succeeded())
         .hasSize(2);
@@ -173,7 +173,7 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
 
     startPrimaryScheduler(completedInto(completed));
 
-    assertThat(awaitRun(run).counts()).isEqualTo(ArtworkCounts.builder().saved(2).build());
+    assertThat(awaitRun(run).counts()).isEqualTo(FinishedImageCounts.builder().saved(2).build());
     // The run sees each result once it is stored; the execution's completion removes the task
     // afterwards.
     completed.get(BOUND.toSeconds(), TimeUnit.SECONDS);
@@ -206,7 +206,8 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
     var firstAttempt = awaitRun(run);
     failed.get(BOUND.toSeconds(), TimeUnit.SECONDS);
 
-    assertThat(firstAttempt.counts()).isEqualTo(ArtworkCounts.builder().saved(1).failed(1).build());
+    assertThat(firstAttempt.counts())
+        .isEqualTo(FinishedImageCounts.builder().saved(1).failed(1).build());
     assertThat(posterResult().outcome())
         .isInstanceOfSatisfying(
             ItemOutcome.Failed.class,
@@ -244,7 +245,7 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
 
     var forced = requestMovieArtwork(ImageRefreshMode.FORCE_REFRESH, POSTER, BACKDROP);
 
-    assertThat(awaitRun(forced).counts()).isEqualTo(ArtworkCounts.builder().saved(2).build());
+    assertThat(awaitRun(forced).counts()).isEqualTo(FinishedImageCounts.builder().saved(2).build());
     assertThat(itemResults.findByItem(movieId, ImageEntityType.MOVIE))
         .filteredOn(result -> result.step() == ItemStep.ARTWORK)
         .hasSize(2)
@@ -307,7 +308,7 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
 
     completed.get(BOUND.toSeconds(), TimeUnit.SECONDS);
     assertThat(awaitRun(run).counts())
-        .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+        .isEqualTo(FinishedImageCounts.builder().saved(1).unavailable(1).build());
   }
 
   @Test
@@ -478,8 +479,8 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
     }
 
     @Override
-    public Map<ImageEntityType, PendingArtwork> findPendingArtworkByItemType() {
-      return delegate.findPendingArtworkByItemType();
+    public Map<ImageEntityType, ArtworkBacklog> findArtworkBacklogByTargetType() {
+      return delegate.findArtworkBacklogByTargetType();
     }
   }
 

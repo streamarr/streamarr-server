@@ -83,9 +83,9 @@ public class ArtworkRequestService {
 
   /** Returns how many background images are requested but not finished, server-wide. */
   public long pendingBackgroundImages() {
-    return requests.findPendingArtworkByItemType().entrySet().stream()
+    return requests.findArtworkBacklogByTargetType().entrySet().stream()
         .filter(entry -> ArtworkPriority.of(entry.getKey()) == ArtworkPriority.BACKGROUND)
-        .mapToLong(entry -> entry.getValue().images())
+        .mapToLong(entry -> entry.getValue().pendingImages())
         .sum();
   }
 

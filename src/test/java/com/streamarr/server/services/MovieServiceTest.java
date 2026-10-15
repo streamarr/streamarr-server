@@ -846,7 +846,7 @@ class MovieServiceTest {
       var saved = movieService.createMovieWithAssociations(metadataResult, mediaFile(), artworkRun);
 
       assertThat(awaitArtwork().counts())
-          .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+          .isEqualTo(FinishedImageCounts.builder().saved(1).unavailable(1).build());
       assertThat(imageRepository.findByEntityIdAndEntityType(saved.getId(), ImageEntityType.MOVIE))
           .extracting(Image::getImageType)
           .containsOnly(ImageType.POSTER);
@@ -860,7 +860,8 @@ class MovieServiceTest {
 
       movieService.createMovieWithAssociations(metadataResult, mediaFile(), artworkRun);
 
-      assertThat(awaitArtwork().counts()).isEqualTo(ArtworkCounts.builder().unavailable(2).build());
+      assertThat(awaitArtwork().counts())
+          .isEqualTo(FinishedImageCounts.builder().unavailable(2).build());
       assertThat(imageDownloader.getDownloadCount()).isZero();
     }
 
@@ -968,7 +969,7 @@ class MovieServiceTest {
       movieService.refreshMovieMetadata(existing, metadataResult, artworkRun);
 
       assertThat(awaitArtwork().counts())
-          .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+          .isEqualTo(FinishedImageCounts.builder().saved(1).unavailable(1).build());
       assertThat(
               imageRepository.findByEntityIdAndEntityType(existing.getId(), ImageEntityType.MOVIE))
           .extracting(Image::getImageType)
@@ -1007,7 +1008,8 @@ class MovieServiceTest {
 
       movieService.refreshMovieMetadata(existing, metadataResult, artworkRun);
 
-      assertThat(awaitArtwork().counts()).isEqualTo(ArtworkCounts.builder().unavailable(2).build());
+      assertThat(awaitArtwork().counts())
+          .isEqualTo(FinishedImageCounts.builder().unavailable(2).build());
     }
   }
 

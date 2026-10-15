@@ -14,7 +14,7 @@ import static org.awaitility.Awaitility.await;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.streamarr.server.AbstractWireMockIntegrationTest;
-import com.streamarr.server.config.ArtworkSchedulers;
+import com.streamarr.server.config.ArtworkPrioritySchedulers;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.domain.media.ArtworkTarget;
@@ -75,7 +75,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private PersonRepository personRepository;
   @Autowired private CompanyRepository companyRepository;
-  @Autowired private ArtworkSchedulers artworkSchedulers;
+  @Autowired private ArtworkPrioritySchedulers artworkPrioritySchedulers;
   @Autowired private ApplicationContext applicationContext;
   @Autowired private CpuPermits cpuPermits;
 
@@ -110,7 +110,8 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
     var movie = movieService.createMovieWithAssociations(movieMetadata(), mediaFile(), artworkRun);
     var summary = closeAndAwait(artworkRun);
 
-    assertThat(summary.counts()).isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+    assertThat(summary.counts())
+        .isEqualTo(FinishedImageCounts.builder().saved(1).unavailable(1).build());
     assertThat(committedImageRows(movie.getId())).isEqualTo(ImageSize.values().length);
   }
 
@@ -129,7 +130,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
             });
     var summary = closeAndAwait(artworkRun);
 
-    assertThat(summary.counts()).isEqualTo(ArtworkCounts.builder().build());
+    assertThat(summary.counts()).isEqualTo(FinishedImageCounts.builder().build());
     assertThat(committedImageRows(movie.getId())).isZero();
     assertThat(wireMock.findAll(getRequestedFor(urlPathEqualTo("/poster.jpg")))).isEmpty();
   }
@@ -161,7 +162,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
             .build();
 
     var completed = new CompletableFuture<ExecutionComplete>();
-    artworkSchedulers.stop();
+    artworkPrioritySchedulers.stop();
     var backgroundScheduler =
         ArtworkSchedulerStarter.fromContext(applicationContext)
             .start(ArtworkPriority.BACKGROUND, completedInto(completed));
@@ -172,7 +173,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
       completed.get(BOUND_SECONDS, TimeUnit.SECONDS);
     } finally {
       backgroundScheduler.stop();
-      artworkSchedulers.start();
+      artworkPrioritySchedulers.start();
     }
 
     assertThat(itemResults.findByItem(person.getId(), ImageEntityType.PERSON))
@@ -227,7 +228,8 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
     movieService.createMovieWithAssociations(movieMetadata(), mediaFile(), artworkRun);
     var summary = closeAndAwait(artworkRun);
 
-    assertThat(summary.counts()).isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+    assertThat(summary.counts())
+        .isEqualTo(FinishedImageCounts.builder().saved(1).unavailable(1).build());
     assertThat(backlog)
         .allSatisfy(
             target ->
@@ -250,7 +252,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
     var completions = new CopyOnWriteArrayList<String>();
     var releases = new ArrayList<CountDownLatch>();
     var holders = new ArrayList<BoundedTask<Void>>();
-    artworkSchedulers.stop();
+    artworkPrioritySchedulers.stop();
     var starter = ArtworkSchedulerStarter.fromContext(applicationContext);
     var primaryScheduler = starter.start(ArtworkPriority.PRIMARY, completedInto(completions));
     var backgroundScheduler = starter.start(ArtworkPriority.BACKGROUND, completedInto(completions));
@@ -291,7 +293,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
 
       primaryScheduler.stop();
       backgroundScheduler.stop();
-      artworkSchedulers.start();
+      artworkPrioritySchedulers.start();
     }
   }
 

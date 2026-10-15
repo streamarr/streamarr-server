@@ -269,7 +269,7 @@ class SeriesServiceTest {
       var saved = seriesService.createSeriesWithAssociations(metadataResult, artworkRun);
 
       assertThat(awaitArtwork().counts())
-          .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+          .isEqualTo(FinishedImageCounts.builder().saved(1).unavailable(1).build());
       assertThat(imageTypesOf(saved.getId(), ImageEntityType.SERIES))
           .containsOnly(ImageType.POSTER);
     }
@@ -282,7 +282,8 @@ class SeriesServiceTest {
 
       seriesService.createSeriesWithAssociations(metadataResult, artworkRun);
 
-      assertThat(awaitArtwork().counts()).isEqualTo(ArtworkCounts.builder().unavailable(2).build());
+      assertThat(awaitArtwork().counts())
+          .isEqualTo(FinishedImageCounts.builder().unavailable(2).build());
       assertThat(imageDownloader.getDownloadCount()).isZero();
     }
 
@@ -308,7 +309,7 @@ class SeriesServiceTest {
       var season = seriesService.createSeasonWithEpisodes(seasonRequest(series, details, library));
 
       assertThat(awaitArtwork().counts())
-          .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+          .isEqualTo(FinishedImageCounts.builder().saved(1).unavailable(1).build());
       assertThat(imageTypesOf(season.getId(), ImageEntityType.SEASON))
           .containsOnly(ImageType.POSTER);
     }
@@ -372,7 +373,8 @@ class SeriesServiceTest {
 
       seriesService.createSeasonWithEpisodes(seasonRequest(series, details, library));
 
-      assertThat(awaitArtwork().counts()).isEqualTo(ArtworkCounts.builder().unavailable(2).build());
+      assertThat(awaitArtwork().counts())
+          .isEqualTo(FinishedImageCounts.builder().unavailable(2).build());
       assertThat(imageDownloader.getDownloadCount()).isZero();
     }
 
@@ -450,7 +452,7 @@ class SeriesServiceTest {
       assertThat(season.getSeasonNumber()).isZero();
       assertThat(episodeRepository.findBySeasonIdOrderByEpisodeNumber(season.getId())).isEmpty();
 
-      assertThat(awaitArtwork().counts()).isEqualTo(ArtworkCounts.builder().saved(1).build());
+      assertThat(awaitArtwork().counts()).isEqualTo(FinishedImageCounts.builder().saved(1).build());
       assertThat(imageTypesOf(season.getId(), ImageEntityType.SEASON))
           .containsOnly(ImageType.POSTER);
     }
@@ -489,7 +491,7 @@ class SeriesServiceTest {
       var season = seriesService.createSeasonWithEpisodes(seasonRequest(series, details, library));
 
       assertThat(awaitArtwork().counts())
-          .isEqualTo(ArtworkCounts.builder().saved(2).unavailable(2).build());
+          .isEqualTo(FinishedImageCounts.builder().saved(2).unavailable(2).build());
       var savedEpisodes = episodeRepository.findBySeasonIdOrderByEpisodeNumber(season.getId());
       assertThat(savedEpisodes)
           .extracting(
@@ -601,7 +603,7 @@ class SeriesServiceTest {
       seriesService.refreshSeriesMetadata(existing, metadataResult, artworkRun);
 
       assertThat(awaitArtwork().counts())
-          .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+          .isEqualTo(FinishedImageCounts.builder().saved(1).unavailable(1).build());
       assertThat(imageTypesOf(existing.getId(), ImageEntityType.SERIES))
           .containsOnly(ImageType.POSTER);
     }
@@ -615,7 +617,8 @@ class SeriesServiceTest {
 
       seriesService.refreshSeriesMetadata(existing, metadataResult, artworkRun);
 
-      assertThat(awaitArtwork().counts()).isEqualTo(ArtworkCounts.builder().unavailable(2).build());
+      assertThat(awaitArtwork().counts())
+          .isEqualTo(FinishedImageCounts.builder().unavailable(2).build());
     }
 
     @Test
@@ -797,7 +800,7 @@ class SeriesServiceTest {
 
       var season = seriesService.refreshSeasonWithEpisodes(seasonRequest(series, details, library));
 
-      assertThat(awaitArtwork().counts()).isEqualTo(ArtworkCounts.builder().saved(2).build());
+      assertThat(awaitArtwork().counts()).isEqualTo(FinishedImageCounts.builder().saved(2).build());
       assertThat(imageTypesOf(season.getId(), ImageEntityType.SEASON))
           .containsOnly(ImageType.POSTER);
       assertThat(episodeRepository.findBySeasonIdOrderByEpisodeNumber(season.getId()))

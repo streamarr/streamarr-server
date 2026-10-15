@@ -117,7 +117,7 @@ class ArtworkRequestServiceTest {
       var summary = requestPrimaryArtwork(sources);
 
       assertThat(summary.counts())
-          .isEqualTo(ArtworkCounts.builder().unavailable(primaryImageTypes.size()).build());
+          .isEqualTo(FinishedImageCounts.builder().unavailable(primaryImageTypes.size()).build());
       assertThat(itemResults.findByItem(entityId, entityType))
           .extracting(ItemResult::imageType)
           .containsExactlyInAnyOrderElementsOf(primaryImageTypes);
@@ -133,7 +133,8 @@ class ArtworkRequestServiceTest {
 
       var summary = requestPrimaryArtwork(movieArtwork(movieId, POSTER, BACKDROP));
 
-      assertThat(summary.counts()).isEqualTo(ArtworkCounts.builder().saved(1).failed(1).build());
+      assertThat(summary.counts())
+          .isEqualTo(FinishedImageCounts.builder().saved(1).failed(1).build());
       assertThat(failureReasonOf(movieId, ImageType.POSTER))
           .isEqualTo(ItemFailureReason.DOWNLOAD_FAILED);
       assertThat(artwork.scheduling().pendingTargets()).isEmpty();
@@ -148,7 +149,8 @@ class ArtworkRequestServiceTest {
 
       var summary = requestPrimaryArtwork(movieArtwork(movieId, POSTER, BACKDROP));
 
-      assertThat(summary.counts()).isEqualTo(ArtworkCounts.builder().saved(1).failed(1).build());
+      assertThat(summary.counts())
+          .isEqualTo(FinishedImageCounts.builder().saved(1).failed(1).build());
       assertThat(failureReasonOf(movieId, ImageType.POSTER)).isEqualTo(ItemFailureReason.TEMPORARY);
       assertThat(artwork.scheduling().pendingTargets())
           .containsExactly(new ArtworkTarget(movieId, ImageEntityType.MOVIE));
@@ -202,7 +204,7 @@ class ArtworkRequestServiceTest {
 
       var summary = requestPrimaryArtwork(movieArtwork(movieId, POSTER, BACKDROP));
 
-      assertThat(summary.counts()).isEqualTo(ArtworkCounts.builder().skipped(2).build());
+      assertThat(summary.counts()).isEqualTo(FinishedImageCounts.builder().skipped(2).build());
       assertThat(artwork.requests().requests()).isEmpty();
       assertThat(imageDownloader.getDownloadCount()).isZero();
     }
@@ -215,7 +217,8 @@ class ArtworkRequestServiceTest {
 
       var summary = requestPrimaryArtwork(movieArtwork(movieId, BACKDROP));
 
-      assertThat(summary.counts()).isEqualTo(ArtworkCounts.builder().saved(1).skipped(1).build());
+      assertThat(summary.counts())
+          .isEqualTo(FinishedImageCounts.builder().saved(1).skipped(1).build());
       assertThat(outcomesOf(movieId))
           .containsOnly(
               Map.entry(ImageType.POSTER, new ItemOutcome.Succeeded()),
@@ -234,7 +237,7 @@ class ArtworkRequestServiceTest {
       artworkRequestService.requestPrimaryArtwork(run, movieArtwork(movieId));
 
       assertThat(artwork.closeAndAwait(run).counts())
-          .isEqualTo(ArtworkCounts.builder().unavailable(2).build());
+          .isEqualTo(FinishedImageCounts.builder().unavailable(2).build());
       assertThat(imageRepository.findByEntityIdAndEntityType(movieId, ImageEntityType.MOVIE))
           .extracting(Image::getId)
           .containsExactly(stored.getId());
@@ -367,7 +370,7 @@ class ArtworkRequestServiceTest {
       var summary = waiting.closeAndAwait(run);
 
       assertThat(sleeper.sleeps()).isNotEmpty();
-      assertThat(summary.counts()).isEqualTo(ArtworkCounts.builder().saved(2).build());
+      assertThat(summary.counts()).isEqualTo(FinishedImageCounts.builder().saved(2).build());
     }
 
     @Test
@@ -380,7 +383,7 @@ class ArtworkRequestServiceTest {
 
       artwork.requests().deleteTarget(new ArtworkTarget(movieId, ImageEntityType.MOVIE));
 
-      assertThat(artwork.closeAndAwait(run).counts()).isEqualTo(ArtworkCounts.NONE);
+      assertThat(artwork.closeAndAwait(run).counts()).isEqualTo(FinishedImageCounts.NONE);
     }
   }
 
@@ -406,7 +409,8 @@ class ArtworkRequestServiceTest {
               UUID.randomUUID(), new TmdbImageSource(ImageType.POSTER, "/other-poster.jpg")));
 
       assertThat(artwork.closeAndAwait(run).counts())
-          .isEqualTo(ArtworkCounts.builder().saved(2).skipped(1).unavailable(2).failed(1).build());
+          .isEqualTo(
+              FinishedImageCounts.builder().saved(2).skipped(1).unavailable(2).failed(1).build());
     }
 
     @Test
@@ -421,7 +425,7 @@ class ArtworkRequestServiceTest {
       artwork.scheduling().runPendingSteps();
 
       assertThat(artwork.closeAndAwait(run).counts())
-          .isEqualTo(ArtworkCounts.builder().saved(2).build());
+          .isEqualTo(FinishedImageCounts.builder().saved(2).build());
     }
 
     @Test
@@ -431,7 +435,7 @@ class ArtworkRequestServiceTest {
 
       var summary = artwork.closeAndAwait(run);
 
-      assertThat(summary.counts()).isEqualTo(ArtworkCounts.NONE);
+      assertThat(summary.counts()).isEqualTo(FinishedImageCounts.NONE);
       assertThat(summary.elapsed()).isZero();
       assertThat(summary.description()).isEqualTo("scan");
     }
@@ -477,7 +481,7 @@ class ArtworkRequestServiceTest {
         artwork.scheduling().runPendingSteps();
 
         assertThat(wait.await(BOUND).counts())
-            .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+            .isEqualTo(FinishedImageCounts.builder().saved(1).unavailable(1).build());
       }
     }
   }
@@ -574,7 +578,7 @@ class ArtworkRequestServiceTest {
     @Test
     @DisplayName("Should report nothing when no artwork is pending")
     void shouldReportNothingWhenNoArtworkIsPending() {
-      assertThat(artwork.progress().reportProgress()).isEmpty();
+      assertThat(artwork.progressReporter().reportProgress()).isEmpty();
     }
 
     @Test
@@ -585,16 +589,16 @@ class ArtworkRequestServiceTest {
       var run = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
       artworkRequestService.requestPrimaryArtwork(
           run, movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
-      artwork.progress().reportProgress();
+      artwork.progressReporter().reportProgress();
       clock.advance(Duration.ofSeconds(5));
 
-      var reports = artwork.progress().reportProgress();
+      var reports = artwork.progressReporter().reportProgress();
 
       assertThat(reports)
           .containsExactly(
               ArtworkProgressReport.builder()
                   .priority(ArtworkPriority.PRIMARY)
-                  .counts(ArtworkCounts.NONE)
+                  .counts(FinishedImageCounts.NONE)
                   .pending(2)
                   .elapsed(Duration.ofSeconds(5))
                   .build());
@@ -608,11 +612,11 @@ class ArtworkRequestServiceTest {
       artwork.scheduling().holdScheduledSteps();
       var run = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
       artworkRequestService.requestPrimaryArtwork(run, movieArtwork(UUID.randomUUID(), POSTER));
-      artwork.progress().reportProgress();
+      artwork.progressReporter().reportProgress();
       clock.advance(Duration.ofSeconds(4));
       artwork.scheduling().runPendingSteps();
 
-      var reports = artwork.progress().reportProgress();
+      var reports = artwork.progressReporter().reportProgress();
 
       assertThat(reports)
           .singleElement()
@@ -621,9 +625,9 @@ class ArtworkRequestServiceTest {
                 assertThat(report.isFinished()).isTrue();
                 assertThat(report.elapsed()).isEqualTo(Duration.ofSeconds(4));
                 assertThat(report.counts())
-                    .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+                    .isEqualTo(FinishedImageCounts.builder().saved(1).unavailable(1).build());
               });
-      assertThat(artwork.progress().reportProgress()).isEmpty();
+      assertThat(artwork.progressReporter().reportProgress()).isEmpty();
     }
 
     @Test
@@ -633,7 +637,7 @@ class ArtworkRequestServiceTest {
       requestMovieWithASavedPosterAndARetryingBackdrop();
       clock.advance(Duration.ofSeconds(20));
 
-      var reports = artwork.progress().reportProgress();
+      var reports = artwork.progressReporter().reportProgress();
 
       assertThat(reports).containsExactly(savedPosterAndRetryingBackdropReport());
     }
@@ -643,9 +647,9 @@ class ArtworkRequestServiceTest {
     void shouldReportTheSameProgressWhenANewReporterStartsAfterARestart() {
       requestMovieWithASavedPosterAndARetryingBackdrop();
       clock.advance(Duration.ofSeconds(20));
-      artwork.progress().reportProgress();
+      artwork.progressReporter().reportProgress();
 
-      var afterRestart = new ArtworkProgress(artwork.requests(), itemResults, clock);
+      var afterRestart = new ArtworkProgressReporter(artwork.requests(), itemResults, clock);
 
       assertThat(afterRestart.reportProgress())
           .containsExactly(savedPosterAndRetryingBackdropReport());
@@ -666,7 +670,7 @@ class ArtworkRequestServiceTest {
     private static ArtworkProgressReport savedPosterAndRetryingBackdropReport() {
       return ArtworkProgressReport.builder()
           .priority(ArtworkPriority.PRIMARY)
-          .counts(ArtworkCounts.builder().saved(1).failed(1).build())
+          .counts(FinishedImageCounts.builder().saved(1).failed(1).build())
           .pending(1)
           .elapsed(Duration.ofSeconds(30))
           .build();
@@ -681,16 +685,16 @@ class ArtworkRequestServiceTest {
           run, movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
       artworkRequestService.requestBackgroundArtwork(
           personArtwork("/profile.jpg"), ImageRefreshMode.PRESERVE);
-      artwork.progress().reportProgress();
+      artwork.progressReporter().reportProgress();
       artwork.scheduling().runPendingSteps();
 
-      var reports = artwork.progress().reportProgress();
+      var reports = artwork.progressReporter().reportProgress();
 
       assertThat(reports)
           .extracting(ArtworkProgressReport::priority, ArtworkProgressReport::counts)
           .containsExactlyInAnyOrder(
-              tuple(ArtworkPriority.PRIMARY, ArtworkCounts.builder().saved(2).build()),
-              tuple(ArtworkPriority.BACKGROUND, ArtworkCounts.builder().saved(1).build()));
+              tuple(ArtworkPriority.PRIMARY, FinishedImageCounts.builder().saved(2).build()),
+              tuple(ArtworkPriority.BACKGROUND, FinishedImageCounts.builder().saved(1).build()));
     }
   }
 
@@ -730,7 +734,7 @@ class ArtworkRequestServiceTest {
             artworkRequestService.requestPrimaryArtwork(run, movieArtwork(keptMovieId, POSTER));
           });
 
-      assertThat(artwork.closeAndAwait(run).counts()).isEqualTo(ArtworkCounts.NONE);
+      assertThat(artwork.closeAndAwait(run).counts()).isEqualTo(FinishedImageCounts.NONE);
       assertThat(imageDownloader.getDownloadCount()).isZero();
     }
   }

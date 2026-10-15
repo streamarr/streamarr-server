@@ -1,6 +1,6 @@
 package com.streamarr.server.fakes;
 
-import com.streamarr.server.domain.media.ArtworkOutcomeTally;
+import com.streamarr.server.domain.media.ArtworkResultCounts;
 import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
@@ -130,17 +130,19 @@ public class FakeItemResultRepository implements ItemResultRepository {
   }
 
   @Override
-  public Map<ImageEntityType, ArtworkOutcomeTally> countArtworkOutcomesRecordedSince(
+  public Map<ImageEntityType, ArtworkResultCounts> countArtworkOutcomesRecordedSince(
       Instant since) {
-    var tallies = new EnumMap<ImageEntityType, ArtworkOutcomeTally>(ImageEntityType.class);
+    var resultCounts = new EnumMap<ImageEntityType, ArtworkResultCounts>(ImageEntityType.class);
     results.values().stream()
         .filter(result -> result.step() == ItemStep.ARTWORK)
         .filter(result -> !recordedAt.getOrDefault(keyOf(result), Instant.MIN).isBefore(since))
         .forEach(
             result ->
-                tallies.merge(
-                    result.itemType(), tallyOf(result.outcome()), FakeItemResultRepository::add));
-    return tallies;
+                resultCounts.merge(
+                    result.itemType(),
+                    resultCountsOf(result.outcome()),
+                    FakeItemResultRepository::add));
+    return resultCounts;
   }
 
   /**
@@ -150,17 +152,17 @@ public class FakeItemResultRepository implements ItemResultRepository {
     this.storageClock = clock;
   }
 
-  private static ArtworkOutcomeTally tallyOf(ItemOutcome outcome) {
+  private static ArtworkResultCounts resultCountsOf(ItemOutcome outcome) {
     return switch (outcome) {
-      case ItemOutcome.Succeeded _ -> new ArtworkOutcomeTally(1, 0, 0);
-      case ItemOutcome.Unavailable _ -> new ArtworkOutcomeTally(0, 1, 0);
-      case ItemOutcome.Failed _ -> new ArtworkOutcomeTally(0, 0, 1);
+      case ItemOutcome.Succeeded _ -> new ArtworkResultCounts(1, 0, 0);
+      case ItemOutcome.Unavailable _ -> new ArtworkResultCounts(0, 1, 0);
+      case ItemOutcome.Failed _ -> new ArtworkResultCounts(0, 0, 1);
     };
   }
 
-  private static ArtworkOutcomeTally add(ArtworkOutcomeTally left, ArtworkOutcomeTally right) {
-    return new ArtworkOutcomeTally(
-        left.succeeded() + right.succeeded(),
+  private static ArtworkResultCounts add(ArtworkResultCounts left, ArtworkResultCounts right) {
+    return new ArtworkResultCounts(
+        left.saved() + right.saved(),
         left.unavailable() + right.unavailable(),
         left.failed() + right.failed());
   }

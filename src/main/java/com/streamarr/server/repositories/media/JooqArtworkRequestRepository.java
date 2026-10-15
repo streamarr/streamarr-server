@@ -7,12 +7,12 @@ import static com.streamarr.server.repositories.media.MediaEnumMapping.toDomain;
 import static com.streamarr.server.repositories.media.MediaEnumMapping.toJooq;
 
 import com.streamarr.server.config.ArtworkProperties;
+import com.streamarr.server.domain.media.ArtworkBacklog;
 import com.streamarr.server.domain.media.ArtworkCompletionEvidence;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemResult;
-import com.streamarr.server.domain.media.PendingArtwork;
 import com.streamarr.server.jooq.generated.enums.ItemResultFailureReason;
 import com.streamarr.server.jooq.generated.enums.ItemResultOutcome;
 import com.streamarr.server.jooq.generated.enums.ItemResultStep;
@@ -205,7 +205,7 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
 
   @Override
   @Transactional(readOnly = true)
-  public Map<ImageEntityType, PendingArtwork> findPendingArtworkByItemType() {
+  public Map<ImageEntityType, ArtworkBacklog> findArtworkBacklogByTargetType() {
     var finishedImages =
         DSL.selectCount()
             .from(ITEM_RESULT)
@@ -217,7 +217,7 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
             .<Integer>asField();
     var pendingImages =
         DSL.greatest(ARTWORK_REQUEST.IMAGE_COUNT.minus(finishedImages), DSL.inline(0));
-    var pending = new EnumMap<ImageEntityType, PendingArtwork>(ImageEntityType.class);
+    var backlog = new EnumMap<ImageEntityType, ArtworkBacklog>(ImageEntityType.class);
     dsl.select(
             ARTWORK_REQUEST.TARGET_TYPE,
             DSL.sum(pendingImages),
@@ -226,10 +226,10 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
         .groupBy(ARTWORK_REQUEST.TARGET_TYPE)
         .forEach(
             row ->
-                pending.put(
+                backlog.put(
                     toDomain(row.value1()),
-                    new PendingArtwork(row.value2().longValue(), row.value3().toInstant())));
-    return pending;
+                    new ArtworkBacklog(row.value2().longValue(), row.value3().toInstant())));
+    return backlog;
   }
 
   // A pending request covers a new one with the same sources and an equal or weaker refresh mode.

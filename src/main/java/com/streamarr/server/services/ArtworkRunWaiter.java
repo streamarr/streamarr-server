@@ -46,7 +46,7 @@ public class ArtworkRunWaiter {
     var pending = new HashMap<ArtworkTarget, AwaitedArtwork>();
     run.awaited()
         .forEach(artwork -> pending.merge(artwork.target(), artwork, ArtworkRunWaiter::merge));
-    var counts = ArtworkCounts.NONE.plusSkipped(run.keptImages());
+    var counts = FinishedImageCounts.NONE.plusSkipped(run.keptImages());
     while (!pending.isEmpty()) {
       counts = countFinishedArtwork(pending, counts);
       if (!pending.isEmpty()) {
@@ -69,8 +69,8 @@ public class ArtworkRunWaiter {
   }
 
   // Removes each target whose requested artwork is finished from pending, and counts its results.
-  private ArtworkCounts countFinishedArtwork(
-      Map<ArtworkTarget, AwaitedArtwork> pending, ArtworkCounts counts) {
+  private FinishedImageCounts countFinishedArtwork(
+      Map<ArtworkTarget, AwaitedArtwork> pending, FinishedImageCounts counts) {
     var total = counts;
     for (var evidence : requests.findCompletionEvidence(pending.keySet())) {
       var finished = finishedResults(evidence, pending.get(evidence.target()));
@@ -117,7 +117,7 @@ public class ArtworkRunWaiter {
   }
 
   private static void logCompleted(ArtworkRunSummary summary) {
-    if (summary.counts().equals(ArtworkCounts.NONE)) {
+    if (summary.counts().equals(FinishedImageCounts.NONE)) {
       return;
     }
 

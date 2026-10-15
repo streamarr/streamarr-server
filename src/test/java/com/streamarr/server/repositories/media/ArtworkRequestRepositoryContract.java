@@ -2,6 +2,7 @@ package com.streamarr.server.repositories.media;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.media.ArtworkBacklog;
 import com.streamarr.server.domain.media.ArtworkCompletionEvidence;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
@@ -10,7 +11,6 @@ import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
-import com.streamarr.server.domain.media.PendingArtwork;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository.SavedArtworkRequest.NewGeneration;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository.SavedArtworkRequest.Unchanged;
 import com.streamarr.server.services.ArtworkSources;
@@ -237,13 +237,13 @@ public interface ArtworkRequestRepositoryContract {
                     ImageRefreshMode.PRESERVE,
                     REQUESTED_AT.plusSeconds(30)));
 
-    assertThat(repository().findPendingArtworkByItemType())
+    assertThat(repository().findArtworkBacklogByTargetType())
         .containsAllEntriesOf(
             Map.of(
                 ImageEntityType.MOVIE,
-                new PendingArtwork(4, REQUESTED_AT),
+                new ArtworkBacklog(4, REQUESTED_AT),
                 ImageEntityType.PERSON,
-                new PendingArtwork(1, REQUESTED_AT.plusSeconds(30))));
+                new ArtworkBacklog(1, REQUESTED_AT.plusSeconds(30))));
   }
 
   @Test
@@ -263,8 +263,8 @@ public interface ArtworkRequestRepositoryContract {
     save(olderResult, ImageRefreshMode.PRESERVE, POSTER, BACKDROP);
     saveResult(savedPoster(olderResult, 0));
 
-    assertThat(repository().findPendingArtworkByItemType())
-        .containsEntry(ImageEntityType.MOVIE, new PendingArtwork(3, REQUESTED_AT));
+    assertThat(repository().findArtworkBacklogByTargetType())
+        .containsEntry(ImageEntityType.MOVIE, new ArtworkBacklog(3, REQUESTED_AT));
   }
 
   @Test
@@ -275,8 +275,8 @@ public interface ArtworkRequestRepositoryContract {
 
     saveAt(movie, REQUESTED_AT.plusSeconds(60), OTHER_POSTER, BACKDROP);
 
-    assertThat(repository().findPendingArtworkByItemType())
-        .containsEntry(ImageEntityType.MOVIE, new PendingArtwork(2, REQUESTED_AT));
+    assertThat(repository().findArtworkBacklogByTargetType())
+        .containsEntry(ImageEntityType.MOVIE, new ArtworkBacklog(2, REQUESTED_AT));
   }
 
   private ArtworkRequestRepository.SavedArtworkRequest saveAt(

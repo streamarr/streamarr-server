@@ -1,9 +1,9 @@
 package com.streamarr.server.repositories.media;
 
+import com.streamarr.server.domain.media.ArtworkBacklog;
 import com.streamarr.server.domain.media.ArtworkCompletionEvidence;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
-import com.streamarr.server.domain.media.PendingArtwork;
 import com.streamarr.server.services.ArtworkSources;
 import com.streamarr.server.services.StoredArtworkRequest;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
@@ -65,9 +65,9 @@ public interface ArtworkRequestRepository {
   List<ArtworkCompletionEvidence> findCompletionEvidence(Collection<ArtworkTarget> targets);
 
   /**
-   * Returns, by target type, the images that pending requests still need and when the earliest of
-   * those requests was first made. A request that a changed request replaced keeps its first
-   * request time.
+   * Returns the artwork backlog of each target type: the images that pending requests still need,
+   * and when the oldest of those requests was first made. A request that a changed request replaced
+   * keeps its first request time.
    */
-  Map<ImageEntityType, PendingArtwork> findPendingArtworkByItemType();
+  Map<ImageEntityType, ArtworkBacklog> findArtworkBacklogByTargetType();
 }

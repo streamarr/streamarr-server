@@ -1,6 +1,6 @@
 package com.streamarr.server.services;
 
-import com.streamarr.server.domain.media.PendingArtwork;
+import com.streamarr.server.domain.media.ArtworkBacklog;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
 import java.time.Clock;
@@ -18,19 +18,19 @@ import org.springframework.stereotype.Component;
 /**
  * Logs server-wide artwork progress by priority from stored artwork requests and recorded artwork
  * results, so the report stays correct across restarts. A priority's busy period starts when the
- * earliest of its pending requests was first made and ends at the first report that finds no
- * pending image. Counts cover the results recorded since the busy period started.
+ * oldest of its pending requests was first made and ends at the first report that finds no pending
+ * image. Counts cover the results recorded since the busy period started.
  */
 @Slf4j
 @Component
-public class ArtworkProgress {
+public class ArtworkProgressReporter {
 
   private final ArtworkRequestRepository requests;
   private final ItemResultRepository itemResults;
   private final Clock clock;
   private final Map<ArtworkPriority, Instant> busySince = new EnumMap<>(ArtworkPriority.class);
 
-  public ArtworkProgress(
+  public ArtworkProgressReporter(
       ArtworkRequestRepository requests, ItemResultRepository itemResults, Clock clock) {
     this.requests = requests;
     this.itemResults = itemResults;
@@ -46,34 +46,34 @@ public class ArtworkProgress {
       fixedDelayString = "${artwork.progress-log-interval:30s}")
   public synchronized List<ArtworkProgressReport> reportProgress() {
     var now = clock.instant();
-    var pendingByPriority = new EnumMap<ArtworkPriority, PendingArtwork>(ArtworkPriority.class);
+    var backlogByPriority = new EnumMap<ArtworkPriority, ArtworkBacklog>(ArtworkPriority.class);
     requests
-        .findPendingArtworkByItemType()
+        .findArtworkBacklogByTargetType()
         .forEach(
-            (itemType, pending) ->
-                pendingByPriority.merge(
-                    ArtworkPriority.of(itemType), pending, PendingArtwork::plus));
+            (targetType, backlog) ->
+                backlogByPriority.merge(
+                    ArtworkPriority.of(targetType), backlog, ArtworkBacklog::plus));
     var reports =
         Arrays.stream(ArtworkPriority.values())
             .map(
                 priority ->
-                    report(priority, Optional.ofNullable(pendingByPriority.get(priority)), now))
+                    report(priority, Optional.ofNullable(backlogByPriority.get(priority)), now))
             .flatMap(Optional::stream)
             .toList();
-    reports.forEach(ArtworkProgress::log);
+    reports.forEach(ArtworkProgressReporter::log);
     return reports;
   }
 
   private Optional<ArtworkProgressReport> report(
-      ArtworkPriority priority, Optional<PendingArtwork> pending, Instant now) {
-    var pendingImages = pending.map(PendingArtwork::images).orElse(0L);
+      ArtworkPriority priority, Optional<ArtworkBacklog> backlog, Instant now) {
+    var pendingImages = backlog.map(ArtworkBacklog::pendingImages).orElse(0L);
     var startedAt = busySince.get(priority);
     if (startedAt == null && pendingImages == 0) {
       return Optional.empty();
     }
 
     if (pendingImages > 0) {
-      startedAt = startOfBusyPeriod(priority, pending.get());
+      startedAt = startOfBusyPeriod(priority, backlog.get());
     }
 
     if (pendingImages == 0) {
@@ -89,21 +89,21 @@ public class ArtworkProgress {
             .build());
   }
 
-  // The busy period starts at the earliest pending request's stored first request time, so a
-  // reporter that starts after a restart counts the results recorded since that request too.
-  private Instant startOfBusyPeriod(ArtworkPriority priority, PendingArtwork pending) {
+  // The busy period starts at the oldest pending request's stored request time, so a reporter
+  // that starts after a restart counts the results recorded since that request too.
+  private Instant startOfBusyPeriod(ArtworkPriority priority, ArtworkBacklog backlog) {
     var startedAt = busySince.get(priority);
     if (startedAt != null) {
       return startedAt;
     }
 
     log.info("Started fetching {} artwork across all libraries.", describe(priority));
-    busySince.put(priority, pending.firstRequestedAt());
-    return pending.firstRequestedAt();
+    busySince.put(priority, backlog.oldestRequestAt());
+    return backlog.oldestRequestAt();
   }
 
-  private ArtworkCounts countsSince(ArtworkPriority priority, Instant since) {
-    var counts = ArtworkCounts.NONE;
+  private FinishedImageCounts countsSince(ArtworkPriority priority, Instant since) {
+    var counts = FinishedImageCounts.NONE;
     for (var entry : itemResults.countArtworkOutcomesRecordedSince(since).entrySet()) {
       if (ArtworkPriority.of(entry.getKey()) == priority) {
         counts = counts.plus(entry.getValue());

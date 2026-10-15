@@ -345,7 +345,7 @@ class ArtworkStepsRunnerIT extends AbstractWireMockIntegrationTest {
     artworkStepsRunner.runSteps(movie);
     var clock = new MutableClock(new AtomicReference<>(Instant.now()));
 
-    var afterRestart = new ArtworkProgress(requests, itemResults, clock);
+    var afterRestart = new ArtworkProgressReporter(requests, itemResults, clock);
 
     assertThat(afterRestart.reportProgress())
         .filteredOn(report -> report.priority() == ArtworkPriority.PRIMARY)
@@ -353,7 +353,7 @@ class ArtworkStepsRunnerIT extends AbstractWireMockIntegrationTest {
         .isEqualTo(
             ArtworkProgressReport.builder()
                 .priority(ArtworkPriority.PRIMARY)
-                .counts(ArtworkCounts.builder().saved(1).failed(1).build())
+                .counts(FinishedImageCounts.builder().saved(1).failed(1).build())
                 .pending(1)
                 .elapsed(Duration.between(requestedAt, clock.instant()))
                 .build());

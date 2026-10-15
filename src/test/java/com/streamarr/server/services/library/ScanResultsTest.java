@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.task.RequestedProbeResult;
-import com.streamarr.server.services.ArtworkCounts;
 import com.streamarr.server.services.ArtworkRunSummary;
+import com.streamarr.server.services.FinishedImageCounts;
 import java.time.Duration;
 import java.util.EnumMap;
 import java.util.Map;
@@ -27,7 +27,12 @@ class ScanResultsTest {
             .files(Map.of(MediaFileStatus.UNMATCHED, 2L, MediaFileStatus.MATCHED, 3L))
             .artwork(
                 artwork(
-                    ArtworkCounts.builder().saved(4).skipped(5).unavailable(6).failed(7).build(),
+                    FinishedImageCounts.builder()
+                        .saved(4)
+                        .skipped(5)
+                        .unavailable(6)
+                        .failed(7)
+                        .build(),
                     Duration.ofMillis(2500)))
             .probes(
                 probes(
@@ -64,7 +69,12 @@ class ScanResultsTest {
             .files(Map.of(MediaFileStatus.MATCHED, 1L))
             .artwork(
                 artwork(
-                    ArtworkCounts.builder().saved(1).skipped(1).unavailable(1).failed(1).build(),
+                    FinishedImageCounts.builder()
+                        .saved(1)
+                        .skipped(1)
+                        .unavailable(1)
+                        .failed(1)
+                        .build(),
                     Duration.ofSeconds(1)))
             .probes(probes(probeCounts, Duration.ofSeconds(1)))
             .backgroundImagesPending(1)
@@ -85,7 +95,7 @@ class ScanResultsTest {
     var results =
         ScanResults.builder()
             .files(Map.of())
-            .artwork(artwork(ArtworkCounts.builder().build(), Duration.ZERO))
+            .artwork(artwork(FinishedImageCounts.builder().build(), Duration.ZERO))
             .probes(probes(Map.of(), Duration.ZERO))
             .backgroundImagesPending(0)
             .build();
@@ -108,7 +118,7 @@ class ScanResultsTest {
     assertThat(summary.describe()).containsPattern("\\b7\\b");
   }
 
-  private static ArtworkRunSummary artwork(ArtworkCounts counts, Duration elapsed) {
+  private static ArtworkRunSummary artwork(FinishedImageCounts counts, Duration elapsed) {
     return ArtworkRunSummary.builder()
         .description("scan of Movies")
         .counts(counts)

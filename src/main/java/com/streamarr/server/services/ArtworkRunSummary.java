@@ -10,4 +10,4 @@ import lombok.NonNull;
  */
 @Builder
 public record ArtworkRunSummary(
-    @NonNull String description, @NonNull ArtworkCounts counts, @NonNull Duration elapsed) {}
+    @NonNull String description, @NonNull FinishedImageCounts counts, @NonNull Duration elapsed) {}

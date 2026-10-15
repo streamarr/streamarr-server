@@ -9,7 +9,7 @@ import com.streamarr.server.fakes.FakeArtworkScheduling;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
-import com.streamarr.server.services.ArtworkProgress;
+import com.streamarr.server.services.ArtworkProgressReporter;
 import com.streamarr.server.services.ArtworkRequestService;
 import com.streamarr.server.services.ArtworkRun;
 import com.streamarr.server.services.ArtworkRunSummary;
@@ -40,7 +40,7 @@ public record ArtworkFixture(
     ArtworkRequestService artworkRequestService,
     ArtworkRunWaiter artworkRunWaiter,
     ArtworkStepsRunner stepsRunner,
-    ArtworkProgress progress,
+    ArtworkProgressReporter progressReporter,
     FakeArtworkScheduling scheduling,
     FakeArtworkRequestRepository requests,
     FakeItemResultRepository itemResults,
@@ -99,7 +99,7 @@ public record ArtworkFixture(
             .properties(ArtworkProperties.builder().resultCheckInterval(CHECK_INTERVAL).build())
             .build(),
         stepsRunner,
-        new ArtworkProgress(requests, results, artworkClock),
+        new ArtworkProgressReporter(requests, results, artworkClock),
         scheduling,
         requests,
         results,

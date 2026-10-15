@@ -45,7 +45,7 @@ class ArtworkSchedulerTest {
   @Test
   @DisplayName("Should reject artwork schedulers when the primary scheduler is missing")
   void shouldRejectArtworkSchedulersWhenThePrimarySchedulerIsMissing() {
-    var withoutPrimary = ArtworkSchedulers.builder();
+    var withoutPrimary = ArtworkPrioritySchedulers.builder();
 
     assertThatNullPointerException()
         .isThrownBy(withoutPrimary::build)

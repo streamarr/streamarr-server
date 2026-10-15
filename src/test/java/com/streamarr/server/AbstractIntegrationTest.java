@@ -2,7 +2,7 @@ package com.streamarr.server;
 
 import com.streamarr.server.support.AuthTestSupportConfig;
 import com.streamarr.server.support.PausedContextConnectionRelease;
-import com.streamarr.server.support.RunningArtworkSchedulersConfiguration;
+import com.streamarr.server.support.RunningArtworkPrioritySchedulersConfiguration;
 import com.streamarr.server.support.TestFixtureActorExtension;
 import com.streamarr.server.support.TestFixtureAuditActorConfiguration;
 import com.streamarr.server.support.TestManagedTransactionFixtureActorListener;
@@ -26,7 +26,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @Import({
   AuthTestSupportConfig.class,
   PausedContextConnectionRelease.class,
-  RunningArtworkSchedulersConfiguration.class,
+  RunningArtworkPrioritySchedulersConfiguration.class,
   TestFixtureAuditActorConfiguration.class,
   UnstartedSchedulerConfiguration.class
 })

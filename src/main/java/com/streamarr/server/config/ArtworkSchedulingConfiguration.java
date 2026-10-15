@@ -25,7 +25,7 @@ public class ArtworkSchedulingConfiguration {
 
   @Bean
   @SuppressWarnings("java:S107") // Spring injects each collaborator by type.
-  public ArtworkSchedulers artworkSchedulers(
+  public ArtworkPrioritySchedulers artworkPrioritySchedulers(
       DbSchedulerCustomizer customizer,
       DataSource dataSource,
       PlatformTransactionManager transactionManager,
@@ -46,7 +46,7 @@ public class ArtworkSchedulingConfiguration {
                 .requests(requests)
                 .clock(clock)
                 .listeners(List.of());
-    return ArtworkSchedulers.builder()
+    return ArtworkPrioritySchedulers.builder()
         .primary(
             newScheduler
                 .get()

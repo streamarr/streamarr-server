@@ -12,7 +12,7 @@ import lombok.NonNull;
 @Builder
 public record ArtworkProgressReport(
     @NonNull ArtworkPriority priority,
-    @NonNull ArtworkCounts counts,
+    @NonNull FinishedImageCounts counts,
     long pending,
     @NonNull Duration elapsed) {
 

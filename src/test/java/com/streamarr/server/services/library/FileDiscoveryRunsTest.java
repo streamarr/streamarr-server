@@ -26,9 +26,9 @@ import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
-import com.streamarr.server.services.ArtworkCounts;
 import com.streamarr.server.services.ArtworkRequestService;
 import com.streamarr.server.services.ArtworkSources;
+import com.streamarr.server.services.FinishedImageCounts;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
@@ -98,7 +98,7 @@ class FileDiscoveryRunsTest {
 
     assertThat(results.files()).isEqualTo(Map.of(MediaFileStatus.MATCHED, 1L));
     assertThat(results.artwork().counts())
-        .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+        .isEqualTo(FinishedImageCounts.builder().saved(1).unavailable(1).build());
     assertThat(results.probes().count(RequestedProbeResult.READY)).isOne();
     assertThat(results.backgroundImagesPending()).isOne();
   }
@@ -132,7 +132,7 @@ class FileDiscoveryRunsTest {
       retried.scheduling().runPendingSteps();
 
       assertThat(scan.await(RESULTS_BOUND).artwork().counts())
-          .isEqualTo(ArtworkCounts.builder().saved(1).failed(1).build());
+          .isEqualTo(FinishedImageCounts.builder().saved(1).failed(1).build());
     }
   }
 

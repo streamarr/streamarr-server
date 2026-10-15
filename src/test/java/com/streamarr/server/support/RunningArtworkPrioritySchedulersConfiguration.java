@@ -1,6 +1,6 @@
 package com.streamarr.server.support;
 
-import com.streamarr.server.config.ArtworkSchedulers;
+import com.streamarr.server.config.ArtworkPrioritySchedulers;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.context.annotation.Bean;
@@ -12,22 +12,23 @@ import org.springframework.context.annotation.Bean;
  * A paused context stops the schedulers and a resumed one starts them again.
  */
 @TestConfiguration(proxyBeanMethods = false)
-public class RunningArtworkSchedulersConfiguration {
+public class RunningArtworkPrioritySchedulersConfiguration {
 
   @Bean
-  SmartLifecycle runningArtworkSchedulers(ArtworkSchedulers artworkSchedulers) {
+  SmartLifecycle runningArtworkPrioritySchedulers(
+      ArtworkPrioritySchedulers artworkPrioritySchedulers) {
     return new SmartLifecycle() {
       private volatile boolean running;
 
       @Override
       public void start() {
-        artworkSchedulers.start();
+        artworkPrioritySchedulers.start();
         running = true;
       }
 
       @Override
       public void stop() {
-        artworkSchedulers.stop();
+        artworkPrioritySchedulers.stop();
         running = false;
       }
 

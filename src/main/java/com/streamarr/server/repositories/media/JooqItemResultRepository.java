@@ -5,7 +5,7 @@ import static com.streamarr.server.repositories.media.MediaEnumMapping.toDomain;
 import static com.streamarr.server.repositories.media.MediaEnumMapping.toJooq;
 
 import com.streamarr.server.config.ArtworkProperties;
-import com.streamarr.server.domain.media.ArtworkOutcomeTally;
+import com.streamarr.server.domain.media.ArtworkResultCounts;
 import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ItemOutcome;
@@ -75,7 +75,7 @@ public class JooqItemResultRepository implements ItemResultRepository {
 
   @Override
   @Transactional(readOnly = true)
-  public Map<ImageEntityType, ArtworkOutcomeTally> countArtworkOutcomesRecordedSince(
+  public Map<ImageEntityType, ArtworkResultCounts> countArtworkOutcomesRecordedSince(
       Instant since) {
     var counts = new EnumMap<ImageEntityType, Map<ItemResultOutcome, Long>>(ImageEntityType.class);
     dsl.select(ITEM_RESULT.ITEM_TYPE, ITEM_RESULT.OUTCOME, DSL.count())
@@ -89,16 +89,16 @@ public class JooqItemResultRepository implements ItemResultRepository {
                     .computeIfAbsent(
                         toDomain(row.value1()), _ -> new EnumMap<>(ItemResultOutcome.class))
                     .put(row.value2(), row.value3().longValue()));
-    var tallies = new EnumMap<ImageEntityType, ArtworkOutcomeTally>(ImageEntityType.class);
+    var resultCounts = new EnumMap<ImageEntityType, ArtworkResultCounts>(ImageEntityType.class);
     counts.forEach(
         (itemType, byOutcome) ->
-            tallies.put(
+            resultCounts.put(
                 itemType,
-                new ArtworkOutcomeTally(
+                new ArtworkResultCounts(
                     byOutcome.getOrDefault(ItemResultOutcome.SUCCEEDED, 0L),
                     byOutcome.getOrDefault(ItemResultOutcome.UNAVAILABLE, 0L),
                     byOutcome.getOrDefault(ItemResultOutcome.FAILED, 0L))));
-    return tallies;
+    return resultCounts;
   }
 
   // A result replaces one of an older generation. Within one generation it replaces only an

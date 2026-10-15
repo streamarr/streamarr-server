@@ -14,7 +14,7 @@ import org.springframework.context.SmartLifecycle;
  * schedulers start with the application only while db-scheduler is enabled.
  */
 @Builder
-public class ArtworkSchedulers implements ArtworkScheduling, SmartLifecycle {
+public class ArtworkPrioritySchedulers implements ArtworkScheduling, SmartLifecycle {
 
   @NonNull private final ArtworkScheduler primary;
   @NonNull private final ArtworkScheduler background;

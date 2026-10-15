@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
-import com.streamarr.server.config.ArtworkSchedulers;
+import com.streamarr.server.config.ArtworkPrioritySchedulers;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
@@ -68,7 +68,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   @Autowired private AuditColumnFixtures auditColumns;
   @Autowired private ProbeExecution probeExecution;
   @Autowired private ApplicationContext applicationContext;
-  @Autowired private ArtworkSchedulers artworkSchedulers;
+  @Autowired private ArtworkPrioritySchedulers artworkPrioritySchedulers;
 
   @TempDir Path tempDir;
 
@@ -235,7 +235,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     stubTmdbMovieMetadata("27205", "Inception");
     startProbeScheduler();
     var rejectedAttempt = new CompletableFuture<ExecutionComplete>();
-    artworkSchedulers.stop();
+    artworkPrioritySchedulers.stop();
     var artworkScheduler =
         ArtworkSchedulerStarter.fromContext(applicationContext)
             .start(ArtworkPriority.PRIMARY, completedInto(rejectedAttempt));
@@ -253,7 +253,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     } finally {
       acceptItemErrors();
       artworkScheduler.stop();
-      artworkSchedulers.start();
+      artworkPrioritySchedulers.start();
     }
 
     assertThat(libraryRepository.findById(library.getId()).orElseThrow().getStatus())

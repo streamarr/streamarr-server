@@ -1,17 +1,17 @@
 package com.streamarr.server.services;
 
-import com.streamarr.server.domain.media.ArtworkOutcomeTally;
+import com.streamarr.server.domain.media.ArtworkResultCounts;
 import com.streamarr.server.domain.media.ItemOutcome;
 import lombok.Builder;
 
 /** Finished source images by result; resized variants of one source image count once. */
 @Builder(toBuilder = true)
-public record ArtworkCounts(int saved, int skipped, int unavailable, int failed) {
+public record FinishedImageCounts(int saved, int skipped, int unavailable, int failed) {
 
-  static final ArtworkCounts NONE = ArtworkCounts.builder().build();
+  static final FinishedImageCounts NONE = FinishedImageCounts.builder().build();
 
   /** Counts a recorded artwork result. A stored image that a step kept counts as saved. */
-  ArtworkCounts plus(ItemOutcome outcome) {
+  FinishedImageCounts plus(ItemOutcome outcome) {
     return switch (outcome) {
       case ItemOutcome.Succeeded _ -> toBuilder().saved(saved + 1).build();
       case ItemOutcome.Unavailable _ -> toBuilder().unavailable(unavailable + 1).build();
@@ -19,17 +19,17 @@ public record ArtworkCounts(int saved, int skipped, int unavailable, int failed)
     };
   }
 
-  /** Counts recorded artwork results; a succeeded result counts as saved. */
-  ArtworkCounts plus(ArtworkOutcomeTally tally) {
+  /** Counts recorded artwork results. */
+  FinishedImageCounts plus(ArtworkResultCounts resultCounts) {
     return toBuilder()
-        .saved(saved + Math.toIntExact(tally.succeeded()))
-        .unavailable(unavailable + Math.toIntExact(tally.unavailable()))
-        .failed(failed + Math.toIntExact(tally.failed()))
+        .saved(saved + Math.toIntExact(resultCounts.saved()))
+        .unavailable(unavailable + Math.toIntExact(resultCounts.unavailable()))
+        .failed(failed + Math.toIntExact(resultCounts.failed()))
         .build();
   }
 
   /** Counts stored images that a run kept without requesting them again. */
-  ArtworkCounts plusSkipped(int kept) {
+  FinishedImageCounts plusSkipped(int kept) {
     return toBuilder().skipped(skipped + kept).build();
   }
 
