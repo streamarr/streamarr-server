@@ -9,6 +9,7 @@ import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -47,7 +48,8 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final Map<ExecutionTargetId, Map<String, WorkerVerifiedEncoder>> encodersByTarget =
       new ConcurrentHashMap<>();
   private final AtomicLong livenessChecks = new AtomicLong();
-  private final HeldSegmentRequests heldRequests = new HeldSegmentRequests();
+  private final HeldSegmentRequests heldRequests =
+      new HeldSegmentRequests(new SimpleMeterRegistry());
   private final Object observationMonitor = new Object();
   private int availableSlots = TranscodeExecutor.UNBOUNDED_SLOTS;
   private final Map<String, Integer> encodeSlotsByVideoCodecFamily =

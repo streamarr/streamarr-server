@@ -8,7 +8,7 @@ final class LiveWorkerConnectionRegistryFixture {
   private LiveWorkerConnectionRegistryFixture() {}
 
   static LiveWorkerConnectionRegistry defaultRegistry() {
-    return registryWaking(new HeldSegmentRequests());
+    return registryWaking(new HeldSegmentRequests(new SimpleMeterRegistry()));
   }
 
   static LiveWorkerConnectionRegistry registryWaking(HeldSegmentRequests heldRequests) {

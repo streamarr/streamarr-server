@@ -31,7 +31,7 @@ public final class WorkerSessionServer implements AutoCloseable {
   private static final int PERMITTED_CLIENT_KEEPALIVE_SECONDS = 10;
   private final WorkerSessionServerConfiguration configuration;
   private final SegmentStore segmentStore;
-  private final HeldSegmentRequests heldSegmentRequests = new HeldSegmentRequests();
+  private final HeldSegmentRequests heldSegmentRequests;
   private final LiveWorkerConnectionRegistry workerConnections;
   private final WorkerSessionServerRuntime runtime = new WorkerSessionServerRuntime(log);
   private boolean started;
@@ -41,6 +41,7 @@ public final class WorkerSessionServer implements AutoCloseable {
       @NonNull SegmentStore segmentStore,
       @NonNull MeterRegistry meterRegistry) {
     this.configuration = configuration;
+    heldSegmentRequests = new HeldSegmentRequests(meterRegistry);
     workerConnections =
         new LiveWorkerConnectionRegistry(configuration, meterRegistry, heldSegmentRequests);
     this.segmentStore = segmentStore;

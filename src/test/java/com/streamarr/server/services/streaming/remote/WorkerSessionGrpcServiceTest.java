@@ -788,7 +788,8 @@ class WorkerSessionGrpcServiceTest {
     var workerId = UUID.randomUUID();
     var sourceNamespaceId = UUID.randomUUID();
     var registry =
-        new LiveWorkerConnectionRegistry(configuration, meterRegistry, new HeldSegmentRequests());
+        new LiveWorkerConnectionRegistry(
+            configuration, meterRegistry, new HeldSegmentRequests(new SimpleMeterRegistry()));
     var segmentStore = new FakeSegmentStore();
     var service = new WorkerSessionGrpcService(registry, segmentStore);
     var responses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();

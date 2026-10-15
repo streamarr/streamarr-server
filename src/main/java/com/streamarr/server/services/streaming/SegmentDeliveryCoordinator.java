@@ -30,16 +30,18 @@ public class SegmentDeliveryCoordinator {
 
     producerLifecycle.prepareRequestedVariant(sessionId, variantLabel, segmentName);
     while (true) {
-      var wake = heldRequests.nextWake(sessionId, variantLabel);
-      var outcome = deliverOnce(sessionId, variantLabel, segmentName);
-      if (outcome != null) {
-        return outcome;
-      }
+      try (var wake = heldRequests.nextWake(sessionId, variantLabel)) {
+        var outcome = deliverOnce(sessionId, variantLabel, segmentName);
+        if (outcome != null) {
+          return outcome;
+        }
 
-      // A stored segment, an ended job attempt or a destroyed session fires the wake. Only a stall
-      // has no event, so the wait ends at the stall deadline that recovery measures against.
-      if (!tryAwait(wake, producerLifecycle.timeUntilStall(sessionId, variantLabel))) {
-        return new SegmentDelivery.Cancelled();
+        // A stored segment, an ended job attempt or a destroyed session fires the wake. Only a
+        // stall has no event, so the wait ends at the stall deadline that recovery measures
+        // against.
+        if (!tryAwait(wake, producerLifecycle.timeUntilStall(sessionId, variantLabel))) {
+          return new SegmentDelivery.Cancelled();
+        }
       }
     }
   }

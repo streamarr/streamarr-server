@@ -19,6 +19,7 @@ import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture.StreamingRig;
 import com.streamarr.server.services.concurrency.MutexFactory;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -173,6 +174,34 @@ class SegmentDeliveryCoordinatorTest {
         coordinator.deliver(UUID.randomUUID(), StreamSession.defaultVariant(), "segment0.m4s");
 
     assertThat(delivery).isInstanceOf(SegmentDelivery.SessionEnded.class);
+  }
+
+  @Test
+  @DisplayName("Should hold no request when a request reaches a destroyed session")
+  void shouldHoldNoRequestWhenARequestReachesADestroyedSession() {
+    var meterRegistry = new SimpleMeterRegistry();
+    var rig =
+        StreamingRigFixture.streamingRigBuilder()
+            .transcodeExecutor(transcodeExecutor)
+            .segmentStore(segmentStore)
+            .properties(properties)
+            .runtimeRegistry(runtimeRegistry)
+            .clock(clock)
+            .heldRequests(new HeldSegmentRequests(meterRegistry))
+            .build();
+    var session = defaultSessionBuilder().build();
+    runtimeRegistry.save(session);
+    rig.lifecycle().startAll(session, 0);
+    runtimeRegistry.removeById(session.getSessionId());
+    rig.coordinator().forgetSession(session.getSessionId());
+
+    var delivery =
+        rig.coordinator()
+            .deliver(session.getSessionId(), StreamSession.defaultVariant(), "segment1.m4s");
+
+    assertThat(delivery).isInstanceOf(SegmentDelivery.SessionEnded.class);
+    assertThat(meterRegistry.get("streamarr.streaming.held_segment_requests").gauge().value())
+        .isZero();
   }
 
   @Test

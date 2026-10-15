@@ -86,6 +86,7 @@ class HeldSegmentRequestConcurrencyIT {
 
   @TempDir Path tempDir;
 
+  private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
   private PausingSegmentStore segmentStore;
   private WorkerSessionServer server;
   private LoopbackVariantWorker worker;
@@ -99,8 +100,7 @@ class HeldSegmentRequestConcurrencyIT {
   void setUp() throws Exception {
     segmentStore = new PausingSegmentStore(new LocalSegmentStore(tempDir.resolve("segments")));
     server =
-        new WorkerSessionServer(
-            serverConfigurationBuilder().build(), segmentStore, new SimpleMeterRegistry());
+        new WorkerSessionServer(serverConfigurationBuilder().build(), segmentStore, meterRegistry);
     server.start();
     worker = LoopbackVariantWorker.register(server.port());
     transcodeExecutor =
@@ -161,6 +161,30 @@ class HeldSegmentRequestConcurrencyIT {
       assertThat(delivery.get(BOUND.toSeconds(), TimeUnit.SECONDS))
           .isEqualTo(new SegmentDelivery.Ready(uploaded));
     }
+  }
+
+  @Test
+  @DisplayName("Should hold no request when destroying the session ends every held request")
+  void shouldHoldNoRequestWhenDestroyingTheSessionEndsEveryHeldRequest() throws Exception {
+    var session = startedSession();
+    worker.nextJob();
+
+    var deliveries = new ArrayList<Future<SegmentDelivery>>();
+    for (var request = 0; request < HELD_REQUEST_COUNT; request++) {
+      deliveries.add(deliverAsync(session));
+    }
+
+    transcodeExecutor.awaitLooks(HELD_REQUEST_COUNT);
+
+    destroy(session.getSessionId());
+
+    for (var delivery : deliveries) {
+      assertThat(delivery.get(BOUND.toSeconds(), TimeUnit.SECONDS))
+          .isEqualTo(new SegmentDelivery.SessionEnded());
+    }
+
+    assertThat(meterRegistry.get("streamarr.streaming.held_segment_requests").gauge().value())
+        .isZero();
   }
 
   @ParameterizedTest(name = "{0}")
