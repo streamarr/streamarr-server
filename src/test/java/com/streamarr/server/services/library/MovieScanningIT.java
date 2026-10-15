@@ -368,14 +368,9 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
         .overview("A thief who steals corporate secrets through dream-sharing technology.");
   }
 
-  @Builder
-  private record TmdbMovieStub(String tmdbId, String title, int genreId, String overview) {}
-
   private void stubTmdbMovieMetadata(TmdbMovieStub movie) {
-    var tmdbId = movie.tmdbId();
-    var title = movie.title();
     wireMock.stubFor(
-        get(urlPathEqualTo("/movie/" + tmdbId))
+        get(urlPathEqualTo("/movie/" + movie.tmdbId()))
             .withQueryParam("append_to_response", equalTo("credits,release_dates"))
             .willReturn(
                 aResponse()
@@ -398,6 +393,14 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
                         }
                         """
                             .formatted(
-                                tmdbId, title, title, movie.overview(), movie.genreId(), tmdbId))));
+                                movie.tmdbId(),
+                                movie.title(),
+                                movie.title(),
+                                movie.overview(),
+                                movie.genreId(),
+                                movie.tmdbId()))));
   }
+
+  @Builder
+  private record TmdbMovieStub(String tmdbId, String title, int genreId, String overview) {}
 }

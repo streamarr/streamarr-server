@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.audit.AuditActor;
 import com.streamarr.server.services.audit.SystemWork;
-import java.util.List;
+import com.streamarr.server.support.security.AnonymousRequestAuthentication;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -13,9 +13,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.TestingAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 @Tag("UnitTest")
@@ -111,9 +109,6 @@ class SecurityAuditActorSourceTest {
   }
 
   private static void signInAnonymously() {
-    SecurityContextHolder.getContext()
-        .setAuthentication(
-            new AnonymousAuthenticationToken(
-                "key", "anonymousUser", List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS"))));
+    SecurityContextHolder.getContext().setAuthentication(AnonymousRequestAuthentication.token());
   }
 }

@@ -8,15 +8,12 @@ import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
 import org.springframework.stereotype.Repository;
 
-/**
- * Passes the actor to the audit trigger through the transaction-local setting {@value
- * #ACTOR_SETTING}. The trigger stores the setting's account id, and stores an empty actor for
- * {@value #REQUEST_WITHOUT_ACCOUNT}.
- */
 @Repository
 @RequiredArgsConstructor
-public class PostgresTransactionAuditActor implements TransactionAuditActor {
+public class PostgresTransactionAuditActorBinder implements TransactionAuditActorBinder {
 
+  // fill_audit_columns (V079) reads this transaction-local setting. It stores the setting's
+  // account id, and stores an empty actor for REQUEST_WITHOUT_ACCOUNT.
   static final String ACTOR_SETTING = "streamarr.actor_id";
   static final String REQUEST_WITHOUT_ACCOUNT = "request-without-account";
 

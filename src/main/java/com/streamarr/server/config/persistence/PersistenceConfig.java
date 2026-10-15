@@ -1,6 +1,6 @@
 package com.streamarr.server.config.persistence;
 
-import com.streamarr.server.repositories.audit.TransactionAuditActor;
+import com.streamarr.server.repositories.audit.TransactionAuditActorBinder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
@@ -17,7 +17,7 @@ public class PersistenceConfig {
   // jOOQ binding depends on the transaction manager.
   @Bean
   public AuditActorTransactionListener auditActorTransactionListener(
-      AuditActorSource auditActorSource, @Lazy TransactionAuditActor transactionAuditActor) {
-    return new AuditActorTransactionListener(auditActorSource, transactionAuditActor);
+      AuditActorSource auditActorSource, @Lazy TransactionAuditActorBinder auditActorBinder) {
+    return new AuditActorTransactionListener(auditActorSource, auditActorBinder);
   }
 }

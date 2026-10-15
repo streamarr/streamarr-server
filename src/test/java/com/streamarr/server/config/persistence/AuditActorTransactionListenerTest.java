@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 import com.streamarr.server.domain.audit.AuditActor;
-import com.streamarr.server.repositories.audit.TransactionAuditActor;
+import com.streamarr.server.repositories.audit.TransactionAuditActorBinder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -24,7 +24,8 @@ import org.springframework.transaction.support.DefaultTransactionStatus;
 @DisplayName("Audit Actor Transaction Listener Tests")
 class AuditActorTransactionListenerTest {
 
-  private final FakeTransactionAuditActor transactionAuditActor = new FakeTransactionAuditActor();
+  private final FakeTransactionAuditActorBinder auditActorBinder =
+      new FakeTransactionAuditActorBinder();
 
   @Test
   @DisplayName("Should bind the resolved actor when a read-write transaction begins")
@@ -34,7 +35,7 @@ class AuditActorTransactionListenerTest {
 
     listenerResolving(actor).afterBegin(transaction, null);
 
-    assertThat(transactionAuditActor.boundActors).containsExactly(actor);
+    assertThat(auditActorBinder.boundActors).containsExactly(actor);
     assertThat(transaction.isRollbackOnly()).isFalse();
   }
 
@@ -43,7 +44,7 @@ class AuditActorTransactionListenerTest {
   void shouldBindNothingWhenNoActorResolves() {
     listenerResolvingNoActor().afterBegin(readWriteTransaction(), null);
 
-    assertThat(transactionAuditActor.boundActors).isEmpty();
+    assertThat(auditActorBinder.boundActors).isEmpty();
   }
 
   @Test
@@ -51,7 +52,7 @@ class AuditActorTransactionListenerTest {
   void shouldBindNothingWhenTheTransactionIsReadOnly() {
     listenerResolving(new AuditActor.System()).afterBegin(readOnlyTransaction(), null);
 
-    assertThat(transactionAuditActor.boundActors).isEmpty();
+    assertThat(auditActorBinder.boundActors).isEmpty();
   }
 
   @Test
@@ -61,7 +62,7 @@ class AuditActorTransactionListenerTest {
         .afterBegin(
             readWriteTransaction(), new CannotCreateTransactionException("connection refused"));
 
-    assertThat(transactionAuditActor.boundActors).isEmpty();
+    assertThat(auditActorBinder.boundActors).isEmpty();
   }
 
   @ParameterizedTest
@@ -69,13 +70,13 @@ class AuditActorTransactionListenerTest {
   @DisplayName("Should leave the transaction to the audit trigger when binding the actor fails")
   void shouldLeaveTheTransactionToTheAuditTriggerWhenBindingTheActorFails(
       RuntimeException failure) {
-    transactionAuditActor.failure = failure;
+    auditActorBinder.failure = failure;
     var transaction = readWriteTransaction();
     var listener = listenerResolving(new AuditActor.System());
 
     assertThatCode(() -> listener.afterBegin(transaction, null)).doesNotThrowAnyException();
 
-    assertThat(transactionAuditActor.boundActors).isEmpty();
+    assertThat(auditActorBinder.boundActors).isEmpty();
     assertThat(transaction.isRollbackOnly()).isFalse();
   }
 
@@ -87,11 +88,11 @@ class AuditActorTransactionListenerTest {
   }
 
   private AuditActorTransactionListener listenerResolving(AuditActor actor) {
-    return new AuditActorTransactionListener(() -> Optional.of(actor), transactionAuditActor);
+    return new AuditActorTransactionListener(() -> Optional.of(actor), auditActorBinder);
   }
 
   private AuditActorTransactionListener listenerResolvingNoActor() {
-    return new AuditActorTransactionListener(Optional::empty, transactionAuditActor);
+    return new AuditActorTransactionListener(Optional::empty, auditActorBinder);
   }
 
   private static DefaultTransactionStatus readWriteTransaction() {
@@ -104,7 +105,8 @@ class AuditActorTransactionListenerTest {
         "audit-actor-test", new Object(), true, true, false, true, false, null);
   }
 
-  private static final class FakeTransactionAuditActor implements TransactionAuditActor {
+  private static final class FakeTransactionAuditActorBinder
+      implements TransactionAuditActorBinder {
 
     private final List<AuditActor> boundActors = new ArrayList<>();
     private RuntimeException failure;

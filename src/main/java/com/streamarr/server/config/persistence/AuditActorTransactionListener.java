@@ -1,7 +1,7 @@
 package com.streamarr.server.config.persistence;
 
 import com.streamarr.server.domain.audit.AuditActor;
-import com.streamarr.server.repositories.audit.TransactionAuditActor;
+import com.streamarr.server.repositories.audit.TransactionAuditActorBinder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.Nullable;
@@ -17,7 +17,7 @@ import org.springframework.transaction.TransactionExecutionListener;
 public class AuditActorTransactionListener implements TransactionExecutionListener {
 
   private final AuditActorSource actorSource;
-  private final TransactionAuditActor transactionAuditActor;
+  private final TransactionAuditActorBinder auditActorBinder;
 
   @Override
   public void afterBegin(TransactionExecution transaction, @Nullable Throwable beginFailure) {
@@ -33,7 +33,7 @@ public class AuditActorTransactionListener implements TransactionExecutionListen
   // its first audited write.
   private void bind(AuditActor actor) {
     try {
-      transactionAuditActor.bindToCurrentTransaction(actor);
+      auditActorBinder.bindToCurrentTransaction(actor);
     } catch (RuntimeException failure) {
       log.error(
           "Could not name the audit actor of a transaction; its audited writes will fail.",

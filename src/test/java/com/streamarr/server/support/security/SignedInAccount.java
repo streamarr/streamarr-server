@@ -1,12 +1,8 @@
 package com.streamarr.server.support.security;
 
-import com.streamarr.server.config.security.StreamarrAuthenticationToken;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
-import com.streamarr.server.services.auth.TokenScope;
-import java.util.List;
 import java.util.UUID;
 import java.util.function.Supplier;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
@@ -27,12 +23,8 @@ public final class SignedInAccount {
 
   public static <T> T callSignedInAs(UUID accountId, Supplier<T> work) {
     var previous = SecurityContextHolder.getContext();
-    var context = SecurityContextHolder.createEmptyContext();
     var identity = AuthenticatedIdentityFixture.accountScopedBuilder().accountId(accountId).build();
-    context.setAuthentication(
-        new StreamarrAuthenticationToken(
-            identity, null, List.of(new SimpleGrantedAuthority(TokenScope.ACCOUNT.authority()))));
-    SecurityContextHolder.setContext(context);
+    SecurityContextHolder.setContext(StreamarrSecurityContextFactory.contextFor(identity));
     try {
       return work.get();
     } finally {

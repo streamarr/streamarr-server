@@ -11,7 +11,7 @@ import com.streamarr.server.config.persistence.AuditActorTransactionListener;
 import com.streamarr.server.config.persistence.SecurityAuditActorSource;
 import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.services.audit.SystemWork;
-import java.util.List;
+import com.streamarr.server.support.security.AnonymousRequestAuthentication;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.sql.DataSource;
@@ -23,8 +23,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.support.JdbcTransactionManager;
-import org.springframework.security.authentication.AnonymousAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -36,7 +34,7 @@ class TransactionAuditActorBindingIT extends AbstractIntegrationTest {
   @Autowired private DSLContext dsl;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private PlatformTransactionManager transactionManager;
-  @Autowired private TransactionAuditActor transactionAuditActor;
+  @Autowired private TransactionAuditActorBinder auditActorBinder;
   @Autowired private DataSource dataSource;
 
   @AfterEach
@@ -67,10 +65,7 @@ class TransactionAuditActorBindingIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should expose the request-without-account marker when an anonymous request begins")
   void shouldExposeTheRequestWithoutAccountMarkerWhenAnAnonymousRequestBegins() {
-    SecurityContextHolder.getContext()
-        .setAuthentication(
-            new AnonymousAuthenticationToken(
-                "key", "anonymousUser", List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS"))));
+    SecurityContextHolder.getContext().setAuthentication(AnonymousRequestAuthentication.token());
 
     assertThat(actorSettingIn(transactionTemplate)).isEqualTo("request-without-account");
   }
@@ -135,7 +130,7 @@ class TransactionAuditActorBindingIT extends AbstractIntegrationTest {
   private TransactionTemplate transactionsResolvingTheProductionActor() {
     var manager = new JdbcTransactionManager(dataSource);
     manager.addListener(
-        new AuditActorTransactionListener(new SecurityAuditActorSource(), transactionAuditActor));
+        new AuditActorTransactionListener(new SecurityAuditActorSource(), auditActorBinder));
     return new TransactionTemplate(manager);
   }
 
