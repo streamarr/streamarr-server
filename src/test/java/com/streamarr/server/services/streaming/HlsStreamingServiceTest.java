@@ -546,7 +546,8 @@ class HlsStreamingServiceTest {
   @Test
   @DisplayName(
       "Should encode AV1 with the whole ladder when one AV1 encode slot is free and workers that encode only H.264 have more")
-  void shouldEncodeAv1WithTheWholeLadderWhenOneAv1EncodeSlotIsFree() {
+  void
+      shouldEncodeAv1WithTheWholeLadderWhenOneAv1EncodeSlotIsFreeAndWorkersThatEncodeOnlyH264HaveMore() {
     transcodeExecutor.setAvailableSlots(4);
     transcodeExecutor.setEncodeSlots(Map.of("h264", 3, "av1", 1));
     probeResults.setDefaultProbe(
@@ -1043,7 +1044,8 @@ class HlsStreamingServiceTest {
   @Test
   @DisplayName(
       "Should list the variant nearest 2000 kb/s first and the others from highest to lowest when an Auto stream session encodes")
-  void shouldListTheVariantNearest2000KbpsFirstWhenAnAutoStreamSessionEncodes() {
+  void
+      shouldListTheVariantNearest2000KbpsFirstAndTheOthersFromHighestToLowestWhenAnAutoStreamSessionEncodes() {
     probeResults.setDefaultProbe(
         defaultProbeBuilder()
             .framerate(OptionalDouble.of(23.976))
@@ -1259,7 +1261,8 @@ class HlsStreamingServiceTest {
   @Test
   @DisplayName(
       "Should count a variant that a request started against the transcode limit when another stream session is created")
-  void shouldCountAVariantThatARequestStartedAgainstTheTranscodeLimitWhenAnotherSessionIsCreated() {
+  void
+      shouldCountAVariantThatARequestStartedAgainstTheTranscodeLimitWhenAnotherStreamSessionIsCreated() {
     probeResults.setDefaultProbe(
         defaultProbeBuilder()
             .framerate(OptionalDouble.of(23.976))

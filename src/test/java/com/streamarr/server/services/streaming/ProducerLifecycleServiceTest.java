@@ -796,7 +796,7 @@ class ProducerLifecycleServiceTest {
   @DisplayName(
       "Should pin only the first-listed variant to the encoder backend of its first job attempt when a stream session starts")
   void
-      shouldPinOnlyTheFirstListedVariantToTheEncoderBackendOfItsFirstJobAttemptWhenSessionStarts() {
+      shouldPinOnlyTheFirstListedVariantToTheEncoderBackendOfItsFirstJobAttemptWhenAStreamSessionStarts() {
     var session = sessionPinnedToLibx264(abrSessionBuilder());
 
     assertThat(session.getPinnedEncoder("1080p")).contains(libx264());

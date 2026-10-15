@@ -357,7 +357,7 @@ class SegmentDeliveryCoordinatorTest {
 
   @Test
   @DisplayName("Should replace a dead variant with its own geometry when delivering a segment")
-  void shouldReplaceADeadVariantWithItsOwnGeometryWhenDeliveringSegment() throws Exception {
+  void shouldReplaceADeadVariantWithItsOwnGeometryWhenDeliveringASegment() throws Exception {
     var session = startedLadderSession();
     transcodeExecutor.markDead(session.getSessionId(), "480p");
     var startsBefore = transcodeExecutor.getStartedRequests().size();
@@ -968,7 +968,7 @@ class SegmentDeliveryCoordinatorTest {
   @DisplayName(
       "Should start the variant at the current segment and stop no job attempt when the initialization segment of a variant with no job attempt is requested")
   void
-      shouldStartTheVariantAtTheCurrentSegmentWhenTheInitializationSegmentOfAVariantWithNoJobAttemptIsRequested()
+      shouldStartTheVariantAtTheCurrentSegmentAndStopNoJobAttemptWhenTheInitializationSegmentOfAVariantWithNoJobAttemptIsRequested()
           throws Exception {
     var session = startedLadderSession();
     var sessionId = session.getSessionId();
@@ -1033,7 +1033,7 @@ class SegmentDeliveryCoordinatorTest {
   @DisplayName(
       "Should start the requested variant and drop the suspended variant when a suspended stream session receives a media request for another variant")
   void
-      shouldStartTheRequestedVariantAndDropTheSuspendedVariantWhenASuspendedSessionReceivesARequestForAnotherVariant()
+      shouldStartTheRequestedVariantAndDropTheSuspendedVariantWhenASuspendedStreamSessionReceivesAMediaRequestForAnotherVariant()
           throws Exception {
     var session = startedLadderSession();
     lifecycle.suspend(session.getSessionId());
@@ -1079,8 +1079,9 @@ class SegmentDeliveryCoordinatorTest {
   @Test
   @DisplayName(
       "Should answer a held request as unrecoverable without restarting its variant when a request for another video variant stops that variant")
-  void shouldAnswerAHeldRequestAsUnrecoverableWhenARequestForAnotherVideoVariantStopsItsVariant()
-      throws Exception {
+  void
+      shouldAnswerAHeldRequestAsUnrecoverableWithoutRestartingItsVariantWhenARequestForAnotherVideoVariantStopsThatVariant()
+          throws Exception {
     var session = startedLadderSession();
     var sessionId = session.getSessionId();
     var held = deliverAsync(sessionId, "480p", "480p/segment1.m4s");
