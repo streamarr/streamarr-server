@@ -22,6 +22,10 @@ import tools.jackson.databind.json.JsonMapper;
 @DisplayName("Keyframe Segment Boundaries Tests")
 class KeyframeSegmentBoundariesTest {
 
+  // The recorded times count ticks of the fMP4 video track's timescale, where the producer grouped
+  // them. Stored positions count ticks of the source's time base. In a stream copy, FFmpeg's MP4
+  // muxer takes the source time base's denominator as the timescale and doubles it until it reaches
+  // 10,000. Each source tick is then a whole number of track ticks, so both give the same segments.
   private static final String RECORDED_FIXTURES =
       "/keyframe-segment-boundaries/adr-0037-copy-fixtures.json";
 
