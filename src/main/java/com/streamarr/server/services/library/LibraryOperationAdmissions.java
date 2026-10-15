@@ -36,33 +36,42 @@ public class LibraryOperationAdmissions {
 
   /** Opens the admission of one scan of {@code library}; the caller closes it. */
   public AdaptiveAdmission openScanAdmission(Library library) {
-    return open("scan", library.getId());
+    return open(LibraryOperation.SCAN, library.getId());
   }
 
   /** Opens the admission of one refresh of {@code library}; the caller closes it. */
   public AdaptiveAdmission openRefreshAdmission(Library library) {
-    return open("refresh", library.getId());
+    return open(LibraryOperation.REFRESH, library.getId());
   }
 
-  private AdaptiveAdmission open(String operation, UUID libraryId) {
+  private AdaptiveAdmission open(LibraryOperation operation, UUID libraryId) {
     var meters = new OperationMeters(operation);
     var admission = admissions.open(meters);
     meters.registerGauges(admission, libraryId);
     return admission;
   }
 
+  private enum LibraryOperation {
+    SCAN,
+    REFRESH;
+
+    private String tagValue() {
+      return name().toLowerCase(Locale.ROOT);
+    }
+  }
+
   private final class OperationMeters implements AdmissionListener {
 
-    private final String operation;
+    private final String operationTag;
     private final Counter admitted;
     private final List<Gauge> gauges = new CopyOnWriteArrayList<>();
 
-    private OperationMeters(String operation) {
-      this.operation = operation;
+    private OperationMeters(LibraryOperation operation) {
+      this.operationTag = operation.tagValue();
       this.admitted =
           Counter.builder(ADMITTED)
               .description("Tasks admitted by library operations")
-              .tag("operation", operation)
+              .tag("operation", operationTag)
               .register(meterRegistry);
     }
 
@@ -71,14 +80,14 @@ public class LibraryOperationAdmissions {
       gauges.add(
           Gauge.builder(LIMIT, admission, AdaptiveAdmission::limit)
               .description("The current admission limit of a library operation")
-              .tag("operation", operation)
+              .tag("operation", operationTag)
               .tag("library", libraryId.toString())
               .strongReference(true)
               .register(meterRegistry));
       gauges.add(
           Gauge.builder(IN_FLIGHT, admission, AdaptiveAdmission::inFlight)
               .description("Admitted tasks of a library operation that have not reported yet")
-              .tag("operation", operation)
+              .tag("operation", operationTag)
               .tag("library", libraryId.toString())
               .strongReference(true)
               .register(meterRegistry));
@@ -93,7 +102,7 @@ public class LibraryOperationAdmissions {
     public void onReported(AdmittedTaskReport report) {
       Counter.builder(REPORTS)
           .description("Reports of admitted library operation tasks, by kind")
-          .tag("operation", operation)
+          .tag("operation", operationTag)
           .tag("report", report.name().toLowerCase(Locale.ROOT))
           .register(meterRegistry)
           .increment();
