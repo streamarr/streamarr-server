@@ -392,7 +392,10 @@ class RemotePlaybackIT {
           };
       assertThat(mediaProbe.audioCodec()).isEqualTo("mp3");
       var decision =
-          new TranscodeDecisionService()
+          new TranscodeDecisionService(
+                  StreamingProperties.builder()
+                      .targetSegmentDuration(Duration.ofSeconds(6))
+                      .build())
               .decide(
                   mediaProbe,
                   StreamingOptions.builder()

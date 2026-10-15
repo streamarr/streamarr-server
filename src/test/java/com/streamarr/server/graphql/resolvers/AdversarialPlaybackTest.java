@@ -284,7 +284,7 @@ class AdversarialPlaybackTest {
           .transcodeExecutor(executor)
           .segmentStore(segments)
           .playbackProbeService(new PlaybackProbeService(reader, events))
-          .transcodeDecisionService(new TranscodeDecisionService())
+          .transcodeDecisionService(new TranscodeDecisionService(properties))
           .qualityLadderService(new QualityLadderService())
           .properties(properties)
           .authorityGate(new FakePlaybackAuthorityGate())

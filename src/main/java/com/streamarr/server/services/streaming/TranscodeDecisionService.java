@@ -1,8 +1,11 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.StreamCopySegments;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.SubtitleMode;
@@ -12,23 +15,28 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 @Service
+@RequiredArgsConstructor
 public class TranscodeDecisionService {
 
   private static final List<String> CODEC_PREFERENCE = List.of("av1", "h264");
 
+  private final StreamingProperties properties;
+
   public TranscodeDecision decide(MediaProbe source, StreamingOptions clientOptions) {
     var supportedCodecs = clientOptions.supportedCodecs();
-    boolean videoCompatible = supportedCodecs.contains(source.videoCodec());
+    boolean videoCopyable =
+        supportedCodecs.contains(source.videoCodec()) && keyframesOpenEverySegment(source);
 
     var videoCodecFamily =
-        videoCompatible ? source.videoCodec() : selectPreferredCodec(supportedCodecs);
+        videoCopyable ? source.videoCodec() : selectPreferredCodec(supportedCodecs);
     var audioDecision = decideAudio(source, clientOptions);
     var subtitleDecision = SubtitleDecision.exclude();
 
-    var mode = resolveTranscodeMode(videoCompatible, audioDecision, subtitleDecision);
+    var mode = resolveTranscodeMode(videoCopyable, audioDecision, subtitleDecision);
 
     return TranscodeDecision.builder()
         .transcodeMode(mode)
@@ -38,16 +46,34 @@ public class TranscodeDecisionService {
         .build();
   }
 
+  // A stream copy's segments can start only at source keyframes (ADR 0037), so the video is copied
+  // only when the known keyframes open every segment.
+  private boolean keyframesOpenEverySegment(MediaProbe source) {
+    return switch (source.keyframes()) {
+      case KeyframeKnowledge.Known(var positions) ->
+          KeyframeSegmentBoundaries.forStreamCopy(positions, periodSeconds(source))
+              instanceof StreamCopySegments.Starts;
+      case KeyframeKnowledge.PacketScanRequired _,
+          KeyframeKnowledge.Unavailable _,
+          KeyframeKnowledge.NotReported _ ->
+          false;
+    };
+  }
+
+  private int periodSeconds(MediaProbe source) {
+    return MediaSegmentTimelines.of(source, properties).targetSegmentDurationSeconds();
+  }
+
   private TranscodeMode resolveTranscodeMode(
-      boolean videoCompatible, AudioDecision audio, SubtitleDecision subtitle) {
+      boolean videoCopyable, AudioDecision audio, SubtitleDecision subtitle) {
     boolean subtitleForcesTranscode = subtitle.mode() == SubtitleMode.BURN_IN;
-    boolean effectiveVideoCompatible = videoCompatible && !subtitleForcesTranscode;
+    boolean effectiveVideoCopyable = videoCopyable && !subtitleForcesTranscode;
     boolean audioPassthrough = audio.mode() == AudioMode.COPY || audio.mode() == AudioMode.NONE;
 
-    if (effectiveVideoCompatible && audioPassthrough) {
+    if (effectiveVideoCopyable && audioPassthrough) {
       return TranscodeMode.REMUX;
     }
-    if (effectiveVideoCompatible) {
+    if (effectiveVideoCopyable) {
       return TranscodeMode.AUDIO_TRANSCODE;
     }
     if (audioPassthrough) {

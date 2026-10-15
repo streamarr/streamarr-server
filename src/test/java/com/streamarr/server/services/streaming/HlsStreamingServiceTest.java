@@ -16,6 +16,8 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
+import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -147,6 +149,64 @@ class HlsStreamingServiceTest {
         .isEqualTo(OptionalDouble.empty());
   }
 
+  @Test
+  @DisplayName("Should encode the video when a segment interval of the source holds no keyframe")
+  void shouldEncodeTheVideoWhenASegmentIntervalOfTheSourceHoldsNoKeyframe() {
+    // At the 6 s period, keyframes 10.01 s apart leave the interval [12 s, 18 s) without one.
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .keyframes(
+                ProbeFixture.keyframesEvery(Duration.ofMillis(10_010), Duration.ofMinutes(120)))
+            .build());
+    var file = seedMediaFile();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .isNotEmpty()
+        .extracting(request -> request.transcodeDecision().transcodeMode())
+        .containsOnly(TranscodeMode.VIDEO_TRANSCODE);
+  }
+
+  @ParameterizedTest
+  @MethodSource("keyframesThatAreNotKnown")
+  @DisplayName("Should encode the video when the source's keyframe positions are not known yet")
+  void shouldEncodeTheVideoWhenTheSourcesKeyframePositionsAreNotKnownYet(
+      KeyframeKnowledge keyframes) {
+    probeResults.setDefaultProbe(defaultProbeBuilder().keyframes(keyframes).build());
+    var file = seedMediaFile();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+  }
+
+  static Stream<KeyframeKnowledge> keyframesThatAreNotKnown() {
+    return Stream.of(
+        new KeyframeKnowledge.NotReported(),
+        new KeyframeKnowledge.PacketScanRequired(KeyframePacketScanReason.NO_CONTAINER_INDEX),
+        new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.KEYFRAME_WITHOUT_TIMESTAMP));
+  }
+
+  @Test
+  @DisplayName("Should copy the video when every segment interval holds a keyframe")
+  void shouldCopyTheVideoWhenEverySegmentIntervalHoldsAKeyframe() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .keyframes(
+                ProbeFixture.keyframesEvery(Duration.ofMillis(5_005), Duration.ofMinutes(120)))
+            .build());
+    var file = seedMediaFile();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(session.getVariants()).isEmpty();
+  }
+
   @BeforeEach
   void setUp() {
     mediaFileRepository = new FakeMediaFileRepository();
@@ -185,7 +245,7 @@ class HlsStreamingServiceTest {
         .segmentStore(segmentStore)
         .playbackProbeService(
             new PlaybackProbeService(new PersistedProbeReader(probeResults), probeEvents))
-        .transcodeDecisionService(new TranscodeDecisionService())
+        .transcodeDecisionService(new TranscodeDecisionService(properties))
         .qualityLadderService(new QualityLadderService())
         .properties(properties)
         .authorityGate(authorityGate)
@@ -923,7 +983,7 @@ class HlsStreamingServiceTest {
             .segmentStore(segmentStore)
             .playbackProbeService(
                 new PlaybackProbeService(new PersistedProbeReader(probeResults), probeEvents))
-            .transcodeDecisionService(new TranscodeDecisionService())
+            .transcodeDecisionService(new TranscodeDecisionService(properties))
             .qualityLadderService(new QualityLadderService())
             .properties(properties)
             .authorityGate(authorityGate)

@@ -2,8 +2,11 @@ package com.streamarr.server.services.streaming;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
+import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -13,9 +16,12 @@ import java.util.List;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Transcode Decision Service Tests")
@@ -24,7 +30,93 @@ class TranscodeDecisionServiceTest {
   private static final KeyframeKnowledge KEYFRAMES_EVERY_TWO_SECONDS =
       ProbeFixture.keyframesEvery(Duration.ofSeconds(2), Duration.ofMinutes(120));
 
-  private final TranscodeDecisionService service = new TranscodeDecisionService();
+  // At the 6 s period, keyframes 10.01 s apart leave the interval [12 s, 18 s) without one.
+  private static final KeyframeKnowledge KEYFRAMES_LEAVING_AN_INTERVAL_EMPTY =
+      ProbeFixture.keyframesEvery(Duration.ofMillis(10_010), Duration.ofMinutes(120));
+
+  private final TranscodeDecisionService service =
+      new TranscodeDecisionService(
+          StreamingProperties.builder().targetSegmentDuration(Duration.ofSeconds(6)).build());
+
+  @Test
+  @DisplayName("Should encode the video when a segment interval of the source holds no keyframe")
+  void shouldEncodeTheVideoWhenASegmentIntervalOfTheSourceHoldsNoKeyframe() {
+    var source = h264Probe(KEYFRAMES_LEAVING_AN_INTERVAL_EMPTY, "aac");
+
+    var decision = service.decide(source, options(List.of("h264")));
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode both streams when the audio needs encoding and an interval holds no keyframe")
+  void shouldEncodeBothStreamsWhenTheAudioNeedsEncodingAndAnIntervalHoldsNoKeyframe() {
+    var source = h264Probe(KEYFRAMES_LEAVING_AN_INTERVAL_EMPTY, "flac");
+
+    var decision = service.decide(source, options(List.of("h264")));
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.FULL_TRANSCODE);
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode with the preferred codec when the source's keyframes rule out a stream copy")
+  void shouldEncodeWithThePreferredCodecWhenTheSourcesKeyframesRuleOutAStreamCopy() {
+    var source = h264Probe(KEYFRAMES_LEAVING_AN_INTERVAL_EMPTY, "aac");
+
+    var decision = service.decide(source, options(List.of("av1", "h264")));
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(decision.videoCodecFamily()).isEqualTo("av1");
+  }
+
+  @ParameterizedTest
+  @MethodSource("keyframesThatAreNotKnown")
+  @DisplayName("Should encode the video when the source's keyframe positions are not known")
+  void shouldEncodeTheVideoWhenTheSourcesKeyframePositionsAreNotKnown(KeyframeKnowledge keyframes) {
+    var source = h264Probe(keyframes, "aac");
+
+    var decision = service.decide(source, options(List.of("h264")));
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+  }
+
+  static Stream<KeyframeKnowledge> keyframesThatAreNotKnown() {
+    return Stream.of(
+        new KeyframeKnowledge.NotReported(),
+        new KeyframeKnowledge.PacketScanRequired(
+            KeyframePacketScanReason.INCOMPLETE_CONTAINER_INDEX),
+        new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.NO_KEYFRAMES));
+  }
+
+  @Test
+  @DisplayName("Should copy the video when every segment interval holds a keyframe")
+  void shouldCopyTheVideoWhenEverySegmentIntervalHoldsAKeyframe() {
+    var source =
+        h264Probe(
+            ProbeFixture.keyframesEvery(Duration.ofMillis(5_005), Duration.ofMinutes(120)), "aac");
+
+    var decision = service.decide(source, options(List.of("h264")));
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+  }
+
+  private MediaProbe h264Probe(KeyframeKnowledge keyframes, String audioCodec) {
+    return MediaProbe.builder()
+        .keyframes(keyframes)
+        .duration(Duration.ofMinutes(120))
+        .framerate(OptionalDouble.of(23.976))
+        .width(1920)
+        .height(1080)
+        .videoCodec("h264")
+        .audioCodec(audioCodec)
+        .bitrate(5_000_000L)
+        .build();
+  }
 
   private MediaProbe probe(String videoCodec, String audioCodec) {
     return probe(videoCodec, audioCodec, 2, 128_000L);

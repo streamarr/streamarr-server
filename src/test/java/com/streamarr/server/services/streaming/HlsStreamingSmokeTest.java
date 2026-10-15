@@ -109,7 +109,6 @@ class HlsStreamingSmokeTest {
     probeRepository.setDefaultOutcome(completeProbe);
     var probeReader = new PersistedProbeReader(probeRepository);
 
-    var decisionService = new TranscodeDecisionService();
     var qualityLadderService = new QualityLadderService();
     var properties =
         StreamingProperties.builder()
@@ -117,6 +116,7 @@ class HlsStreamingSmokeTest {
             .targetSegmentDuration(Duration.ofSeconds(6))
             .sessionTimeout(Duration.ofSeconds(60))
             .build();
+    var decisionService = new TranscodeDecisionService(properties);
 
     mediaFileRepository = new FakeMediaFileRepository();
     var sessionRegistry = new InMemoryStreamSessionRegistry();
