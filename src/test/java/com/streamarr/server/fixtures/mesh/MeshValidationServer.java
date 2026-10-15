@@ -56,7 +56,7 @@ public final class MeshValidationServer {
                     .setRelativeKey("mesh-fixture.mkv"))
             .build();
     try {
-      var result = dispatched(server.dispatchProbe(request)).get(10, TimeUnit.SECONDS);
+      var result = dispatched(server.dispatchProbe(request)).get(10, TimeUnit.SECONDS).result();
       if (!result.getProbeAttemptId().equals(request.getProbeAttemptId())
           || result.getProbeVersion() != request.getProbeVersion()
           || !result.getMedia().getContainer().getFormat().equals("mesh-fixture")) {

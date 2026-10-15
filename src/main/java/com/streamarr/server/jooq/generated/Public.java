@@ -26,6 +26,7 @@ import com.streamarr.server.jooq.generated.tables.Library;
 import com.streamarr.server.jooq.generated.tables.LibraryMetadata;
 import com.streamarr.server.jooq.generated.tables.MediaFile;
 import com.streamarr.server.jooq.generated.tables.MediaFileContainerInfo;
+import com.streamarr.server.jooq.generated.tables.MediaFileKeyframePositions;
 import com.streamarr.server.jooq.generated.tables.MediaFileProbeTaskRequest;
 import com.streamarr.server.jooq.generated.tables.MediaFileStreamInfo;
 import com.streamarr.server.jooq.generated.tables.Movie;
@@ -187,6 +188,11 @@ public class Public extends SchemaImpl {
      * The table <code>public.media_file_container_info</code>.
      */
     public final MediaFileContainerInfo MEDIA_FILE_CONTAINER_INFO = MediaFileContainerInfo.MEDIA_FILE_CONTAINER_INFO;
+
+    /**
+     * The table <code>public.media_file_keyframe_positions</code>.
+     */
+    public final MediaFileKeyframePositions MEDIA_FILE_KEYFRAME_POSITIONS = MediaFileKeyframePositions.MEDIA_FILE_KEYFRAME_POSITIONS;
 
     /**
      * The table <code>public.media_file_probe_task_request</code>.
@@ -373,6 +379,7 @@ public class Public extends SchemaImpl {
             LibraryMetadata.LIBRARY_METADATA,
             MediaFile.MEDIA_FILE,
             MediaFileContainerInfo.MEDIA_FILE_CONTAINER_INFO,
+            MediaFileKeyframePositions.MEDIA_FILE_KEYFRAME_POSITIONS,
             MediaFileProbeTaskRequest.MEDIA_FILE_PROBE_TASK_REQUEST,
             MediaFileStreamInfo.MEDIA_FILE_STREAM_INFO,
             Movie.MOVIE,

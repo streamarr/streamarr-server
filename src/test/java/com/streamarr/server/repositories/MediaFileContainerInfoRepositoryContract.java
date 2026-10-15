@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFileContainerInfo;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -66,7 +67,8 @@ public interface MediaFileContainerInfoRepositoryContract {
         .hasValueSatisfying(
             stored -> {
               assertThat(stored.getProbeVersion()).isEqualTo(2);
-              assertThat(stored.getOutcome()).isEqualTo(replacement);
+              assertThat(stored.getOutcome(KeyframeKnowledge.NotReported::new))
+                  .isEqualTo(replacement);
             });
   }
 
@@ -84,7 +86,7 @@ public interface MediaFileContainerInfoRepositoryContract {
         .hasValueSatisfying(
             stored -> {
               assertThat(stored.getProbeVersion()).isEqualTo(2);
-              assertThat(stored.getOutcome()).isEqualTo(newer);
+              assertThat(stored.getOutcome(KeyframeKnowledge.NotReported::new)).isEqualTo(newer);
             });
   }
 
@@ -111,7 +113,8 @@ public interface MediaFileContainerInfoRepositoryContract {
             stored -> {
               assertThat(stored.getSnapshot()).isEqualTo(SNAPSHOT_B);
               assertThat(stored.getProbeVersion()).isEqualTo(1);
-              assertThat(stored.getOutcome()).isEqualTo(replacement);
+              assertThat(stored.getOutcome(KeyframeKnowledge.NotReported::new))
+                  .isEqualTo(replacement);
             });
   }
 
@@ -160,7 +163,7 @@ public interface MediaFileContainerInfoRepositoryContract {
             stored -> {
               assertThat(stored.getSnapshot()).isEqualTo(SNAPSHOT_A);
               assertThat(stored.getProbeVersion()).isEqualTo(1);
-              assertThat(stored.getOutcome()).isEqualTo(outcome);
+              assertThat(stored.getOutcome(KeyframeKnowledge.NotReported::new)).isEqualTo(outcome);
             });
   }
 
@@ -185,7 +188,9 @@ public interface MediaFileContainerInfoRepositoryContract {
 
     assertThat(stored(mediaFileId))
         .hasValueSatisfying(
-            stored -> assertThat(stored.getOutcome()).isEqualTo(success("h264", "aac")));
+            stored ->
+                assertThat(stored.getOutcome(KeyframeKnowledge.NotReported::new))
+                    .isEqualTo(success("h264", "aac")));
   }
 
   @Test
@@ -378,6 +383,7 @@ public interface MediaFileContainerInfoRepositoryContract {
                 .index(1)
                 .codecType("audio")
                 .codec(Optional.of(audioCodec))
-                .build()));
+                .build()),
+        new KeyframeKnowledge.NotReported());
   }
 }

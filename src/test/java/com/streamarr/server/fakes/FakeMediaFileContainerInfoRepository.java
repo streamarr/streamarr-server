@@ -3,6 +3,7 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.media.MediaFileContainerInfo;
 import com.streamarr.server.domain.media.MediaFileStreamInfo;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.task.ProbeAttemptFailure;
@@ -27,6 +28,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   private final Map<UUID, MediaFileContainerInfo> rows = new ConcurrentHashMap<>();
   private final Map<UUID, ProbeInputs> desiredInputs = new ConcurrentHashMap<>();
   private final Map<UUID, ProbeAttemptFailure> failures = new ConcurrentHashMap<>();
+  private final Map<UUID, KeyframeKnowledge> keyframes = new ConcurrentHashMap<>();
   private final List<ProbePublication> publications = new ArrayList<>();
   private Optional<ProbeOutcome.Success> defaultProbe = Optional.empty();
   private final Set<UUID> deletedMediaFiles = ConcurrentHashMap.newKeySet();
@@ -46,6 +48,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     rows.clear();
     desiredInputs.clear();
     failures.clear();
+    keyframes.clear();
   }
 
   @Override
@@ -90,7 +93,21 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     publications.add(publication);
     rows.put(publication.mediaFileId(), toRow(publication));
     failures.remove(publication.mediaFileId());
+    keyframes.remove(publication.mediaFileId());
+    if (publication.outcome() instanceof ProbeOutcome.Success success) {
+      keyframes.put(publication.mediaFileId(), success.keyframes());
+    }
+
     return true;
+  }
+
+  @Override
+  public Optional<KeyframeKnowledge> findKeyframeKnowledge(UUID mediaFileId) {
+    if (rows.containsKey(mediaFileId)) {
+      return Optional.of(keyframes.getOrDefault(mediaFileId, new KeyframeKnowledge.NotReported()));
+    }
+
+    return defaultProbe.map(ProbeOutcome.Success::keyframes);
   }
 
   @Override
@@ -185,7 +202,11 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
       UUID mediaFileId, SourceFileSnapshot snapshot) {
     Optional.ofNullable(rows.get(mediaFileId))
         .filter(row -> !row.getSnapshot().equals(snapshot))
-        .ifPresent(_ -> rows.remove(mediaFileId));
+        .ifPresent(
+            _ -> {
+              rows.remove(mediaFileId);
+              keyframes.remove(mediaFileId);
+            });
   }
 
   public void store(MediaFileContainerInfo row) {
@@ -215,10 +236,12 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     Optional<ProbeInputs> requested;
     Optional<ProbeAttemptFailure> failure;
     Optional<MediaFileContainerInfo> row;
+    Optional<KeyframeKnowledge> knowledge;
     synchronized (this) {
       requested = Optional.ofNullable(desiredInputs.get(mediaFileId));
       failure = Optional.ofNullable(failures.get(mediaFileId));
       row = Optional.ofNullable(rows.get(mediaFileId));
+      knowledge = Optional.ofNullable(keyframes.get(mediaFileId));
     }
 
     try {
@@ -228,6 +251,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
         restore(desiredInputs, mediaFileId, requested);
         restore(failures, mediaFileId, failure);
         restore(rows, mediaFileId, row);
+        restore(keyframes, mediaFileId, knowledge);
       }
 
       throw rejected;
@@ -250,6 +274,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
           synchronized (this) {
             deletedMediaFiles.add(mediaFileId);
             rows.remove(mediaFileId);
+            keyframes.remove(mediaFileId);
             desiredInputs.remove(mediaFileId);
             failures.remove(mediaFileId);
           }
@@ -270,7 +295,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
             .probeVersion(publication.probeVersion());
     return switch (publication.outcome()) {
       case ProbeOutcome.Failure(var error) -> builder.probeError(error).build();
-      case ProbeOutcome.Success(var container, var streams) ->
+      case ProbeOutcome.Success(var container, var streams, _) ->
           builder
               .container(container)
               .streams(

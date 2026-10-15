@@ -1,9 +1,9 @@
 package com.streamarr.server.fixtures;
 
+import com.streamarr.server.services.streaming.remote.ProbeAttemptReport;
 import com.streamarr.server.services.streaming.remote.ProbeDispatch;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
 import com.streamarr.server.services.streaming.remote.protocol.WorkerIdentityMetadata;
-import com.streamarr.transcode.v1.ProbeAttemptResult;
 import io.grpc.Metadata;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.MetadataUtils;
@@ -30,7 +30,7 @@ public final class RemoteWorkerFixtures {
         .intercept(MetadataUtils.newAttachHeadersInterceptor(headers));
   }
 
-  public static Future<ProbeAttemptResult> dispatched(ProbeDispatch dispatch) {
+  public static Future<ProbeAttemptReport> dispatched(ProbeDispatch dispatch) {
     return switch (dispatch) {
       case ProbeDispatch.Dispatched(var result) -> result;
       case ProbeDispatch.Refused(var reason) ->

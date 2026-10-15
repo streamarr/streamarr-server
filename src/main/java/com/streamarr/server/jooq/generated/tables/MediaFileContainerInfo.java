@@ -7,6 +7,7 @@ package com.streamarr.server.jooq.generated.tables;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.tables.MediaFile.MediaFilePath;
+import com.streamarr.server.jooq.generated.tables.MediaFileKeyframePositions.MediaFileKeyframePositionsPath;
 import com.streamarr.server.jooq.generated.tables.MediaFileStreamInfo.MediaFileStreamInfoPath;
 import com.streamarr.server.jooq.generated.tables.records.MediaFileContainerInfoRecord;
 
@@ -113,6 +114,23 @@ public class MediaFileContainerInfo extends TableImpl<MediaFileContainerInfoReco
      */
     public final TableField<MediaFileContainerInfoRecord, String> PROBE_ERROR = createField(DSL.name("probe_error"), SQLDataType.CLOB, this, "");
 
+    /**
+     * The column <code>public.media_file_container_info.keyframe_status</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, String> KEYFRAME_STATUS = createField(DSL.name("keyframe_status"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_container_info.keyframe_packet_scan_reason</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, String> KEYFRAME_PACKET_SCAN_REASON = createField(DSL.name("keyframe_packet_scan_reason"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_container_info.keyframes_unavailable_reason</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, String> KEYFRAMES_UNAVAILABLE_REASON = createField(DSL.name("keyframes_unavailable_reason"), SQLDataType.CLOB, this, "");
+
     private MediaFileContainerInfo(Name alias, Table<MediaFileContainerInfoRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -188,6 +206,11 @@ public class MediaFileContainerInfo extends TableImpl<MediaFileContainerInfoReco
     }
 
     @Override
+    public List<UniqueKey<MediaFileContainerInfoRecord>> getUniqueKeys() {
+        return Arrays.asList(Keys.MEDIA_FILE_CONTAINER_INFO_KEYFRAME_STATUS_KEY);
+    }
+
+    @Override
     public List<ForeignKey<MediaFileContainerInfoRecord, ?>> getReferences() {
         return Arrays.asList(Keys.MEDIA_FILE_CONTAINER_INFO__MEDIA_FILE_CONTAINER_INFO_MEDIA_FILE_ID_FKEY);
     }
@@ -202,6 +225,19 @@ public class MediaFileContainerInfo extends TableImpl<MediaFileContainerInfoReco
             _mediaFile = new MediaFilePath(this, Keys.MEDIA_FILE_CONTAINER_INFO__MEDIA_FILE_CONTAINER_INFO_MEDIA_FILE_ID_FKEY, null);
 
         return _mediaFile;
+    }
+
+    private transient MediaFileKeyframePositionsPath _mediaFileKeyframePositions;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.media_file_keyframe_positions</code> table
+     */
+    public MediaFileKeyframePositionsPath mediaFileKeyframePositions() {
+        if (_mediaFileKeyframePositions == null)
+            _mediaFileKeyframePositions = new MediaFileKeyframePositionsPath(this, null, Keys.MEDIA_FILE_KEYFRAME_POSITIONS__KEYFRAME_POSITIONS_REQUIRE_KNOWN_STATUS.getInverseKey());
+
+        return _mediaFileKeyframePositions;
     }
 
     private transient MediaFileStreamInfoPath _mediaFileStreamInfo;
@@ -222,11 +258,17 @@ public class MediaFileContainerInfo extends TableImpl<MediaFileContainerInfoReco
         return Arrays.asList(
             Internal.createCheck(this, DSL.name("complete_probe_duration"), "(((duration_seconds IS NULL) = (duration_nanos IS NULL)))", true),
             Internal.createCheck(this, DSL.name("failed_probe_has_no_container_properties"), "(((probe_error IS NULL) OR ((format IS NULL) AND (duration_seconds IS NULL) AND (duration_nanos IS NULL) AND (total_bitrate IS NULL))))", true),
+            Internal.createCheck(this, DSL.name("failed_probe_has_no_keyframe_status"), "(((probe_error IS NULL) OR (keyframe_status IS NULL)))", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_duration_nanos_check"), "(((duration_nanos >= 0) AND (duration_nanos <= 999999999)))", true),
+            Internal.createCheck(this, DSL.name("media_file_container_info_keyframe_packet_scan_reason_check"), "((keyframe_packet_scan_reason = ANY (ARRAY['NO_CONTAINER_INDEX'::text, 'INCOMPLETE_CONTAINER_INDEX'::text, 'UNREADABLE_LAST_INDEXED_KEYFRAME'::text])))", true),
+            Internal.createCheck(this, DSL.name("media_file_container_info_keyframe_status_check"), "((keyframe_status = ANY (ARRAY['KNOWN'::text, 'PACKET_SCAN_REQUIRED'::text, 'UNAVAILABLE'::text])))", true),
+            Internal.createCheck(this, DSL.name("media_file_container_info_keyframes_unavailable_reason_check"), "((keyframes_unavailable_reason = ANY (ARRAY['KEYFRAME_WITHOUT_TIMESTAMP'::text, 'NO_KEYFRAMES'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_probe_error_check"), "((probe_error = ANY (ARRAY['INVALID_MEDIA'::text, 'NO_VIDEO_STREAM'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_probe_version_check"), "((probe_version > 0))", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_source_modified_nanos_check"), "(((source_modified_nanos >= 0) AND (source_modified_nanos <= 999999999)))", true),
-            Internal.createCheck(this, DSL.name("media_file_container_info_source_size_check"), "((source_size >= 0))", true)
+            Internal.createCheck(this, DSL.name("media_file_container_info_source_size_check"), "((source_size >= 0))", true),
+            Internal.createCheck(this, DSL.name("packet_scan_reason_only_when_packet_scan_required"), "(((NOT (keyframe_status IS DISTINCT FROM 'PACKET_SCAN_REQUIRED'::text)) = (keyframe_packet_scan_reason IS NOT NULL)))", true),
+            Internal.createCheck(this, DSL.name("unavailable_reason_only_when_keyframes_unavailable"), "(((NOT (keyframe_status IS DISTINCT FROM 'UNAVAILABLE'::text)) = (keyframes_unavailable_reason IS NOT NULL)))", true)
         );
     }
 

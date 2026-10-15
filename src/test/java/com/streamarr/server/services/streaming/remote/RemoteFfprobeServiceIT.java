@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
@@ -251,7 +252,8 @@ class RemoteFfprobeServiceIT {
                         StreamInfo.builder()
                             .codecType("video")
                             .width(OptionalInt.of(1920))
-                            .build())));
+                            .build()),
+                    new KeyframeKnowledge.NotReported()));
       }
     }
   }

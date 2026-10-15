@@ -25,7 +25,9 @@ class ProbeOutcomeTest {
     var laterVideo = streamBuilder("video", "hevc").index(2).isDefault(true).build();
     var laterAudio = streamBuilder("audio", "aac").index(3).isDefault(true).build();
     var source = new ArrayList<>(List.of(firstVideo, firstAudio, laterVideo, laterAudio));
-    var outcome = new ProbeOutcome.Success(ProbeContainer.builder().build(), source);
+    var outcome =
+        new ProbeOutcome.Success(
+            ProbeContainer.builder().build(), source, new KeyframeKnowledge.NotReported());
     var summary = outcome.mediaProbe();
 
     source.clear();
@@ -45,7 +47,10 @@ class ProbeOutcomeTest {
     var laterVideo =
         streamBuilder("video", "hevc").index(1).framerate(OptionalDouble.of(23.976)).build();
     var outcome =
-        new ProbeOutcome.Success(ProbeContainer.builder().build(), List.of(firstVideo, laterVideo));
+        new ProbeOutcome.Success(
+            ProbeContainer.builder().build(),
+            List.of(firstVideo, laterVideo),
+            new KeyframeKnowledge.NotReported());
 
     assertThat(outcome.mediaProbe().framerate()).isEmpty();
   }
@@ -54,7 +59,9 @@ class ProbeOutcomeTest {
   @DisplayName("Should reject changes when a caller mutates the retained streams")
   void shouldRejectChangesWhenACallerMutatesTheRetainedStreams() {
     var video = streamBuilder("video", "h264").build();
-    var outcome = new ProbeOutcome.Success(ProbeContainer.builder().build(), List.of(video));
+    var outcome =
+        new ProbeOutcome.Success(
+            ProbeContainer.builder().build(), List.of(video), new KeyframeKnowledge.NotReported());
     var streams = outcome.streams();
 
     assertThatExceptionOfType(UnsupportedOperationException.class).isThrownBy(streams::clear);
@@ -67,7 +74,9 @@ class ProbeOutcomeTest {
   void shouldRejectASuccessWhenItsContainerIsMissing() {
     var streams = List.of(streamBuilder("video", "h264").build());
 
-    assertThatNullPointerException().isThrownBy(() -> new ProbeOutcome.Success(null, streams));
+    assertThatNullPointerException()
+        .isThrownBy(
+            () -> new ProbeOutcome.Success(null, streams, new KeyframeKnowledge.NotReported()));
   }
 
   @Test
@@ -75,7 +84,9 @@ class ProbeOutcomeTest {
   void shouldRejectASuccessWhenItsStreamListIsMissing() {
     var container = ProbeContainer.builder().build();
 
-    assertThatNullPointerException().isThrownBy(() -> new ProbeOutcome.Success(container, null));
+    assertThatNullPointerException()
+        .isThrownBy(
+            () -> new ProbeOutcome.Success(container, null, new KeyframeKnowledge.NotReported()));
   }
 
   @Test
@@ -86,7 +97,10 @@ class ProbeOutcomeTest {
     streams.add(streamBuilder("video", "h264").build());
     streams.add(null);
 
-    assertThatNullPointerException().isThrownBy(() -> new ProbeOutcome.Success(container, streams));
+    assertThatNullPointerException()
+        .isThrownBy(
+            () ->
+                new ProbeOutcome.Success(container, streams, new KeyframeKnowledge.NotReported()));
   }
 
   @Test

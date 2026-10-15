@@ -69,7 +69,7 @@ final class MeshMediaHandler implements HttpHandler {
                     .setSourceNamespaceId(toProto(MeshValidationServer.SOURCE_ID))
                     .setRelativeKey("mesh-fixture.mkv"))
             .build();
-    var result = dispatched(server.dispatchProbe(request)).get(10, TimeUnit.SECONDS);
+    var result = dispatched(server.dispatchProbe(request)).get(10, TimeUnit.SECONDS).result();
     var media = result.getMedia();
     if (!Arrays.asList(media.getContainer().getFormat().split(",")).contains("mp4")
         || media.getStreamsList().stream().noneMatch(this::isFixtureVideo)) {

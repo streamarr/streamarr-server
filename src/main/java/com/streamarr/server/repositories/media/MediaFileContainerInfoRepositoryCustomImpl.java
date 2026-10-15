@@ -2,11 +2,17 @@ package com.streamarr.server.repositories.media;
 
 import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE;
 import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE_CONTAINER_INFO;
+import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE_KEYFRAME_POSITIONS;
 import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE_PROBE_TASK_REQUEST;
 import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE_STREAM_INFO;
 
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
+import com.streamarr.server.domain.streaming.KeyframePositionSource;
+import com.streamarr.server.domain.streaming.KeyframePositions;
+import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
@@ -14,7 +20,9 @@ import com.streamarr.server.domain.task.ProbeAttemptFailure;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeState;
+import com.streamarr.server.exceptions.MalformedKeyframePositionsException;
 import com.streamarr.server.jooq.generated.enums.ItemResultFailureReason;
+import com.streamarr.server.jooq.generated.tables.records.MediaFileContainerInfoRecord;
 import com.streamarr.server.jooq.generated.tables.records.MediaFileStreamInfoRecord;
 import java.time.Duration;
 import java.time.Instant;
@@ -151,6 +159,64 @@ public class MediaFileContainerInfoRepositoryCustomImpl
     dsl.deleteFrom(MEDIA_FILE_PROBE_TASK_REQUEST)
         .where(MEDIA_FILE_PROBE_TASK_REQUEST.MEDIA_FILE_ID.eq(mediaFileId))
         .execute();
+  }
+
+  @Override
+  // A read changes nothing, so a malformed row must not mark the caller's transaction
+  // rollback-only.
+  @Transactional(readOnly = true, noRollbackFor = MalformedKeyframePositionsException.class)
+  public Optional<KeyframeKnowledge> findKeyframeKnowledge(UUID mediaFileId) {
+    return dsl.select(
+            MEDIA_FILE_CONTAINER_INFO.KEYFRAME_STATUS,
+            MEDIA_FILE_CONTAINER_INFO.KEYFRAME_PACKET_SCAN_REASON,
+            MEDIA_FILE_CONTAINER_INFO.KEYFRAMES_UNAVAILABLE_REASON,
+            MEDIA_FILE_KEYFRAME_POSITIONS.STREAM_INDEX,
+            MEDIA_FILE_KEYFRAME_POSITIONS.TIME_BASE_NUMERATOR,
+            MEDIA_FILE_KEYFRAME_POSITIONS.TIME_BASE_DENOMINATOR,
+            MEDIA_FILE_KEYFRAME_POSITIONS.KEYFRAME_COUNT,
+            MEDIA_FILE_KEYFRAME_POSITIONS.ENCODED_TIMES,
+            MEDIA_FILE_KEYFRAME_POSITIONS.SOURCE)
+        .from(MEDIA_FILE_CONTAINER_INFO)
+        .leftJoin(MEDIA_FILE_KEYFRAME_POSITIONS)
+        .on(MEDIA_FILE_KEYFRAME_POSITIONS.MEDIA_FILE_ID.eq(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID))
+        .where(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(mediaFileId))
+        .fetchOptional(MediaFileContainerInfoRepositoryCustomImpl::toKeyframeKnowledge);
+  }
+
+  private static KeyframeKnowledge toKeyframeKnowledge(Record row) {
+    var status = row.get(MEDIA_FILE_CONTAINER_INFO.KEYFRAME_STATUS);
+    if (status == null) {
+      return new KeyframeKnowledge.NotReported();
+    }
+
+    return switch (KeyframeStatus.valueOf(status)) {
+      case KNOWN -> new KeyframeKnowledge.Known(toKeyframePositions(row));
+      case PACKET_SCAN_REQUIRED ->
+          new KeyframeKnowledge.PacketScanRequired(
+              KeyframePacketScanReason.valueOf(
+                  row.get(MEDIA_FILE_CONTAINER_INFO.KEYFRAME_PACKET_SCAN_REASON)));
+      case UNAVAILABLE ->
+          new KeyframeKnowledge.Unavailable(
+              KeyframesUnavailableReason.valueOf(
+                  row.get(MEDIA_FILE_CONTAINER_INFO.KEYFRAMES_UNAVAILABLE_REASON)));
+    };
+  }
+
+  private static KeyframePositions toKeyframePositions(Record row) {
+    var keyframes =
+        KeyframePositionsCodec.decode(row.get(MEDIA_FILE_KEYFRAME_POSITIONS.ENCODED_TIMES));
+    if (keyframes.size() != row.get(MEDIA_FILE_KEYFRAME_POSITIONS.KEYFRAME_COUNT)) {
+      throw new MalformedKeyframePositionsException(
+          "Stored keyframe positions differ from their keyframe count");
+    }
+
+    return KeyframePositions.builder()
+        .streamIndex(row.get(MEDIA_FILE_KEYFRAME_POSITIONS.STREAM_INDEX))
+        .timeBaseNumerator(row.get(MEDIA_FILE_KEYFRAME_POSITIONS.TIME_BASE_NUMERATOR))
+        .timeBaseDenominator(row.get(MEDIA_FILE_KEYFRAME_POSITIONS.TIME_BASE_DENOMINATOR))
+        .source(KeyframePositionSource.valueOf(row.get(MEDIA_FILE_KEYFRAME_POSITIONS.SOURCE)))
+        .keyframes(keyframes)
+        .build();
   }
 
   @Override
@@ -308,7 +374,8 @@ public class MediaFileContainerInfoRepositoryCustomImpl
     row.setProbeVersion(publication.probeVersion());
     switch (publication.outcome()) {
       case ProbeOutcome.Failure(var error) -> row.setProbeError(error.name());
-      case ProbeOutcome.Success(var container, _) -> {
+      case ProbeOutcome.Success(var container, _, var keyframes) -> {
+        setKeyframeStatus(row, keyframes);
         row.setFormat(container.format().orElse(null));
         row.setTotalBitrate(
             container.bitrate().isPresent() ? container.bitrate().getAsLong() : null);
@@ -318,11 +385,52 @@ public class MediaFileContainerInfoRepositoryCustomImpl
     }
 
     dsl.executeInsert(row);
-    if (publication.outcome() instanceof ProbeOutcome.Success success) {
-      dsl.batchInsert(
-              success.streams().stream().map(stream -> toStreamRow(mediaFileId, stream)).toList())
-          .execute();
+    if (!(publication.outcome() instanceof ProbeOutcome.Success success)) {
+      return;
     }
+
+    dsl.batchInsert(
+            success.streams().stream().map(stream -> toStreamRow(mediaFileId, stream)).toList())
+        .execute();
+    if (success.keyframes() instanceof KeyframeKnowledge.Known(var positions)) {
+      insertKeyframePositions(mediaFileId, positions);
+    }
+  }
+
+  private static void setKeyframeStatus(
+      MediaFileContainerInfoRecord row, KeyframeKnowledge keyframes) {
+    switch (keyframes) {
+      case KeyframeKnowledge.Known _ -> row.setKeyframeStatus(KeyframeStatus.KNOWN.name());
+      case KeyframeKnowledge.PacketScanRequired(var reason) -> {
+        row.setKeyframeStatus(KeyframeStatus.PACKET_SCAN_REQUIRED.name());
+        row.setKeyframePacketScanReason(reason.name());
+      }
+      case KeyframeKnowledge.Unavailable(var reason) -> {
+        row.setKeyframeStatus(KeyframeStatus.UNAVAILABLE.name());
+        row.setKeyframesUnavailableReason(reason.name());
+      }
+      case KeyframeKnowledge.NotReported _ -> row.setKeyframeStatus(null);
+    }
+  }
+
+  private void insertKeyframePositions(UUID mediaFileId, KeyframePositions positions) {
+    dsl.insertInto(MEDIA_FILE_KEYFRAME_POSITIONS)
+        .set(MEDIA_FILE_KEYFRAME_POSITIONS.MEDIA_FILE_ID, mediaFileId)
+        .set(MEDIA_FILE_KEYFRAME_POSITIONS.STREAM_INDEX, positions.streamIndex())
+        .set(MEDIA_FILE_KEYFRAME_POSITIONS.TIME_BASE_NUMERATOR, positions.timeBaseNumerator())
+        .set(MEDIA_FILE_KEYFRAME_POSITIONS.TIME_BASE_DENOMINATOR, positions.timeBaseDenominator())
+        .set(MEDIA_FILE_KEYFRAME_POSITIONS.KEYFRAME_COUNT, positions.keyframes().size())
+        .set(
+            MEDIA_FILE_KEYFRAME_POSITIONS.ENCODED_TIMES,
+            KeyframePositionsCodec.encode(positions.keyframes()))
+        .set(MEDIA_FILE_KEYFRAME_POSITIONS.SOURCE, positions.source().name())
+        .execute();
+  }
+
+  private enum KeyframeStatus {
+    KNOWN,
+    PACKET_SCAN_REQUIRED,
+    UNAVAILABLE
   }
 
   private MediaFileStreamInfoRecord toStreamRow(UUID mediaFileId, StreamInfo stream) {

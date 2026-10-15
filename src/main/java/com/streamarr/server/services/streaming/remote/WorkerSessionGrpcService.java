@@ -7,6 +7,7 @@ import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.UploadSegmentResponse;
@@ -188,6 +189,8 @@ final class WorkerSessionGrpcService
         case JOB_ATTEMPT_STOPPED ->
             finishOrWarn(request.getJobAttemptStopped().getJobAttemptId(), "stopped");
         case PROBE_RESULT -> completeProbe(request.getProbeResult());
+        case PROBE_KEYFRAME_POSITIONS_PART ->
+            acceptKeyframePositionsPart(request.getProbeKeyframePositionsPart());
         default ->
             log.warn(
                 "Ignoring unexpected {} event on established session of worker {}",
@@ -206,6 +209,18 @@ final class WorkerSessionGrpcService
           authenticatedWorkerId,
           fromProto(result.getProbeAttemptId()),
           result.getProbeVersion());
+    }
+
+    private void acceptKeyframePositionsPart(ProbeKeyframePositionsPart part) {
+      if (workerConnections.acceptKeyframePositionsPart(
+          authenticatedWorkerId, workerSessionId, part)) {
+        return;
+      }
+
+      log.warn(
+          "Worker {} sent keyframe positions for unaccepted probe attempt {}",
+          authenticatedWorkerId,
+          fromProto(part.getProbeAttemptId()));
     }
 
     private void reportFailedJobAttempt(JobAttemptFailed failed) {

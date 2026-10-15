@@ -1,5 +1,6 @@
 package com.streamarr.server.repositories.media;
 
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.task.ProbeAttemptFailure;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbePublication;
@@ -12,10 +13,10 @@ import java.util.UUID;
 public interface MediaFileContainerInfoRepositoryCustom {
 
   /**
-   * Replaces the stored outcome and its stream rows in one transaction, and clears the recorded
-   * failure of the requested inputs. Returns {@code false} without writing when the media file no
-   * longer exists or when a newer probe version already holds a result for the same source
-   * snapshot, or when the latest requested inputs differ.
+   * Replaces the stored outcome, its stream rows and its keyframe positions in one transaction, and
+   * clears the recorded failure of the requested inputs. Returns {@code false} without writing when
+   * the media file no longer exists or when a newer probe version already holds a result for the
+   * same source snapshot, or when the latest requested inputs differ.
    */
   boolean publish(ProbePublication publication);
 
@@ -40,6 +41,14 @@ public interface MediaFileContainerInfoRepositoryCustom {
    * requested for the file. Requires the caller's transaction.
    */
   void withdrawProbeRequest(UUID mediaFileId);
+
+  /**
+   * Reads what the stored outcome says about the source's keyframes, with the decoded positions
+   * when they are known. Empty when no outcome is stored. Throws {@link
+   * com.streamarr.server.exceptions.MalformedKeyframePositionsException} when the stored positions
+   * cannot be decoded, without marking the caller's transaction rollback-only.
+   */
+  Optional<KeyframeKnowledge> findKeyframeKnowledge(UUID mediaFileId);
 
   /** Reads desired inputs under the media file lock. Requires the caller's transaction. */
   Optional<ProbeInputs> lockProbeInputs(UUID mediaFileId);

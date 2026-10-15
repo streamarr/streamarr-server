@@ -316,7 +316,7 @@ class WorkerSessionServerIT {
                 .build();
         session.onNext(EstablishWorkerSessionRequest.newBuilder().setProbeResult(result).build());
 
-        assertThat(pending.get(5, TimeUnit.SECONDS)).isEqualTo(result);
+        assertThat(pending.get(5, TimeUnit.SECONDS).result()).isEqualTo(result);
         assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
       } finally {
         shutdown(channel);
@@ -381,7 +381,7 @@ class WorkerSessionServerIT {
                             .build()));
         worker.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(result).build());
 
-        assertThat(pending.get(5, TimeUnit.SECONDS)).isEqualTo(result);
+        assertThat(pending.get(5, TimeUnit.SECONDS).result()).isEqualTo(result);
         assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isTrue();
         assertThat(server.availableSlots(SOURCE_NAMESPACE_ID))
             .as("the running variant must keep its slot")

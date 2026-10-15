@@ -2,6 +2,7 @@ package com.streamarr.server.domain.media;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -61,7 +62,8 @@ class PersistedProbeOutcomeTest {
                         .index(0)
                         .codecType("video")
                         .codec(Optional.of("h264"))
-                        .build())));
+                        .build()),
+                new KeyframeKnowledge.NotReported()));
 
     assertThat(outcome.isCompatibleWith(2)).isEqualTo(compatible);
     assertThat(outcome.matches(outcome.snapshot(), 2)).isEqualTo(storedVersion == 2);

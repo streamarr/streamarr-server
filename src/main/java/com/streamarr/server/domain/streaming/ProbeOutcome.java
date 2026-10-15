@@ -10,7 +10,10 @@ public sealed interface ProbeOutcome {
 
   record Failure(@NonNull ProbeError error) implements ProbeOutcome {}
 
-  record Success(@NonNull ProbeContainer container, @NonNull List<StreamInfo> streams)
+  record Success(
+      @NonNull ProbeContainer container,
+      @NonNull List<StreamInfo> streams,
+      @NonNull KeyframeKnowledge keyframes)
       implements ProbeOutcome {
 
     public Success {

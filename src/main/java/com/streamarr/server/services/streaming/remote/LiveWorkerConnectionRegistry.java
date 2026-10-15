@@ -10,6 +10,7 @@ import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.StartProbeCommand;
@@ -65,7 +66,7 @@ final class LiveWorkerConnectionRegistry {
   }
 
   private final ConcurrentHashMap<UUID, WorkerConnection> connections = new ConcurrentHashMap<>();
-  private final Map<UUID, CompletableFuture<ProbeAttemptResult>> pendingProbes =
+  private final Map<UUID, CompletableFuture<ProbeAttemptReport>> pendingProbes =
       new ConcurrentHashMap<>();
 
   synchronized UUID register(
@@ -164,6 +165,16 @@ final class LiveWorkerConnectionRegistry {
     }
 
     return connection.completeProbe(result);
+  }
+
+  boolean acceptKeyframePositionsPart(
+      UUID workerId, UUID workerSessionId, ProbeKeyframePositionsPart part) {
+    var connection = connections.get(workerId);
+    if (connection == null || !connection.workerSessionId().equals(workerSessionId)) {
+      return false;
+    }
+
+    return connection.acceptKeyframePositionsPart(part);
   }
 
   boolean dispatchTo(ExecutionTargetId target, VariantJob job) {
@@ -328,7 +339,12 @@ final class LiveWorkerConnectionRegistry {
       }
 
       var attemptId = fromProto(request.getProbeAttemptId());
-      var pending = new PendingProbe(request, new CompletableFuture<>(), new CompletableFuture<>());
+      var pending =
+          new PendingProbe(
+              request,
+              new CompletableFuture<>(),
+              new CompletableFuture<>(),
+              new ReceivedKeyframePositionsParts());
       if (pendingProbes.putIfAbsent(attemptId, pending.result()) != null) {
         return new ProbeDispatch.Refused(ProbeRefusal.ATTEMPT_IN_PROGRESS);
       }
@@ -440,7 +456,29 @@ final class LiveWorkerConnectionRegistry {
         return false;
       }
 
-      pending.result().complete(result);
+      if (pending.keyframePositionsParts().violatesContract()) {
+        pending
+            .result()
+            .completeExceptionally(
+                new ProbeExecutionException(
+                    ItemFailureReason.TEMPORARY,
+                    "Worker probe sent keyframe positions parts that break the contract"));
+        return false;
+      }
+
+      pending
+          .result()
+          .complete(new ProbeAttemptReport(result, pending.keyframePositionsParts().parts()));
+      return true;
+    }
+
+    private boolean acceptKeyframePositionsPart(ProbeKeyframePositionsPart part) {
+      var pending = activeProbes.get(fromProto(part.getProbeAttemptId()));
+      if (pending == null) {
+        return false;
+      }
+
+      pending.keyframePositionsParts().add(part);
       return true;
     }
 
@@ -605,7 +643,8 @@ final class LiveWorkerConnectionRegistry {
 
     private record PendingProbe(
         ProbeRequest request,
-        CompletableFuture<ProbeAttemptResult> result,
-        CompletableFuture<Void> terminated) {}
+        CompletableFuture<ProbeAttemptReport> result,
+        CompletableFuture<Void> terminated,
+        ReceivedKeyframePositionsParts keyframePositionsParts) {}
   }
 }

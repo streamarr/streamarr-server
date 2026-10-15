@@ -12,8 +12,14 @@ import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePosition;
+import com.streamarr.server.domain.streaming.KeyframePositionSource;
+import com.streamarr.server.domain.streaming.KeyframePositions;
+import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
@@ -29,6 +35,7 @@ import com.streamarr.server.support.BoundedTask;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -291,6 +298,45 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
 
   private void scan() throws Exception {
     BoundedTask.runWithin(SCAN_BOUND, () -> libraryManagementService.scanLibrary(library.getId()));
+  }
+
+  @Test
+  @DisplayName("Should request a probe when the stored keyframe positions cannot be decoded")
+  void shouldRequestAProbeWhenTheStoredKeyframePositionsCannotBeDecoded() throws Exception {
+    var current = requestFor(mediaFile);
+    assertThat(
+            outcomes.publish(
+                ProbePublication.builder()
+                    .mediaFileId(mediaFile.getId())
+                    .snapshot(current.snapshot())
+                    .probeVersion(ProbeVersion.CURRENT)
+                    .outcome(knownKeyframesOutcome())
+                    .build()))
+        .isTrue();
+    // A format byte of 2 names no format this server can decode.
+    jdbc.update(
+        "UPDATE media_file_keyframe_positions SET encoded_times = '\\x02' WHERE media_file_id = ?",
+        mediaFile.getId());
+
+    libraryManagementService.processDiscoveredFile(library.getId(), path);
+
+    assertThat(scheduledRequest())
+        .hasValueSatisfying(
+            request -> assertThat(request.snapshot()).isEqualTo(current.snapshot()));
+  }
+
+  private static ProbeOutcome knownKeyframesOutcome() {
+    return new ProbeOutcome.Success(
+        ProbeContainer.builder().build(),
+        List.of(StreamInfo.builder().index(0).codecType("video").build()),
+        new KeyframeKnowledge.Known(
+            KeyframePositions.builder()
+                .streamIndex(0)
+                .timeBaseNumerator(1)
+                .timeBaseDenominator(90_000)
+                .source(KeyframePositionSource.CONTAINER_INDEX)
+                .keyframes(List.of(new KeyframePosition(0, 0)))
+                .build()));
   }
 
   private Optional<ProbeTaskRequest> scheduledRequest() {

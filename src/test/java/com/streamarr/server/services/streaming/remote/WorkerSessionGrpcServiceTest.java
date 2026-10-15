@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.google.protobuf.ByteString;
+import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.services.streaming.SegmentPublication;
@@ -19,11 +20,13 @@ import com.streamarr.transcode.v1.JobAttemptStopped;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeFailure;
+import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.UploadSegmentResponse;
+import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
 import com.streamarr.transcode.v1.WorkerCapabilities;
@@ -35,18 +38,28 @@ import io.grpc.stub.StreamObserver;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.LongStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Worker Session gRPC Service Tests")
 class WorkerSessionGrpcServiceTest {
+
+  // worker_session.proto bounds the keyframe positions of one probe attempt to 1,048,576 entries.
+  private static final int MAXIMUM_KEYFRAME_POSITIONS_PER_PROBE = 1_048_576;
+  // worker_session.proto bounds each list of a keyframe positions part to 4,096 entries.
+  private static final int MAXIMUM_ENTRIES_PER_PART = 4_096;
 
   @Test
   @DisplayName(
@@ -77,7 +90,201 @@ class WorkerSessionGrpcServiceTest {
 
     session.onNext(EstablishWorkerSessionRequest.newBuilder().setProbeResult(result).build());
 
-    assertThat(attempt.get(1, TimeUnit.SECONDS)).isEqualTo(result);
+    assertThat(attempt.get(1, TimeUnit.SECONDS).result()).isEqualTo(result);
+  }
+
+  @Test
+  @DisplayName(
+      "Should report keyframe positions parts with the probe result when a worker sends them before the result")
+  void shouldReportKeyframePositionsPartsWithProbeResultWhenWorkerSendsThemBeforeResult()
+      throws Exception {
+    var probe = SessionProbe.dispatch();
+    var first = keyframePositionsPart(probe.request(), 2);
+    var second = keyframePositionsPart(probe.request(), 1);
+
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeKeyframePositionsPart(first));
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeKeyframePositionsPart(second));
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
+
+    assertThat(probe.attempt().get(1, TimeUnit.SECONDS))
+        .isEqualTo(
+            new ProbeAttemptReport(
+                probe.result(), List.of(keyframePositionsPart(probe.request(), 3))));
+  }
+
+  @Test
+  @DisplayName(
+      "Should report the same keyframe positions when a worker sends them in 1,025 single-entry parts")
+  void shouldReportSameKeyframePositionsWhenWorkerSendsThemIn1025SingleEntryParts()
+      throws Exception {
+    var onePart = SessionProbe.dispatch();
+    onePart.send(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setProbeKeyframePositionsPart(keyframePositionsPart(onePart.request(), 1_025)));
+    onePart.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(onePart.result()));
+    var singleEntryParts = SessionProbe.dispatch();
+    var singleEntryPart = keyframePositionsPart(singleEntryParts.request(), 1);
+
+    for (var sent = 0; sent < 1_025; sent++) {
+      singleEntryParts.send(
+          EstablishWorkerSessionRequest.newBuilder()
+              .setProbeKeyframePositionsPart(singleEntryPart));
+    }
+
+    singleEntryParts.send(
+        EstablishWorkerSessionRequest.newBuilder().setProbeResult(singleEntryParts.result()));
+
+    assertThat(withoutAttemptIds(singleEntryParts.attempt().get(1, TimeUnit.SECONDS)))
+        .isEqualTo(withoutAttemptIds(onePart.attempt().get(1, TimeUnit.SECONDS)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should report no keyframe positions parts when a worker sends them for another probe attempt")
+  void shouldReportNoKeyframePositionsPartsWhenWorkerSendsThemForAnotherProbeAttempt()
+      throws Exception {
+    var probe = SessionProbe.dispatch();
+    var otherAttempt =
+        probe.request().toBuilder().setProbeAttemptId(toProto(UUID.randomUUID())).build();
+
+    probe.send(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setProbeKeyframePositionsPart(keyframePositionsPart(otherAttempt, 1)));
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
+
+    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).keyframePositionsParts()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should fail a probe when a worker sends more keyframe positions than one probe allows")
+  void shouldFailProbeWhenWorkerSendsMoreKeyframePositionsThanOneProbeAllows() throws Exception {
+    var probe = SessionProbe.dispatch();
+    var fullPart = keyframePositionsPart(probe.request(), MAXIMUM_ENTRIES_PER_PART);
+
+    for (var sent = 0;
+        sent < MAXIMUM_KEYFRAME_POSITIONS_PER_PROBE / MAXIMUM_ENTRIES_PER_PART;
+        sent++) {
+      probe.send(
+          EstablishWorkerSessionRequest.newBuilder().setProbeKeyframePositionsPart(fullPart));
+    }
+
+    probe.send(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setProbeKeyframePositionsPart(keyframePositionsPart(probe.request(), 1)));
+
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
+
+    assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
+        .isInstanceOf(ExecutionException.class)
+        .hasCauseInstanceOf(ProbeExecutionException.class);
+  }
+
+  @ParameterizedTest
+  @CsvSource({"4097,0", "0,4097"})
+  @DisplayName(
+      "Should fail a probe when a keyframe positions part holds more entries than the contract allows")
+  void shouldFailProbeWhenKeyframePositionsPartHoldsMoreEntriesThanContractAllows(
+      int presentationTimes, int decodeTimes) throws Exception {
+    var probe = SessionProbe.dispatch();
+    var part = ProbeKeyframePositionsPart.newBuilder().setProbeAttemptId(probe.attemptId());
+    LongStream.range(0, presentationTimes).forEach(part::addPresentationTimeDeltas);
+    LongStream.range(0, decodeTimes).forEach(part::addDecodeTimeDeltas);
+
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeKeyframePositionsPart(part));
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
+
+    assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
+        .isInstanceOf(ExecutionException.class)
+        .hasCauseInstanceOf(ProbeExecutionException.class);
+  }
+
+  @Test
+  @DisplayName("Should fail a probe when the lists of one keyframe positions part differ in length")
+  void shouldFailProbeWhenListsOfOneKeyframePositionsPartDifferInLength() throws Exception {
+    var probe = SessionProbe.dispatch();
+    var longerPresentationTimes =
+        ProbeKeyframePositionsPart.newBuilder()
+            .setProbeAttemptId(probe.attemptId())
+            .addPresentationTimeDeltas(90_000)
+            .addPresentationTimeDeltas(90_000)
+            .addDecodeTimeDeltas(90_000);
+    var longerDecodeTimes =
+        ProbeKeyframePositionsPart.newBuilder()
+            .setProbeAttemptId(probe.attemptId())
+            .addPresentationTimeDeltas(90_000)
+            .addDecodeTimeDeltas(90_000)
+            .addDecodeTimeDeltas(90_000);
+
+    probe.send(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setProbeKeyframePositionsPart(longerPresentationTimes));
+    probe.send(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setProbeKeyframePositionsPart(longerDecodeTimes));
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
+
+    assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
+        .isInstanceOf(ExecutionException.class)
+        .hasCauseInstanceOf(ProbeExecutionException.class);
+  }
+
+  private static List<ProbeKeyframePositionsPart> withoutAttemptIds(ProbeAttemptReport report) {
+    return report.keyframePositionsParts().stream()
+        .map(part -> part.toBuilder().clearProbeAttemptId().build())
+        .toList();
+  }
+
+  private static ProbeKeyframePositionsPart keyframePositionsPart(
+      ProbeRequest request, int keyframes) {
+    var part =
+        ProbeKeyframePositionsPart.newBuilder().setProbeAttemptId(request.getProbeAttemptId());
+    for (var keyframe = 0; keyframe < keyframes; keyframe++) {
+      part.addPresentationTimeDeltas(90_000).addDecodeTimeDeltas(90_000);
+    }
+
+    return part.build();
+  }
+
+  private record SessionProbe(
+      StreamObserver<EstablishWorkerSessionRequest> session,
+      ProbeRequest request,
+      Future<ProbeAttemptReport> attempt) {
+
+    private static SessionProbe dispatch() throws Exception {
+      var workerId = UUID.randomUUID();
+      var sourceNamespaceId = UUID.randomUUID();
+      var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+      var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+      var session = workerSession(service, workerId, new IgnoringResponseObserver());
+      var registration = registration(worker(workerId), sourceNamespaceId).toBuilder();
+      registration.getCapabilitiesBuilder().addProbeVersions(1);
+      session.onNext(
+          EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build());
+      var request =
+          ProbeRequest.newBuilder()
+              .setProbeAttemptId(toProto(UUID.randomUUID()))
+              .setProbeVersion(1)
+              .setSource(variantJob(sourceNamespaceId).getSource())
+              .build();
+      return new SessionProbe(session, request, dispatched(registry.dispatchProbe(request)));
+    }
+
+    private Uuid attemptId() {
+      return request.getProbeAttemptId();
+    }
+
+    private ProbeAttemptResult result() {
+      return ProbeAttemptResult.newBuilder()
+          .setProbeAttemptId(request.getProbeAttemptId())
+          .setProbeVersion(1)
+          .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA)
+          .build();
+    }
+
+    private void send(EstablishWorkerSessionRequest.Builder event) {
+      session.onNext(event.build());
+    }
   }
 
   @Test

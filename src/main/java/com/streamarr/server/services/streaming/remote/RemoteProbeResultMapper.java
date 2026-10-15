@@ -9,9 +9,11 @@ import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeContainerInfo;
+import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
@@ -22,9 +24,12 @@ final class RemoteProbeResultMapper {
   private static final long MAXIMUM_PROTOBUF_DURATION_SECONDS = 315_576_000_000L;
   private static final int MAXIMUM_PROTOBUF_DURATION_NANOS = 999_999_999;
 
-  ProbeOutcome map(ProbeAttemptResult result) {
+  private final RemoteKeyframeKnowledgeMapper keyframeMapper = new RemoteKeyframeKnowledgeMapper();
+
+  ProbeOutcome map(ProbeAttemptReport report) {
+    var result = report.result();
     if (result.hasMedia()) {
-      return success(result.getMedia());
+      return success(result.getMedia(), report.keyframePositionsParts());
     }
 
     return switch (result.getFailure()) {
@@ -50,15 +55,18 @@ final class RemoteProbeResultMapper {
     return new ProbeExecutionException(ItemFailureReason.TEMPORARY, message);
   }
 
-  private ProbeOutcome.Success success(ProbeMediaInfo media) {
+  private ProbeOutcome.Success success(
+      ProbeMediaInfo media, List<ProbeKeyframePositionsPart> keyframePositionsParts) {
     if (media.getStreamsList().stream()
         .noneMatch(stream -> "video".equals(stream.getCodecType()))) {
       throw contractViolation("Worker probe success contains no video stream");
     }
 
+    var streams = media.getStreamsList().stream().map(this::stream).toList();
     return new ProbeOutcome.Success(
         container(media.getContainer()),
-        media.getStreamsList().stream().map(this::stream).toList());
+        streams,
+        keyframeMapper.map(media, keyframePositionsParts));
   }
 
   private ProbeContainer container(ProbeContainerInfo container) {

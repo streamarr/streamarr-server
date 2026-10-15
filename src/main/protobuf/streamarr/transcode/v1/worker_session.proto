@@ -342,16 +342,20 @@ message KeyframePositions {
   uint32 time_base_denominator = 3;
   KeyframePositionSource source = 4;
   // The number of entries in each list across every part of the attempt. The count is at least
-  // one; a stream without keyframes reports KEYFRAMES_UNAVAILABLE_REASON_NO_KEYFRAMES instead. The
-  // server discards the parts and the positions when the count differs from the entries it
-  // received.
+  // one; a stream without keyframes reports KEYFRAMES_UNAVAILABLE_REASON_NO_KEYFRAMES instead. When
+  // the count differs from the entries the server received, the server fails the probe attempt as
+  // a contract violation and retries the probe.
   uint32 keyframe_count = 5;
 }
 
 // One run of consecutive keyframe positions from a probe attempt. A long source has too many
 // keyframes for one session message, so the worker splits the positions into parts. Each list in a
 // part holds at most 4,096 entries. Even when every entry takes the widest sint64 encoding of 10
-// bytes, a part then stays below 128 KiB, the largest session message the server accepts.
+// bytes, a part then stays below 128 KiB, the largest session message the server accepts. The
+// parts of one attempt hold at most 1,048,576 entries in each list, which covers 12 hours of 24 fps
+// video in which every frame is a keyframe. The worker may split the entries into parts of any
+// size up to the part limit. The server fails the probe attempt when a part or the attempt breaks
+// these limits, or when the two lists of a part differ in length.
 //
 // The worker sends every part of the attempt in decode-time order, before the attempt's
 // ProbeAttemptResult. The worker sends parts only when the result reports KeyframePositions. The
