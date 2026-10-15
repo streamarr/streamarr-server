@@ -1,7 +1,7 @@
 package com.streamarr.server.repositories.media;
 
-import com.streamarr.server.domain.media.ArtworkAttempt;
 import com.streamarr.server.domain.media.ArtworkOutcomeTally;
+import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ItemResult;
 import java.time.Instant;
@@ -31,7 +31,7 @@ public interface ItemResultRepository {
    * attempt's generation is no longer the item's pending artwork request or the item no longer
    * exists.
    */
-  boolean trySaveArtworkResults(ArtworkAttempt attempt, List<ItemResult> results);
+  boolean trySaveArtworkResults(ArtworkStepsAttempt attempt, List<ItemResult> results);
 
   List<ItemResult> findByItem(UUID itemId, ImageEntityType itemType);
 

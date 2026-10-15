@@ -7,13 +7,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.domain.media.ArtworkAttempt;
+import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
-import com.streamarr.server.exceptions.ObsoleteArtworkAttemptException;
-import com.streamarr.server.fixtures.ArtworkAttemptFixture;
+import com.streamarr.server.exceptions.ObsoleteArtworkStepsAttemptException;
+import com.streamarr.server.fixtures.ArtworkStepsAttemptFixture;
 import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
@@ -126,7 +126,7 @@ class ItemArtworkDeletionIT extends AbstractIntegrationTest {
     movieService.deleteMovieById(movieId);
 
     assertThatThrownBy(() -> imageService.replaceImages(replacement, attempt))
-        .isInstanceOf(ObsoleteArtworkAttemptException.class);
+        .isInstanceOf(ObsoleteArtworkStepsAttemptException.class);
     assertThat(imageRepository.findByEntityIdAndEntityType(movieId, ImageEntityType.MOVIE))
         .isEmpty();
     assertThat(replacement.writtenFiles())
@@ -139,7 +139,8 @@ class ItemArtworkDeletionIT extends AbstractIntegrationTest {
         createTestImage(600, 900), ImageType.POSTER, movieId, ImageEntityType.MOVIE, key);
   }
 
-  private ArtworkAttempt requestedAttempt(List<Image> images) {
-    return ArtworkAttemptFixture.requestedAttemptFor(transactionTemplate, artworkRequests, images);
+  private ArtworkStepsAttempt requestedAttempt(List<Image> images) {
+    return ArtworkStepsAttemptFixture.requestedAttemptFor(
+        transactionTemplate, artworkRequests, images);
   }
 }

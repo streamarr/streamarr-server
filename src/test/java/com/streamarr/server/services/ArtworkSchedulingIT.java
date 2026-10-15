@@ -77,7 +77,7 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   @Autowired private ArtworkSchedulers contextSchedulers;
   @Autowired private ArtworkService artworkService;
   @Autowired private ArtworkRuns artworkRuns;
-  @Autowired private ArtworkSteps artworkSteps;
+  @Autowired private ArtworkStepsRunner artworkStepsRunner;
   @Autowired private ImageService imageService;
   @Autowired private TmdbImageDownloader imageDownloader;
   @Autowired private CpuPermits cpuPermits;
@@ -273,7 +273,7 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
     requestMovieArtwork(ImageRefreshMode.PRESERVE, POSTER);
     var unreadable = new DataAccessResourceFailureException("database unavailable");
     var failingSteps =
-        ArtworkSteps.builder()
+        ArtworkStepsRunner.builder()
             .requests(new UnreadableRequests(requests, unreadable))
             .itemResults(itemResults)
             .imageService(imageService)
@@ -371,14 +371,14 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   }
 
   private ArtworkScheduler startPrimaryScheduler(AbstractSchedulerListener listener) {
-    return startPrimaryScheduler(artworkSteps, listener);
+    return startPrimaryScheduler(artworkStepsRunner, listener);
   }
 
   private ArtworkScheduler startPrimaryScheduler(
-      ArtworkSteps steps, AbstractSchedulerListener listener) {
+      ArtworkStepsRunner stepsRunner, AbstractSchedulerListener listener) {
     var scheduler =
         ArtworkSchedulerStarter.fromContext(applicationContext).toBuilder()
-            .steps(steps)
+            .stepsRunner(stepsRunner)
             .build()
             .start(ArtworkPriority.PRIMARY, listener);
     startedSchedulers.add(scheduler);

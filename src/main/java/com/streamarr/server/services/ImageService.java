@@ -1,7 +1,7 @@
 package com.streamarr.server.services;
 
 import com.streamarr.server.config.ImageProperties;
-import com.streamarr.server.domain.media.ArtworkAttempt;
+import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
@@ -118,11 +118,11 @@ public class ImageService {
    * transaction, so the stored image and its result commit or roll back together. When another
    * attempt already stored artwork of the type, that artwork stays and the result names its key.
    *
-   * @throws com.streamarr.server.exceptions.ObsoleteArtworkAttemptException if a newer artwork
+   * @throws com.streamarr.server.exceptions.ObsoleteArtworkStepsAttemptException if a newer artwork
    *     request replaced the attempt's generation or the item was deleted
    */
   @Transactional(propagation = Propagation.REQUIRES_NEW)
-  public void saveImages(List<Image> images, ArtworkAttempt attempt) {
+  public void saveImages(List<Image> images, ArtworkStepsAttempt attempt) {
     var insertedImageIds = imageRepository.insertAllIfAbsent(images, attempt);
     var first = images.getFirst();
     var storedKey = first.getKey();
@@ -145,11 +145,11 @@ public class ImageService {
    * Replaces one logical artwork and records its success in the same transaction. The last
    * replacement to commit wins (ADR 0031), and its result is the one stored.
    *
-   * @throws com.streamarr.server.exceptions.ObsoleteArtworkAttemptException if a newer artwork
+   * @throws com.streamarr.server.exceptions.ObsoleteArtworkStepsAttemptException if a newer artwork
    *     request replaced the attempt's generation or the item was deleted
    */
   @Transactional(propagation = Propagation.REQUIRES_NEW)
-  public void replaceImages(ProcessedImage replacement, ArtworkAttempt attempt) {
+  public void replaceImages(ProcessedImage replacement, ArtworkStepsAttempt attempt) {
     if (replacement.images().isEmpty()) {
       deleteFiles(replacement.writtenFiles());
       return;
@@ -187,7 +187,8 @@ public class ImageService {
     return stored.get().getKey();
   }
 
-  private static ItemResult savedArtwork(Image image, ArtworkAttempt attempt, String sourceKey) {
+  private static ItemResult savedArtwork(
+      Image image, ArtworkStepsAttempt attempt, String sourceKey) {
     return ItemResult.builder()
         .itemId(image.getEntityId())
         .itemType(image.getEntityType())

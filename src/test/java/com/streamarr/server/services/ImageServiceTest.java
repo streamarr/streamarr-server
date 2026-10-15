@@ -4,7 +4,7 @@ import static com.streamarr.server.fakes.TestImages.createSolidPngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fakes.TestImages.createTestImageWithMismatchedColorProfile;
 import static com.streamarr.server.fakes.TestImages.createTransparentPngImage;
-import static com.streamarr.server.fixtures.ArtworkAttemptFixture.attemptFor;
+import static com.streamarr.server.fixtures.ArtworkStepsAttemptFixture.attemptFor;
 import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

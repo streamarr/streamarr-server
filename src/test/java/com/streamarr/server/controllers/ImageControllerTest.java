@@ -1,7 +1,7 @@
 package com.streamarr.server.controllers;
 
 import static com.streamarr.server.fakes.TestImages.createTestImage;
-import static com.streamarr.server.fixtures.ArtworkAttemptFixture.attemptFor;
+import static com.streamarr.server.fixtures.ArtworkStepsAttemptFixture.attemptFor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.http.HttpHeaders.IF_NONE_MATCH;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;

@@ -5,8 +5,8 @@ import static com.streamarr.server.repositories.media.MediaEnumMapping.toDomain;
 import static com.streamarr.server.repositories.media.MediaEnumMapping.toJooq;
 
 import com.streamarr.server.config.ArtworkProperties;
-import com.streamarr.server.domain.media.ArtworkAttempt;
 import com.streamarr.server.domain.media.ArtworkOutcomeTally;
+import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
@@ -60,7 +60,7 @@ public class JooqItemResultRepository implements ItemResultRepository {
 
   @Override
   @Transactional
-  public boolean trySaveArtworkResults(ArtworkAttempt attempt, List<ItemResult> results) {
+  public boolean trySaveArtworkResults(ArtworkStepsAttempt attempt, List<ItemResult> results) {
     return transactionLocks.withLockWaitLimit(
         properties.lockTimeout(),
         () -> {

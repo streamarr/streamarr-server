@@ -64,10 +64,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
-@DisplayName("Artwork Steps Integration Tests")
-class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
+@DisplayName("Artwork Steps Runner Integration Tests")
+class ArtworkStepsRunnerIT extends AbstractWireMockIntegrationTest {
 
-  @Autowired private ArtworkSteps artworkSteps;
+  @Autowired private ArtworkStepsRunner artworkStepsRunner;
   @Autowired private ArtworkRequestRepository requests;
   @Autowired private ImageRepository imageRepository;
   @Autowired private ItemResultRepository itemResults;
@@ -99,7 +99,7 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
     stubImage("/poster.jpg");
     var generation = request("/poster.jpg", ImageRefreshMode.PRESERVE);
 
-    var outcome = artworkSteps.runSteps(movie);
+    var outcome = artworkStepsRunner.runSteps(movie);
 
     assertThat(outcome).isEqualTo(new ArtworkStepsOutcome.Finished(generation));
     assertThat(storedPosterKeys()).containsOnly("/poster.jpg");
@@ -110,7 +110,8 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
   @Test
   @DisplayName("Should run no step when the target has no artwork request")
   void shouldRunNoStepWhenTheTargetHasNoArtworkRequest() {
-    assertThat(artworkSteps.runSteps(movie)).isEqualTo(new ArtworkStepsOutcome.NotRequested());
+    assertThat(artworkStepsRunner.runSteps(movie))
+        .isEqualTo(new ArtworkStepsOutcome.NotRequested());
     assertThat(wireMock.getAllServeEvents()).isEmpty();
   }
 
@@ -123,7 +124,7 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
     stubImage("/poster.jpg");
     var generation = request("/poster.jpg", ImageRefreshMode.PRESERVE);
 
-    var rejected = rejectSucceededResultsWhile(() -> artworkSteps.runSteps(movie));
+    var rejected = rejectSucceededResultsWhile(() -> artworkStepsRunner.runSteps(movie));
 
     assertThat(rejected).isInstanceOf(ArtworkStepsOutcome.Unfinished.class);
     assertThat(storedPosterKeys()).isEmpty();
@@ -133,7 +134,7 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
             ItemOutcome.Failed.class,
             failed -> assertThat(failed.reason()).isEqualTo(ItemFailureReason.TEMPORARY));
 
-    assertThat(artworkSteps.runSteps(movie))
+    assertThat(artworkStepsRunner.runSteps(movie))
         .isEqualTo(new ArtworkStepsOutcome.Finished(generation));
     assertThat(storedPosterKeys()).containsOnly("/poster.jpg");
     assertThat(posterResult().outcome()).isEqualTo(new ItemOutcome.Succeeded());
@@ -158,7 +159,7 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
         replace.executeUpdate();
       }
 
-      var attempt = executor.submit(() -> artworkSteps.runSteps(movie));
+      var attempt = executor.submit(() -> artworkStepsRunner.runSteps(movie));
       awaitWaitersBehind(jdbcTemplate, backendPid(connection), 1);
       connection.commit();
 
@@ -192,7 +193,7 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
                       }));
       var blockerPid = deletePid.get(10, TimeUnit.SECONDS);
 
-      var attempt = executor.submit(() -> artworkSteps.runSteps(movie));
+      var attempt = executor.submit(() -> artworkStepsRunner.runSteps(movie));
       awaitWaitersBehind(jdbcTemplate, blockerPid, 1);
       commitDelete.countDown();
       delete.get(10, TimeUnit.SECONDS);
@@ -231,7 +232,7 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
 
     try (var resultLock = lockRow(posterResult);
         var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
-      var attempt = executor.submit(() -> artworkSteps.runSteps(movie));
+      var attempt = executor.submit(() -> artworkStepsRunner.runSteps(movie));
       awaitWaitersBehind(jdbcTemplate, resultLock.backendPid(), 1);
       var delete = executor.submit(() -> movieService.deleteMovieById(entityId));
       awaitWaitersBehind(jdbcTemplate, resultLock.backendPid(), 2);
@@ -253,7 +254,7 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
     stubImage("/poster.jpg");
     var generation = request("/poster.jpg", ImageRefreshMode.PRESERVE);
     var bothDownloaded = new CyclicBarrier(2);
-    var steps =
+    var stepsRunner =
         stepsDownloadingWith(
             key -> {
               var image = imageDownloader.downloadImage(key);
@@ -263,8 +264,8 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
             Clock.systemUTC());
 
     try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
-      var first = executor.submit(() -> steps.runSteps(movie));
-      var second = executor.submit(() -> steps.runSteps(movie));
+      var first = executor.submit(() -> stepsRunner.runSteps(movie));
+      var second = executor.submit(() -> stepsRunner.runSteps(movie));
 
       assertThat(List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
           .containsOnly(new ArtworkStepsOutcome.Finished(generation));
@@ -288,7 +289,7 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
     var laterDownloading = new CountDownLatch(1);
     var earlierFinished = new CountDownLatch(1);
     var downloads = new AtomicInteger();
-    var steps =
+    var stepsRunner =
         stepsDownloadingWith(
             key -> {
               if (downloads.incrementAndGet() == 1) {
@@ -304,10 +305,10 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
             clock);
 
     try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
-      var earlier = executor.submit(() -> steps.runSteps(movie));
+      var earlier = executor.submit(() -> stepsRunner.runSteps(movie));
       assertThat(earlierDownloading.await(10, TimeUnit.SECONDS)).isTrue();
       clock.advance(Duration.ofSeconds(1));
-      var later = executor.submit(() -> steps.runSteps(movie));
+      var later = executor.submit(() -> stepsRunner.runSteps(movie));
 
       assertThat(earlier.get(10, TimeUnit.SECONDS))
           .isEqualTo(new ArtworkStepsOutcome.Finished(generation));
@@ -341,7 +342,7 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
                     .build(),
                 ImageRefreshMode.PRESERVE,
                 requestedAt));
-    artworkSteps.runSteps(movie);
+    artworkStepsRunner.runSteps(movie);
     var clock = new MutableClock(new AtomicReference<>(Instant.now()));
 
     var afterRestart = new ArtworkProgress(requests, itemResults, clock);
@@ -358,8 +359,8 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
                 .build());
   }
 
-  private ArtworkSteps stepsDownloadingWith(TmdbImageDownloader downloader, Clock clock) {
-    return ArtworkSteps.builder()
+  private ArtworkStepsRunner stepsDownloadingWith(TmdbImageDownloader downloader, Clock clock) {
+    return ArtworkStepsRunner.builder()
         .requests(requests)
         .itemResults(itemResults)
         .imageService(imageService)

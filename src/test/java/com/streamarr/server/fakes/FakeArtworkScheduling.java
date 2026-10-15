@@ -10,10 +10,10 @@ import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.services.ArtworkPriority;
 import com.streamarr.server.services.ArtworkScheduling;
-import com.streamarr.server.services.ArtworkSteps;
-import com.streamarr.server.services.ArtworkStepsCompletion;
 import com.streamarr.server.services.ArtworkStepsOutcome;
+import com.streamarr.server.services.ArtworkStepsRunner;
 import com.streamarr.server.services.ArtworkStepsTask;
+import com.streamarr.server.services.ArtworkStepsTaskCompletion;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
@@ -23,28 +23,29 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Keeps scheduled artwork steps in memory and runs them through the real {@link ArtworkSteps} on
- * the calling thread. The real {@link ArtworkStepsCompletion} completes each attempt: a removed
- * task leaves the pending targets, a task rescheduled to run at once without failures runs again,
- * and any other rescheduled task stays pending until a test runs it again. Unless a test holds
- * them, steps run as soon as they are scheduled.
+ * Keeps scheduled artwork steps in memory and runs them through the real {@link ArtworkStepsRunner}
+ * on the calling thread. The real {@link ArtworkStepsTaskCompletion} completes each attempt: a
+ * removed task leaves the pending targets, a task rescheduled to run at once without failures runs
+ * again, and any other rescheduled task stays pending until a test runs it again. Unless a test
+ * holds them, steps run as soon as they are scheduled.
  */
 public class FakeArtworkScheduling implements ArtworkScheduling {
 
   private final Set<ArtworkTarget> pending = ConcurrentHashMap.newKeySet();
   private final Semaphore unfinishedAttempts = new Semaphore(0);
   private final FakeTaskRepository artworkTasks = new FakeTaskRepository();
-  private volatile ArtworkSteps steps;
-  private volatile ArtworkStepsCompletion completion;
+  private volatile ArtworkStepsRunner stepsRunner;
+  private volatile ArtworkStepsTaskCompletion completion;
   private volatile Clock clock;
   private volatile boolean runWhenScheduled = true;
   private volatile boolean runBackgroundWhenScheduled = true;
 
-  public void runStepsWith(ArtworkSteps steps, ArtworkRequestRepository requests, Clock clock) {
-    this.steps = steps;
+  public void runStepsWith(
+      ArtworkStepsRunner stepsRunner, ArtworkRequestRepository requests, Clock clock) {
+    this.stepsRunner = stepsRunner;
     this.clock = clock;
     this.completion =
-        ArtworkStepsCompletion.builder()
+        ArtworkStepsTaskCompletion.builder()
             .requests(requests)
             .transactionManager(new FakeTransactionManager())
             .artworkTasks(artworkTasks)
@@ -98,7 +99,7 @@ public class FakeArtworkScheduling implements ArtworkScheduling {
   }
 
   private ArtworkStepsOutcome run(ArtworkTarget target) {
-    var outcome = steps.runSteps(target);
+    var outcome = stepsRunner.runSteps(target);
     var completed = complete(target, outcome);
     if (completed == Completion.REMOVED) {
       pending.remove(target);

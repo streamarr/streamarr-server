@@ -37,7 +37,7 @@ class ArtworkStepsTaskTest {
   @Test
   @DisplayName("Should name the task when it is created")
   void shouldNameTheTaskWhenItIsCreated() {
-    var task = ArtworkStepsTask.create("primary-artwork-steps", steps(), completion());
+    var task = ArtworkStepsTask.create("primary-artwork-steps", stepsRunner(), completion());
 
     assertThat(task.getName()).isEqualTo("primary-artwork-steps");
   }
@@ -45,15 +45,15 @@ class ArtworkStepsTaskTest {
   @Test
   @DisplayName("Should reject a task when its name, steps or completion is missing")
   void shouldRejectATaskWhenItsNameStepsOrCompletionIsMissing() {
-    var steps = steps();
+    var stepsRunner = stepsRunner();
     var completion = completion();
 
     assertThatNullPointerException()
-        .isThrownBy(() -> ArtworkStepsTask.create(null, steps, completion));
+        .isThrownBy(() -> ArtworkStepsTask.create(null, stepsRunner, completion));
     assertThatNullPointerException()
         .isThrownBy(() -> ArtworkStepsTask.create("primary-artwork-steps", null, completion));
     assertThatNullPointerException()
-        .isThrownBy(() -> ArtworkStepsTask.create("primary-artwork-steps", steps, null));
+        .isThrownBy(() -> ArtworkStepsTask.create("primary-artwork-steps", stepsRunner, null));
     assertThatNullPointerException().isThrownBy(() -> ArtworkStepsTask.instanceId(null));
   }
 
@@ -89,12 +89,12 @@ class ArtworkStepsTaskTest {
 
   private final ArtworkFixture artwork = ArtworkFixture.builder().build();
 
-  private ArtworkSteps steps() {
-    return artwork.steps();
+  private ArtworkStepsRunner stepsRunner() {
+    return artwork.stepsRunner();
   }
 
-  private ArtworkStepsCompletion completion() {
-    return ArtworkStepsCompletion.builder()
+  private ArtworkStepsTaskCompletion completion() {
+    return ArtworkStepsTaskCompletion.builder()
         .requests(artwork.requests())
         .transactionManager(new FakeTransactionManager())
         .artworkTasks(new FakeTaskRepository())

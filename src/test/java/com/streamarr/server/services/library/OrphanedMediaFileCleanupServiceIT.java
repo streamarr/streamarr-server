@@ -4,14 +4,14 @@ import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.domain.media.ArtworkAttempt;
+import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.fixtures.ArtworkAttemptFixture;
+import com.streamarr.server.fixtures.ArtworkStepsAttemptFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
@@ -136,7 +136,8 @@ class OrphanedMediaFileCleanupServiceIT extends AbstractIntegrationTest {
         .status(MediaFileStatus.MATCHED);
   }
 
-  private ArtworkAttempt requestedAttempt(List<Image> images) {
-    return ArtworkAttemptFixture.requestedAttemptFor(transactionTemplate, artworkRequests, images);
+  private ArtworkStepsAttempt requestedAttempt(List<Image> images) {
+    return ArtworkStepsAttemptFixture.requestedAttemptFor(
+        transactionTemplate, artworkRequests, images);
   }
 }

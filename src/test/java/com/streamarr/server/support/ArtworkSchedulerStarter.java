@@ -5,7 +5,7 @@ import com.github.kagkarlsson.scheduler.event.SchedulerListener;
 import com.streamarr.server.config.ArtworkScheduler;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.services.ArtworkPriority;
-import com.streamarr.server.services.ArtworkSteps;
+import com.streamarr.server.services.ArtworkStepsRunner;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
@@ -25,7 +25,7 @@ public record ArtworkSchedulerStarter(
     DbSchedulerCustomizer customizer,
     DataSource dataSource,
     PlatformTransactionManager transactionManager,
-    ArtworkSteps steps,
+    ArtworkStepsRunner stepsRunner,
     ArtworkRequestRepository requests,
     Environment environment,
     Clock clock) {
@@ -38,7 +38,7 @@ public record ArtworkSchedulerStarter(
         .customizer(context.getBean(DbSchedulerCustomizer.class))
         .dataSource(context.getBean(DataSource.class))
         .transactionManager(context.getBean(PlatformTransactionManager.class))
-        .steps(context.getBean(ArtworkSteps.class))
+        .stepsRunner(context.getBean(ArtworkStepsRunner.class))
         .requests(context.getBean(ArtworkRequestRepository.class))
         .environment(context.getEnvironment())
         .clock(Clock.systemUTC())
@@ -56,7 +56,7 @@ public record ArtworkSchedulerStarter(
             .customizer(customizer)
             .dataSource(dataSource)
             .transactionManager(transactionManager)
-            .steps(steps)
+            .stepsRunner(stepsRunner)
             .requests(requests)
             .tableName(tableOf(priority))
             .taskName(priority.name().toLowerCase() + "-artwork-steps")

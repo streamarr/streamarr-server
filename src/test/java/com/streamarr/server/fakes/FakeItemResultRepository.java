@@ -1,7 +1,7 @@
 package com.streamarr.server.fakes;
 
-import com.streamarr.server.domain.media.ArtworkAttempt;
 import com.streamarr.server.domain.media.ArtworkOutcomeTally;
+import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
@@ -90,7 +90,7 @@ public class FakeItemResultRepository implements ItemResultRepository {
   }
 
   @Override
-  public boolean trySaveArtworkResults(ArtworkAttempt attempt, List<ItemResult> results) {
+  public boolean trySaveArtworkResults(ArtworkStepsAttempt attempt, List<ItemResult> results) {
     if (remainingArtworkResultsFailures.getAndUpdate(remaining -> Math.max(0, remaining - 1)) > 0) {
       throw artworkResultsFailure.get();
     }

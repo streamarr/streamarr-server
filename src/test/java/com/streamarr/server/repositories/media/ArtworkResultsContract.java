@@ -3,7 +3,7 @@ package com.streamarr.server.repositories.media;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
-import com.streamarr.server.domain.media.ArtworkAttempt;
+import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
@@ -130,8 +130,9 @@ public interface ArtworkResultsContract {
         .containsExactly(tuple(new ItemOutcome.Unavailable(), generation));
   }
 
-  private static ArtworkAttempt attempt(ArtworkTarget movie, long generation, Instant attemptedAt) {
-    return ArtworkAttempt.builder()
+  private static ArtworkStepsAttempt attempt(
+      ArtworkTarget movie, long generation, Instant attemptedAt) {
+    return ArtworkStepsAttempt.builder()
         .target(movie)
         .generation(generation)
         .attemptedAt(attemptedAt)

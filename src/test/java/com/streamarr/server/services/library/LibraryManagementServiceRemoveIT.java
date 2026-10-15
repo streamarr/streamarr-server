@@ -10,7 +10,7 @@ import static org.mockito.Mockito.mock;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.LibraryStatus;
-import com.streamarr.server.domain.media.ArtworkAttempt;
+import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
@@ -31,7 +31,7 @@ import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
-import com.streamarr.server.fixtures.ArtworkAttemptFixture;
+import com.streamarr.server.fixtures.ArtworkStepsAttemptFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.PersistedProbeFixture;
 import com.streamarr.server.fixtures.ProbeFixture;
@@ -613,7 +613,8 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
     assertThat(imageRepository.findByEntityIdAndEntityType(itemId, itemType)).isEmpty();
   }
 
-  private ArtworkAttempt requestedAttempt(List<Image> images) {
-    return ArtworkAttemptFixture.requestedAttemptFor(transactionTemplate, artworkRequests, images);
+  private ArtworkStepsAttempt requestedAttempt(List<Image> images) {
+    return ArtworkStepsAttemptFixture.requestedAttemptFor(
+        transactionTemplate, artworkRequests, images);
   }
 }

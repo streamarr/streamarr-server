@@ -26,7 +26,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @Builder
 @RequiredArgsConstructor
-public class ArtworkStepsCompletion {
+public class ArtworkStepsTaskCompletion {
 
   @NonNull private final ArtworkRequestRepository requests;
   @NonNull private final PlatformTransactionManager transactionManager;

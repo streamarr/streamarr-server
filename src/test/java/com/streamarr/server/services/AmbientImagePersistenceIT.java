@@ -5,12 +5,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.media.AmbientColors;
-import com.streamarr.server.domain.media.ArtworkAttempt;
+import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
-import com.streamarr.server.fixtures.ArtworkAttemptFixture;
+import com.streamarr.server.fixtures.ArtworkStepsAttemptFixture;
 import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
@@ -98,8 +98,8 @@ class AmbientImagePersistenceIT extends AbstractIntegrationTest {
     assertThat(readAmbientColors()).isEmpty();
   }
 
-  private ArtworkAttempt requestedAttempt() {
-    return ArtworkAttemptFixture.requestedAttemptFor(
+  private ArtworkStepsAttempt requestedAttempt() {
+    return ArtworkStepsAttemptFixture.requestedAttemptFor(
         transactions, artworkRequests, new ArtworkTarget(entityId, ImageEntityType.MOVIE));
   }
 

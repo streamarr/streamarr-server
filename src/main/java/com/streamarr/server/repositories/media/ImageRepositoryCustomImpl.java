@@ -8,9 +8,9 @@ import static com.streamarr.server.jooq.generated.tables.Series.SERIES;
 
 import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.media.AmbientColors;
-import com.streamarr.server.domain.media.ArtworkAttempt;
+import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.Image;
-import com.streamarr.server.exceptions.ObsoleteArtworkAttemptException;
+import com.streamarr.server.exceptions.ObsoleteArtworkStepsAttemptException;
 import com.streamarr.server.jooq.generated.enums.ImageEntityType;
 import com.streamarr.server.jooq.generated.enums.ImageSize;
 import com.streamarr.server.jooq.generated.enums.ImageType;
@@ -37,7 +37,7 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
   private final ItemLocks itemLocks;
 
   @Override
-  public Set<UUID> insertAllIfAbsent(List<Image> images, ArtworkAttempt attempt) {
+  public Set<UUID> insertAllIfAbsent(List<Image> images, ArtworkStepsAttempt attempt) {
     if (images.isEmpty()) {
       return Set.of();
     }
@@ -52,7 +52,7 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
   }
 
   @Override
-  public List<String> replaceLogicalArtwork(List<Image> images, ArtworkAttempt attempt) {
+  public List<String> replaceLogicalArtwork(List<Image> images, ArtworkStepsAttempt attempt) {
     if (images.isEmpty()) {
       return List.of();
     }
@@ -102,9 +102,9 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
             .or(IMAGE.EPISODE_ID.in(episodes)));
   }
 
-  private void lockArtworkGeneration(ArtworkAttempt attempt) {
+  private void lockArtworkGeneration(ArtworkStepsAttempt attempt) {
     if (!itemLocks.tryLockArtworkGeneration(attempt.target(), attempt.generation())) {
-      throw new ObsoleteArtworkAttemptException(attempt);
+      throw new ObsoleteArtworkStepsAttemptException(attempt);
     }
   }
 

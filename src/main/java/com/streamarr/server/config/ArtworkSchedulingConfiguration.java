@@ -3,7 +3,7 @@ package com.streamarr.server.config;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerProperties;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
-import com.streamarr.server.services.ArtworkSteps;
+import com.streamarr.server.services.ArtworkStepsRunner;
 import java.time.Clock;
 import java.util.List;
 import java.util.function.Supplier;
@@ -29,7 +29,7 @@ public class ArtworkSchedulingConfiguration {
       DbSchedulerCustomizer customizer,
       DataSource dataSource,
       PlatformTransactionManager transactionManager,
-      ArtworkSteps steps,
+      ArtworkStepsRunner stepsRunner,
       ArtworkRequestRepository requests,
       Clock clock,
       ArtworkProperties properties,
@@ -42,7 +42,7 @@ public class ArtworkSchedulingConfiguration {
                 .customizer(customizer)
                 .dataSource(dataSource)
                 .transactionManager(transactionManager)
-                .steps(steps)
+                .stepsRunner(stepsRunner)
                 .requests(requests)
                 .clock(clock)
                 .listeners(List.of());

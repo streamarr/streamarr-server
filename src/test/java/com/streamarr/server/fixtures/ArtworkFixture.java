@@ -14,7 +14,7 @@ import com.streamarr.server.services.ArtworkRun;
 import com.streamarr.server.services.ArtworkRunSummary;
 import com.streamarr.server.services.ArtworkRuns;
 import com.streamarr.server.services.ArtworkService;
-import com.streamarr.server.services.ArtworkSteps;
+import com.streamarr.server.services.ArtworkStepsRunner;
 import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.concurrency.CpuPermits;
 import com.streamarr.server.services.concurrency.Sleeper;
@@ -39,7 +39,7 @@ import lombok.Builder;
 public record ArtworkFixture(
     ArtworkService artworkService,
     ArtworkRuns artworkRuns,
-    ArtworkSteps steps,
+    ArtworkStepsRunner stepsRunner,
     ArtworkProgress progress,
     FakeArtworkScheduling scheduling,
     FakeArtworkRequestRepository requests,
@@ -79,8 +79,8 @@ public record ArtworkFixture(
             new ImageProperties("/data/images"),
             imageFileSystem,
             results);
-    var steps =
-        ArtworkSteps.builder()
+    var stepsRunner =
+        ArtworkStepsRunner.builder()
             .requests(requests)
             .itemResults(results)
             .imageService(imageService)
@@ -89,7 +89,7 @@ public record ArtworkFixture(
             .clock(artworkClock)
             .build();
     var scheduling = new FakeArtworkScheduling();
-    scheduling.runStepsWith(steps, requests, artworkClock);
+    scheduling.runStepsWith(stepsRunner, requests, artworkClock);
     return new ArtworkFixture(
         new ArtworkService(requests, scheduling, imageService, artworkClock),
         ArtworkRuns.builder()
@@ -98,7 +98,7 @@ public record ArtworkFixture(
             .clock(artworkClock)
             .properties(ArtworkProperties.builder().resultCheckInterval(CHECK_INTERVAL).build())
             .build(),
-        steps,
+        stepsRunner,
         new ArtworkProgress(requests, results, artworkClock),
         scheduling,
         requests,

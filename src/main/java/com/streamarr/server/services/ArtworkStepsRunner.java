@@ -1,13 +1,13 @@
 package com.streamarr.server.services;
 
-import com.streamarr.server.domain.media.ArtworkAttempt;
+import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
-import com.streamarr.server.exceptions.ObsoleteArtworkAttemptException;
+import com.streamarr.server.exceptions.ObsoleteArtworkStepsAttemptException;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.services.ArtworkPlan.PlannedImage.DownloadImage;
@@ -43,7 +43,7 @@ import org.springframework.stereotype.Component;
 @Component
 @Builder
 @RequiredArgsConstructor
-public class ArtworkSteps {
+public class ArtworkStepsRunner {
 
   private final ArtworkRequestRepository requests;
   private final ItemResultRepository itemResults;
@@ -86,7 +86,7 @@ public class ArtworkSteps {
 
     var request = pending.get();
     var attempt =
-        ArtworkAttempt.builder()
+        ArtworkStepsAttempt.builder()
             .target(target)
             .generation(request.generation())
             .attemptedAt(clock.instant())
@@ -124,7 +124,7 @@ public class ArtworkSteps {
   }
 
   // A result of this generation or a newer one that no retry would change.
-  private Set<ImageType> finishedImageTypes(ArtworkAttempt attempt) {
+  private Set<ImageType> finishedImageTypes(ArtworkStepsAttempt attempt) {
     return itemResults
         .findByItem(attempt.target().targetId(), attempt.target().targetType())
         .stream()
@@ -135,7 +135,7 @@ public class ArtworkSteps {
         .collect(Collectors.toSet());
   }
 
-  private List<StepOutcome> downloadAll(ArtworkAttempt attempt, List<DownloadImage> planned) {
+  private List<StepOutcome> downloadAll(ArtworkStepsAttempt attempt, List<DownloadImage> planned) {
     if (planned.isEmpty()) {
       return List.of();
     }
@@ -151,7 +151,7 @@ public class ArtworkSteps {
     return downloads.stream().map(download -> save(attempt, download)).toList();
   }
 
-  private ProcessedImage downloadAndProcess(ArtworkAttempt attempt, DownloadImage planned)
+  private ProcessedImage downloadAndProcess(ArtworkStepsAttempt attempt, DownloadImage planned)
       throws IOException, InterruptedException {
     var source = planned.source();
     var imageData =
@@ -177,7 +177,7 @@ public class ArtworkSteps {
     };
   }
 
-  private StepOutcome save(ArtworkAttempt attempt, ImageDownload download) {
+  private StepOutcome save(ArtworkStepsAttempt attempt, ImageDownload download) {
     var planned = download.planned();
     if (download.processedImage().state() == Future.State.FAILED) {
       return failed(attempt, planned, download.processedImage().exceptionNow());
@@ -187,7 +187,7 @@ public class ArtworkSteps {
     try {
       storeImages(attempt, planned, processed);
       return new StepOutcome.Saved();
-    } catch (ObsoleteArtworkAttemptException _) {
+    } catch (ObsoleteArtworkStepsAttemptException _) {
       imageService.deleteFiles(processed.writtenFiles());
       return new StepOutcome.Obsolete();
     } catch (RuntimeException e) {
@@ -197,7 +197,7 @@ public class ArtworkSteps {
   }
 
   private void storeImages(
-      ArtworkAttempt attempt, DownloadImage planned, ProcessedImage processed) {
+      ArtworkStepsAttempt attempt, DownloadImage planned, ProcessedImage processed) {
     if (planned.replacesStoredImage()) {
       imageService.replaceImages(processed, attempt);
       return;
@@ -206,7 +206,7 @@ public class ArtworkSteps {
     imageService.saveImages(processed.images(), attempt);
   }
 
-  private StepOutcome failed(ArtworkAttempt attempt, DownloadImage planned, Throwable cause) {
+  private StepOutcome failed(ArtworkStepsAttempt attempt, DownloadImage planned, Throwable cause) {
     if (cause instanceof InterruptedException) {
       return new StepOutcome.Interrupted();
     }
@@ -231,7 +231,7 @@ public class ArtworkSteps {
         retryAfter);
   }
 
-  private ArtworkStepsOutcome finish(ArtworkAttempt attempt, List<StepOutcome> outcomes) {
+  private ArtworkStepsOutcome finish(ArtworkStepsAttempt attempt, List<StepOutcome> outcomes) {
     // An interrupted attempt clears the flag here, so its results and its completion can still be
     // stored; the scheduled task then runs again without counting a failure.
     var interrupted =
@@ -255,7 +255,7 @@ public class ArtworkSteps {
 
   // Each step's result is stored; what remains depends on the outcomes.
   private static ArtworkStepsOutcome outcomeOfStoredAttempt(
-      ArtworkAttempt attempt, List<StepOutcome.ResultToStore> stored, boolean interrupted) {
+      ArtworkStepsAttempt attempt, List<StepOutcome.ResultToStore> stored, boolean interrupted) {
     if (interrupted) {
       return new ArtworkStepsOutcome.Interrupted(attempt.generation());
     }
@@ -282,7 +282,7 @@ public class ArtworkSteps {
   // Failed, unavailable and kept results are stored in one transaction, so one failed write leaves
   // every one of them pending rather than some stored and some lost.
   private ResultStorage storeResults(
-      ArtworkAttempt attempt, List<StepOutcome.ResultToStore> unsaved) {
+      ArtworkStepsAttempt attempt, List<StepOutcome.ResultToStore> unsaved) {
     if (unsaved.isEmpty()) {
       return ResultStorage.STORED;
     }
@@ -318,7 +318,7 @@ public class ArtworkSteps {
   }
 
   private static ItemResult.ItemResultBuilder result(
-      ArtworkAttempt attempt, ImageType imageType, ItemOutcome outcome) {
+      ArtworkStepsAttempt attempt, ImageType imageType, ItemOutcome outcome) {
     return ItemResult.builder()
         .itemId(attempt.target().targetId())
         .itemType(attempt.target().targetType())

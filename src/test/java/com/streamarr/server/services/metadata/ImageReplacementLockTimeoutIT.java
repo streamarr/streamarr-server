@@ -5,12 +5,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.domain.media.ArtworkAttempt;
+import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
-import com.streamarr.server.fixtures.ArtworkAttemptFixture;
+import com.streamarr.server.fixtures.ArtworkStepsAttemptFixture;
 import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
@@ -131,7 +131,8 @@ class ImageReplacementLockTimeoutIT extends AbstractIntegrationTest {
     }
   }
 
-  private ArtworkAttempt requestedAttempt(List<Image> images) {
-    return ArtworkAttemptFixture.requestedAttemptFor(transactionTemplate, artworkRequests, images);
+  private ArtworkStepsAttempt requestedAttempt(List<Image> images) {
+    return ArtworkStepsAttemptFixture.requestedAttemptFor(
+        transactionTemplate, artworkRequests, images);
   }
 }

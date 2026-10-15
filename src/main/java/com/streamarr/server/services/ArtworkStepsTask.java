@@ -13,13 +13,14 @@ public final class ArtworkStepsTask {
 
   public static Task<ArtworkTarget> create(
       @NonNull String name,
-      @NonNull ArtworkSteps steps,
-      @NonNull ArtworkStepsCompletion completion) {
+      @NonNull ArtworkStepsRunner stepsRunner,
+      @NonNull ArtworkStepsTaskCompletion completion) {
     return Tasks.custom(name, ArtworkTarget.class)
         .onFailure(completion.failureHandler())
         .execute(
             (instance, _) ->
-                completion.handlerFor(instance.getData(), steps.runSteps(instance.getData())));
+                completion.handlerFor(
+                    instance.getData(), stepsRunner.runSteps(instance.getData())));
   }
 
   /** The id of the target's scheduled task instance. */

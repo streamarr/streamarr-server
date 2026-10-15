@@ -3,7 +3,7 @@ package com.streamarr.server.repositories.media;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.ImageProperties;
-import com.streamarr.server.fixtures.ArtworkAttemptFixture;
+import com.streamarr.server.fixtures.ArtworkStepsAttemptFixture;
 import com.streamarr.server.fixtures.ImageFixture;
 import com.streamarr.server.repositories.PostgresTransactionLocks;
 import java.util.List;
@@ -28,7 +28,7 @@ class ImageRepositoryCustomImplTest {
 
     assertThat(
             repository.replaceLogicalArtwork(
-                List.of(), ArtworkAttemptFixture.attemptFor(List.of())))
+                List.of(), ArtworkStepsAttemptFixture.attemptFor(List.of())))
         .isEmpty();
   }
 
@@ -54,7 +54,7 @@ class ImageRepositoryCustomImplTest {
 
       assertThat(
               repository.insertAllIfAbsent(
-                  List.of(image), ArtworkAttemptFixture.attemptFor(List.of(image))))
+                  List.of(image), ArtworkStepsAttemptFixture.attemptFor(List.of(image))))
           .containsExactly(imageId);
     }
   }

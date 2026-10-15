@@ -1,11 +1,11 @@
 package com.streamarr.server.fakes;
 
-import com.streamarr.server.domain.media.ArtworkAttempt;
+import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
-import com.streamarr.server.exceptions.ObsoleteArtworkAttemptException;
+import com.streamarr.server.exceptions.ObsoleteArtworkStepsAttemptException;
 import com.streamarr.server.repositories.media.ImageRepository;
 import java.util.Collection;
 import java.util.HashSet;
@@ -35,7 +35,7 @@ public class FakeImageRepository extends FakeJpaRepository<Image> implements Ima
   }
 
   @Override
-  public Set<UUID> insertAllIfAbsent(List<Image> images, ArtworkAttempt attempt) {
+  public Set<UUID> insertAllIfAbsent(List<Image> images, ArtworkStepsAttempt attempt) {
     if (failOnInsertAllIfAbsent) {
       throw new RuntimeException("Simulated insertAllIfAbsent failure");
     }
@@ -55,7 +55,7 @@ public class FakeImageRepository extends FakeJpaRepository<Image> implements Ima
   }
 
   @Override
-  public List<String> replaceLogicalArtwork(List<Image> images, ArtworkAttempt attempt) {
+  public List<String> replaceLogicalArtwork(List<Image> images, ArtworkStepsAttempt attempt) {
     if (failOnReplaceLogicalArtwork) {
       throw new RuntimeException("Simulated logical artwork replacement failure");
     }
@@ -75,9 +75,9 @@ public class FakeImageRepository extends FakeJpaRepository<Image> implements Ima
     return replacedPaths;
   }
 
-  private void requireCurrentGeneration(ArtworkAttempt attempt) {
+  private void requireCurrentGeneration(ArtworkStepsAttempt attempt) {
     if (!currentArtworkGeneration.test(attempt.target(), attempt.generation())) {
-      throw new ObsoleteArtworkAttemptException(attempt);
+      throw new ObsoleteArtworkStepsAttemptException(attempt);
     }
   }
 

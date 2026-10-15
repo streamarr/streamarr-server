@@ -6,14 +6,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.domain.media.ArtworkAttempt;
+import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
-import com.streamarr.server.fixtures.ArtworkAttemptFixture;
+import com.streamarr.server.fixtures.ArtworkStepsAttemptFixture;
 import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.ArtworkSources;
@@ -85,7 +85,8 @@ class ArtworkLockTimeoutIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should give up within the lock timeout when results wait for a request being replaced")
   void shouldGiveUpWithinTheLockTimeoutWhenResultsWaitForARequestBeingReplaced() throws Exception {
-    var attempt = ArtworkAttemptFixture.requestedAttemptFor(transactionTemplate, requests, movie);
+    var attempt =
+        ArtworkStepsAttemptFixture.requestedAttemptFor(transactionTemplate, requests, movie);
 
     whileAnotherTransactionSavesARequest(
         () -> itemResults.trySaveArtworkResults(attempt, List.of(unavailablePoster(attempt))));
@@ -95,7 +96,8 @@ class ArtworkLockTimeoutIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should give up within the lock timeout when images wait for a request being replaced")
   void shouldGiveUpWithinTheLockTimeoutWhenImagesWaitForARequestBeingReplaced() throws Exception {
-    var attempt = ArtworkAttemptFixture.requestedAttemptFor(transactionTemplate, requests, movie);
+    var attempt =
+        ArtworkStepsAttemptFixture.requestedAttemptFor(transactionTemplate, requests, movie);
     var images =
         List.of(imageBuilder(movie.targetId()).key("/poster.jpg").path("movie/poster.jpg").build());
 
@@ -159,7 +161,7 @@ class ArtworkLockTimeoutIT extends AbstractIntegrationTest {
         .build();
   }
 
-  private static ItemResult unavailablePoster(ArtworkAttempt attempt) {
+  private static ItemResult unavailablePoster(ArtworkStepsAttempt attempt) {
     return ItemResult.builder()
         .itemId(attempt.target().targetId())
         .itemType(attempt.target().targetType())

@@ -18,9 +18,9 @@ import com.github.kagkarlsson.scheduler.stats.StatsRegistry;
 import com.github.kagkarlsson.scheduler.task.Task;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
-import com.streamarr.server.services.ArtworkSteps;
-import com.streamarr.server.services.ArtworkStepsCompletion;
+import com.streamarr.server.services.ArtworkStepsRunner;
 import com.streamarr.server.services.ArtworkStepsTask;
+import com.streamarr.server.services.ArtworkStepsTaskCompletion;
 import java.time.Clock;
 import java.util.List;
 import java.util.function.Supplier;
@@ -68,7 +68,7 @@ public final class ArtworkScheduler {
       @NonNull DbSchedulerCustomizer customizer,
       @NonNull DataSource dataSource,
       @NonNull PlatformTransactionManager transactionManager,
-      @NonNull ArtworkSteps steps,
+      @NonNull ArtworkStepsRunner stepsRunner,
       @NonNull ArtworkRequestRepository requests,
       @NonNull String tableName,
       @NonNull String taskName,
@@ -89,13 +89,13 @@ public final class ArtworkScheduler {
             false,
             clock::instant);
     var completion =
-        ArtworkStepsCompletion.builder()
+        ArtworkStepsTaskCompletion.builder()
             .requests(requests)
             .transactionManager(transactionManager)
             .artworkTasks(artworkTasks)
             .clock(clock)
             .build();
-    var task = ArtworkStepsTask.create(taskName, steps, completion);
+    var task = ArtworkStepsTask.create(taskName, stepsRunner, completion);
     var client =
         SchedulerClient.Builder.create(transactionalDataSource, task)
             .tableName(tableName)

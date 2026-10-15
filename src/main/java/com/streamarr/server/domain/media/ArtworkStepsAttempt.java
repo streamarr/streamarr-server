@@ -6,5 +6,5 @@ import lombok.NonNull;
 
 /** One attempt at a target's artwork steps, for one generation of the target's artwork request. */
 @Builder
-public record ArtworkAttempt(
+public record ArtworkStepsAttempt(
     @NonNull ArtworkTarget target, long generation, @NonNull Instant attemptedAt) {}

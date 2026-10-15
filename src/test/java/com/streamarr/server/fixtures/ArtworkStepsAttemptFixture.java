@@ -1,6 +1,6 @@
 package com.streamarr.server.fixtures;
 
-import com.streamarr.server.domain.media.ArtworkAttempt;
+import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
@@ -13,21 +13,21 @@ import java.util.UUID;
 import lombok.NonNull;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/** Artwork attempts for tests that save processed images directly. */
-public final class ArtworkAttemptFixture {
+/** Artwork steps attempts for tests that save processed images directly. */
+public final class ArtworkStepsAttemptFixture {
 
   public static final Instant ATTEMPTED_AT = Instant.parse("2026-09-23T10:00:00Z");
 
   private static final long FAKE_GENERATION = 1;
 
-  private ArtworkAttemptFixture() {}
+  private ArtworkStepsAttemptFixture() {}
 
   /**
    * An attempt for the target of the first image, for fakes that accept every generation. Without
    * images it names a movie that no image belongs to.
    */
-  public static ArtworkAttempt attemptFor(@NonNull List<Image> images) {
-    return ArtworkAttempt.builder()
+  public static ArtworkStepsAttempt attemptFor(@NonNull List<Image> images) {
+    return ArtworkStepsAttempt.builder()
         .target(targetOf(images))
         .generation(FAKE_GENERATION)
         .attemptedAt(ATTEMPTED_AT)
@@ -38,7 +38,7 @@ public final class ArtworkAttemptFixture {
    * Stores an artwork request for the target of the first image and returns an attempt of its
    * generation, so the database accepts the attempt's images.
    */
-  public static ArtworkAttempt requestedAttemptFor(
+  public static ArtworkStepsAttempt requestedAttemptFor(
       @NonNull TransactionTemplate transactionTemplate,
       @NonNull ArtworkRequestRepository requests,
       @NonNull List<Image> images) {
@@ -46,7 +46,7 @@ public final class ArtworkAttemptFixture {
   }
 
   /** Stores an artwork request for the target and returns an attempt of its generation. */
-  public static ArtworkAttempt requestedAttemptFor(
+  public static ArtworkStepsAttempt requestedAttemptFor(
       @NonNull TransactionTemplate transactionTemplate,
       @NonNull ArtworkRequestRepository requests,
       @NonNull ArtworkTarget target) {
@@ -62,7 +62,7 @@ public final class ArtworkAttemptFixture {
                 requests
                     .saveRequest(artwork, ImageRefreshMode.FORCE_REFRESH, ATTEMPTED_AT)
                     .generation());
-    return ArtworkAttempt.builder()
+    return ArtworkStepsAttempt.builder()
         .target(target)
         .generation(generation)
         .attemptedAt(ATTEMPTED_AT)

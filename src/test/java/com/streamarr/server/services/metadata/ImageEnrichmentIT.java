@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractWireMockIntegrationTest;
-import com.streamarr.server.domain.media.ArtworkAttempt;
+import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
@@ -25,7 +25,7 @@ import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.ArtworkSources;
-import com.streamarr.server.services.ArtworkSteps;
+import com.streamarr.server.services.ArtworkStepsRunner;
 import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
@@ -56,7 +56,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
 
   private static final Instant ATTEMPTED_AT = Instant.parse("2026-09-23T10:00:00Z");
 
-  @Autowired private ArtworkSteps artworkSteps;
+  @Autowired private ArtworkStepsRunner artworkStepsRunner;
   @Autowired private ArtworkRequestRepository requests;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private ImageRepository imageRepository;
@@ -78,7 +78,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
     stubImageDownload("/poster.jpg");
     request(entityId, "/poster.jpg");
 
-    artworkSteps.runSteps(new ArtworkTarget(entityId, ImageEntityType.MOVIE));
+    artworkStepsRunner.runSteps(new ArtworkTarget(entityId, ImageEntityType.MOVIE));
 
     assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
         .extracting(Image::getImageType)
@@ -92,7 +92,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
     stubImageDownload("/transparent.png", createTransparentPngImage());
     request(entityId, "/transparent.png");
 
-    artworkSteps.runSteps(new ArtworkTarget(entityId, ImageEntityType.MOVIE));
+    artworkStepsRunner.runSteps(new ArtworkTarget(entityId, ImageEntityType.MOVIE));
 
     assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
         .filteredOn(image -> image.getVariant() == ImageSize.SMALL)
@@ -373,8 +373,8 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
         _ -> requests.saveRequest(artwork, ImageRefreshMode.PRESERVE, ATTEMPTED_AT).generation());
   }
 
-  private ArtworkAttempt attemptFor(UUID entityId) {
-    return ArtworkAttempt.builder()
+  private ArtworkStepsAttempt attemptFor(UUID entityId) {
+    return ArtworkStepsAttempt.builder()
         .target(new ArtworkTarget(entityId, ImageEntityType.MOVIE))
         .generation(request(entityId, "/requested.jpg"))
         .attemptedAt(ATTEMPTED_AT)

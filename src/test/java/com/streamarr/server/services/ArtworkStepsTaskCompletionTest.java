@@ -35,8 +35,8 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
-@DisplayName("Artwork Steps Completion Tests")
-class ArtworkStepsCompletionTest {
+@DisplayName("Artwork Steps Task Completion Tests")
+class ArtworkStepsTaskCompletionTest {
 
   private static final Instant NOW = Instant.parse("2026-10-14T12:00:00Z");
   private static final ArtworkTarget MOVIE =
@@ -45,8 +45,8 @@ class ArtworkStepsCompletionTest {
   private final FakeArtworkRequestRepository requests =
       new FakeArtworkRequestRepository(new FakeItemResultRepository());
   private final FakeTaskRepository artworkTasks = new FakeTaskRepository();
-  private final ArtworkStepsCompletion completion =
-      ArtworkStepsCompletion.builder()
+  private final ArtworkStepsTaskCompletion completion =
+      ArtworkStepsTaskCompletion.builder()
           .requests(requests)
           .transactionManager(new FakeTransactionManager())
           .artworkTasks(artworkTasks)
@@ -177,14 +177,15 @@ class ArtworkStepsCompletionTest {
 
     assertThatNullPointerException()
         .isThrownBy(
-            () -> new ArtworkStepsCompletion(null, transactionManager, artworkTasks, clock));
+            () -> new ArtworkStepsTaskCompletion(null, transactionManager, artworkTasks, clock));
     assertThatNullPointerException()
-        .isThrownBy(() -> new ArtworkStepsCompletion(requests, null, artworkTasks, clock));
-    assertThatNullPointerException()
-        .isThrownBy(() -> new ArtworkStepsCompletion(requests, transactionManager, null, clock));
+        .isThrownBy(() -> new ArtworkStepsTaskCompletion(requests, null, artworkTasks, clock));
     assertThatNullPointerException()
         .isThrownBy(
-            () -> new ArtworkStepsCompletion(requests, transactionManager, artworkTasks, null));
+            () -> new ArtworkStepsTaskCompletion(requests, transactionManager, null, clock));
+    assertThatNullPointerException()
+        .isThrownBy(
+            () -> new ArtworkStepsTaskCompletion(requests, transactionManager, artworkTasks, null));
   }
 
   private long request(String key) {
