@@ -3,7 +3,9 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.media.ArtworkItem;
 import com.streamarr.server.domain.media.ArtworkState;
 import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
+import com.streamarr.server.domain.media.PendingArtwork;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.services.ArtworkSources;
 import com.streamarr.server.services.PendingArtworkRequest;
@@ -27,6 +29,7 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
       Comparator.comparing(ImageSource::imageType).thenComparing(ImageSource::key);
 
   private final Map<ArtworkItem, PendingArtworkRequest> requests = new HashMap<>();
+  private final Map<ArtworkItem, Instant> firstRequestedAt = new HashMap<>();
   private final FakeItemResultRepository itemResults;
   private long lastGeneration;
 
@@ -65,6 +68,7 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
     }
 
     var generation = ++lastGeneration;
+    firstRequestedAt.putIfAbsent(artwork.item(), requestedAt);
     requests.put(
         artwork.item(),
         PendingArtworkRequest.builder()
@@ -96,7 +100,7 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
       return false;
     }
 
-    requests.remove(item);
+    remove(item);
     return true;
   }
 
@@ -116,22 +120,36 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
   }
 
   @Override
-  public synchronized Map<ImageEntityType, Long> countPendingImagesByItemType() {
-    var counts = new EnumMap<ImageEntityType, Long>(ImageEntityType.class);
-    requests
-        .values()
-        .forEach(
-            request ->
-                counts.merge(
-                    request.artwork().entityType(),
-                    (long) request.artwork().requestedImageTypes().size(),
-                    Long::sum));
-    return counts;
+  public synchronized Map<ImageEntityType, PendingArtwork> findPendingArtworkByItemType() {
+    var pending = new EnumMap<ImageEntityType, PendingArtwork>(ImageEntityType.class);
+    requests.forEach(
+        (item, request) ->
+            pending.merge(
+                item.itemType(),
+                new PendingArtwork(pendingImagesOf(request), firstRequestedAt.get(item)),
+                PendingArtwork::plus));
+    return pending;
+  }
+
+  private long pendingImagesOf(PendingArtworkRequest request) {
+    var item = request.artwork().item();
+    var finished =
+        itemResults.findByItem(item.itemId(), item.itemType()).stream()
+            .filter(result -> result.step() == ItemStep.ARTWORK)
+            .filter(result -> result.artworkGeneration() >= request.generation())
+            .filter(ItemResult::isFinal)
+            .count();
+    return Math.max(0, request.artwork().requestedImageTypes().size() - finished);
   }
 
   /** Deletes the item's request, as deleting the item does. */
   public synchronized void deleteItem(ArtworkItem item) {
+    remove(item);
+  }
+
+  private void remove(ArtworkItem item) {
     requests.remove(item);
+    firstRequestedAt.remove(item);
   }
 
   private static boolean covers(

@@ -6,7 +6,6 @@ import com.streamarr.server.repositories.media.ArtworkRequestRepository.SavedArt
 import com.streamarr.server.services.ArtworkPlan.PlannedImage;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.time.Clock;
-import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -84,9 +83,9 @@ public class ArtworkService {
 
   /** Returns how many background images are requested but not finished, server-wide. */
   public long pendingBackgroundImages() {
-    return requests.countPendingImagesByItemType().entrySet().stream()
+    return requests.findPendingArtworkByItemType().entrySet().stream()
         .filter(entry -> ArtworkPriority.of(entry.getKey()) == ArtworkPriority.BACKGROUND)
-        .mapToLong(Map.Entry::getValue)
+        .mapToLong(entry -> entry.getValue().images())
         .sum();
   }
 

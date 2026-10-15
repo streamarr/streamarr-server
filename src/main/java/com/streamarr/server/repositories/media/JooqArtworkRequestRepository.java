@@ -12,6 +12,9 @@ import com.streamarr.server.domain.media.ArtworkState;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemResult;
+import com.streamarr.server.domain.media.PendingArtwork;
+import com.streamarr.server.jooq.generated.enums.ItemResultFailureReason;
+import com.streamarr.server.jooq.generated.enums.ItemResultOutcome;
 import com.streamarr.server.jooq.generated.enums.ItemResultStep;
 import com.streamarr.server.jooq.generated.tables.records.ArtworkRequestRecord;
 import com.streamarr.server.repositories.PostgresTransactionLocks;
@@ -96,9 +99,8 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
                 ARTWORK_REQUEST.SOURCE_IMAGE_TYPES,
                 DSL.excluded(ARTWORK_REQUEST.SOURCE_IMAGE_TYPES))
             .set(ARTWORK_REQUEST.SOURCE_KEYS, DSL.excluded(ARTWORK_REQUEST.SOURCE_KEYS))
-            .set(ARTWORK_REQUEST.IMAGE_COUNT, DSL.excluded(ARTWORK_REQUEST.IMAGE_COUNT))
             .set(ARTWORK_REQUEST.GENERATION, ARTWORK_REQUEST_GENERATION.nextval())
-            .set(ARTWORK_REQUEST.REQUESTED_AT, DSL.excluded(ARTWORK_REQUEST.REQUESTED_AT))
+            .set(ARTWORK_REQUEST.IMAGE_COUNT, DSL.excluded(ARTWORK_REQUEST.IMAGE_COUNT))
             .where(changesPendingRequest())
             .returning(ARTWORK_REQUEST.GENERATION)
             .fetchOptional(ARTWORK_REQUEST.GENERATION);
@@ -201,13 +203,31 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
 
   @Override
   @Transactional(readOnly = true)
-  public Map<ImageEntityType, Long> countPendingImagesByItemType() {
-    var counts = new EnumMap<ImageEntityType, Long>(ImageEntityType.class);
-    dsl.select(ARTWORK_REQUEST.ITEM_TYPE, DSL.sum(ARTWORK_REQUEST.IMAGE_COUNT))
+  public Map<ImageEntityType, PendingArtwork> findPendingArtworkByItemType() {
+    var finishedImages =
+        DSL.selectCount()
+            .from(ITEM_RESULT)
+            .where(ITEM_RESULT.ITEM_ID.eq(ARTWORK_REQUEST.ITEM_ID))
+            .and(ITEM_RESULT.ITEM_TYPE.eq(ARTWORK_REQUEST.ITEM_TYPE))
+            .and(ITEM_RESULT.STEP.eq(ItemResultStep.ARTWORK))
+            .and(ITEM_RESULT.ARTWORK_GENERATION.ge(ARTWORK_REQUEST.GENERATION))
+            .and(isFinal())
+            .<Integer>asField();
+    var pendingImages =
+        DSL.greatest(ARTWORK_REQUEST.IMAGE_COUNT.minus(finishedImages), DSL.inline(0));
+    var pending = new EnumMap<ImageEntityType, PendingArtwork>(ImageEntityType.class);
+    dsl.select(
+            ARTWORK_REQUEST.ITEM_TYPE,
+            DSL.sum(pendingImages),
+            DSL.min(ARTWORK_REQUEST.REQUESTED_AT))
         .from(ARTWORK_REQUEST)
         .groupBy(ARTWORK_REQUEST.ITEM_TYPE)
-        .forEach(row -> counts.put(toDomain(row.value1()), row.value2().longValue()));
-    return counts;
+        .forEach(
+            row ->
+                pending.put(
+                    toDomain(row.value1()),
+                    new PendingArtwork(row.value2().longValue(), row.value3().toInstant())));
+    return pending;
   }
 
   // A pending request covers a new one with the same sources and an equal or weaker refresh mode.
@@ -219,6 +239,14 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
         .or(
             DSL.excluded(ARTWORK_REQUEST.IMAGE_REFRESH_MODE)
                 .gt(ARTWORK_REQUEST.IMAGE_REFRESH_MODE));
+  }
+
+  // A result that no retry of its generation would change.
+  private static Condition isFinal() {
+    return ITEM_RESULT
+        .OUTCOME
+        .ne(ItemResultOutcome.FAILED)
+        .or(ITEM_RESULT.FAILURE_REASON.ne(ItemResultFailureReason.TEMPORARY));
   }
 
   private void lockRequest(ArtworkItem item) {

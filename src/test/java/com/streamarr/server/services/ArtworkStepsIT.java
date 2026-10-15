@@ -41,6 +41,7 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -320,20 +321,41 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should report artwork progress from stored requests and results when the server restarts")
-  void shouldReportArtworkProgressFromStoredRequestsAndResultsWhenTheServerRestarts() {
+      "Should report the saved, failed and pending images of a partly finished request when a new"
+          + " reporter starts after a restart")
+  void shouldReportThePartlyFinishedRequestsImagesWhenANewReporterStartsAfterARestart() {
+    jdbcTemplate.update("DELETE FROM artwork_request");
     stubImage("/poster.jpg");
-    request("/poster.jpg", ImageRefreshMode.PRESERVE);
+    wireMock.stubFor(get(urlEqualTo("/backdrop.jpg")).willReturn(aResponse().withStatus(503)));
+    var requestedAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
+    transactionTemplate.execute(
+        _ ->
+            requests.saveRequest(
+                ArtworkSources.builder()
+                    .entityId(entityId)
+                    .entityType(ImageEntityType.MOVIE)
+                    .sources(
+                        List.of(
+                            new TmdbImageSource(ImageType.POSTER, "/poster.jpg"),
+                            new TmdbImageSource(ImageType.BACKDROP, "/backdrop.jpg")))
+                    .build(),
+                ImageRefreshMode.PRESERVE,
+                requestedAt));
+    artworkSteps.runSteps(movie);
     var clock = new MutableClock(new AtomicReference<>(Instant.now()));
-    var progressBeforeRestart = new ArtworkProgress(requests, itemResults, clock);
-    progressBeforeRestart.reportProgress();
 
-    var progressAfterRestart = new ArtworkProgress(requests, itemResults, clock);
+    var afterRestart = new ArtworkProgress(requests, itemResults, clock);
 
-    assertThat(progressAfterRestart.reportProgress())
+    assertThat(afterRestart.reportProgress())
         .filteredOn(report -> report.priority() == ArtworkPriority.PRIMARY)
         .singleElement()
-        .satisfies(report -> assertThat(report.pending()).isPositive());
+        .isEqualTo(
+            ArtworkProgressReport.builder()
+                .priority(ArtworkPriority.PRIMARY)
+                .counts(ArtworkCounts.builder().saved(1).failed(1).build())
+                .pending(1)
+                .elapsed(Duration.between(requestedAt, clock.instant()))
+                .build());
   }
 
   private ArtworkSteps stepsDownloadingWith(TmdbImageDownloader downloader, Clock clock) {

@@ -3,6 +3,7 @@ package com.streamarr.server.repositories.media;
 import com.streamarr.server.domain.media.ArtworkItem;
 import com.streamarr.server.domain.media.ArtworkState;
 import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.domain.media.PendingArtwork;
 import com.streamarr.server.services.ArtworkSources;
 import com.streamarr.server.services.PendingArtworkRequest;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
@@ -62,6 +63,10 @@ public interface ArtworkRequestRepository {
    */
   List<ArtworkState> findArtworkStates(Collection<ArtworkItem> items);
 
-  /** Counts the images that pending requests ask for, by item type. */
-  Map<ImageEntityType, Long> countPendingImagesByItemType();
+  /**
+   * Returns, by item type, the images that pending requests still need and when the earliest of
+   * those requests was first made. A request that a changed request replaced keeps its first
+   * request time.
+   */
+  Map<ImageEntityType, PendingArtwork> findPendingArtworkByItemType();
 }

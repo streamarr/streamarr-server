@@ -135,7 +135,10 @@ A restart resumes pending steps, and db-scheduler revives the execution of a cra
 
 A scan or refresh waits for primary artwork by reading recorded results, never an in-process signal, so a result recorded after a restart counts.
 A wait is satisfied only by a result of the awaited generation or a newer one; a failed result counts, and its retry continues in the background.
-Server-wide progress reads pending requests and recorded results, so it is correct across restarts.
+Server-wide progress reads stored state, so it is correct across restarts.
+It counts as pending each requested image without a final result of its request's generation.
+Its busy period starts when the earliest pending request was first made; a changed request keeps its first request time.
+It counts the results recorded since the busy period started.
 
 === Deleting Items
 

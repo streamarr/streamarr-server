@@ -22,6 +22,7 @@ import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
+import com.streamarr.server.domain.media.PendingArtwork;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -470,8 +471,8 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
     }
 
     @Override
-    public Map<ImageEntityType, Long> countPendingImagesByItemType() {
-      return delegate.countPendingImagesByItemType();
+    public Map<ImageEntityType, PendingArtwork> findPendingArtworkByItemType() {
+      return delegate.findPendingArtworkByItemType();
     }
   }
 

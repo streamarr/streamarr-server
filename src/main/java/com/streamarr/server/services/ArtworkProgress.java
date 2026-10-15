@@ -1,5 +1,6 @@
 package com.streamarr.server.services;
 
+import com.streamarr.server.domain.media.PendingArtwork;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
 import java.time.Clock;
@@ -16,8 +17,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * Logs server-wide artwork progress by priority from stored artwork requests and recorded artwork
- * results, so the report stays correct across restarts. A priority's busy period starts at the
- * first report that finds pending images and ends at the first report that finds none.
+ * results, so the report stays correct across restarts. A priority's busy period starts when the
+ * earliest of its pending requests was first made and ends at the first report that finds no
+ * pending image. Counts cover the results recorded since the busy period started.
  */
 @Slf4j
 @Component
@@ -44,15 +46,18 @@ public class ArtworkProgress {
       fixedDelayString = "${artwork.progress-log-interval:30s}")
   public synchronized List<ArtworkProgressReport> reportProgress() {
     var now = clock.instant();
-    var pendingByPriority = new EnumMap<ArtworkPriority, Long>(ArtworkPriority.class);
+    var pendingByPriority = new EnumMap<ArtworkPriority, PendingArtwork>(ArtworkPriority.class);
     requests
-        .countPendingImagesByItemType()
+        .findPendingArtworkByItemType()
         .forEach(
-            (itemType, images) ->
-                pendingByPriority.merge(ArtworkPriority.of(itemType), images, Long::sum));
+            (itemType, pending) ->
+                pendingByPriority.merge(
+                    ArtworkPriority.of(itemType), pending, PendingArtwork::plus));
     var reports =
         Arrays.stream(ArtworkPriority.values())
-            .map(priority -> report(priority, pendingByPriority.getOrDefault(priority, 0L), now))
+            .map(
+                priority ->
+                    report(priority, Optional.ofNullable(pendingByPriority.get(priority)), now))
             .flatMap(Optional::stream)
             .toList();
     reports.forEach(ArtworkProgress::log);
@@ -60,19 +65,18 @@ public class ArtworkProgress {
   }
 
   private Optional<ArtworkProgressReport> report(
-      ArtworkPriority priority, long pending, Instant now) {
+      ArtworkPriority priority, Optional<PendingArtwork> pending, Instant now) {
+    var pendingImages = pending.map(PendingArtwork::images).orElse(0L);
     var startedAt = busySince.get(priority);
-    if (startedAt == null && pending == 0) {
+    if (startedAt == null && pendingImages == 0) {
       return Optional.empty();
     }
 
-    if (startedAt == null) {
-      startedAt = now;
-      busySince.put(priority, startedAt);
-      log.info("Started fetching {} artwork across all libraries.", describe(priority));
+    if (pendingImages > 0) {
+      startedAt = startOfBusyPeriod(priority, pending.get());
     }
 
-    if (pending == 0) {
+    if (pendingImages == 0) {
       busySince.remove(priority);
     }
 
@@ -80,9 +84,22 @@ public class ArtworkProgress {
         ArtworkProgressReport.builder()
             .priority(priority)
             .counts(countsSince(priority, startedAt))
-            .pending(pending)
+            .pending(pendingImages)
             .elapsed(Duration.between(startedAt, now))
             .build());
+  }
+
+  // The busy period starts at the earliest pending request's stored first request time, so a
+  // reporter that starts after a restart counts the results recorded since that request too.
+  private Instant startOfBusyPeriod(ArtworkPriority priority, PendingArtwork pending) {
+    var startedAt = busySince.get(priority);
+    if (startedAt != null) {
+      return startedAt;
+    }
+
+    log.info("Started fetching {} artwork across all libraries.", describe(priority));
+    busySince.put(priority, pending.firstRequestedAt());
+    return pending.firstRequestedAt();
   }
 
   private ArtworkCounts countsSince(ArtworkPriority priority, Instant since) {

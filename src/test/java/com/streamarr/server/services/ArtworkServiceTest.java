@@ -569,8 +569,9 @@ class ArtworkServiceTest {
     }
 
     @Test
-    @DisplayName("Should start the busy period when the first report finds pending images")
-    void shouldStartTheBusyPeriodWhenTheFirstReportFindsPendingImages() {
+    @DisplayName(
+        "Should measure the busy period from the earliest pending request when images are pending")
+    void shouldMeasureTheBusyPeriodFromTheEarliestPendingRequestWhenImagesArePending() {
       artwork.scheduling().holdScheduledSteps();
       var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
       artworkService.requestPrimaryArtwork(run, movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
@@ -613,6 +614,51 @@ class ArtworkServiceTest {
                     .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
               });
       assertThat(artwork.progress().reportProgress()).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+        "Should count results stored before the first report when their request was made earlier")
+    void shouldCountResultsStoredBeforeTheFirstReportWhenTheirRequestWasMadeEarlier() {
+      requestMovieWithASavedPosterAndARetryingBackdrop();
+      clock.advance(Duration.ofSeconds(20));
+
+      var reports = artwork.progress().reportProgress();
+
+      assertThat(reports).containsExactly(savedPosterAndRetryingBackdropReport());
+    }
+
+    @Test
+    @DisplayName("Should report the same progress when a new reporter starts after a restart")
+    void shouldReportTheSameProgressWhenANewReporterStartsAfterARestart() {
+      requestMovieWithASavedPosterAndARetryingBackdrop();
+      clock.advance(Duration.ofSeconds(20));
+      artwork.progress().reportProgress();
+
+      var afterRestart = new ArtworkProgress(artwork.requests(), itemResults, clock);
+
+      assertThat(afterRestart.reportProgress())
+          .containsExactly(savedPosterAndRetryingBackdropReport());
+    }
+
+    // The movie is requested, and ten seconds later its poster is saved while its backdrop waits
+    // to retry a temporary failure.
+    private void requestMovieWithASavedPosterAndARetryingBackdrop() {
+      artwork.scheduling().holdScheduledSteps();
+      imageDownloader.setFailOnPath("/backdrop.jpg");
+      var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+      artworkService.requestPrimaryArtwork(run, movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
+      clock.advance(Duration.ofSeconds(10));
+      artwork.scheduling().runPendingSteps();
+    }
+
+    private static ArtworkProgressReport savedPosterAndRetryingBackdropReport() {
+      return ArtworkProgressReport.builder()
+          .priority(ArtworkPriority.PRIMARY)
+          .counts(ArtworkCounts.builder().saved(1).failed(1).build())
+          .pending(1)
+          .elapsed(Duration.ofSeconds(30))
+          .build();
     }
 
     @Test

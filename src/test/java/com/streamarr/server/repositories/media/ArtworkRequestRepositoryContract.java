@@ -6,9 +6,11 @@ import com.streamarr.server.domain.media.ArtworkItem;
 import com.streamarr.server.domain.media.ArtworkState;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
+import com.streamarr.server.domain.media.PendingArtwork;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository.SavedArtworkRequest.NewGeneration;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository.SavedArtworkRequest.Unchanged;
 import com.streamarr.server.services.ArtworkSources;
@@ -215,10 +217,12 @@ public interface ArtworkRequestRepositoryContract {
   }
 
   @Test
-  @DisplayName("Should count pending images by item type when requests are pending")
-  default void shouldCountPendingImagesByItemTypeWhenRequestsArePending() {
-    save(createMovie(), ImageRefreshMode.PRESERVE, POSTER);
-    save(createMovie(), ImageRefreshMode.PRESERVE, POSTER, BACKDROP);
+  @DisplayName(
+      "Should count pending images and the earliest request time by item type when requests are"
+          + " pending")
+  default void shouldCountPendingImagesAndTheEarliestRequestTimeByItemTypeWhenRequestsArePending() {
+    saveAt(createMovie(), REQUESTED_AT.plusSeconds(60), POSTER);
+    saveAt(createMovie(), REQUESTED_AT, POSTER, BACKDROP);
     var person = createPerson();
     inTransaction(
         () ->
@@ -230,10 +234,56 @@ public interface ArtworkRequestRepositoryContract {
                         .sources(List.of(new TmdbImageSource(ImageType.PROFILE, "/face.jpg")))
                         .build(),
                     ImageRefreshMode.PRESERVE,
-                    REQUESTED_AT));
+                    REQUESTED_AT.plusSeconds(30)));
 
-    assertThat(repository().countPendingImagesByItemType())
-        .containsAllEntriesOf(Map.of(ImageEntityType.MOVIE, 4L, ImageEntityType.PERSON, 1L));
+    assertThat(repository().findPendingArtworkByItemType())
+        .containsAllEntriesOf(
+            Map.of(
+                ImageEntityType.MOVIE,
+                new PendingArtwork(4, REQUESTED_AT),
+                ImageEntityType.PERSON,
+                new PendingArtwork(1, REQUESTED_AT.plusSeconds(30))));
+  }
+
+  @Test
+  @DisplayName(
+      "Should leave images with a final result of the pending generation out of the pending count"
+          + " when their request is pending")
+  default void shouldLeaveImagesWithAFinalResultOutOfThePendingCountWhenTheirRequestIsPending() {
+    var movie = createMovie();
+    var saved = save(movie, ImageRefreshMode.PRESERVE, POSTER, BACKDROP);
+    saveResult(savedPoster(movie, saved.generation()));
+    saveResult(
+        savedPoster(movie, saved.generation()).toBuilder()
+            .imageType(ImageType.BACKDROP)
+            .outcome(new ItemOutcome.Failed(ItemFailureReason.TEMPORARY, "timeout"))
+            .build());
+    var olderResult = createMovie();
+    save(olderResult, ImageRefreshMode.PRESERVE, POSTER, BACKDROP);
+    saveResult(savedPoster(olderResult, 0));
+
+    assertThat(repository().findPendingArtworkByItemType())
+        .containsEntry(ImageEntityType.MOVIE, new PendingArtwork(3, REQUESTED_AT));
+  }
+
+  @Test
+  @DisplayName("Should keep the first request time when a changed request replaces a pending one")
+  default void shouldKeepTheFirstRequestTimeWhenAChangedRequestReplacesAPendingOne() {
+    var movie = createMovie();
+    saveAt(movie, REQUESTED_AT, POSTER, BACKDROP);
+
+    saveAt(movie, REQUESTED_AT.plusSeconds(60), OTHER_POSTER, BACKDROP);
+
+    assertThat(repository().findPendingArtworkByItemType())
+        .containsEntry(ImageEntityType.MOVIE, new PendingArtwork(2, REQUESTED_AT));
+  }
+
+  private ArtworkRequestRepository.SavedArtworkRequest saveAt(
+      ArtworkItem item, Instant requestedAt, ImageSource... sources) {
+    return inTransaction(
+        () ->
+            repository()
+                .saveRequest(artwork(item, sources), ImageRefreshMode.PRESERVE, requestedAt));
   }
 
   private ArtworkRequestRepository.SavedArtworkRequest save(
