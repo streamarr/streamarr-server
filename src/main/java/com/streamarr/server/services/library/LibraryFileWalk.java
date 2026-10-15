@@ -108,7 +108,8 @@ public class LibraryFileWalk {
     }
 
     try (var discovery = fileDiscoveryRuns.open("file discovery in", library)) {
-      return processFile(discovery, path, discovery.probeRun()::request);
+      var outcome = processFile(discovery, path, discovery.probeRun()::request);
+      return !(outcome instanceof MatchingOutcome.SkippedAsMatched);
     }
   }
 
@@ -128,7 +129,7 @@ public class LibraryFileWalk {
 
   // The probe is requested with the snapshot the listing observed, so a source that becomes
   // unreadable afterwards fails its probe attempt rather than the scan.
-  private boolean processListedFile(FileDiscovery discovery, ListedFile listed) {
+  private MatchingOutcome processListedFile(FileDiscovery discovery, ListedFile listed) {
     return processFile(
         discovery,
         listed.path(),
@@ -161,22 +162,21 @@ public class LibraryFileWalk {
     throw scanFailure;
   }
 
-  private boolean processFile(FileDiscovery discovery, Path path, Consumer<UUID> requestProbe) {
+  private MatchingOutcome processFile(
+      FileDiscovery discovery, Path path, Consumer<UUID> requestProbe) {
     var library = discovery.library();
     var mediaFile = findOrCreateMediaFile(library, path);
     requestProbe.accept(mediaFile.getId());
 
     if (isAlreadyMatched(mediaFile)) {
-      return false;
+      return new MatchingOutcome.SkippedAsMatched();
     }
 
-    switch (library.getType()) {
+    return switch (library.getType()) {
       case MOVIE -> movieFileProcessor.process(discovery, mediaFile);
       case SERIES -> seriesFileProcessor.process(discovery, mediaFile);
       default -> throw new IllegalStateException("Unsupported media type: " + library.getType());
-    }
-
-    return true;
+    };
   }
 
   // Files with other extensions are not media files, so they get no task and no media_file row.

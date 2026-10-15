@@ -111,7 +111,8 @@ public class LibraryRefreshService {
     throwIfAnyRefreshTaskFailed(library, tasks);
   }
 
-  private void refreshSeries(Series series, String tmdbId, Library library, ArtworkRun artworkRun) {
+  private ItemOutcome refreshSeries(
+      Series series, String tmdbId, Library library, ArtworkRun artworkRun) {
     var attemptedAt = clock.instant();
     var outcome = refreshSeriesMetadata(series, tmdbId, library, artworkRun);
 
@@ -120,6 +121,7 @@ public class LibraryRefreshService {
             .outcome(outcome)
             .attemptedAt(attemptedAt)
             .build());
+    return outcome;
   }
 
   private ItemOutcome refreshSeriesMetadata(
@@ -225,7 +227,8 @@ public class LibraryRefreshService {
     throwIfAnyRefreshTaskFailed(library, tasks);
   }
 
-  private void refreshMovie(Movie movie, String tmdbId, Library library, ArtworkRun artworkRun) {
+  private ItemOutcome refreshMovie(
+      Movie movie, String tmdbId, Library library, ArtworkRun artworkRun) {
     var attemptedAt = clock.instant();
     var outcome = refreshMovieMetadata(movie, tmdbId, library, artworkRun);
 
@@ -234,6 +237,7 @@ public class LibraryRefreshService {
             .outcome(outcome)
             .attemptedAt(attemptedAt)
             .build());
+    return outcome;
   }
 
   private ItemOutcome refreshMovieMetadata(
