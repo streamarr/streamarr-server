@@ -605,6 +605,7 @@ public class ProducerLifecycleService {
         .sessionId(session.getSessionId())
         .sourcePath(session.getSourcePath())
         .seekPosition(timeline.mediaSegmentStartSeconds(startSequenceNumber))
+        .keyframeSeekPosition(timeline.keyframeSeekPosition(startSequenceNumber))
         .targetSegmentDuration(timeline.targetSegmentDurationSeconds())
         .framerate(probe.framerate())
         .transcodeDecision(session.getTranscodeDecision())

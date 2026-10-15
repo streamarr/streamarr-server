@@ -12,9 +12,12 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.transcode.v1.ContainerFormat;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -86,5 +89,44 @@ class RemoteVariantJobMapperTest {
     var job = mapper.map(request);
 
     assertThat(job.getVariant().getEncoderPreset()).isEqualTo(expected);
+  }
+
+  @Test
+  @DisplayName("Should write the keyframe seek position when a copy attempt carries one")
+  void shouldWriteTheKeyframeSeekPositionWhenACopyAttemptCarriesOne() {
+    var request =
+        copyAttempt().keyframeSeekPosition(Optional.of(Duration.ofMillis(600_558))).build();
+
+    var execution = mapper.map(request).getExecution();
+
+    assertThat(execution.hasSeekPosition()).isTrue();
+    assertThat(execution.getSeekPosition().getSeconds()).isEqualTo(600);
+    assertThat(execution.getSeekPosition().getNanos()).isEqualTo(558_000_000);
+  }
+
+  @Test
+  @DisplayName("Should leave the seek position unset when an attempt carries no keyframe seek")
+  void shouldLeaveTheSeekPositionUnsetWhenAnAttemptCarriesNoKeyframeSeek() {
+    var execution = mapper.map(copyAttempt().build()).getExecution();
+
+    assertThat(execution.hasSeekPosition()).isFalse();
+  }
+
+  private static TranscodeRequest.TranscodeRequestBuilder copyAttempt() {
+    return TranscodeRequest.builder()
+        .sessionId(UUID.randomUUID())
+        .sourcePath(SOURCE_ROOT.resolve("movie.mkv"))
+        .variantLabel(StreamSession.defaultVariant())
+        .seekPosition(600)
+        .startSequenceNumber(100)
+        .mediaSegmentCount(1_200)
+        .transcodeDecision(
+            TranscodeDecision.builder()
+                .transcodeMode(TranscodeMode.REMUX)
+                .videoCodecFamily("h264")
+                .audioDecision(AudioDecision.copy("aac", 2, 0))
+                .subtitleDecision(SubtitleDecision.exclude())
+                .build())
+        .encoderPreset(EncoderPreset.FASTER);
   }
 }
