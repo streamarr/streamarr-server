@@ -41,6 +41,10 @@ public final class ArtworkRun implements AutoCloseable {
     this.imageRefreshMode = operationRun.imageRefreshMode;
     this.clock = operationRun.clock;
     this.operationRun = Optional.of(operationRun);
+    // A task run starts empty and open, whatever its operation's run holds.
+    this.keptImages = 0;
+    this.firstRequestedAt = null;
+    this.closed = false;
   }
 
   /**
