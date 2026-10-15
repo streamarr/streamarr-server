@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 
 import com.streamarr.server.domain.audit.AuditActor;
 import com.streamarr.server.repositories.audit.TransactionAuditActorBinder;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -24,8 +25,11 @@ import org.springframework.transaction.support.DefaultTransactionStatus;
 @DisplayName("Audit Actor Transaction Listener Tests")
 class AuditActorTransactionListenerTest {
 
+  private static final String BINDING_FAILURE_METRIC = "streamarr.audit.actor_binding_failures";
+
   private final FakeTransactionAuditActorBinder auditActorBinder =
       new FakeTransactionAuditActorBinder();
+  private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
 
   @Test
   @DisplayName("Should bind the resolved actor when a read-write transaction begins")
@@ -37,6 +41,7 @@ class AuditActorTransactionListenerTest {
 
     assertThat(auditActorBinder.boundActors).containsExactly(actor);
     assertThat(transaction.isRollbackOnly()).isFalse();
+    assertThat(meterRegistry.find(BINDING_FAILURE_METRIC).counter()).isNull();
   }
 
   @Test
@@ -67,8 +72,9 @@ class AuditActorTransactionListenerTest {
 
   @ParameterizedTest
   @MethodSource("bindingFailures")
-  @DisplayName("Should leave the transaction to the audit trigger when binding the actor fails")
-  void shouldLeaveTheTransactionToTheAuditTriggerWhenBindingTheActorFails(
+  @DisplayName(
+      "Should count the failure and leave the transaction to the audit trigger when binding fails")
+  void shouldCountTheFailureAndLeaveTheTransactionToTheAuditTriggerWhenBindingFails(
       RuntimeException failure) {
     auditActorBinder.failure = failure;
     var transaction = readWriteTransaction();
@@ -78,6 +84,7 @@ class AuditActorTransactionListenerTest {
 
     assertThat(auditActorBinder.boundActors).isEmpty();
     assertThat(transaction.isRollbackOnly()).isFalse();
+    assertThat(meterRegistry.counter(BINDING_FAILURE_METRIC).count()).isEqualTo(1);
   }
 
   private static Stream<RuntimeException> bindingFailures() {
@@ -88,11 +95,12 @@ class AuditActorTransactionListenerTest {
   }
 
   private AuditActorTransactionListener listenerResolving(AuditActor actor) {
-    return new AuditActorTransactionListener(() -> Optional.of(actor), auditActorBinder);
+    return new AuditActorTransactionListener(
+        () -> Optional.of(actor), auditActorBinder, meterRegistry);
   }
 
   private AuditActorTransactionListener listenerResolvingNoActor() {
-    return new AuditActorTransactionListener(Optional::empty, auditActorBinder);
+    return new AuditActorTransactionListener(Optional::empty, auditActorBinder, meterRegistry);
   }
 
   private static DefaultTransactionStatus readWriteTransaction() {

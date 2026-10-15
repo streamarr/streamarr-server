@@ -13,6 +13,7 @@ import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.support.AuditActorSetting;
 import com.streamarr.server.support.security.AnonymousRequestAuthentication;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.sql.DataSource;
@@ -132,7 +133,8 @@ class TransactionAuditActorBindingIT extends AbstractIntegrationTest {
   private TransactionTemplate transactionsResolvingTheProductionActor() {
     var manager = new JdbcTransactionManager(dataSource);
     manager.addListener(
-        new AuditActorTransactionListener(new SecurityAuditActorSource(), auditActorBinder));
+        new AuditActorTransactionListener(
+            new SecurityAuditActorSource(), auditActorBinder, new SimpleMeterRegistry()));
     return new TransactionTemplate(manager);
   }
 
