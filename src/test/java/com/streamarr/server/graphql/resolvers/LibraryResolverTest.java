@@ -38,6 +38,7 @@ import com.streamarr.server.services.authorization.SecurityContextAuthorizationS
 import com.streamarr.server.services.library.AddLibraryRejection;
 import com.streamarr.server.services.library.LibraryAdministrationService;
 import com.streamarr.server.services.library.LibraryManagementService;
+import com.streamarr.server.services.library.LibraryOperationKind;
 import com.streamarr.server.services.library.LibraryOperationRejection;
 import com.streamarr.server.services.library.LibraryOperationService;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
@@ -50,6 +51,8 @@ import com.streamarr.server.services.pagination.PaginationService;
 import com.streamarr.server.support.security.WithAccountContext;
 import com.streamarr.server.support.security.WithProfileContext;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -65,6 +68,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
@@ -215,46 +219,195 @@ class LibraryResolverTest {
     }
 
     @Test
-    @DisplayName("Should return true when scanLibrary called with valid ID")
-    void shouldReturnTrueWhenScanLibraryCalledWithValidId() {
+    @DisplayName(
+        "Should return the library SCANNING with no userErrors when startLibraryScan starts an idle library")
+    void shouldReturnLibraryScanningWithNoUserErrorsWhenStartLibraryScanStartsIdleLibrary() {
       var libraryId = UUID.randomUUID();
 
-      Boolean result =
-          dgsQueryExecutor.executeAndExtractJsonPath(
-              String.format("mutation { scanLibrary(id: \"%s\") }", libraryId), "data.scanLibrary");
+      var payload = payloadOf(LibraryOperationMutation.START_LIBRARY_SCAN, libraryId.toString());
 
-      assertThat(result).isTrue();
+      assertThat(payload)
+          .containsEntry("library", Map.of("id", libraryId.toString(), "status", "SCANNING"))
+          .containsEntry("userErrors", List.of());
+      assertThat(FAKE_LIBRARY_OPERATION_SERVICE.startedLibraryIds()).containsExactly(libraryId);
       assertThat(authorizationDecider.recordedIntents())
           .contains(new Intent.ScanLibrary(libraryId));
     }
 
     @Test
-    @DisplayName("Should return FORBIDDEN with no data when authorization denies")
-    void shouldReturnForbiddenWithNoDataWhenAuthorizationDenies() {
-      authorizationDecider.denyAll();
+    @DisplayName(
+        "Should return the library REFRESHING with no userErrors when startLibraryRefresh starts an idle library")
+    void shouldReturnLibraryRefreshingWithNoUserErrorsWhenStartLibraryRefreshStartsIdleLibrary() {
+      var libraryId = UUID.randomUUID();
 
-      var result =
-          dgsQueryExecutor.execute(
-              String.format("mutation { scanLibrary(id: \"%s\") }", UUID.randomUUID()));
+      var payload = payloadOf(LibraryOperationMutation.START_LIBRARY_REFRESH, libraryId.toString());
 
-      assertThat(result.getErrors())
-          .singleElement()
-          .satisfies(error -> assertThat(error.getExtensions()).containsEntry("code", "FORBIDDEN"));
-      // Boolean! cannot be null, so the denial nulls the whole data envelope.
-      assertThat(result.<Map<String, Object>>getData()).isNull();
+      assertThat(payload)
+          .containsEntry("library", Map.of("id", libraryId.toString(), "status", "REFRESHING"))
+          .containsEntry("userErrors", List.of());
+      assertThat(FAKE_LIBRARY_OPERATION_SERVICE.refreshRequest())
+          .isEqualTo(new RefreshRequest(libraryId, ImageRefreshMode.PRESERVE));
+      assertThat(authorizationDecider.recordedIntents())
+          .contains(new Intent.RefreshLibrary(libraryId));
+    }
+
+    @Test
+    @DisplayName("Should pass the image refresh mode when the startLibraryRefresh input names one")
+    void shouldPassImageRefreshModeWhenStartLibraryRefreshInputNamesOne() {
+      var libraryId = UUID.randomUUID();
+
+      String status =
+          dgsQueryExecutor.executeAndExtractJsonPath(
+              """
+              mutation {
+                startLibraryRefresh(
+                  input: { libraryId: "%s", imageRefreshMode: REFRESH_IF_CHANGED }
+                ) {
+                  library { status }
+                }
+              }
+              """
+                  .formatted(libraryId),
+              "data.startLibraryRefresh.library.status");
+
+      assertThat(status).isEqualTo("REFRESHING");
+      assertThat(FAKE_LIBRARY_OPERATION_SERVICE.refreshRequest())
+          .isEqualTo(new RefreshRequest(libraryId, ImageRefreshMode.REFRESH_IF_CHANGED));
     }
 
     @Test
     @DisplayName(
-        "Should return LIBRARY_OPERATION_NOT_STARTED with a requestId when the scan does not start")
-    void shouldReturnLibraryOperationNotStartedWithRequestIdWhenScanDoesNotStart() {
+        "Should reject the request when the startLibraryRefresh input sets imageRefreshMode to null")
+    void shouldRejectRequestWhenStartLibraryRefreshInputSetsImageRefreshModeToNull() {
+      var result =
+          dgsQueryExecutor.execute(
+              """
+              mutation {
+                startLibraryRefresh(input: { libraryId: "%s", imageRefreshMode: null }) {
+                  library { status }
+                }
+              }
+              """
+                  .formatted(UUID.randomUUID()));
+
+      assertThat(result.getErrors())
+          .singleElement()
+          .satisfies(error -> assertThat(error.getMessage()).contains("imageRefreshMode"));
+      assertThat(FAKE_LIBRARY_OPERATION_SERVICE.startedLibraryIds()).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+        "Should return the removed library's id with no userErrors when removeLibrary removes an idle library")
+    void shouldReturnRemovedLibraryIdWithNoUserErrorsWhenRemoveLibraryRemovesIdleLibrary() {
+      var libraryId = UUID.randomUUID();
+
+      var payload = payloadOf(LibraryOperationMutation.REMOVE_LIBRARY, libraryId.toString());
+
+      assertThat(payload)
+          .containsEntry("removedLibraryId", libraryId.toString())
+          .containsEntry("userErrors", List.of());
+      assertThat(FAKE_LIBRARY_MANAGEMENT_SERVICE.removedLibraryIds()).containsExactly(libraryId);
+      assertThat(authorizationDecider.recordedIntents())
+          .contains(new Intent.RemoveLibrary(libraryId));
+    }
+
+    @ParameterizedTest(
+        name = "Should return LibraryNotFoundError and no result when {0} names a missing library")
+    @EnumSource(LibraryOperationMutation.class)
+    @DisplayName(
+        "Should return LibraryNotFoundError at libraryId and no result when the library is missing")
+    void shouldReturnLibraryNotFoundErrorAndNoResultWhenLibraryIsMissing(
+        LibraryOperationMutation mutation) {
+      rejectEveryRequestWith(new LibraryOperationRejection.LibraryNotFound());
+
+      var payload = payloadOf(mutation, UUID.randomUUID().toString());
+
+      assertThat(payload).containsEntry(mutation.resultField(), null);
+      assertThat(userErrorsOf(payload))
+          .singleElement()
+          .isEqualTo(
+              Map.of(
+                  "__typename", "LibraryNotFoundError",
+                  "message", "That library does not exist.",
+                  "inputPath", List.of("libraryId")));
+    }
+
+    @ParameterizedTest(
+        name = "Should return LibraryBusyError with {2} and no result when {0} meets a running {1}")
+    @MethodSource("com.streamarr.server.graphql.resolvers.LibraryResolverTest#libraryBusyRefusals")
+    @DisplayName(
+        "Should return LibraryBusyError naming the running kind and no result when the library is busy")
+    @SuppressWarnings("checkstyle:fullyQualifiedName")
+    void shouldReturnLibraryBusyErrorNamingRunningKindAndNoResultWhenLibraryIsBusy(
+        LibraryOperationMutation mutation,
+        LibraryOperationKind runningKind,
+        LibraryStatus status,
+        String message) {
+      rejectEveryRequestWith(new LibraryOperationRejection.LibraryBusy(status, runningKind));
+
+      var payload = payloadOf(mutation, UUID.randomUUID().toString());
+
+      assertThat(payload).containsEntry(mutation.resultField(), null);
+      assertThat(userErrorsOf(payload))
+          .singleElement()
+          .isEqualTo(
+              Map.of(
+                  "__typename", "LibraryBusyError", "message", message, "status", status.name()));
+    }
+
+    @ParameterizedTest(
+        name = "Should return InvalidIdError and no result when {0} receives a malformed id")
+    @EnumSource(LibraryOperationMutation.class)
+    @DisplayName(
+        "Should return InvalidIdError at libraryId and start nothing when the libraryId is malformed")
+    void shouldReturnInvalidIdErrorAndStartNothingWhenLibraryIdIsMalformed(
+        LibraryOperationMutation mutation) {
+      var payload = payloadOf(mutation, "not-a-uuid");
+
+      assertThat(payload).containsEntry(mutation.resultField(), null);
+      assertThat(userErrorsOf(payload))
+          .singleElement()
+          .isEqualTo(
+              Map.of(
+                  "__typename", "InvalidIdError",
+                  "message", "Enter a valid ID.",
+                  "inputPath", List.of("libraryId")));
+      assertThat(FAKE_LIBRARY_OPERATION_SERVICE.startedLibraryIds()).isEmpty();
+      assertThat(FAKE_LIBRARY_MANAGEMENT_SERVICE.removedLibraryIds()).isEmpty();
+    }
+
+    @ParameterizedTest(name = "Should return FORBIDDEN and a null payload when {0} is denied")
+    @EnumSource(LibraryOperationMutation.class)
+    @DisplayName("Should return FORBIDDEN and a null payload when authorization denies")
+    void shouldReturnForbiddenAndNullPayloadWhenAuthorizationDenies(
+        LibraryOperationMutation mutation) {
+      authorizationDecider.denyAll();
+
+      var result = dgsQueryExecutor.execute(mutation.document(UUID.randomUUID().toString()));
+
+      assertThat(result.getErrors())
+          .singleElement()
+          .satisfies(error -> assertThat(error.getExtensions()).containsEntry("code", "FORBIDDEN"));
+      assertThat(result.<Map<String, Object>>getData()).containsEntry(mutation.fieldName(), null);
+      assertThat(FAKE_LIBRARY_OPERATION_SERVICE.startedLibraryIds()).isEmpty();
+      assertThat(FAKE_LIBRARY_MANAGEMENT_SERVICE.removedLibraryIds()).isEmpty();
+    }
+
+    @ParameterizedTest(
+        name = "Should return LIBRARY_OPERATION_NOT_STARTED and a null payload when {0} fails")
+    @EnumSource(
+        value = LibraryOperationMutation.class,
+        names = {"START_LIBRARY_SCAN", "START_LIBRARY_REFRESH"})
+    @DisplayName(
+        "Should return LIBRARY_OPERATION_NOT_STARTED and a null payload when the start transaction fails")
+    void shouldReturnLibraryOperationNotStartedAndNullPayloadWhenStartTransactionFails(
+        LibraryOperationMutation mutation) {
       FAKE_LIBRARY_OPERATION_SERVICE.throwWhenStarted(
           new LibraryOperationNotStartedException(
               new CannotAcquireLockException("connection to db.internal:5432 lost")));
 
-      var result =
-          dgsQueryExecutor.execute(
-              String.format("mutation { scanLibrary(id: \"%s\") }", UUID.randomUUID()));
+      var result = dgsQueryExecutor.execute(mutation.document(UUID.randomUUID().toString()));
 
       assertThat(result.getErrors())
           .singleElement()
@@ -267,7 +420,7 @@ class LibraryResolverTest {
                     .containsEntry("code", "LIBRARY_OPERATION_NOT_STARTED")
                     .containsOnlyKeys("errorType", "code", "requestId");
               });
-      assertThat(result.<Map<String, Object>>getData()).isNull();
+      assertThat(result.<Map<String, Object>>getData()).containsEntry(mutation.fieldName(), null);
     }
 
     @Test
@@ -277,7 +430,7 @@ class LibraryResolverTest {
 
       var result =
           dgsQueryExecutor.execute(
-              String.format("mutation { removeLibrary(id: \"%s\") }", UUID.randomUUID()));
+              LibraryOperationMutation.REMOVE_LIBRARY.document(UUID.randomUUID().toString()));
 
       assertThat(result.getErrors())
           .singleElement()
@@ -288,54 +441,7 @@ class LibraryResolverTest {
                 assertThat(error.getMessage())
                     .contains("Authorization is temporarily unavailable.");
               });
-      assertThat(result.<Map<String, Object>>getData()).isNull();
-    }
-
-    @Test
-    @DisplayName("Should return true when refreshLibrary called with valid ID")
-    void shouldReturnTrueWhenRefreshLibraryCalledWithValidId() {
-      var libraryId = UUID.randomUUID();
-
-      Boolean result =
-          dgsQueryExecutor.executeAndExtractJsonPath(
-              String.format("mutation { refreshLibrary(id: \"%s\") }", libraryId),
-              "data.refreshLibrary");
-
-      assertThat(result).isTrue();
-      assertThat(FAKE_LIBRARY_OPERATION_SERVICE.refreshRequest())
-          .isEqualTo(new RefreshRequest(libraryId, ImageRefreshMode.PRESERVE));
-    }
-
-    @Test
-    @DisplayName(
-        "Should pass explicit image refresh mode when refreshLibrary mutation specifies it")
-    void shouldPassExplicitImageRefreshModeWhenRefreshLibraryMutationSpecifiesIt() {
-      var libraryId = UUID.randomUUID();
-
-      Boolean result =
-          dgsQueryExecutor.executeAndExtractJsonPath(
-              String.format(
-                  "mutation { refreshLibrary(id: \"%s\", imageRefreshMode: REFRESH_IF_CHANGED) }",
-                  libraryId),
-              "data.refreshLibrary");
-
-      assertThat(result).isTrue();
-      assertThat(FAKE_LIBRARY_OPERATION_SERVICE.refreshRequest())
-          .isEqualTo(new RefreshRequest(libraryId, ImageRefreshMode.REFRESH_IF_CHANGED));
-    }
-
-    @Test
-    @DisplayName("Should reject image refresh mode when refreshLibrary mutation receives null")
-    void shouldRejectImageRefreshModeWhenRefreshLibraryMutationReceivesNull() {
-      var result =
-          dgsQueryExecutor.execute(
-              String.format(
-                  "mutation { refreshLibrary(id: \"%s\", imageRefreshMode: null) }",
-                  UUID.randomUUID()));
-
-      assertThat(result.getErrors())
-          .singleElement()
-          .satisfies(error -> assertThat(error.getMessage()).contains("imageRefreshMode"));
+      assertThat(result.<Map<String, Object>>getData()).containsEntry("removeLibrary", null);
     }
 
     @Test
@@ -445,25 +551,13 @@ class LibraryResolverTest {
     }
 
     @Test
-    @DisplayName("Should return true when removeLibrary called with valid ID")
-    void shouldReturnTrueWhenRemoveLibraryCalledWithValidId() {
-      Boolean result =
-          dgsQueryExecutor.executeAndExtractJsonPath(
-              String.format("mutation { removeLibrary(id: \"%s\") }", UUID.randomUUID()),
-              "data.removeLibrary");
+    @DisplayName("Should return an invalid ID error when the library query receives a malformed id")
+    void shouldReturnInvalidIdErrorWhenLibraryQueryReceivesMalformedId() {
+      var result = dgsQueryExecutor.execute("{ library(id: \"not-a-uuid\") { name } }");
 
-      assertThat(result).isTrue();
-    }
-
-    @ParameterizedTest(name = "Should return error when {0} called with invalid ID")
-    @MethodSource("com.streamarr.server.graphql.resolvers.LibraryResolverTest#invalidIdOperations")
-    @DisplayName("Should return error when operation called with invalid ID")
-    @SuppressWarnings("checkstyle:fullyQualifiedName")
-    void shouldReturnErrorWhenCalledWithInvalidId(String operationName, String query) {
-      var result = dgsQueryExecutor.execute(query);
-
-      assertThat(result.getErrors()).isNotEmpty();
-      assertThat(result.getErrors().get(0).getMessage()).contains("Invalid ID format");
+      assertThat(result.getErrors())
+          .singleElement()
+          .satisfies(error -> assertThat(error.getMessage()).contains("Invalid ID format"));
     }
   }
 
@@ -504,11 +598,88 @@ class LibraryResolverTest {
             "filepath"));
   }
 
-  static Stream<Arguments> invalidIdOperations() {
-    return Stream.of(
-        Arguments.of("library", "{ library(id: \"not-a-uuid\") { name } }"),
-        Arguments.of("refreshLibrary", "mutation { refreshLibrary(id: \"not-a-uuid\") }"),
-        Arguments.of("removeLibrary", "mutation { removeLibrary(id: \"not-a-uuid\") }"));
+  static Stream<Arguments> libraryBusyRefusals() {
+    return Arrays.stream(LibraryOperationMutation.values())
+        .flatMap(
+            mutation ->
+                Stream.of(
+                    Arguments.of(
+                        mutation,
+                        LibraryOperationKind.SCAN,
+                        LibraryStatus.SCANNING,
+                        "A library scan is already in progress."),
+                    Arguments.of(
+                        mutation,
+                        LibraryOperationKind.REFRESH,
+                        LibraryStatus.REFRESHING,
+                        "A library refresh is already in progress.")));
+  }
+
+  /** The three library operation mutations, each selecting its result and its user errors. */
+  enum LibraryOperationMutation {
+    START_LIBRARY_SCAN("startLibraryScan", "library", "library { id status }"),
+    START_LIBRARY_REFRESH("startLibraryRefresh", "library", "library { id status }"),
+    REMOVE_LIBRARY("removeLibrary", "removedLibraryId", "removedLibraryId");
+
+    private final String fieldName;
+    private final String resultField;
+    private final String resultSelection;
+
+    LibraryOperationMutation(String fieldName, String resultField, String resultSelection) {
+      this.fieldName = fieldName;
+      this.resultField = resultField;
+      this.resultSelection = resultSelection;
+    }
+
+    String fieldName() {
+      return fieldName;
+    }
+
+    String resultField() {
+      return resultField;
+    }
+
+    String document(String libraryId) {
+      return """
+          mutation {
+            %s(input: { libraryId: "%s" }) {
+              %s
+              userErrors {
+                __typename
+                ... on MutationError { message }
+                ... on InputMutationError { inputPath }
+                ... on LibraryBusyError { status }
+              }
+            }
+          }
+          """
+          .formatted(fieldName, libraryId, resultSelection);
+    }
+
+    @Override
+    public String toString() {
+      return fieldName;
+    }
+  }
+
+  private Map<String, Object> payloadOf(LibraryOperationMutation mutation, String libraryId) {
+    var result = dgsQueryExecutor.execute(mutation.document(libraryId));
+
+    assertThat(result.getErrors()).isEmpty();
+    Map<String, Object> data = result.getData();
+    @SuppressWarnings("unchecked")
+    var payload = (Map<String, Object>) data.get(mutation.fieldName());
+    return payload;
+  }
+
+  @SuppressWarnings("unchecked")
+  private static List<Map<String, Object>> userErrorsOf(Map<String, Object> payload) {
+    return (List<Map<String, Object>>) payload.get("userErrors");
+  }
+
+  private static void rejectEveryRequestWith(LibraryOperationRejection rejection) {
+    FAKE_LIBRARY_OPERATION_SERVICE.rejectWith(rejection);
+    FAKE_LIBRARY_MANAGEMENT_SERVICE.rejectRemovalWith(rejection);
   }
 
   @Nested
@@ -939,6 +1110,8 @@ class LibraryResolverTest {
     private Outcome<Library, AddLibraryRejection> addLibraryOutcome;
     private Library addedLibrary;
     private List<LibraryMetadata> alphabetIndex = List.of();
+    private final List<UUID> removedLibraryIds = new ArrayList<>();
+    private LibraryOperationRejection removalRejection;
 
     private FakeLibraryManagementService() {
       super(null, null, null, null, null, null, null, null, null, null, null, null);
@@ -959,6 +1132,11 @@ class LibraryResolverTest {
     @Override
     public Outcome<UUID, LibraryOperationRejection> removeLibrary(
         AuthenticatedIdentity identity, UUID libraryId) {
+      removedLibraryIds.add(libraryId);
+      if (removalRejection != null) {
+        return Outcome.rejected(removalRejection);
+      }
+
       return Outcome.accepted(libraryId);
     }
 
@@ -991,19 +1169,31 @@ class LibraryResolverTest {
       alphabetIndex = metadata;
     }
 
+    private List<UUID> removedLibraryIds() {
+      return List.copyOf(removedLibraryIds);
+    }
+
+    private void rejectRemovalWith(LibraryOperationRejection rejection) {
+      removalRejection = rejection;
+    }
+
     private void reset() {
       addedIdentity = null;
       addLibraryFailure = null;
       addLibraryOutcome = null;
       addedLibrary = null;
       alphabetIndex = List.of();
+      removedLibraryIds.clear();
+      removalRejection = null;
     }
   }
 
   private static final class FakeLibraryOperationService extends LibraryOperationService {
 
+    private final List<UUID> startedLibraryIds = new ArrayList<>();
     private RefreshRequest refreshRequest;
     private RuntimeException startFailure;
+    private LibraryOperationRejection rejection;
 
     private FakeLibraryOperationService() {
       super(null, null, null, null, null, null);
@@ -1012,18 +1202,34 @@ class LibraryResolverTest {
     @Override
     public Outcome<Library, LibraryOperationRejection> startLibraryScan(
         AuthenticatedIdentity identity, UUID libraryId) {
-      if (startFailure != null) {
-        throw startFailure;
-      }
-
-      return Outcome.accepted(Library.builder().status(LibraryStatus.SCANNING).build());
+      return start(libraryId, LibraryStatus.SCANNING);
     }
 
     @Override
     public Outcome<Library, LibraryOperationRejection> startLibraryRefresh(
         AuthenticatedIdentity identity, UUID libraryId, ImageRefreshMode imageRefreshMode) {
       refreshRequest = new RefreshRequest(libraryId, imageRefreshMode);
-      return Outcome.accepted(Library.builder().status(LibraryStatus.REFRESHING).build());
+      return start(libraryId, LibraryStatus.REFRESHING);
+    }
+
+    private Outcome<Library, LibraryOperationRejection> start(
+        UUID libraryId, LibraryStatus busyStatus) {
+      startedLibraryIds.add(libraryId);
+      if (startFailure != null) {
+        throw startFailure;
+      }
+
+      if (rejection != null) {
+        return Outcome.rejected(rejection);
+      }
+
+      var library = Library.builder().status(busyStatus).build();
+      library.setId(libraryId);
+      return Outcome.accepted(library);
+    }
+
+    private List<UUID> startedLibraryIds() {
+      return List.copyOf(startedLibraryIds);
     }
 
     private RefreshRequest refreshRequest() {
@@ -1034,9 +1240,15 @@ class LibraryResolverTest {
       startFailure = exception;
     }
 
+    private void rejectWith(LibraryOperationRejection libraryOperationRejection) {
+      rejection = libraryOperationRejection;
+    }
+
     private void reset() {
+      startedLibraryIds.clear();
       refreshRequest = null;
       startFailure = null;
+      rejection = null;
     }
   }
 

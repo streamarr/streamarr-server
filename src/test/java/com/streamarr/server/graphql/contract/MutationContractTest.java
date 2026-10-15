@@ -42,9 +42,6 @@ class MutationContractTest {
   private static final Set<String> LEGACY_MUTATIONS =
       Set.of(
           "addRating",
-          "removeLibrary",
-          "scanLibrary",
-          "refreshLibrary",
           "destroyStreamSession",
           "reportStreamSessionTimeline");
 
@@ -82,6 +79,33 @@ class MutationContractTest {
     assertThat(mutationFields().stream().map(FieldDefinition::getName))
         .contains("administrativelyDeleteAccount")
         .doesNotContain("deleteAccount");
+  }
+
+  @Test
+  @DisplayName(
+      "Should name library scans and refreshes with the start verb when mutation names are inspected")
+  void shouldNameLibraryScansAndRefreshesWithStartVerbWhenMutationNamesAreInspected() {
+    assertThat(mutationFields().stream().map(FieldDefinition::getName))
+        .contains("startLibraryScan", "startLibraryRefresh", "removeLibrary")
+        .doesNotContain("scanLibrary", "refreshLibrary");
+  }
+
+  @Test
+  @DisplayName("Should carry the library's required status when LibraryBusyError is declared")
+  void shouldCarryLibraryRequiredStatusWhenLibraryBusyErrorIsDeclared() {
+    var libraryBusyError =
+        SCHEMA.getType("LibraryBusyError", ObjectTypeDefinition.class).orElseThrow();
+    var status =
+        libraryBusyError.getFieldDefinitions().stream()
+            .filter(field -> "status".equals(field.getName()))
+            .findFirst()
+            .orElseThrow();
+
+    assertThat(status.getType())
+        .isInstanceOfSatisfying(
+            NonNullType.class,
+            nonNull ->
+                assertThat(((TypeName) nonNull.getType()).getName()).isEqualTo("LibraryStatus"));
   }
 
   @Test

@@ -4,6 +4,7 @@ import static com.streamarr.server.support.GraphQlResults.firstErrorCode;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.config.LibraryOperationScheduler;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
@@ -51,6 +52,7 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
 
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private LibraryRepository libraryRepository;
+  @Autowired private LibraryOperationScheduler libraryOperationScheduler;
   @Autowired private MeterRegistry meterRegistry;
   @Autowired private UserAccountRepository userAccountRepository;
 
@@ -99,7 +101,9 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
 
     var accepted = http.execute(bearer, scanMutation(library.getId()));
 
-    assertThat(accepted.path("data").path("scanLibrary").asBoolean()).isTrue();
+    var payload = accepted.path("data").path("startLibraryScan");
+    assertThat(payload.path("library").path("status").asString()).isEqualTo("SCANNING");
+    assertThat(payload.path("userErrors").isEmpty()).isTrue();
     var scanning = nextStatusChange(socket, library.getId());
     assertThat(scanning.path("status").asString()).isEqualTo("SCANNING");
     assertThat(scanning.path("name").asString()).isEqualTo(library.getName());
@@ -133,10 +137,11 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     var library = saveLibrary(libraryDirectory);
     var socket = statusSubscribedSocket(bearer);
 
-    var accepted =
-        http.execute(bearer, "mutation { refreshLibrary(id: \"%s\") }".formatted(library.getId()));
+    var accepted = http.execute(bearer, refreshMutation(library.getId()));
 
-    assertThat(accepted.path("data").path("refreshLibrary").asBoolean()).isTrue();
+    var payload = accepted.path("data").path("startLibraryRefresh");
+    assertThat(payload.path("library").path("status").asString()).isEqualTo("REFRESHING");
+    assertThat(payload.path("userErrors").isEmpty()).isTrue();
     assertThat(nextStatusChange(socket, library.getId()).path("status").asString())
         .isEqualTo("REFRESHING");
     assertThat(nextStatusChange(socket, library.getId()).path("status").asString())
@@ -161,7 +166,7 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
 
     var removed = http.execute(otherSession, removeMutation(libraryId));
 
-    assertThat(removed.path("data").path("removeLibrary").asBoolean()).isTrue();
+    assertThat(removedLibraryIdOf(removed)).isEqualTo(libraryId.toString());
     assertThat(removedLibraryId(socket)).isEqualTo(libraryId.toString());
   }
 
@@ -216,15 +221,25 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     var busy = saveLibrary(directory("busy"));
     var sentinel = saveLibrary(directory("sentinel"));
     var socket = libraryAdministrationSocket(admin);
-    markStatus(busy, LibraryStatus.SCANNING);
+    // The stopped scheduler keeps the scan stored and the library SCANNING.
+    libraryOperationScheduler.stop();
+    try {
+      http.execute(admin, scanMutation(busy.getId()));
 
-    var refused = http.execute(admin, removeMutation(busy.getId()));
-    var removed = http.execute(admin, removeMutation(sentinel.getId()));
+      var refused = http.execute(admin, removeMutation(busy.getId()));
+      var removed = http.execute(admin, removeMutation(sentinel.getId()));
 
-    assertThat(refused.path("errors").isEmpty()).isFalse();
-    assertThat(libraryRepository.findById(busy.getId())).isPresent();
-    assertThat(removed.path("data").path("removeLibrary").asBoolean()).isTrue();
-    assertThat(removedLibraryId(socket)).isEqualTo(sentinel.getId().toString());
+      var refusal = refused.path("data").path("removeLibrary").path("userErrors").path(0);
+      assertThat(refusal.path("__typename").asString()).isEqualTo("LibraryBusyError");
+      assertThat(refusal.path("status").asString()).isEqualTo("SCANNING");
+      assertThat(libraryRepository.findById(busy.getId())).isPresent();
+      assertThat(removedLibraryIdOf(removed)).isEqualTo(sentinel.getId().toString());
+      assertThat(removedLibraryId(socket)).isEqualTo(sentinel.getId().toString());
+    } finally {
+      libraryOperationScheduler.start();
+    }
+
+    awaitStatus(socket, busy.getId(), "HEALTHY");
   }
 
   @Test
@@ -316,11 +331,6 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     return Files.createDirectories(libraryDirectory.resolve(name));
   }
 
-  private void markStatus(Library library, LibraryStatus status) {
-    library.setStatus(status);
-    libraryRepository.saveAndFlush(library);
-  }
-
   private static void awaitStatus(
       GraphQlTransportWsTestClient socket, UUID libraryId, String status) {
     while (!status.equals(nextStatusChange(socket, libraryId).path("status").asString())) {
@@ -341,7 +351,19 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
   }
 
   private static String removeMutation(UUID libraryId) {
-    return "mutation { removeLibrary(id: \"%s\") }".formatted(libraryId);
+    return """
+        mutation {
+          removeLibrary(input: { libraryId: "%s" }) {
+            removedLibraryId
+            userErrors { __typename ... on LibraryBusyError { status } }
+          }
+        }
+        """
+        .formatted(libraryId);
+  }
+
+  private static String removedLibraryIdOf(JsonNode response) {
+    return response.path("data").path("removeLibrary").path("removedLibraryId").asString();
   }
 
   private String adminBearer() {
@@ -380,6 +402,26 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
   }
 
   private static String scanMutation(UUID libraryId) {
-    return "mutation { scanLibrary(id: \"%s\") }".formatted(libraryId);
+    return """
+        mutation {
+          startLibraryScan(input: { libraryId: "%s" }) {
+            library { status }
+            userErrors { __typename }
+          }
+        }
+        """
+        .formatted(libraryId);
+  }
+
+  private static String refreshMutation(UUID libraryId) {
+    return """
+        mutation {
+          startLibraryRefresh(input: { libraryId: "%s" }) {
+            library { status }
+            userErrors { __typename }
+          }
+        }
+        """
+        .formatted(libraryId);
   }
 }

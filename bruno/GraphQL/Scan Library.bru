@@ -11,21 +11,44 @@ post {
 }
 
 body:graphql {
-  mutation ScanLibrary($id: ID!) {
-    scanLibrary(id: $id)
+  mutation StartLibraryScan($input: StartLibraryScanInput!) {
+    startLibraryScan(input: $input) {
+      library {
+        id
+        status
+      }
+      userErrors {
+        __typename
+        ... on MutationError {
+          message
+        }
+        ... on LibraryBusyError {
+          status
+        }
+      }
+    }
   }
 }
 
 body:graphql:vars {
   {
-    "id": "{{LIBRARY_ID}}"
+    "input": {
+      "libraryId": "{{LIBRARY_ID}}"
+    }
   }
 }
 
 tests {
-  test("Should start a library scan", function() {
+  // The first scan from Create Library can still run, and then the library refuses this scan.
+  test("Should start a library scan or report the running operation", function() {
     expect(res.status).to.equal(200);
     expect(res.body).to.not.have.property("errors");
-    expect(res.body.data.scanLibrary).to.equal(true);
+    const payload = res.body.data.startLibraryScan;
+    if (payload.userErrors.length === 0) {
+      expect(payload.library.status).to.equal("SCANNING");
+      return;
+    }
+    expect(payload.library).to.equal(null);
+    expect(payload.userErrors[0].__typename).to.equal("LibraryBusyError");
   });
 }

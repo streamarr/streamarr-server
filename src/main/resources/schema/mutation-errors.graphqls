@@ -48,6 +48,18 @@ type InvalidIdError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
+type LibraryNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"The library runs a scan or a refresh. The request changes nothing, and no request waits in a queue."
+type LibraryBusyError implements MutationError {
+    message: String!
+    "The status the library shows while its scan or refresh runs."
+    status: LibraryStatus!
+}
+
 type LibraryNameRequiredError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
