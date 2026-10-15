@@ -18,6 +18,7 @@ import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.ArtworkSources;
 import com.streamarr.server.services.ImageService;
+import com.streamarr.server.services.NewArtworkRequest;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import java.time.Instant;
@@ -70,7 +71,11 @@ class ArtworkLockTimeoutIT extends AbstractIntegrationTest {
             transactionTemplate.execute(
                 _ ->
                     requests.saveRequest(
-                        artwork("/other.jpg"), ImageRefreshMode.PRESERVE, REQUESTED_AT)));
+                        NewArtworkRequest.builder()
+                            .artwork(artwork("/other.jpg"))
+                            .refreshMode(ImageRefreshMode.PRESERVE)
+                            .requestedAt(REQUESTED_AT)
+                            .build())));
   }
 
   @Test
@@ -116,7 +121,12 @@ class ArtworkLockTimeoutIT extends AbstractIntegrationTest {
     var lockTimeout =
         transactionTemplate.execute(
             _ -> {
-              requests.saveRequest(artwork("/poster.jpg"), ImageRefreshMode.PRESERVE, REQUESTED_AT);
+              requests.saveRequest(
+                  NewArtworkRequest.builder()
+                      .artwork(artwork("/poster.jpg"))
+                      .refreshMode(ImageRefreshMode.PRESERVE)
+                      .requestedAt(REQUESTED_AT)
+                      .build());
               return dsl.fetchValue("SELECT current_setting('lock_timeout')");
             });
 
@@ -135,7 +145,11 @@ class ArtworkLockTimeoutIT extends AbstractIntegrationTest {
                   transactionTemplate.executeWithoutResult(
                       _ -> {
                         requests.saveRequest(
-                            artwork("/poster.jpg"), ImageRefreshMode.PRESERVE, REQUESTED_AT);
+                            NewArtworkRequest.builder()
+                                .artwork(artwork("/poster.jpg"))
+                                .refreshMode(ImageRefreshMode.PRESERVE)
+                                .requestedAt(REQUESTED_AT)
+                                .build());
                         saved.countDown();
                         awaitLatch(release);
                       }));

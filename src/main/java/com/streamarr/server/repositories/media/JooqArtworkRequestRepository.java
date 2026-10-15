@@ -19,11 +19,11 @@ import com.streamarr.server.jooq.generated.enums.ItemResultStep;
 import com.streamarr.server.jooq.generated.tables.records.ArtworkRequestRecord;
 import com.streamarr.server.repositories.PostgresTransactionLocks;
 import com.streamarr.server.services.ArtworkSources;
+import com.streamarr.server.services.NewArtworkRequest;
 import com.streamarr.server.services.StoredArtworkRequest;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
-import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -63,14 +63,14 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
 
   @Override
   @Transactional(propagation = Propagation.MANDATORY)
-  public SavedArtworkRequest saveRequest(
-      ArtworkSources artwork, ImageRefreshMode refreshMode, Instant requestedAt) {
+  public SavedArtworkRequest saveRequest(NewArtworkRequest request) {
     return transactionLocks.withLockWaitLimit(
-        requestLock.timeout(), () -> saveRequestUnderLock(artwork, refreshMode, requestedAt));
+        requestLock.timeout(), () -> saveRequestUnderLock(request));
   }
 
-  private SavedArtworkRequest saveRequestUnderLock(
-      ArtworkSources artwork, ImageRefreshMode refreshMode, Instant requestedAt) {
+  private SavedArtworkRequest saveRequestUnderLock(NewArtworkRequest request) {
+    var artwork = request.artwork();
+    var refreshMode = request.refreshMode();
     var sources = storedSources(artwork);
     var unlocked = findRow(artwork.target());
     if (unlocked.isPresent() && coversRequest(unlocked.get(), sources, refreshMode)) {
@@ -87,7 +87,7 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
             .set(ARTWORK_REQUEST.SOURCE_KEYS, sources.keys().toArray(String[]::new))
             .set(ARTWORK_REQUEST.IMAGE_COUNT, artwork.requestedImageTypes().size())
             .set(ARTWORK_REQUEST.GENERATION, ARTWORK_REQUEST_GENERATION.nextval())
-            .set(ARTWORK_REQUEST.REQUESTED_AT, requestedAt.atOffset(ZoneOffset.UTC))
+            .set(ARTWORK_REQUEST.REQUESTED_AT, request.requestedAt().atOffset(ZoneOffset.UTC))
             .onConflict(ARTWORK_REQUEST.TARGET_ID, ARTWORK_REQUEST.TARGET_TYPE)
             .doUpdate()
             .set(

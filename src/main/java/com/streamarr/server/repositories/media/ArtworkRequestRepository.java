@@ -4,10 +4,8 @@ import com.streamarr.server.domain.media.ArtworkBacklog;
 import com.streamarr.server.domain.media.ArtworkCompletionEvidence;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
-import com.streamarr.server.services.ArtworkSources;
+import com.streamarr.server.services.NewArtworkRequest;
 import com.streamarr.server.services.StoredArtworkRequest;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
-import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -40,8 +38,7 @@ public interface ArtworkRequestRepository {
    * stronger of the pending and the requested refresh mode. A request that changes nothing takes no
    * row lock.
    */
-  SavedArtworkRequest saveRequest(
-      ArtworkSources artwork, ImageRefreshMode refreshMode, Instant requestedAt);
+  SavedArtworkRequest saveRequest(NewArtworkRequest request);
 
   Optional<StoredArtworkRequest> findRequest(ArtworkTarget target);
 

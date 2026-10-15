@@ -195,7 +195,14 @@ class ArtworkStepsTaskCompletionTest {
             .targetType(MOVIE.targetType())
             .sources(List.of(new TmdbImageSource(ImageType.POSTER, key)))
             .build();
-    return requests.saveRequest(artwork, ImageRefreshMode.PRESERVE, NOW).generation();
+    return requests
+        .saveRequest(
+            NewArtworkRequest.builder()
+                .artwork(artwork)
+                .refreshMode(ImageRefreshMode.PRESERVE)
+                .requestedAt(NOW)
+                .build())
+        .generation();
   }
 
   private void complete(ArtworkStepsOutcome outcome, Execution execution) {

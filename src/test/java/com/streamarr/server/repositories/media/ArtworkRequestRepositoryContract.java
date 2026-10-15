@@ -14,6 +14,7 @@ import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository.SavedArtworkRequest.NewGeneration;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository.SavedArtworkRequest.Unchanged;
 import com.streamarr.server.services.ArtworkSources;
+import com.streamarr.server.services.NewArtworkRequest;
 import com.streamarr.server.services.StoredArtworkRequest;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
@@ -229,13 +230,17 @@ public interface ArtworkRequestRepositoryContract {
         () ->
             repository()
                 .saveRequest(
-                    ArtworkSources.builder()
-                        .targetId(person.targetId())
-                        .targetType(ImageEntityType.PERSON)
-                        .sources(List.of(new TmdbImageSource(ImageType.PROFILE, "/face.jpg")))
-                        .build(),
-                    ImageRefreshMode.PRESERVE,
-                    REQUESTED_AT.plusSeconds(30)));
+                    NewArtworkRequest.builder()
+                        .artwork(
+                            ArtworkSources.builder()
+                                .targetId(person.targetId())
+                                .targetType(ImageEntityType.PERSON)
+                                .sources(
+                                    List.of(new TmdbImageSource(ImageType.PROFILE, "/face.jpg")))
+                                .build())
+                        .refreshMode(ImageRefreshMode.PRESERVE)
+                        .requestedAt(REQUESTED_AT.plusSeconds(30))
+                        .build()));
 
     assertThat(repository().findArtworkBacklogByTargetType())
         .containsAllEntriesOf(
@@ -284,13 +289,25 @@ public interface ArtworkRequestRepositoryContract {
     return inTransaction(
         () ->
             repository()
-                .saveRequest(artwork(target, sources), ImageRefreshMode.PRESERVE, requestedAt));
+                .saveRequest(
+                    NewArtworkRequest.builder()
+                        .artwork(artwork(target, sources))
+                        .refreshMode(ImageRefreshMode.PRESERVE)
+                        .requestedAt(requestedAt)
+                        .build()));
   }
 
   private ArtworkRequestRepository.SavedArtworkRequest save(
       ArtworkTarget target, ImageRefreshMode refreshMode, ImageSource... sources) {
     return inTransaction(
-        () -> repository().saveRequest(artwork(target, sources), refreshMode, REQUESTED_AT));
+        () ->
+            repository()
+                .saveRequest(
+                    NewArtworkRequest.builder()
+                        .artwork(artwork(target, sources))
+                        .refreshMode(refreshMode)
+                        .requestedAt(REQUESTED_AT)
+                        .build()));
   }
 
   private static ArtworkSources artwork(ArtworkTarget target, ImageSource... sources) {

@@ -8,6 +8,7 @@ import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.services.ArtworkSources;
+import com.streamarr.server.services.NewArtworkRequest;
 import com.streamarr.server.services.StoredArtworkRequest;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
@@ -63,8 +64,9 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
   }
 
   @Override
-  public synchronized SavedArtworkRequest saveRequest(
-      ArtworkSources artwork, ImageRefreshMode refreshMode, Instant requestedAt) {
+  public synchronized SavedArtworkRequest saveRequest(NewArtworkRequest request) {
+    var artwork = request.artwork();
+    var refreshMode = request.refreshMode();
     var sorted =
         artwork.toBuilder()
             .sources(artwork.sources().stream().sorted(SOURCE_ORDER).toList())
@@ -80,7 +82,7 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
     }
 
     var generation = ++lastGeneration;
-    firstRequestedAt.putIfAbsent(artwork.target(), requestedAt);
+    firstRequestedAt.putIfAbsent(artwork.target(), request.requestedAt());
     requests.put(
         artwork.target(),
         StoredArtworkRequest.builder()

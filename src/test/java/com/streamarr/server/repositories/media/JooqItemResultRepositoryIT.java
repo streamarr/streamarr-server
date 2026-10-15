@@ -17,6 +17,7 @@ import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.ArtworkSources;
+import com.streamarr.server.services.NewArtworkRequest;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.time.Duration;
 import java.util.List;
@@ -233,7 +234,15 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest implements Artw
             .sources(List.of())
             .build();
     return transactionTemplate.execute(
-        _ -> artworkRequests.saveRequest(artwork, ImageRefreshMode.PRESERVE, EARLIER).generation());
+        _ ->
+            artworkRequests
+                .saveRequest(
+                    NewArtworkRequest.builder()
+                        .artwork(artwork)
+                        .refreshMode(ImageRefreshMode.PRESERVE)
+                        .requestedAt(EARLIER)
+                        .build())
+                .generation());
   }
 
   private UUID savedMovieId() {

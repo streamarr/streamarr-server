@@ -452,9 +452,8 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
       implements ArtworkRequestRepository {
 
     @Override
-    public SavedArtworkRequest saveRequest(
-        ArtworkSources artwork, ImageRefreshMode refreshMode, Instant requestedAt) {
-      return delegate.saveRequest(artwork, refreshMode, requestedAt);
+    public SavedArtworkRequest saveRequest(NewArtworkRequest request) {
+      return delegate.saveRequest(request);
     }
 
     @Override

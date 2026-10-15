@@ -99,7 +99,13 @@ public class ArtworkRequestService {
   // A new generation is scheduled while this transaction holds the request's lock, so the request
   // and its scheduled task commit or roll back together.
   private SavedArtworkRequest request(ArtworkSources artwork, ImageRefreshMode refreshMode) {
-    var saved = requests.saveRequest(artwork, refreshMode, clock.instant());
+    var saved =
+        requests.saveRequest(
+            NewArtworkRequest.builder()
+                .artwork(artwork)
+                .refreshMode(refreshMode)
+                .requestedAt(clock.instant())
+                .build());
     if (saved instanceof SavedArtworkRequest.NewGeneration) {
       scheduling.scheduleSteps(artwork.target());
     }
