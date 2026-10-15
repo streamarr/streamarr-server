@@ -363,8 +363,8 @@ class ImageServiceTest {
             "/new-poster.jpg");
     imageRepository.setFailOnReplaceLogicalArtwork(true);
 
-    assertThatThrownBy(
-            () -> imageService.replaceImages(replacement, attemptFor(replacement.images())))
+    var attempt = attemptFor(replacement.images());
+    assertThatThrownBy(() -> imageService.replaceImages(replacement, attempt))
         .isInstanceOf(RuntimeException.class)
         .hasMessageContaining("Simulated logical artwork replacement failure");
 
@@ -393,8 +393,8 @@ class ImageServiceTest {
     TransactionSynchronizationManager.initSynchronization();
 
     try {
-      assertThatThrownBy(
-              () -> imageService.replaceImages(replacement, attemptFor(replacement.images())))
+      var attempt = attemptFor(replacement.images());
+      assertThatThrownBy(() -> imageService.replaceImages(replacement, attempt))
           .isInstanceOf(RuntimeException.class)
           .hasMessageContaining("Simulated logical artwork replacement failure");
       assertThat(replacement.writtenFiles()).allSatisfy(path -> assertThat(path).exists());
@@ -434,10 +434,8 @@ class ImageServiceTest {
                     .build()),
             List.of(stagedFile));
 
-    assertThatThrownBy(
-            () ->
-                imageService.replaceImages(
-                    invalidReplacement, attemptFor(invalidReplacement.images())))
+    var attempt = attemptFor(invalidReplacement.images());
+    assertThatThrownBy(() -> imageService.replaceImages(invalidReplacement, attempt))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Replacement contentSha256 must be 64 lowercase hexadecimal characters");
 
@@ -458,8 +456,8 @@ class ImageServiceTest {
             "/poster.jpg");
     replacement.images().getLast().setContentSha256(null);
 
-    assertThatThrownBy(
-            () -> imageService.replaceImages(replacement, attemptFor(replacement.images())))
+    var attempt = attemptFor(replacement.images());
+    assertThatThrownBy(() -> imageService.replaceImages(replacement, attempt))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Replacement contentSha256 must be 64 lowercase hexadecimal characters");
 
@@ -478,8 +476,8 @@ class ImageServiceTest {
             "/poster.jpg");
     replacement.images().getLast().setContentSha256("b".repeat(64));
 
-    assertThatThrownBy(
-            () -> imageService.replaceImages(replacement, attemptFor(replacement.images())))
+    var attempt = attemptFor(replacement.images());
+    assertThatThrownBy(() -> imageService.replaceImages(replacement, attempt))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Replacement variants must have the same contentSha256");
 
@@ -498,8 +496,8 @@ class ImageServiceTest {
             "/poster.jpg");
     replacement.images().getLast().setEntityId(UUID.randomUUID());
 
-    assertThatThrownBy(
-            () -> imageService.replaceImages(replacement, attemptFor(replacement.images())))
+    var attempt = attemptFor(replacement.images());
+    assertThatThrownBy(() -> imageService.replaceImages(replacement, attempt))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Replacement variants must describe one logical artwork");
 
@@ -518,8 +516,8 @@ class ImageServiceTest {
             "/poster.jpg");
     replacement.images().getLast().setKey("/different-poster.jpg");
 
-    assertThatThrownBy(
-            () -> imageService.replaceImages(replacement, attemptFor(replacement.images())))
+    var attempt = attemptFor(replacement.images());
+    assertThatThrownBy(() -> imageService.replaceImages(replacement, attempt))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Replacement variants must describe one logical artwork");
 
@@ -538,8 +536,8 @@ class ImageServiceTest {
             "/poster.jpg");
     replacement.images().getLast().setEntityType(ImageEntityType.SERIES);
 
-    assertThatThrownBy(
-            () -> imageService.replaceImages(replacement, attemptFor(replacement.images())))
+    var attempt = attemptFor(replacement.images());
+    assertThatThrownBy(() -> imageService.replaceImages(replacement, attempt))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Replacement variants must describe one logical artwork");
 
@@ -558,8 +556,8 @@ class ImageServiceTest {
             "/poster.jpg");
     replacement.images().getLast().setImageType(ImageType.BACKDROP);
 
-    assertThatThrownBy(
-            () -> imageService.replaceImages(replacement, attemptFor(replacement.images())))
+    var attempt = attemptFor(replacement.images());
+    assertThatThrownBy(() -> imageService.replaceImages(replacement, attempt))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Replacement variants must describe one logical artwork");
 
@@ -580,10 +578,8 @@ class ImageServiceTest {
         new ImageService.ProcessedImage(
             processed.images().stream().limit(3).toList(), processed.writtenFiles());
 
-    assertThatThrownBy(
-            () ->
-                imageService.replaceImages(
-                    incompleteReplacement, attemptFor(incompleteReplacement.images())))
+    var attempt = attemptFor(incompleteReplacement.images());
+    assertThatThrownBy(() -> imageService.replaceImages(incompleteReplacement, attempt))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Replacement must contain exactly one of every image variant");
 
@@ -602,8 +598,8 @@ class ImageServiceTest {
             "/poster.jpg");
     replacement.images().getLast().setVariant(replacement.images().getFirst().getVariant());
 
-    assertThatThrownBy(
-            () -> imageService.replaceImages(replacement, attemptFor(replacement.images())))
+    var attempt = attemptFor(replacement.images());
+    assertThatThrownBy(() -> imageService.replaceImages(replacement, attempt))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Replacement must contain exactly one of every image variant");
 

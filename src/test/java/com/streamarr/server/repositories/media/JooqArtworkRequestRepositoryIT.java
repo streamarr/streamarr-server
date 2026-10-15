@@ -47,7 +47,7 @@ class JooqArtworkRequestRepositoryIT extends AbstractIntegrationTest {
     var artwork = posterOf(savedMovieId(), "/poster.jpg");
     var first = save(artwork);
 
-    try (var held = lockRow(requestRow(artwork))) {
+    try (var _ = lockRow(requestRow(artwork))) {
       var identical = BoundedTask.start(() -> save(artwork)).await(BOUND);
 
       assertThat(identical).isEqualTo(new SavedArtworkRequest.Unchanged(first.generation()));

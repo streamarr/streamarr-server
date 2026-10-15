@@ -256,10 +256,11 @@ class ArtworkServiceTest {
               .imageRepository(unreadableRepository)
               .imageDownloader(imageDownloader)
               .build();
-      var run = unreadable.artworkService().openRun("scan", ImageRefreshMode.PRESERVE);
+      var unreadableArtworkService = unreadable.artworkService();
+      var run = unreadableArtworkService.openRun("scan", ImageRefreshMode.PRESERVE);
       var sources = movieArtwork(UUID.randomUUID(), POSTER);
 
-      assertThatThrownBy(() -> unreadable.artworkService().requestPrimaryArtwork(run, sources))
+      assertThatThrownBy(() -> unreadableArtworkService.requestPrimaryArtwork(run, sources))
           .isInstanceOf(IllegalStateException.class);
       assertThat(unreadable.requests().requests()).isEmpty();
     }

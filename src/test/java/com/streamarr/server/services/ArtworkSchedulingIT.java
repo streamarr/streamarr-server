@@ -16,6 +16,7 @@ import com.streamarr.server.config.ArtworkScheduler;
 import com.streamarr.server.config.ArtworkSchedulers;
 import com.streamarr.server.domain.media.ArtworkItem;
 import com.streamarr.server.domain.media.ArtworkState;
+import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemFailureReason;
@@ -152,7 +153,7 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
         .containsOnly(new ItemOutcome.Succeeded(), new ItemOutcome.Succeeded())
         .hasSize(2);
     assertThat(imageRepository.findByEntityIdAndEntityType(movieId, ImageEntityType.MOVIE))
-        .extracting(image -> image.getImageType())
+        .extracting(Image::getImageType)
         .containsOnly(ImageType.POSTER, ImageType.BACKDROP);
   }
 

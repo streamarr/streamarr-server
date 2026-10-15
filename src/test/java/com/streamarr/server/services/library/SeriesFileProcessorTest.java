@@ -24,7 +24,6 @@ import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
-import com.streamarr.server.services.ArtworkService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.MetadataFetchOutcome;
@@ -62,7 +61,6 @@ class SeriesFileProcessorTest {
       new SeriesMetadataProviderResolver(List.of(seriesMetadataProvider));
   private final SeriesService seriesService = mock(SeriesService.class);
   private final ArtworkFixture artwork = ArtworkFixture.builder().build();
-  private final ArtworkService artworkService = artwork.artworkService();
   private final FakeMediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
   private final FakeSeasonRepository fakeSeasonRepository = new FakeSeasonRepository();
   private final FakeEpisodeRepository fakeEpisodeRepository = new FakeEpisodeRepository();
