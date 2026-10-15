@@ -1,13 +1,14 @@
 package com.streamarr.server.services.watchprogress;
 
 import com.streamarr.server.config.WatchProgressProperties;
-import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.streaming.SaveWatchProgress;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
+import com.streamarr.server.repositories.streaming.StreamSessionCompletion;
+import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.services.watchprogress.events.WatchStateChangedEvent;
 import java.util.Set;
@@ -25,9 +26,9 @@ public class SessionProgressService {
 
   private final RuntimeStreamSessionRegistry runtimeRegistry;
   private final SessionProgressRepository sessionProgressRepository;
+  private final WatchHistoryRepository watchHistoryRepository;
   private final MediaFileRepository mediaFileRepository;
   private final WatchProgressProperties properties;
-  private final WatchStatusService watchStatusService;
   private final ApplicationEventPublisher eventPublisher;
 
   @Transactional
@@ -98,16 +99,21 @@ public class SessionProgressService {
     publishChange(profileId, ctx);
   }
 
-  // WatchStatusService.markWatched publishes one change for this whole write, including the
-  // deleted session progress.
   private void markSessionWatched(UUID profileId, PlaybackContext ctx) {
-    sessionProgressRepository.deleteBySessionId(ctx.sessionId());
+    var deleted = sessionProgressRepository.deleteBySessionId(ctx.sessionId());
+    var saved =
+        watchHistoryRepository.saveStreamSessionCompletion(
+            StreamSessionCompletion.builder()
+                .streamSessionId(ctx.sessionId())
+                .profileId(profileId)
+                .collectableId(resolveCollectableId(ctx.mediaFileId()))
+                .durationSeconds(ctx.durationSeconds())
+                .build());
+    if (deleted + saved == 0) {
+      return;
+    }
 
-    watchStatusService.markWatched(
-        profileId,
-        resolveCollectableId(ctx.mediaFileId()),
-        CollectableScope.MOVIE_OR_EPISODE,
-        ctx.durationSeconds());
+    publishChange(profileId, ctx);
   }
 
   private void persistProgress(UUID profileId, PlaybackContext ctx) {

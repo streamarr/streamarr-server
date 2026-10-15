@@ -82,9 +82,9 @@ class SessionProgressServiceTest {
         new SessionProgressService(
             runtimeRegistry,
             sessionProgressRepository,
+            watchHistoryRepository,
             mediaFileRepository,
             properties,
-            watchStatusService,
             eventPublisher);
   }
 
@@ -683,6 +683,35 @@ class SessionProgressServiceTest {
       markAsWatched(session2);
 
       assertThat(watchHistoryRepository.count()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("Should save one completion and publish one change when a stopped report repeats")
+    void shouldSaveOneCompletionAndPublishOneChangeWhenAStoppedReportRepeats() {
+      var session = addSession();
+
+      markAsWatched(session);
+      markAsWatched(session);
+
+      assertThat(watchHistoryRepository.count()).isEqualTo(1);
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class)).hasSize(1);
+    }
+
+    @Test
+    @DisplayName(
+        "Should clear progress and publish a change when a repeated stop follows a later report")
+    void shouldClearProgressAndPublishAChangeWhenARepeatedStopFollowsALaterReport() {
+      var session = addSession();
+      markAsWatched(session);
+      service.reportStreamSessionTimeline(
+          PROFILE_ID, session.getSessionId(), 6000, PlaybackState.PLAYING);
+      eventPublisher.clear();
+
+      markAsWatched(session);
+
+      assertThat(watchHistoryRepository.count()).isEqualTo(1);
+      assertThat(sessionProgressRepository.findBySessionId(session.getSessionId())).isEmpty();
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class)).hasSize(1);
     }
 
     @Test

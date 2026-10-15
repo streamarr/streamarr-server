@@ -14,6 +14,13 @@ public interface WatchHistoryRepositoryCustom {
    */
   int batchInsert(UUID profileId, Collection<UUID> collectableIds, int durationSeconds);
 
+  /**
+   * Saves the completion that a stream session reports, stamped with the database clock. A stream
+   * session completes its title at most once: returns 0 when the stream session already saved a
+   * completion, and 1 otherwise.
+   */
+  int saveStreamSessionCompletion(StreamSessionCompletion completion);
+
   /** Returns the number of completions dismissed. */
   int dismissAll(UUID profileId, Collection<UUID> collectableIds);
 

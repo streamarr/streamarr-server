@@ -111,6 +111,11 @@ public class WatchHistory extends TableImpl<WatchHistoryRecord> {
      */
     public final TableField<WatchHistoryRecord, OffsetDateTime> DISMISSED_AT = createField(DSL.name("dismissed_at"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "");
 
+    /**
+     * The column <code>public.watch_history.stream_session_id</code>.
+     */
+    public final TableField<WatchHistoryRecord, UUID> STREAM_SESSION_ID = createField(DSL.name("stream_session_id"), SQLDataType.UUID, this, "");
+
     private WatchHistory(Name alias, Table<WatchHistoryRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -190,7 +195,7 @@ public class WatchHistory extends TableImpl<WatchHistoryRecord> {
 
     @Override
     public List<UniqueKey<WatchHistoryRecord>> getUniqueKeys() {
-        return Arrays.asList(Keys.UQ_WATCH_HISTORY_PROFILE_COLLECTABLE_WATCHED);
+        return Arrays.asList(Keys.UQ_WATCH_HISTORY_PROFILE_COLLECTABLE_WATCHED, Keys.UQ_WATCH_HISTORY_STREAM_SESSION);
     }
 
     @Override

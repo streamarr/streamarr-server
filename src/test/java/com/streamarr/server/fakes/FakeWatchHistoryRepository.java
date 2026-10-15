@@ -2,6 +2,7 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.domain.streaming.WatchHistory;
+import com.streamarr.server.repositories.streaming.StreamSessionCompletion;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import java.time.Instant;
 import java.util.Collection;
@@ -49,6 +50,26 @@ public class FakeWatchHistoryRepository extends FakeJpaRepository<WatchHistory>
     }
 
     return collectableIds.size();
+  }
+
+  @Override
+  public int saveStreamSessionCompletion(StreamSessionCompletion completion) {
+    var alreadySaved =
+        database.values().stream()
+            .anyMatch(wh -> completion.streamSessionId().equals(wh.getStreamSessionId()));
+    if (alreadySaved) {
+      return 0;
+    }
+
+    save(
+        WatchHistory.builder()
+            .streamSessionId(completion.streamSessionId())
+            .profileId(completion.profileId())
+            .collectableId(completion.collectableId())
+            .watchedAt(Instant.now())
+            .durationSeconds(completion.durationSeconds())
+            .build());
+    return 1;
   }
 
   @Override

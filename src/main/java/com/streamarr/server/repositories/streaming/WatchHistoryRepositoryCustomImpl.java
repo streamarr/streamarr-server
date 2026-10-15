@@ -53,6 +53,19 @@ public class WatchHistoryRepositoryCustomImpl implements WatchHistoryRepositoryC
   }
 
   @Override
+  public int saveStreamSessionCompletion(StreamSessionCompletion completion) {
+    return dsl.insertInto(WATCH_HISTORY)
+        .set(WATCH_HISTORY.STREAM_SESSION_ID, completion.streamSessionId())
+        .set(WATCH_HISTORY.PROFILE_ID, completion.profileId())
+        .set(WATCH_HISTORY.COLLECTABLE_ID, completion.collectableId())
+        .set(WATCH_HISTORY.WATCHED_AT, currentOffsetDateTime())
+        .set(WATCH_HISTORY.DURATION_SECONDS, completion.durationSeconds())
+        .onConflict(WATCH_HISTORY.STREAM_SESSION_ID)
+        .doNothing()
+        .execute();
+  }
+
+  @Override
   public int dismissAll(UUID profileId, Collection<UUID> collectableIds) {
     return dsl.update(WATCH_HISTORY)
         .set(WATCH_HISTORY.DISMISSED_AT, currentOffsetDateTime())
