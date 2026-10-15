@@ -45,9 +45,7 @@ class AccessBoundWebSocketHandler extends WebSocketHandlerDecorator {
 
   @Override
   public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-    var bound = new AccessBoundSession(session, accessExpiresAt(session), clock);
-    // Started before the session is visible, so a close always finds the timer to cancel.
-    bound.startExpiryTimer(taskScheduler);
+    var bound = new AccessBoundSession(session, clock, taskScheduler);
     sessions.put(session.getId(), bound);
     super.afterConnectionEstablished(bound);
   }
@@ -104,12 +102,14 @@ class AccessBoundWebSocketHandler extends WebSocketHandlerDecorator {
 
     private final Instant accessExpiresAt;
     private final Clock clock;
-    private volatile ScheduledFuture<?> expiryTimer;
+    private final ScheduledFuture<?> expiryTimer;
 
-    private AccessBoundSession(WebSocketSession session, Instant accessExpiresAt, Clock clock) {
+    private AccessBoundSession(WebSocketSession session, Clock clock, TaskScheduler taskScheduler) {
       super(session);
-      this.accessExpiresAt = accessExpiresAt;
+      this.accessExpiresAt = accessExpiresAt(session);
       this.clock = clock;
+      this.expiryTimer =
+          taskScheduler.schedule(() -> closeForExpiry(session), this.accessExpiresAt);
     }
 
     private boolean isExpired() {
@@ -126,14 +126,14 @@ class AccessBoundWebSocketHandler extends WebSocketHandlerDecorator {
       super.sendMessage(message);
     }
 
-    private void startExpiryTimer(TaskScheduler taskScheduler) {
-      expiryTimer = taskScheduler.schedule(this::closeForExpiry, accessExpiresAt);
+    private void closeForExpiry() {
+      closeForExpiry(getDelegate());
     }
 
     // The container ignores a close after the first, so a late send and the timer may both close.
-    private void closeForExpiry() {
+    private static void closeForExpiry(WebSocketSession session) {
       try {
-        getDelegate().close(ACCESS_EXPIRED);
+        session.close(ACCESS_EXPIRED);
       } catch (IOException e) {
         log.debug("Could not close an expired WebSocket session cleanly.", e);
       }
