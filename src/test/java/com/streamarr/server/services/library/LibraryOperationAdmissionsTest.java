@@ -95,8 +95,8 @@ class LibraryOperationAdmissionsTest {
     var first = library();
     var second = library();
 
-    try (var firstAdmission = admissions.openScanAdmission(first)) {
-      try (var secondAdmission = admissions.openScanAdmission(second)) {
+    try (var _ = admissions.openScanAdmission(first)) {
+      try (var _ = admissions.openScanAdmission(second)) {
         assertThat(registry.find(LIMIT).gauges()).hasSize(2);
         assertThat(gauge(LIMIT, "scan", second)).isEqualTo(3.0);
       }

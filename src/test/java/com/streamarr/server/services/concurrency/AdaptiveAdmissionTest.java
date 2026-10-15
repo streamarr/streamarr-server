@@ -433,8 +433,7 @@ class AdaptiveAdmissionTest {
   @Test
   @DisplayName(
       "Should admit no further task when the walking thread is interrupted with admissions free")
-  void shouldAdmitNoFurtherTaskWhenTheWalkingThreadIsInterruptedWithAdmissionsFree()
-      throws Exception {
+  void shouldAdmitNoFurtherTaskWhenTheWalkingThreadIsInterruptedWithAdmissionsFree() {
     var admission = admissionWith(FixedLimit.of(10));
     var pulled = new AtomicInteger();
     Iterator<Integer> subjects =
@@ -465,8 +464,7 @@ class AdaptiveAdmissionTest {
   @Test
   @DisplayName(
       "Should rethrow the interrupt when the walking thread is interrupted after its tasks finished")
-  void shouldRethrowTheInterruptWhenTheWalkingThreadIsInterruptedAfterItsTasksFinished()
-      throws Exception {
+  void shouldRethrowTheInterruptWhenTheWalkingThreadIsInterruptedAfterItsTasksFinished() {
     var admission = admissionWith(FixedLimit.of(3));
     var tasksFinished = new CountDownLatch(2);
     ThreadFactory threadsThatSignalTheirEnd =
@@ -516,12 +514,11 @@ class AdaptiveAdmissionTest {
   @DisplayName("Should return the admission and rethrow when a task cannot be forked")
   void shouldReturnTheAdmissionAndRethrowWhenATaskCannotBeForked() {
     var admission = admissionWith(FixedLimit.of(1));
+    var subjects = new CountingSubjects(2);
     ThreadFactory noThreads = _ -> null;
 
     assertThatThrownBy(
-            () ->
-                admission.forkAdmittedTasks(
-                    new CountingSubjects(2), _ -> AdmittedTaskReport.LATENCY, noThreads))
+            () -> admission.forkAdmittedTasks(subjects, _ -> AdmittedTaskReport.LATENCY, noThreads))
         .isInstanceOf(RejectedExecutionException.class);
     assertThat(admission.inFlight()).isZero();
     assertThat(listener.admitted()).isZero();
