@@ -15,9 +15,9 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.dataloader.MappedBatchLoader;
 
-@DgsDataLoader(name = "aggregateWatchProgress")
+@DgsDataLoader(name = "watchProgress")
 @RequiredArgsConstructor
-public class AggregateWatchProgressDataLoader
+public class WatchProgressDataLoader
     implements MappedBatchLoader<WatchProgressLoaderKey, WatchProgressDto> {
 
   private final WatchStatusService watchStatusService;
@@ -53,11 +53,9 @@ public class AggregateWatchProgressDataLoader
   private Map<UUID, WatchProgressDto> loadByScope(
       UUID profileId, CollectableScope scope, List<UUID> entityIds) {
     return switch (scope) {
+      case DIRECT_MEDIA -> watchStatusService.getProgressForDirectMedia(profileId, entityIds);
       case SEASON -> watchStatusService.getAggregateProgressForSeasons(profileId, entityIds);
       case SERIES -> watchStatusService.getAggregateProgressForSeries(profileId, entityIds);
-      case DIRECT_MEDIA ->
-          throw new UnsupportedOperationException(
-              "DIRECT_MEDIA uses the per-media-file watchProgress loader");
     };
   }
 }

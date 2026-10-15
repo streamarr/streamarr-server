@@ -25,8 +25,7 @@ import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
-import com.streamarr.server.graphql.dataloaders.AggregateWatchProgressDataLoader;
-import com.streamarr.server.graphql.dataloaders.SessionProgressDataLoader;
+import com.streamarr.server.graphql.dataloaders.WatchProgressDataLoader;
 import com.streamarr.server.graphql.dataloaders.WatchStatusDataLoader;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.MovieService;
@@ -57,8 +56,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @SpringBootTest(
     classes = {
       WatchProgressFieldResolver.class,
-      SessionProgressDataLoader.class,
-      AggregateWatchProgressDataLoader.class,
+      WatchProgressDataLoader.class,
       WatchStatusDataLoader.class,
       MovieResolver.class,
       SeriesResolver.class,
@@ -156,7 +154,6 @@ class WatchProgressFieldResolverTest {
       var mediaFile = buildMediaFile();
       mediaFile.setMediaId(movie.getId());
       mediaFileRepository.save(mediaFile);
-      when(movieService.findMediaFiles(movie.getId())).thenReturn(List.of(mediaFile));
 
       sessionProgressRepository.save(
           progressBuilder(PROFILE_ID, mediaFile.getId())
@@ -180,7 +177,6 @@ class WatchProgressFieldResolverTest {
     @DisplayName("Should return null watch progress when movie has no files")
     void shouldReturnNullWatchProgressWhenMovieHasNoFiles() {
       var movie = setupMovie();
-      when(movieService.findMediaFiles(movie.getId())).thenReturn(List.of());
 
       Object watchProgress =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -196,7 +192,6 @@ class WatchProgressFieldResolverTest {
     @WithAccountContext
     void shouldRequireProfileWhenMovieHasNoFiles() {
       var movie = setupMovie();
-      when(movieService.findMediaFiles(movie.getId())).thenReturn(List.of());
 
       var result =
           dgsQueryExecutor.execute(
@@ -214,7 +209,6 @@ class WatchProgressFieldResolverTest {
       var mediaFile = buildMediaFile();
       mediaFile.setMediaId(movie.getId());
       mediaFileRepository.save(mediaFile);
-      when(movieService.findMediaFiles(movie.getId())).thenReturn(List.of(mediaFile));
 
       Object watchProgress =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -238,7 +232,6 @@ class WatchProgressFieldResolverTest {
       var mediaFile = buildMediaFile();
       mediaFile.setMediaId(movie.getId());
       mediaFileRepository.save(mediaFile);
-      when(movieService.findMediaFiles(movie.getId())).thenReturn(List.of(mediaFile));
 
       sessionProgressRepository.save(
           progressBuilder(PROFILE_ID, mediaFile.getId()).positionSeconds(300).build());
@@ -263,7 +256,6 @@ class WatchProgressFieldResolverTest {
       var mediaFile = buildMediaFile();
       mediaFile.setMediaId(graph.episode().getId());
       mediaFileRepository.save(mediaFile);
-      when(seriesService.findMediaFiles(graph.episode().getId())).thenReturn(List.of(mediaFile));
 
       sessionProgressRepository.save(
           progressBuilder(PROFILE_ID, mediaFile.getId())

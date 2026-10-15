@@ -46,7 +46,7 @@ public class WatchStatusService {
   private final SeriesRepository seriesRepository;
   private final ApplicationEventPublisher eventPublisher;
 
-  public Map<UUID, SessionProgress> getProgressForMediaFiles(
+  private Map<UUID, SessionProgress> getProgressForMediaFiles(
       UUID profileId, Collection<UUID> mediaFileIds) {
     return sessionProgressRepository
         .findByProfileIdAndMediaFileIdIn(profileId, mediaFileIds)
@@ -210,6 +210,18 @@ public class WatchStatusService {
       result.put(
           entry.getKey(),
           deriveAggregateStatus(episodeIds, data.watchedIds(), mediaFileIds, data.progressMap()));
+    }
+    return result;
+  }
+
+  public Map<UUID, WatchProgressDto> getProgressForDirectMedia(
+      UUID profileId, Collection<UUID> collectableIds) {
+    var data = fetchCollectableMediaData(profileId, collectableIds);
+
+    var result = new HashMap<UUID, WatchProgressDto>();
+    for (var collectableId : collectableIds) {
+      var mediaFileIds = collectMediaFileIds(List.of(collectableId), data);
+      result.put(collectableId, pickLatestProgress(mediaFileIds, data.progressMap()));
     }
     return result;
   }
