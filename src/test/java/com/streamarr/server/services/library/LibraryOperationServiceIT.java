@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitWaitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -20,15 +21,21 @@ import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.BoundedTask;
+import com.streamarr.server.support.PostgresLockTestSupport;
+import com.streamarr.server.support.PostgresLockTestSupport.HeldRowLock;
+import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import com.streamarr.server.support.security.SignedInAccount;
 import java.nio.file.Path;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -53,6 +60,7 @@ class LibraryOperationServiceIT extends AbstractIntegrationTest {
   @Autowired private LibraryOperationRepository libraryOperations;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private JdbcTemplate jdbcTemplate;
+  @Autowired private DataSource dataSource;
 
   private AuthTestSupport.TestIdentity admin;
   private AuthenticatedIdentity identity;
@@ -244,6 +252,92 @@ class LibraryOperationServiceIT extends AbstractIntegrationTest {
         .isEqualTo(
             Outcome.rejected(new LibraryBusy(LibraryStatus.SCANNING, LibraryOperationKind.SCAN)));
     assertThat(libraryRepository.existsById(library.getId())).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse the scan with LibraryNotFound and schedule nothing when removeLibrary takes"
+          + " the library's row first")
+  void shouldRefuseTheScanWithLibraryNotFoundWhenRemoveLibraryTakesTheLibraryRowFirst()
+      throws Exception {
+    var library = createLibrary();
+
+    try (var heldLibrary = lockLibraryRow(library);
+        var removal =
+            BoundedTask.start(
+                () ->
+                    asAdmin(
+                        () -> libraryManagementService.removeLibrary(identity, library.getId())));
+        var scan =
+            startBehind(
+                heldLibrary,
+                () ->
+                    asAdmin(
+                        () ->
+                            libraryOperationService.startLibraryScan(identity, library.getId())))) {
+      awaitWaitersBehind(jdbcTemplate, heldLibrary.backendPid(), 2);
+      heldLibrary.release();
+
+      assertThat(removal.await(BOUND)).isEqualTo(Outcome.accepted(library.getId()));
+      assertThat(scan.await(BOUND))
+          .isEqualTo(Outcome.rejected(new LibraryOperationRejection.LibraryNotFound()));
+    }
+
+    assertThat(libraryRepository.existsById(library.getId())).isFalse();
+    assertThat(storedLibraryOperations()).isZero();
+    assertThat(scheduledLibraryOperations()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse removeLibrary with LibraryBusy and keep the scan when the scan takes the"
+          + " library's row first")
+  void shouldRefuseRemoveLibraryWithLibraryBusyWhenTheScanTakesTheLibraryRowFirst()
+      throws Exception {
+    var library = createLibrary();
+
+    try (var heldLibrary = lockLibraryRow(library);
+        var scan =
+            BoundedTask.start(
+                () ->
+                    asAdmin(
+                        () ->
+                            libraryOperationService.startLibraryScan(identity, library.getId())));
+        var removal =
+            startBehind(
+                heldLibrary,
+                () ->
+                    asAdmin(
+                        () -> libraryManagementService.removeLibrary(identity, library.getId())))) {
+      awaitWaitersBehind(jdbcTemplate, heldLibrary.backendPid(), 2);
+      heldLibrary.release();
+
+      assertThat(scan.await(BOUND).map(Library::getStatus))
+          .isEqualTo(Outcome.accepted(LibraryStatus.SCANNING));
+      assertThat(removal.await(BOUND))
+          .isEqualTo(
+              Outcome.rejected(new LibraryBusy(LibraryStatus.SCANNING, LibraryOperationKind.SCAN)));
+    }
+
+    assertThat(statusOf(library)).isEqualTo(LibraryStatus.SCANNING);
+    assertThat(storedLibraryOperations()).isOne();
+    assertThat(scheduledLibraryOperations()).isOne();
+  }
+
+  private HeldRowLock lockLibraryRow(Library library) throws SQLException {
+    return PostgresLockTestSupport.lockRow(
+        RowLockTarget.builder()
+            .dataSource(dataSource)
+            .table("library")
+            .rowId(library.getId())
+            .build());
+  }
+
+  // PostgreSQL queues row-lock waiters in arrival order, so the second request starts only after
+  // the first request waits behind the held row.
+  private <T> BoundedTask<T> startBehind(HeldRowLock heldLibrary, Callable<T> request) {
+    awaitWaitersBehind(jdbcTemplate, heldLibrary.backendPid(), 1);
+    return BoundedTask.start(request);
   }
 
   private <T> T asAdmin(Supplier<T> work) {
