@@ -8,6 +8,7 @@ import com.streamarr.server.services.concurrency.AdmittedTaskReport;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Tags;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -62,16 +63,16 @@ public class LibraryOperationAdmissions {
 
   private final class OperationMeters implements AdmissionListener {
 
-    private final String operationTag;
+    private final Tags operationTags;
     private final Counter admitted;
     private final List<Gauge> gauges = new CopyOnWriteArrayList<>();
 
     private OperationMeters(LibraryOperation operation) {
-      this.operationTag = operation.tagValue();
+      this.operationTags = Tags.of("operation", operation.tagValue());
       this.admitted =
           Counter.builder(ADMITTED)
               .description("Tasks admitted by library operations")
-              .tag("operation", operationTag)
+              .tags(operationTags)
               .register(meterRegistry);
     }
 
@@ -80,14 +81,14 @@ public class LibraryOperationAdmissions {
       gauges.add(
           Gauge.builder(LIMIT, admission, AdaptiveAdmission::limit)
               .description("The current admission limit of a library operation")
-              .tag("operation", operationTag)
+              .tags(operationTags)
               .tag("library", libraryId.toString())
               .strongReference(true)
               .register(meterRegistry));
       gauges.add(
           Gauge.builder(IN_FLIGHT, admission, AdaptiveAdmission::inFlight)
               .description("Admitted tasks of a library operation that have not reported yet")
-              .tag("operation", operationTag)
+              .tags(operationTags)
               .tag("library", libraryId.toString())
               .strongReference(true)
               .register(meterRegistry));
@@ -102,7 +103,7 @@ public class LibraryOperationAdmissions {
     public void onReported(AdmittedTaskReport report) {
       Counter.builder(REPORTS)
           .description("Reports of admitted library operation tasks, by kind")
-          .tag("operation", operationTag)
+          .tags(operationTags)
           .tag("report", report.name().toLowerCase(Locale.ROOT))
           .register(meterRegistry)
           .increment();
