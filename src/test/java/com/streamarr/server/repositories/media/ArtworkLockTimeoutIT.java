@@ -7,7 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.media.ArtworkAttempt;
-import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemOutcome;
@@ -51,18 +51,18 @@ class ArtworkLockTimeoutIT extends AbstractIntegrationTest {
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
 
-  private ArtworkItem movie;
+  private ArtworkTarget movie;
 
   @BeforeEach
   void setUp() {
     var movieId = SavedMediaFixture.saveMovie(libraryRepository, movieRepository).getId();
-    movie = new ArtworkItem(movieId, ImageEntityType.MOVIE);
+    movie = new ArtworkTarget(movieId, ImageEntityType.MOVIE);
   }
 
   @Test
   @DisplayName(
-      "Should give up within the lock timeout when another transaction saves the item's request")
-  void shouldGiveUpWithinTheLockTimeoutWhenAnotherTransactionSavesTheItemsRequest()
+      "Should give up within the lock timeout when another transaction saves the target's request")
+  void shouldGiveUpWithinTheLockTimeoutWhenAnotherTransactionSavesTheTargetsRequest()
       throws Exception {
     whileAnotherTransactionSavesARequest(
         () ->
@@ -97,7 +97,7 @@ class ArtworkLockTimeoutIT extends AbstractIntegrationTest {
   void shouldGiveUpWithinTheLockTimeoutWhenImagesWaitForARequestBeingReplaced() throws Exception {
     var attempt = ArtworkAttemptFixture.requestedAttemptFor(transactionTemplate, requests, movie);
     var images =
-        List.of(imageBuilder(movie.itemId()).key("/poster.jpg").path("movie/poster.jpg").build());
+        List.of(imageBuilder(movie.targetId()).key("/poster.jpg").path("movie/poster.jpg").build());
 
     whileAnotherTransactionSavesARequest(
         () -> {
@@ -120,7 +120,7 @@ class ArtworkLockTimeoutIT extends AbstractIntegrationTest {
     assertThat(lockTimeout).isEqualTo("0");
   }
 
-  // Another transaction replaces the item's request and keeps it uncommitted while the contender
+  // Another transaction replaces the target's request and keeps it uncommitted while the contender
   // runs, so the contender waits for the request lock or the request row.
   private void whileAnotherTransactionSavesARequest(Callable<?> contender) throws Exception {
     var saved = new CountDownLatch(1);
@@ -153,16 +153,16 @@ class ArtworkLockTimeoutIT extends AbstractIntegrationTest {
 
   private ArtworkSources artwork(String posterKey) {
     return ArtworkSources.builder()
-        .entityId(movie.itemId())
-        .entityType(movie.itemType())
+        .targetId(movie.targetId())
+        .targetType(movie.targetType())
         .sources(List.of(new TmdbImageSource(ImageType.POSTER, posterKey)))
         .build();
   }
 
   private static ItemResult unavailablePoster(ArtworkAttempt attempt) {
     return ItemResult.builder()
-        .itemId(attempt.item().itemId())
-        .itemType(attempt.item().itemType())
+        .itemId(attempt.target().targetId())
+        .itemType(attempt.target().targetType())
         .step(ItemStep.ARTWORK)
         .imageType(ImageType.POSTER)
         .outcome(new ItemOutcome.Unavailable())

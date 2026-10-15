@@ -5,7 +5,7 @@ import lombok.Builder;
 import lombok.NonNull;
 
 /**
- * An item's stored artwork request: the sources and the refresh mode its artwork steps follow, and
+ * A target's stored artwork request: the sources and the refresh mode its artwork steps follow, and
  * the generation those steps record their results for.
  */
 @Builder

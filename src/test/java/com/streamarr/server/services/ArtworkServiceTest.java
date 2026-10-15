@@ -6,7 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
-import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
@@ -109,8 +109,8 @@ class ArtworkServiceTest {
       var entityId = UUID.randomUUID();
       var sources =
           ArtworkSources.builder()
-              .entityId(entityId)
-              .entityType(entityType)
+              .targetId(entityId)
+              .targetType(entityType)
               .sources(List.of())
               .build();
 
@@ -136,7 +136,7 @@ class ArtworkServiceTest {
       assertThat(summary.counts()).isEqualTo(ArtworkCounts.builder().saved(1).failed(1).build());
       assertThat(failureReasonOf(movieId, ImageType.POSTER))
           .isEqualTo(ItemFailureReason.DOWNLOAD_FAILED);
-      assertThat(artwork.scheduling().pendingItems()).isEmpty();
+      assertThat(artwork.scheduling().pendingTargets()).isEmpty();
     }
 
     @Test
@@ -150,8 +150,8 @@ class ArtworkServiceTest {
 
       assertThat(summary.counts()).isEqualTo(ArtworkCounts.builder().saved(1).failed(1).build());
       assertThat(failureReasonOf(movieId, ImageType.POSTER)).isEqualTo(ItemFailureReason.TEMPORARY);
-      assertThat(artwork.scheduling().pendingItems())
-          .containsExactly(new ArtworkItem(movieId, ImageEntityType.MOVIE));
+      assertThat(artwork.scheduling().pendingTargets())
+          .containsExactly(new ArtworkTarget(movieId, ImageEntityType.MOVIE));
     }
 
     @Test
@@ -170,7 +170,7 @@ class ArtworkServiceTest {
               Map.entry(ImageType.POSTER, new ItemOutcome.Succeeded()),
               Map.entry(ImageType.BACKDROP, new ItemOutcome.Succeeded()));
       assertThat(imageDownloader.getDownloadCount()).isEqualTo(downloadsBeforeRetry + 1);
-      assertThat(artwork.scheduling().pendingItems()).isEmpty();
+      assertThat(artwork.scheduling().pendingTargets()).isEmpty();
     }
 
     @Test
@@ -293,8 +293,8 @@ class ArtworkServiceTest {
       assertThat(itemResults.findByItem(movieId, ImageEntityType.MOVIE))
           .extracting(ItemResult::imageType)
           .containsExactly(ImageType.BACKDROP);
-      assertThat(interrupted.scheduling().pendingItems())
-          .containsExactly(new ArtworkItem(movieId, ImageEntityType.MOVIE));
+      assertThat(interrupted.scheduling().pendingTargets())
+          .containsExactly(new ArtworkTarget(movieId, ImageEntityType.MOVIE));
     }
   }
 
@@ -364,14 +364,14 @@ class ArtworkServiceTest {
     }
 
     @Test
-    @DisplayName("Should stop waiting for an item when the item is deleted")
-    void shouldStopWaitingForAnItemWhenTheItemIsDeleted() {
+    @DisplayName("Should stop waiting for a target when the target is deleted")
+    void shouldStopWaitingForATargetWhenTheTargetIsDeleted() {
       artwork.scheduling().holdScheduledSteps();
       var movieId = UUID.randomUUID();
       var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
       artworkService.requestPrimaryArtwork(run, movieArtwork(movieId, POSTER));
 
-      artwork.requests().deleteItem(new ArtworkItem(movieId, ImageEntityType.MOVIE));
+      artwork.requests().deleteTarget(new ArtworkTarget(movieId, ImageEntityType.MOVIE));
 
       assertThat(artwork.closeAndAwait(run).counts()).isEqualTo(ArtworkCounts.NONE);
     }
@@ -402,8 +402,8 @@ class ArtworkServiceTest {
     }
 
     @Test
-    @DisplayName("Should count the newest request's images once when a run requests an item twice")
-    void shouldCountTheNewestRequestsImagesOnceWhenARunRequestsAnItemTwice() {
+    @DisplayName("Should count the newest request's images once when a run requests a target twice")
+    void shouldCountTheNewestRequestsImagesOnceWhenARunRequestsATargetTwice() {
       artwork.scheduling().holdScheduledSteps();
       var run = artworkService.openRun("refresh", ImageRefreshMode.PRESERVE);
       var movieId = UUID.randomUUID();
@@ -492,8 +492,8 @@ class ArtworkServiceTest {
       var entityId = UUID.randomUUID();
       var sources =
           ArtworkSources.builder()
-              .entityId(entityId)
-              .entityType(entityType)
+              .targetId(entityId)
+              .targetType(entityType)
               .sources(List.of(new TmdbImageSource(imageType, "/background.jpg")))
               .build();
 
@@ -515,8 +515,8 @@ class ArtworkServiceTest {
       var entityId = UUID.randomUUID();
       var sources =
           ArtworkSources.builder()
-              .entityId(entityId)
-              .entityType(entityType)
+              .targetId(entityId)
+              .targetType(entityType)
               .sources(List.of())
               .build();
 
@@ -532,7 +532,7 @@ class ArtworkServiceTest {
     void shouldRequestNothingWhenPreserveKeepsEveryStoredBackgroundImage() {
       var person = personArtwork("/profile.jpg");
       imageRepository.save(
-          imageBuilder(person.entityId())
+          imageBuilder(person.targetId())
               .entityType(ImageEntityType.PERSON)
               .imageType(ImageType.PROFILE)
               .key("/old-profile.jpg")
@@ -786,16 +786,16 @@ class ArtworkServiceTest {
 
   private static ArtworkSources movieArtwork(UUID movieId, ImageSource... sources) {
     return ArtworkSources.builder()
-        .entityId(movieId)
-        .entityType(ImageEntityType.MOVIE)
+        .targetId(movieId)
+        .targetType(ImageEntityType.MOVIE)
         .sources(List.of(sources))
         .build();
   }
 
   private static ArtworkSources personArtwork(String profilePath) {
     return ArtworkSources.builder()
-        .entityId(UUID.randomUUID())
-        .entityType(ImageEntityType.PERSON)
+        .targetId(UUID.randomUUID())
+        .targetType(ImageEntityType.PERSON)
         .sources(List.of(new TmdbImageSource(ImageType.PROFILE, profilePath)))
         .build();
   }

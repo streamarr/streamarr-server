@@ -10,7 +10,7 @@ import com.github.kagkarlsson.scheduler.task.ExecutionOperations;
 import com.github.kagkarlsson.scheduler.task.NewValue;
 import com.github.kagkarlsson.scheduler.task.RescheduleUpdate;
 import com.github.kagkarlsson.scheduler.task.TaskInstance;
-import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.fakes.FakeArtworkRequestRepository;
@@ -39,8 +39,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 class ArtworkStepsCompletionTest {
 
   private static final Instant NOW = Instant.parse("2026-10-14T12:00:00Z");
-  private static final ArtworkItem MOVIE =
-      new ArtworkItem(UUID.randomUUID(), ImageEntityType.MOVIE);
+  private static final ArtworkTarget MOVIE =
+      new ArtworkTarget(UUID.randomUUID(), ImageEntityType.MOVIE);
 
   private final FakeArtworkRequestRepository requests =
       new FakeArtworkRequestRepository(new FakeItemResultRepository());
@@ -190,8 +190,8 @@ class ArtworkStepsCompletionTest {
   private long request(String key) {
     var artwork =
         ArtworkSources.builder()
-            .entityId(MOVIE.itemId())
-            .entityType(MOVIE.itemType())
+            .targetId(MOVIE.targetId())
+            .targetType(MOVIE.targetType())
             .sources(List.of(new TmdbImageSource(ImageType.POSTER, key)))
             .build();
     return requests.saveRequest(artwork, ImageRefreshMode.PRESERVE, NOW).generation();
@@ -212,7 +212,7 @@ class ArtworkStepsCompletionTest {
             operations(execution));
   }
 
-  private ExecutionOperations<ArtworkItem> operations(Execution execution) {
+  private ExecutionOperations<ArtworkTarget> operations(Execution execution) {
     return new ExecutionOperations<>(artworkTasks, SchedulerListeners.NOOP, execution);
   }
 

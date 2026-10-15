@@ -1,7 +1,7 @@
 package com.streamarr.server.services;
 
 import com.streamarr.server.domain.media.ArtworkAttempt;
-import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemOutcome;
@@ -34,8 +34,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * Runs the artwork steps of one item for the current generation of its artwork request: fetch each
- * requested image, keep stored images that the refresh mode keeps, and report images that the
+ * Runs the artwork steps of one target for the current generation of its artwork request: fetch
+ * each requested image, keep stored images that the refresh mode keeps, and report images that the
  * provider does not have. A step whose result of this generation is already final does not run
  * again, so repeating an attempt is safe.
  */
@@ -66,7 +66,7 @@ public class ArtworkSteps {
       }
     }
 
-    /** A newer generation replaced the attempt's, or the item was deleted. */
+    /** A newer generation replaced the attempt's, or the target was deleted. */
     record Obsolete() implements StepOutcome {}
 
     record Interrupted() implements StepOutcome {}
@@ -75,11 +75,11 @@ public class ArtworkSteps {
   private record ImageDownload(DownloadImage planned, Future<ProcessedImage> processedImage) {}
 
   /**
-   * Runs the steps of the item's pending artwork request that have no final result of its
+   * Runs the steps of the target's pending artwork request that have no final result of its
    * generation yet, and stores each step's result.
    */
-  public ArtworkStepsOutcome runSteps(ArtworkItem item) {
-    var pending = requests.findRequest(item);
+  public ArtworkStepsOutcome runSteps(ArtworkTarget target) {
+    var pending = requests.findRequest(target);
     if (pending.isEmpty()) {
       return new ArtworkStepsOutcome.NotRequested();
     }
@@ -87,12 +87,12 @@ public class ArtworkSteps {
     var request = pending.get();
     var attempt =
         ArtworkAttempt.builder()
-            .item(item)
+            .target(target)
             .generation(request.generation())
             .attemptedAt(clock.instant())
             .build();
     var storedImagesByType =
-        imageService.findByEntity(item.itemId(), item.itemType()).stream()
+        imageService.findByEntity(target.targetId(), target.targetType()).stream()
             .collect(Collectors.groupingBy(Image::getImageType));
     var finishedTypes = finishedImageTypes(attempt);
     var planned =
@@ -125,7 +125,9 @@ public class ArtworkSteps {
 
   // A result of this generation or a newer one that no retry would change.
   private Set<ImageType> finishedImageTypes(ArtworkAttempt attempt) {
-    return itemResults.findByItem(attempt.item().itemId(), attempt.item().itemType()).stream()
+    return itemResults
+        .findByItem(attempt.target().targetId(), attempt.target().targetType())
+        .stream()
         .filter(result -> result.step() == ItemStep.ARTWORK)
         .filter(result -> result.artworkGeneration() >= attempt.generation())
         .filter(ItemResult::isFinal)
@@ -158,18 +160,18 @@ public class ArtworkSteps {
         };
 
     return cpuPermits.runWithPermit(
-        cpuPriorityOf(attempt.item()),
+        cpuPriorityOf(attempt.target()),
         () ->
             imageService.processImage(
                 imageData,
                 source.imageType(),
-                attempt.item().itemId(),
-                attempt.item().itemType(),
+                attempt.target().targetId(),
+                attempt.target().targetType(),
                 source.key()));
   }
 
-  private static CpuPermits.Priority cpuPriorityOf(ArtworkItem item) {
-    return switch (ArtworkPriority.of(item.itemType())) {
+  private static CpuPermits.Priority cpuPriorityOf(ArtworkTarget target) {
+    return switch (ArtworkPriority.of(target.targetType())) {
       case PRIMARY -> CpuPermits.Priority.PRIMARY;
       case BACKGROUND -> CpuPermits.Priority.BACKGROUND;
     };
@@ -213,8 +215,8 @@ public class ArtworkSteps {
     log.warn(
         "Artwork step {} failed for {} {}: {} ({})",
         planned.imageType(),
-        attempt.item().itemType(),
-        attempt.item().itemId(),
+        attempt.target().targetType(),
+        attempt.target().targetId(),
         failure.reason(),
         cause.toString());
     var retryAfter =
@@ -295,8 +297,8 @@ public class ArtworkSteps {
     } catch (RuntimeException e) {
       log.error(
           "Failed to store artwork results for {} {}; the steps stay pending",
-          attempt.item().itemType(),
-          attempt.item().itemId(),
+          attempt.target().targetType(),
+          attempt.target().targetId(),
           e);
       return ResultStorage.NOT_STORED;
     }
@@ -318,8 +320,8 @@ public class ArtworkSteps {
   private static ItemResult.ItemResultBuilder result(
       ArtworkAttempt attempt, ImageType imageType, ItemOutcome outcome) {
     return ItemResult.builder()
-        .itemId(attempt.item().itemId())
-        .itemType(attempt.item().itemType())
+        .itemId(attempt.target().targetId())
+        .itemType(attempt.target().targetType())
         .step(ItemStep.ARTWORK)
         .imageType(imageType)
         .outcome(outcome)

@@ -1,6 +1,6 @@
 package com.streamarr.server.fakes;
 
-import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.repositories.media.ArtworkResultsContract;
 import com.streamarr.server.repositories.media.ItemResultRepository;
@@ -22,12 +22,12 @@ class FakeItemResultRepositoryTest implements ArtworkResultsContract {
   }
 
   @Override
-  public ArtworkItem createMovie() {
-    return new ArtworkItem(UUID.randomUUID(), ImageEntityType.MOVIE);
+  public ArtworkTarget createMovie() {
+    return new ArtworkTarget(UUID.randomUUID(), ImageEntityType.MOVIE);
   }
 
   @Override
-  public long requestArtwork(ArtworkItem movie) {
+  public long requestArtwork(ArtworkTarget movie) {
     return lastGeneration.incrementAndGet();
   }
 }

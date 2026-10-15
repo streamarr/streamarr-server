@@ -99,8 +99,8 @@ public class PersonService {
 
     artworkService.requestBackgroundArtwork(
         ArtworkSources.builder()
-            .entityId(person.getId())
-            .entityType(ImageEntityType.PERSON)
+            .targetId(person.getId())
+            .targetType(ImageEntityType.PERSON)
             .sources(imageSources)
             .build(),
         imageRefreshMode);

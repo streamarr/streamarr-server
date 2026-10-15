@@ -124,7 +124,7 @@ class PersonServiceTest {
 
     var requests = artwork.requests().requests();
     assertThat(requests).hasSize(1);
-    assertThat(requests.getFirst().artwork().entityType()).isEqualTo(ImageEntityType.PERSON);
+    assertThat(requests.getFirst().artwork().targetType()).isEqualTo(ImageEntityType.PERSON);
   }
 
   @Test
@@ -144,8 +144,8 @@ class PersonServiceTest {
         .singleElement()
         .satisfies(
             request -> {
-              assertThat(request.artwork().entityId()).isEqualTo(existing.getId());
-              assertThat(request.artwork().entityType()).isEqualTo(ImageEntityType.PERSON);
+              assertThat(request.artwork().targetId()).isEqualTo(existing.getId());
+              assertThat(request.artwork().targetType()).isEqualTo(ImageEntityType.PERSON);
               assertThat(request.artwork().sources()).containsExactly(expectedImageSource);
               assertThat(request.refreshMode()).isEqualTo(ImageRefreshMode.PRESERVE);
             });

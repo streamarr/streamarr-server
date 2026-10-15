@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.domain.media.ArtworkAttempt;
-import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemFailureReason;
@@ -28,10 +28,10 @@ public interface ArtworkResultsContract {
   ItemResultRepository itemResults();
 
   /** Creates a movie that artwork can be requested for. */
-  ArtworkItem createMovie();
+  ArtworkTarget createMovie();
 
   /** Stores an artwork request for the movie and returns its generation. */
-  long requestArtwork(ArtworkItem movie);
+  long requestArtwork(ArtworkTarget movie);
 
   @Test
   @DisplayName(
@@ -59,7 +59,7 @@ public interface ArtworkResultsContract {
                     .outcome(new ItemOutcome.Unavailable())
                     .build()));
 
-    assertThat(itemResults().findByItem(movie.itemId(), movie.itemType()))
+    assertThat(itemResults().findByItem(movie.targetId(), movie.targetType()))
         .extracting(ItemResult::imageType, ItemResult::outcome)
         .containsExactlyInAnyOrder(
             tuple(ImageType.POSTER, new ItemOutcome.Succeeded()),
@@ -85,7 +85,8 @@ public interface ArtworkResultsContract {
                     .attemptedAt(LATER)
                     .build()));
 
-    assertThat(itemResults().findByItem(movie.itemId(), movie.itemType())).containsExactly(saved);
+    assertThat(itemResults().findByItem(movie.targetId(), movie.targetType()))
+        .containsExactly(saved);
   }
 
   @Test
@@ -105,7 +106,8 @@ public interface ArtworkResultsContract {
 
     itemResults().trySaveArtworkResults(attempt(movie, generation, LATER), List.of(kept));
 
-    assertThat(itemResults().findByItem(movie.itemId(), movie.itemType())).containsExactly(kept);
+    assertThat(itemResults().findByItem(movie.targetId(), movie.targetType()))
+        .containsExactly(kept);
   }
 
   @Test
@@ -123,22 +125,22 @@ public interface ArtworkResultsContract {
             attempt(movie, generation, EARLIER),
             List.of(poster(movie, generation).outcome(new ItemOutcome.Unavailable()).build()));
 
-    assertThat(itemResults().findByItem(movie.itemId(), movie.itemType()))
+    assertThat(itemResults().findByItem(movie.targetId(), movie.targetType()))
         .extracting(ItemResult::outcome, ItemResult::artworkGeneration)
         .containsExactly(tuple(new ItemOutcome.Unavailable(), generation));
   }
 
-  private static ArtworkAttempt attempt(ArtworkItem movie, long generation, Instant attemptedAt) {
+  private static ArtworkAttempt attempt(ArtworkTarget movie, long generation, Instant attemptedAt) {
     return ArtworkAttempt.builder()
-        .item(movie)
+        .target(movie)
         .generation(generation)
         .attemptedAt(attemptedAt)
         .build();
   }
 
-  private static ItemResult.ItemResultBuilder poster(ArtworkItem movie, long generation) {
+  private static ItemResult.ItemResultBuilder poster(ArtworkTarget movie, long generation) {
     return ItemResult.builder()
-        .itemId(movie.itemId())
+        .itemId(movie.targetId())
         .itemType(ImageEntityType.MOVIE)
         .step(ItemStep.ARTWORK)
         .imageType(ImageType.POSTER)

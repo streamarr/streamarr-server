@@ -1,7 +1,7 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.media.ArtworkAttempt;
-import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
@@ -18,10 +18,11 @@ public class FakeImageRepository extends FakeJpaRepository<Image> implements Ima
 
   private boolean failOnInsertAllIfAbsent;
   private boolean failOnReplaceLogicalArtwork;
-  private BiPredicate<ArtworkItem, Long> currentArtworkGeneration = (_, _) -> true;
+  private BiPredicate<ArtworkTarget, Long> currentArtworkGeneration = (_, _) -> true;
 
-  /** Decides whether an attempt's generation is still the item's pending artwork request. */
-  public void checkArtworkGenerationsWith(BiPredicate<ArtworkItem, Long> currentArtworkGeneration) {
+  /** Decides whether an attempt's generation is still the target's pending artwork request. */
+  public void checkArtworkGenerationsWith(
+      BiPredicate<ArtworkTarget, Long> currentArtworkGeneration) {
     this.currentArtworkGeneration = currentArtworkGeneration;
   }
 
@@ -75,7 +76,7 @@ public class FakeImageRepository extends FakeJpaRepository<Image> implements Ima
   }
 
   private void requireCurrentGeneration(ArtworkAttempt attempt) {
-    if (!currentArtworkGeneration.test(attempt.item(), attempt.generation())) {
+    if (!currentArtworkGeneration.test(attempt.target(), attempt.generation())) {
       throw new ObsoleteArtworkAttemptException(attempt);
     }
   }

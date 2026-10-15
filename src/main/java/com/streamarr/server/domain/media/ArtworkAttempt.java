@@ -4,7 +4,7 @@ import java.time.Instant;
 import lombok.Builder;
 import lombok.NonNull;
 
-/** One attempt at an item's artwork steps, for one generation of the item's artwork request. */
+/** One attempt at a target's artwork steps, for one generation of the target's artwork request. */
 @Builder
 public record ArtworkAttempt(
-    @NonNull ArtworkItem item, long generation, @NonNull Instant attemptedAt) {}
+    @NonNull ArtworkTarget target, long generation, @NonNull Instant attemptedAt) {}

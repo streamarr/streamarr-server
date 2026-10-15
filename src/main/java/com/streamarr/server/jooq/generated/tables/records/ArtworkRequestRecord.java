@@ -25,30 +25,30 @@ public class ArtworkRequestRecord extends UpdatableRecordImpl<ArtworkRequestReco
     private static final long serialVersionUID = 1L;
 
     /**
-     * Setter for <code>public.artwork_request.item_id</code>.
+     * Setter for <code>public.artwork_request.target_id</code>.
      */
-    public void setItemId(UUID value) {
+    public void setTargetId(UUID value) {
         set(0, value);
     }
 
     /**
-     * Getter for <code>public.artwork_request.item_id</code>.
+     * Getter for <code>public.artwork_request.target_id</code>.
      */
-    public UUID getItemId() {
+    public UUID getTargetId() {
         return (UUID) get(0);
     }
 
     /**
-     * Setter for <code>public.artwork_request.item_type</code>.
+     * Setter for <code>public.artwork_request.target_type</code>.
      */
-    public void setItemType(ImageEntityType value) {
+    public void setTargetType(ImageEntityType value) {
         set(1, value);
     }
 
     /**
-     * Getter for <code>public.artwork_request.item_type</code>.
+     * Getter for <code>public.artwork_request.target_type</code>.
      */
-    public ImageEntityType getItemType() {
+    public ImageEntityType getTargetType() {
         return (ImageEntityType) get(1);
     }
 
@@ -243,11 +243,11 @@ public class ArtworkRequestRecord extends UpdatableRecordImpl<ArtworkRequestReco
     /**
      * Create a detached, initialised ArtworkRequestRecord
      */
-    public ArtworkRequestRecord(UUID itemId, ImageEntityType itemType, ImageRefreshMode imageRefreshMode, ImageType[] sourceImageTypes, String[] sourceKeys, Integer imageCount, Long generation, OffsetDateTime requestedAt, UUID movieId, UUID seriesId, UUID seasonId, UUID episodeId, UUID personId, UUID companyId) {
+    public ArtworkRequestRecord(UUID targetId, ImageEntityType targetType, ImageRefreshMode imageRefreshMode, ImageType[] sourceImageTypes, String[] sourceKeys, Integer imageCount, Long generation, OffsetDateTime requestedAt, UUID movieId, UUID seriesId, UUID seasonId, UUID episodeId, UUID personId, UUID companyId) {
         super(ArtworkRequest.ARTWORK_REQUEST);
 
-        setItemId(itemId);
-        setItemType(itemType);
+        setTargetId(targetId);
+        setTargetType(targetType);
         setImageRefreshMode(imageRefreshMode);
         setSourceImageTypes(sourceImageTypes);
         setSourceKeys(sourceKeys);

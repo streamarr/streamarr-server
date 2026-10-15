@@ -2,8 +2,8 @@ package com.streamarr.server.repositories.media;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.domain.media.ArtworkItem;
 import com.streamarr.server.domain.media.ArtworkState;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemFailureReason;
@@ -40,12 +40,12 @@ public interface ArtworkRequestRepositoryContract {
   ArtworkRequestRepository repository();
 
   /** Creates a movie that artwork can be requested for. */
-  ArtworkItem createMovie();
+  ArtworkTarget createMovie();
 
   /** Creates a person that artwork can be requested for. */
-  ArtworkItem createPerson();
+  ArtworkTarget createPerson();
 
-  void deleteMovie(ArtworkItem movie);
+  void deleteMovie(ArtworkTarget movie);
 
   /** Stores an artwork result as the step that records it would. */
   void saveResult(ItemResult result);
@@ -54,8 +54,8 @@ public interface ArtworkRequestRepositoryContract {
   <T> T inTransaction(Supplier<T> work);
 
   @Test
-  @DisplayName("Should start a generation when an item requests artwork for the first time")
-  default void shouldStartAGenerationWhenAnItemRequestsArtworkForTheFirstTime() {
+  @DisplayName("Should start a generation when a target requests artwork for the first time")
+  default void shouldStartAGenerationWhenATargetRequestsArtworkForTheFirstTime() {
     var movie = createMovie();
 
     var saved = save(movie, ImageRefreshMode.PRESERVE, POSTER, BACKDROP);
@@ -200,8 +200,8 @@ public interface ArtworkRequestRepositoryContract {
   }
 
   @Test
-  @DisplayName("Should read the pending generation and artwork results when items are checked")
-  default void shouldReadThePendingGenerationAndArtworkResultsWhenItemsAreChecked() {
+  @DisplayName("Should read the pending generation and artwork results when targets are checked")
+  default void shouldReadThePendingGenerationAndArtworkResultsWhenTargetsAreChecked() {
     var pending = createMovie();
     var saved = save(pending, ImageRefreshMode.PRESERVE, POSTER);
     var finished = createMovie();
@@ -218,9 +218,10 @@ public interface ArtworkRequestRepositoryContract {
 
   @Test
   @DisplayName(
-      "Should count pending images and the earliest request time by item type when requests are"
+      "Should count pending images and the earliest request time by target type when requests are"
           + " pending")
-  default void shouldCountPendingImagesAndTheEarliestRequestTimeByItemTypeWhenRequestsArePending() {
+  default void
+      shouldCountPendingImagesAndTheEarliestRequestTimeByTargetTypeWhenRequestsArePending() {
     saveAt(createMovie(), REQUESTED_AT.plusSeconds(60), POSTER);
     saveAt(createMovie(), REQUESTED_AT, POSTER, BACKDROP);
     var person = createPerson();
@@ -229,8 +230,8 @@ public interface ArtworkRequestRepositoryContract {
             repository()
                 .saveRequest(
                     ArtworkSources.builder()
-                        .entityId(person.itemId())
-                        .entityType(ImageEntityType.PERSON)
+                        .targetId(person.targetId())
+                        .targetType(ImageEntityType.PERSON)
                         .sources(List.of(new TmdbImageSource(ImageType.PROFILE, "/face.jpg")))
                         .build(),
                     ImageRefreshMode.PRESERVE,
@@ -279,31 +280,31 @@ public interface ArtworkRequestRepositoryContract {
   }
 
   private ArtworkRequestRepository.SavedArtworkRequest saveAt(
-      ArtworkItem item, Instant requestedAt, ImageSource... sources) {
+      ArtworkTarget target, Instant requestedAt, ImageSource... sources) {
     return inTransaction(
         () ->
             repository()
-                .saveRequest(artwork(item, sources), ImageRefreshMode.PRESERVE, requestedAt));
+                .saveRequest(artwork(target, sources), ImageRefreshMode.PRESERVE, requestedAt));
   }
 
   private ArtworkRequestRepository.SavedArtworkRequest save(
-      ArtworkItem item, ImageRefreshMode refreshMode, ImageSource... sources) {
+      ArtworkTarget target, ImageRefreshMode refreshMode, ImageSource... sources) {
     return inTransaction(
-        () -> repository().saveRequest(artwork(item, sources), refreshMode, REQUESTED_AT));
+        () -> repository().saveRequest(artwork(target, sources), refreshMode, REQUESTED_AT));
   }
 
-  private static ArtworkSources artwork(ArtworkItem item, ImageSource... sources) {
+  private static ArtworkSources artwork(ArtworkTarget target, ImageSource... sources) {
     return ArtworkSources.builder()
-        .entityId(item.itemId())
-        .entityType(item.itemType())
+        .targetId(target.targetId())
+        .targetType(target.targetType())
         .sources(List.of(sources))
         .build();
   }
 
-  private static ItemResult savedPoster(ArtworkItem item, long generation) {
+  private static ItemResult savedPoster(ArtworkTarget target, long generation) {
     return ItemResult.builder()
-        .itemId(item.itemId())
-        .itemType(item.itemType())
+        .itemId(target.targetId())
+        .itemType(target.targetType())
         .step(ItemStep.ARTWORK)
         .imageType(ImageType.POSTER)
         .outcome(new ItemOutcome.Succeeded())

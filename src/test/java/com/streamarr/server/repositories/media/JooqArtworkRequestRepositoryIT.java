@@ -71,8 +71,9 @@ class JooqArtworkRequestRepositoryIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should keep one request when concurrent transactions request new artwork for an item")
-  void shouldKeepOneRequestWhenConcurrentTransactionsRequestNewArtworkForAnItem() throws Exception {
+      "Should keep one request when concurrent transactions request new artwork for a target")
+  void shouldKeepOneRequestWhenConcurrentTransactionsRequestNewArtworkForATarget()
+      throws Exception {
     var artwork = posterOf(savedMovieId(), "/poster.jpg");
 
     try (var first = BoundedTask.start(() -> save(artwork));
@@ -97,8 +98,8 @@ class JooqArtworkRequestRepositoryIT extends AbstractIntegrationTest {
     return RowLockTarget.builder()
         .dataSource(dataSource)
         .table("artwork_request")
-        .keyColumn("item_id")
-        .rowId(artwork.entityId())
+        .keyColumn("target_id")
+        .rowId(artwork.targetId())
         .build();
   }
 
@@ -108,8 +109,8 @@ class JooqArtworkRequestRepositoryIT extends AbstractIntegrationTest {
 
   private static ArtworkSources posterOf(UUID movieId, String key) {
     return ArtworkSources.builder()
-        .entityId(movieId)
-        .entityType(ImageEntityType.MOVIE)
+        .targetId(movieId)
+        .targetType(ImageEntityType.MOVIE)
         .sources(List.of(new TmdbImageSource(ImageType.POSTER, key)))
         .build();
   }

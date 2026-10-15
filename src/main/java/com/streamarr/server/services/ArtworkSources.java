@@ -1,6 +1,6 @@
 package com.streamarr.server.services;
 
-import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.services.metadata.events.ImageSource;
@@ -15,15 +15,15 @@ import lombok.NonNull;
 
 @Builder(toBuilder = true)
 public record ArtworkSources(
-    @NonNull UUID entityId,
-    @NonNull ImageEntityType entityType,
+    @NonNull UUID targetId,
+    @NonNull ImageEntityType targetType,
     @NonNull List<ImageSource> sources) {
 
-  public ArtworkItem item() {
-    return new ArtworkItem(entityId, entityType);
+  public ArtworkTarget target() {
+    return new ArtworkTarget(targetId, targetType);
   }
 
-  /** Image types the entity needs but the provider supplied no source for. */
+  /** Image types the target needs but the provider supplied no source for. */
   public List<ImageType> missingImageTypes() {
     var suppliedTypes = sources.stream().map(ImageSource::imageType).collect(Collectors.toSet());
     return expectedImageTypes().stream().filter(type -> !suppliedTypes.contains(type)).toList();
@@ -36,7 +36,7 @@ public record ArtworkSources(
   }
 
   private Set<ImageType> expectedImageTypes() {
-    return switch (entityType) {
+    return switch (targetType) {
       case MOVIE, SERIES -> EnumSet.of(ImageType.POSTER, ImageType.BACKDROP);
       case SEASON -> EnumSet.of(ImageType.POSTER);
       case EPISODE -> EnumSet.of(ImageType.STILL);

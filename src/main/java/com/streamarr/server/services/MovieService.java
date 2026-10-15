@@ -138,8 +138,8 @@ public class MovieService {
     artworkService.requestPrimaryArtwork(
         artworkRun,
         ArtworkSources.builder()
-            .entityId(movieId)
-            .entityType(ImageEntityType.MOVIE)
+            .targetId(movieId)
+            .targetType(ImageEntityType.MOVIE)
             .sources(sources)
             .build());
   }

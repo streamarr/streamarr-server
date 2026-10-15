@@ -135,8 +135,8 @@ class ArtworkPlanTest {
 
   private ArtworkSources movieArtwork(ImageSource... sources) {
     return ArtworkSources.builder()
-        .entityId(movieId)
-        .entityType(ImageEntityType.MOVIE)
+        .targetId(movieId)
+        .targetType(ImageEntityType.MOVIE)
         .sources(List.of(sources))
         .build();
   }

@@ -1,6 +1,6 @@
 package com.streamarr.server.config;
 
-import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.services.ArtworkPriority;
 import com.streamarr.server.services.ArtworkScheduling;
 import lombok.Builder;
@@ -21,10 +21,10 @@ public class ArtworkSchedulers implements ArtworkScheduling, SmartLifecycle {
   private final boolean autoStartup;
 
   @Override
-  public void scheduleSteps(@NonNull ArtworkItem item) {
-    switch (ArtworkPriority.of(item.itemType())) {
-      case PRIMARY -> primary.scheduleSteps(item);
-      case BACKGROUND -> background.scheduleSteps(item);
+  public void scheduleSteps(@NonNull ArtworkTarget target) {
+    switch (ArtworkPriority.of(target.targetType())) {
+      case PRIMARY -> primary.scheduleSteps(target);
+      case BACKGROUND -> background.scheduleSteps(target);
     }
   }
 

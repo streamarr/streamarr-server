@@ -6,7 +6,7 @@ import static com.streamarr.server.support.HeldCreditInsert.CreditTable.PERSON;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.metadata.Company;
@@ -234,9 +234,9 @@ class CreditServiceConcurrencyIT extends AbstractIntegrationTest {
     assertThat(
             artworkRequests.findArtworkStates(
                 List.of(
-                    new ArtworkItem(people.get(0), ImageEntityType.PERSON),
-                    new ArtworkItem(people.get(1), ImageEntityType.PERSON),
-                    new ArtworkItem(studio, ImageEntityType.COMPANY))))
+                    new ArtworkTarget(people.get(0), ImageEntityType.PERSON),
+                    new ArtworkTarget(people.get(1), ImageEntityType.PERSON),
+                    new ArtworkTarget(studio, ImageEntityType.COMPANY))))
         .hasSize(3)
         .allMatch(
             state -> state.pendingGeneration().isPresent() || !state.artworkResults().isEmpty());

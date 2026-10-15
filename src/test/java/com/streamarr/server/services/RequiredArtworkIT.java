@@ -17,7 +17,7 @@ import com.streamarr.server.AbstractWireMockIntegrationTest;
 import com.streamarr.server.config.ArtworkSchedulers;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.auth.SystemActor;
-import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
@@ -155,8 +155,8 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
             Person.builder().name("Artwork Person").sourceId(UUID.randomUUID().toString()).build());
     var artwork =
         ArtworkSources.builder()
-            .entityId(person.getId())
-            .entityType(ImageEntityType.PERSON)
+            .targetId(person.getId())
+            .targetType(ImageEntityType.PERSON)
             .sources(List.of(new TmdbImageSource(ImageType.PROFILE, "/poster.jpg")))
             .build();
 
@@ -195,7 +195,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
                     .withHeader("Content-Type", "image/jpeg")
                     .withFixedDelay(3_000)
                     .withBody(createTestImage(600, 900))));
-    var backlog = new ArrayList<ArtworkItem>();
+    var backlog = new ArrayList<ArtworkTarget>();
     for (var index = 0; index < 6; index++) {
       var person =
           personRepository.saveAndFlush(
@@ -203,7 +203,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
                   .name("Backlog Person")
                   .sourceId(UUID.randomUUID().toString())
                   .build());
-      backlog.add(new ArtworkItem(person.getId(), ImageEntityType.PERSON));
+      backlog.add(new ArtworkTarget(person.getId(), ImageEntityType.PERSON));
     }
 
     for (var index = 0; index < 2; index++) {
@@ -213,7 +213,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
                   .name("Backlog Studio")
                   .sourceId(UUID.randomUUID().toString())
                   .build());
-      backlog.add(new ArtworkItem(company.getId(), ImageEntityType.COMPANY));
+      backlog.add(new ArtworkTarget(company.getId(), ImageEntityType.COMPANY));
     }
 
     transactionTemplate.executeWithoutResult(
@@ -230,7 +230,9 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
     assertThat(summary.counts()).isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
     assertThat(backlog)
         .allSatisfy(
-            item -> assertThat(itemResults.findByItem(item.itemId(), item.itemType())).isEmpty());
+            target ->
+                assertThat(itemResults.findByItem(target.targetId(), target.targetType()))
+                    .isEmpty());
   }
 
   @Test
@@ -280,7 +282,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
 
       assertThat(completions.getFirst())
           .isEqualTo(
-              ArtworkStepsTask.instanceId(new ArtworkItem(movie.getId(), ImageEntityType.MOVIE)));
+              ArtworkStepsTask.instanceId(new ArtworkTarget(movie.getId(), ImageEntityType.MOVIE)));
     } finally {
       releases.forEach(CountDownLatch::countDown);
       for (var holder : holders) {
@@ -310,23 +312,23 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
     return holder;
   }
 
-  private ArtworkItem savePerson() {
+  private ArtworkTarget savePerson() {
     var person =
         personRepository.saveAndFlush(
             Person.builder().name("Backlog Person").sourceId(UUID.randomUUID().toString()).build());
-    return new ArtworkItem(person.getId(), ImageEntityType.PERSON);
+    return new ArtworkTarget(person.getId(), ImageEntityType.PERSON);
   }
 
-  private void requestBacklogArtwork(ArtworkItem item, int index) {
+  private void requestBacklogArtwork(ArtworkTarget target, int index) {
     var imageType = ImageType.PROFILE;
-    if (item.itemType() == ImageEntityType.COMPANY) {
+    if (target.targetType() == ImageEntityType.COMPANY) {
       imageType = ImageType.LOGO;
     }
 
     artworkService.requestBackgroundArtwork(
         ArtworkSources.builder()
-            .entityId(item.itemId())
-            .entityType(item.itemType())
+            .targetId(target.targetId())
+            .targetType(target.targetType())
             .sources(List.of(new TmdbImageSource(imageType, "/backlog-" + index + ".jpg")))
             .build(),
         ImageRefreshMode.PRESERVE);

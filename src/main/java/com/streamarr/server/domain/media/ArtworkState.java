@@ -5,11 +5,11 @@ import java.util.Optional;
 import lombok.NonNull;
 
 /**
- * The recorded artwork of one item: the generation of its pending artwork request, if one is
+ * The recorded artwork of one target: the generation of its pending artwork request, if one is
  * pending, and its artwork results.
  */
 public record ArtworkState(
-    @NonNull ArtworkItem item,
+    @NonNull ArtworkTarget target,
     @NonNull Optional<Long> pendingGeneration,
     @NonNull List<ItemResult> artworkResults) {
 

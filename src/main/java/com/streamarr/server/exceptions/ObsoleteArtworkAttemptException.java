@@ -6,7 +6,7 @@ import lombok.NonNull;
 
 /**
  * An artwork attempt tried to save images after a newer artwork request replaced its generation, or
- * after its item was deleted. The attempt saves nothing and records no result.
+ * after its target was deleted. The attempt saves nothing and records no result.
  */
 @Getter
 public class ObsoleteArtworkAttemptException extends RuntimeException {
@@ -16,7 +16,8 @@ public class ObsoleteArtworkAttemptException extends RuntimeException {
   public ObsoleteArtworkAttemptException(@NonNull ArtworkAttempt attempt) {
     super(
         "Artwork generation %d of %s %s is no longer requested"
-            .formatted(attempt.generation(), attempt.item().itemType(), attempt.item().itemId()));
+            .formatted(
+                attempt.generation(), attempt.target().targetType(), attempt.target().targetId()));
     this.attempt = attempt;
   }
 }

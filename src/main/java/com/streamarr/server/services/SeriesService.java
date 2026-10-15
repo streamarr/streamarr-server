@@ -82,8 +82,8 @@ public class SeriesService {
     artworkService.requestPrimaryArtwork(
         artworkRun,
         ArtworkSources.builder()
-            .entityId(savedSeries.getId())
-            .entityType(ImageEntityType.SERIES)
+            .targetId(savedSeries.getId())
+            .targetType(ImageEntityType.SERIES)
             .sources(metadataResult.imageSources())
             .build());
 
@@ -109,8 +109,8 @@ public class SeriesService {
     artworkService.requestPrimaryArtwork(
         request.artworkRun(),
         ArtworkSources.builder()
-            .entityId(season.getId())
-            .entityType(ImageEntityType.SEASON)
+            .targetId(season.getId())
+            .targetType(ImageEntityType.SEASON)
             .sources(details.imageSources())
             .build());
 
@@ -158,8 +158,8 @@ public class SeriesService {
     artworkService.requestPrimaryArtwork(
         artworkRun,
         ArtworkSources.builder()
-            .entityId(saved.getId())
-            .entityType(ImageEntityType.SERIES)
+            .targetId(saved.getId())
+            .targetType(ImageEntityType.SERIES)
             .sources(metadataResult.imageSources())
             .build());
     return saved;
@@ -184,8 +184,8 @@ public class SeriesService {
     artworkService.requestPrimaryArtwork(
         request.artworkRun(),
         ArtworkSources.builder()
-            .entityId(savedSeason.getId())
-            .entityType(ImageEntityType.SEASON)
+            .targetId(savedSeason.getId())
+            .targetType(ImageEntityType.SEASON)
             .sources(details.imageSources())
             .build());
 
@@ -227,8 +227,8 @@ public class SeriesService {
                   artworkService.requestPrimaryArtwork(
                       request.artworkRun(),
                       ArtworkSources.builder()
-                          .entityId(episode.getId())
-                          .entityType(ImageEntityType.EPISODE)
+                          .targetId(episode.getId())
+                          .targetType(ImageEntityType.EPISODE)
                           .sources(details.imageSources())
                           .build()));
     }

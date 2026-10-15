@@ -6,7 +6,7 @@ import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.github.kagkarlsson.scheduler.task.ExecutionOperations;
 import com.github.kagkarlsson.scheduler.task.RescheduleUpdate;
 import com.github.kagkarlsson.scheduler.task.TaskInstance;
-import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.services.ArtworkPriority;
 import com.streamarr.server.services.ArtworkScheduling;
@@ -25,13 +25,13 @@ import java.util.concurrent.TimeUnit;
 /**
  * Keeps scheduled artwork steps in memory and runs them through the real {@link ArtworkSteps} on
  * the calling thread. The real {@link ArtworkStepsCompletion} completes each attempt: a removed
- * task leaves the pending items, a task rescheduled to run at once without failures runs again, and
- * any other rescheduled task stays pending until a test runs it again. Unless a test holds them,
- * steps run as soon as they are scheduled.
+ * task leaves the pending targets, a task rescheduled to run at once without failures runs again,
+ * and any other rescheduled task stays pending until a test runs it again. Unless a test holds
+ * them, steps run as soon as they are scheduled.
  */
 public class FakeArtworkScheduling implements ArtworkScheduling {
 
-  private final Set<ArtworkItem> pending = ConcurrentHashMap.newKeySet();
+  private final Set<ArtworkTarget> pending = ConcurrentHashMap.newKeySet();
   private final Semaphore unfinishedAttempts = new Semaphore(0);
   private final FakeTaskRepository artworkTasks = new FakeTaskRepository();
   private volatile ArtworkSteps steps;
@@ -63,30 +63,30 @@ public class FakeArtworkScheduling implements ArtworkScheduling {
   }
 
   @Override
-  public void scheduleSteps(ArtworkItem item) {
-    pending.add(item);
-    if (isHeld(item)) {
+  public void scheduleSteps(ArtworkTarget target) {
+    pending.add(target);
+    if (isHeld(target)) {
       return;
     }
 
-    run(item);
+    run(target);
   }
 
-  private boolean isHeld(ArtworkItem item) {
+  private boolean isHeld(ArtworkTarget target) {
     if (!runWhenScheduled) {
       return true;
     }
 
     return !runBackgroundWhenScheduled
-        && ArtworkPriority.of(item.itemType()) == ArtworkPriority.BACKGROUND;
+        && ArtworkPriority.of(target.targetType()) == ArtworkPriority.BACKGROUND;
   }
 
-  /** Runs every pending item's steps once and returns how each attempt ended. */
+  /** Runs every pending target's steps once and returns how each attempt ended. */
   public List<ArtworkStepsOutcome> runPendingSteps() {
     return List.copyOf(pending).stream().map(this::run).toList();
   }
 
-  public Set<ArtworkItem> pendingItems() {
+  public Set<ArtworkTarget> pendingTargets() {
     return Set.copyOf(pending);
   }
 
@@ -97,16 +97,16 @@ public class FakeArtworkScheduling implements ArtworkScheduling {
     }
   }
 
-  private ArtworkStepsOutcome run(ArtworkItem item) {
-    var outcome = steps.runSteps(item);
-    var completed = complete(item, outcome);
+  private ArtworkStepsOutcome run(ArtworkTarget target) {
+    var outcome = steps.runSteps(target);
+    var completed = complete(target, outcome);
     if (completed == Completion.REMOVED) {
-      pending.remove(item);
+      pending.remove(target);
       return outcome;
     }
 
     if (completed == Completion.RUN_AGAIN_NOW) {
-      return run(item);
+      return run(target);
     }
 
     unfinishedAttempts.release();
@@ -120,12 +120,12 @@ public class FakeArtworkScheduling implements ArtworkScheduling {
   }
 
   // The fake task repository is shared, so one completion at a time reads what it did.
-  private synchronized Completion complete(ArtworkItem item, ArtworkStepsOutcome outcome) {
+  private synchronized Completion complete(ArtworkTarget target, ArtworkStepsOutcome outcome) {
     var now = clock.instant();
     var execution =
         new Execution(
             now,
-            new TaskInstance<>("artwork-steps", ArtworkStepsTask.instanceId(item), item),
+            new TaskInstance<>("artwork-steps", ArtworkStepsTask.instanceId(target), target),
             true,
             "fake-artwork-scheduling",
             null,
@@ -135,7 +135,7 @@ public class FakeArtworkScheduling implements ArtworkScheduling {
             1L);
     var removedBefore = artworkTasks.removed().size();
     completion
-        .handlerFor(item, outcome)
+        .handlerFor(target, outcome)
         .complete(
             ExecutionComplete.success(execution, now, now),
             new ExecutionOperations<>(artworkTasks, SchedulerListeners.NOOP, execution));

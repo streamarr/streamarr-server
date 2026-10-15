@@ -14,8 +14,8 @@ import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.streamarr.server.AbstractWireMockIntegrationTest;
 import com.streamarr.server.config.ArtworkScheduler;
 import com.streamarr.server.config.ArtworkSchedulers;
-import com.streamarr.server.domain.media.ArtworkItem;
 import com.streamarr.server.domain.media.ArtworkState;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
@@ -253,8 +253,8 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should remove the scheduled task when its item was deleted before the steps ran")
-  void shouldRemoveTheScheduledTaskWhenItsItemWasDeletedBeforeTheStepsRan() throws Exception {
+  @DisplayName("Should remove the scheduled task when its target was deleted before the steps ran")
+  void shouldRemoveTheScheduledTaskWhenItsTargetWasDeletedBeforeTheStepsRan() throws Exception {
     requestMovieArtwork(ImageRefreshMode.PRESERVE, POSTER);
     movieRepository.deleteById(movieId);
     var completed = new CompletableFuture<ExecutionComplete>();
@@ -343,8 +343,8 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
         _ ->
             artworkService.requestBackgroundArtwork(
                 ArtworkSources.builder()
-                    .entityId(personId)
-                    .entityType(ImageEntityType.PERSON)
+                    .targetId(personId)
+                    .targetType(ImageEntityType.PERSON)
                     .sources(List.of(new TmdbImageSource(ImageType.PROFILE, "/profile.jpg")))
                     .build(),
                 ImageRefreshMode.PRESERVE));
@@ -401,14 +401,14 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
 
   private ArtworkSources movieArtwork(ImageSource... sources) {
     return ArtworkSources.builder()
-        .entityId(movieId)
-        .entityType(ImageEntityType.MOVIE)
+        .targetId(movieId)
+        .targetType(ImageEntityType.MOVIE)
         .sources(List.of(sources))
         .build();
   }
 
-  private ArtworkItem movie() {
-    return new ArtworkItem(movieId, ImageEntityType.MOVIE);
+  private ArtworkTarget movie() {
+    return new ArtworkTarget(movieId, ImageEntityType.MOVIE);
   }
 
   private List<ItemOutcome> artworkOutcomes() {
@@ -457,23 +457,23 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
     }
 
     @Override
-    public Optional<PendingArtworkRequest> findRequest(ArtworkItem item) {
+    public Optional<PendingArtworkRequest> findRequest(ArtworkTarget target) {
       throw failure;
     }
 
     @Override
-    public Optional<Long> lockPendingGeneration(ArtworkItem item) {
-      return delegate.lockPendingGeneration(item);
+    public Optional<Long> lockPendingGeneration(ArtworkTarget target) {
+      return delegate.lockPendingGeneration(target);
     }
 
     @Override
-    public boolean tryCompleteGeneration(ArtworkItem item, long generation) {
-      return delegate.tryCompleteGeneration(item, generation);
+    public boolean tryCompleteGeneration(ArtworkTarget target, long generation) {
+      return delegate.tryCompleteGeneration(target, generation);
     }
 
     @Override
-    public List<ArtworkState> findArtworkStates(Collection<ArtworkItem> items) {
-      return delegate.findArtworkStates(items);
+    public List<ArtworkState> findArtworkStates(Collection<ArtworkTarget> targets) {
+      return delegate.findArtworkStates(targets);
     }
 
     @Override

@@ -63,7 +63,7 @@ class CreditServiceTest {
 
   private static ArtworkSources artworkOf(
       UUID itemId, ImageEntityType itemType, List<ImageSource> sources) {
-    return ArtworkSources.builder().entityId(itemId).entityType(itemType).sources(sources).build();
+    return ArtworkSources.builder().targetId(itemId).targetType(itemType).sources(sources).build();
   }
 
   @Test

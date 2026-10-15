@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractWireMockIntegrationTest;
 import com.streamarr.server.domain.media.ArtworkAttempt;
-import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
@@ -78,7 +78,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
     stubImageDownload("/poster.jpg");
     request(entityId, "/poster.jpg");
 
-    artworkSteps.runSteps(new ArtworkItem(entityId, ImageEntityType.MOVIE));
+    artworkSteps.runSteps(new ArtworkTarget(entityId, ImageEntityType.MOVIE));
 
     assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
         .extracting(Image::getImageType)
@@ -92,7 +92,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
     stubImageDownload("/transparent.png", createTransparentPngImage());
     request(entityId, "/transparent.png");
 
-    artworkSteps.runSteps(new ArtworkItem(entityId, ImageEntityType.MOVIE));
+    artworkSteps.runSteps(new ArtworkTarget(entityId, ImageEntityType.MOVIE));
 
     assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
         .filteredOn(image -> image.getVariant() == ImageSize.SMALL)
@@ -365,8 +365,8 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
   private long request(UUID entityId, String posterKey) {
     var artwork =
         ArtworkSources.builder()
-            .entityId(entityId)
-            .entityType(ImageEntityType.MOVIE)
+            .targetId(entityId)
+            .targetType(ImageEntityType.MOVIE)
             .sources(List.of(new TmdbImageSource(ImageType.POSTER, posterKey)))
             .build();
     return transactionTemplate.execute(
@@ -375,7 +375,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
 
   private ArtworkAttempt attemptFor(UUID entityId) {
     return ArtworkAttempt.builder()
-        .item(new ArtworkItem(entityId, ImageEntityType.MOVIE))
+        .target(new ArtworkTarget(entityId, ImageEntityType.MOVIE))
         .generation(request(entityId, "/requested.jpg"))
         .attemptedAt(ATTEMPTED_AT)
         .build();

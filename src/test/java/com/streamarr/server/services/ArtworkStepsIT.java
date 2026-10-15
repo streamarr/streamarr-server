@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractWireMockIntegrationTest;
 import com.streamarr.server.config.ImageProperties;
-import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
@@ -83,13 +83,13 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
   @Autowired private CpuPermits cpuPermits;
 
   private UUID entityId;
-  private ArtworkItem movie;
+  private ArtworkTarget movie;
 
   @BeforeEach
   void setUp() {
     wireMock.resetAll();
     entityId = SavedMediaFixture.saveMovie(libraryRepository, movieRepository).getId();
-    movie = new ArtworkItem(entityId, ImageEntityType.MOVIE);
+    movie = new ArtworkTarget(entityId, ImageEntityType.MOVIE);
   }
 
   @Test
@@ -108,8 +108,8 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should run no step when the item has no artwork request")
-  void shouldRunNoStepWhenTheItemHasNoArtworkRequest() {
+  @DisplayName("Should run no step when the target has no artwork request")
+  void shouldRunNoStepWhenTheTargetHasNoArtworkRequest() {
     assertThat(artworkSteps.runSteps(movie)).isEqualTo(new ArtworkStepsOutcome.NotRequested());
     assertThat(wireMock.getAllServeEvents()).isEmpty();
   }
@@ -153,7 +153,7 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
       try (var replace =
           connection.prepareStatement(
               "UPDATE artwork_request SET generation = nextval('artwork_request_generation')"
-                  + " WHERE item_id = ?")) {
+                  + " WHERE target_id = ?")) {
         replace.setObject(1, entityId);
         replace.executeUpdate();
       }
@@ -332,8 +332,8 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
         _ ->
             requests.saveRequest(
                 ArtworkSources.builder()
-                    .entityId(entityId)
-                    .entityType(ImageEntityType.MOVIE)
+                    .targetId(entityId)
+                    .targetType(ImageEntityType.MOVIE)
                     .sources(
                         List.of(
                             new TmdbImageSource(ImageType.POSTER, "/poster.jpg"),
@@ -384,8 +384,8 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
 
   private ArtworkSources posterArtwork(String key) {
     return ArtworkSources.builder()
-        .entityId(entityId)
-        .entityType(ImageEntityType.MOVIE)
+        .targetId(entityId)
+        .targetType(ImageEntityType.MOVIE)
         .sources(List.of(new TmdbImageSource(ImageType.POSTER, key)))
         .build();
   }

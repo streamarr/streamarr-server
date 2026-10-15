@@ -143,7 +143,7 @@ class CompanyServiceTest {
 
     var requests = artwork.requests().requests();
     assertThat(requests).hasSize(1);
-    assertThat(requests.getFirst().artwork().entityType()).isEqualTo(ImageEntityType.COMPANY);
+    assertThat(requests.getFirst().artwork().targetType()).isEqualTo(ImageEntityType.COMPANY);
   }
 
   @Test
@@ -163,8 +163,8 @@ class CompanyServiceTest {
         .singleElement()
         .satisfies(
             request -> {
-              assertThat(request.artwork().entityId()).isEqualTo(existing.getId());
-              assertThat(request.artwork().entityType()).isEqualTo(ImageEntityType.COMPANY);
+              assertThat(request.artwork().targetId()).isEqualTo(existing.getId());
+              assertThat(request.artwork().targetType()).isEqualTo(ImageEntityType.COMPANY);
               assertThat(request.artwork().sources()).containsExactly(expectedImageSource);
               assertThat(request.refreshMode()).isEqualTo(ImageRefreshMode.PRESERVE);
             });

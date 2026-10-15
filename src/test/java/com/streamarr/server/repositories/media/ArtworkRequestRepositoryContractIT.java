@@ -3,7 +3,7 @@ package com.streamarr.server.repositories.media;
 import static com.streamarr.server.jooq.generated.tables.ArtworkRequest.ARTWORK_REQUEST;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.metadata.Person;
@@ -44,25 +44,25 @@ class ArtworkRequestRepositoryContractIT extends AbstractIntegrationTest
   }
 
   @Override
-  public ArtworkItem createMovie() {
+  public ArtworkTarget createMovie() {
     var movie = SavedMediaFixture.saveMovie(libraryRepository, movieRepository);
-    return new ArtworkItem(movie.getId(), ImageEntityType.MOVIE);
+    return new ArtworkTarget(movie.getId(), ImageEntityType.MOVIE);
   }
 
   @Override
-  public ArtworkItem createPerson() {
+  public ArtworkTarget createPerson() {
     var person =
         personRepository.saveAndFlush(
             Person.builder()
                 .name("Requested Person")
                 .sourceId(UUID.randomUUID().toString())
                 .build());
-    return new ArtworkItem(person.getId(), ImageEntityType.PERSON);
+    return new ArtworkTarget(person.getId(), ImageEntityType.PERSON);
   }
 
   @Override
-  public void deleteMovie(ArtworkItem movie) {
-    movieRepository.deleteById(movie.itemId());
+  public void deleteMovie(ArtworkTarget movie) {
+    movieRepository.deleteById(movie.targetId());
   }
 
   @Override

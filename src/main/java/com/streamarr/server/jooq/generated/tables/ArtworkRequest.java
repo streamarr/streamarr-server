@@ -71,14 +71,14 @@ public class ArtworkRequest extends TableImpl<ArtworkRequestRecord> {
     }
 
     /**
-     * The column <code>public.artwork_request.item_id</code>.
+     * The column <code>public.artwork_request.target_id</code>.
      */
-    public final TableField<ArtworkRequestRecord, UUID> ITEM_ID = createField(DSL.name("item_id"), SQLDataType.UUID.nullable(false), this, "");
+    public final TableField<ArtworkRequestRecord, UUID> TARGET_ID = createField(DSL.name("target_id"), SQLDataType.UUID.nullable(false), this, "");
 
     /**
-     * The column <code>public.artwork_request.item_type</code>.
+     * The column <code>public.artwork_request.target_type</code>.
      */
-    public final TableField<ArtworkRequestRecord, ImageEntityType> ITEM_TYPE = createField(DSL.name("item_type"), SQLDataType.VARCHAR.nullable(false).asEnumDataType(ImageEntityType.class), this, "");
+    public final TableField<ArtworkRequestRecord, ImageEntityType> TARGET_TYPE = createField(DSL.name("target_type"), SQLDataType.VARCHAR.nullable(false).asEnumDataType(ImageEntityType.class), this, "");
 
     /**
      * The column <code>public.artwork_request.image_refresh_mode</code>.

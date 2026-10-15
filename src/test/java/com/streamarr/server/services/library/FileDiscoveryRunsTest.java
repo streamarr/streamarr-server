@@ -125,7 +125,7 @@ class FileDiscoveryRunsTest {
 
     try (var scan = BoundedTask.start(() -> runs.awaitResults(discovery))) {
       retried.scheduling().awaitUnfinishedAttempt(RESULTS_BOUND);
-      assertThat(results.findByItem(movie.entityId(), ImageEntityType.MOVIE))
+      assertThat(results.findByItem(movie.targetId(), ImageEntityType.MOVIE))
           .extracting(ItemResult::imageType)
           .containsExactly(ImageType.BACKDROP);
 
@@ -246,16 +246,16 @@ class FileDiscoveryRunsTest {
 
   private static ArtworkSources movieArtwork() {
     return ArtworkSources.builder()
-        .entityId(UUID.randomUUID())
-        .entityType(ImageEntityType.MOVIE)
+        .targetId(UUID.randomUUID())
+        .targetType(ImageEntityType.MOVIE)
         .sources(List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))
         .build();
   }
 
   private static ArtworkSources movieArtworkWithBackdrop() {
     return ArtworkSources.builder()
-        .entityId(UUID.randomUUID())
-        .entityType(ImageEntityType.MOVIE)
+        .targetId(UUID.randomUUID())
+        .targetType(ImageEntityType.MOVIE)
         .sources(
             List.of(
                 new TmdbImageSource(ImageType.POSTER, "/poster.jpg"),
@@ -265,8 +265,8 @@ class FileDiscoveryRunsTest {
 
   private static ArtworkSources personArtwork() {
     return ArtworkSources.builder()
-        .entityId(UUID.randomUUID())
-        .entityType(ImageEntityType.PERSON)
+        .targetId(UUID.randomUUID())
+        .targetType(ImageEntityType.PERSON)
         .sources(List.of(new TmdbImageSource(ImageType.PROFILE, "/profile.jpg")))
         .build();
   }

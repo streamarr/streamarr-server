@@ -14,8 +14,8 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
- * Requests artwork for catalog items. A request is stored in the transaction that records the
- * item's metadata, and scheduled artwork steps carry it out, so a committed request survives a
+ * Requests artwork for catalog targets. A request is stored in the transaction that records the
+ * target's metadata, and scheduled artwork steps carry it out, so a committed request survives a
  * restart and its steps retry until each image has a result.
  */
 @Service
@@ -33,9 +33,9 @@ public class ArtworkService {
   }
 
   /**
-   * Requests an item's primary artwork for the run, in the caller's transaction. Stored images that
-   * the run's refresh mode keeps count as skipped and need no request; the run waits for a result
-   * of every other image. A rollback withdraws the request from the run.
+   * Requests a target's primary artwork for the run, in the caller's transaction. Stored images
+   * that the run's refresh mode keeps count as skipped and need no request; the run waits for a
+   * result of every other image. A rollback withdraws the request from the run.
    *
    * @throws IllegalStateException if the run is closed to new requests
    */
@@ -57,7 +57,7 @@ public class ArtworkService {
     var saved = request(artwork, run.imageRefreshMode());
     var requested =
         RequestedArtwork.builder()
-            .item(artwork.item())
+            .target(artwork.target())
             .generation(saved.generation())
             .awaitedImageTypes(awaited)
             .build();
@@ -91,7 +91,7 @@ public class ArtworkService {
 
   private ArtworkPlan plan(ArtworkSources artwork, ImageRefreshMode refreshMode) {
     var storedImagesByType =
-        imageService.findByEntity(artwork.entityId(), artwork.entityType()).stream()
+        imageService.findByEntity(artwork.targetId(), artwork.targetType()).stream()
             .collect(Collectors.groupingBy(Image::getImageType));
     return ArtworkPlan.of(artwork, storedImagesByType, refreshMode);
   }
@@ -101,7 +101,7 @@ public class ArtworkService {
   private SavedArtworkRequest request(ArtworkSources artwork, ImageRefreshMode refreshMode) {
     var saved = requests.saveRequest(artwork, refreshMode, clock.instant());
     if (saved instanceof SavedArtworkRequest.NewGeneration) {
-      scheduling.scheduleSteps(artwork.item());
+      scheduling.scheduleSteps(artwork.target());
     }
 
     return saved;

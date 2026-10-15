@@ -3,7 +3,7 @@ package com.streamarr.server.services;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
-import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.fakes.FakeTaskRepository;
@@ -22,14 +22,15 @@ import org.junit.jupiter.params.provider.EnumSource;
 @DisplayName("Artwork Steps Task Tests")
 class ArtworkStepsTaskTest {
 
-  private static final UUID ITEM_ID = UUID.fromString("6f1d7a52-9c1e-4c55-8f0b-0b3a7d1e2c11");
+  private static final UUID TARGET_ID = UUID.fromString("6f1d7a52-9c1e-4c55-8f0b-0b3a7d1e2c11");
 
   @Test
-  @DisplayName("Should name a task instance after the item's type and id when an item is scheduled")
-  void shouldNameATaskInstanceAfterTheItemsTypeAndIdWhenAnItemIsScheduled() {
-    var item = new ArtworkItem(ITEM_ID, ImageEntityType.PERSON);
+  @DisplayName(
+      "Should name a task instance after the target's type and id when a target is scheduled")
+  void shouldNameATaskInstanceAfterTheTargetsTypeAndIdWhenATargetIsScheduled() {
+    var target = new ArtworkTarget(TARGET_ID, ImageEntityType.PERSON);
 
-    assertThat(ArtworkStepsTask.instanceId(item))
+    assertThat(ArtworkStepsTask.instanceId(target))
         .isEqualTo("PERSON:6f1d7a52-9c1e-4c55-8f0b-0b3a7d1e2c11");
   }
 
@@ -60,29 +61,30 @@ class ArtworkStepsTaskTest {
   @EnumSource(
       value = ImageEntityType.class,
       names = {"MOVIE", "SERIES", "SEASON", "EPISODE"})
-  @DisplayName("Should give primary priority when the item is a movie, series, season or episode")
-  void shouldGivePrimaryPriorityWhenTheItemIsAMovieSeriesSeasonOrEpisode(ImageEntityType itemType) {
-    assertThat(ArtworkPriority.of(itemType)).isEqualTo(ArtworkPriority.PRIMARY);
+  @DisplayName("Should give primary priority when the target is a movie, series, season or episode")
+  void shouldGivePrimaryPriorityWhenTheTargetIsAMovieSeriesSeasonOrEpisode(
+      ImageEntityType targetType) {
+    assertThat(ArtworkPriority.of(targetType)).isEqualTo(ArtworkPriority.PRIMARY);
   }
 
   @ParameterizedTest
   @EnumSource(
       value = ImageEntityType.class,
       names = {"PERSON", "COMPANY"})
-  @DisplayName("Should give background priority when the item is a person or company")
-  void shouldGiveBackgroundPriorityWhenTheItemIsAPersonOrCompany(ImageEntityType itemType) {
-    assertThat(ArtworkPriority.of(itemType)).isEqualTo(ArtworkPriority.BACKGROUND);
+  @DisplayName("Should give background priority when the target is a person or company")
+  void shouldGiveBackgroundPriorityWhenTheTargetIsAPersonOrCompany(ImageEntityType targetType) {
+    assertThat(ArtworkPriority.of(targetType)).isEqualTo(ArtworkPriority.BACKGROUND);
   }
 
   @Test
-  @DisplayName("Should reject requested artwork when its item or awaited image types are missing")
-  void shouldRejectRequestedArtworkWhenItsItemOrAwaitedImageTypesAreMissing() {
-    var item = new ArtworkItem(ITEM_ID, ImageEntityType.MOVIE);
+  @DisplayName("Should reject requested artwork when its target or awaited image types are missing")
+  void shouldRejectRequestedArtworkWhenItsTargetOrAwaitedImageTypesAreMissing() {
+    var target = new ArtworkTarget(TARGET_ID, ImageEntityType.MOVIE);
     var awaited = Set.of(ImageType.POSTER);
 
     assertThatNullPointerException().isThrownBy(() -> ArtworkPriority.of(null));
     assertThatNullPointerException().isThrownBy(() -> new RequestedArtwork(null, 1, awaited));
-    assertThatNullPointerException().isThrownBy(() -> new RequestedArtwork(item, 1, null));
+    assertThatNullPointerException().isThrownBy(() -> new RequestedArtwork(target, 1, null));
   }
 
   private final ArtworkFixture artwork = ArtworkFixture.builder().build();

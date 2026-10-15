@@ -1,7 +1,7 @@
 package com.streamarr.server.fakes;
 
-import com.streamarr.server.domain.media.ArtworkItem;
 import com.streamarr.server.domain.media.ArtworkState;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
@@ -28,8 +28,8 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
   private static final Comparator<ImageSource> SOURCE_ORDER =
       Comparator.comparing(ImageSource::imageType).thenComparing(ImageSource::key);
 
-  private final Map<ArtworkItem, PendingArtworkRequest> requests = new HashMap<>();
-  private final Map<ArtworkItem, Instant> firstRequestedAt = new HashMap<>();
+  private final Map<ArtworkTarget, PendingArtworkRequest> requests = new HashMap<>();
+  private final Map<ArtworkTarget, Instant> firstRequestedAt = new HashMap<>();
   private final FakeItemResultRepository itemResults;
   private long lastGeneration;
 
@@ -44,9 +44,9 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
     return List.copyOf(requests.values());
   }
 
-  /** Returns whether {@code generation} is the item's pending artwork request. */
-  public synchronized boolean isPendingGeneration(ArtworkItem item, long generation) {
-    var pending = requests.get(item);
+  /** Returns whether {@code generation} is the target's pending artwork request. */
+  public synchronized boolean isPendingGeneration(ArtworkTarget target, long generation) {
+    var pending = requests.get(target);
     return pending != null && pending.generation() == generation;
   }
 
@@ -57,7 +57,7 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
         artwork.toBuilder()
             .sources(artwork.sources().stream().sorted(SOURCE_ORDER).toList())
             .build();
-    var pending = requests.get(artwork.item());
+    var pending = requests.get(artwork.target());
     if (pending != null && covers(pending, sorted, refreshMode)) {
       return new SavedArtworkRequest.Unchanged(pending.generation());
     }
@@ -68,9 +68,9 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
     }
 
     var generation = ++lastGeneration;
-    firstRequestedAt.putIfAbsent(artwork.item(), requestedAt);
+    firstRequestedAt.putIfAbsent(artwork.target(), requestedAt);
     requests.put(
-        artwork.item(),
+        artwork.target(),
         PendingArtworkRequest.builder()
             .artwork(sorted)
             .refreshMode(mode)
@@ -80,18 +80,18 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
   }
 
   @Override
-  public synchronized Optional<PendingArtworkRequest> findRequest(ArtworkItem item) {
-    return Optional.ofNullable(requests.get(item));
+  public synchronized Optional<PendingArtworkRequest> findRequest(ArtworkTarget target) {
+    return Optional.ofNullable(requests.get(target));
   }
 
   @Override
-  public synchronized Optional<Long> lockPendingGeneration(ArtworkItem item) {
-    return findRequest(item).map(PendingArtworkRequest::generation);
+  public synchronized Optional<Long> lockPendingGeneration(ArtworkTarget target) {
+    return findRequest(target).map(PendingArtworkRequest::generation);
   }
 
   @Override
-  public synchronized boolean tryCompleteGeneration(ArtworkItem item, long generation) {
-    var pending = requests.get(item);
+  public synchronized boolean tryCompleteGeneration(ArtworkTarget target, long generation) {
+    var pending = requests.get(target);
     if (pending == null) {
       return true;
     }
@@ -100,20 +100,20 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
       return false;
     }
 
-    remove(item);
+    remove(target);
     return true;
   }
 
   @Override
-  public synchronized List<ArtworkState> findArtworkStates(Collection<ArtworkItem> items) {
-    return items.stream()
+  public synchronized List<ArtworkState> findArtworkStates(Collection<ArtworkTarget> targets) {
+    return targets.stream()
         .distinct()
         .map(
-            item ->
+            target ->
                 new ArtworkState(
-                    item,
-                    findRequest(item).map(PendingArtworkRequest::generation),
-                    itemResults.findByItem(item.itemId(), item.itemType()).stream()
+                    target,
+                    findRequest(target).map(PendingArtworkRequest::generation),
+                    itemResults.findByItem(target.targetId(), target.targetType()).stream()
                         .filter(result -> result.step() == ItemStep.ARTWORK)
                         .toList()))
         .toList();
@@ -123,18 +123,18 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
   public synchronized Map<ImageEntityType, PendingArtwork> findPendingArtworkByItemType() {
     var pending = new EnumMap<ImageEntityType, PendingArtwork>(ImageEntityType.class);
     requests.forEach(
-        (item, request) ->
+        (target, request) ->
             pending.merge(
-                item.itemType(),
-                new PendingArtwork(pendingImagesOf(request), firstRequestedAt.get(item)),
+                target.targetType(),
+                new PendingArtwork(pendingImagesOf(request), firstRequestedAt.get(target)),
                 PendingArtwork::plus));
     return pending;
   }
 
   private long pendingImagesOf(PendingArtworkRequest request) {
-    var item = request.artwork().item();
+    var target = request.artwork().target();
     var finished =
-        itemResults.findByItem(item.itemId(), item.itemType()).stream()
+        itemResults.findByItem(target.targetId(), target.targetType()).stream()
             .filter(result -> result.step() == ItemStep.ARTWORK)
             .filter(result -> result.artworkGeneration() >= request.generation())
             .filter(ItemResult::isFinal)
@@ -142,14 +142,14 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
     return Math.max(0, request.artwork().requestedImageTypes().size() - finished);
   }
 
-  /** Deletes the item's request, as deleting the item does. */
-  public synchronized void deleteItem(ArtworkItem item) {
-    remove(item);
+  /** Deletes the target's request, as deleting the target does. */
+  public synchronized void deleteTarget(ArtworkTarget target) {
+    remove(target);
   }
 
-  private void remove(ArtworkItem item) {
-    requests.remove(item);
-    firstRequestedAt.remove(item);
+  private void remove(ArtworkTarget target) {
+    requests.remove(target);
+    firstRequestedAt.remove(target);
   }
 
   private static boolean covers(

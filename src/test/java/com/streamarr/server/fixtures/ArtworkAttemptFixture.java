@@ -1,7 +1,7 @@
 package com.streamarr.server.fixtures;
 
 import com.streamarr.server.domain.media.ArtworkAttempt;
-import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
@@ -23,37 +23,37 @@ public final class ArtworkAttemptFixture {
   private ArtworkAttemptFixture() {}
 
   /**
-   * An attempt for the item of the first image, for fakes that accept every generation. Without
+   * An attempt for the target of the first image, for fakes that accept every generation. Without
    * images it names a movie that no image belongs to.
    */
   public static ArtworkAttempt attemptFor(@NonNull List<Image> images) {
     return ArtworkAttempt.builder()
-        .item(itemOf(images))
+        .target(targetOf(images))
         .generation(FAKE_GENERATION)
         .attemptedAt(ATTEMPTED_AT)
         .build();
   }
 
   /**
-   * Stores an artwork request for the item of the first image and returns an attempt of its
+   * Stores an artwork request for the target of the first image and returns an attempt of its
    * generation, so the database accepts the attempt's images.
    */
   public static ArtworkAttempt requestedAttemptFor(
       @NonNull TransactionTemplate transactionTemplate,
       @NonNull ArtworkRequestRepository requests,
       @NonNull List<Image> images) {
-    return requestedAttemptFor(transactionTemplate, requests, itemOf(images));
+    return requestedAttemptFor(transactionTemplate, requests, targetOf(images));
   }
 
-  /** Stores an artwork request for the item and returns an attempt of its generation. */
+  /** Stores an artwork request for the target and returns an attempt of its generation. */
   public static ArtworkAttempt requestedAttemptFor(
       @NonNull TransactionTemplate transactionTemplate,
       @NonNull ArtworkRequestRepository requests,
-      @NonNull ArtworkItem item) {
+      @NonNull ArtworkTarget target) {
     var artwork =
         ArtworkSources.builder()
-            .entityId(item.itemId())
-            .entityType(item.itemType())
+            .targetId(target.targetId())
+            .targetType(target.targetType())
             .sources(List.of())
             .build();
     var generation =
@@ -63,18 +63,18 @@ public final class ArtworkAttemptFixture {
                     .saveRequest(artwork, ImageRefreshMode.FORCE_REFRESH, ATTEMPTED_AT)
                     .generation());
     return ArtworkAttempt.builder()
-        .item(item)
+        .target(target)
         .generation(generation)
         .attemptedAt(ATTEMPTED_AT)
         .build();
   }
 
-  private static ArtworkItem itemOf(List<Image> images) {
+  private static ArtworkTarget targetOf(List<Image> images) {
     if (images.isEmpty()) {
-      return new ArtworkItem(UUID.randomUUID(), ImageEntityType.MOVIE);
+      return new ArtworkTarget(UUID.randomUUID(), ImageEntityType.MOVIE);
     }
 
     var first = images.getFirst();
-    return new ArtworkItem(first.getEntityId(), first.getEntityType());
+    return new ArtworkTarget(first.getEntityId(), first.getEntityType());
   }
 }

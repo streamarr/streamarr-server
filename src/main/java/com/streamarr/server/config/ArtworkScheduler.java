@@ -16,7 +16,7 @@ import com.github.kagkarlsson.scheduler.jdbc.AutodetectJdbcCustomization;
 import com.github.kagkarlsson.scheduler.jdbc.JdbcTaskRepository;
 import com.github.kagkarlsson.scheduler.stats.StatsRegistry;
 import com.github.kagkarlsson.scheduler.task.Task;
-import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.services.ArtworkSteps;
 import com.streamarr.server.services.ArtworkStepsCompletion;
@@ -39,14 +39,14 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  */
 public final class ArtworkScheduler {
 
-  private final Task<ArtworkItem> task;
+  private final Task<ArtworkTarget> task;
   private final SchedulerClient client;
   private final Supplier<Scheduler> newScheduler;
   private final Clock clock;
   private Scheduler running;
 
   private ArtworkScheduler(
-      Task<ArtworkItem> task,
+      Task<ArtworkTarget> task,
       SchedulerClient client,
       Supplier<Scheduler> newScheduler,
       Clock clock) {
@@ -119,13 +119,13 @@ public final class ArtworkScheduler {
   }
 
   /**
-   * Schedules the item's artwork steps to run now in the caller's transaction. A pending execution
-   * that waits to retry runs now instead. A running execution checks the item's request again when
-   * it completes, so it is left alone. Once the transaction commits, the running scheduler checks
-   * for due executions at once instead of at its next poll.
+   * Schedules the target's artwork steps to run now in the caller's transaction. A pending
+   * execution that waits to retry runs now instead. A running execution checks the target's request
+   * again when it completes, so it is left alone. Once the transaction commits, the running
+   * scheduler checks for due executions at once instead of at its next poll.
    */
-  public void scheduleSteps(ArtworkItem item) {
-    var instance = task.instance(ArtworkStepsTask.instanceId(item), item);
+  public void scheduleSteps(ArtworkTarget target) {
+    var instance = task.instance(ArtworkStepsTask.instanceId(target), target);
     var now = clock.instant();
     checkForDueExecutionsAfterCommit();
     if (client.scheduleIfNotExists(instance, now)) {

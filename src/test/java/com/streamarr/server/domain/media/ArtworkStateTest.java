@@ -13,12 +13,12 @@ import org.junit.jupiter.api.Test;
 @DisplayName("Artwork State Tests")
 class ArtworkStateTest {
 
-  private static final ArtworkItem MOVIE =
-      new ArtworkItem(UUID.randomUUID(), ImageEntityType.MOVIE);
+  private static final ArtworkTarget MOVIE =
+      new ArtworkTarget(UUID.randomUUID(), ImageEntityType.MOVIE);
 
   @Test
-  @DisplayName("Should reject a state when its item, pending generation or results are missing")
-  void shouldRejectAStateWhenItsItemPendingGenerationOrResultsAreMissing() {
+  @DisplayName("Should reject a state when its target, pending generation or results are missing")
+  void shouldRejectAStateWhenItsTargetPendingGenerationOrResultsAreMissing() {
     var none = Optional.<Long>empty();
     var noResults = List.<ItemResult>of();
 

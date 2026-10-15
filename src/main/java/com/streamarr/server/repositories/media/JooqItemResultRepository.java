@@ -64,7 +64,7 @@ public class JooqItemResultRepository implements ItemResultRepository {
     return transactionLocks.withLockWaitLimit(
         properties.lockTimeout(),
         () -> {
-          if (!itemLocks.tryLockArtworkGeneration(attempt.item(), attempt.generation())) {
+          if (!itemLocks.tryLockArtworkGeneration(attempt.target(), attempt.generation())) {
             return false;
           }
 

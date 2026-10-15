@@ -1,8 +1,8 @@
 package com.streamarr.server.services;
 
 import com.streamarr.server.config.ArtworkProperties;
-import com.streamarr.server.domain.media.ArtworkItem;
 import com.streamarr.server.domain.media.ArtworkState;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
@@ -38,13 +38,14 @@ public class ArtworkRuns {
 
   /**
    * Waits until each image type that the closed run awaits has a result of the awaited generation
-   * or a newer one. A failed result counts: its retry continues in the background. An item that was
-   * deleted, or whose newer request no longer asks for an awaited type, no longer holds the run.
-   * Counts follow each image's own recorded outcome.
+   * or a newer one. A failed result counts: its retry continues in the background. A target that
+   * was deleted, or whose newer request no longer asks for an awaited type, no longer holds the
+   * run. Counts follow each image's own recorded outcome.
    */
   public ArtworkRunSummary awaitResults(ArtworkRun run) throws InterruptedException {
-    var pending = new HashMap<ArtworkItem, RequestedArtwork>();
-    run.requested().forEach(artwork -> pending.merge(artwork.item(), artwork, ArtworkRuns::merge));
+    var pending = new HashMap<ArtworkTarget, RequestedArtwork>();
+    run.requested()
+        .forEach(artwork -> pending.merge(artwork.target(), artwork, ArtworkRuns::merge));
     var counts = ArtworkCounts.NONE.plusSkipped(run.keptImages());
     while (!pending.isEmpty()) {
       counts = countFinishedArtwork(pending, counts);
@@ -67,17 +68,17 @@ public class ArtworkRuns {
     return summary;
   }
 
-  // Removes each item whose requested artwork is finished from pending, and counts its results.
+  // Removes each target whose requested artwork is finished from pending, and counts its results.
   private ArtworkCounts countFinishedArtwork(
-      Map<ArtworkItem, RequestedArtwork> pending, ArtworkCounts counts) {
+      Map<ArtworkTarget, RequestedArtwork> pending, ArtworkCounts counts) {
     var total = counts;
     for (var state : requests.findArtworkStates(pending.keySet())) {
-      var finished = finishedResults(state, pending.get(state.item()));
+      var finished = finishedResults(state, pending.get(state.target()));
       if (finished.isEmpty()) {
         continue;
       }
 
-      pending.remove(state.item());
+      pending.remove(state.target());
       for (var result : finished.get()) {
         total = total.plus(result.outcome());
       }
@@ -109,7 +110,7 @@ public class ArtworkRuns {
     var awaited = new HashSet<>(earlier.awaitedImageTypes());
     awaited.addAll(later.awaitedImageTypes());
     return RequestedArtwork.builder()
-        .item(earlier.item())
+        .target(earlier.target())
         .generation(Math.max(earlier.generation(), later.generation()))
         .awaitedImageTypes(awaited)
         .build();

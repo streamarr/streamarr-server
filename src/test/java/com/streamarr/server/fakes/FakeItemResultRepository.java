@@ -1,8 +1,8 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.media.ArtworkAttempt;
-import com.streamarr.server.domain.media.ArtworkItem;
 import com.streamarr.server.domain.media.ArtworkOutcomeTally;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemOutcome;
@@ -32,7 +32,7 @@ public class FakeItemResultRepository implements ItemResultRepository {
   private final AtomicReference<RuntimeException> writeFailure = new AtomicReference<>();
   private final AtomicReference<RuntimeException> artworkResultsFailure = new AtomicReference<>();
   private final AtomicInteger remainingArtworkResultsFailures = new AtomicInteger();
-  private volatile BiPredicate<ArtworkItem, Long> currentArtworkGeneration = (_, _) -> true;
+  private volatile BiPredicate<ArtworkTarget, Long> currentArtworkGeneration = (_, _) -> true;
 
   public void failWritesWith(RuntimeException failure) {
     writeFailure.set(failure);
@@ -47,8 +47,9 @@ public class FakeItemResultRepository implements ItemResultRepository {
     remainingArtworkResultsFailures.set(times);
   }
 
-  /** Decides whether an attempt's generation is still the item's pending artwork request. */
-  public void checkArtworkGenerationsWith(BiPredicate<ArtworkItem, Long> currentArtworkGeneration) {
+  /** Decides whether an attempt's generation is still the target's pending artwork request. */
+  public void checkArtworkGenerationsWith(
+      BiPredicate<ArtworkTarget, Long> currentArtworkGeneration) {
     this.currentArtworkGeneration = currentArtworkGeneration;
   }
 
@@ -99,7 +100,7 @@ public class FakeItemResultRepository implements ItemResultRepository {
       throw failure;
     }
 
-    if (!currentArtworkGeneration.test(attempt.item(), attempt.generation())) {
+    if (!currentArtworkGeneration.test(attempt.target(), attempt.generation())) {
       return false;
     }
 

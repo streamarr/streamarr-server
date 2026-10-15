@@ -79,8 +79,8 @@ public class CompanyService {
 
     artworkService.requestBackgroundArtwork(
         ArtworkSources.builder()
-            .entityId(company.getId())
-            .entityType(ImageEntityType.COMPANY)
+            .targetId(company.getId())
+            .targetType(ImageEntityType.COMPANY)
             .sources(imageSources)
             .build(),
         imageRefreshMode);

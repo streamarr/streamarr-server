@@ -7,7 +7,7 @@ import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.github.kagkarlsson.scheduler.task.ExecutionOperations;
 import com.github.kagkarlsson.scheduler.task.FailureHandler;
 import com.github.kagkarlsson.scheduler.task.RescheduleUpdate;
-import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import java.time.Clock;
 import java.time.Duration;
@@ -19,7 +19,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Completes the scheduled task of an item's artwork steps in one transaction with the item's
+ * Completes the scheduled task of a target's artwork steps in one transaction with the target's
  * artwork request, which it locks first. The task is removed only together with the request of the
  * attempted generation, or when no request remains. A newer generation runs at once and starts
  * without failures.
@@ -33,9 +33,9 @@ public class ArtworkStepsCompletion {
   @NonNull private final TaskRepository artworkTasks;
   @NonNull private final Clock clock;
 
-  /** The execution being completed, with the item it ran the steps of. */
+  /** The execution being completed, with the target it ran the steps of. */
   private record CompletingExecution(
-      ArtworkItem item, Execution execution, ExecutionOperations<ArtworkItem> operations) {}
+      ArtworkTarget target, Execution execution, ExecutionOperations<ArtworkTarget> operations) {}
 
   /**
    * Returns how the attempt's execution completes. A finished generation removes the task. A step
@@ -43,23 +43,24 @@ public class ArtworkStepsCompletion {
    * exponential backoff, and counts a failure. An interrupted attempt runs again at once without
    * counting a failure.
    */
-  public CompletionHandler<ArtworkItem> handlerFor(ArtworkItem item, ArtworkStepsOutcome outcome) {
+  public CompletionHandler<ArtworkTarget> handlerFor(
+      ArtworkTarget target, ArtworkStepsOutcome outcome) {
     return (complete, operations) ->
         inTransaction(
             () ->
                 complete(
-                    new CompletingExecution(item, complete.getExecution(), operations), outcome));
+                    new CompletingExecution(target, complete.getExecution(), operations), outcome));
   }
 
   /**
    * Handles an execution that failed unexpectedly, for example because the database could not be
    * read: it waits for the capped exponential backoff and counts a failure.
    */
-  public FailureHandler<ArtworkItem> failureHandler() {
+  public FailureHandler<ArtworkTarget> failureHandler() {
     return (complete, operations) ->
         inTransaction(
             () -> {
-              if (requests.lockPendingGeneration(artworkItemOf(complete)).isEmpty()) {
+              if (requests.lockPendingGeneration(artworkTargetOf(complete)).isEmpty()) {
                 operations.remove();
                 return;
               }
@@ -68,9 +69,9 @@ public class ArtworkStepsCompletion {
             });
   }
 
-  // The task is created as a Task<ArtworkItem>, so every execution it completes carries an item.
-  private static ArtworkItem artworkItemOf(ExecutionComplete complete) {
-    return (ArtworkItem) complete.getExecution().taskInstance.getData();
+  // The task is created as a Task<ArtworkTarget>, so every execution it completes carries a target.
+  private static ArtworkTarget artworkTargetOf(ExecutionComplete complete) {
+    return (ArtworkTarget) complete.getExecution().taskInstance.getData();
   }
 
   private void complete(CompletingExecution completing, ArtworkStepsOutcome outcome) {
@@ -93,7 +94,7 @@ public class ArtworkStepsCompletion {
   }
 
   private void completeGeneration(CompletingExecution completing, long generation) {
-    if (requests.tryCompleteGeneration(completing.item(), generation)) {
+    if (requests.tryCompleteGeneration(completing.target(), generation)) {
       completing.operations().remove();
       return;
     }
@@ -102,10 +103,10 @@ public class ArtworkStepsCompletion {
   }
 
   // Acts on the attempt only while its generation is still pending: a newer generation runs at
-  // once, and an item without a request has its task removed.
+  // once, and a target without a request has its task removed.
   private void actOnPendingGeneration(
       CompletingExecution completing, long attemptedGeneration, Runnable action) {
-    var pending = requests.lockPendingGeneration(completing.item());
+    var pending = requests.lockPendingGeneration(completing.target());
     if (pending.isEmpty()) {
       completing.operations().remove();
       return;
@@ -120,7 +121,7 @@ public class ArtworkStepsCompletion {
   }
 
   private void removeUnlessRequested(CompletingExecution completing) {
-    if (requests.lockPendingGeneration(completing.item()).isEmpty()) {
+    if (requests.lockPendingGeneration(completing.target()).isEmpty()) {
       completing.operations().remove();
       return;
     }

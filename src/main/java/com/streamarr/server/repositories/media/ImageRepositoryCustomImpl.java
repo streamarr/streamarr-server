@@ -103,7 +103,7 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
   }
 
   private void lockArtworkGeneration(ArtworkAttempt attempt) {
-    if (!itemLocks.tryLockArtworkGeneration(attempt.item(), attempt.generation())) {
+    if (!itemLocks.tryLockArtworkGeneration(attempt.target(), attempt.generation())) {
       throw new ObsoleteArtworkAttemptException(attempt);
     }
   }

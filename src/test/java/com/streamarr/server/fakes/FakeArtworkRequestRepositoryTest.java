@@ -1,6 +1,6 @@
 package com.streamarr.server.fakes;
 
-import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
@@ -24,18 +24,18 @@ class FakeArtworkRequestRepositoryTest implements ArtworkRequestRepositoryContra
   }
 
   @Override
-  public ArtworkItem createMovie() {
-    return new ArtworkItem(UUID.randomUUID(), ImageEntityType.MOVIE);
+  public ArtworkTarget createMovie() {
+    return new ArtworkTarget(UUID.randomUUID(), ImageEntityType.MOVIE);
   }
 
   @Override
-  public ArtworkItem createPerson() {
-    return new ArtworkItem(UUID.randomUUID(), ImageEntityType.PERSON);
+  public ArtworkTarget createPerson() {
+    return new ArtworkTarget(UUID.randomUUID(), ImageEntityType.PERSON);
   }
 
   @Override
-  public void deleteMovie(ArtworkItem movie) {
-    repository.deleteItem(movie);
+  public void deleteMovie(ArtworkTarget movie) {
+    repository.deleteTarget(movie);
   }
 
   @Override

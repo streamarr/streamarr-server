@@ -7,7 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.domain.media.ArtworkItem;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemFailureReason;
@@ -220,16 +220,16 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest implements Artw
   }
 
   @Override
-  public ArtworkItem createMovie() {
-    return new ArtworkItem(savedMovieId(), ImageEntityType.MOVIE);
+  public ArtworkTarget createMovie() {
+    return new ArtworkTarget(savedMovieId(), ImageEntityType.MOVIE);
   }
 
   @Override
-  public long requestArtwork(ArtworkItem movie) {
+  public long requestArtwork(ArtworkTarget movie) {
     var artwork =
         ArtworkSources.builder()
-            .entityId(movie.itemId())
-            .entityType(movie.itemType())
+            .targetId(movie.targetId())
+            .targetType(movie.targetType())
             .sources(List.of())
             .build();
     return transactionTemplate.execute(
