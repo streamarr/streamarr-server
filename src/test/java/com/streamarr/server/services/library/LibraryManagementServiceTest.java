@@ -973,17 +973,22 @@ class LibraryManagementServiceTest {
             null,
             null,
             null);
+    var artworkFileDiscoveryRuns = fileDiscoveryRunsWith(artwork);
     return serviceBuilder()
-        .movieFileProcessor(
-            new MovieFileProcessor(
-                new DefaultVideoFileMetadataParser(),
-                new ExternalIdVideoFileMetadataParser(),
-                fakeMovieMetadataProviderResolver,
-                artworkMovieService,
-                fakeMediaFileRepository,
-                new MutexFactoryProvider()))
+        .libraryFileWalk(
+            fileWalkBuilder()
+                .movieFileProcessor(
+                    new MovieFileProcessor(
+                        new DefaultVideoFileMetadataParser(),
+                        new ExternalIdVideoFileMetadataParser(),
+                        fakeMovieMetadataProviderResolver,
+                        artworkMovieService,
+                        fakeMediaFileRepository,
+                        new MutexFactoryProvider()))
+                .fileDiscoveryRuns(artworkFileDiscoveryRuns)
+                .build())
         .movieService(artworkMovieService)
-        .fileDiscoveryRuns(fileDiscoveryRunsWith(artwork))
+        .fileDiscoveryRuns(artworkFileDiscoveryRuns)
         .build();
   }
 
@@ -2303,10 +2308,7 @@ class LibraryManagementServiceTest {
 
   private LibraryManagementService.LibraryManagementServiceBuilder serviceBuilder() {
     return LibraryManagementService.builder()
-        .ignoredFileValidator(new IgnoredFileValidator(new LibraryScanProperties(null, null, null)))
-        .videoExtensionValidator(new VideoExtensionValidator())
-        .movieFileProcessor(movieFileProcessor)
-        .seriesFileProcessor(seriesFileProcessor)
+        .libraryFileWalk(fileWalkBuilder().build())
         .libraryRepository(fakeLibraryRepository)
         .libraryMetadataRepository(new FakeLibraryMetadataRepository())
         .mediaFileRepository(fakeMediaFileRepository)
@@ -2321,15 +2323,33 @@ class LibraryManagementServiceTest {
         .fileDiscoveryRuns(fileDiscoveryRuns);
   }
 
+  private LibraryFileWalk.LibraryFileWalkBuilder fileWalkBuilder() {
+    return LibraryFileWalk.builder()
+        .ignoredFileValidator(new IgnoredFileValidator(new LibraryScanProperties(null, null, null)))
+        .videoExtensionValidator(new VideoExtensionValidator())
+        .movieFileProcessor(movieFileProcessor)
+        .seriesFileProcessor(seriesFileProcessor)
+        .mediaFileRepository(fakeMediaFileRepository)
+        .fileSystem(fileSystem)
+        .fileDiscoveryRuns(fileDiscoveryRuns)
+        .mutexFactoryProvider(new MutexFactoryProvider());
+  }
+
   private LibraryManagementService serviceWith(FileSystem alternateFileSystem) {
-    return serviceBuilder().fileSystem(alternateFileSystem).build();
+    return serviceBuilder()
+        .fileSystem(alternateFileSystem)
+        .libraryFileWalk(fileWalkBuilder().fileSystem(alternateFileSystem).build())
+        .build();
   }
 
   private LibraryManagementService libraryManagementServiceWith(
       MovieFileProcessor movieProcessor, SeriesFileProcessor seriesProcessor) {
     return serviceBuilder()
-        .movieFileProcessor(movieProcessor)
-        .seriesFileProcessor(seriesProcessor)
+        .libraryFileWalk(
+            fileWalkBuilder()
+                .movieFileProcessor(movieProcessor)
+                .seriesFileProcessor(seriesProcessor)
+                .build())
         .build();
   }
 

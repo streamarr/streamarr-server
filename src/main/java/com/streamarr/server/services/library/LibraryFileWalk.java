@@ -1,0 +1,242 @@
+package com.streamarr.server.services.library;
+
+import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.exceptions.LibraryScanFailedException;
+import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.services.audit.SystemWork;
+import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.validation.IgnoredFileValidator;
+import com.streamarr.server.services.validation.VideoExtensionValidator;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.FileSystem;
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.function.Consumer;
+import lombok.Builder;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.FilenameUtils;
+import org.springframework.stereotype.Service;
+
+/**
+ * Walks a library's files during a scan and matches each media file, and matches a single file that
+ * the file watcher discovered.
+ */
+@Slf4j
+@Service
+public class LibraryFileWalk {
+
+  private final IgnoredFileValidator ignoredFileValidator;
+  private final VideoExtensionValidator videoExtensionValidator;
+  private final MovieFileProcessor movieFileProcessor;
+  private final SeriesFileProcessor seriesFileProcessor;
+  private final MediaFileRepository mediaFileRepository;
+  private final FileSystem fileSystem;
+  private final FileDiscoveryRuns fileDiscoveryRuns;
+  private final MutexFactory<String> mutexFactory;
+
+  @Builder
+  public LibraryFileWalk(
+      IgnoredFileValidator ignoredFileValidator,
+      VideoExtensionValidator videoExtensionValidator,
+      MovieFileProcessor movieFileProcessor,
+      SeriesFileProcessor seriesFileProcessor,
+      MediaFileRepository mediaFileRepository,
+      FileSystem fileSystem,
+      FileDiscoveryRuns fileDiscoveryRuns,
+      MutexFactoryProvider mutexFactoryProvider) {
+    this.ignoredFileValidator = ignoredFileValidator;
+    this.videoExtensionValidator = videoExtensionValidator;
+    this.movieFileProcessor = movieFileProcessor;
+    this.seriesFileProcessor = seriesFileProcessor;
+    this.mediaFileRepository = mediaFileRepository;
+    this.fileSystem = fileSystem;
+    this.fileDiscoveryRuns = fileDiscoveryRuns;
+    this.mutexFactory = mutexFactoryProvider.getMutexFactory();
+  }
+
+  /**
+   * Walks the library and matches each of its files, then returns the closed discovery whose
+   * results the scan waits for.
+   *
+   * @throws LibraryScanFailedException if the library cannot be walked, a file's task fails, or the
+   *     walk is interrupted
+   */
+  public FileDiscovery discoverFiles(Library library) {
+    var discovery = fileDiscoveryRuns.open("scan of", library);
+    try (discovery;
+        var executor = SystemWork.newExecutorRunningAsSystemActor("library-scan-file-");
+        var stream = Files.walk(FilepathCodec.decode(fileSystem, library.getFilepathUri()))) {
+
+      var tasks =
+          stream
+              .flatMap(file -> regularFile(file).stream())
+              .filter(listed -> !ignoredFileValidator.shouldIgnore(listed.path()))
+              .map(listed -> executor.submit(() -> processListedFile(discovery, listed)))
+              .toList();
+      awaitFileProcessing(library, tasks);
+
+    } catch (IOException | UncheckedIOException | SecurityException | InvalidPathException e) {
+      throw new LibraryScanFailedException(library.getName(), e);
+    }
+
+    return discovery;
+  }
+
+  /**
+   * Matches a file that the file watcher discovered and waits for nothing.
+   *
+   * @return whether the file was matched against the metadata provider
+   */
+  public boolean processDiscoveredFile(Library library, Path path) {
+    try (var discovery = fileDiscoveryRuns.open("file discovery in", library)) {
+      return processFile(discovery, path, discovery.probeRun()::request);
+    }
+  }
+
+  // Like Files.isRegularFile, this follows links and skips a file whose attributes cannot be read.
+  private static Optional<ListedFile> regularFile(Path path) {
+    try {
+      var attributes = Files.readAttributes(path, BasicFileAttributes.class);
+      if (!attributes.isRegularFile()) {
+        return Optional.empty();
+      }
+
+      return Optional.of(new ListedFile(path, SourceFileSnapshot.of(attributes)));
+    } catch (IOException _) {
+      return Optional.empty();
+    }
+  }
+
+  // The probe is requested with the snapshot the listing observed, so a source that becomes
+  // unreadable afterwards fails its probe attempt rather than the scan.
+  private boolean processListedFile(FileDiscovery discovery, ListedFile listed) {
+    return processFile(
+        discovery,
+        listed.path(),
+        mediaFileId -> discovery.probeRun().request(mediaFileId, listed.snapshot()));
+  }
+
+  private record ListedFile(Path path, SourceFileSnapshot snapshot) {}
+
+  private static void awaitFileProcessing(Library library, List<? extends Future<?>> tasks) {
+    var failures = new ArrayList<Throwable>();
+
+    for (var task : tasks) {
+      try {
+        task.get();
+      } catch (InterruptedException exception) {
+        Thread.currentThread().interrupt();
+        throw new LibraryScanFailedException(library.getName(), exception);
+      } catch (ExecutionException exception) {
+        failures.add(exception.getCause());
+      }
+    }
+
+    if (failures.isEmpty()) {
+      return;
+    }
+
+    var scanFailure =
+        new LibraryScanFailedException(library.getName(), failures.size(), failures.getFirst());
+    failures.stream().skip(1).forEach(scanFailure::addSuppressed);
+    throw scanFailure;
+  }
+
+  private boolean processFile(FileDiscovery discovery, Path path, Consumer<UUID> requestProbe) {
+    var library = discovery.library();
+
+    if (!hasSupportedExtension(path)) {
+      log.warn(
+          "Unsupported file extension: {} for filepath {}.",
+          getExtension(path),
+          path.toAbsolutePath());
+      return false;
+    }
+
+    var mediaFile = findOrCreateMediaFile(library, path);
+    requestProbe.accept(mediaFile.getId());
+
+    if (isAlreadyMatched(mediaFile)) {
+      return false;
+    }
+
+    switch (library.getType()) {
+      case MOVIE -> movieFileProcessor.process(discovery, mediaFile);
+      case SERIES -> seriesFileProcessor.process(discovery, mediaFile);
+      default -> throw new IllegalStateException("Unsupported media type: " + library.getType());
+    }
+
+    return true;
+  }
+
+  private boolean hasSupportedExtension(Path path) {
+    return videoExtensionValidator.validate(getExtension(path));
+  }
+
+  private String getExtension(Path path) {
+    return FilenameUtils.getExtension(path.getFileName().toString());
+  }
+
+  private MediaFile findOrCreateMediaFile(Library library, Path path) {
+    var absoluteFilepath = FilepathCodec.encode(path);
+    var filepathMutex = mutexFactory.getMutex(absoluteFilepath);
+
+    filepathMutex.lock();
+    try {
+      var optionalMediaFile = mediaFileRepository.findFirstByFilepathUri(absoluteFilepath);
+
+      if (optionalMediaFile.isEmpty()) {
+        return createNewMediaFile(library, path, absoluteFilepath);
+      }
+
+      var mediaFile = optionalMediaFile.orElseThrow();
+      var filename = FilepathCodec.filenameOf(absoluteFilepath);
+      if (!filename.equals(mediaFile.getFilename())) {
+        mediaFile.setFilename(filename);
+        mediaFileRepository.save(mediaFile);
+      }
+
+      log.info("MediaFile id: '{}' already exists, not adding again.", mediaFile.getId());
+      return mediaFile;
+    } finally {
+      filepathMutex.unlock();
+    }
+  }
+
+  private MediaFile createNewMediaFile(Library library, Path path, String absoluteFilepath) {
+    long fileSize = 0;
+
+    try {
+      fileSize = Files.size(path);
+    } catch (IOException | SecurityException ex) {
+      log.error("Could not get filesize at path: {} media might be corrupt.", absoluteFilepath, ex);
+    }
+
+    return mediaFileRepository.save(
+        MediaFile.builder()
+            .status(MediaFileStatus.UNMATCHED)
+            .filename(FilepathCodec.filenameOf(absoluteFilepath))
+            .filepathUri(absoluteFilepath)
+            .size(fileSize)
+            .libraryId(library.getId())
+            .build());
+  }
+
+  private boolean isAlreadyMatched(MediaFile file) {
+    return file.getStatus().equals(MediaFileStatus.MATCHED);
+  }
+}
