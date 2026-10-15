@@ -182,9 +182,18 @@ public final class AdaptiveAdmission implements AutoCloseable {
           return;
         }
 
+        forked.add(fork(admission, subject.get()));
         listener.onAdmitted();
-        var value = subject.get();
-        forked.add(executor.submit(() -> runAdmitted(admission, value)));
+      }
+    }
+
+    // Returns the admission unused when the executor cannot start the task's thread.
+    private Future<?> fork(Admission admission, S subject) {
+      try {
+        return executor.submit(() -> runAdmitted(admission, subject));
+      } catch (RuntimeException notForked) {
+        admission.returnUnused();
+        throw notForked;
       }
     }
 

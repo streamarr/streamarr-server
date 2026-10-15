@@ -5,7 +5,10 @@ public interface AdmissionListener {
 
   AdmissionListener NONE = new AdmissionListener() {};
 
-  /** Called on the walking thread after an admission is granted to a subject. */
+  /**
+   * Called on the walking thread after an admitted subject's task is forked. The task may already
+   * have reported.
+   */
   default void onAdmitted() {}
 
   /** Called on the task's thread after its report returned its admission. */

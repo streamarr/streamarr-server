@@ -22,6 +22,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -489,6 +490,22 @@ class AdaptiveAdmissionTest {
     assertThat(listener.reports())
         .containsExactly(AdmittedTaskReport.LATENCY, AdmittedTaskReport.LATENCY);
     assertThat(admission.inFlight()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should return the admission and rethrow when a task cannot be forked")
+  void shouldReturnTheAdmissionAndRethrowWhenATaskCannotBeForked() {
+    var admission = admissionWith(FixedLimit.of(1));
+    ThreadFactory noThreads = _ -> null;
+
+    assertThatThrownBy(
+            () ->
+                admission.forkAdmittedTasks(
+                    new CountingSubjects(2), _ -> AdmittedTaskReport.LATENCY, noThreads))
+        .isInstanceOf(RejectedExecutionException.class);
+    assertThat(admission.inFlight()).isZero();
+    assertThat(listener.admitted()).isZero();
+    assertThat(listener.reports()).isEmpty();
   }
 
   @Test
