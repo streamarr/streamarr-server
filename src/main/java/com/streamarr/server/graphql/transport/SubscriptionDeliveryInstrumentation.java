@@ -14,6 +14,7 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
 import org.dataloader.DataLoader;
 import org.dataloader.DataLoaderRegistry;
+import org.dataloader.registries.ScheduledDataLoaderRegistry;
 import org.springframework.stereotype.Component;
 
 /**
@@ -83,7 +84,26 @@ class SubscriptionDeliveryInstrumentation extends SimplePerformantInstrumentatio
   private static void disableDataLoaderCachingForWebSocketRequests(DataLoaderRegistry registry) {
     registry
         .getDataLoadersMap()
-        .forEach((name, loader) -> registry.register(name, uncached(loader)));
+        .forEach((name, loader) -> replace(registry, name, uncached(loader)));
+  }
+
+  // DGS builds a ScheduledDataLoaderRegistry, which keys each dispatch predicate by DataLoader
+  // instance. A replacement without its predicate falls back to the registry's default, which
+  // never dispatches it.
+  private static void replace(
+      DataLoaderRegistry registry, String name, DataLoader<?, ?> replacement) {
+    if (!(registry instanceof ScheduledDataLoaderRegistry scheduled)) {
+      registry.register(name, replacement);
+      return;
+    }
+
+    var original = scheduled.getDataLoader(name);
+    var predicate =
+        scheduled
+            .getDataLoaderPredicates()
+            .getOrDefault(original, scheduled.getDispatchPredicate());
+    scheduled.unregister(name);
+    scheduled.register(name, replacement, predicate);
   }
 
   private static <K, V> DataLoader<K, V> uncached(DataLoader<K, V> loader) {

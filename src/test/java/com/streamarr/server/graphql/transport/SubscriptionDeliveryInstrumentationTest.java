@@ -21,6 +21,8 @@ import org.dataloader.DataLoader;
 import org.dataloader.DataLoaderFactory;
 import org.dataloader.DataLoaderRegistry;
 import org.dataloader.MappedBatchLoader;
+import org.dataloader.registries.DispatchPredicate;
+import org.dataloader.registries.ScheduledDataLoaderRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -51,6 +53,26 @@ class SubscriptionDeliveryInstrumentationTest {
 
     assertThat(loadAndDispatch(registry)).isEqualTo(1);
     assertThat(loadAndDispatch(registry)).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep dispatching each loader when a scheduled registry dispatches by loader predicate")
+  void shouldKeepDispatchingEachLoaderWhenScheduledRegistryDispatchesByLoaderPredicate() {
+    var batches = new AtomicInteger();
+    var registry =
+        ScheduledDataLoaderRegistry.newScheduledRegistry()
+            .dispatchPredicate(DispatchPredicate.DISPATCH_NEVER)
+            .register(LOADER, countingLoader(batches), DispatchPredicate.DISPATCH_ALWAYS)
+            .build();
+
+    try (registry) {
+      instrumentation.instrumentExecutionInput(
+          input(registry, GraphQlTransport.WEBSOCKET), null, null);
+
+      assertThat(loadAndDispatchAll(registry)).isEqualTo(1);
+      assertThat(loadAndDispatchAll(registry)).isEqualTo(2);
+    }
   }
 
   @Test
@@ -143,15 +165,27 @@ class SubscriptionDeliveryInstrumentationTest {
   }
 
   private static DataLoaderRegistry registryCountingBatches(AtomicInteger batches) {
+    var registry = new DataLoaderRegistry();
+    registry.register(LOADER, countingLoader(batches));
+    return registry;
+  }
+
+  private static DataLoader<String, Integer> countingLoader(AtomicInteger batches) {
     MappedBatchLoader<String, Integer> loader =
         keys -> {
           var batch = batches.incrementAndGet();
           return CompletableFuture.completedFuture(
               keys.stream().collect(Collectors.toMap(Function.identity(), _ -> batch)));
         };
-    var registry = new DataLoaderRegistry();
-    registry.register(LOADER, DataLoaderFactory.newMappedDataLoader(loader));
-    return registry;
+    return DataLoaderFactory.newMappedDataLoader(loader);
+  }
+
+  // Dispatches through the registry, so the registry's dispatch predicates apply.
+  private static int loadAndDispatchAll(DataLoaderRegistry registry) {
+    DataLoader<String, Integer> loader = registry.getDataLoader(LOADER);
+    var value = loader.load("key");
+    registry.dispatchAll();
+    return value.orTimeout(BOUND.toMillis(), TimeUnit.MILLISECONDS).join();
   }
 
   // The value the batch that answered the load carried: a new batch means the key was loaded again.
