@@ -159,11 +159,11 @@ public class LibraryOperationExecution {
 
     var libraryId = operation.libraryId();
     eventPublisher.publishEvent(new LibraryStatusChangedEvent(libraryId));
-    switch (operation.kind()) {
-      case SCAN -> eventPublisher.publishEvent(new ScanEndedEvent(libraryId));
-      case REFRESH -> eventPublisher.publishEvent(new RefreshEndedEvent(libraryId));
-    }
-
+    eventPublisher.publishEvent(
+        switch (operation.kind()) {
+          case SCAN -> new ScanEndedEvent(libraryId);
+          case REFRESH -> new RefreshEndedEvent(libraryId);
+        });
     return true;
   }
 }
