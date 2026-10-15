@@ -1,0 +1,93 @@
+package com.streamarr.server.graphql.transport;
+
+import com.streamarr.server.graphql.subscriptions.SubscriptionProperties;
+import graphql.ExecutionInput;
+import graphql.execution.SubscriptionExecutionStrategy;
+import graphql.execution.instrumentation.InstrumentationState;
+import graphql.execution.instrumentation.SimplePerformantInstrumentation;
+import graphql.execution.instrumentation.parameters.InstrumentationExecutionParameters;
+import graphql.execution.instrumentation.parameters.InstrumentationFieldFetchParameters;
+import graphql.language.OperationDefinition.Operation;
+import graphql.schema.DataFetcher;
+import java.time.Duration;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.TimeUnit;
+import org.dataloader.DataLoader;
+import org.dataloader.DataLoaderRegistry;
+import org.springframework.stereotype.Component;
+
+/**
+ * Executes each value a subscription delivers against current data, in delivery order, without
+ * letting one slow value hold back the values after it.
+ *
+ * <p>All values of one operation run against the operation's one DataLoader registry, and the
+ * executions of two values may overlap. A cached loader would answer a later value with an earlier
+ * value's data, and clearing the cache between values would race with an overlapping execution. So
+ * WebSocket requests, which carry only subscriptions, get DataLoaders without caching; batching
+ * still applies within one execution. Queries and mutations keep their cache.
+ *
+ * <p>graphql-java sends an operation's results in the order the values arrived, so a later value
+ * waits for an earlier one. Each asynchronous field of a delivered value is bounded by {@link
+ * SubscriptionProperties#deliveryFetchTimeout()}: a slower field resolves as an error on that value
+ * instead of stalling the operation.
+ */
+@Component
+class SubscriptionDeliveryInstrumentation extends SimplePerformantInstrumentation {
+
+  private final Duration deliveryFetchTimeout;
+
+  SubscriptionDeliveryInstrumentation(SubscriptionProperties properties) {
+    this.deliveryFetchTimeout = properties.deliveryFetchTimeout();
+  }
+
+  @Override
+  public ExecutionInput instrumentExecutionInput(
+      ExecutionInput executionInput,
+      InstrumentationExecutionParameters parameters,
+      InstrumentationState state) {
+    var context = executionInput.getGraphQLContext();
+    if (!GraphQlTransport.WEBSOCKET.equals(context.get(GraphQlTransport.class))) {
+      return executionInput;
+    }
+
+    context.put(SubscriptionExecutionStrategy.KEEP_SUBSCRIPTION_EVENTS_ORDERED, true);
+    disableDataLoaderCachingForWebSocketRequests(executionInput.getDataLoaderRegistry());
+    return executionInput;
+  }
+
+  @Override
+  public DataFetcher<?> instrumentDataFetcher(
+      DataFetcher<?> dataFetcher,
+      InstrumentationFieldFetchParameters parameters,
+      InstrumentationState state) {
+    var operation = parameters.getExecutionContext().getOperationDefinition().getOperation();
+    var isRootField = parameters.getExecutionStepInfo().getPath().getLevel() == 1;
+    if (operation != Operation.SUBSCRIPTION || isRootField) {
+      return dataFetcher;
+    }
+
+    return environment -> boundByDeliveryFetchTimeout(dataFetcher.get(environment));
+  }
+
+  private Object boundByDeliveryFetchTimeout(Object value) {
+    if (!(value instanceof CompletionStage<?> stage)) {
+      return value;
+    }
+
+    return stage
+        .toCompletableFuture()
+        .copy()
+        .orTimeout(deliveryFetchTimeout.toMillis(), TimeUnit.MILLISECONDS);
+  }
+
+  private static void disableDataLoaderCachingForWebSocketRequests(DataLoaderRegistry registry) {
+    registry
+        .getDataLoadersMap()
+        .forEach((name, loader) -> registry.register(name, uncached(loader)));
+  }
+
+  private static <K, V> DataLoader<K, V> uncached(DataLoader<K, V> loader) {
+    var options = loader.getOptions().transform(builder -> builder.setCachingEnabled(false));
+    return loader.transform(builder -> builder.options(options));
+  }
+}

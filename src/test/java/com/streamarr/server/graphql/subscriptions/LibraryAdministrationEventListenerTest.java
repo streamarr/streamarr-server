@@ -42,7 +42,7 @@ class LibraryAdministrationEventListenerTest {
       new LibraryAdministrationBroadcasters(
           meterRegistry,
           Schedulers.immediate(),
-          new SubscriptionProperties(64, 32, DataSize.ofMegabytes(1)));
+          new SubscriptionProperties(64, 32, DataSize.ofMegabytes(1), Duration.ofSeconds(10)));
   private final LibraryAdministrationEventListener listener =
       new LibraryAdministrationEventListener(
           libraryRepository, broadcasters, meterRegistry, new FakeTransactionManager());
