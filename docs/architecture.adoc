@@ -82,12 +82,13 @@ Each admitted task forks on a virtual thread that runs as the System actor, and 
 Each admitted task reports exactly one outcome, which returns its admission:
 
 * A task that called the metadata provider reports its latency.
-* A task that returned without real processing reports that it was ignored. This covers a file that was already matched, a file whose name could not be parsed, a misconfigured provider, and an interrupted task. Ignored reports do not move the limit.
-* A task that hit a TMDB retry, recorded a temporary failure, or threw because of a timeout reports a drop. Gradient2 reads a drop as an ordinary latency sample.
+* A task that returned without real processing reports that it was ignored. This covers a file that was already matched, a file whose name could not be parsed, a misconfigured provider, an interrupted task, and a task that threw without a timeout cause. Ignored reports do not move the limit.
+* A task that hit a TMDB retry, recorded a temporary failure, threw because of a timeout, or could not read its artwork results reports a drop. Gradient2 reads a drop as an ordinary latency sample.
 
 A task keeps its admission until the primary artwork it requested has recorded results, so its latency includes that artwork.
 A series file task waits for every series, season and episode image it requested.
 The task checks its results every `artwork.task-result-check-interval` (100 ms by default), and a task that requested no artwork reads nothing.
+A failed read stops that task's wait, and the operation reads the same results again when it waits for its artwork at its end.
 
 A recorded failure does not fail the operation.
 A task that throws ends admission: the admitted tasks finish, files or titles that were not admitted yet are not processed in that operation, and the operation fails.
@@ -95,7 +96,10 @@ One task's failure never cancels another task.
 
 Each scan and refresh starts with a fresh limit.
 The tuning lives in `AdaptiveAdmission.learnedLimit()`: initial limit 16, minimum 1, maximum 200, queue size 1 and RTT tolerance 1.0.
-The initial limit is high enough that an unchanged rescan, whose tasks all report ignored, runs about as fast as it did without admission.
+Ignored reports never move the limit, so an unchanged rescan, whose tasks all report ignored, runs at most 16 tasks at once for the whole scan.
+
+The limit applies when a task is admitted.
+When Gradient2 lowers the limit, the tasks already admitted keep running, so `in_flight` can read above `limit` until enough of them report.
 
 Admission publishes these metrics:
 

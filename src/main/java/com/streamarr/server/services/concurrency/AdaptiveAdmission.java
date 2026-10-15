@@ -66,9 +66,9 @@ public final class AdaptiveAdmission implements AutoCloseable {
   }
 
   /**
-   * Returns a fresh Gradient2 limit with the tuning that ADR 0041 keeps in code. It starts high
-   * enough that work which reports only ignored tasks, such as an unchanged rescan, runs as fast as
-   * it did without admission.
+   * Returns a fresh Gradient2 limit with the tuning that ADR 0041 keeps in code. Ignored reports
+   * never move it, so work that reports only ignored tasks, such as an unchanged rescan, runs at
+   * most the initial 16 tasks at once.
    */
   public static Limit learnedLimit() {
     return Gradient2Limit.newBuilder()
