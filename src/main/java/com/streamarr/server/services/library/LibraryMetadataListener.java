@@ -13,6 +13,7 @@ import com.streamarr.server.repositories.LibraryOperationRepository;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.events.library.ItemProcessedEvent;
+import com.streamarr.server.services.events.library.RefreshEndedEvent;
 import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,6 +25,8 @@ import org.jooq.Query;
 import org.jooq.Record2;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Slf4j
@@ -55,7 +58,18 @@ public class LibraryMetadataListener {
     }
   }
 
-  // A running scan or refresh recalculates the letter index when it finishes.
+  // A refresh skips the recalculation of every item processed while it runs, so its end
+  // recalculates the letter index once, whatever its conclusion.
+  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+  public void onRefreshEnded(RefreshEndedEvent event) {
+    try {
+      recalculateLetterCounts(event.libraryId());
+    } catch (Exception e) {
+      log.error("Letter index recalculation failed for library: {}", event.libraryId(), e);
+    }
+  }
+
+  // A running scan recalculates the letter index when it completes, and a refresh when it ends.
   @EventListener
   public void onItemProcessed(ItemProcessedEvent event) {
     if (libraryOperations.existsLibraryOperationForLibrary(event.libraryId())) {

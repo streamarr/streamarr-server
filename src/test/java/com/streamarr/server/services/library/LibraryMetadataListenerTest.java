@@ -9,6 +9,7 @@ import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.events.library.ItemProcessedEvent;
+import com.streamarr.server.services.events.library.RefreshEndedEvent;
 import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import java.util.UUID;
 import org.jooq.DSLContext;
@@ -87,6 +88,24 @@ class LibraryMetadataListenerTest {
 
     assertThatNoException()
         .isThrownBy(() -> listener.onScanCompleted(new ScanCompletedEvent(libraryId)));
+  }
+
+  @Test
+  @DisplayName("Should not propagate exception when refresh ended recalculation fails")
+  void shouldNotPropagateExceptionWhenRefreshEndedRecalculationFails() {
+    var failingContext =
+        mock(
+            DSLContext.class,
+            invocation -> {
+              throw new RuntimeException("DB error");
+            });
+
+    var listener =
+        new LibraryMetadataListener(
+            failingContext, noOpTransactionTemplate(), libraryOperations, mutexFactoryProvider);
+
+    assertThatNoException()
+        .isThrownBy(() -> listener.onRefreshEnded(new RefreshEndedEvent(libraryId)));
   }
 
   @Test
