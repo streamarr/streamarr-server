@@ -5,8 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
-import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
-import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -86,11 +84,7 @@ class TranscodeDecisionServiceTest {
   }
 
   static Stream<KeyframeKnowledge> keyframesThatAreNotKnown() {
-    return Stream.of(
-        new KeyframeKnowledge.NotReported(),
-        new KeyframeKnowledge.PacketScanRequired(
-            KeyframePacketScanReason.INCOMPLETE_CONTAINER_INDEX),
-        new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.NO_KEYFRAMES));
+    return ProbeFixture.keyframesThatAreNotKnown();
   }
 
   @Test
@@ -106,24 +100,22 @@ class TranscodeDecisionServiceTest {
   }
 
   private MediaProbe h264Probe(KeyframeKnowledge keyframes, String audioCodec) {
-    return MediaProbe.builder()
-        .keyframes(keyframes)
-        .duration(Duration.ofMinutes(120))
-        .framerate(OptionalDouble.of(23.976))
-        .width(1920)
-        .height(1080)
-        .videoCodec("h264")
-        .audioCodec(audioCodec)
-        .bitrate(5_000_000L)
-        .build();
+    return probeBuilder("h264", audioCodec).keyframes(keyframes).build();
   }
 
   private MediaProbe probe(String videoCodec, String audioCodec) {
-    return probe(videoCodec, audioCodec, 2, 128_000L);
+    return probeBuilder(videoCodec, audioCodec).build();
   }
 
   private MediaProbe probe(
       String videoCodec, String audioCodec, int audioChannels, long audioBitrate) {
+    return probeBuilder(videoCodec, audioCodec)
+        .audioChannels(OptionalInt.of(audioChannels))
+        .audioBitrate(OptionalLong.of(audioBitrate))
+        .build();
+  }
+
+  private MediaProbe.MediaProbeBuilder probeBuilder(String videoCodec, String audioCodec) {
     return MediaProbe.builder()
         .keyframes(KEYFRAMES_EVERY_TWO_SECONDS)
         .duration(Duration.ofMinutes(120))
@@ -133,9 +125,8 @@ class TranscodeDecisionServiceTest {
         .videoCodec(videoCodec)
         .audioCodec(audioCodec)
         .bitrate(5_000_000L)
-        .audioChannels(OptionalInt.of(audioChannels))
-        .audioBitrate(OptionalLong.of(audioBitrate))
-        .build();
+        .audioChannels(OptionalInt.of(2))
+        .audioBitrate(OptionalLong.of(128_000L));
   }
 
   private StreamingOptions options(List<String> supportedCodecs) {

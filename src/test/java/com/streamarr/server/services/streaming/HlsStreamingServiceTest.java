@@ -16,8 +16,6 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
-import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
-import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -185,10 +183,7 @@ class HlsStreamingServiceTest {
   }
 
   static Stream<KeyframeKnowledge> keyframesThatAreNotKnown() {
-    return Stream.of(
-        new KeyframeKnowledge.NotReported(),
-        new KeyframeKnowledge.PacketScanRequired(KeyframePacketScanReason.NO_CONTAINER_INDEX),
-        new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.KEYFRAME_WITHOUT_TIMESTAMP));
+    return ProbeFixture.keyframesThatAreNotKnown();
   }
 
   @Test
