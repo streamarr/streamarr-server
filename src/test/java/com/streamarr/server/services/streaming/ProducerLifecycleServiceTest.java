@@ -456,6 +456,46 @@ class ProducerLifecycleServiceTest {
         session.getSessionId(), StreamSession.defaultVariant(), "segment2.m4s");
   }
 
+  private Duration timeUntilStall(StreamSession session) {
+    return lifecycle.timeUntilStall(session.getSessionId(), StreamSession.defaultVariant());
+  }
+
+  @Test
+  @DisplayName(
+      "Should bound a held request's wait by the startup stall threshold when recovery tracks no job attempt of the variant")
+  void shouldBoundHeldRequestsWaitByStartupStallThresholdWhenRecoveryTracksNoJobAttempt() {
+    var session = startedSession();
+
+    // The default 10 s stall threshold plus the 6 s target segment duration.
+    assertThat(timeUntilStall(session)).isEqualTo(Duration.ofSeconds(16));
+  }
+
+  @Test
+  @DisplayName(
+      "Should bound a held request's wait by the time left before the tracked job attempt stalls")
+  void shouldBoundHeldRequestsWaitByTimeLeftBeforeTrackedJobAttemptStalls() {
+    var session = startedSession();
+    segmentStore.addSegment(session.getSessionId(), "segment0.m4s", new byte[] {1});
+    recover(session);
+
+    clock.advance(Duration.ofSeconds(4));
+
+    // Segment 0 took the attempt out of startup, so the 10 s stall threshold applies.
+    assertThat(timeUntilStall(session)).isEqualTo(Duration.ofSeconds(6));
+  }
+
+  @Test
+  @DisplayName(
+      "Should end a held request's wait at once when the tracked job attempt is past its stall deadline")
+  void shouldEndHeldRequestsWaitAtOnceWhenTrackedJobAttemptIsPastItsStallDeadline() {
+    var session = startedSession();
+    recover(session);
+
+    clock.advance(Duration.ofSeconds(20));
+
+    assertThat(timeUntilStall(session)).isZero();
+  }
+
   @Test
   @DisplayName(
       "Should install a fresh attempt at the requested offset when recovering a dead producer")

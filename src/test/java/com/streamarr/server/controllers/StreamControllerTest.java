@@ -92,7 +92,7 @@ class StreamControllerTest {
         .transcodeExecutor(transcodeExecutor)
         .properties(properties)
         .runtimeRegistry(runtimeRegistry)
-        .pollInterval(Duration.ofMillis(10))
+        .heldRequests(transcodeExecutor.heldSegmentRequests())
         .build()
         .coordinator();
   }

@@ -3,6 +3,7 @@ package com.streamarr.server.config;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
+import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.PlaybackAuthorityGate;
 import com.streamarr.server.services.streaming.PlaybackProbeService;
@@ -53,10 +54,13 @@ public class StreamingConfig {
 
   @Bean
   public SegmentDeliveryCoordinator segmentDeliveryCoordinator(
-      SegmentStore segmentStore, ProducerLifecycleService producerLifecycleService) {
+      SegmentStore segmentStore,
+      ProducerLifecycleService producerLifecycleService,
+      HeldSegmentRequests heldSegmentRequests) {
     return SegmentDeliveryCoordinator.builder()
         .segmentStore(segmentStore)
         .producerLifecycle(producerLifecycleService)
+        .heldRequests(heldSegmentRequests)
         .build();
   }
 

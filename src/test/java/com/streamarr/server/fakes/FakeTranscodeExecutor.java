@@ -7,6 +7,7 @@ import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
+import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -46,6 +47,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final Map<ExecutionTargetId, Map<String, WorkerVerifiedEncoder>> encodersByTarget =
       new ConcurrentHashMap<>();
   private final AtomicLong livenessChecks = new AtomicLong();
+  private final HeldSegmentRequests heldRequests = new HeldSegmentRequests();
   private final Object observationMonitor = new Object();
   private int availableSlots = TranscodeExecutor.UNBOUNDED_SLOTS;
   private final Map<String, Integer> encodeSlotsByVideoCodecFamily =
@@ -90,8 +92,10 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
         || !request.pinnedEncoder().map(pinned -> advertises(target, pinned)).orElse(true)) {
       throw new TranscodeException("Target " + target.value() + " refused the transcode");
     }
-    startedTargets.add(target);
     var handle = doStart(request);
+    // A recorded start names a job that already runs, so a test that awaits it can end the job.
+    startedTargets.add(target);
+    signalObservation();
     return advertisedEncoder(target, request.transcodeDecision())
         .map(handle::withEncoder)
         .orElse(handle);
@@ -112,10 +116,10 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       throw new TranscodeException("No connected transcode worker can encode this variant");
     }
 
-    startedRequests.add(request);
     var key = new ProcessKey(request.sessionId(), request.variantLabel());
     running.add(key);
     started.add(key);
+    startedRequests.add(request);
     var handle =
         new TranscodeHandle(
             1L, request.attemptId(), TranscodeStatus.ACTIVE, request.startSequenceNumber());
@@ -136,14 +140,32 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     if (failingOnStop.contains(sessionId)) {
       throw new TranscodeException("Simulated stop failure for session: " + sessionId);
     }
-    running.removeIf(key -> key.sessionId().equals(sessionId));
+    endAll(sessionId);
     stopped.add(sessionId);
   }
 
   @Override
   public void stopVariant(UUID sessionId, String variantLabel) {
-    running.remove(new ProcessKey(sessionId, variantLabel));
+    end(new ProcessKey(sessionId, variantLabel));
     stoppedVariants.add(sessionId + "/" + variantLabel);
+  }
+
+  /**
+   * The requests held until this executor's job attempts store their segments. Like the worker
+   * session server, the executor wakes a variant's held requests when one of its job attempts ends.
+   */
+  public HeldSegmentRequests heldSegmentRequests() {
+    return heldRequests;
+  }
+
+  private void endAll(UUID sessionId) {
+    running.stream().filter(key -> key.sessionId().equals(sessionId)).toList().forEach(this::end);
+  }
+
+  private void end(ProcessKey key) {
+    if (running.remove(key)) {
+      heldRequests.wakeVariant(key.sessionId(), key.variantLabel());
+    }
   }
 
   public List<String> getStoppedVariants() {
@@ -163,9 +185,9 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   }
 
   /**
-   * Per-variant liveness checks observed so far. The delivery coordinator calls this once per poll
-   * iteration (after {@code syncProgress}), so awaiting an increment is a deterministic signal that
-   * a poll cycle has completed — replacing wall-clock sleeps in timing tests.
+   * Per-variant liveness checks observed so far. The delivery coordinator calls this once in each
+   * pass that looks for a segment and finds none (after {@code syncProgress}), so awaiting an
+   * increment is a deterministic signal that a held request has looked at its variant.
    */
   public long livenessChecks() {
     return livenessChecks.get();
@@ -364,11 +386,11 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   }
 
   public void markDead(UUID sessionId) {
-    running.removeIf(key -> key.sessionId().equals(sessionId));
+    endAll(sessionId);
   }
 
   public void markDead(UUID sessionId, String variantLabel) {
-    running.remove(new ProcessKey(sessionId, variantLabel));
+    end(new ProcessKey(sessionId, variantLabel));
   }
 
   public List<TranscodeRequest> getStartedRequests() {

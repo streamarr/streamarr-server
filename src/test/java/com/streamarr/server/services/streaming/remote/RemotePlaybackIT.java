@@ -34,6 +34,7 @@ import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
+import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
@@ -118,6 +119,7 @@ class RemotePlaybackIT {
                   .streamSessionId(streamSessionId)
                   .segmentStore(segmentStore)
                   .executor(executor)
+                  .heldRequests(server.heldSegmentRequests())
                   .build());
       playback.session().setHandle(handle);
       var streamController = playback.controller();
@@ -204,6 +206,7 @@ class RemotePlaybackIT {
                   .streamSessionId(streamSessionId)
                   .segmentStore(segmentStore)
                   .executor(executor)
+                  .heldRequests(server.heldSegmentRequests())
                   .build());
 
       var handle = executor.start(transcodeRequest(streamSessionId, mediaFile));
@@ -664,7 +667,10 @@ class RemotePlaybackIT {
 
   @Builder
   private record PlaybackRigConfiguration(
-      UUID streamSessionId, LocalSegmentStore segmentStore, RemoteTranscodeExecutor executor) {}
+      UUID streamSessionId,
+      LocalSegmentStore segmentStore,
+      RemoteTranscodeExecutor executor,
+      HeldSegmentRequests heldRequests) {}
 
   private PlaybackRig rig(PlaybackRigConfiguration configuration) {
     var session =
@@ -689,7 +695,7 @@ class RemotePlaybackIT {
             .transcodeExecutor(configuration.executor())
             .properties(properties)
             .runtimeRegistry(registry)
-            .pollInterval(Duration.ofMillis(50))
+            .heldRequests(configuration.heldRequests())
             .build();
     var authorizationService =
         new FakeAuthorizationService(() -> identity(configuration.streamSessionId()), "it-token");

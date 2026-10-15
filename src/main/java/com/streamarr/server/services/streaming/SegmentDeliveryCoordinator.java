@@ -14,8 +14,7 @@ public class SegmentDeliveryCoordinator {
 
   private final SegmentStore segmentStore;
   private final ProducerLifecycleService producerLifecycle;
-
-  @Builder.Default private final Duration pollInterval = Duration.ofMillis(100);
+  private final HeldSegmentRequests heldRequests;
 
   /**
    * Answers one segment request. Before the wait, the request applies the on-demand rules of ADR
@@ -31,14 +30,15 @@ public class SegmentDeliveryCoordinator {
 
     producerLifecycle.prepareRequestedVariant(sessionId, variantLabel, segmentName);
     while (true) {
+      var wake = heldRequests.nextWake(sessionId, variantLabel);
       var outcome = deliverOnce(sessionId, variantLabel, segmentName);
       if (outcome != null) {
         return outcome;
       }
-      // Every non-terminal pass — waiting on a live producer, a superseded recovery attempt, or a
-      // FAILED variant awaiting revival — re-observes at poll cadence, never in a hot loop. The
-      // loop owns the one wait and the one interrupt check.
-      if (!sleepOnePoll()) {
+
+      // A stored segment, an ended job attempt or a destroyed session fires the wake. Only a stall
+      // has no event, so the wait ends at the stall deadline that recovery measures against.
+      if (!tryAwait(wake, producerLifecycle.timeUntilStall(sessionId, variantLabel))) {
         return new SegmentDelivery.Cancelled();
       }
     }
@@ -66,7 +66,7 @@ public class SegmentDeliveryCoordinator {
 
   /**
    * One delivery pass. Returns a terminal {@link SegmentDelivery} outcome, or {@code null} to mean
-   * "re-observe after one poll interval".
+   * "re-observe after the next wake".
    */
   private SegmentDelivery deliverOnce(UUID sessionId, String variantLabel, String segmentName) {
     var ready = tryRead(sessionId, segmentName);
@@ -90,9 +90,10 @@ public class SegmentDeliveryCoordinator {
     return new SegmentDelivery.Unrecoverable();
   }
 
-  /** Drops recovery bookkeeping after session destruction. */
+  /** Drops recovery state after session destruction and wakes the session's held requests. */
   public void forgetSession(UUID sessionId) {
     producerLifecycle.forgetRecovery(sessionId);
+    heldRequests.wakeSession(sessionId);
   }
 
   private SegmentDelivery tryRead(UUID sessionId, String segmentName) {
@@ -111,9 +112,9 @@ public class SegmentDeliveryCoordinator {
     }
   }
 
-  private boolean sleepOnePoll() {
+  private static boolean tryAwait(HeldSegmentRequests.Wake wake, Duration timeout) {
     try {
-      Thread.sleep(pollInterval.toMillis());
+      wake.await(timeout);
       return true;
     } catch (InterruptedException _) {
       Thread.currentThread().interrupt();

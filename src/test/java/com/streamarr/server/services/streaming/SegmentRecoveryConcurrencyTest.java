@@ -17,7 +17,6 @@ import com.streamarr.server.fixtures.ServerSettingsFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture.StreamingRig;
 import com.streamarr.server.services.concurrency.MutexFactory;
-import java.time.Duration;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -55,7 +54,7 @@ class SegmentRecoveryConcurrencyTest {
         .runtimeRegistry(registry)
         .properties(properties)
         .clock(clock)
-        .pollInterval(Duration.ofMillis(1))
+        .heldRequests(executor.heldSegmentRequests())
         .build();
   }
 
@@ -186,7 +185,7 @@ class SegmentRecoveryConcurrencyTest {
         SegmentDeliveryCoordinator.builder()
             .segmentStore(store)
             .producerLifecycle(lifecycle)
-            .pollInterval(Duration.ofMillis(1))
+            .heldRequests(race.executor.heldSegmentRequests())
             .build();
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
@@ -338,14 +337,20 @@ class SegmentRecoveryConcurrencyTest {
         if (running && !getStartedTargets().isEmpty() && Thread.currentThread() == second) {
           continueRecovery.countDown();
           awaitUnserializedWaiter();
-          store.addSegment(sessionId, "segment0.m4s", new byte[] {0x47});
+          uploadFirstSegment(sessionId, variantLabel);
         }
 
         if (running && !getStartedTargets().isEmpty() && Thread.currentThread() == first) {
-          store.addSegment(sessionId, "segment0.m4s", new byte[] {0x47});
+          uploadFirstSegment(sessionId, variantLabel);
         }
 
         return running;
+      }
+
+      // Stores segment 0, then wakes the requests held on its variant, as a worker's upload does.
+      private void uploadFirstSegment(UUID sessionId, String variantLabel) {
+        store.addSegment(sessionId, "segment0.m4s", new byte[] {0x47});
+        heldSegmentRequests().wakeVariant(sessionId, variantLabel);
       }
 
       private void awaitUnserializedWaiter() {

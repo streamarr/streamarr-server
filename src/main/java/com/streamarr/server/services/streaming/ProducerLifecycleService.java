@@ -69,6 +69,32 @@ public class ProducerLifecycleService {
     return withSessionLock(sessionId, () -> doRecover(sessionId, variantLabel, segmentName));
   }
 
+  /**
+   * How long a held segment request can wait for a wake before recovery must look at the variant
+   * again: until the variant's tracked job attempt counts as stalled. Before recovery tracks a job
+   * attempt of the variant, the startup stall threshold bounds the wait.
+   */
+  public Duration timeUntilStall(UUID sessionId, String variantLabel) {
+    return withSessionLock(
+        sessionId, () -> doTimeUntilStall(new VariantKey(sessionId, variantLabel)));
+  }
+
+  private Duration doTimeUntilStall(VariantKey key) {
+    var state = recoveryStates.get(key);
+    if (state == null) {
+      return startupStallThreshold();
+    }
+
+    var deadline =
+        state.stallDeadline(properties.producerStallThreshold(), startupStallThreshold());
+    var remaining = Duration.between(clock.instant(), deadline);
+    if (remaining.isNegative()) {
+      return Duration.ZERO;
+    }
+
+    return remaining;
+  }
+
   public void forgetRecovery(UUID sessionId) {
     withSessionLock(
         sessionId,

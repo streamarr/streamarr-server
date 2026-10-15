@@ -129,6 +129,7 @@ class HlsCopySeekSmokeTest {
         SegmentDeliveryCoordinator.builder()
             .segmentStore(segmentStore)
             .producerLifecycle(producerLifecycle)
+            .heldRequests(workerFixture.workerSessions().heldSegmentRequests())
             .build();
     mediaFileRepository = new FakeMediaFileRepository();
     probeRepository = new FakeMediaFileContainerInfoRepository();

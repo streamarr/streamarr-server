@@ -1,5 +1,6 @@
 package com.streamarr.server.config;
 
+import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
@@ -25,5 +26,10 @@ public class WorkerSessionConfiguration {
             .startReportTimeout(properties.startReportTimeout())
             .build();
     return new WorkerSessionServer(configuration, segmentStore, meterRegistry);
+  }
+
+  @Bean
+  public HeldSegmentRequests heldSegmentRequests(WorkerSessionServer workerSessionServer) {
+    return workerSessionServer.heldSegmentRequests();
   }
 }

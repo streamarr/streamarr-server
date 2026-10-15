@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.remote;
 
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
+import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.VariantJob;
@@ -30,6 +31,7 @@ public final class WorkerSessionServer implements AutoCloseable {
   private static final int PERMITTED_CLIENT_KEEPALIVE_SECONDS = 10;
   private final WorkerSessionServerConfiguration configuration;
   private final SegmentStore segmentStore;
+  private final HeldSegmentRequests heldSegmentRequests = new HeldSegmentRequests();
   private final LiveWorkerConnectionRegistry workerConnections;
   private final WorkerSessionServerRuntime runtime = new WorkerSessionServerRuntime(log);
   private boolean started;
@@ -39,7 +41,8 @@ public final class WorkerSessionServer implements AutoCloseable {
       @NonNull SegmentStore segmentStore,
       @NonNull MeterRegistry meterRegistry) {
     this.configuration = configuration;
-    workerConnections = new LiveWorkerConnectionRegistry(configuration, meterRegistry);
+    workerConnections =
+        new LiveWorkerConnectionRegistry(configuration, meterRegistry, heldSegmentRequests);
     this.segmentStore = segmentStore;
   }
 
@@ -78,6 +81,14 @@ public final class WorkerSessionServer implements AutoCloseable {
                 .permitKeepAliveWithoutCalls(true)
                 .build()
                 .start());
+  }
+
+  /**
+   * The segment requests held until a worker of this server stores their segment. A stored segment
+   * or an ended job attempt wakes the requests held on its variant.
+   */
+  public HeldSegmentRequests heldSegmentRequests() {
+    return heldSegmentRequests;
   }
 
   public synchronized int port() {
