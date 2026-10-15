@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -76,6 +77,14 @@ class DirectoryWatchingServiceTest {
     service.addDirectory(tempDir);
 
     assertThatCode(() -> service.addDirectory(subDir)).doesNotThrowAnyException();
+  }
+
+  @Test
+  @DisplayName("Should leave the common fork-join pool idle when watching a directory")
+  void shouldLeaveCommonForkJoinPoolIdleWhenWatchingDirectory() throws IOException {
+    service.addDirectory(tempDir);
+
+    assertThat(ForkJoinPool.commonPool().awaitQuiescence(5, TimeUnit.SECONDS)).isTrue();
   }
 
   @Test
