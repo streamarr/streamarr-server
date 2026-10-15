@@ -6,7 +6,10 @@ import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
+import static com.streamarr.server.support.CpuPermitWaiters.backgroundWaiters;
+import static com.streamarr.server.support.CpuPermitWaiters.primaryWaiters;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
@@ -31,6 +34,7 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.services.concurrency.CpuPermits;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
@@ -42,7 +46,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -70,6 +77,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
   @Autowired private CompanyRepository companyRepository;
   @Autowired private ArtworkSchedulers artworkSchedulers;
   @Autowired private ApplicationContext applicationContext;
+  @Autowired private CpuPermits cpuPermits;
 
   private Library library;
 
@@ -84,6 +92,14 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
                     .withHeader("Content-Type", "image/jpeg")
                     .withBody(createTestImage(600, 900))));
     library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
+  }
+
+  // Background steps that a test leaves pending would otherwise run during later tests.
+  @AfterEach
+  void tearDown() {
+    jdbcTemplate.update("DELETE FROM artwork_request");
+    jdbcTemplate.update("DELETE FROM " + ArtworkSchedulerStarter.PRIMARY_TABLE);
+    jdbcTemplate.update("DELETE FROM " + ArtworkSchedulerStarter.BACKGROUND_TABLE);
   }
 
   @Test
@@ -169,9 +185,8 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should save the poster first when it is requested after a backlog of person photos and company logos")
-  void shouldSaveThePosterFirstWhenItIsRequestedAfterABacklogOfPersonPhotosAndCompanyLogos()
-      throws Exception {
+      "Should save the poster while a backlog of person photos and company logos downloads")
+  void shouldSaveThePosterWhileABacklogOfPersonPhotosAndCompanyLogosDownloads() throws Exception {
     wireMock.stubFor(
         get(urlPathMatching("/backlog-.*"))
             .willReturn(
@@ -218,6 +233,90 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
             item -> assertThat(itemResults.findByItem(item.itemId(), item.itemType())).isEmpty());
   }
 
+  @Test
+  @DisplayName(
+      "Should give a freed CPU permit to the poster when person photos waited for one before it")
+  void shouldGiveAFreedCpuPermitToThePosterWhenPersonPhotosWaitedForOneBeforeIt() throws Exception {
+    wireMock.stubFor(
+        get(urlPathMatching("/backlog-.*"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "image/jpeg")
+                    .withBody(createTestImage(2000, 3000))));
+    var backlog = List.of(savePerson(), savePerson());
+    var completions = new CopyOnWriteArrayList<String>();
+    var releases = new ArrayList<CountDownLatch>();
+    var holders = new ArrayList<BoundedTask<Void>>();
+    artworkSchedulers.stop();
+    var starter = ArtworkSchedulerStarter.fromContext(applicationContext);
+    var primaryScheduler = starter.start(ArtworkPriority.PRIMARY, completedInto(completions));
+    var backgroundScheduler = starter.start(ArtworkPriority.BACKGROUND, completedInto(completions));
+    try {
+      for (var index = 0; index < Runtime.getRuntime().availableProcessors(); index++) {
+        var release = new CountDownLatch(1);
+        releases.add(release);
+        holders.add(holdCpuPermit(release));
+      }
+
+      transactionTemplate.executeWithoutResult(
+          _ -> {
+            for (var index = 0; index < backlog.size(); index++) {
+              requestBacklogArtwork(backlog.get(index), index);
+            }
+          });
+      await().atMost(Duration.ofSeconds(BOUND_SECONDS)).until(() -> backgroundWaiters() == 2);
+      var artworkRun = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+      var movie =
+          movieService.createMovieWithAssociations(movieMetadata(), mediaFile(), artworkRun);
+      await().atMost(Duration.ofSeconds(BOUND_SECONDS)).until(() -> primaryWaiters() == 1);
+
+      releases.getFirst().countDown();
+      closeAndAwait(artworkRun);
+      releases.forEach(CountDownLatch::countDown);
+      await()
+          .atMost(Duration.ofSeconds(BOUND_SECONDS))
+          .until(() -> completions.size() == backlog.size() + 1);
+
+      assertThat(completions.getFirst())
+          .isEqualTo(
+              ArtworkStepsTask.instanceId(new ArtworkItem(movie.getId(), ImageEntityType.MOVIE)));
+    } finally {
+      releases.forEach(CountDownLatch::countDown);
+      for (var holder : holders) {
+        holder.await(Duration.ofSeconds(BOUND_SECONDS));
+      }
+
+      primaryScheduler.stop();
+      backgroundScheduler.stop();
+      artworkSchedulers.start();
+    }
+  }
+
+  private BoundedTask<Void> holdCpuPermit(CountDownLatch release) throws InterruptedException {
+    var held = new CountDownLatch(1);
+    var holder =
+        BoundedTask.start(
+            () -> {
+              cpuPermits.runWithPermit(
+                  CpuPermits.Priority.PRIMARY,
+                  () -> {
+                    held.countDown();
+                    release.await();
+                    return null;
+                  });
+            });
+    assertThat(held.await(BOUND_SECONDS, TimeUnit.SECONDS)).isTrue();
+    return holder;
+  }
+
+  private ArtworkItem savePerson() {
+    var person =
+        personRepository.saveAndFlush(
+            Person.builder().name("Backlog Person").sourceId(UUID.randomUUID().toString()).build());
+    return new ArtworkItem(person.getId(), ImageEntityType.PERSON);
+  }
+
   private void requestBacklogArtwork(ArtworkItem item, int index) {
     var imageType = ImageType.PROFILE;
     if (item.itemType() == ImageEntityType.COMPANY) {
@@ -239,6 +338,15 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
       @Override
       public void onExecutionComplete(ExecutionComplete complete) {
         completed.complete(complete);
+      }
+    };
+  }
+
+  private static AbstractSchedulerListener completedInto(List<String> completedInstanceIds) {
+    return new AbstractSchedulerListener() {
+      @Override
+      public void onExecutionComplete(ExecutionComplete complete) {
+        completedInstanceIds.add(complete.getExecution().taskInstance.getId());
       }
     };
   }
