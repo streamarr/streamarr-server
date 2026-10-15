@@ -1,6 +1,7 @@
 package com.streamarr.server.services.audit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -11,6 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Tag("UnitTest")
 @DisplayName("System Work Tests")
@@ -40,6 +42,22 @@ class SystemWorkTest {
     SystemWork.runAsSystemActor(() -> {});
 
     assertThat(SystemWork.isRunningAsSystemActor()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should reject system work when it starts inside an open transaction")
+  void shouldRejectSystemWorkWhenItStartsInsideAnOpenTransaction() {
+    var ran = new AtomicBoolean();
+
+    TransactionSynchronizationManager.setActualTransactionActive(true);
+    try {
+      assertThatThrownBy(() -> SystemWork.runAsSystemActor(() -> ran.set(true)))
+          .isInstanceOf(SystemWorkInsideTransactionException.class);
+    } finally {
+      TransactionSynchronizationManager.setActualTransactionActive(false);
+    }
+
+    assertThat(ran).isFalse();
   }
 
   @Test
