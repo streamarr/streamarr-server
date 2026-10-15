@@ -90,14 +90,14 @@ class SegmentDeliveryCoordinatorTest {
   private StreamSession startedSession() {
     var session = defaultSessionBuilder().build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 0, 0);
+    lifecycle.startAll(session, 0);
     return session;
   }
 
   private StreamSession startedAbrSession() {
     var session = abrSessionBuilder().build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 0, 0);
+    lifecycle.startAll(session, 0);
     return session;
   }
 
@@ -166,7 +166,7 @@ class SegmentDeliveryCoordinatorTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
-    rig.lifecycle().startAll(session, 0, 0);
+    rig.lifecycle().startAll(session, 0);
     destroyRaceRegistry.destroyAfterNextLookup(
         () -> {
           runtimeRegistry.removeById(sessionId);
@@ -204,7 +204,7 @@ class SegmentDeliveryCoordinatorTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
-    rig.lifecycle().startAll(session, 0, 0);
+    rig.lifecycle().startAll(session, 0);
     transcodeExecutor.setExecutionTargets(List.of(TARGET_A, TARGET_B));
     transcodeExecutor.refuseTarget(TARGET_A);
     transcodeExecutor.refuseTarget(TARGET_B);
@@ -257,7 +257,7 @@ class SegmentDeliveryCoordinatorTest {
           throws Exception {
     var sixtySecondSession = sessionWithDurationBuilder(60).build();
     runtimeRegistry.save(sixtySecondSession);
-    lifecycle.startAll(sixtySecondSession, 0, 0);
+    lifecycle.startAll(sixtySecondSession, 0);
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
     var delivery = deliverAsync(sixtySecondSession.getSessionId(), "segment10.m4s");
@@ -278,7 +278,7 @@ class SegmentDeliveryCoordinatorTest {
       throws Exception {
     var sixtySecondSession = sessionWithDurationBuilder(60).build();
     runtimeRegistry.save(sixtySecondSession);
-    lifecycle.startAll(sixtySecondSession, 0, 0);
+    lifecycle.startAll(sixtySecondSession, 0);
     segmentStore.addSegment(sixtySecondSession.getSessionId(), "segment10.m4s", new byte[] {10});
 
     var delivery = deliverAsync(sixtySecondSession.getSessionId(), "segment10.m4s");
@@ -452,7 +452,7 @@ class SegmentDeliveryCoordinatorTest {
       throws Exception {
     var session = defaultSessionBuilder().build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 5400, 900);
+    lifecycle.startAll(session, 900);
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
     // init.mp4 resolves to the run's start index, so no earlier segment can ever exist -- the
@@ -751,7 +751,7 @@ class SegmentDeliveryCoordinatorTest {
       throws Exception {
     var session = defaultSessionBuilder().build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 12, 2);
+    lifecycle.startAll(session, 2);
     transcodeExecutor.markDead(session.getSessionId());
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
@@ -807,7 +807,7 @@ class SegmentDeliveryCoordinatorTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
-    rig.lifecycle().startAll(session, 0, 0);
+    rig.lifecycle().startAll(session, 0);
 
     transcodeExecutor.setExecutionTargets(List.of(TARGET_A, TARGET_B));
     transcodeExecutor.refuseTarget(TARGET_A);
@@ -878,7 +878,7 @@ class SegmentDeliveryCoordinatorTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
-    rig.lifecycle().startAll(session, 0, 0);
+    rig.lifecycle().startAll(session, 0);
     gatingExecutor.markDead(sessionId);
     var streamingService =
         HlsStreamingService.builder()

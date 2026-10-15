@@ -67,21 +67,21 @@ class ProducerLifecycleServiceTest {
   private StreamSession startedSession() {
     var session = defaultSessionBuilder().build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 0, 0);
+    lifecycle.startAll(session, 0);
     return session;
   }
 
   private StreamSession startedAbrSession() {
     var session = abrSessionBuilder().build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 0, 0);
+    lifecycle.startAll(session, 0);
     return session;
   }
 
   private StreamSession midTimelineSession() {
     var session = defaultSessionBuilder().build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 5400, 900);
+    lifecycle.startAll(session, 900);
     return session;
   }
 
@@ -389,7 +389,7 @@ class ProducerLifecycleServiceTest {
   void shouldAdvertiseTheWholeTimelineMediaSegmentCountWhenInstallingReplacementAttempt() {
     var sixtySecondSession = sessionWithDurationBuilder(60).build();
     runtimeRegistry.save(sixtySecondSession);
-    lifecycle.startAll(sixtySecondSession, 0, 0);
+    lifecycle.startAll(sixtySecondSession, 0);
     transcodeExecutor.markDead(sixtySecondSession.getSessionId());
 
     recover(sixtySecondSession);
@@ -405,7 +405,7 @@ class ProducerLifecycleServiceTest {
   void shouldLeaveRunningProducerInPlaceWhenRequestNamesMediaSegmentPastTheAdvertisedTimeline() {
     var sixtySecondSession = sessionWithDurationBuilder(60).build();
     runtimeRegistry.save(sixtySecondSession);
-    lifecycle.startAll(sixtySecondSession, 0, 0);
+    lifecycle.startAll(sixtySecondSession, 0);
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
     var result =
@@ -423,7 +423,7 @@ class ProducerLifecycleServiceTest {
   void shouldInstallNoReplacementAttemptWhenRequestNamesMediaSegmentPastTheAdvertisedTimeline() {
     var sixtySecondSession = sessionWithDurationBuilder(60).build();
     runtimeRegistry.save(sixtySecondSession);
-    lifecycle.startAll(sixtySecondSession, 0, 0);
+    lifecycle.startAll(sixtySecondSession, 0);
     transcodeExecutor.markDead(sixtySecondSession.getSessionId());
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
@@ -612,7 +612,7 @@ class ProducerLifecycleServiceTest {
     var session =
         abrSessionBuilder().transcodeDecision(fullTranscodeDecision(videoCodecFamily)).build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 0, 0);
+    lifecycle.startAll(session, 0);
     return session;
   }
 

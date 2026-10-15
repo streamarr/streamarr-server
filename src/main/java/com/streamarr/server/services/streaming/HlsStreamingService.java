@@ -100,7 +100,7 @@ public class HlsStreamingService implements StreamingService {
 
     try {
       runtimeRegistry.save(session);
-      producerLifecycle.startAll(session, 0, 0);
+      producerLifecycle.startAll(session, 0);
       runtimeRegistry.save(session);
     } catch (RuntimeException startupFailure) {
       rollbackFailedStartup(sessionId, startupFailure);
