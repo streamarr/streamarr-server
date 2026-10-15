@@ -41,6 +41,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Proves the refresh use case is one Spring-proxied transaction against real PostgreSQL: rotation,
@@ -63,6 +64,7 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
   @Autowired private GatedAccessTokenIssuer gatedIssuer;
 
   @Autowired private DSLContext dsl;
+  @Autowired private TransactionTemplate transactionTemplate;
 
   @Autowired private AuthTestSupport authTestSupport;
 
@@ -366,11 +368,13 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
 
     // Rotate once, then age the rotation past grace so replaying the original proves reuse.
     tokenRefreshService.refresh(issued.rawToken());
-    dsl.update(REFRESH_TOKEN)
-        .set(REFRESH_TOKEN.ROTATED_AT, OffsetDateTime.now().minus(Duration.ofMinutes(10)))
-        .where(REFRESH_TOKEN.SESSION_ID.eq(issued.session().getId()))
-        .and(REFRESH_TOKEN.STATUS.eq(RefreshTokenStatus.ROTATED))
-        .execute();
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            dsl.update(REFRESH_TOKEN)
+                .set(REFRESH_TOKEN.ROTATED_AT, OffsetDateTime.now().minus(Duration.ofMinutes(10)))
+                .where(REFRESH_TOKEN.SESSION_ID.eq(issued.session().getId()))
+                .and(REFRESH_TOKEN.STATUS.eq(RefreshTokenStatus.ROTATED))
+                .execute());
     var rawToken = issued.rawToken();
 
     assertThatThrownBy(() -> tokenRefreshService.refresh(rawToken))

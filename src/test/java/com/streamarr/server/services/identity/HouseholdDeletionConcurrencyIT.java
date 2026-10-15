@@ -46,6 +46,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @Isolated("Uses the shared PostgreSQL identity fixtures")
@@ -66,6 +67,7 @@ class HouseholdDeletionConcurrencyIT extends AbstractIntegrationTest {
   @Autowired private DataSource dataSource;
   @Autowired private JdbcTemplate jdbc;
   @Autowired private DSLContext dsl;
+  @Autowired private TransactionTemplate transactionTemplate;
 
   @Test
   @DisplayName(
@@ -76,10 +78,12 @@ class HouseholdDeletionConcurrencyIT extends AbstractIntegrationTest {
     var source = auth.createIdentity();
     var joining = auth.createIdentity();
     var destinationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-    dsl.insertInto(HOUSEHOLD)
-        .set(HOUSEHOLD.ID, destinationId)
-        .set(HOUSEHOLD.NAME, "Empty destination")
-        .execute();
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            dsl.insertInto(HOUSEHOLD)
+                .set(HOUSEHOLD.ID, destinationId)
+                .set(HOUSEHOLD.NAME, "Empty destination")
+                .execute());
     var identity = auth.freshIdentityOf(admin);
     assertThat(
             service.transferLastAccountAndDeleteHousehold(
@@ -417,10 +421,12 @@ class HouseholdDeletionConcurrencyIT extends AbstractIntegrationTest {
     var admin = auth.createAdminIdentity();
     var source = auth.createIdentity();
     var destinationId = UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff");
-    dsl.insertInto(HOUSEHOLD)
-        .set(HOUSEHOLD.ID, destinationId)
-        .set(HOUSEHOLD.NAME, "Destination")
-        .execute();
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            dsl.insertInto(HOUSEHOLD)
+                .set(HOUSEHOLD.ID, destinationId)
+                .set(HOUSEHOLD.NAME, "Destination")
+                .execute());
     var identity = auth.freshIdentityOf(admin);
     try (var executor = Executors.newVirtualThreadPerTaskExecutor();
         var held =

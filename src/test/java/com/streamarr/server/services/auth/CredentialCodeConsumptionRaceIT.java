@@ -7,6 +7,7 @@ import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockAccountRow;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
 import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
+import static com.streamarr.server.support.TestFixtureAuditActorConfiguration.nameTestFixtureActorIn;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
@@ -325,6 +326,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor();
         var disablement = dataSource.getConnection()) {
       disablement.setAutoCommit(false);
+      nameTestFixtureActorIn(disablement);
       lockAccountRow(disablement, issuerId);
       var acceptance =
           executor.submit(
@@ -408,6 +410,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
         var statement =
             connection.prepareStatement("UPDATE user_account SET display_name = ? WHERE id = ?")) {
       connection.setAutoCommit(false);
+      nameTestFixtureActorIn(connection);
       statement.setString(1, "Concurrent Display Name");
       statement.setObject(2, accountId);
       statement.executeUpdate();

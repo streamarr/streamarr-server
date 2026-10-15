@@ -9,10 +9,10 @@ import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationOptions;
+import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.security.WithAccountContext;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -25,6 +25,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Profile Manager Invitation Repository Custom Implementation Integration Tests")
@@ -34,6 +35,8 @@ class ProfileManagerInvitationRepositoryCustomImplIT extends AbstractIntegration
   @Autowired private ProfileManagerInvitationRepository invitationRepository;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private DSLContext dsl;
+  @Autowired private TransactionTemplate transactionTemplate;
+  @Autowired private AuditColumnFixtures auditColumns;
 
   @Test
   @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -53,12 +56,10 @@ class ProfileManagerInvitationRepositoryCustomImplIT extends AbstractIntegration
             .toList();
     var createdAt = Instant.parse("2026-08-21T12:00:00Z");
     for (var index = 0; index < invitations.size(); index++) {
-      dsl.update(PROFILE_MANAGER_INVITATION)
-          .set(
-              PROFILE_MANAGER_INVITATION.CREATED_ON,
-              createdAt.plusSeconds(index).atOffset(ZoneOffset.UTC))
-          .where(PROFILE_MANAGER_INVITATION.ID.eq(invitations.get(index).getId()))
-          .execute();
+      auditColumns.overwriteCreatedOn(
+          PROFILE_MANAGER_INVITATION,
+          PROFILE_MANAGER_INVITATION.ID.eq(invitations.get(index).getId()),
+          createdAt.plusSeconds(index));
     }
 
     try {
@@ -96,12 +97,10 @@ class ProfileManagerInvitationRepositoryCustomImplIT extends AbstractIntegration
         inviters.stream().map(inviter -> saveInvitation(inviter, recipient, expiresAt)).toList();
     var createdAt = Instant.parse("2026-08-21T12:00:00Z");
     for (var index = 0; index < invitations.size(); index++) {
-      dsl.update(PROFILE_MANAGER_INVITATION)
-          .set(
-              PROFILE_MANAGER_INVITATION.CREATED_ON,
-              createdAt.plusSeconds(index).atOffset(ZoneOffset.UTC))
-          .where(PROFILE_MANAGER_INVITATION.ID.eq(invitations.get(index).getId()))
-          .execute();
+      auditColumns.overwriteCreatedOn(
+          PROFILE_MANAGER_INVITATION,
+          PROFILE_MANAGER_INVITATION.ID.eq(invitations.get(index).getId()),
+          createdAt.plusSeconds(index));
     }
 
     try {
@@ -133,8 +132,10 @@ class ProfileManagerInvitationRepositoryCustomImplIT extends AbstractIntegration
     var expiredInvitation = saveInvitation(inviter, recipient, now.minusSeconds(1));
 
     try {
-      invitationRepository.invalidatePendingByProfileIdAndRecipientAccountId(
-          inviter.profile().getId(), recipient.account().getId(), "replaced", now);
+      transactionTemplate.executeWithoutResult(
+          _ ->
+              invitationRepository.invalidatePendingByProfileIdAndRecipientAccountId(
+                  inviter.profile().getId(), recipient.account().getId(), "replaced", now));
 
       assertThat(invitationRepository.findById(expiredInvitation.getId()).orElseThrow())
           .satisfies(
@@ -254,6 +255,11 @@ class ProfileManagerInvitationRepositoryCustomImplIT extends AbstractIntegration
   }
 
   private void clearRequiredParty(UUID invitationId, RequiredParty requiredParty) {
+    transactionTemplate.executeWithoutResult(
+        _ -> clearRequiredPartyInTransaction(invitationId, requiredParty));
+  }
+
+  private void clearRequiredPartyInTransaction(UUID invitationId, RequiredParty requiredParty) {
     var update = dsl.update(PROFILE_MANAGER_INVITATION);
     switch (requiredParty) {
       case PROFILE ->

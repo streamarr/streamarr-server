@@ -1,5 +1,6 @@
 package com.streamarr.server.config;
 
+import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.auth.SetupCommand;
 import com.streamarr.server.services.auth.SetupService;
 import lombok.extern.slf4j.Slf4j;
@@ -48,14 +49,15 @@ public class DevIdentitySeeder {
       return;
     }
 
-    setupService.setup(
+    var command =
         SetupCommand.builder()
             .email(adminEmail)
             .displayName("Dev Admin")
             .password(adminPassword)
             .householdName("Dev Household")
             .profileName("Dev")
-            .build());
+            .build();
+    SystemWork.runAsSystemActor(() -> setupService.setup(command));
 
     log.info("Seeded dev identity — log in with {} and the configured dev password.", adminEmail);
   }

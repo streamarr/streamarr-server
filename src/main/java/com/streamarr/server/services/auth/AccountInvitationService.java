@@ -151,8 +151,12 @@ public class AccountInvitationService {
 
   public void decline(InvitationCodeCommand command) {
     var invitation = resolvePending(command.code(), command.ipAddress());
-    if (!invitationRepository.markDeclinedIfPendingAndUnexpired(
-        invitation.getId(), clock.instant())) {
+    var declined =
+        transactionTemplate.execute(
+            _ ->
+                invitationRepository.markDeclinedIfPendingAndUnexpired(
+                    invitation.getId(), clock.instant()));
+    if (!Boolean.TRUE.equals(declined)) {
       throw new InvalidOneTimeCodeException();
     }
   }

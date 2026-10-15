@@ -19,9 +19,9 @@ import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationOptions;
+import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -46,6 +46,7 @@ class AccountInvitationPaginationIT extends AbstractIntegrationTest {
   @Autowired private AccountInvitationRepository invitationRepository;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private DSLContext dsl;
+  @Autowired private AuditColumnFixtures auditColumns;
 
   private AuthTestSupport.TestIdentity serverAdmin;
   private AuthenticatedIdentity identity;
@@ -171,10 +172,7 @@ class AccountInvitationPaginationIT extends AbstractIntegrationTest {
 
   private void setCreatedOn(List<AccountInvitation> invitations, Instant createdOn) {
     var ids = invitations.stream().map(AccountInvitation::getId).toList();
-    dsl.update(ACCOUNT_INVITATION)
-        .set(ACCOUNT_INVITATION.CREATED_ON, createdOn.atOffset(ZoneOffset.UTC))
-        .where(ACCOUNT_INVITATION.ID.in(ids))
-        .execute();
+    auditColumns.overwriteCreatedOn(ACCOUNT_INVITATION, ACCOUNT_INVITATION.ID.in(ids), createdOn);
   }
 
   private static MediaPaginationOptions forwardOptions(int limit) {

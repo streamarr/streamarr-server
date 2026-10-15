@@ -129,7 +129,9 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
     var offer = pendingOffer(owner, host, now.minusSeconds(60));
 
     var declined =
-        shareRepository.tryDeclinePending(offer.getId(), ProfileShareStatus.REJECTED, now);
+        transactionTemplate.<Boolean>execute(
+            _ ->
+                shareRepository.tryDeclinePending(offer.getId(), ProfileShareStatus.REJECTED, now));
 
     assertThat(declined).isTrue();
     assertThat(shareRepository.findById(offer.getId()).orElseThrow().getStatus())

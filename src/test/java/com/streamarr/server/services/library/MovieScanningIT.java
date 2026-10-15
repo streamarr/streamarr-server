@@ -4,6 +4,9 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static com.streamarr.server.jooq.generated.tables.BaseCollectable.BASE_COLLECTABLE;
+import static com.streamarr.server.jooq.generated.tables.Library.LIBRARY;
+import static com.streamarr.server.jooq.generated.tables.Movie.MOVIE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
@@ -20,6 +23,7 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.BoundedTask;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -28,6 +32,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.UUID;
 import lombok.Builder;
+import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -54,6 +59,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   @Autowired private MovieRepository movieRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private JdbcTemplate jdbcTemplate;
+  @Autowired private AuditColumnFixtures auditColumns;
   @Autowired private ProbeExecution probeExecution;
   @Autowired private ApplicationContext applicationContext;
 
@@ -251,10 +257,9 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
 
   // Rows written before the System actor existed have empty audit columns.
   private void clearAuditors() {
-    jdbcTemplate.update(
-        "UPDATE base_collectable SET created_by = NULL, last_modified_by = NULL"
-            + " WHERE id IN (SELECT id FROM movie)");
-    jdbcTemplate.update("UPDATE library SET created_by = NULL, last_modified_by = NULL");
+    auditColumns.clearActors(
+        BASE_COLLECTABLE, BASE_COLLECTABLE.ID.in(DSL.select(MOVIE.ID).from(MOVIE)));
+    auditColumns.clearActors(LIBRARY, DSL.trueCondition());
   }
 
   // The movie has no poster or backdrop, so the scan must record them as unavailable.

@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.support.TestFixtureAuditActorConfiguration.TEST_FIXTURE_ACTOR_ID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
@@ -49,7 +50,7 @@ class LibraryCrashRecoveryServiceIT extends AbstractIntegrationTest {
     recoveryService.onStartup();
 
     var recovered = libraryRepository.findById(stuckLibrary.getId()).orElseThrow();
-    assertThat(recovered.getCreatedBy()).isNull();
+    assertThat(recovered.getCreatedBy()).isEqualTo(TEST_FIXTURE_ACTOR_ID);
     assertThat(recovered.getLastModifiedBy()).isEqualTo(SystemActor.ID);
   }
 
@@ -62,7 +63,7 @@ class LibraryCrashRecoveryServiceIT extends AbstractIntegrationTest {
 
     var reset = libraryRepository.findById(busyLibrary.getId()).orElseThrow();
     assertThat(reset.getStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
-    assertThat(reset.getCreatedBy()).isNull();
+    assertThat(reset.getCreatedBy()).isEqualTo(TEST_FIXTURE_ACTOR_ID);
     assertThat(reset.getLastModifiedBy()).isEqualTo(SystemActor.ID);
   }
 

@@ -268,7 +268,10 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
     var invalidImages = List.of(invalidImage);
 
     try {
-      assertThatThrownBy(() -> imageRepository.insertAllIfAbsent(invalidImages))
+      assertThatThrownBy(
+              () ->
+                  transactionTemplate.execute(
+                      _ -> imageRepository.insertAllIfAbsent(invalidImages)))
           .isInstanceOf(DataIntegrityViolationException.class)
           .hasMessageContaining("image_content_sha256_format_check");
     } finally {

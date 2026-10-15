@@ -95,7 +95,10 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
                     accountLifecycleService.transferAccount(
                         authenticated(actor), transferTo(mover, destination)));
         assertThat(transferReached.await(10, TimeUnit.SECONDS)).isTrue();
-        assertThat(accountRepository.trySetPasswordHash(mover.getId(), "concurrent-password"))
+        assertThat(
+                transactionTemplate.<Boolean>execute(
+                    _ ->
+                        accountRepository.trySetPasswordHash(mover.getId(), "concurrent-password")))
             .isTrue();
         releaseTransfer.countDown();
         transfer = pendingTransfer.get(20, TimeUnit.SECONDS);
@@ -137,7 +140,10 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
                     accountLifecycleService.transferAccount(
                         authenticated(actor), transferTo(mover, destination)));
         assertThat(transferReached.await(10, TimeUnit.SECONDS)).isTrue();
-        assertThat(accountRepository.tryRename(mover.getId(), "Concurrent rename")).isTrue();
+        assertThat(
+                transactionTemplate.<Boolean>execute(
+                    _ -> accountRepository.tryRename(mover.getId(), "Concurrent rename")))
+            .isTrue();
         releaseTransfer.countDown();
         transfer = pendingTransfer.get(20, TimeUnit.SECONDS);
       }

@@ -70,6 +70,8 @@ public final class HeldCreditInsert implements AutoCloseable {
         statement.execute("SET LOCAL lock_timeout = '10s'");
       }
 
+      TestFixtureAuditActorConfiguration.nameTestFixtureActorIn(connection);
+
       return new HeldCreditInsert(
           dataSource, connection, PostgresLockTestSupport.backendPid(connection));
     } catch (SQLException failure) {

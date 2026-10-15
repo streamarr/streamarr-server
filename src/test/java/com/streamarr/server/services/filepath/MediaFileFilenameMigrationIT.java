@@ -1,18 +1,20 @@
 package com.streamarr.server.services.filepath;
 
+import static com.streamarr.server.jooq.generated.tables.MediaFile.MEDIA_FILE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.support.AuditColumnFixtures;
 import db.migration.V049__Derive_Media_File_Filename_From_Filepath_Uri;
 import jakarta.persistence.EntityManager;
 import java.sql.Connection;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.flywaydb.core.api.configuration.Configuration;
@@ -33,6 +35,7 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
   @Autowired private EntityManager entityManager;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
+  @Autowired private AuditColumnFixtures auditColumnFixtures;
 
   private UUID mediaFileId;
   private UUID additionalMediaFileId;
@@ -66,10 +69,7 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
                 .build());
     mediaFileId = mediaFile.getId();
 
-    try (var connection = dataSource.getConnection()) {
-      new V049__Derive_Media_File_Filename_From_Filepath_Uri()
-          .migrate(new MigrationContext(connection));
-    }
+    migrate();
     entityManager.clear();
 
     assertThat(mediaFileRepository.findById(mediaFileId).orElseThrow().getFilename())
@@ -95,10 +95,7 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
     var originalTimestamp = Instant.parse("2020-01-01T00:00:00Z");
     setLastModifiedOn(mediaFileId, originalTimestamp);
 
-    try (var connection = dataSource.getConnection()) {
-      new V049__Derive_Media_File_Filename_From_Filepath_Uri()
-          .migrate(new MigrationContext(connection));
-    }
+    migrate();
     entityManager.clear();
 
     assertThat(mediaFileRepository.findById(mediaFileId).orElseThrow().getLastModifiedOn())
@@ -138,22 +135,24 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
         .isEqualTo("Café Meridian (2001).mkv");
   }
 
+  // A migration that writes audited rows names the System actor, as Flyway runs it outside any
+  // request.
   private void migrate() throws Exception {
     try (var connection = dataSource.getConnection()) {
+      connection.setAutoCommit(false);
+      try (var nameActor = connection.prepareStatement("SELECT set_config(?, ?, true)")) {
+        nameActor.setString(1, "streamarr.actor_id");
+        nameActor.setString(2, SystemActor.ID.toString());
+        nameActor.execute();
+      }
       new V049__Derive_Media_File_Filename_From_Filepath_Uri()
           .migrate(new MigrationContext(connection));
+      connection.commit();
     }
   }
 
-  private void setLastModifiedOn(UUID id, Instant timestamp) throws Exception {
-    try (var connection = dataSource.getConnection();
-        var update =
-            connection.prepareStatement(
-                "UPDATE media_file SET last_modified_on = ? WHERE id = ?")) {
-      update.setObject(1, timestamp.atOffset(ZoneOffset.UTC));
-      update.setObject(2, id);
-      update.executeUpdate();
-    }
+  private void setLastModifiedOn(UUID id, Instant timestamp) {
+    auditColumnFixtures.overwriteLastModifiedOn(MEDIA_FILE, MEDIA_FILE.ID.eq(id), timestamp);
     entityManager.clear();
   }
 

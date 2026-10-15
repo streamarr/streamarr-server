@@ -215,9 +215,11 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
       "Should refuse disabling an Account when it is the last enabled ServerAdmin after bootstrap")
   void shouldRefuseDisablingAccountWhenItIsLastEnabledServerAdminAfterBootstrap() {
     var admin = createServerAdmin();
-    dsl.insertInto(SERVER_BOOTSTRAP)
-        .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, admin.account().getId())
-        .execute();
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            dsl.insertInto(SERVER_BOOTSTRAP)
+                .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, admin.account().getId())
+                .execute());
 
     assertThatThrownBy(
             () ->
@@ -238,9 +240,11 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   void shouldKeepOneEnabledServerAdminWhenCrossHouseholdDemotionsRace() throws Exception {
     var first = createServerAdmin();
     var second = createServerAdmin();
-    dsl.insertInto(SERVER_BOOTSTRAP)
-        .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, first.account().getId())
-        .execute();
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            dsl.insertInto(SERVER_BOOTSTRAP)
+                .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, first.account().getId())
+                .execute());
     var race =
         ServerAdminRace.builder()
             .updatesReady(new CountDownLatch(2))

@@ -342,8 +342,10 @@ class CredentialInvariantsIT extends AbstractIntegrationTest {
 
     try {
       var affected =
-          invitationRepository.expirePendingInvitationsForRecipientEmail(
-              expired.getRecipientEmail(), Instant.now());
+          transactionTemplate.execute(
+              _ ->
+                  invitationRepository.expirePendingInvitationsForRecipientEmail(
+                      expired.getRecipientEmail(), Instant.now()));
 
       assertThat(affected).isOne();
       var row = invitationRepository.findById(expired.getId()).orElseThrow();

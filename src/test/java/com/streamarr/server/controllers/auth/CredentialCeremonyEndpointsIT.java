@@ -411,6 +411,18 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should keep an empty modifier when an invitation is declined")
+  void shouldKeepEmptyModifierWhenInvitationIsDeclined() throws Exception {
+    var code = issueInvitation("invitee@example.com");
+
+    mockMvc.perform(declineRequest(code)).andExpect(status().isNoContent());
+
+    var declined = invitationRepository.findAll().getFirst();
+    assertThat(declined.getCreatedBy()).isEqualTo(serverAdmin.account().getId());
+    assertThat(declined.getLastModifiedBy()).isNull();
+  }
+
+  @Test
   @DisplayName("Should replace the pending invitation when the same email is invited again")
   void shouldReplacePendingInvitationWhenSameEmailInvitedAgain() throws Exception {
     var first = issueInvitation("invitee@example.com");

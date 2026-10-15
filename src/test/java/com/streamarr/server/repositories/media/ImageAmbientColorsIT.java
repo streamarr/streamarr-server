@@ -21,6 +21,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Image Ambient Colors Integration Tests")
@@ -29,6 +30,7 @@ class ImageAmbientColorsIT extends AbstractIntegrationTest {
   private final UUID imageId = UUID.randomUUID();
 
   @Autowired private DSLContext dsl;
+  @Autowired private TransactionTemplate transactionTemplate;
 
   @AfterEach
   void cleanUp() {
@@ -40,7 +42,7 @@ class ImageAmbientColorsIT extends AbstractIntegrationTest {
   void shouldRejectPartialAmbientColorsWhenImageInserted() {
     var insert = insertImage().set(IMAGE.AMBIENT_PRIMARY, "#00a0a0");
 
-    assertThatThrownBy(insert::execute)
+    assertThatThrownBy(() -> transactionTemplate.execute(_ -> insert.execute()))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("chk_image_ambient_colors_complete");
   }
@@ -51,7 +53,7 @@ class ImageAmbientColorsIT extends AbstractIntegrationTest {
   void shouldRejectTargetSwatchesWhenPrimaryAmbientColorIsAbsent(Field<String> column) {
     var insert = insertImage().set(column, "#283830");
 
-    assertThatThrownBy(insert::execute)
+    assertThatThrownBy(() -> transactionTemplate.execute(_ -> insert.execute()))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("chk_image_ambient_swatches_require_primary");
   }
