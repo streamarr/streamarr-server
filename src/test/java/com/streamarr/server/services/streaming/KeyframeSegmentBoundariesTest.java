@@ -54,7 +54,7 @@ class KeyframeSegmentBoundariesTest {
 
     var segments = KeyframeSegmentBoundaries.forStreamCopy(positions, fixture.periodSeconds());
 
-    assertThat(segments).isEqualTo(new StreamCopySegments.Starts(fixture.segmentStarts()));
+    assertThat(segments).isEqualTo(startsAt(fixture.segmentStarts()));
   }
 
   @Test
@@ -88,7 +88,7 @@ class KeyframeSegmentBoundariesTest {
 
     var segments = KeyframeSegmentBoundaries.forStreamCopy(positions, 6);
 
-    assertThat(segments).isEqualTo(new StreamCopySegments.Starts(List.of(0L, 6_000L)));
+    assertThat(segments).isEqualTo(startsAt(List.of(0L, 6_000L)));
   }
 
   @Test
@@ -157,7 +157,7 @@ class KeyframeSegmentBoundariesTest {
 
     var segments = KeyframeSegmentBoundaries.forStreamCopy(positions, 6);
 
-    assertThat(segments).isEqualTo(new StreamCopySegments.Starts(List.of(0L)));
+    assertThat(segments).isEqualTo(startsAt(List.of(0L)));
   }
 
   @Test
@@ -198,6 +198,10 @@ class KeyframeSegmentBoundariesTest {
     }
   }
 
+  private static StreamCopySegments.Starts startsAt(List<Long> presentationTimes) {
+    return new StreamCopySegments.Starts(keyframesAt(presentationTimes));
+  }
+
   // The rule reads presentation times only. The recordings hold no decode times, and these
   // keyframes carry none of their own, so each position repeats its presentation time.
   private static KeyframePositions positions(int timescale, List<Long> presentationTimes) {
@@ -206,8 +210,11 @@ class KeyframeSegmentBoundariesTest {
         .timeBaseNumerator(1)
         .timeBaseDenominator(timescale)
         .source(KeyframePositionSource.CONTAINER_INDEX)
-        .keyframes(
-            presentationTimes.stream().map(time -> new KeyframePosition(time, time)).toList())
+        .keyframes(keyframesAt(presentationTimes))
         .build();
+  }
+
+  private static List<KeyframePosition> keyframesAt(List<Long> presentationTimes) {
+    return presentationTimes.stream().map(time -> new KeyframePosition(time, time)).toList();
   }
 }

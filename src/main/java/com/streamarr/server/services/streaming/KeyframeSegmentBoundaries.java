@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.StreamCopySegments;
 import java.util.ArrayList;
@@ -20,7 +21,7 @@ final class KeyframeSegmentBoundaries {
     }
 
     var keyframes = positions.keyframes();
-    var starts = new ArrayList<Long>();
+    var openingKeyframes = new ArrayList<KeyframePosition>();
     for (var index = 0; index < keyframes.size(); index++) {
       var presentationTime = keyframes.get(index).presentationTime();
       if (index > 0 && presentationTime < keyframes.get(index - 1).presentationTime()) {
@@ -32,21 +33,21 @@ final class KeyframeSegmentBoundaries {
       }
 
       var segmentNumber = segmentNumberOf(presentationTime, positions, periodSeconds);
-      if (segmentNumber > starts.size()) {
-        return new StreamCopySegments.IntervalWithoutKeyframe(starts.size());
+      if (segmentNumber > openingKeyframes.size()) {
+        return new StreamCopySegments.IntervalWithoutKeyframe(openingKeyframes.size());
       }
 
       // A lower number joins the open segment, or lies before zero, where no segment opens.
-      if (segmentNumber == starts.size()) {
-        starts.add(presentationTime);
+      if (segmentNumber == openingKeyframes.size()) {
+        openingKeyframes.add(keyframes.get(index));
       }
     }
 
-    if (starts.isEmpty()) {
+    if (openingKeyframes.isEmpty()) {
       return new StreamCopySegments.IntervalWithoutKeyframe(0);
     }
 
-    return new StreamCopySegments.Starts(starts);
+    return new StreamCopySegments.Starts(openingKeyframes);
   }
 
   private static boolean isOutOfRange(long presentationTime, KeyframePositions positions) {
