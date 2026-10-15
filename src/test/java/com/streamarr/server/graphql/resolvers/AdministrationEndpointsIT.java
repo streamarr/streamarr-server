@@ -115,7 +115,10 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should revoke server admin and audit the win when a fresh ServerAdmin asks")
   void shouldRevokeServerAdminAndAuditWinWhenFreshServerAdminAsks() throws Exception {
-    assertThat(userAccountRepository.tryGrantServerAdmin(resident.account().getId())).isTrue();
+    assertThat(
+            transactionTemplate.<Boolean>execute(
+                _ -> userAccountRepository.tryGrantServerAdmin(resident.account().getId())))
+        .isTrue();
 
     graphql(
             authTestSupport.freshAccountBearer(serverAdmin),
@@ -147,7 +150,10 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should require reauthentication when revoking with a stale token")
   void shouldReportMissingCeremonyWhenRevokingServerAdminWithStaleToken() throws Exception {
-    assertThat(userAccountRepository.tryGrantServerAdmin(resident.account().getId())).isTrue();
+    assertThat(
+            transactionTemplate.<Boolean>execute(
+                _ -> userAccountRepository.tryGrantServerAdmin(resident.account().getId())))
+        .isTrue();
 
     graphql(
             authTestSupport.accountBearer(serverAdmin),
@@ -174,7 +180,10 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should require a reason when revoking server admin")
   void shouldRequireReasonWhenRevokingServerAdmin() throws Exception {
-    assertThat(userAccountRepository.tryGrantServerAdmin(resident.account().getId())).isTrue();
+    assertThat(
+            transactionTemplate.<Boolean>execute(
+                _ -> userAccountRepository.tryGrantServerAdmin(resident.account().getId())))
+        .isTrue();
 
     graphql(
             authTestSupport.freshAccountBearer(serverAdmin),
@@ -299,9 +308,11 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should return a typed error when revoking the last enabled ServerAdmin")
   void shouldReturnTypedErrorWhenRevokingLastEnabledServerAdmin() throws Exception {
-    dsl.insertInto(SERVER_BOOTSTRAP)
-        .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, serverAdmin.account().getId())
-        .execute();
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            dsl.insertInto(SERVER_BOOTSTRAP)
+                .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, serverAdmin.account().getId())
+                .execute());
 
     graphql(
             authTestSupport.freshAccountBearer(serverAdmin),
@@ -328,9 +339,11 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should translate disabling the Account when it is the last enabled ServerAdmin")
   void shouldTranslateDisablingAccountWhenLastEnabledServerAdmin() throws Exception {
-    dsl.insertInto(SERVER_BOOTSTRAP)
-        .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, serverAdmin.account().getId())
-        .execute();
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            dsl.insertInto(SERVER_BOOTSTRAP)
+                .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, serverAdmin.account().getId())
+                .execute());
 
     graphql(
             authTestSupport.freshAccountBearer(serverAdmin),
@@ -502,7 +515,10 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should enable an Account and audit when the transition wins")
   void shouldEnableAccountAndAuditWhenTransitionWins() throws Exception {
-    assertThat(userAccountRepository.tryDisable(resident.account().getId())).isTrue();
+    assertThat(
+            transactionTemplate.<Boolean>execute(
+                _ -> userAccountRepository.tryDisable(resident.account().getId())))
+        .isTrue();
 
     graphql(
             authTestSupport.accountBearer(serverAdmin),
@@ -747,9 +763,17 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should continue Household pagination when the cursor Household is renamed")
   void shouldContinueHouseholdPaginationWhenCursorHouseholdIsRenamed() throws Exception {
-    assertThat(householdRepository.tryRename(serverAdmin.household().getId(), "! cursor household"))
+    assertThat(
+            transactionTemplate.<Boolean>execute(
+                _ ->
+                    householdRepository.tryRename(
+                        serverAdmin.household().getId(), "! cursor household")))
         .isTrue();
-    assertThat(householdRepository.tryRename(resident.household().getId(), "! cursor successor"))
+    assertThat(
+            transactionTemplate.<Boolean>execute(
+                _ ->
+                    householdRepository.tryRename(
+                        resident.household().getId(), "! cursor successor")))
         .isTrue();
 
     var firstPage = householdPage(1, null);
@@ -759,7 +783,10 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
     var after =
         firstPage.path("data").path("households").path("pageInfo").path("endCursor").asString();
 
-    householdRepository.tryRename(UUID.fromString(firstNode.path("id").asString()), "zzzzzzzzzz");
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            householdRepository.tryRename(
+                UUID.fromString(firstNode.path("id").asString()), "zzzzzzzzzz"));
 
     var secondPage = householdPage(1, after);
     assertThat(
@@ -777,9 +804,14 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should paginate Households backward when last and before are provided")
   void shouldPaginateHouseholdsBackwardWhenLastAndBeforeProvided() throws Exception {
-    assertThat(householdRepository.tryRename(serverAdmin.household().getId(), "A Household"))
+    assertThat(
+            transactionTemplate.<Boolean>execute(
+                _ -> householdRepository.tryRename(serverAdmin.household().getId(), "A Household")))
         .isTrue();
-    assertThat(householdRepository.tryRename(resident.household().getId(), "Z Household")).isTrue();
+    assertThat(
+            transactionTemplate.<Boolean>execute(
+                _ -> householdRepository.tryRename(resident.household().getId(), "Z Household")))
+        .isTrue();
     var ordered = householdPage(2, null);
     var before =
         ordered.path("data").path("households").path("edges").get(1).path("cursor").asString();
@@ -807,9 +839,12 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   void shouldContinueNestedAccountPaginationWhenAfterCursorProvided() throws Exception {
     var middle = joinHousehold(resident, HouseholdRole.MEMBER);
     var last = joinHousehold(resident, HouseholdRole.MEMBER);
-    userAccountRepository.tryRename(resident.account().getId(), "A Account");
-    userAccountRepository.tryRename(middle.getId(), "M Account");
-    userAccountRepository.tryRename(last.getId(), "Z Account");
+    transactionTemplate.executeWithoutResult(
+        _ -> userAccountRepository.tryRename(resident.account().getId(), "A Account"));
+    transactionTemplate.executeWithoutResult(
+        _ -> userAccountRepository.tryRename(middle.getId(), "M Account"));
+    transactionTemplate.executeWithoutResult(
+        _ -> userAccountRepository.tryRename(last.getId(), "Z Account"));
 
     var firstPage = accountPage("first: 1");
     var after = firstPage.path("edges").get(0).path("cursor").asString();
@@ -828,9 +863,12 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   void shouldPaginateNestedAccountsBackwardWhenLastAndBeforeProvided() throws Exception {
     var middle = joinHousehold(resident, HouseholdRole.MEMBER);
     var last = joinHousehold(resident, HouseholdRole.MEMBER);
-    userAccountRepository.tryRename(resident.account().getId(), "A Account");
-    userAccountRepository.tryRename(middle.getId(), "M Account");
-    userAccountRepository.tryRename(last.getId(), "Z Account");
+    transactionTemplate.executeWithoutResult(
+        _ -> userAccountRepository.tryRename(resident.account().getId(), "A Account"));
+    transactionTemplate.executeWithoutResult(
+        _ -> userAccountRepository.tryRename(middle.getId(), "M Account"));
+    transactionTemplate.executeWithoutResult(
+        _ -> userAccountRepository.tryRename(last.getId(), "Z Account"));
     var ordered = accountPage("first: 3");
     var before = ordered.path("edges").get(2).path("cursor").asString();
 

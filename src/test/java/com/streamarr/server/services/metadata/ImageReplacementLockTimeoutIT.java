@@ -5,12 +5,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.fixtures.ArtworkStepsAttemptFixture;
 import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.ImageService;
@@ -18,7 +21,7 @@ import com.streamarr.server.services.MovieService;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
@@ -29,14 +32,17 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Image Replacement Lock Timeout Integration Tests")
-@SpringBootTest(properties = "image.replacement-lock-timeout=200ms")
+// The same properties as ArtworkLockTimeoutIT, so both share one cached context.
+@SpringBootTest(
+    properties = {"image.replacement-lock-timeout=200ms", "artwork.request-lock.timeout=200ms"})
 class ImageReplacementLockTimeoutIT extends AbstractIntegrationTest {
 
-  private static final Instant ATTEMPTED_AT = Instant.parse("2026-09-23T10:00:00Z");
-
+  @Autowired private TransactionTemplate transactionTemplate;
+  @Autowired private ArtworkRequestRepository artworkRequests;
   @Autowired private ImageRepository imageRepository;
   @Autowired private ImageService imageService;
   @Autowired private DataSource dataSource;
@@ -51,7 +57,8 @@ class ImageReplacementLockTimeoutIT extends AbstractIntegrationTest {
     var original = processedImage(entityId, 0x0000FF, "/original.jpg");
     var holderReplacement = processedImage(entityId, 0x00FFFF, "/holder.jpg");
     var contenderReplacement = processedImage(entityId, 0xFF00FF, "/contender.jpg");
-    imageService.saveImages(original.images(), ATTEMPTED_AT);
+    var attempt = requestedAttempt(original.images());
+    imageService.saveImages(original.images(), attempt);
 
     try {
       try (var lockConnection = dataSource.getConnection();
@@ -62,7 +69,7 @@ class ImageReplacementLockTimeoutIT extends AbstractIntegrationTest {
         var contender =
             executor.submit(
                 () -> {
-                  imageService.replaceImages(contenderReplacement, ATTEMPTED_AT);
+                  imageService.replaceImages(contenderReplacement, attempt);
                   return null;
                 });
 
@@ -84,7 +91,7 @@ class ImageReplacementLockTimeoutIT extends AbstractIntegrationTest {
         }
       }
 
-      imageService.replaceImages(holderReplacement, ATTEMPTED_AT);
+      imageService.replaceImages(holderReplacement, attempt);
 
       assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
           .hasSize(ImageSize.values().length)
@@ -123,5 +130,10 @@ class ImageReplacementLockTimeoutIT extends AbstractIntegrationTest {
       statement.setLong(1, lockKey);
       statement.execute();
     }
+  }
+
+  private ArtworkStepsAttempt requestedAttempt(List<Image> images) {
+    return ArtworkStepsAttemptFixture.requestedAttemptFor(
+        transactionTemplate, artworkRequests, images);
   }
 }

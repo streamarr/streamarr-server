@@ -13,6 +13,7 @@ import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockProbe;
+import com.streamarr.server.support.TestFixtureWork;
 import jakarta.persistence.EntityManager;
 import java.time.Duration;
 import java.time.Instant;
@@ -20,7 +21,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.Builder;
@@ -83,7 +83,7 @@ class AccountAdministrationConcurrencyIT extends AbstractIntegrationTest {
             .lockProbe(lockProbe)
             .build();
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var targetLock = executor.submit(() -> lockTarget(targetLockPlan));
       assertThat(targetLocked.await(10, TimeUnit.SECONDS)).isTrue();
 
@@ -148,7 +148,7 @@ class AccountAdministrationConcurrencyIT extends AbstractIntegrationTest {
             .lockProbe(lockProbe)
             .build();
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var targetLock = executor.submit(() -> lockTarget(targetLockPlan));
       assertThat(targetLocked.await(10, TimeUnit.SECONDS)).isTrue();
 

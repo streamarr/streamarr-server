@@ -3,16 +3,17 @@ package com.streamarr.server.services.library;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.exceptions.LibraryScanFailedException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
-import com.streamarr.server.services.ArtworkService;
+import com.streamarr.server.services.ArtworkRequestService;
+import com.streamarr.server.services.ArtworkRunWaiter;
+import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
- * Opens the runs that collect the required artwork and probes of one scan or file discovery, and
+ * Opens the runs that collect the primary artwork and probes of one scan or file discovery, and
  * waits until each has a saved result.
  */
 @Service
@@ -20,23 +21,25 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class FileDiscoveryRuns {
 
-  private final ArtworkService artworkService;
+  private final ArtworkRequestService artworkRequestService;
+  private final ArtworkRunWaiter artworkRunWaiter;
   private final ProbeRuns probeRuns;
   private final MediaFileRepository mediaFiles;
 
   public FileDiscovery open(String operation, Library library) {
     var artworkRun =
-        artworkService.openRun(
+        artworkRequestService.openRun(
             operation + " library '" + library.getName() + "'", ImageRefreshMode.PRESERVE);
     return new FileDiscovery(library, artworkRun, probeRuns.open());
   }
 
   /**
-   * Waits for the required artwork and probes of a closed discovery. Secondary artwork and the
-   * retries of failed probes continue in the background.
+   * Waits for the recorded primary artwork results and probe results of a closed discovery.
+   * Background artwork and the retries of failed artwork steps and probes continue in the
+   * background.
    *
-   * @throws LibraryScanFailedException if a required result was not recorded, the stored results
-   *     cannot be read, the wait fails unexpectedly, or the wait is interrupted
+   * @throws LibraryScanFailedException if the stored results cannot be read, the wait fails
+   *     unexpectedly, or the wait is interrupted
    */
   public ScanResults awaitResults(FileDiscovery discovery) {
     var libraryName = discovery.library().getName();
@@ -55,15 +58,15 @@ public class FileDiscoveryRuns {
   // Probes are checked while the artwork finishes, so each phase's timer stops with its own work.
   private ScanResults awaitRequiredResults(FileDiscovery discovery)
       throws InterruptedException, ExecutionException {
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = SystemWork.newExecutorRunningAsSystemActor("library-scan-probes-")) {
       var probes = executor.submit(() -> probeRuns.awaitResults(discovery.probeRun()));
       try {
-        var artwork = discovery.artworkRun().completion().get();
+        var artwork = artworkRunWaiter.awaitResults(discovery.artworkRun());
         return ScanResults.builder()
             .files(mediaFiles.countStatuses(discovery.probeRun().mediaFileIds()))
             .artwork(artwork)
             .probes(probes.get())
-            .secondaryImagesPending(artworkService.pendingSecondaryImages())
+            .backgroundImagesPending(artworkRequestService.pendingBackgroundImages())
             .build();
       } finally {
         probes.cancel(true);

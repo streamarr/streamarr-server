@@ -1,7 +1,9 @@
 package com.streamarr.server.controllers.auth;
 
+import static com.streamarr.server.jooq.generated.tables.AuthSession.AUTH_SESSION;
 import static com.streamarr.server.jooq.generated.tables.CredentialAttempt.CREDENTIAL_ATTEMPT;
 import static com.streamarr.server.jooq.generated.tables.ServerBootstrap.SERVER_BOOTSTRAP;
+import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
 import static com.streamarr.server.support.AuthTestSupport.remoteAddr;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -179,6 +181,37 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should keep an empty actor when sign-in creates a session")
+  void shouldKeepEmptyActorWhenSignInCreatesSession() throws Exception {
+    seedSingleProfileIdentity();
+    var seededSessionIds =
+        dsl.select(AUTH_SESSION.ID)
+            .from(AUTH_SESSION)
+            .where(AUTH_SESSION.ACCOUNT_ID.eq(account.getId()))
+            .fetch(AUTH_SESSION.ID);
+
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(loginBody(account.getEmail(), password)))
+        .andExpect(status().isOk());
+
+    assertThat(
+            dsl.select(AUTH_SESSION.CREATED_BY, AUTH_SESSION.LAST_MODIFIED_BY)
+                .from(AUTH_SESSION)
+                .where(AUTH_SESSION.ACCOUNT_ID.eq(account.getId()))
+                .and(AUTH_SESSION.ID.notIn(seededSessionIds))
+                .fetch())
+        .singleElement()
+        .satisfies(
+            actors -> {
+              assertThat(actors.value1()).isNull();
+              assertThat(actors.value2()).isNull();
+            });
+  }
+
+  @Test
   @DisplayName("Should journal the client address when a login is attempted")
   void shouldJournalClientAddressWhenLoginIsAttempted() throws Exception {
     seedSingleProfileIdentity();
@@ -234,6 +267,33 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.refreshToken").isNotEmpty())
         .andExpect(jsonPath("$.accessTokenExpiresAt").exists())
         .andExpect(jsonPath("$.scope").value("account"));
+  }
+
+  @Test
+  @DisplayName("Should keep an empty actor when setup creates the first administrator")
+  void shouldKeepEmptyActorWhenSetupCreatesTheFirstAdministrator() throws Exception {
+    setupEmail = "setup-" + UUID.randomUUID() + "@example.com";
+
+    mockMvc
+        .perform(
+            post("/api/auth/setup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(setupBody(setupEmail)))
+        .andExpect(status().isCreated());
+
+    assertThat(
+            dsl.select(USER_ACCOUNT.CREATED_BY, USER_ACCOUNT.LAST_MODIFIED_BY)
+                .from(USER_ACCOUNT)
+                .where(USER_ACCOUNT.EMAIL.equalIgnoreCase(setupEmail))
+                .fetchSingle()
+                .intoList())
+        .containsOnlyNulls();
+    assertThat(
+            dsl.select(SERVER_BOOTSTRAP.CREATED_BY, SERVER_BOOTSTRAP.LAST_MODIFIED_BY)
+                .from(SERVER_BOOTSTRAP)
+                .fetchSingle()
+                .intoList())
+        .containsOnlyNulls();
   }
 
   @Test
@@ -1134,7 +1194,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.setupComplete").value(false));
 
     seedSingleProfileIdentity();
-    serverBootstrapRepository.claim(account.getId());
+    transactionTemplate.executeWithoutResult(_ -> serverBootstrapRepository.claim(account.getId()));
 
     mockMvc
         .perform(get("/api/auth/status"))

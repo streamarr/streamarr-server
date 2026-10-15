@@ -11,6 +11,7 @@ import static org.awaitility.Awaitility.await;
 
 import com.github.mizosoft.methanol.HttpCache;
 import com.streamarr.server.AbstractWireMockIntegrationTest;
+import com.streamarr.server.exceptions.ImageDownloadException;
 import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.metadata.tmdb.TmdbSearchResults;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
@@ -691,13 +692,34 @@ class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should throw when image endpoint returns 404")
-  void shouldThrowWhenImageEndpointReturns404() {
+  @DisplayName("Should report the status when the image endpoint returns 404")
+  void shouldReportTheStatusWhenTheImageEndpointReturns404() {
     wireMock.stubFor(
         get(urlPathEqualTo("/nonexistent.jpg")).willReturn(aResponse().withStatus(404)));
 
     assertThatThrownBy(() -> service.downloadImage("/nonexistent.jpg"))
-        .isInstanceOf(TmdbApiException.class);
+        .isInstanceOfSatisfying(
+            ImageDownloadException.class,
+            failure -> {
+              assertThat(failure.getStatusCode()).isEqualTo(404);
+              assertThat(failure.getRetryAfter()).isEmpty();
+            });
+  }
+
+  @Test
+  @DisplayName("Should report the requested delay when the image host keeps answering 429")
+  void shouldReportTheRequestedDelayWhenTheImageHostKeepsAnswering429() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/still-limited.jpg"))
+            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0")));
+
+    assertThatThrownBy(() -> service.downloadImage("/still-limited.jpg"))
+        .isInstanceOfSatisfying(
+            ImageDownloadException.class,
+            failure -> {
+              assertThat(failure.getStatusCode()).isEqualTo(429);
+              assertThat(failure.getRetryAfter()).contains(Duration.ZERO);
+            });
   }
 
   @Test

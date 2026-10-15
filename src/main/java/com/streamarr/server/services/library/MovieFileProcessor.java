@@ -49,18 +49,20 @@ public class MovieFileProcessor {
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
 
-  public void process(FileDiscovery discovery, MediaFile mediaFile) {
+  public MatchingOutcome process(FileDiscovery discovery, MediaFile mediaFile) {
     var mediaInformationResult = parseMediaFileForMovieInfo(mediaFile);
 
     if (mediaInformationResult.isEmpty()) {
-      markMatchingFailed(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_PARSING_FAILED));
+      var outcome =
+          markMatchingFailed(
+              mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_PARSING_FAILED));
 
       log.error(
           "Failed to parse MediaFile id: {} at path: '{}'",
           mediaFile.getId(),
           mediaFile.getFilepathUri());
 
-      return;
+      return outcome;
     }
 
     log.info(
@@ -72,25 +74,29 @@ public class MovieFileProcessor {
     var searchOutcome =
         movieMetadataProviderResolver.search(discovery.library(), mediaInformationResult.get());
 
-    switch (searchOutcome) {
+    return switch (searchOutcome) {
       case NotFound _ -> {
-        markMatchingFailed(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_NOT_FOUND));
+        var outcome =
+            markMatchingFailed(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_NOT_FOUND));
 
         log.error(
             "Failed to find matching search result for MediaFile id: {} at path: '{}'",
             mediaFile.getId(),
             mediaFile.getFilepathUri());
+        yield outcome;
       }
       case TemporarilyUnavailable unavailable -> {
-        markMatchingFailed(
-            mediaFile,
-            new MatchingFailure(MediaFileStatus.METADATA_UNAVAILABLE, unavailable.reason()));
+        var outcome =
+            markMatchingFailed(
+                mediaFile,
+                new MatchingFailure(MediaFileStatus.METADATA_UNAVAILABLE, unavailable.reason()));
 
         log.error(
             "Metadata provider unavailable for MediaFile id: {} at path: '{}'",
             mediaFile.getId(),
             mediaFile.getFilepathUri(),
             unavailable.cause());
+        yield outcome;
       }
       case Found(var movieSearchResult) -> {
         log.info(
@@ -99,10 +105,10 @@ public class MovieFileProcessor {
             movieSearchResult.externalSourceType(),
             movieSearchResult.externalId());
 
-        enrichMovieMetadata(discovery, mediaFile, movieSearchResult)
-            .ifPresent(failure -> markMatchingFailed(mediaFile, failure));
+        yield markIfNotMatched(
+            mediaFile, enrichMovieMetadata(discovery, mediaFile, movieSearchResult));
       }
-    }
+    };
   }
 
   private Optional<VideoFileParserResult> parseMediaFileForMovieInfo(MediaFile mediaFile) {
@@ -137,7 +143,7 @@ public class MovieFileProcessor {
         .flatMap(defaultVideoFileMetadataParser::parse);
   }
 
-  private Optional<MatchingFailure> enrichMovieMetadata(
+  private MatchingOutcome enrichMovieMetadata(
       FileDiscovery discovery, MediaFile mediaFile, RemoteSearchResult remoteSearchResult) {
 
     var externalIdMutex = mutexFactory.getMutex(remoteSearchResult.externalId());
@@ -149,10 +155,10 @@ public class MovieFileProcessor {
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
       log.error("Enrichment interrupted for MediaFile id: {}", mediaFile.getId(), ex);
-      return Optional.empty();
+      return new MatchingOutcome.Interrupted();
     } catch (Exception ex) {
       log.error("Failure enriching movie metadata:", ex);
-      return Optional.of(
+      return new MatchingOutcome.NotMatched(
           new MatchingFailure(MediaFileStatus.ENRICHMENT_FAILED, ItemFailureReason.TEMPORARY));
     } finally {
       if (externalIdMutex.isHeldByCurrentThread()) {
@@ -161,14 +167,14 @@ public class MovieFileProcessor {
     }
   }
 
-  private Optional<MatchingFailure> updateOrSaveEnrichedMovie(
+  private MatchingOutcome updateOrSaveEnrichedMovie(
       FileDiscovery discovery, MediaFile mediaFile, RemoteSearchResult remoteSearchResult) {
     var optionalMovie =
         movieService.addMediaFileToMovieByTmdbId(remoteSearchResult.externalId(), mediaFile);
 
     if (optionalMovie.isPresent()) {
       markMediaFileAsMatched(mediaFile);
-      return Optional.empty();
+      return new MatchingOutcome.Matched();
     }
 
     return switch (movieMetadataProviderResolver.getMetadata(
@@ -176,12 +182,13 @@ public class MovieFileProcessor {
       case MetadataFetchOutcome.Found(var metadataResult) -> {
         movieService.createMovieWithAssociations(metadataResult, mediaFile, discovery.artworkRun());
         markMediaFileAsMatched(mediaFile);
-        yield Optional.empty();
+        yield new MatchingOutcome.Matched();
       }
       case MetadataFetchOutcome.NotFound<?> _ ->
-          Optional.of(MatchingFailure.of(MediaFileStatus.METADATA_NOT_FOUND));
+          new MatchingOutcome.NotMatched(MatchingFailure.of(MediaFileStatus.METADATA_NOT_FOUND));
       case MetadataFetchOutcome.Failed<?> failed ->
-          Optional.of(new MatchingFailure(MediaFileStatus.ENRICHMENT_FAILED, failed.reason()));
+          new MatchingOutcome.NotMatched(
+              new MatchingFailure(MediaFileStatus.ENRICHMENT_FAILED, failed.reason()));
     };
   }
 
@@ -191,7 +198,15 @@ public class MovieFileProcessor {
     mediaFileRepository.save(mediaFile);
   }
 
-  private void markMatchingFailed(MediaFile mediaFile, MatchingFailure failure) {
-    mediaFileRepository.tryMarkMatchingFailed(mediaFile.getId(), failure);
+  private MatchingOutcome markIfNotMatched(MediaFile mediaFile, MatchingOutcome outcome) {
+    if (outcome instanceof MatchingOutcome.NotMatched(var failure)) {
+      mediaFileRepository.tryMarkMatchingFailed(mediaFile.getId(), failure);
+    }
+
+    return outcome;
+  }
+
+  private MatchingOutcome markMatchingFailed(MediaFile mediaFile, MatchingFailure failure) {
+    return markIfNotMatched(mediaFile, new MatchingOutcome.NotMatched(failure));
   }
 }

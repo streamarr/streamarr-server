@@ -28,6 +28,7 @@ import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockProbe;
+import com.streamarr.server.support.TestFixtureWork;
 import jakarta.persistence.EntityManager;
 import java.time.Duration;
 import java.time.Instant;
@@ -36,7 +37,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -86,7 +86,7 @@ class ProfileAdministrationConcurrencyIT extends AbstractIntegrationTest {
     var targetLock = revocationProbe();
     var releaseTarget = new CountDownLatch(1);
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var lock =
           executor.submit(
               () -> lockTargetProfile(target.profile().getId(), targetLock, releaseTarget));
@@ -153,7 +153,7 @@ class ProfileAdministrationConcurrencyIT extends AbstractIntegrationTest {
             "Supervision revocation did not observe the authorized rename transaction");
     var revocation = revocationProbe();
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var rename =
           executor.submit(
               () ->
@@ -216,7 +216,7 @@ class ProfileAdministrationConcurrencyIT extends AbstractIntegrationTest {
             "Management revocation did not observe the authorized rename transaction");
     var revocation = revocationProbe();
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var rename =
           executor.submit(
               () ->
@@ -265,7 +265,7 @@ class ProfileAdministrationConcurrencyIT extends AbstractIntegrationTest {
             "HouseholdAdmin revocation did not observe the authorized creation transaction");
     var revocation = revocationProbe();
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var create =
           executor.submit(
               () ->

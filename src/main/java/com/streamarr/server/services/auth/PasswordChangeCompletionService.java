@@ -48,7 +48,7 @@ public class PasswordChangeCompletionService {
             session -> {
               sessionRepository.revoke(
                   session.getId(), SessionRevocationReason.PASSWORD_CHANGE, changedAt);
-              tokenRepository.revokeAllForSession(session.getId(), changedAt);
+              tokenRepository.revokeAllForSession(session.getId());
             });
 
     var issued =

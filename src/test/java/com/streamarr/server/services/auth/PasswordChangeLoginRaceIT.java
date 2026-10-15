@@ -14,13 +14,13 @@ import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupportConfig;
+import com.streamarr.server.support.TestFixtureWork;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -101,7 +101,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
 
     var successes = new ArrayList<PasswordChangeResult>();
     var failures = new ArrayList<Throwable>();
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var first =
           executor.submit(
               () -> changePassword(firstCaller.getId(), oldPassword, UUID.randomUUID().toString()));
@@ -138,7 +138,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
             builder -> builder.passwordHash(passwordEncoder.encode(oldPassword)));
     var caller = refreshTokenService.createSession(account, "password-change-device").session();
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var login =
           executor.submit(
               () -> {
@@ -191,7 +191,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
             builder -> builder.passwordHash(passwordEncoder.encode(oldPassword)));
     var caller = refreshTokenService.createSession(account, "password-change-device").session();
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var login =
           executor.submit(
               () -> {
@@ -245,7 +245,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
     var tableLocked = new CountDownLatch(1);
     var releaseTable = new CountDownLatch(1);
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var blocker = executor.submit(() -> holdAuthSessionTableLock(tableLocked, releaseTable));
       assertThat(tableLocked.await(10, TimeUnit.SECONDS))
           .as("auth-session table should be locked before the racing login")

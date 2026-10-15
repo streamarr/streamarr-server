@@ -7,19 +7,26 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.jayway.jsonpath.JsonPath;
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
+import com.streamarr.server.services.events.library.ScanEndedEvent;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockProbe;
+import com.streamarr.server.support.TestFixtureWork;
 import jakarta.persistence.EntityManager;
+import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -27,6 +34,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,15 +56,36 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @Tag("IntegrationTest")
 @DisplayName("Library Administration Integration Tests")
-@Import(LibraryAdministrationIT.BlockingLibraryRemovalConfig.class)
+@Import(LibraryAdministrationIT.LibraryEventListenerConfig.class)
 class LibraryAdministrationIT extends AbstractIntegrationTest {
 
+  private static final long BOUND_SECONDS = 10;
+
   @TestConfiguration(proxyBeanMethods = false)
-  static class BlockingLibraryRemovalConfig {
+  static class LibraryEventListenerConfig {
 
     @Bean
     BlockingLibraryRemovalListener blockingLibraryRemovalListener() {
       return new BlockingLibraryRemovalListener();
+    }
+
+    @Bean
+    ScanEndedListener scanEndedListener() {
+      return new ScanEndedListener();
+    }
+  }
+
+  static class ScanEndedListener {
+
+    private final Map<UUID, CompletableFuture<Void>> endedScans = new ConcurrentHashMap<>();
+
+    CompletableFuture<Void> scanEnded(UUID libraryId) {
+      return endedScans.computeIfAbsent(libraryId, _ -> new CompletableFuture<>());
+    }
+
+    @EventListener
+    void onScanEnded(ScanEndedEvent event) {
+      scanEnded(event.libraryId()).complete(null);
     }
   }
 
@@ -91,7 +120,7 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
 
     private static void await(CountDownLatch latch) {
       try {
-        if (!latch.await(10, TimeUnit.SECONDS)) {
+        if (!latch.await(BOUND_SECONDS, TimeUnit.SECONDS)) {
           throw new IllegalStateException("Library removal gate was never released.");
         }
       } catch (InterruptedException e) {
@@ -118,6 +147,10 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
   @Autowired private JdbcTemplate jdbcTemplate;
 
   @Autowired private TransactionTemplate transactionTemplate;
+
+  @Autowired private ScanEndedListener scanEndedListener;
+
+  @TempDir Path libraryDirectory;
 
   private AuthTestSupport.TestIdentity identity;
 
@@ -244,7 +277,7 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
     var removalGate = blockingLibraryRemovalListener.holdBeforeCommit();
     var lockProbe = new PostgresLockProbe(entityManager, jdbcTemplate);
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       try {
         var removal =
             executor.submit(
@@ -253,7 +286,7 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
                         .andExpect(status().isOk())
                         .andExpect(jsonPath("$.errors").doesNotExist())
                         .andExpect(jsonPath("$.data.removeLibrary").value(true)));
-        assertThat(removalGate.reached().await(10, TimeUnit.SECONDS)).isTrue();
+        assertThat(removalGate.reached().await(BOUND_SECONDS, TimeUnit.SECONDS)).isTrue();
 
         var revocationTransactionStarted = new CountDownLatch(1);
         var revocationBackendPid = new AtomicInteger();
@@ -264,18 +297,18 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
                       identity, revocationTransactionStarted, revocationBackendPid, lockProbe);
                   return null;
                 });
-        assertThat(revocationTransactionStarted.await(10, TimeUnit.SECONDS)).isTrue();
+        assertThat(revocationTransactionStarted.await(BOUND_SECONDS, TimeUnit.SECONDS)).isTrue();
 
         await()
-            .atMost(Duration.ofSeconds(10))
+            .atMost(Duration.ofSeconds(BOUND_SECONDS))
             .untilAsserted(
                 () ->
                     assertThat(lockProbe.isUserAccountUpdateWaiting(revocationBackendPid.get()))
                         .isTrue());
 
         blockingLibraryRemovalListener.release();
-        removal.get(10, TimeUnit.SECONDS);
-        revocation.get(10, TimeUnit.SECONDS);
+        removal.get(BOUND_SECONDS, TimeUnit.SECONDS);
+        revocation.get(BOUND_SECONDS, TimeUnit.SECONDS);
       } finally {
         blockingLibraryRemovalListener.release();
       }
@@ -285,6 +318,36 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
     assertThat(userAccountRepository.findById(identity.account().getId()).orElseThrow())
         .extracting(UserAccount::isServerAdmin)
         .isEqualTo(false);
+  }
+
+  @Test
+  @DisplayName(
+      "Should name the ServerAdmin as creator and the System actor as modifier when a ServerAdmin"
+          + " adds a library")
+  void shouldNameServerAdminAsCreatorAndSystemActorAsModifierWhenServerAdminAddsLibrary()
+      throws Exception {
+    identity = authTestSupport.createAdminIdentity();
+    var adminToken = authTestSupport.profileBearer(identity);
+
+    var response =
+        postGraphQl(addLibraryMutation(libraryDirectory), adminToken)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn();
+    var libraryId =
+        UUID.fromString(
+            JsonPath.read(
+                response.getResponse().getContentAsString(), "$.data.addLibrary.library.id"));
+
+    try {
+      scanEndedListener.scanEnded(libraryId).get(BOUND_SECONDS, TimeUnit.SECONDS);
+
+      var library = libraryRepository.findById(libraryId).orElseThrow();
+      assertThat(library.getCreatedBy()).isEqualTo(identity.account().getId());
+      assertThat(library.getLastModifiedBy()).isEqualTo(SystemActor.ID);
+    } finally {
+      postGraphQl(removeLibraryMutation(libraryId), adminToken).andExpect(status().isOk());
+    }
   }
 
   private void demoteToUser(AuthTestSupport.TestIdentity identity) {
@@ -318,6 +381,12 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
     var account = userAccountRepository.findById(identity.account().getId()).orElseThrow();
     account.setEnabled(false);
     userAccountRepository.saveAndFlush(account);
+  }
+
+  private static String addLibraryMutation(Path directory) {
+    return ("mutation { addLibrary(input: {name: \\\"Added\\\", filepath: \\\"%s\\\","
+            + " type: MOVIE, backend: LOCAL}) { library { id } } }")
+        .formatted(directory.toAbsolutePath());
   }
 
   private String removeLibraryMutation(UUID libraryId) {

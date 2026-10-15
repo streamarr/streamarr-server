@@ -23,7 +23,6 @@ import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.impl.DSL;
-import org.springframework.data.domain.AuditorAware;
 
 @RequiredArgsConstructor
 public class ProfileHouseholdShareRepositoryCustomImpl
@@ -31,7 +30,6 @@ public class ProfileHouseholdShareRepositoryCustomImpl
 
   private final DSLContext dsl;
   private final EntityManager entityManager;
-  private final AuditorAware<UUID> auditorAware;
 
   @Override
   public int supersedePending(UUID profileId, UUID householdId, Instant now) {
@@ -42,9 +40,6 @@ public class ProfileHouseholdShareRepositoryCustomImpl
             when(PROFILE_HOUSEHOLD_SHARE.EXPIRES_AT.le(nowUtc), ProfileShareStatus.EXPIRED)
                 .otherwise(ProfileShareStatus.CANCELED))
         .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, nowUtc)
-        .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_ON, nowUtc)
-        .set(
-            PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
         .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
         .and(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId))
         .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.PENDING))
@@ -81,9 +76,6 @@ public class ProfileHouseholdShareRepositoryCustomImpl
         .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.INVALIDATED)
         .set(PROFILE_HOUSEHOLD_SHARE.INVALIDATION_REASON, reason)
         .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, nowUtc)
-        .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_ON, nowUtc)
-        .set(
-            PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
         .where(scope)
         .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.PENDING))
         .execute();
@@ -155,10 +147,6 @@ public class ProfileHouseholdShareRepositoryCustomImpl
     return dsl.update(PROFILE_HOUSEHOLD_SHARE)
             .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ACTIVE)
             .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
-            .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
-            .set(
-                PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY,
-                auditorAware.getCurrentAuditor().orElse(null))
             .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(shareId))
             .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.PENDING))
             .and(unexpiredAt(val(now.atOffset(ZoneOffset.UTC))))
@@ -179,10 +167,6 @@ public class ProfileHouseholdShareRepositoryCustomImpl
                 when(PROFILE_HOUSEHOLD_SHARE.EXPIRES_AT.le(nowUtc), ProfileShareStatus.EXPIRED)
                     .otherwise(ProfileShareStatus.valueOf(target.name())))
             .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
-            .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
-            .set(
-                PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY,
-                auditorAware.getCurrentAuditor().orElse(null))
             .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(shareId))
             .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.PENDING))
             .execute()
@@ -194,10 +178,6 @@ public class ProfileHouseholdShareRepositoryCustomImpl
     return dsl.update(PROFILE_HOUSEHOLD_SHARE)
             .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ENDED)
             .set(PROFILE_HOUSEHOLD_SHARE.ENDED_AT, now.atOffset(ZoneOffset.UTC))
-            .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
-            .set(
-                PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY,
-                auditorAware.getCurrentAuditor().orElse(null))
             .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(shareId))
             .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.ACTIVE))
             .execute()
@@ -208,17 +188,12 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   public void ensureActiveMembershipShare(UUID profileId, UUID householdId, Instant now) {
     materializeExpiredPending(profileId, householdId, now);
     var timestamp = now.atOffset(ZoneOffset.UTC);
-    var auditor = auditorAware.getCurrentAuditor().orElse(null);
     dsl.insertInto(PROFILE_HOUSEHOLD_SHARE)
         .set(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID, profileId)
         .set(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID, householdId)
         .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ACTIVE)
         .set(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL, true)
         .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, timestamp)
-        .set(PROFILE_HOUSEHOLD_SHARE.CREATED_ON, timestamp)
-        .set(PROFILE_HOUSEHOLD_SHARE.CREATED_BY, auditor)
-        .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_ON, timestamp)
-        .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY, auditor)
         .onConflict(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID, PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID)
         .where(
             PROFILE_HOUSEHOLD_SHARE.STATUS.in(
@@ -227,8 +202,6 @@ public class ProfileHouseholdShareRepositoryCustomImpl
         .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ACTIVE)
         .set(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL, true)
         .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, timestamp)
-        .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_ON, timestamp)
-        .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY, auditor)
         .execute();
   }
 
@@ -250,9 +223,6 @@ public class ProfileHouseholdShareRepositoryCustomImpl
     dsl.update(PROFILE_HOUSEHOLD_SHARE)
         .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.EXPIRED)
         .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, nowUtc)
-        .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_ON, nowUtc)
-        .set(
-            PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
         .where(scope)
         .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.PENDING))
         .and(PROFILE_HOUSEHOLD_SHARE.EXPIRES_AT.le(nowUtc))
@@ -266,12 +236,9 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
-  public void convertMembershipShareToVisitorShare(UUID profileId, UUID householdId, Instant now) {
+  public void convertMembershipShareToVisitorShare(UUID profileId, UUID householdId) {
     dsl.update(PROFILE_HOUSEHOLD_SHARE)
         .set(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL, false)
-        .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
-        .set(
-            PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
         .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
         .and(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId))
         .and(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL.isTrue())

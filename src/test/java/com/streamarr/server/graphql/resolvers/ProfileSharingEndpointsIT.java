@@ -267,7 +267,10 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
     var orphan = managedOrphan();
     var revoker = authTestSupport.createAdminIdentity();
     try {
-      assertThat(userAccountRepository.tryGrantServerAdmin(owner.account().getId())).isTrue();
+      assertThat(
+              transactionTemplate.<Boolean>execute(
+                  _ -> userAccountRepository.tryGrantServerAdmin(owner.account().getId())))
+          .isTrue();
       var shareId = offer(orphan, host.household().getId());
 
       graphql(

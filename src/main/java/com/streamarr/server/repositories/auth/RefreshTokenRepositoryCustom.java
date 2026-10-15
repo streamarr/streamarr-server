@@ -13,7 +13,7 @@ public interface RefreshTokenRepositoryCustom {
   int consumeActiveToken(String digest, Instant now);
 
   /** Revokes every non-revoked token of the session, stamping audit columns from {@code now}. */
-  void revokeAllForSession(UUID sessionId, Instant now);
+  void revokeAllForSession(UUID sessionId);
 
   /**
    * Reads the owning session id for a digest without loading the token as a managed entity — so a

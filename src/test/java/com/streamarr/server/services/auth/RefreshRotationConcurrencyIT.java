@@ -10,9 +10,9 @@ import com.streamarr.server.repositories.auth.RefreshTokenRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupportConfig;
+import com.streamarr.server.support.TestFixtureWork;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -53,7 +53,7 @@ class RefreshRotationConcurrencyIT extends AbstractIntegrationTest {
     var issued = refreshTokenService.createSession(account, "race-device");
 
     var threadCount = 2;
-    var executor = Executors.newFixedThreadPool(threadCount);
+    var executor = TestFixtureWork.newFixedThreadPoolRunningAsTestFixtureActor(threadCount);
     var startLatch = new CountDownLatch(1);
     var doneLatch = new CountDownLatch(threadCount);
     var results = new CopyOnWriteArrayList<RefreshResult>();

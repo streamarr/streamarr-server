@@ -23,10 +23,10 @@ import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.TestFixtureWork;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.awaitility.Awaitility;
@@ -270,7 +270,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
     var commitTransition = new CountDownLatch(1);
     var transitionBackendPid = new AtomicInteger();
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var transitioning =
           executor.submit(
               () ->
@@ -715,7 +715,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
     var commitShare = new CountDownLatch(1);
     var sharingBackendPid = new AtomicInteger();
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var sharing =
           executor.submit(
               () ->

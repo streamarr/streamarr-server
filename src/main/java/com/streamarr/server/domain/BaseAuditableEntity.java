@@ -1,7 +1,6 @@
 package com.streamarr.server.domain;
 
 import jakarta.persistence.Column;
-import jakarta.persistence.EntityListeners;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -14,11 +13,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.experimental.SuperBuilder;
-import org.springframework.data.annotation.CreatedBy;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.LastModifiedBy;
-import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+import org.hibernate.annotations.Generated;
+import org.hibernate.generator.EventType;
 
 @Getter
 @Setter
@@ -26,7 +22,6 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 @MappedSuperclass
 @NoArgsConstructor
 @AllArgsConstructor
-@EntityListeners(AuditingEntityListener.class)
 public abstract class BaseAuditableEntity<T extends BaseAuditableEntity<T>> {
 
   @Id
@@ -34,18 +29,24 @@ public abstract class BaseAuditableEntity<T extends BaseAuditableEntity<T>> {
   @GeneratedValue(strategy = GenerationType.AUTO)
   private UUID id;
 
-  @CreatedBy
-  @Column(updatable = false)
+  // The audit trigger fills these columns from the transaction's actor; Hibernate only reads them.
+  @Generated
+  @Column(insertable = false, updatable = false)
+  @Setter(value = AccessLevel.PROTECTED)
   private UUID createdBy;
 
-  @CreatedDate
-  @Column(updatable = false)
+  @Generated
+  @Column(insertable = false, updatable = false)
   @Setter(value = AccessLevel.PROTECTED)
   private Instant createdOn;
 
-  @LastModifiedBy private UUID lastModifiedBy;
+  @Generated(event = {EventType.INSERT, EventType.UPDATE})
+  @Column(insertable = false, updatable = false)
+  @Setter(value = AccessLevel.NONE)
+  private UUID lastModifiedBy;
 
-  @LastModifiedDate
+  @Generated(event = {EventType.INSERT, EventType.UPDATE})
+  @Column(insertable = false, updatable = false)
   @Setter(value = AccessLevel.PROTECTED)
   private Instant lastModifiedOn;
 
@@ -73,10 +74,26 @@ public abstract class BaseAuditableEntity<T extends BaseAuditableEntity<T>> {
       C extends BaseAuditableEntity<T>,
       B extends BaseAuditableEntityBuilder<T, C, B>> {
 
+    // Lombok generates no builder setter whose name the builder already declares. These private
+    // methods claim the audit column names, so no caller can set a column the audit trigger fills;
+    // only Lombok's generated toBuilder copy calls them, and they discard the copied value.
+
+    @SuppressWarnings("unused")
+    private B createdBy(UUID createdBy) {
+      return self();
+    }
+
+    @SuppressWarnings("unused")
     private B createdOn(Instant createdOn) {
       return self();
     }
 
+    @SuppressWarnings("unused")
+    private B lastModifiedBy(UUID lastModifiedBy) {
+      return self();
+    }
+
+    @SuppressWarnings("unused")
     private B lastModifiedOn(Instant lastModifiedOn) {
       return self();
     }

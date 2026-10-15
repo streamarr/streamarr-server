@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.task.RequestedProbeResult;
-import com.streamarr.server.services.ArtworkCounts;
 import com.streamarr.server.services.ArtworkRunSummary;
+import com.streamarr.server.services.FinishedImageCounts;
 import java.time.Duration;
 import java.util.EnumMap;
 import java.util.Map;
@@ -27,7 +27,12 @@ class ScanResultsTest {
             .files(Map.of(MediaFileStatus.UNMATCHED, 2L, MediaFileStatus.MATCHED, 3L))
             .artwork(
                 artwork(
-                    ArtworkCounts.builder().saved(4).skipped(5).unavailable(6).failed(7).build(),
+                    FinishedImageCounts.builder()
+                        .saved(4)
+                        .skipped(5)
+                        .unavailable(6)
+                        .failed(7)
+                        .build(),
                     Duration.ofMillis(2500)))
             .probes(
                 probes(
@@ -39,15 +44,15 @@ class ScanResultsTest {
                         RequestedProbeResult.PROBED_BY_NEWER_VERSION, 12,
                         RequestedProbeResult.REMOVED, 13),
                     Duration.ofMillis(1200)))
-            .secondaryImagesPending(14)
+            .backgroundImagesPending(14)
             .build();
 
     assertThat(results.describe())
         .isEqualTo(
-            "5 files (2 unmatched, 3 matched); required artwork in 2.5 seconds (4 saved, 5 skipped,"
+            "5 files (2 unmatched, 3 matched); primary artwork in 2.5 seconds (4 saved, 5 skipped,"
                 + " 6 unavailable, 7 failed); probes in 1.2 seconds (8 ready, 9 media errors, 10"
                 + " failed, 11 superseded, 12 probed by a newer version, 13 removed); in the"
-                + " background: 14 secondary images pending across all libraries, 10 failed probes"
+                + " background: 14 background images pending across all libraries, 10 failed probes"
                 + " retrying, 11 changed files to probe");
   }
 
@@ -64,18 +69,23 @@ class ScanResultsTest {
             .files(Map.of(MediaFileStatus.MATCHED, 1L))
             .artwork(
                 artwork(
-                    ArtworkCounts.builder().saved(1).skipped(1).unavailable(1).failed(1).build(),
+                    FinishedImageCounts.builder()
+                        .saved(1)
+                        .skipped(1)
+                        .unavailable(1)
+                        .failed(1)
+                        .build(),
                     Duration.ofSeconds(1)))
             .probes(probes(probeCounts, Duration.ofSeconds(1)))
-            .secondaryImagesPending(1)
+            .backgroundImagesPending(1)
             .build();
 
     assertThat(results.describe())
         .isEqualTo(
-            "1 file (1 matched); required artwork in 1.0 seconds (1 saved, 1 skipped, 1"
+            "1 file (1 matched); primary artwork in 1.0 seconds (1 saved, 1 skipped, 1"
                 + " unavailable, 1 failed); probes in 1.0 seconds (1 ready, 1 media error, 1"
                 + " failed, 1 superseded, 1 probed by a newer version, 1 removed); in the"
-                + " background: 1 secondary image pending across all libraries, 1 failed probe"
+                + " background: 1 background image pending across all libraries, 1 failed probe"
                 + " retrying, 1 changed file to probe");
   }
 
@@ -85,17 +95,17 @@ class ScanResultsTest {
     var results =
         ScanResults.builder()
             .files(Map.of())
-            .artwork(artwork(ArtworkCounts.builder().build(), Duration.ZERO))
+            .artwork(artwork(FinishedImageCounts.builder().build(), Duration.ZERO))
             .probes(probes(Map.of(), Duration.ZERO))
-            .secondaryImagesPending(0)
+            .backgroundImagesPending(0)
             .build();
 
     assertThat(results.describe())
         .isEqualTo(
-            "0 files; required artwork in 0.0 seconds (0 saved, 0 skipped, 0 unavailable, 0"
+            "0 files; primary artwork in 0.0 seconds (0 saved, 0 skipped, 0 unavailable, 0"
                 + " failed); probes in 0.0 seconds (0 ready, 0 media errors, 0 failed, 0"
                 + " superseded, 0 probed by a newer version, 0 removed); in the background: 0"
-                + " secondary images pending across all libraries, 0 failed probes retrying, 0"
+                + " background images pending across all libraries, 0 failed probes retrying, 0"
                 + " changed files to probe");
   }
 
@@ -108,7 +118,7 @@ class ScanResultsTest {
     assertThat(summary.describe()).containsPattern("\\b7\\b");
   }
 
-  private static ArtworkRunSummary artwork(ArtworkCounts counts, Duration elapsed) {
+  private static ArtworkRunSummary artwork(FinishedImageCounts counts, Duration elapsed) {
     return ArtworkRunSummary.builder()
         .description("scan of Movies")
         .counts(counts)

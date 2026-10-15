@@ -5,6 +5,7 @@ package com.streamarr.server.jooq.generated;
 
 
 import com.streamarr.server.jooq.generated.tables.AccountInvitation;
+import com.streamarr.server.jooq.generated.tables.ArtworkRequest;
 import com.streamarr.server.jooq.generated.tables.AuthSession;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.CredentialAttempt;
@@ -58,6 +59,12 @@ public class Indexes {
     // INDEX definitions
     // -------------------------------------------------------------------------
 
+    public static final Index ARTWORK_REQUEST_COMPANY_ID_IDX = Internal.createIndex(DSL.name("artwork_request_company_id_idx"), ArtworkRequest.ARTWORK_REQUEST, new OrderField[] { ArtworkRequest.ARTWORK_REQUEST.COMPANY_ID }, false);
+    public static final Index ARTWORK_REQUEST_EPISODE_ID_IDX = Internal.createIndex(DSL.name("artwork_request_episode_id_idx"), ArtworkRequest.ARTWORK_REQUEST, new OrderField[] { ArtworkRequest.ARTWORK_REQUEST.EPISODE_ID }, false);
+    public static final Index ARTWORK_REQUEST_MOVIE_ID_IDX = Internal.createIndex(DSL.name("artwork_request_movie_id_idx"), ArtworkRequest.ARTWORK_REQUEST, new OrderField[] { ArtworkRequest.ARTWORK_REQUEST.MOVIE_ID }, false);
+    public static final Index ARTWORK_REQUEST_PERSON_ID_IDX = Internal.createIndex(DSL.name("artwork_request_person_id_idx"), ArtworkRequest.ARTWORK_REQUEST, new OrderField[] { ArtworkRequest.ARTWORK_REQUEST.PERSON_ID }, false);
+    public static final Index ARTWORK_REQUEST_SEASON_ID_IDX = Internal.createIndex(DSL.name("artwork_request_season_id_idx"), ArtworkRequest.ARTWORK_REQUEST, new OrderField[] { ArtworkRequest.ARTWORK_REQUEST.SEASON_ID }, false);
+    public static final Index ARTWORK_REQUEST_SERIES_ID_IDX = Internal.createIndex(DSL.name("artwork_request_series_id_idx"), ArtworkRequest.ARTWORK_REQUEST, new OrderField[] { ArtworkRequest.ARTWORK_REQUEST.SERIES_ID }, false);
     public static final Index EXTERNAL_IDENTIFIER_ID_IDX = Internal.createIndex(DSL.name("external_identifier_id_idx"), ExternalIdentifier.EXTERNAL_IDENTIFIER, new OrderField[] { ExternalIdentifier.EXTERNAL_IDENTIFIER.ID }, true);
     public static final Index FILE_PROCESSING_TASK_CLAIMABLE_IDX = Internal.createIndex(DSL.name("file_processing_task_claimable_idx"), FileProcessingTask.FILE_PROCESSING_TASK, new OrderField[] { FileProcessingTask.FILE_PROCESSING_TASK.STATUS }, false);
     public static final Index FILE_PROCESSING_TASK_FILEPATH_URI_ACTIVE_IDX = Internal.createIndex(DSL.name("file_processing_task_filepath_uri_active_idx"), FileProcessingTask.FILE_PROCESSING_TASK, new OrderField[] { FileProcessingTask.FILE_PROCESSING_TASK.FILEPATH_URI }, true);

@@ -14,30 +14,26 @@ import com.streamarr.server.jooq.generated.enums.ProfileShareStatus;
 import com.streamarr.server.jooq.generated.tables.records.ProfileRecord;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import jakarta.persistence.EntityManager;
-import java.time.Clock;
-import java.time.ZoneOffset;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.UnaryOperator;
+import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Record1;
 import org.jooq.SelectSeekStep1;
+import org.jooq.UpdateSetFirstStep;
 import org.jooq.UpdateSetMoreStep;
 import org.jooq.impl.DSL;
-import org.springframework.data.domain.AuditorAware;
 
 @RequiredArgsConstructor
 public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
 
   private final DSLContext dsl;
   private final EntityManager entityManager;
-  private final AuditorAware<UUID> auditorAware;
-  private final Clock clock;
 
   @Override
   public boolean lockByShareId(UUID shareId) {
@@ -158,8 +154,6 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
     return dsl.update(PROFILE)
             .set(PROFILE.KIND, jooqKind(target.kind()))
             .set(PROFILE.MAXIMUM_ALLOWED_RATING_AGE, target.maximumAllowedRatingAge())
-            .set(PROFILE.LAST_MODIFIED_ON, clock.instant().atOffset(ZoneOffset.UTC))
-            .set(PROFILE.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
             .where(PROFILE.ID.eq(profileId))
             .execute()
         > 0;
@@ -169,8 +163,6 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
   public boolean tryRehome(UUID profileId, UUID expectedHouseholdId, UUID destinationHouseholdId) {
     return dsl.update(PROFILE)
             .set(PROFILE.HOUSEHOLD_ID, destinationHouseholdId)
-            .set(PROFILE.LAST_MODIFIED_ON, clock.instant().atOffset(ZoneOffset.UTC))
-            .set(PROFILE.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
             .where(PROFILE.ID.eq(profileId))
             .and(PROFILE.HOUSEHOLD_ID.eq(expectedHouseholdId))
             .execute()
@@ -214,15 +206,9 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
   }
 
   private boolean updateColumn(
-      UUID profileId, UnaryOperator<UpdateSetMoreStep<ProfileRecord>> change) {
-    var update =
-        dsl.update(PROFILE).set(PROFILE.LAST_MODIFIED_ON, clock.instant().atOffset(ZoneOffset.UTC));
-    return change
-            .apply(
-                update.set(PROFILE.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null)))
-            .where(PROFILE.ID.eq(profileId))
-            .execute()
-        > 0;
+      UUID profileId,
+      Function<UpdateSetFirstStep<ProfileRecord>, UpdateSetMoreStep<ProfileRecord>> change) {
+    return change.apply(dsl.update(PROFILE)).where(PROFILE.ID.eq(profileId)).execute() > 0;
   }
 
   // Unavoidable collision: the domain and the generated jOOQ enum share the simple name.

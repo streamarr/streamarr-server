@@ -4,11 +4,10 @@ import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeProbeTaskRequests;
 import com.streamarr.server.repositories.media.MediaFileRepository;
-import com.streamarr.server.services.ArtworkService;
+import com.streamarr.server.services.concurrency.Sleeper;
 import com.streamarr.server.services.library.FileDiscoveryRuns;
 import com.streamarr.server.services.library.MediaFileProbeTaskScheduler;
 import com.streamarr.server.services.library.ProbeRuns;
-import com.streamarr.server.services.library.Sleeper;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import java.nio.file.FileSystem;
 import java.time.Clock;
@@ -29,7 +28,7 @@ public final class FileDiscoveryRunsFixture {
    */
   @Builder(builderMethodName = "fileDiscoveryRunsBuilder")
   private static FileDiscoveryRuns fileDiscoveryRuns(
-      @NonNull ArtworkService artworkService,
+      @NonNull ArtworkFixture artwork,
       @NonNull MediaFileRepository mediaFiles,
       @NonNull FakeMediaFileContainerInfoRepository outcomes,
       @NonNull FakeProbeTaskRequests probeTaskRequests,
@@ -47,7 +46,8 @@ public final class FileDiscoveryRunsFixture {
     }
 
     return FileDiscoveryRuns.builder()
-        .artworkService(artworkService)
+        .artworkRequestService(artwork.artworkRequestService())
+        .artworkRunWaiter(artwork.artworkRunWaiter())
         .probeRuns(
             ProbeRuns.builder()
                 .scheduler(

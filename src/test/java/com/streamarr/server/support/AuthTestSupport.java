@@ -78,8 +78,8 @@ public class AuthTestSupport {
       bootstrapAdmin = createAdminIdentity();
     }
 
-    serverBootstrapRepository.claim(
-        bootstrapAdmin == null ? null : bootstrapAdmin.account().getId());
+    var adminAccountId = bootstrapAdmin == null ? null : bootstrapAdmin.account().getId();
+    transactionTemplate.executeWithoutResult(_ -> serverBootstrapRepository.claim(adminAccountId));
   }
 
   private boolean hasEnabledServerAdmin() {
@@ -243,6 +243,17 @@ public class AuthTestSupport {
 
   public String profileBearer(TestIdentity identity) {
     return accessTokenIssuer.issue(contextBuilder(identity).build()).value();
+  }
+
+  /** A Profile token from a session born of a Device registration (ADR 0024 §Devices). */
+  public String deviceBoundProfileBearer(TestIdentity identity) {
+    var deviceSession = identity.session().toBuilder().registrationId(UUID.randomUUID()).build();
+    return accessTokenIssuer.issue(contextBuilder(identity).session(deviceSession).build()).value();
+  }
+
+  /** A Profile token that expires at the given instant, or earlier at the configured lifetime. */
+  public String profileBearerExpiringAt(TestIdentity identity, Instant expiresAt) {
+    return accessTokenIssuer.issueDerived(contextBuilder(identity).build(), expiresAt).value();
   }
 
   public String playbackBearer(TestIdentity identity, UUID streamSessionId) {

@@ -14,11 +14,11 @@ import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockProbe;
+import com.streamarr.server.support.TestFixtureWork;
 import jakarta.persistence.EntityManager;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -73,7 +73,7 @@ class TransactionalLibraryMutationIT extends AbstractIntegrationTest {
     var revocationBackendPid = new AtomicInteger();
     var lockProbe = new PostgresLockProbe(entityManager, jdbcTemplate);
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var add =
           executor.submit(
               () ->

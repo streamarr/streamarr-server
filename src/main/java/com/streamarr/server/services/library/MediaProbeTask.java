@@ -3,6 +3,7 @@ package com.streamarr.server.services.library;
 import com.github.kagkarlsson.scheduler.task.Task;
 import com.github.kagkarlsson.scheduler.task.helper.Tasks;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
+import com.streamarr.server.services.concurrency.CappedExponentialBackoff;
 import java.time.Clock;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;

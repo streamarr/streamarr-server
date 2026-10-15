@@ -18,12 +18,12 @@ import com.streamarr.server.services.auth.RefreshTokenService;
 import com.streamarr.server.services.auth.TokenContext;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupportConfig;
+import com.streamarr.server.support.TestFixtureWork;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -41,6 +41,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Proves the refresh use case is one Spring-proxied transaction against real PostgreSQL: rotation,
@@ -63,6 +64,7 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
   @Autowired private GatedAccessTokenIssuer gatedIssuer;
 
   @Autowired private DSLContext dsl;
+  @Autowired private TransactionTemplate transactionTemplate;
 
   @Autowired private AuthTestSupport authTestSupport;
 
@@ -261,7 +263,7 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
     var arrival = new CountDownLatch(1);
     gatedIssuer.holdIssuanceAt(gate, arrival);
 
-    try (var executor = Executors.newFixedThreadPool(2)) {
+    try (var executor = TestFixtureWork.newFixedThreadPoolRunningAsTestFixtureActor(2)) {
       var refreshDone = new CountDownLatch(1);
       var logoutDone = new CountDownLatch(1);
       var refreshResult = new AtomicReference<TokenRefreshService.RefreshedTokens>();
@@ -311,7 +313,7 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
     var arrival = new CountDownLatch(1);
     gatedIssuer.holdIssuanceAt(gate, arrival);
 
-    try (var executor = Executors.newFixedThreadPool(2)) {
+    try (var executor = TestFixtureWork.newFixedThreadPoolRunningAsTestFixtureActor(2)) {
       var refreshDone = new CountDownLatch(1);
       var logoutStarted = new CountDownLatch(1);
       var logoutDone = new CountDownLatch(1);
@@ -366,11 +368,13 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
 
     // Rotate once, then age the rotation past grace so replaying the original proves reuse.
     tokenRefreshService.refresh(issued.rawToken());
-    dsl.update(REFRESH_TOKEN)
-        .set(REFRESH_TOKEN.ROTATED_AT, OffsetDateTime.now().minus(Duration.ofMinutes(10)))
-        .where(REFRESH_TOKEN.SESSION_ID.eq(issued.session().getId()))
-        .and(REFRESH_TOKEN.STATUS.eq(RefreshTokenStatus.ROTATED))
-        .execute();
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            dsl.update(REFRESH_TOKEN)
+                .set(REFRESH_TOKEN.ROTATED_AT, OffsetDateTime.now().minus(Duration.ofMinutes(10)))
+                .where(REFRESH_TOKEN.SESSION_ID.eq(issued.session().getId()))
+                .and(REFRESH_TOKEN.STATUS.eq(RefreshTokenStatus.ROTATED))
+                .execute());
     var rawToken = issued.rawToken();
 
     assertThatThrownBy(() -> tokenRefreshService.refresh(rawToken))

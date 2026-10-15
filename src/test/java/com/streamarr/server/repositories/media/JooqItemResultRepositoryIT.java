@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemFailureReason;
@@ -15,9 +16,10 @@ import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.services.ArtworkSources;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -33,16 +35,14 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Item Result Repository Integration Tests")
-class JooqItemResultRepositoryIT extends AbstractIntegrationTest {
-
-  private static final Instant EARLIER = Instant.parse("2026-09-23T10:00:00Z");
-  private static final Instant LATER = EARLIER.plus(1, ChronoUnit.MINUTES);
+class JooqItemResultRepositoryIT extends AbstractIntegrationTest implements ArtworkResultsContract {
 
   @Autowired private ItemResultRepository itemResults;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MovieRepository movieRepository;
+  @Autowired private ArtworkRequestRepository artworkRequests;
 
   @Test
   @DisplayName("Should store failed artwork with its reason and source when an attempt fails")
@@ -214,6 +214,28 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest {
     assertThat(itemResults.findByItem(missingItemId, ImageEntityType.MOVIE)).isEmpty();
   }
 
+  @Override
+  public ItemResultRepository itemResults() {
+    return itemResults;
+  }
+
+  @Override
+  public ArtworkTarget createMovie() {
+    return new ArtworkTarget(savedMovieId(), ImageEntityType.MOVIE);
+  }
+
+  @Override
+  public long requestArtwork(ArtworkTarget movie) {
+    var artwork =
+        ArtworkSources.builder()
+            .targetId(movie.targetId())
+            .targetType(movie.targetType())
+            .sources(List.of())
+            .build();
+    return transactionTemplate.execute(
+        _ -> artworkRequests.saveRequest(artwork, ImageRefreshMode.PRESERVE, EARLIER).generation());
+  }
+
   private UUID savedMovieId() {
     return SavedMediaFixture.saveMovie(libraryRepository, movieRepository).getId();
   }
@@ -232,7 +254,8 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest {
         .itemType(ImageEntityType.MOVIE)
         .step(ItemStep.ARTWORK)
         .imageType(imageType)
-        .attemptedAt(EARLIER);
+        .attemptedAt(EARLIER)
+        .artworkGeneration(1L);
   }
 
   private boolean hasWriterWaitingOnAnotherTransaction() {

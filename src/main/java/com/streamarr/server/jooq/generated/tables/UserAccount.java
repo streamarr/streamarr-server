@@ -27,6 +27,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
+import org.jooq.Check;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.ForeignKey;
@@ -423,6 +424,13 @@ public class UserAccount extends TableImpl<UserAccountRecord> {
             _serverBootstrap = new ServerBootstrapPath(this, null, Keys.SERVER_BOOTSTRAP__FK_SERVER_BOOTSTRAP_ADMIN_ACCOUNT.getInverseKey());
 
         return _serverBootstrap;
+    }
+
+    @Override
+    public List<Check<UserAccountRecord>> getChecks() {
+        return Arrays.asList(
+            Internal.createCheck(this, DSL.name("chk_user_account_id_not_system_actor"), "((id <> 'b634c755-3c6a-4ff1-a0a7-3e812d0ed1b9'::uuid))", true)
+        );
     }
 
     @Override

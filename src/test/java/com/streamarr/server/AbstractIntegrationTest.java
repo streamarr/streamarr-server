@@ -2,7 +2,12 @@ package com.streamarr.server;
 
 import com.streamarr.server.support.AuthTestSupportConfig;
 import com.streamarr.server.support.PausedContextConnectionRelease;
+import com.streamarr.server.support.RunningArtworkPrioritySchedulersConfiguration;
+import com.streamarr.server.support.TestFixtureActorExtension;
+import com.streamarr.server.support.TestFixtureAuditActorConfiguration;
+import com.streamarr.server.support.TestManagedTransactionFixtureActorListener;
 import com.streamarr.server.support.UnstartedSchedulerConfiguration;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.api.parallel.Isolated;
@@ -11,6 +16,7 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.TestExecutionListeners;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 // Test support is imported on the base class itself: per-subclass imports would fork the
@@ -20,9 +26,15 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @Import({
   AuthTestSupportConfig.class,
   PausedContextConnectionRelease.class,
+  RunningArtworkPrioritySchedulersConfiguration.class,
+  TestFixtureAuditActorConfiguration.class,
   UnstartedSchedulerConfiguration.class
 })
 @ActiveProfiles("test")
+@ExtendWith(TestFixtureActorExtension.class)
+@TestExecutionListeners(
+    listeners = TestManagedTransactionFixtureActorListener.class,
+    mergeMode = TestExecutionListeners.MergeMode.MERGE_WITH_DEFAULTS)
 @Isolated("Integration tests share one reusable PostgreSQL database")
 @Execution(ExecutionMode.SAME_THREAD)
 public abstract class AbstractIntegrationTest {

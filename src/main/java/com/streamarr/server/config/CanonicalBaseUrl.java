@@ -3,6 +3,7 @@ package com.streamarr.server.config;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Locale;
+import java.util.Optional;
 
 /** An absent base URL disables device pairing. Clients enforce the full connection policy. */
 public final class CanonicalBaseUrl {
@@ -43,6 +44,20 @@ public final class CanonicalBaseUrl {
   public String value() {
     requireConfigured();
     return baseUri.toString();
+  }
+
+  /** The scheme, host and port of the configured base URL, the way browsers send an Origin. */
+  public Optional<String> origin() {
+    if (!isConfigured()) {
+      return Optional.empty();
+    }
+
+    var origin = baseUri.getScheme() + "://" + baseUri.getHost();
+    if (baseUri.getPort() != -1) {
+      origin += ":" + baseUri.getPort();
+    }
+
+    return Optional.of(origin);
   }
 
   /** Joins an absolute path beneath the configured base, preserving any base path. */

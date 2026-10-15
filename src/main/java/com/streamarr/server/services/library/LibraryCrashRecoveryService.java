@@ -3,12 +3,15 @@ package com.streamarr.server.services.library;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.services.audit.SystemWork;
+import com.streamarr.server.services.events.library.LibraryStatusChangedEvent;
 import jakarta.annotation.PreDestroy;
 import java.time.Instant;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
@@ -19,9 +22,19 @@ public class LibraryCrashRecoveryService {
 
   private final LibraryRepository libraryRepository;
   private final ActiveScanChecker activeScanChecker;
+  private final ApplicationEventPublisher eventPublisher;
 
   @EventListener(ApplicationReadyEvent.class)
   public void onStartup() {
+    SystemWork.runAsSystemActor(this::resetOrphanedLibraries);
+  }
+
+  @PreDestroy
+  public void onShutdown() {
+    SystemWork.runAsSystemActor(this::resetBusyLibraries);
+  }
+
+  private void resetOrphanedLibraries() {
     var orphanedScanning =
         libraryRepository.findAllByStatus(LibraryStatus.SCANNING).stream()
             .filter(lib -> !activeScanChecker.isActivelyScanning(lib.getId()))
@@ -32,8 +45,7 @@ public class LibraryCrashRecoveryService {
     resetLibraries(orphanedRefreshing);
   }
 
-  @PreDestroy
-  public void onShutdown() {
+  private void resetBusyLibraries() {
     resetLibraries(libraryRepository.findAllByStatus(LibraryStatus.SCANNING));
     resetLibraries(libraryRepository.findAllByStatus(LibraryStatus.REFRESHING));
   }
@@ -54,6 +66,7 @@ public class LibraryCrashRecoveryService {
     library.setStatus(LibraryStatus.UNHEALTHY);
     library.setScanCompletedOn(Instant.now());
     libraryRepository.save(library);
+    eventPublisher.publishEvent(new LibraryStatusChangedEvent(library.getId()));
 
     log.warn(
         "Reset library '{}' (ID: {}) from {} to UNHEALTHY due to incomplete operation.",

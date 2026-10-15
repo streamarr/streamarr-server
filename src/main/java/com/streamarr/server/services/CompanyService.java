@@ -5,7 +5,6 @@ import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.repositories.CompanyRepository;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
-import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -13,7 +12,6 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,7 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class CompanyService {
 
   private final CompanyRepository companyRepository;
-  private final ApplicationEventPublisher eventPublisher;
+  private final ArtworkRequestService artworkRequestService;
 
   @Transactional
   public Set<Company> getOrCreateCompanies(
@@ -56,7 +54,7 @@ public class CompanyService {
 
     renameBeforeNextInsert(saved, company.getName());
 
-    publishImageEvent(saved, imageSources, imageRefreshMode);
+    requestArtwork(saved, imageSources, imageRefreshMode);
     return saved;
   }
 
@@ -71,14 +69,20 @@ public class CompanyService {
     companyRepository.flush();
   }
 
-  private void publishImageEvent(
+  // The request joins the metadata transaction, in the same source-id order as the upserts, so a
+  // rollback leaves no request behind and concurrent scans take the request locks in one order.
+  private void requestArtwork(
       Company company, List<ImageSource> imageSources, ImageRefreshMode imageRefreshMode) {
     if (imageSources.isEmpty()) {
       return;
     }
 
-    eventPublisher.publishEvent(
-        new MetadataEnrichedEvent(
-            company.getId(), ImageEntityType.COMPANY, imageSources, imageRefreshMode));
+    artworkRequestService.requestBackgroundArtwork(
+        ArtworkSources.builder()
+            .targetId(company.getId())
+            .targetType(ImageEntityType.COMPANY)
+            .sources(imageSources)
+            .build(),
+        imageRefreshMode);
   }
 }

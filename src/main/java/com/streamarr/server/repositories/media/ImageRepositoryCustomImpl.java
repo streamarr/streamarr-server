@@ -8,7 +8,9 @@ import static com.streamarr.server.jooq.generated.tables.Series.SERIES;
 
 import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.media.AmbientColors;
+import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.Image;
+import com.streamarr.server.exceptions.ObsoleteArtworkStepsAttemptException;
 import com.streamarr.server.jooq.generated.enums.ImageEntityType;
 import com.streamarr.server.jooq.generated.enums.ImageSize;
 import com.streamarr.server.jooq.generated.enums.ImageType;
@@ -25,34 +27,32 @@ import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
-import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.data.domain.AuditorAware;
 
 @RequiredArgsConstructor
 public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
 
   private final DSLContext dsl;
-  private final AuditorAware<UUID> auditorAware;
   private final ImageProperties imageProperties;
   private final PostgresTransactionLocks transactionLocks;
   private final ItemLocks itemLocks;
 
   @Override
-  public Set<UUID> insertAllIfAbsent(List<Image> images) {
+  public Set<UUID> insertAllIfAbsent(List<Image> images, ArtworkStepsAttempt attempt) {
     if (images.isEmpty()) {
       return Set.of();
     }
 
-    var auditUser = auditorAware.getCurrentAuditor().orElse(null);
+    transactionLocks.limitLockWait(imageProperties.replacementLockTimeout());
+    lockArtworkGeneration(attempt);
 
     return images.stream()
-        .filter(image -> insertIfAbsent(image, auditUser))
+        .filter(this::insertIfAbsent)
         .map(Image::getId)
         .collect(Collectors.toUnmodifiableSet());
   }
 
   @Override
-  public List<String> replaceLogicalArtwork(List<Image> images) {
+  public List<String> replaceLogicalArtwork(List<Image> images, ArtworkStepsAttempt attempt) {
     if (images.isEmpty()) {
       return List.of();
     }
@@ -66,11 +66,7 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
             .getMostSignificantBits();
     transactionLocks.limitLockWait(imageProperties.replacementLockTimeout());
     transactionLocks.lock(lockKey);
-    if (!itemLocks.tryLockAgainstDeletion(first.getEntityId(), first.getEntityType())) {
-      throw new DataIntegrityViolationException(
-          "Cannot replace artwork of deleted %s %s"
-              .formatted(first.getEntityType(), first.getEntityId()));
-    }
+    lockArtworkGeneration(attempt);
 
     var condition =
         IMAGE
@@ -82,9 +78,7 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
         dsl.select(IMAGE.PATH).from(IMAGE).where(condition).forUpdate().fetch(IMAGE.PATH);
 
     dsl.deleteFrom(IMAGE).where(condition).execute();
-
-    var auditUser = auditorAware.getCurrentAuditor().orElse(null);
-    images.forEach(image -> dsl.insertInto(IMAGE).set(imageValues(image, auditUser)).execute());
+    images.forEach(image -> dsl.insertInto(IMAGE).set(imageValues(image)).execute());
 
     return replacedPaths;
   }
@@ -108,20 +102,26 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
             .or(IMAGE.EPISODE_ID.in(episodes)));
   }
 
+  private void lockArtworkGeneration(ArtworkStepsAttempt attempt) {
+    if (!itemLocks.tryLockArtworkGeneration(attempt.target(), attempt.generation())) {
+      throw new ObsoleteArtworkStepsAttemptException(attempt);
+    }
+  }
+
   private List<String> artworkPaths(Condition owners) {
     return dsl.select(IMAGE.PATH).from(IMAGE).where(owners).fetch(IMAGE.PATH);
   }
 
-  private boolean insertIfAbsent(Image image, UUID auditUser) {
+  private boolean insertIfAbsent(Image image) {
     return dsl.insertInto(IMAGE)
-            .set(imageValues(image, auditUser))
+            .set(imageValues(image))
             .onConflict(IMAGE.ENTITY_ID, IMAGE.IMAGE_TYPE, IMAGE.VARIANT)
             .doNothing()
             .execute()
         > 0;
   }
 
-  private Map<Field<?>, Object> imageValues(Image image, UUID auditUser) {
+  private Map<Field<?>, Object> imageValues(Image image) {
     var ambient = image.getAmbientColors();
 
     var values = new LinkedHashMap<Field<?>, Object>();
@@ -145,8 +145,6 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
     values.put(IMAGE.AMBIENT_LIGHT_VIBRANT, ambient.map(AmbientColors::lightVibrant).orElse(null));
     values.put(IMAGE.AMBIENT_LIGHT_MUTED, ambient.map(AmbientColors::lightMuted).orElse(null));
     values.put(IMAGE.PATH, image.getPath());
-    values.put(IMAGE.CREATED_BY, auditUser);
-    values.put(IMAGE.LAST_MODIFIED_BY, auditUser);
     return values;
   }
 }

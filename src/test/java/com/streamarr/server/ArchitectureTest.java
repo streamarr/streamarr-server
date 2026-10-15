@@ -40,21 +40,41 @@ import com.streamarr.server.services.architecturefixture.DirectAccountPasswordMa
 import com.streamarr.server.services.architecturefixture.DirectGenreServiceFixture;
 import com.streamarr.server.services.architecturefixture.IncomingHttpServiceFixture;
 import com.streamarr.server.services.architecturefixture.IncomingWebRequestServiceFixture;
+import com.streamarr.server.services.architecturefixture.ReactiveServiceFixture;
 import com.streamarr.server.services.architecturefixture.SubdomainServiceCycleFixture;
 import com.streamarr.server.services.auth.AccountPasswordVerifier;
 import com.streamarr.server.services.auth.LoginService;
 import com.streamarr.server.services.auth.PasswordTimingEqualizer;
 import com.streamarr.server.services.auth.ProfilePinVerifier;
+import com.streamarr.server.services.auth.architecturefixture.RequestServiceThreads;
 import com.streamarr.server.services.authorization.AuthorizationDecider;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.DirectAuthorizationDeciderFixture;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.library.MovieFileProcessor;
 import com.streamarr.server.services.library.SeriesFileProcessor;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.CommonForkJoinPool;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.DefaultAsyncExecutor;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.DefaultDelayedExecutor;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryExecutorReference;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryFixedPool;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryForkJoinPool;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryParallelStream;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryParallelStreamSwitch;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryScheduledPoolConstructor;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinarySpringTaskExecutor;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryThreadBuilder;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryThreadConstructor;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryThreadPoolConstructor;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryTimer;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryVirtualThreadStart;
+import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.SystemWorkThreads;
 import com.streamarr.server.services.streaming.remote.architecturefixture.AllowedWorkerProtocolFixture;
 import com.streamarr.transcode.engine.architecturefixture.EngineImplementationFixture;
 import com.streamarr.transcode.probe.architecturefixture.ProbeImplementationFixture;
 import com.streamarr.transcode.worker.architecturefixture.WorkerImplementationFixture;
+import com.tngtech.archunit.base.DescribedPredicate;
+import com.tngtech.archunit.core.domain.AccessTarget;
 import com.tngtech.archunit.core.domain.JavaAccess;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
@@ -67,6 +87,17 @@ import com.tngtech.archunit.lang.CompositeArchRule;
 import com.tngtech.archunit.library.dependencies.SliceAssignment;
 import com.tngtech.archunit.library.dependencies.SliceIdentifier;
 import java.nio.file.Path;
+import java.util.Collection;
+import java.util.List;
+import java.util.Set;
+import java.util.Timer;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ThreadFactory;
+import java.util.function.Predicate;
+import java.util.stream.BaseStream;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -78,6 +109,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
+import reactor.core.publisher.Flux;
 
 @Tag("UnitTest")
 @DisplayName("Architecture Rules")
@@ -207,6 +239,18 @@ class ArchitectureTest {
               "org.springframework.http..",
               "org.springframework.web.context.request..")
           .as("Services receive protocol data explicitly and must not depend on HTTP or DGS types");
+
+  @ArchTest
+  static final ArchRule reactiveTypesMustStayInGraphqlLayer =
+      noClasses()
+          .that()
+          .resideOutsideOfPackage("..graphql..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAnyPackage("reactor..", "org.reactivestreams..")
+          .as(
+              "Reactive types stay in the GraphQL layer; services, domain and repositories use"
+                  + " virtual threads");
 
   @ArchTest
   static final ArchRule authServicesMustNotDependOnJooq =
@@ -395,6 +439,18 @@ class ArchitectureTest {
           .bePublic()
           .as("Cedar engine types are package-private; only the image self-check is public");
 
+  // Library operations admit tasks through AdaptiveAdmission (ADR 0041). The limiter library stays
+  // behind it, so its listener, which must complete exactly once, has one caller.
+  @ArchTest
+  static final ArchRule onlyTheConcurrencyPackageMayUseConcurrencyLimits =
+      noClasses()
+          .that()
+          .resideOutsideOfPackage("..services.concurrency..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("com.netflix.concurrency.limits..")
+          .as("Only services.concurrency may use Netflix concurrency-limits");
+
   // Read models are named *Details (AccountInvitationDetails, SeasonDetails): they describe the
   // data a client shapes, not a rendered screen.
   @ArchTest
@@ -407,6 +463,71 @@ class ArchitectureTest {
           .as(
               "Presentation DTOs and service records are read models named *Details and must not"
                   + " use the View suffix");
+
+  // A thread does not inherit the System actor binding of the thread that starts it, so a thread
+  // that system work starts any other way names no actor, and its audited writes are rejected.
+  @ArchTest
+  static final ArchRule systemWorkMustStartThreadsThroughSystemWork =
+      systemWorkMustStartThreadsThroughSystemWork();
+
+  @ParameterizedTest
+  @ValueSource(
+      classes = {
+        OrdinaryVirtualThreadStart.class,
+        OrdinaryThreadBuilder.class,
+        OrdinaryThreadConstructor.class,
+        OrdinaryExecutorReference.class,
+        OrdinaryFixedPool.class,
+        DefaultAsyncExecutor.class,
+        OrdinaryParallelStream.class,
+        OrdinaryParallelStreamSwitch.class,
+        CommonForkJoinPool.class,
+        OrdinaryForkJoinPool.class,
+        OrdinaryThreadPoolConstructor.class,
+        OrdinaryScheduledPoolConstructor.class,
+        DefaultDelayedExecutor.class,
+        OrdinarySpringTaskExecutor.class,
+        OrdinaryTimer.class
+      })
+  @DisplayName("Should reject a thread when system work starts it outside SystemWork")
+  void shouldRejectThreadWhenSystemWorkStartsItOutsideSystemWork(Class<?> fixture) {
+    var classes = new ClassFileImporter().importClasses(fixture);
+
+    assertThat(
+            systemWorkMustStartThreadsThroughSystemWork()
+                .evaluate(classes)
+                .getFailureReport()
+                .getDetails())
+        .anySatisfy(detail -> assertThat(detail).contains(fixture.getName()));
+  }
+
+  // Requests are not system work, so the rule leaves the threads they start alone.
+  @Test
+  @DisplayName("Should allow an ordinary thread when a request service starts it")
+  void shouldAllowOrdinaryThreadWhenRequestServiceStartsIt() {
+    var classes =
+        new ClassFileImporter().importClasses(RequestServiceThreads.class, SystemWorkThreads.class);
+
+    assertThat(
+            systemWorkMustStartThreadsThroughSystemWork()
+                .evaluate(classes)
+                .getFailureReport()
+                .getDetails())
+        .isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should allow threads when system work starts them through SystemWork")
+  void shouldAllowThreadsWhenSystemWorkStartsThemThroughSystemWork() {
+    var classes = new ClassFileImporter().importClasses(SystemWorkThreads.class);
+
+    assertThat(
+            systemWorkMustStartThreadsThroughSystemWork()
+                .evaluate(classes)
+                .getFailureReport()
+                .getDetails())
+        .isEmpty();
+  }
 
   @ArchTest
   @DisplayName("Should avoid Path display text when media metadata is processed")
@@ -527,6 +648,19 @@ class ArchitectureTest {
         .hasMessageContaining("HTTP");
   }
 
+  @Test
+  @DisplayName("Should reject reactive types when a service returns a publisher")
+  void shouldRejectReactiveTypesWhenServiceReturnsPublisher() {
+    var services = new ClassFileImporter().importClasses(ReactiveServiceFixture.class);
+
+    assertThat(
+            reactiveTypesMustStayInGraphqlLayer.evaluate(services).getFailureReport().getDetails())
+        .anySatisfy(
+            detail ->
+                assertThat(detail)
+                    .contains(ReactiveServiceFixture.class.getName(), Flux.class.getName()));
+  }
+
   @ParameterizedTest
   @ValueSource(classes = ProcessBuilderLaunch.class)
   @DisplayName("Should reject ProcessBuilder dependencies when server code launches a process")
@@ -586,6 +720,82 @@ class ArchitectureTest {
         Arguments.of(EngineDependency.class, EngineImplementationFixture.class),
         Arguments.of(ProbeDependency.class, ProbeImplementationFixture.class),
         Arguments.of(WorkerDependency.class, WorkerImplementationFixture.class));
+  }
+
+  private static ArchRule systemWorkMustStartThreadsThroughSystemWork() {
+    return noClasses()
+        .that()
+        .resideInAnyPackage(
+            "com.streamarr.server.services",
+            "com.streamarr.server.services.concurrency..",
+            "com.streamarr.server.services.library..",
+            "com.streamarr.server.config..")
+        .should()
+        .accessTargetWhere(new StartsThreadOutsideSystemWork())
+        .as(
+            "Scans, refreshes, their admission, the file watcher, artwork and scheduled tasks start"
+                + " threads through SystemWork, so system work keeps the System actor on every"
+                + " thread it starts");
+  }
+
+  private static final class StartsThreadOutsideSystemWork
+      extends DescribedPredicate<JavaAccess<?>> {
+
+    private static final String CONSTRUCTOR = "<init>";
+
+    // Each source runs work on a thread that does not carry the System actor binding.
+    private static final List<ThreadSource> THREAD_SOURCES =
+        List.of(
+            new ThreadSource(
+                Thread.class,
+                target ->
+                    Set.of("ofVirtual", "ofPlatform", "startVirtualThread", CONSTRUCTOR)
+                        .contains(target.getName())),
+            new ThreadSource(
+                Executors.class,
+                target ->
+                    target.getName().equals("defaultThreadFactory")
+                        || (target.getName().startsWith("new")
+                            && !takes(target, ThreadFactory.class))),
+            new ThreadSource(
+                Executor.class,
+                target ->
+                    target.getName().equals(CONSTRUCTOR) && !takes(target, ThreadFactory.class)),
+            new ThreadSource(ForkJoinPool.class, target -> target.getName().equals("commonPool")),
+            new ThreadSource(
+                CompletableFuture.class,
+                target ->
+                    (target.getName().endsWith("Async")
+                            || target.getName().equals("delayedExecutor"))
+                        && !takes(target, Executor.class)),
+            new ThreadSource(Collection.class, target -> target.getName().equals("parallelStream")),
+            new ThreadSource(BaseStream.class, target -> target.getName().equals("parallel")),
+            new ThreadSource(Timer.class, target -> target.getName().equals(CONSTRUCTOR)));
+
+    private StartsThreadOutsideSystemWork() {
+      super("start a thread outside SystemWork");
+    }
+
+    @Override
+    public boolean test(JavaAccess<?> access) {
+      if (!(access.getTarget() instanceof AccessTarget.CodeUnitAccessTarget target)) {
+        return false;
+      }
+
+      return THREAD_SOURCES.stream().anyMatch(source -> source.startsThread(target));
+    }
+
+    private static boolean takes(AccessTarget.CodeUnitAccessTarget target, Class<?> type) {
+      return target.getRawParameterTypes().stream().anyMatch(param -> param.isEquivalentTo(type));
+    }
+
+    private record ThreadSource(
+        Class<?> owner, Predicate<AccessTarget.CodeUnitAccessTarget> startsThreadThrough) {
+
+      boolean startsThread(AccessTarget.CodeUnitAccessTarget target) {
+        return target.getOwner().isAssignableTo(owner) && startsThreadThrough.test(target);
+      }
+    }
   }
 
   private static ArchRule accountPasswordMatchesMustUseVerifier() {

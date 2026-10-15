@@ -28,6 +28,7 @@ import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource
 import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.net.http.HttpClient;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
@@ -58,7 +59,8 @@ class TMDBSeriesProviderIT {
             wireMock.baseUrl(),
             wireMock.baseUrl(),
             HttpClient.newHttpClient(),
-            new ObjectMapper());
+            new ObjectMapper(),
+            Clock.systemUTC());
     provider = new TMDBSeriesProvider(httpService, new TmdbSearchDelegate(httpService));
     savedLibrary =
         LibraryFixtureCreator.buildFakeSeriesLibrary().toBuilder().id(UUID.randomUUID()).build();

@@ -4,8 +4,6 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
-import com.streamarr.server.domain.media.MediaFileStatus;
-import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
 import com.streamarr.server.exceptions.LibraryScanFailedException;
@@ -15,6 +13,7 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.concurrency.MutexFactory;
@@ -22,6 +21,7 @@ import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.events.library.ItemProcessedEvent;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
+import com.streamarr.server.services.events.library.LibraryStatusChangedEvent;
 import com.streamarr.server.services.events.library.RefreshEndedEvent;
 import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
@@ -29,15 +29,10 @@ import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.validation.IgnoredFileValidator;
-import com.streamarr.server.services.validation.VideoExtensionValidator;
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -46,14 +41,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.io.FilenameUtils;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
@@ -66,10 +57,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
    */
   static final String LIBRARY_FILEPATH_UNIQUE = "library_filepath_uri_idx";
 
-  private final IgnoredFileValidator ignoredFileValidator;
-  private final VideoExtensionValidator videoExtensionValidator;
-  private final MovieFileProcessor movieFileProcessor;
-  private final SeriesFileProcessor seriesFileProcessor;
+  private final LibraryFileWalk libraryFileWalk;
   private final LibraryRepository libraryRepository;
   private final LibraryMetadataRepository libraryMetadataRepository;
   private final MediaFileRepository mediaFileRepository;
@@ -87,10 +75,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
 
   @Builder
   public LibraryManagementService(
-      IgnoredFileValidator ignoredFileValidator,
-      VideoExtensionValidator videoExtensionValidator,
-      MovieFileProcessor movieFileProcessor,
-      SeriesFileProcessor seriesFileProcessor,
+      LibraryFileWalk libraryFileWalk,
       LibraryRepository libraryRepository,
       LibraryMetadataRepository libraryMetadataRepository,
       MediaFileRepository mediaFileRepository,
@@ -103,10 +88,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
       LibraryMutationTransaction libraryMutationTransaction,
       MutationTransactions mutationTransactions,
       FileDiscoveryRuns fileDiscoveryRuns) {
-    this.ignoredFileValidator = ignoredFileValidator;
-    this.videoExtensionValidator = videoExtensionValidator;
-    this.movieFileProcessor = movieFileProcessor;
-    this.seriesFileProcessor = seriesFileProcessor;
+    this.libraryFileWalk = libraryFileWalk;
     this.libraryRepository = libraryRepository;
     this.libraryMetadataRepository = libraryMetadataRepository;
     this.mediaFileRepository = mediaFileRepository;
@@ -209,7 +191,8 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
 
   @Override
   public void triggerAsyncScan(UUID libraryId) {
-    Thread.startVirtualThread(
+    SystemWork.startThreadRunningAsSystemActor(
+        "library-scan-" + libraryId,
         () -> {
           try {
             scanLibrary(libraryId);
@@ -228,7 +211,8 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
   }
 
   private void startAsyncRefresh(UUID libraryId, Runnable refresh) {
-    Thread.startVirtualThread(
+    SystemWork.startThreadRunningAsSystemActor(
+        "library-refresh-" + libraryId,
         () -> {
           try {
             refresh.run();
@@ -261,7 +245,8 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     deleteLibraryContent(libraryId, mediaFiles);
     libraryRepository.delete(library);
 
-    eventPublisher.publishEvent(new LibraryRemovedEvent(library.getFilepathUri(), mediaFileIds));
+    eventPublisher.publishEvent(
+        new LibraryRemovedEvent(libraryId, library.getFilepathUri(), mediaFileIds));
   }
 
   private Library findLibraryOrThrow(UUID libraryId) {
@@ -292,16 +277,22 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     mediaFileRepository.deleteAll(mediaFiles);
   }
 
+  /** Refreshes the library as the System actor, whoever calls this method. */
   public void refreshLibrary(UUID libraryId) {
     refreshLibrary(libraryId, libraryRefreshService::refreshLibrary);
   }
 
+  /** Refreshes the library as {@link #refreshLibrary(UUID)} does, with {@code imageRefreshMode}. */
   public void refreshLibrary(UUID libraryId, ImageRefreshMode imageRefreshMode) {
     refreshLibrary(
         libraryId, library -> libraryRefreshService.refreshLibrary(library, imageRefreshMode));
   }
 
   private void refreshLibrary(UUID libraryId, Consumer<Library> refresh) {
+    SystemWork.runAsSystemActor(() -> refreshItemsInLibrary(libraryId, refresh));
+  }
+
+  private void refreshItemsInLibrary(UUID libraryId, Consumer<Library> refresh) {
     if (!activeRefreshes.add(libraryId)) {
       throw new LibraryRefreshInProgressException(libraryId);
     }
@@ -340,7 +331,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
       log.info("Starting {} library refresh.", library.getName());
 
       library.setStatus(LibraryStatus.REFRESHING);
-      libraryRepository.save(library);
+      saveStatusAndPublishChange(library);
 
       return library;
     } finally {
@@ -352,30 +343,43 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     var elapsedSeconds = Duration.between(startTime, Instant.now()).getSeconds();
 
     library.setStatus(LibraryStatus.HEALTHY);
-    libraryRepository.save(library);
+    saveStatusAndPublishChange(library);
 
     log.info("Finished {} library refresh in {} seconds.", library.getName(), elapsedSeconds);
   }
 
   private void completeRefreshWithFailure(Library library) {
     library.setStatus(LibraryStatus.UNHEALTHY);
-    libraryRepository.save(library);
+    saveStatusAndPublishChange(library);
   }
 
+  private void saveStatusAndPublishChange(Library library) {
+    libraryRepository.save(library);
+    eventPublisher.publishEvent(new LibraryStatusChangedEvent(library.getId()));
+  }
+
+  /** Processes a file that the file watcher discovered, as the System actor. */
   public void processDiscoveredFile(UUID libraryId, Path path) {
+    SystemWork.runAsSystemActor(() -> processDiscoveredFileInLibrary(libraryId, path));
+  }
+
+  private void processDiscoveredFileInLibrary(UUID libraryId, Path path) {
     var library =
         libraryRepository
             .findById(libraryId)
             .orElseThrow(() -> new LibraryNotFoundException(libraryId));
 
-    try (var discovery = fileDiscoveryRuns.open("file discovery in", library)) {
-      if (processFile(discovery, path, discovery.probeRun()::request)) {
-        eventPublisher.publishEvent(new ItemProcessedEvent(libraryId));
-      }
+    if (libraryFileWalk.tryProcessDiscoveredFile(library, path)) {
+      eventPublisher.publishEvent(new ItemProcessedEvent(libraryId));
     }
   }
 
+  /** Scans the library as the System actor, whoever calls this method. */
   public void scanLibrary(UUID libraryId) {
+    SystemWork.runAsSystemActor(() -> scanFilesInLibrary(libraryId));
+  }
+
+  private void scanFilesInLibrary(UUID libraryId) {
     if (!activeScans.add(libraryId)) {
       throw new LibraryScanInProgressException(libraryId);
     }
@@ -385,7 +389,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
       var startTime = library.getScanStartedOn();
 
       try {
-        var results = fileDiscoveryRuns.awaitResults(discoverFiles(library));
+        var results = fileDiscoveryRuns.awaitResults(libraryFileWalk.discoverFiles(library));
         completeScanSuccessfully(library, startTime, results);
       } catch (LibraryScanFailedException e) {
         completeScanWithFailure(library, e);
@@ -396,76 +400,6 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     }
   }
 
-  private FileDiscovery discoverFiles(Library library) {
-    var discovery = fileDiscoveryRuns.open("scan of", library);
-    try (discovery;
-        var executor = Executors.newVirtualThreadPerTaskExecutor();
-        var stream = Files.walk(FilepathCodec.decode(fileSystem, library.getFilepathUri()))) {
-
-      var tasks =
-          stream
-              .flatMap(file -> regularFile(file).stream())
-              .filter(listed -> !ignoredFileValidator.shouldIgnore(listed.path()))
-              .map(listed -> executor.submit(() -> processListedFile(discovery, listed)))
-              .toList();
-      awaitFileProcessing(library, tasks);
-
-    } catch (IOException | UncheckedIOException | SecurityException | InvalidPathException e) {
-      throw new LibraryScanFailedException(library.getName(), e);
-    }
-
-    return discovery;
-  }
-
-  // Like Files.isRegularFile, this follows links and skips a file whose attributes cannot be read.
-  private static Optional<ListedFile> regularFile(Path path) {
-    try {
-      var attributes = Files.readAttributes(path, BasicFileAttributes.class);
-      if (!attributes.isRegularFile()) {
-        return Optional.empty();
-      }
-
-      return Optional.of(new ListedFile(path, SourceFileSnapshot.of(attributes)));
-    } catch (IOException _) {
-      return Optional.empty();
-    }
-  }
-
-  // The probe is requested with the snapshot the listing observed, so a source that becomes
-  // unreadable afterwards fails its probe attempt rather than the scan.
-  private boolean processListedFile(FileDiscovery discovery, ListedFile listed) {
-    return processFile(
-        discovery,
-        listed.path(),
-        mediaFileId -> discovery.probeRun().request(mediaFileId, listed.snapshot()));
-  }
-
-  private record ListedFile(Path path, SourceFileSnapshot snapshot) {}
-
-  private static void awaitFileProcessing(Library library, List<? extends Future<?>> tasks) {
-    var failures = new ArrayList<Throwable>();
-
-    for (var task : tasks) {
-      try {
-        task.get();
-      } catch (InterruptedException exception) {
-        Thread.currentThread().interrupt();
-        throw new LibraryScanFailedException(library.getName(), exception);
-      } catch (ExecutionException exception) {
-        failures.add(exception.getCause());
-      }
-    }
-
-    if (failures.isEmpty()) {
-      return;
-    }
-
-    var scanFailure =
-        new LibraryScanFailedException(library.getName(), failures.size(), failures.getFirst());
-    failures.stream().skip(1).forEach(scanFailure::addSuppressed);
-    throw scanFailure;
-  }
-
   private void completeScanSuccessfully(Library library, Instant startTime, ScanResults results) {
     eventPublisher.publishEvent(new ScanCompletedEvent(library.getId()));
 
@@ -474,7 +408,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
 
     library.setStatus(LibraryStatus.HEALTHY);
     library.setScanCompletedOn(endTime);
-    libraryRepository.save(library);
+    saveStatusAndPublishChange(library);
 
     log.info(
         "Finished {} library scan in {} seconds: {}.",
@@ -486,7 +420,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
   private void completeScanWithFailure(Library library, Throwable cause) {
     library.setStatus(LibraryStatus.UNHEALTHY);
     library.setScanCompletedOn(Instant.now());
-    libraryRepository.save(library);
+    saveStatusAndPublishChange(library);
 
     log.error("Failed {} library scan.", library.getName(), cause);
   }
@@ -512,95 +446,11 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
 
       library.setStatus(LibraryStatus.SCANNING);
       library.setScanStartedOn(Instant.now());
-      libraryRepository.save(library);
+      saveStatusAndPublishChange(library);
 
       return library;
     } finally {
       libraryMutex.unlock();
     }
-  }
-
-  private boolean processFile(FileDiscovery discovery, Path path, Consumer<UUID> requestProbe) {
-    var library = discovery.library();
-
-    if (!hasSupportedExtension(path)) {
-      log.warn(
-          "Unsupported file extension: {} for filepath {}.",
-          getExtension(path),
-          path.toAbsolutePath());
-      return false;
-    }
-
-    var mediaFile = findOrCreateMediaFile(library, path);
-    requestProbe.accept(mediaFile.getId());
-
-    if (isAlreadyMatched(mediaFile)) {
-      return false;
-    }
-
-    switch (library.getType()) {
-      case MOVIE -> movieFileProcessor.process(discovery, mediaFile);
-      case SERIES -> seriesFileProcessor.process(discovery, mediaFile);
-      default -> throw new IllegalStateException("Unsupported media type: " + library.getType());
-    }
-
-    return true;
-  }
-
-  private boolean hasSupportedExtension(Path path) {
-    return videoExtensionValidator.validate(getExtension(path));
-  }
-
-  private String getExtension(Path path) {
-    return FilenameUtils.getExtension(path.getFileName().toString());
-  }
-
-  private MediaFile findOrCreateMediaFile(Library library, Path path) {
-    var absoluteFilepath = FilepathCodec.encode(path);
-    var filepathMutex = mutexFactory.getMutex(absoluteFilepath);
-
-    filepathMutex.lock();
-    try {
-      var optionalMediaFile = mediaFileRepository.findFirstByFilepathUri(absoluteFilepath);
-
-      if (optionalMediaFile.isEmpty()) {
-        return createNewMediaFile(library, path, absoluteFilepath);
-      }
-
-      var mediaFile = optionalMediaFile.orElseThrow();
-      var filename = FilepathCodec.filenameOf(absoluteFilepath);
-      if (!filename.equals(mediaFile.getFilename())) {
-        mediaFile.setFilename(filename);
-        mediaFileRepository.save(mediaFile);
-      }
-
-      log.info("MediaFile id: '{}' already exists, not adding again.", mediaFile.getId());
-      return mediaFile;
-    } finally {
-      filepathMutex.unlock();
-    }
-  }
-
-  private MediaFile createNewMediaFile(Library library, Path path, String absoluteFilepath) {
-    long fileSize = 0;
-
-    try {
-      fileSize = Files.size(path);
-    } catch (IOException | SecurityException ex) {
-      log.error("Could not get filesize at path: {} media might be corrupt.", absoluteFilepath, ex);
-    }
-
-    return mediaFileRepository.save(
-        MediaFile.builder()
-            .status(MediaFileStatus.UNMATCHED)
-            .filename(FilepathCodec.filenameOf(absoluteFilepath))
-            .filepathUri(absoluteFilepath)
-            .size(fileSize)
-            .libraryId(library.getId())
-            .build());
-  }
-
-  private boolean isAlreadyMatched(MediaFile file) {
-    return file.getStatus().equals(MediaFileStatus.MATCHED);
   }
 }

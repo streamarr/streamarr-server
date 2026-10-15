@@ -37,6 +37,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Movie Service Integration Tests")
@@ -54,6 +55,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
   @Autowired private PersonRepository personRepository;
 
   @Autowired private JdbcTemplate jdbcTemplate;
+  @Autowired private TransactionTemplate transactionTemplate;
 
   @Autowired private MovieService movieService;
 
@@ -1764,12 +1766,14 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
       // Insert an orphaned external_identifier with NULL entity_id.
       // This simulates real-world data that breaks NOT IN due to SQL three-valued logic.
-      jdbcTemplate.update(
-          """
-          INSERT INTO external_identifier (id, created_on, created_by, last_modified_on, external_source_type, external_id, entity_id)
-          VALUES (gen_random_uuid(), now(), '00000000-0000-0000-0000-000000000000', now(), 'TMDB', ?, NULL)
-          """,
-          "orphan-" + library.getId());
+      transactionTemplate.executeWithoutResult(
+          _ ->
+              jdbcTemplate.update(
+                  """
+                  INSERT INTO external_identifier (id, external_source_type, external_id, entity_id)
+                  VALUES (gen_random_uuid(), 'TMDB', ?, NULL)
+                  """,
+                  "orphan-" + library.getId()));
 
       var filter = MediaFilter.builder().libraryId(library.getId()).unmatched(true).build();
 

@@ -340,9 +340,11 @@ class HouseholdDeletionEffectsIT extends AbstractIntegrationTest {
       names = {"DELETE", "PRESERVE"})
   @DisplayName("Should roll back deletion when it would delete the last enabled ServerAdmin")
   void shouldRollBackDeletionWhenItWouldDeleteLastEnabledServerAdmin(FinalDisposition disposition) {
-    dsl.insertInto(SERVER_BOOTSTRAP)
-        .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, admin.account().getId())
-        .execute();
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            dsl.insertInto(SERVER_BOOTSTRAP)
+                .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, admin.account().getId())
+                .execute());
 
     var identity = authTestSupport.freshIdentityOf(admin);
     var outcome =
@@ -850,7 +852,10 @@ class HouseholdDeletionEffectsIT extends AbstractIntegrationTest {
     var target = authTestSupport.createIdentity();
     var unrelated = authTestSupport.createIdentity();
     try {
-      assertThat(userAccountRepository.tryGrantServerAdmin(doomed.account().getId())).isTrue();
+      assertThat(
+              transactionTemplate.<Boolean>execute(
+                  _ -> userAccountRepository.tryGrantServerAdmin(doomed.account().getId())))
+          .isTrue();
       var code =
           acceptedResetCode(
               credentialIssuance.issuePasswordReset(

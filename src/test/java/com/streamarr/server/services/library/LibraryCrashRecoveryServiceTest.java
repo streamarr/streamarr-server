@@ -7,8 +7,10 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaType;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.services.events.library.LibraryStatusChangedEvent;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -19,8 +21,9 @@ import org.junit.jupiter.api.Test;
 class LibraryCrashRecoveryServiceTest {
 
   private final LibraryRepository fakeLibraryRepository = new FakeLibraryRepository();
+  private final CapturingEventPublisher eventPublisher = new CapturingEventPublisher();
   private final LibraryCrashRecoveryService recoveryService =
-      new LibraryCrashRecoveryService(fakeLibraryRepository, id -> false);
+      new LibraryCrashRecoveryService(fakeLibraryRepository, id -> false, eventPublisher);
 
   @Test
   @DisplayName(
@@ -100,7 +103,7 @@ class LibraryCrashRecoveryServiceTest {
     var active = fakeLibraryRepository.save(buildLibrary(LibraryStatus.SCANNING));
 
     ActiveScanChecker checker = id -> id.equals(active.getId());
-    var service = new LibraryCrashRecoveryService(fakeLibraryRepository, checker);
+    var service = new LibraryCrashRecoveryService(fakeLibraryRepository, checker, eventPublisher);
 
     service.onStartup();
 
@@ -117,7 +120,7 @@ class LibraryCrashRecoveryServiceTest {
     var active = fakeLibraryRepository.save(buildLibrary(LibraryStatus.SCANNING));
 
     ActiveScanChecker allActive = id -> true;
-    var service = new LibraryCrashRecoveryService(fakeLibraryRepository, allActive);
+    var service = new LibraryCrashRecoveryService(fakeLibraryRepository, allActive, eventPublisher);
 
     service.onShutdown();
 
@@ -145,6 +148,42 @@ class LibraryCrashRecoveryServiceTest {
 
     assertThat(fakeLibraryRepository.findById(refreshingLibrary.getId()).orElseThrow().getStatus())
         .isEqualTo(LibraryStatus.UNHEALTHY);
+  }
+
+  @Test
+  @DisplayName("Should publish a status change for each reset library when recovering at startup")
+  void shouldPublishStatusChangeForEachResetLibraryWhenRecoveringAtStartup() {
+    var scanningLibrary = fakeLibraryRepository.save(buildLibrary(LibraryStatus.SCANNING));
+    var refreshingLibrary = fakeLibraryRepository.save(buildLibrary(LibraryStatus.REFRESHING));
+    fakeLibraryRepository.save(buildLibrary(LibraryStatus.HEALTHY));
+
+    recoveryService.onStartup();
+
+    assertThat(eventPublisher.getEventsOfType(LibraryStatusChangedEvent.class))
+        .extracting(LibraryStatusChangedEvent::libraryId)
+        .containsExactlyInAnyOrder(scanningLibrary.getId(), refreshingLibrary.getId());
+  }
+
+  @Test
+  @DisplayName("Should publish a status change for each reset library when shutting down")
+  void shouldPublishStatusChangeForEachResetLibraryWhenShuttingDown() {
+    var scanningLibrary = fakeLibraryRepository.save(buildLibrary(LibraryStatus.SCANNING));
+
+    recoveryService.onShutdown();
+
+    assertThat(eventPublisher.getEventsOfType(LibraryStatusChangedEvent.class))
+        .extracting(LibraryStatusChangedEvent::libraryId)
+        .containsExactly(scanningLibrary.getId());
+  }
+
+  @Test
+  @DisplayName("Should publish no status change when no library is stuck at shutdown")
+  void shouldPublishNoStatusChangeWhenNoLibraryIsStuckAtShutdown() {
+    fakeLibraryRepository.save(buildLibrary(LibraryStatus.HEALTHY));
+
+    recoveryService.onShutdown();
+
+    assertThat(eventPublisher.getEventsOfType(LibraryStatusChangedEvent.class)).isEmpty();
   }
 
   private static Library buildLibrary(LibraryStatus status) {

@@ -35,11 +35,24 @@ streaming:
   worker-session:
     port: 0
 
-# Integration tests that need executions build their own scheduler against the test database;
-# the shared context only records requests.
+# Tests never download artwork from the real image host: a refused local port fails each download
+# at once. Tests that need images stub them in WireMock.
+tmdb:
+  image:
+    base-url: http://127.0.0.1:9
+
+# Integration tests that need probe executions build their own scheduler against the test
+# database; the shared context only records probe requests. Artwork schedulers run in every
+# integration test context (RunningArtworkPrioritySchedulersConfiguration).
 db-scheduler:
   enabled: false
 
 # Scans that wait for their probes check stored results often, so tests finish soon after a result.
 probe:
   result-check-interval: 50ms
+
+# Scans and refreshes that wait for primary artwork check its recorded results often, so tests
+# finish soon after a result.
+artwork:
+  runs:
+    result-check-interval: 50ms

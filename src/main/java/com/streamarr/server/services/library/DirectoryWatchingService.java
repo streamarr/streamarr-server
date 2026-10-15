@@ -2,6 +2,7 @@ package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
@@ -14,7 +15,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.annotation.DependsOn;
@@ -44,7 +44,7 @@ public class DirectoryWatchingService implements InitializingBean, LibraryWatchT
             .fileStabilityChecker(fileStabilityChecker)
             .libraryManagementService(libraryManagementService)
             .ignoredFileValidator(ignoredFileValidator)
-            .executors(Executors::newVirtualThreadPerTaskExecutor)
+            .executors(() -> SystemWork.newExecutorRunningAsSystemActor("file-watcher-"))
             .build();
   }
 
@@ -109,8 +109,11 @@ public class DirectoryWatchingService implements InitializingBean, LibraryWatchT
     fileEventProcessor.shutdown();
   }
 
+  // The event loop blocks for the watcher's lifetime. On the common fork-join pool it would hold a
+  // worker that CompletableFuture and the JDK HTTP client need to complete their futures.
   public CompletableFuture<Void> watch() {
-    return watcher.watchAsync();
+    return watcher.watchAsync(
+        eventLoop -> SystemWork.startThreadRunningAsSystemActor("file-watcher-events", eventLoop));
   }
 
   @Override
@@ -119,7 +122,8 @@ public class DirectoryWatchingService implements InitializingBean, LibraryWatchT
 
     libraries.forEach(lib -> directoriesToWatch.add(FilepathCodec.decode(lib.getFilepathUri())));
 
-    Thread.startVirtualThread(
+    SystemWork.startThreadRunningAsSystemActor(
+        "file-watcher-setup",
         () -> {
           try {
             setup(libraries);
@@ -133,7 +137,8 @@ public class DirectoryWatchingService implements InitializingBean, LibraryWatchT
   // watcher behind.
   @Override
   public void triggerAsyncWatch(String filepathUri) {
-    Thread.startVirtualThread(
+    SystemWork.startThreadRunningAsSystemActor(
+        "file-watcher-add",
         () -> {
           try {
             addDirectory(FilepathCodec.decode(filepathUri));

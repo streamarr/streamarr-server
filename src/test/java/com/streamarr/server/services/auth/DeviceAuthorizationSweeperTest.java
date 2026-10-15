@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.domain.auth.DeviceAuthorization;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
 import com.streamarr.server.fakes.FakeDeviceAuthorizationRepository;
+import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.MutableClock;
 import java.time.Duration;
 import java.time.Instant;
@@ -13,6 +14,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("UnitTest")
 @DisplayName("Device Authorization Sweeper Tests")
@@ -26,7 +28,8 @@ class DeviceAuthorizationSweeperTest {
       new FakeDeviceAuthorizationRepository();
 
   private final DeviceAuthorizationSweeper sweeper =
-      new DeviceAuthorizationSweeper(repository, clock);
+      new DeviceAuthorizationSweeper(
+          repository, new TransactionTemplate(new FakeTransactionManager()), clock);
 
   @Test
   @DisplayName("Should delete every row regardless of terminal status when its lifetime has passed")

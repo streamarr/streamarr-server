@@ -11,5 +11,4 @@ type Rating {
 input RatingInput {
     source: String!
     value: String!
-    userId: String!
 }

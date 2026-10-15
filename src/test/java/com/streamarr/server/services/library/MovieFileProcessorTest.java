@@ -11,6 +11,7 @@ import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.domain.media.MatchingFailure;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
@@ -20,13 +21,13 @@ import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakePersonRepository;
 import com.streamarr.server.fakes.FakeProbeTaskRequests;
-import com.streamarr.server.fixtures.ArtworkServiceFixture;
+import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.repositories.PersonRepository;
-import com.streamarr.server.services.ArtworkService;
+import com.streamarr.server.services.ArtworkRequestService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.MetadataFetchOutcome;
@@ -62,8 +63,8 @@ class MovieFileProcessorTest {
       new MovieMetadataProviderResolver(List.of(tmdbMovieProvider));
   private final FakeMediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
   private final FakeMovieRepository fakeMovieRepository = new FakeMovieRepository();
-  private final ArtworkService artworkService =
-      ArtworkServiceFixture.artworkServiceBuilder().build();
+  private final ArtworkFixture artwork = ArtworkFixture.builder().build();
+  private final ArtworkRequestService artworkRequestService = artwork.artworkRequestService();
   private final MovieFileProcessor movieFileProcessor =
       movieFileProcessorSavingPeopleIn(new FakePersonRepository());
 
@@ -108,6 +109,29 @@ class MovieFileProcessorTest {
       // Clear the interrupt flag so it doesn't affect other tests
       Thread.interrupted();
     }
+  }
+
+  @Test
+  @DisplayName("Should return a parsing failure without searching when the filename has no title")
+  void shouldReturnAParsingFailureWithoutSearchingWhenTheFilenameHasNoTitle() {
+    var library = LibraryFixtureCreator.buildFakeLibrary();
+    var mediaFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .filepathUri("file:///library/---/---")
+                .filename("---")
+                .status(MediaFileStatus.UNMATCHED)
+                .build());
+
+    var outcome = movieFileProcessor.process(discoveryOf(library), mediaFile);
+
+    assertThat(outcome)
+        .isEqualTo(
+            new MatchingOutcome.NotMatched(
+                MatchingFailure.of(MediaFileStatus.METADATA_PARSING_FAILED)));
+    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
+        .isEqualTo(MediaFileStatus.METADATA_PARSING_FAILED);
   }
 
   @Test
@@ -327,7 +351,7 @@ class MovieFileProcessorTest {
   private FileDiscovery discoveryOf(Library library) {
     var outcomes = new FakeMediaFileContainerInfoRepository();
     return FileDiscoveryRunsFixture.fileDiscoveryRunsBuilder()
-        .artworkService(artworkService)
+        .artwork(artwork)
         .mediaFiles(fakeMediaFileRepository)
         .outcomes(outcomes)
         .probeTaskRequests(new FakeProbeTaskRequests(outcomes))
@@ -342,7 +366,7 @@ class MovieFileProcessorTest {
             fakeMovieRepository,
             CreditServiceFixture.creditServiceBuilder().personRepository(personRepository).build(),
             null,
-            artworkService,
+            artworkRequestService,
             null,
             null,
             null,

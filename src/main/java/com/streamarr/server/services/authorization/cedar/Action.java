@@ -10,6 +10,8 @@ enum Action {
   REMOVE_LIBRARY("removeLibrary", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
   SCAN_LIBRARY("scanLibrary", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
   REFRESH_LIBRARY("refreshLibrary", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  VIEW_LIBRARY_ADMINISTRATION(
+      "viewLibraryAdministration", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
   VIEW_PROFILE_PICKER(
       "viewProfilePicker",
       ResourceKind.HOUSEHOLD,

@@ -7,19 +7,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.media.ArtworkStepsAttempt;
+import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.exceptions.ObsoleteArtworkStepsAttemptException;
+import com.streamarr.server.fixtures.ArtworkStepsAttemptFixture;
 import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.ImageService.ProcessedImage;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
-import java.time.Instant;
+import com.streamarr.server.support.TestFixtureWork;
+import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
@@ -28,7 +33,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -36,8 +40,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @DisplayName("Item Artwork Deletion Integration Tests")
 class ItemArtworkDeletionIT extends AbstractIntegrationTest {
 
-  private static final Instant ATTEMPTED_AT = Instant.parse("2026-09-23T10:00:00Z");
-
+  @Autowired private ArtworkRequestRepository artworkRequests;
   @Autowired private MovieService movieService;
   @Autowired private ImageService imageService;
   @Autowired private ImageRepository imageRepository;
@@ -55,7 +58,7 @@ class ItemArtworkDeletionIT extends AbstractIntegrationTest {
   void saveMovieWithPoster() {
     movieId = SavedMediaFixture.saveMovie(libraryRepository, movieRepository).getId();
     poster = processedPoster("/poster.jpg");
-    imageService.saveImages(poster.images(), ATTEMPTED_AT);
+    imageService.saveImages(poster.images(), requestedAttempt(poster.images()));
   }
 
   @AfterEach
@@ -89,9 +92,11 @@ class ItemArtworkDeletionIT extends AbstractIntegrationTest {
             .rowId(poster.images().getFirst().getId())
             .build();
 
+    var attempt = requestedAttempt(replacement.images());
+
     try (var imageLock = lockRow(posterRow);
-        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var replace = executor.submit(() -> imageService.replaceImages(replacement, ATTEMPTED_AT));
+        var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
+      var replace = executor.submit(() -> imageService.replaceImages(replacement, attempt));
       awaitWaitersBehind(jdbcTemplate, imageLock.backendPid(), 1);
       var delete = executor.submit(() -> movieService.deleteMovieById(movieId));
       awaitWaitersBehind(jdbcTemplate, imageLock.backendPid(), 2);
@@ -117,10 +122,11 @@ class ItemArtworkDeletionIT extends AbstractIntegrationTest {
   @DisplayName("Should reject a replacement and delete its files when the movie was deleted")
   void shouldRejectAReplacementAndDeleteItsFilesWhenTheMovieWasDeleted() {
     var replacement = processedPoster("/replacement.jpg");
+    var attempt = requestedAttempt(replacement.images());
     movieService.deleteMovieById(movieId);
 
-    assertThatThrownBy(() -> imageService.replaceImages(replacement, ATTEMPTED_AT))
-        .isInstanceOf(DataIntegrityViolationException.class);
+    assertThatThrownBy(() -> imageService.replaceImages(replacement, attempt))
+        .isInstanceOf(ObsoleteArtworkStepsAttemptException.class);
     assertThat(imageRepository.findByEntityIdAndEntityType(movieId, ImageEntityType.MOVIE))
         .isEmpty();
     assertThat(replacement.writtenFiles())
@@ -131,5 +137,10 @@ class ItemArtworkDeletionIT extends AbstractIntegrationTest {
   private ProcessedImage processedPoster(String key) {
     return imageService.processImage(
         createTestImage(600, 900), ImageType.POSTER, movieId, ImageEntityType.MOVIE, key);
+  }
+
+  private ArtworkStepsAttempt requestedAttempt(List<Image> images) {
+    return ArtworkStepsAttemptFixture.requestedAttemptFor(
+        transactionTemplate, artworkRequests, images);
   }
 }

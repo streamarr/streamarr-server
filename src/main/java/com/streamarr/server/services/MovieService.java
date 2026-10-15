@@ -43,7 +43,7 @@ public class MovieService {
   private final MovieRepository movieRepository;
   private final CreditService creditService;
   private final PaginationService paginationService;
-  private final ArtworkService artworkService;
+  private final ArtworkRequestService artworkRequestService;
   private final ImageService imageService;
   private final MediaFileRepository mediaFileRepository;
   private final PersonRepository personRepository;
@@ -104,7 +104,7 @@ public class MovieService {
 
     var savedMovie = saveMovieWithMediaFile(movie, mediaFile);
 
-    fetchRequiredArtwork(savedMovie.getId(), metadataResult.imageSources(), artworkRun);
+    requestPrimaryArtwork(savedMovie.getId(), metadataResult.imageSources(), artworkRun);
 
     return savedMovie;
   }
@@ -129,17 +129,17 @@ public class MovieService {
         .copyTo(existing);
 
     var saved = movieRepository.saveAndFlush(existing);
-    fetchRequiredArtwork(saved.getId(), metadataResult.imageSources(), artworkRun);
+    requestPrimaryArtwork(saved.getId(), metadataResult.imageSources(), artworkRun);
     return saved;
   }
 
-  private void fetchRequiredArtwork(
+  private void requestPrimaryArtwork(
       UUID movieId, List<ImageSource> sources, ArtworkRun artworkRun) {
-    artworkService.fetchRequired(
+    artworkRequestService.requestPrimaryArtwork(
         artworkRun,
         ArtworkSources.builder()
-            .entityId(movieId)
-            .entityType(ImageEntityType.MOVIE)
+            .targetId(movieId)
+            .targetType(ImageEntityType.MOVIE)
             .sources(sources)
             .build());
   }

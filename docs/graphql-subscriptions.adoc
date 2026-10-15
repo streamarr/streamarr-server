@@ -1,0 +1,211 @@
+= GraphQL Subscriptions
+
+Streamarr delivers live library-administration changes over GraphQL subscriptions.
+https://github.com/streamarr/streamarr-adr/blob/main/adr/0042-graphql-subscriptions-run-over-websocket-until-token-expiry.adoc[ADR 0042] records the decision.
+The schema descriptions in `src/main/resources/schema/root-subscription.graphqls` define each field.
+
+== Transport
+
+Subscriptions run only over the `graphql-transport-ws` WebSocket protocol on `/graphql`.
+Queries and mutations run only over HTTP `POST /graphql`.
+
+The server refuses an operation on the wrong transport before it executes:
+
+* A subscription sent over HTTP gets the error code `WEBSOCKET_REQUIRED`.
+* A request that asks for `text/event-stream` gets HTTP 406 and the error code `WEBSOCKET_REQUIRED`.
+* A query or mutation sent over the WebSocket gets the error code `HTTP_REQUIRED`.
+
+== Authentication
+
+The opening HTTP handshake carries the credential.
+Browsers send the access cookie.
+Native clients send an `Authorization: Bearer` header.
+The `connection_init` payload carries no credential.
+
+The handshake answers:
+
+[cols="1,3"]
+|===
+|Response |Meaning
+
+|101
+|The socket is open. Send `connection_init` next.
+
+|401
+|No credential, or the access token is invalid or expired. Refresh the token, then reconnect.
+
+|403
+|The `Origin` header names another site.
+|===
+
+A browser may connect from the server's own origin or from the origin of `STREAMARR_BASE_URL`.
+A request without an `Origin` header, as native clients send, passes the origin check.
+Browsers report every refused handshake as close code 1006 and hide the HTTP status.
+A browser client that sees 1006 before `connection_ack` refreshes its token before it reconnects.
+
+Each operation is authorized when the client subscribes.
+A caller who is not a ServerAdmin gets a `next` message with the error code `FORBIDDEN`, then `complete`.
+`AUTHORIZATION_UNAVAILABLE` means the server could not decide; retry later.
+
+== Access token expiry
+
+A socket lives no longer than the access token that opened it.
+At expiry the server closes the socket with code 4100 and the reason `Access token expired`.
+The server sends no `complete` message first.
+The client refreshes its token, opens a new socket, and subscribes again.
+
+== Slow clients
+
+The server holds at most `GRAPHQL_SUBSCRIPTION_CONNECTION_SEND_BUFFER` unsent bytes for each socket.
+A client that stops reading lets those bytes grow.
+When one more frame would exceed the limit, the server discards the unsent frames, ignores further messages, and closes the socket with code 4101 and the reason `Client fell behind`.
+One frame larger than the limit closes the socket the same way.
+The client reconnects, subscribes, and queries `libraries` again.
+Other sockets keep receiving changes, and scans and refreshes continue.
+
+== Close codes
+
+[cols="1,3"]
+|===
+|Code |Meaning
+
+|4100
+|The opening access token expired. Refresh, reconnect, and subscribe again.
+
+|4101
+|The client fell behind. Reconnect, subscribe, and query again.
+
+|4400
+|The client sent a message the protocol does not allow.
+
+|4401
+|The client subscribed before `connection_ack`.
+
+|4408
+|The client sent no `connection_init` within `GRAPHQL_WEBSOCKET_CONNECTION_INIT_TIMEOUT`.
+
+|4409
+|The client reused the id of a running operation.
+
+|4429
+|The client sent a second `connection_init`.
+
+|1001
+|The server is shutting down. Reconnect.
+
+|1011
+|The server failed unexpectedly. Reconnect after a delay.
+|===
+
+The codes 4400, 4401, 4409 and 4429 report a client defect.
+A client stops and reports these codes instead of reconnecting.
+
+== Operation errors
+
+[cols="1,3"]
+|===
+|Code |Meaning
+
+|`FORBIDDEN`
+|The caller is not a ServerAdmin. The operation ends.
+
+|`AUTHORIZATION_UNAVAILABLE`
+|The server could not decide authorization. Subscribe again later.
+
+|`SUBSCRIPTION_OVERFLOW`
+|Changes for the operation arrived faster than the server could resolve them, and more than `GRAPHQL_SUBSCRIPTION_OPERATION_BUFFER` waited. The server ends that operation with an `error` message. Subscribe again, then query `libraries` again. A client that stops reading gets close code 4101 instead.
+
+|`TOO_MANY_OPERATIONS`
+|The connection already runs `GRAPHQL_SUBSCRIPTION_MAX_OPERATIONS_PER_CONNECTION` operations. Complete one first.
+|===
+
+A subscription never completes normally while the server runs.
+Another unexpected failure ends the operation with the error `Subscription error`.
+
+== Client lifecycle
+
+A client subscribes first and then queries `libraries { id name status scanStartedOn scanCompletedOn }`.
+It applies each change by library id.
+The server sends no snapshot and replays nothing missed.
+After every reconnect, the client subscribes and queries again.
+
+Each field delivers one library's changes in commit order.
+There is no order across libraries or across fields: `libraryAdded` and `libraryStatusChanged` for one library may arrive in either order.
+A client that receives `libraryStatusChanged` for a library it does not hold yet adds that library.
+`libraryStatusChanged` delivers the library as the server reads it after the change.
+A client may miss an intermediate status, but the last change it receives carries the latest status.
+
+Clients reconnect with an exponential, jittered delay capped near 30 seconds, and retry without limit.
+They stop on logout, on a permanent authentication failure, and when the client is disposed.
+Before each reconnect after 4100 or a refused handshake, the client refreshes its token.
+
+* Web clients use the `graphql-ws` library.
+Its default retry wait grows without a cap, and it stops after five attempts, so the client sets `retryAttempts: Infinity` and a capped `retryWait`.
+`graphql-ws` retries 1001, 1006, 4100, 4101 and 4408 itself.
+It treats 1011, 4400, 4401, 4409 and 4429 as fatal, so the client reconnects after 1011 itself.
+* Apple clients use the Apollo iOS WebSocket transport.
+It reports no close code: any server close ends the subscription stream.
+It does not reconnect by default, and when enabled it reconnects once after a fixed interval.
+The app reconnects with its own backoff and passes the fresh token through `updateHeaderValues(_:reconnectIfConnected:)`.
+
+A client closes its socket on logout and when the user switches Profile or Household, because the socket keeps the authority it opened with.
+It discards changes that arrive from the old socket after the switch, so they never reach the new identity's cache.
+
+== Configuration
+
+[cols="2,1,3"]
+|===
+|Variable |Default |Meaning
+
+|`GRAPHQL_WEBSOCKET_CONNECTION_INIT_TIMEOUT`
+|`10s`
+|How long the server waits for `connection_init`.
+
+|`GRAPHQL_WEBSOCKET_KEEP_ALIVE`
+|`20s`
+|How often the server sends `ping`. Keep it below the proxy idle timeout.
+
+|`GRAPHQL_SUBSCRIPTION_OPERATION_BUFFER`
+|`64`
+|How many changes may wait for one operation before `SUBSCRIPTION_OVERFLOW`.
+
+|`GRAPHQL_SUBSCRIPTION_MAX_OPERATIONS_PER_CONNECTION`
+|`32`
+|How many operations one socket may run at once.
+
+|`GRAPHQL_SUBSCRIPTION_CONNECTION_SEND_BUFFER`
+|`1MB`
+|How many unsent bytes one socket may hold before it closes with 4101.
+|===
+
+The server refuses to start when a subscription limit is missing, zero, or negative.
+Tomcat ends a socket write that stalls for 20 seconds.
+
+== Metrics
+
+[cols="2,1,3"]
+|===
+|Metric |Type |Meaning
+
+|`streamarr.graphql.subscriptions.active`
+|Gauge, tag `field`
+|Subscription operations registered for each subscription field.
+
+|`streamarr.graphql.subscriptions.publication_failures`
+|Counter, tag `field`
+|Changes the server could not publish. The change itself still committed; subscribers see it on their next query.
+
+|`streamarr.graphql.websocket.client_fell_behind`
+|Counter
+|Sockets closed with 4101.
+|===
+
+== Reverse proxies
+
+A reverse proxy in front of the server must pass WebSocket upgrades on `/graphql`:
+
+* Forward the `Upgrade` and `Connection` headers.
+* Set the read timeout above `GRAPHQL_WEBSOCKET_KEEP_ALIVE`.
+* Set `STREAMARR_BASE_URL` to the public URL, or forward `Host` and `X-Forwarded-Proto` and set `SERVER_FORWARD_HEADERS_STRATEGY=native`.
+
+Without the last step, browsers send a public `Origin` that the server rejects with 403.
