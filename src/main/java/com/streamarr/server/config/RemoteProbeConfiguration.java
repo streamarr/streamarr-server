@@ -19,7 +19,10 @@ public class RemoteProbeConfiguration {
     return remoteFfprobeService(workerSessionServer, properties);
   }
 
-  // A bean that is only a scanner keeps one FfprobeService bean, which tests can replace.
+  // A method reference, so the bean is only a KeyframePacketScanner. Spring matches a singleton by
+  // its instance type, so returning the RemoteFfprobeService would make this bean a second
+  // FfprobeService candidate, and every FfprobeService injection and @TestBean would find two.
+  // For the same reason, RemoteFfprobeService does not implement KeyframePacketScanner.
   @Bean
   public KeyframePacketScanner keyframePacketScanner(
       WorkerSessionServer workerSessionServer, RemoteTranscodeProperties properties) {
