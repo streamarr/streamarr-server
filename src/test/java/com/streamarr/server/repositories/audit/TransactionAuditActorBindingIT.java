@@ -175,27 +175,30 @@ class TransactionAuditActorBindingIT extends AbstractIntegrationTest {
   }
 
   enum ThreadKind {
-    PLATFORM(Thread.ofPlatform()),
-    VIRTUAL(Thread.ofVirtual());
+    PLATFORM,
+    VIRTUAL;
 
-    private final Thread.Builder builder;
-
-    ThreadKind(Thread.Builder builder) {
-      this.builder = builder;
+    private Thread.Builder newBuilder() {
+      return switch (this) {
+        case PLATFORM -> Thread.ofPlatform();
+        case VIRTUAL -> Thread.ofVirtual();
+      };
     }
   }
 
   private static CompletableFuture<Void> runOnNewThread(ThreadKind threadKind, Runnable work) {
     var outcome = new CompletableFuture<Void>();
-    threadKind.builder.start(
-        () -> {
-          try {
-            work.run();
-            outcome.complete(null);
-          } catch (RuntimeException failure) {
-            outcome.completeExceptionally(failure);
-          }
-        });
+    threadKind
+        .newBuilder()
+        .start(
+            () -> {
+              try {
+                work.run();
+                outcome.complete(null);
+              } catch (RuntimeException failure) {
+                outcome.completeExceptionally(failure);
+              }
+            });
     return outcome;
   }
 
