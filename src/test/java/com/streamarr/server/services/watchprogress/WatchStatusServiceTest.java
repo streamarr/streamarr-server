@@ -76,7 +76,7 @@ class WatchStatusServiceTest {
     void shouldCreateWatchHistoryEntryWhenMarkingWatchedExplicitly() {
       var movieId = UUID.randomUUID();
 
-      service.markWatched(PROFILE_ID, movieId, CollectableScope.DIRECT_MEDIA, Instant.now(), 7200);
+      service.markWatched(PROFILE_ID, movieId, CollectableScope.DIRECT_MEDIA, 7200);
 
       var history =
           watchHistoryRepository.findFirstByProfileIdAndCollectableIdOrderByWatchedAtDesc(
@@ -93,7 +93,7 @@ class WatchStatusServiceTest {
       episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
       episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
 
-      service.markWatched(PROFILE_ID, season.getId(), CollectableScope.SEASON, Instant.now(), 3600);
+      service.markWatched(PROFILE_ID, season.getId(), CollectableScope.SEASON, 3600);
 
       assertThat(watchHistoryRepository.count()).isEqualTo(2);
     }
@@ -104,8 +104,7 @@ class WatchStatusServiceTest {
       var movie = buildMovie();
       mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
-      service.markWatched(
-          PROFILE_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, Instant.now(), 7200);
+      service.markWatched(PROFILE_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, 7200);
 
       var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId()));
       assertThat(result).containsEntry(movie.getId(), WatchStatus.WATCHED);
@@ -117,8 +116,7 @@ class WatchStatusServiceTest {
       var movie = movieRepository.save(buildMovie());
       mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
-      service.markWatched(
-          PROFILE_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, Instant.now(), 7200);
+      service.markWatched(PROFILE_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, 7200);
       service.markUnwatched(PROFILE_ID, movie.getId());
 
       var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId()));
@@ -131,8 +129,7 @@ class WatchStatusServiceTest {
       var movie = buildMovie();
       var mf = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
-      service.markWatched(
-          PROFILE_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, Instant.now(), 7200);
+      service.markWatched(PROFILE_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, 7200);
 
       // Simulate active re-watch session
       sessionProgressRepository.save(
@@ -394,7 +391,7 @@ class WatchStatusServiceTest {
       var first = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
       var second =
           episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
-      service.markWatched(PROFILE_ID, season.getId(), CollectableScope.SEASON, Instant.now(), 3600);
+      service.markWatched(PROFILE_ID, season.getId(), CollectableScope.SEASON, 3600);
 
       service.markUnwatched(PROFILE_ID, season.getId(), CollectableScope.SEASON);
 
@@ -422,7 +419,7 @@ class WatchStatusServiceTest {
       episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
       episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
 
-      service.markWatched(PROFILE_ID, series.getId(), CollectableScope.SERIES, Instant.now(), 3600);
+      service.markWatched(PROFILE_ID, series.getId(), CollectableScope.SERIES, 3600);
 
       var result = service.getWatchStatusForSeries(PROFILE_ID, List.of(series.getId()));
       assertThat(result).containsEntry(series.getId(), WatchStatus.WATCHED);
@@ -437,8 +434,7 @@ class WatchStatusServiceTest {
           episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
       episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
 
-      service.markWatched(
-          PROFILE_ID, watched.getId(), CollectableScope.DIRECT_MEDIA, Instant.now(), 3600);
+      service.markWatched(PROFILE_ID, watched.getId(), CollectableScope.DIRECT_MEDIA, 3600);
 
       var result = service.getWatchStatusForSeries(PROFILE_ID, List.of(series.getId()));
       assertThat(result).containsEntry(series.getId(), WatchStatus.IN_PROGRESS);

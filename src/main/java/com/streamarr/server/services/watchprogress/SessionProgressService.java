@@ -11,7 +11,6 @@ import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.services.watchprogress.events.ItemWatchedEvent;
 import com.streamarr.server.services.watchprogress.events.SessionProgressChangedEvent;
-import java.time.Instant;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -96,11 +95,7 @@ public class SessionProgressService {
 
     var collectableId = resolveCollectableId(ctx.mediaFileId());
     watchStatusService.markWatched(
-        profileId,
-        collectableId,
-        CollectableScope.DIRECT_MEDIA,
-        Instant.now(),
-        ctx.durationSeconds());
+        profileId, collectableId, CollectableScope.DIRECT_MEDIA, ctx.durationSeconds());
 
     eventPublisher.publishEvent(
         ItemWatchedEvent.builder()

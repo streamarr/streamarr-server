@@ -17,7 +17,6 @@ import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
-import java.time.Instant;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -66,28 +65,20 @@ public class WatchStatusService {
       return Outcome.rejected(new MarkWatchedRejection.ItemNotFound(itemId));
     }
 
-    markWatchedInternal(profileId, itemId, scopeOf(item.get()), Instant.now(), 0);
+    markWatchedInternal(profileId, itemId, scopeOf(item.get()), 0);
     return Outcome.accepted(item.get());
   }
 
   @Transactional
   public void markWatched(
-      UUID profileId,
-      UUID collectableId,
-      CollectableScope scope,
-      Instant watchedAt,
-      int durationSeconds) {
-    markWatchedInternal(profileId, collectableId, scope, watchedAt, durationSeconds);
+      UUID profileId, UUID collectableId, CollectableScope scope, int durationSeconds) {
+    markWatchedInternal(profileId, collectableId, scope, durationSeconds);
   }
 
   private void markWatchedInternal(
-      UUID profileId,
-      UUID collectableId,
-      CollectableScope scope,
-      Instant watchedAt,
-      int durationSeconds) {
+      UUID profileId, UUID collectableId, CollectableScope scope, int durationSeconds) {
     var leafIds = resolveLeafCollectableIds(collectableId, scope);
-    watchHistoryRepository.batchInsert(profileId, leafIds, watchedAt, durationSeconds);
+    watchHistoryRepository.batchInsert(profileId, leafIds, durationSeconds);
 
     eventPublisher.publishEvent(new WatchStatusChangedEvent(profileId, collectableId));
   }

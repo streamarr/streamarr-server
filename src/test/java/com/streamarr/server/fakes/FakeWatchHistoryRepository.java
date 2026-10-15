@@ -36,8 +36,8 @@ public class FakeWatchHistoryRepository extends FakeJpaRepository<WatchHistory>
   }
 
   @Override
-  public void batchInsert(
-      UUID profileId, Collection<UUID> collectableIds, Instant watchedAt, int durationSeconds) {
+  public void batchInsert(UUID profileId, Collection<UUID> collectableIds, int durationSeconds) {
+    var watchedAt = Instant.now();
     for (var collectableId : collectableIds) {
       save(
           WatchHistory.builder()

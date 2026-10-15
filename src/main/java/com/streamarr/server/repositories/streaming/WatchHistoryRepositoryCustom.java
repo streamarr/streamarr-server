@@ -8,8 +8,8 @@ import java.util.UUID;
 
 public interface WatchHistoryRepositoryCustom {
 
-  void batchInsert(
-      UUID profileId, Collection<UUID> collectableIds, Instant watchedAt, int durationSeconds);
+  /** Stamps each completion with the database clock, the clock that stamps session progress. */
+  void batchInsert(UUID profileId, Collection<UUID> collectableIds, int durationSeconds);
 
   void dismissAll(UUID profileId, Collection<UUID> collectableIds);
 

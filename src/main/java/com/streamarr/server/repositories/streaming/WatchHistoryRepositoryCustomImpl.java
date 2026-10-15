@@ -2,12 +2,13 @@ package com.streamarr.server.repositories.streaming;
 
 import static com.streamarr.server.jooq.generated.tables.BaseCollectable.BASE_COLLECTABLE;
 import static com.streamarr.server.jooq.generated.tables.WatchHistory.WATCH_HISTORY;
+import static org.jooq.impl.DSL.currentOffsetDateTime;
+import static org.jooq.impl.DSL.row;
+import static org.jooq.impl.DSL.val;
 
 import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.repositories.LastWatchedExpression;
 import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.Collection;
 import java.util.Map;
 import java.util.UUID;
@@ -22,34 +23,39 @@ public class WatchHistoryRepositoryCustomImpl implements WatchHistoryRepositoryC
   private final DSLContext dsl;
 
   @Override
-  public void batchInsert(
-      UUID profileId, Collection<UUID> collectableIds, Instant watchedAt, int durationSeconds) {
-    var watchedAtOdt = watchedAt.atOffset(ZoneOffset.UTC);
-    var insert =
-        dsl.insertInto(
-                WATCH_HISTORY,
-                WATCH_HISTORY.PROFILE_ID,
-                WATCH_HISTORY.COLLECTABLE_ID,
-                WATCH_HISTORY.WATCHED_AT,
-                WATCH_HISTORY.DURATION_SECONDS)
-            .values((UUID) null, null, null, null)
-            .onConflict(
-                WATCH_HISTORY.PROFILE_ID, WATCH_HISTORY.COLLECTABLE_ID, WATCH_HISTORY.WATCHED_AT)
-            .doNothing();
-
-    var batch = dsl.batch(insert);
-    for (var collectableId : collectableIds) {
-      batch = batch.bind(profileId, collectableId, watchedAtOdt, durationSeconds);
+  public void batchInsert(UUID profileId, Collection<UUID> collectableIds, int durationSeconds) {
+    if (collectableIds.isEmpty()) {
+      return;
     }
-    batch.execute();
+
+    var rows =
+        collectableIds.stream()
+            .map(
+                collectableId ->
+                    row(
+                        val(profileId),
+                        val(collectableId),
+                        currentOffsetDateTime(),
+                        val(durationSeconds)))
+            .toList();
+
+    dsl.insertInto(
+            WATCH_HISTORY,
+            WATCH_HISTORY.PROFILE_ID,
+            WATCH_HISTORY.COLLECTABLE_ID,
+            WATCH_HISTORY.WATCHED_AT,
+            WATCH_HISTORY.DURATION_SECONDS)
+        .valuesOfRows(rows)
+        .onConflict(
+            WATCH_HISTORY.PROFILE_ID, WATCH_HISTORY.COLLECTABLE_ID, WATCH_HISTORY.WATCHED_AT)
+        .doNothing()
+        .execute();
   }
 
   @Override
   public void dismissAll(UUID profileId, Collection<UUID> collectableIds) {
-    var now = OffsetDateTime.now(ZoneOffset.UTC);
-
     dsl.update(WATCH_HISTORY)
-        .set(WATCH_HISTORY.DISMISSED_AT, now)
+        .set(WATCH_HISTORY.DISMISSED_AT, currentOffsetDateTime())
         .where(WATCH_HISTORY.PROFILE_ID.eq(profileId))
         .and(WATCH_HISTORY.COLLECTABLE_ID.in(collectableIds))
         .and(WATCH_HISTORY.DISMISSED_AT.isNull())
