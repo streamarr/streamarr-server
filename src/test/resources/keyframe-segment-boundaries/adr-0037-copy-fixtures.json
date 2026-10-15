@@ -1,0 +1,39 @@
+{
+  "source": "streamarr/streamarr-transcode-worker src/test/resources/fmp4/expected.json",
+  "sourceCommit": "8b8144b5f4b69f2f6ccec1032f98d19c457db190",
+  "copied": "Each fixture's period, video timescale, source keyframe presentation times (sourceKeyframeCheck.keyframePresentationTimes), the producer's segment starts (segments[].firstVideoPresentationTime) and the segment number the producer skipped (failure.expectedNumber).",
+  "fixtures": [
+    {
+      "name": "02-copy-irregular-keyframes",
+      "periodSeconds": 6,
+      "videoTimescale": 12288,
+      "keyframePresentationTimes": [0, 79872, 147456, 221184, 301056, 368640, 448512, 516096, 589824, 669696, 737280],
+      "segmentStarts": [0, 79872, 147456, 221184, 301056, 368640, 448512, 516096, 589824, 669696, 737280],
+      "skippedSegmentNumber": null
+    },
+    {
+      "name": "04-copy-vfr-bframes",
+      "periodSeconds": 6,
+      "videoTimescale": 24000,
+      "keyframePresentationTimes": [984, 60043, 142125, 197180, 295278, 432415, 456439, 578561, 719702, 744727, 868851, 973956, 1010993, 1150132, 1176158, 1279261, 1299281, 1439421, 1464446, 1560542],
+      "segmentStarts": [984, 197180, 295278, 432415, 578561, 744727, 868851, 1010993, 1176158, 1299281, 1464446],
+      "skippedSegmentNumber": null
+    },
+    {
+      "name": "07-copy-start0",
+      "periodSeconds": 6,
+      "videoTimescale": 24000,
+      "keyframePresentationTimes": [0, 48048, 96096, 144144, 192192, 240240, 288288, 336336, 384384, 432432, 480480, 528528, 576576, 624624, 672672, 720720, 768768, 816816, 864864, 912912, 960960, 1009008, 1057056, 1105104, 1153152, 1201200, 1249248, 1297296, 1345344, 1393392, 1441440, 1489488, 1537536],
+      "segmentStarts": [0, 144144, 288288, 432432, 576576, 720720, 864864, 1009008, 1153152, 1297296, 1441440],
+      "skippedSegmentNumber": null
+    },
+    {
+      "name": "10-copy-gop-exceeds-period",
+      "periodSeconds": 6,
+      "videoTimescale": 24000,
+      "keyframePresentationTimes": [0, 240240, 480480],
+      "segmentStarts": [0, 240240],
+      "skippedSegmentNumber": 2
+    }
+  ]
+}
