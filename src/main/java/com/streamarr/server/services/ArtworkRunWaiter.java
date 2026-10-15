@@ -3,18 +3,16 @@ package com.streamarr.server.services;
 import com.streamarr.server.config.ArtworkRunProperties;
 import com.streamarr.server.domain.media.ArtworkCompletionEvidence;
 import com.streamarr.server.domain.media.ArtworkTarget;
-import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
+import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.services.concurrency.Sleeper;
 import java.time.Clock;
 import java.time.Duration;
-import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,9 +20,10 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 /**
- * Waits until the primary artwork that a run requested has recorded results. Artwork steps run in
- * db-scheduler, so the wait reads recorded results rather than waiting for an in-process signal,
- * and a result recorded after a restart counts as well (ADR 0027).
+ * Waits until the primary artwork that a library operation or one of its tasks requested has
+ * recorded results. Artwork steps run in db-scheduler, so the wait reads recorded results rather
+ * than waiting for an in-process signal, and a result recorded after a restart counts as well (ADR
+ * 0027).
  */
 @Slf4j
 @Service
@@ -33,18 +32,36 @@ import org.springframework.stereotype.Service;
 public class ArtworkRunWaiter {
 
   private final ArtworkRequestRepository requests;
+  private final ItemResultRepository itemResults;
   private final Sleeper sleeper;
   private final Clock clock;
   private final ArtworkRunProperties properties;
 
   /**
-   * Waits until each image type that the closed run awaits has a result of the awaited generation
-   * or a newer one. A failed result counts: its retry continues in the background. A target that
-   * was deleted, or whose newer request no longer asks for an awaited type, no longer holds the
-   * run. Counts follow each image's own recorded outcome.
+   * Waits until each primary artwork request that carries the run's library operation id has a
+   * result carrying that id for every image of the request's generation. The requests come from the
+   * database, so an execution after a restart also waits for artwork that an earlier execution of
+   * the operation requested. A failed result counts: its retry continues in the background. Counts
+   * follow each image's own recorded outcome, plus the stored images that this run kept.
+   *
+   * @throws IllegalArgumentException if the run belongs to no library operation
    */
-  public ArtworkRunSummary awaitResults(ArtworkRun run) throws InterruptedException {
-    var counts = awaitFinishedArtwork(run, properties.resultCheckInterval());
+  public ArtworkRunSummary awaitLibraryOperationResults(ArtworkRun run)
+      throws InterruptedException {
+    var libraryOperationId =
+        run.libraryOperationId()
+            .orElseThrow(
+                () ->
+                    new IllegalArgumentException(
+                        "Artwork run belongs to no library operation: " + run.description()));
+    while (requests.countPrimaryImagesAwaitingResultForLibraryOperation(libraryOperationId) > 0) {
+      sleeper.sleep(properties.resultCheckInterval());
+    }
+
+    var counts =
+        FinishedImageCounts.NONE
+            .plusSkipped(run.keptImages())
+            .plus(itemResults.countArtworkOutcomesForLibraryOperation(libraryOperationId));
     var elapsed =
         run.firstRequestedAt()
             .map(requestedAt -> Duration.between(requestedAt, clock.instant()))
@@ -60,12 +77,14 @@ public class ArtworkRunWaiter {
   }
 
   /**
-   * Tries to wait as {@link #awaitResults} does for the artwork that one closed task run awaits,
-   * and checks more often, because an admitted task holds its admission while it waits. A task that
-   * awaits no artwork returns at once without reading any result.
+   * Tries to wait until each image type that one closed task run awaits has a result of the awaited
+   * generation or a newer one, checking often, because an admitted task holds its admission while
+   * it waits. A task of a library operation counts only results that carry the operation's id. A
+   * target that was deleted, or whose newer request no longer asks for an awaited type, no longer
+   * holds the task. A task that awaits no artwork returns at once without reading any result.
    *
-   * <p>A failed read stops the task's wait instead of failing the task. The operation's run holds
-   * the same artwork, and {@link #awaitResults} reads its results again when the operation ends.
+   * <p>A failed read stops the task's wait instead of failing the task. The operation waits for the
+   * same artwork through {@link #awaitLibraryOperationResults} when its walk ends.
    *
    * @return true when the task's artwork has results; false when a read of the results failed
    */
@@ -82,59 +101,41 @@ public class ArtworkRunWaiter {
     }
   }
 
-  private FinishedImageCounts awaitFinishedArtwork(ArtworkRun run, Duration checkInterval)
+  private void awaitFinishedArtwork(ArtworkRun run, Duration checkInterval)
       throws InterruptedException {
     var pending = new HashMap<ArtworkTarget, AwaitedArtwork>();
     run.awaited()
         .forEach(artwork -> pending.merge(artwork.target(), artwork, ArtworkRunWaiter::merge));
-    var counts = FinishedImageCounts.NONE.plusSkipped(run.keptImages());
     while (!pending.isEmpty()) {
-      counts = countFinishedArtwork(pending, counts);
+      removeFinishedArtwork(pending);
       if (!pending.isEmpty()) {
         sleeper.sleep(checkInterval);
       }
     }
-
-    return counts;
   }
 
-  // Removes each target whose awaited artwork is finished from pending, and counts its results.
-  private FinishedImageCounts countFinishedArtwork(
-      Map<ArtworkTarget, AwaitedArtwork> pending, FinishedImageCounts counts) {
-    var total = counts;
+  // Removes each target whose awaited artwork is finished from pending.
+  private void removeFinishedArtwork(Map<ArtworkTarget, AwaitedArtwork> pending) {
     for (var evidence : requests.findCompletionEvidence(pending.keySet())) {
-      var finished = finishedResults(evidence, pending.get(evidence.target()));
-      if (finished.isEmpty()) {
-        continue;
-      }
-
-      pending.remove(evidence.target());
-      for (var result : finished.get()) {
-        total = total.plus(result.outcome());
+      if (isFinished(evidence, pending.get(evidence.target()))) {
+        pending.remove(evidence.target());
       }
     }
-
-    return total;
   }
 
-  // Returns the results that finish the awaited artwork, or nothing while it is still pending.
-  private static Optional<List<ItemResult>> finishedResults(
-      ArtworkCompletionEvidence evidence, AwaitedArtwork awaited) {
-    var resultsByType = new EnumMap<ImageType, ItemResult>(ImageType.class);
-    evidence.artworkResults().stream()
-        .filter(result -> result.artworkGeneration() >= awaited.generation())
-        .filter(result -> awaited.awaitedImageTypes().contains(result.imageType()))
-        .filter(result -> isForTheAwaitingLibraryOperation(result, awaited))
-        .forEach(result -> resultsByType.put(result.imageType(), result));
-    if (resultsByType.keySet().containsAll(awaited.awaitedImageTypes())) {
-      return Optional.of(List.copyOf(resultsByType.values()));
+  // Awaited artwork is finished when each awaited type has a result, or when no request remains.
+  private static boolean isFinished(ArtworkCompletionEvidence evidence, AwaitedArtwork awaited) {
+    if (evidence.pendingGeneration().isEmpty()) {
+      return true;
     }
 
-    if (evidence.pendingGeneration().isPresent()) {
-      return Optional.empty();
-    }
-
-    return Optional.of(List.copyOf(resultsByType.values()));
+    var recordedTypes =
+        evidence.artworkResults().stream()
+            .filter(result -> result.artworkGeneration() >= awaited.generation())
+            .filter(result -> isForTheAwaitingLibraryOperation(result, awaited))
+            .map(ItemResult::imageType)
+            .collect(Collectors.toSet());
+    return recordedTypes.containsAll(awaited.awaitedImageTypes());
   }
 
   // A run of a library operation counts only results saved for the operation, so a result that an

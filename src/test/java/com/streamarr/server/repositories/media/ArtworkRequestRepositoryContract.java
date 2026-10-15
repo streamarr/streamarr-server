@@ -468,6 +468,64 @@ public interface ArtworkRequestRepositoryContract {
         .containsExactly(Optional.empty());
   }
 
+  @Test
+  @DisplayName(
+      "Should count the images of an operation's primary requests that have no result for the"
+          + " operation")
+  default void shouldCountTheImagesOfAnOperationsPrimaryRequestsThatHaveNoResultForTheOperation() {
+    var operation = UUID.randomUUID();
+    var movie = createMovie();
+    var saved = saveFor(movie, operation, ImageRefreshMode.PRESERVE, POSTER, BACKDROP);
+    saveResult(savedPoster(movie, saved.generation()));
+    saveFor(createMovie(), UUID.randomUUID(), ImageRefreshMode.PRESERVE, POSTER);
+    save(createMovie(), ImageRefreshMode.PRESERVE, POSTER);
+
+    assertThat(repository().countPrimaryImagesAwaitingResultForLibraryOperation(operation)).isOne();
+  }
+
+  @Test
+  @DisplayName(
+      "Should count a result that waits to retry as a result for the operation when its images"
+          + " are counted")
+  default void shouldCountAResultThatWaitsToRetryAsAResultForTheOperation() {
+    var operation = UUID.randomUUID();
+    var movie = createMovie();
+    var saved = saveFor(movie, operation, ImageRefreshMode.PRESERVE, POSTER);
+    saveResult(
+        savedPoster(movie, saved.generation()).toBuilder()
+            .outcome(new ItemOutcome.Failed(ItemFailureReason.TEMPORARY, "timeout"))
+            .build());
+    saveResult(
+        savedPoster(movie, saved.generation()).toBuilder()
+            .imageType(ImageType.BACKDROP)
+            .outcome(new ItemOutcome.Unavailable())
+            .sourceKey(null)
+            .build());
+
+    assertThat(repository().countPrimaryImagesAwaitingResultForLibraryOperation(operation))
+        .isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should count an image whose only result belongs to an older generation or another operation")
+  default void shouldCountAnImageWhoseOnlyResultBelongsToAnOlderGenerationOrAnotherOperation() {
+    var endedOperation = UUID.randomUUID();
+    var movie = createMovie();
+    var older = saveFor(movie, endedOperation, ImageRefreshMode.PRESERVE, POSTER);
+    saveResult(
+        savedPoster(movie, older.generation()).toBuilder()
+            .imageType(ImageType.BACKDROP)
+            .outcome(new ItemOutcome.Failed(ItemFailureReason.TEMPORARY, "timeout"))
+            .sourceKey(null)
+            .build());
+    var operation = UUID.randomUUID();
+    saveFor(movie, operation, ImageRefreshMode.FORCE_REFRESH, POSTER);
+
+    assertThat(repository().countPrimaryImagesAwaitingResultForLibraryOperation(operation))
+        .isEqualTo(2);
+  }
+
   private List<ItemResult> artworkResultsOf(ArtworkTarget target) {
     return repository().findCompletionEvidence(List.of(target)).getFirst().artworkResults();
   }

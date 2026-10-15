@@ -178,6 +178,15 @@ public class FakeItemResultRepository implements ItemResultRepository {
   }
 
   @Override
+  public ArtworkResultCounts countArtworkOutcomesForLibraryOperation(UUID libraryOperationId) {
+    return results.values().stream()
+        .filter(result -> result.step() == ItemStep.ARTWORK)
+        .filter(result -> result.libraryOperationId().equals(Optional.of(libraryOperationId)))
+        .map(result -> resultCountsOf(result.outcome()))
+        .reduce(new ArtworkResultCounts(0, 0, 0), FakeItemResultRepository::add);
+  }
+
+  @Override
   public Map<ImageEntityType, ArtworkResultCounts> countArtworkOutcomesRecordedSince(
       Instant since) {
     var resultCounts = new EnumMap<ImageEntityType, ArtworkResultCounts>(ImageEntityType.class);

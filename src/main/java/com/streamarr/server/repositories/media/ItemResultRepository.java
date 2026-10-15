@@ -40,6 +40,9 @@ public interface ItemResultRepository {
 
   List<ItemResult> findByItem(UUID itemId, ImageEntityType itemType);
 
+  /** Counts the artwork results that carry the library operation's id by outcome. */
+  ArtworkResultCounts countArtworkOutcomesForLibraryOperation(UUID libraryOperationId);
+
   /** Counts the artwork results recorded since {@code since} by item type and outcome. */
   Map<ImageEntityType, ArtworkResultCounts> countArtworkOutcomesRecordedSince(Instant since);
 }

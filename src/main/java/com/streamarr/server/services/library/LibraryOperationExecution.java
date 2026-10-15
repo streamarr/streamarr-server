@@ -9,7 +9,6 @@ import com.streamarr.server.services.events.library.RefreshEndedEvent;
 import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
 import com.streamarr.server.services.library.LibraryOperationMetrics.ExecutionResult;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.UUID;
@@ -71,8 +70,8 @@ public class LibraryOperationExecution {
     try {
       conclusion =
           switch (operation.kind()) {
-            case SCAN -> scan(library);
-            case REFRESH -> refresh(library, operation.imageRefreshMode().orElseThrow());
+            case SCAN -> scan(library, operation);
+            case REFRESH -> refresh(library, operation);
           };
     } catch (InterruptedException _) {
       Thread.currentThread().interrupt();
@@ -98,11 +97,13 @@ public class LibraryOperationExecution {
     return new LibraryOperationExecutionResult.Interrupted();
   }
 
-  private LibraryOperationConclusion scan(Library library) throws InterruptedException {
+  private LibraryOperationConclusion scan(Library library, LibraryOperation operation)
+      throws InterruptedException {
     log.info("Starting {} library scan.", library.getName());
     try {
       libraryFolderCheck.requirePassed(library);
-      var results = fileDiscoveryRuns.awaitResults(libraryFileWalk.discoverFiles(library));
+      var results =
+          fileDiscoveryRuns.awaitResults(libraryFileWalk.discoverFiles(library, operation.id()));
       // A share can unmount while the scan waits for artwork, and completing the scan removes
       // every item whose file Streamarr cannot find.
       libraryFolderCheck.requirePassed(library);
@@ -115,11 +116,11 @@ public class LibraryOperationExecution {
     }
   }
 
-  private LibraryOperationConclusion refresh(Library library, ImageRefreshMode imageRefreshMode)
+  private LibraryOperationConclusion refresh(Library library, LibraryOperation operation)
       throws InterruptedException {
     log.info("Starting {} library refresh.", library.getName());
     try {
-      libraryRefreshService.refreshLibrary(library, imageRefreshMode);
+      libraryRefreshService.refreshLibrary(library, operation);
       log.info("Finished {} library refresh.", library.getName());
       return LibraryOperationConclusion.FINISHED;
     } catch (RuntimeException e) {

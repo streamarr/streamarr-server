@@ -94,14 +94,28 @@ public class JooqItemResultRepository implements ItemResultRepository {
                     .put(row.value2(), row.value3().longValue()));
     var resultCounts = new EnumMap<ImageEntityType, ArtworkResultCounts>(ImageEntityType.class);
     counts.forEach(
-        (itemType, byOutcome) ->
-            resultCounts.put(
-                itemType,
-                new ArtworkResultCounts(
-                    byOutcome.getOrDefault(ItemResultOutcome.SUCCEEDED, 0L),
-                    byOutcome.getOrDefault(ItemResultOutcome.UNAVAILABLE, 0L),
-                    byOutcome.getOrDefault(ItemResultOutcome.FAILED, 0L))));
+        (itemType, byOutcome) -> resultCounts.put(itemType, artworkResultCounts(byOutcome)));
     return resultCounts;
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public ArtworkResultCounts countArtworkOutcomesForLibraryOperation(UUID libraryOperationId) {
+    var byOutcome = new EnumMap<ItemResultOutcome, Long>(ItemResultOutcome.class);
+    dsl.select(ITEM_RESULT.OUTCOME, DSL.count())
+        .from(ITEM_RESULT)
+        .where(ITEM_RESULT.LIBRARY_OPERATION_ID.eq(libraryOperationId))
+        .and(ITEM_RESULT.STEP.eq(ItemResultStep.ARTWORK))
+        .groupBy(ITEM_RESULT.OUTCOME)
+        .forEach(row -> byOutcome.put(row.value1(), row.value2().longValue()));
+    return artworkResultCounts(byOutcome);
+  }
+
+  private static ArtworkResultCounts artworkResultCounts(Map<ItemResultOutcome, Long> byOutcome) {
+    return new ArtworkResultCounts(
+        byOutcome.getOrDefault(ItemResultOutcome.SUCCEEDED, 0L),
+        byOutcome.getOrDefault(ItemResultOutcome.UNAVAILABLE, 0L),
+        byOutcome.getOrDefault(ItemResultOutcome.FAILED, 0L));
   }
 
   // A result replaces one of an older generation. Within one generation it replaces only an

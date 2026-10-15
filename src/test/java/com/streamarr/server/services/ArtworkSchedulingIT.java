@@ -359,7 +359,9 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   @DisplayName(
       "Should store no request and schedule no steps when the metadata transaction rolls back")
   void shouldStoreNoRequestAndScheduleNoStepsWhenTheMetadataTransactionRollsBack() {
-    var run = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
+    var run =
+        artworkRequestService.openLibraryOperationRun(
+            "scan", ImageRefreshMode.PRESERVE, UUID.randomUUID());
 
     transactionTemplate.executeWithoutResult(
         status -> {
@@ -387,7 +389,7 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   }
 
   private ArtworkRun requestMovieArtwork(ImageRefreshMode refreshMode, ImageSource... sources) {
-    var run = artworkRequestService.openRun("scan", refreshMode);
+    var run = artworkRequestService.openLibraryOperationRun("scan", refreshMode, UUID.randomUUID());
     transactionTemplate.executeWithoutResult(
         _ -> artworkRequestService.requestPrimaryArtwork(run, movieArtwork(sources)));
     run.close();
@@ -395,7 +397,7 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   }
 
   private ArtworkRunSummary awaitRun(ArtworkRun run) throws Exception {
-    try (var wait = BoundedTask.start(() -> artworkRunWaiter.awaitResults(run))) {
+    try (var wait = BoundedTask.start(() -> artworkRunWaiter.awaitLibraryOperationResults(run))) {
       return wait.await(BOUND);
     }
   }
@@ -464,6 +466,11 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
     @Override
     public Optional<PendingArtworkRequest> lockPendingRequest(ArtworkTarget target) {
       return delegate.lockPendingRequest(target);
+    }
+
+    @Override
+    public long countPrimaryImagesAwaitingResultForLibraryOperation(UUID libraryOperationId) {
+      return delegate.countPrimaryImagesAwaitingResultForLibraryOperation(libraryOperationId);
     }
 
     @Override

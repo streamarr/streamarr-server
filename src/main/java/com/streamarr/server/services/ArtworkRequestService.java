@@ -44,9 +44,11 @@ public class ArtworkRequestService {
   }
 
   /**
-   * Requests a target's primary artwork for the run, in the caller's transaction. Stored images
-   * that the run's refresh mode keeps count as skipped and need no request; the run waits for a
-   * result of every other image. A rollback withdraws the request from the run.
+   * Requests a target's primary artwork for the run, in the caller's transaction. A target whose
+   * stored images the run's refresh mode keeps needs no request, and its images count as skipped.
+   * Otherwise the request covers every image type: the steps keep the stored images that the mode
+   * keeps, which then count as saved, and the run waits for a result of every other image. A
+   * rollback withdraws the request from the run.
    *
    * @throws IllegalStateException if the run is closed to new requests
    */
@@ -58,10 +60,10 @@ public class ArtworkRequestService {
             .filter(image -> !(image instanceof PlannedImage.KeepStoredImage))
             .map(PlannedImage::imageType)
             .collect(Collectors.toSet());
-    var kept = plan.images().size() - awaitedImageTypes.size();
-    run.countKeptImages(kept);
-    afterRollback(() -> run.withdrawKeptImages(kept));
     if (awaitedImageTypes.isEmpty()) {
+      var kept = plan.images().size();
+      run.countKeptImages(kept);
+      afterRollback(() -> run.withdrawKeptImages(kept));
       return;
     }
 

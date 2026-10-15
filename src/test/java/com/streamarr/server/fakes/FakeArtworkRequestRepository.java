@@ -7,6 +7,7 @@ import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
+import com.streamarr.server.services.ArtworkPriority;
 import com.streamarr.server.services.ArtworkSources;
 import com.streamarr.server.services.NewArtworkRequest;
 import com.streamarr.server.services.PendingArtworkRequest;
@@ -179,6 +180,29 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
                         .filter(result -> result.step() == ItemStep.ARTWORK)
                         .toList()))
         .toList();
+  }
+
+  @Override
+  public synchronized long countPrimaryImagesAwaitingResultForLibraryOperation(
+      UUID libraryOperationId) {
+    return requests.values().stream()
+        .filter(request -> request.libraryOperationId().equals(Optional.of(libraryOperationId)))
+        .filter(
+            request ->
+                ArtworkPriority.of(request.artwork().targetType()) == ArtworkPriority.PRIMARY)
+        .mapToLong(request -> imagesAwaitingResultFor(request, libraryOperationId))
+        .sum();
+  }
+
+  private long imagesAwaitingResultFor(StoredArtworkRequest request, UUID libraryOperationId) {
+    var target = request.artwork().target();
+    var resultsForTheOperation =
+        itemResults.findByItem(target.targetId(), target.targetType()).stream()
+            .filter(result -> result.step() == ItemStep.ARTWORK)
+            .filter(result -> result.artworkGeneration() >= request.generation())
+            .filter(result -> result.libraryOperationId().equals(Optional.of(libraryOperationId)))
+            .count();
+    return Math.max(0, request.artwork().requestedImageTypes().size() - resultsForTheOperation);
   }
 
   @Override

@@ -301,7 +301,7 @@ class LibraryOperationExecutionTest {
     var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
     var fileWalk = fileWalkBuilder().build();
 
-    var failure = catchThrowable(() -> fileWalk.discoverFiles(library));
+    var failure = catchThrowable(() -> fileWalk.discoverFiles(library, UUID.randomUUID()));
 
     assertThat(failure)
         .isInstanceOf(LibraryScanFailedException.class)
@@ -1764,8 +1764,8 @@ class LibraryOperationExecutionTest {
     }
 
     @Override
-    public void refreshLibrary(Library library, ImageRefreshMode requestedImageRefreshMode) {
-      imageRefreshMode.set(requestedImageRefreshMode);
+    public void refreshLibrary(Library library, LibraryOperation operation) {
+      imageRefreshMode.set(operation.imageRefreshMode().orElseThrow());
       refreshAnswer.run();
     }
 

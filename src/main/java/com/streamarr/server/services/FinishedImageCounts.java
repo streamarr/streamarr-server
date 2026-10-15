@@ -1,7 +1,6 @@
 package com.streamarr.server.services;
 
 import com.streamarr.server.domain.media.ArtworkResultCounts;
-import com.streamarr.server.domain.media.ItemOutcome;
 import lombok.Builder;
 
 /** Finished source images by result; resized variants of one source image count once. */
@@ -10,16 +9,7 @@ public record FinishedImageCounts(int saved, int skipped, int unavailable, int f
 
   static final FinishedImageCounts NONE = FinishedImageCounts.builder().build();
 
-  /** Counts a recorded artwork result. A stored image that a step kept counts as saved. */
-  FinishedImageCounts plus(ItemOutcome outcome) {
-    return switch (outcome) {
-      case ItemOutcome.Succeeded _ -> toBuilder().saved(saved + 1).build();
-      case ItemOutcome.Unavailable _ -> toBuilder().unavailable(unavailable + 1).build();
-      case ItemOutcome.Failed _ -> toBuilder().failed(failed + 1).build();
-    };
-  }
-
-  /** Counts recorded artwork results. */
+  /** Counts recorded artwork results. A stored image that a step kept counts as saved. */
   FinishedImageCounts plus(ArtworkResultCounts resultCounts) {
     return toBuilder()
         .saved(saved + Math.toIntExact(resultCounts.saved()))

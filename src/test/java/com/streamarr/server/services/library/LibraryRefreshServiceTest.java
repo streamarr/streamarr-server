@@ -48,6 +48,7 @@ import com.streamarr.server.fakes.GatedImageDownloader;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.CreditServiceFixture;
+import com.streamarr.server.fixtures.LibraryOperationFixture;
 import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.MovieService;
@@ -73,6 +74,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -250,7 +252,7 @@ class LibraryRefreshServiceTest {
               });
       var service = refreshServiceWith(artwork, admissionsWith(new FixedLimitAdmissions(1)));
 
-      service.refreshLibrary(library);
+      service.refreshLibrary(library, refreshOf(library));
 
       assertThat(reportsAtEachFetch).containsExactly(0.0, 1.0);
       assertThat(refreshAdmissions()).isEqualTo(2);
@@ -277,7 +279,7 @@ class LibraryRefreshServiceTest {
           .thenReturn(new MetadataFetchOutcome.Found<>(List.of()));
       var service = refreshServiceWith(artwork, admissionsWith(new FixedLimitAdmissions(1)));
 
-      service.refreshLibrary(library);
+      service.refreshLibrary(library, refreshOf(library));
 
       assertThat(reportsAtEachFetch).containsExactly(0.0, 1.0);
       assertThat(refreshAdmissions()).isEqualTo(2);
@@ -305,7 +307,8 @@ class LibraryRefreshServiceTest {
           });
       var service = refreshServiceWith(heldArtwork, admissionsWith(new AdaptiveAdmissions()));
 
-      BoundedTask.runWithin(Duration.ofSeconds(5), () -> service.refreshLibrary(library));
+      BoundedTask.runWithin(
+          Duration.ofSeconds(5), () -> service.refreshLibrary(library, refreshOf(library)));
 
       assertThat(inFlightWhilePosterPending).hasValue(1.0);
       assertThat(heldArtwork.scheduling().pendingTargets()).isEmpty();
@@ -327,7 +330,8 @@ class LibraryRefreshServiceTest {
                   new SQLTransientConnectionException("connection not available")));
       var service = refreshServiceWith(artwork, admissionsWith(new FixedLimitAdmissions(1)));
 
-      BoundedTask.runWithin(Duration.ofSeconds(5), () -> service.refreshLibrary(library));
+      BoundedTask.runWithin(
+          Duration.ofSeconds(5), () -> service.refreshLibrary(library, refreshOf(library)));
 
       assertThat(itemResults.findByItem(first.getId(), ImageEntityType.MOVIE)).isNotEmpty();
       assertThat(itemResults.findByItem(second.getId(), ImageEntityType.MOVIE)).isNotEmpty();
@@ -351,7 +355,7 @@ class LibraryRefreshServiceTest {
       itemResults.failWritesWith(failure);
       var service = refreshServiceWith(artwork, admissionsWith(new FixedLimitAdmissions(1)));
 
-      assertThatThrownBy(() -> service.refreshLibrary(library))
+      assertThatThrownBy(() -> service.refreshLibrary(library, refreshOf(library)))
           .isInstanceOf(LibraryRefreshFailedException.class)
           .hasRootCause(failure);
       assertThat(fetches).hasValue(1);
@@ -368,7 +372,7 @@ class LibraryRefreshServiceTest {
       try {
         Thread.currentThread().interrupt();
 
-        assertThatThrownBy(() -> refreshService.refreshLibrary(library))
+        assertThatThrownBy(() -> refreshService.refreshLibrary(library, refreshOf(library)))
             .isInstanceOf(InterruptedException.class);
       } finally {
         Thread.interrupted();
@@ -381,7 +385,7 @@ class LibraryRefreshServiceTest {
       var library = buildMovieLibrary();
       movieRepository.save(Movie.builder().title("No TMDB ID").library(library).build());
 
-      refreshService.refreshLibrary(library);
+      refreshService.refreshLibrary(library, refreshOf(library));
 
       assertThat(refreshAdmissions()).isZero();
     }
@@ -402,7 +406,7 @@ class LibraryRefreshServiceTest {
     var movie = saveMovieWithTmdbId("Inception", "27205", library);
     stubMovieMetadata("27205", library);
 
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     assertThat(itemResults.find(movie.getId(), ItemStep.METADATA, null))
         .contains(
@@ -423,7 +427,7 @@ class LibraryRefreshServiceTest {
     when(movieProviderResolver.getMetadata(argThatHasExternalId("27205"), eq(library)))
         .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("connection reset")));
 
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     assertThat(metadataOutcome(movie.getId()))
         .isEqualTo(
@@ -439,7 +443,7 @@ class LibraryRefreshServiceTest {
         .thenReturn(
             new MetadataFetchOutcome.Failed<>(new TmdbApiException(401, "Invalid API key")));
 
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     assertThat(metadataOutcome(movie.getId()))
         .isInstanceOfSatisfying(
@@ -455,7 +459,7 @@ class LibraryRefreshServiceTest {
     when(movieProviderResolver.getMetadata(argThatHasExternalId("27205"), eq(library)))
         .thenReturn(new MetadataFetchOutcome.NotFound<>());
 
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     assertThat(metadataOutcome(movie.getId())).isEqualTo(new ItemOutcome.Unavailable());
   }
@@ -468,7 +472,7 @@ class LibraryRefreshServiceTest {
     when(movieProviderResolver.getMetadata(argThatHasExternalId("27205"), eq(library)))
         .thenThrow(new IllegalStateException("database hiccup"));
 
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     assertThat(metadataOutcome(movie.getId()))
         .isEqualTo(
@@ -483,11 +487,11 @@ class LibraryRefreshServiceTest {
     var movie = saveMovieWithTmdbId("Inception", "27205", library);
     when(movieProviderResolver.getMetadata(argThatHasExternalId("27205"), eq(library)))
         .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("connection reset")));
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     clock.advance(Duration.ofMinutes(5));
     stubMovieMetadata("27205", library);
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     assertThat(metadataOutcome(movie.getId())).isEqualTo(new ItemOutcome.Succeeded());
   }
@@ -505,7 +509,7 @@ class LibraryRefreshServiceTest {
     when(seriesProviderResolver.getSeasonDetails(library, "1396", 2))
         .thenReturn(new MetadataFetchOutcome.Found<>(seasonDetails(2)));
 
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     assertThat(metadataOutcome(series.getId()))
         .isEqualTo(
@@ -528,12 +532,12 @@ class LibraryRefreshServiceTest {
         .thenReturn(new MetadataFetchOutcome.Found<>(seasonDetails(1)));
     when(seriesProviderResolver.getSeasonDetails(library, "1396", 2))
         .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("connection reset")));
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     clock.advance(Duration.ofMinutes(5));
     when(seriesProviderResolver.getSeasonDetails(library, "1396", 2))
         .thenReturn(new MetadataFetchOutcome.NotFound<>());
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     assertThat(metadataOutcome(series.getId()))
         .isEqualTo(new ItemOutcome.Failed(ItemFailureReason.TEMPORARY, "Season 2: not found"));
@@ -548,7 +552,7 @@ class LibraryRefreshServiceTest {
     when(seriesProviderResolver.getAvailableSeasonNumbers(library, "1396"))
         .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("connection reset")));
 
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     assertThat(metadataOutcome(series.getId()))
         .isEqualTo(
@@ -567,7 +571,7 @@ class LibraryRefreshServiceTest {
     when(seriesProviderResolver.getSeasonDetails(library, "1396", 1))
         .thenReturn(new MetadataFetchOutcome.Found<>(seasonDetails(1)));
 
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     assertThat(metadataOutcome(series.getId())).isEqualTo(new ItemOutcome.Succeeded());
   }
@@ -581,7 +585,8 @@ class LibraryRefreshServiceTest {
     var failure = new DataAccessResourceFailureException("database unavailable");
     itemResults.failWritesWith(failure);
 
-    assertThatThrownBy(() -> refreshService.refreshLibrary(library)).hasRootCause(failure);
+    assertThatThrownBy(() -> refreshService.refreshLibrary(library, refreshOf(library)))
+        .hasRootCause(failure);
   }
 
   @Test
@@ -596,7 +601,7 @@ class LibraryRefreshServiceTest {
     when(seriesProviderResolver.getAvailableSeasonNumbers(any(), any()))
         .thenReturn(new MetadataFetchOutcome.Found<>(List.of()));
 
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     assertThat(seriesRepository.findById(series1.getId()).orElseThrow().getTitle())
         .isEqualTo("Breaking Bad (Updated)");
@@ -611,7 +616,7 @@ class LibraryRefreshServiceTest {
     var series =
         seriesRepository.save(Series.builder().title("No TMDB ID").library(library).build());
 
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     assertThat(seriesRepository.findById(series.getId()).orElseThrow().getTitle())
         .isEqualTo("No TMDB ID");
@@ -630,7 +635,7 @@ class LibraryRefreshServiceTest {
     when(seriesProviderResolver.getAvailableSeasonNumbers(any(), any()))
         .thenReturn(new MetadataFetchOutcome.Found<>(List.of()));
 
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     assertThat(seriesRepository.findById(failingSeries.getId()).orElseThrow().getTitle())
         .isEqualTo("Failing Series");
@@ -651,7 +656,7 @@ class LibraryRefreshServiceTest {
     when(seriesProviderResolver.getAvailableSeasonNumbers(any(), any()))
         .thenReturn(new MetadataFetchOutcome.Found<>(List.of()));
 
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     assertThat(seriesRepository.findById(explodingSeries.getId()).orElseThrow().getTitle())
         .isEqualTo("Exploding Series");
@@ -676,7 +681,7 @@ class LibraryRefreshServiceTest {
                             .build()))
                 .build());
 
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     assertThat(seriesRepository.findById(series.getId()).orElseThrow().getTitle())
         .isEqualTo("IMDB-only Series");
@@ -711,7 +716,7 @@ class LibraryRefreshServiceTest {
     when(seriesProviderResolver.getSeasonDetails(library, "1396", 1))
         .thenReturn(new MetadataFetchOutcome.Found<>(seasonDetails));
 
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     var seasons = seasonRepository.findBySeriesIdOrderBySeasonNumber(series.getId());
     assertThat(seasons).hasSize(1);
@@ -762,7 +767,7 @@ class LibraryRefreshServiceTest {
                                 .build()))
                     .build()));
 
-    refreshService.refreshLibrary(library, ImageRefreshMode.REFRESH_IF_CHANGED);
+    refreshService.refreshLibrary(library, refreshOf(library, ImageRefreshMode.REFRESH_IF_CHANGED));
 
     await()
         .atMost(Duration.ofSeconds(5))
@@ -795,7 +800,7 @@ class LibraryRefreshServiceTest {
     try (var refresh =
         BoundedTask.start(
             () -> {
-              refreshService.refreshLibrary(library);
+              refreshService.refreshLibrary(library, refreshOf(library));
               return !imagesOf(movie.getId(), ImageEntityType.MOVIE).isEmpty();
             })) {
       imageDownloader.awaitHeldDownloads(1, Duration.ofSeconds(5));
@@ -823,7 +828,7 @@ class LibraryRefreshServiceTest {
     try (var refresh =
         BoundedTask.start(
             () -> {
-              refreshService.refreshLibrary(library);
+              refreshService.refreshLibrary(library, refreshOf(library));
               return artworkResults.findByItem(movie.getId(), ImageEntityType.MOVIE).stream()
                   .filter(result -> result.step() == ItemStep.ARTWORK)
                   .map(ItemResult::outcome)
@@ -850,7 +855,7 @@ class LibraryRefreshServiceTest {
             new MetadataFetchOutcome.Found<>(
                 new MetadataResult<>(freshMovie, List.of(), Map.of(), Map.of())));
 
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     assertThat(movieRepository.findById(movie.getId()).orElseThrow().getTitle())
         .isEqualTo("Inception (Updated)");
@@ -892,7 +897,7 @@ class LibraryRefreshServiceTest {
                             List.of(new TmdbImageSource(ImageType.LOGO, "/studio.jpg"))))
                     .build()));
 
-    refreshService.refreshLibrary(library, ImageRefreshMode.FORCE_REFRESH);
+    refreshService.refreshLibrary(library, refreshOf(library, ImageRefreshMode.FORCE_REFRESH));
 
     assertThat(artworkResults.findAll())
         .filteredOn(result -> result.step() == ItemStep.ARTWORK)
@@ -917,7 +922,7 @@ class LibraryRefreshServiceTest {
     var library = buildMovieLibrary();
     var movie = movieRepository.save(Movie.builder().title("No TMDB ID").library(library).build());
 
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     assertThat(movieRepository.findById(movie.getId()).orElseThrow().getTitle())
         .isEqualTo("No TMDB ID");
@@ -936,7 +941,7 @@ class LibraryRefreshServiceTest {
             .externalAgentStrategy(ExternalAgentStrategy.TMDB)
             .build();
 
-    assertThatThrownBy(() -> refreshService.refreshLibrary(library))
+    assertThatThrownBy(() -> refreshService.refreshLibrary(library, refreshOf(library)))
         .isInstanceOf(UnsupportedMediaTypeException.class);
   }
 
@@ -963,7 +968,7 @@ class LibraryRefreshServiceTest {
     when(seriesProviderResolver.getSeasonDetails(library, "1396", 2))
         .thenReturn(new MetadataFetchOutcome.Found<>(seasonDetails));
 
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     var seasons = seasonRepository.findBySeriesIdOrderBySeasonNumber(series.getId());
     assertThat(seasons).hasSize(1);
@@ -979,7 +984,7 @@ class LibraryRefreshServiceTest {
     when(movieProviderResolver.getMetadata(argThatHasExternalId("27205"), eq(library)))
         .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("simulated fetch failure")));
 
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     assertThat(movieRepository.findById(movie.getId()).orElseThrow().getTitle())
         .isEqualTo("Inception");
@@ -1001,7 +1006,7 @@ class LibraryRefreshServiceTest {
             new MetadataFetchOutcome.Found<>(
                 new MetadataResult<>(freshMovie, List.of(), Map.of(), Map.of())));
 
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     assertThat(movieRepository.findById(failingMovie.getId()).orElseThrow().getTitle())
         .isEqualTo("Failing Movie");
@@ -1014,7 +1019,7 @@ class LibraryRefreshServiceTest {
   void shouldCompleteSuccessfullyWhenSeriesLibraryHasNoItems() throws Exception {
     var library = buildSeriesLibrary();
 
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     assertThat(seriesRepository.findAll()).isEmpty();
     assertThat(seasonRepository.findAll()).isEmpty();
@@ -1025,7 +1030,7 @@ class LibraryRefreshServiceTest {
   void shouldCompleteSuccessfullyWhenMovieLibraryHasNoItems() throws Exception {
     var library = buildMovieLibrary();
 
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     assertThat(movieRepository.findAll()).isEmpty();
   }
@@ -1051,7 +1056,7 @@ class LibraryRefreshServiceTest {
                     .episodes(List.of())
                     .build()));
 
-    refreshService.refreshLibrary(library);
+    refreshService.refreshLibrary(library, refreshOf(library));
 
     assertThat(seasonRepository.findBySeriesIdOrderBySeasonNumber(series.getId())).isEmpty();
   }
@@ -1154,5 +1159,15 @@ class LibraryRefreshServiceTest {
           }
           return false;
         });
+  }
+
+  private static LibraryOperation refreshOf(Library library) {
+    return refreshOf(library, ImageRefreshMode.PRESERVE);
+  }
+
+  private static LibraryOperation refreshOf(Library library, ImageRefreshMode imageRefreshMode) {
+    return LibraryOperationFixture.refreshBuilder(library.getId())
+        .imageRefreshMode(Optional.of(imageRefreshMode))
+        .build();
   }
 }

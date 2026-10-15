@@ -11,6 +11,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Stores at most one artwork request per target. A request with changed sources or a stronger
@@ -70,6 +71,14 @@ public interface ArtworkRequestRepository {
    * A deleted target has neither.
    */
   List<ArtworkCompletionEvidence> findCompletionEvidence(Collection<ArtworkTarget> targets);
+
+  /**
+   * Counts the images that the primary artwork requests carrying the library operation's id still
+   * need: for each such request, the images of its generation that have no result carrying the
+   * operation's id. A result counts whatever its outcome, so a step that waits to retry holds no
+   * operation open.
+   */
+  long countPrimaryImagesAwaitingResultForLibraryOperation(UUID libraryOperationId);
 
   /**
    * Returns the artwork backlog of each target type: the images that pending requests still need,

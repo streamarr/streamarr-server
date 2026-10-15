@@ -94,6 +94,7 @@ public record ArtworkFixture(
         new ArtworkRequestService(requests, scheduling, imageService, artworkClock),
         ArtworkRunWaiter.builder()
             .requests(requests)
+            .itemResults(results)
             .sleeper(resultSleeper)
             .clock(artworkClock)
             .properties(ArtworkRunProperties.builder().resultCheckInterval(CHECK_INTERVAL).build())
@@ -108,8 +109,8 @@ public record ArtworkFixture(
   }
 
   /**
-   * Closes the run and waits at most five seconds for its recorded results, as a scan does after
-   * its last request.
+   * Closes the library operation's run and waits at most five seconds for the operation's recorded
+   * results, as a scan does after its last request.
    */
   public ArtworkRunSummary closeAndAwait(ArtworkRun run) {
     run.close();
@@ -117,7 +118,7 @@ public record ArtworkFixture(
         CompletableFuture.supplyAsync(
             () -> {
               try {
-                return artworkRunWaiter.awaitResults(run);
+                return artworkRunWaiter.awaitLibraryOperationResults(run);
               } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new CompletionException(e);

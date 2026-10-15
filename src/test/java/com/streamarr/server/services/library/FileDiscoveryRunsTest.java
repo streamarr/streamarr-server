@@ -88,7 +88,7 @@ class FileDiscoveryRunsTest {
     artwork.scheduling().holdBackgroundSteps();
     artworkRequestService.requestBackgroundArtwork(personArtwork(), ImageRefreshMode.PRESERVE);
     var runs = fileDiscoveryRuns();
-    var discovery = runs.open("scan of", library);
+    var discovery = runs.openScan(library, UUID.randomUUID());
     try (discovery) {
       discovery.probeRun().request(mediaFile().getId());
       artworkRequestService.requestPrimaryArtwork(discovery.artworkRun(), movieArtwork());
@@ -118,7 +118,7 @@ class FileDiscoveryRunsTest {
     var retried = ArtworkFixture.builder().imageDownloader(downloader).itemResults(results).build();
     var runs = fileDiscoveryRunsBuilder().artwork(retried).build();
     var movie = movieArtworkWithBackdrop();
-    var discovery = runs.open("scan of", library);
+    var discovery = runs.openScan(library, UUID.randomUUID());
     try (discovery) {
       retried.artworkRequestService().requestPrimaryArtwork(discovery.artworkRun(), movie);
     }
@@ -149,7 +149,7 @@ class FileDiscoveryRunsTest {
         };
     probeTaskRequests = new FakeProbeTaskRequests(outcomes);
     var runs = fileDiscoveryRuns();
-    var discovery = runs.open("scan of", library);
+    var discovery = runs.openScan(library, UUID.randomUUID());
     try (discovery) {
       discovery.probeRun().request(mediaFile().getId());
     }
@@ -180,7 +180,7 @@ class FileDiscoveryRunsTest {
         });
     var runs =
         fileDiscoveryRunsBuilder().artwork(timedArtwork).clock(clock).sleeper(sleeper).build();
-    var discovery = runs.open("scan of", library);
+    var discovery = runs.openScan(library, UUID.randomUUID());
     try (discovery) {
       discovery.probeRun().request(mediaFile().getId());
       timedArtwork
@@ -206,7 +206,7 @@ class FileDiscoveryRunsTest {
   void shouldThrowInterruptedExceptionWhenWaitingIsInterrupted() throws IOException {
     probeTaskRequests.dispatchWith(_ -> {});
     var runs = fileDiscoveryRuns();
-    var discovery = runs.open("scan of", library);
+    var discovery = runs.openScan(library, UUID.randomUUID());
     try (discovery) {
       discovery.probeRun().request(mediaFile().getId());
     }

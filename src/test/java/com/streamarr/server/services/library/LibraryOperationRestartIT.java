@@ -5,10 +5,13 @@ import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.github.kagkarlsson.scheduler.CurrentlyExecuting;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
+import com.streamarr.server.config.ArtworkPrioritySchedulers;
+import com.streamarr.server.config.ArtworkRunProperties;
 import com.streamarr.server.config.LibraryOperationScheduler;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
@@ -18,11 +21,19 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.repositories.LibraryOperationRepository;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.media.ArtworkRequestRepository;
+import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.ArtworkPriority;
+import com.streamarr.server.services.ArtworkRequestService;
+import com.streamarr.server.services.ArtworkRunWaiter;
+import com.streamarr.server.services.concurrency.Sleeper;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.support.ArtworkSchedulerStarter;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.LibraryOperationSchedulerStarter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -33,6 +44,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.apache.commons.io.FileUtils;
@@ -45,6 +57,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
 
 @Tag("IntegrationTest")
 @DisplayName("Library operation restart integration tests")
@@ -63,6 +76,7 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private ApplicationContext applicationContext;
   @Autowired private MeterRegistry meterRegistry;
+  @Autowired private ArtworkPrioritySchedulers artworkPrioritySchedulers;
 
   @TempDir Path tempDir;
 
@@ -77,6 +91,7 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
     contextScheduler.stop();
     wireMock.resetAll();
     deleteLibraryOperations();
+    jdbcTemplate.update("DELETE FROM " + ArtworkSchedulerStarter.PRIMARY_TABLE);
     mediaFileRepository.deleteAll();
     movieRepository.deleteAll();
     libraryRepository.deleteAll();
@@ -94,6 +109,106 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
     deleteLibraryOperations();
     authTestSupport.deleteIdentity(admin);
     contextScheduler.start();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the library SCANNING after a restart until the artwork requested before the"
+          + " restart has results for the scan, then end HEALTHY")
+  void shouldKeepTheLibraryScanningAfterARestartUntilTheArtworkRequestedBeforeTheRestartHasResults()
+      throws Exception {
+    var library = createMovieLibrary();
+    createMovieFile("Inception (2010)", "Inception (2010).mkv");
+    stubTmdbMovieSearch(Duration.ZERO);
+    stubTmdbMovieMetadata();
+    artworkPrioritySchedulers.stop();
+    try {
+      scanAcrossARestartWithTheArtworkLeftWithoutResults(library);
+    } finally {
+      artworkPrioritySchedulers.start();
+    }
+  }
+
+  private void scanAcrossARestartWithTheArtworkLeftWithoutResults(Library library)
+      throws Exception {
+    var beforeRestart = startScheduler(new AbstractSchedulerListener() {});
+
+    var outcome =
+        libraryOperationService.startLibraryScan(
+            authTestSupport.identityOf(admin), library.getId());
+    // The file's task holds its admission until its artwork has results, so the restart comes
+    // while the task waits for the poster and backdrop that it requested.
+    await().atMost(BOUND).until(() -> storedArtworkRequests() == 1);
+    beforeRestart.stop();
+    var libraryOperationId = storedLibraryOperationId();
+
+    var waitingOnArtwork = new CompletableFuture<Void>();
+    var completed = new CompletableFuture<ExecutionComplete>();
+    startScheduler(
+        executionWaitingOnArtworkInto(waitingOnArtwork),
+        new AbstractSchedulerListener() {
+          @Override
+          public void onExecutionComplete(ExecutionComplete complete) {
+            completed.complete(complete);
+          }
+        });
+    CompletableFuture.anyOf(waitingOnArtwork, completed).get(BOUND.toSeconds(), TimeUnit.SECONDS);
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(completed).as("the scan ended before its artwork had results").isNotDone();
+    assertThat(libraryStatus(library)).isEqualTo(LibraryStatus.SCANNING);
+    assertThat(artworkResultsFor(libraryOperationId)).isZero();
+
+    var artworkScheduler =
+        ArtworkSchedulerStarter.fromContext(applicationContext)
+            .start(ArtworkPriority.PRIMARY, new AbstractSchedulerListener() {});
+    try {
+      completed.get(BOUND.toSeconds(), TimeUnit.SECONDS);
+    } finally {
+      artworkScheduler.stop();
+    }
+
+    assertThat(libraryStatus(library)).isEqualTo(LibraryStatus.HEALTHY);
+    assertThat(artworkResultsFor(libraryOperationId)).isEqualTo(2);
+    assertThat(storedLibraryOperations()).isZero();
+  }
+
+  // The execution's wait for the operation's artwork results completes the future when it first
+  // finds a result missing.
+  private LibraryOperationExecution executionWaitingOnArtworkInto(
+      CompletableFuture<Void> waitingOnArtwork) {
+    var contextSleeper = applicationContext.getBean(Sleeper.class);
+    var artworkRunWaiter =
+        ArtworkRunWaiter.builder()
+            .requests(applicationContext.getBean(ArtworkRequestRepository.class))
+            .itemResults(applicationContext.getBean(ItemResultRepository.class))
+            .sleeper(
+                duration -> {
+                  waitingOnArtwork.complete(null);
+                  contextSleeper.sleep(duration);
+                })
+            .clock(Clock.systemUTC())
+            .properties(applicationContext.getBean(ArtworkRunProperties.class))
+            .build();
+    var fileDiscoveryRuns =
+        FileDiscoveryRuns.builder()
+            .artworkRequestService(applicationContext.getBean(ArtworkRequestService.class))
+            .artworkRunWaiter(artworkRunWaiter)
+            .probeRuns(applicationContext.getBean(ProbeRuns.class))
+            .mediaFiles(mediaFileRepository)
+            .build();
+    return LibraryOperationExecution.builder()
+        .libraryOperations(applicationContext.getBean(LibraryOperationRepository.class))
+        .libraryRepository(libraryRepository)
+        .libraryFileWalk(applicationContext.getBean(LibraryFileWalk.class))
+        .fileDiscoveryRuns(fileDiscoveryRuns)
+        .libraryFolderCheck(applicationContext.getBean(LibraryFolderCheck.class))
+        .libraryRefreshService(applicationContext.getBean(LibraryRefreshService.class))
+        .eventPublisher(applicationContext)
+        .transactionManager(applicationContext.getBean(PlatformTransactionManager.class))
+        .clock(Clock.systemUTC())
+        .metrics(applicationContext.getBean(LibraryOperationMetrics.class))
+        .build();
   }
 
   @Test
@@ -282,6 +397,32 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
         LibraryOperationSchedulerStarter.fromContext(applicationContext).start(listener);
     startedSchedulers.add(scheduler);
     return scheduler;
+  }
+
+  private LibraryOperationScheduler startScheduler(
+      LibraryOperationExecution execution, AbstractSchedulerListener listener) {
+    var scheduler =
+        LibraryOperationSchedulerStarter.fromContext(applicationContext).toBuilder()
+            .execution(execution)
+            .build()
+            .start(listener);
+    startedSchedulers.add(scheduler);
+    return scheduler;
+  }
+
+  private int storedArtworkRequests() {
+    return jdbcTemplate.queryForObject("SELECT count(*) FROM artwork_request", Integer.class);
+  }
+
+  private UUID storedLibraryOperationId() {
+    return jdbcTemplate.queryForObject("SELECT id FROM library_operation", UUID.class);
+  }
+
+  private int artworkResultsFor(UUID libraryOperationId) {
+    return jdbcTemplate.queryForObject(
+        "SELECT count(*) FROM item_result WHERE step = 'ARTWORK' AND library_operation_id = ?",
+        Integer.class,
+        libraryOperationId);
   }
 
   private LibraryStatus libraryStatus(Library library) {

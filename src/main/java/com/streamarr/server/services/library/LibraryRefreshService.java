@@ -25,7 +25,6 @@ import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.concurrency.AdaptiveAdmission;
 import com.streamarr.server.services.concurrency.AdmittedTaskReport;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
@@ -63,23 +62,22 @@ public class LibraryRefreshService {
   private final Clock clock;
   private final LibraryOperationAdmissions libraryOperationAdmissions;
 
-  public void refreshLibrary(Library library) throws InterruptedException {
-    refreshLibrary(library, ImageRefreshMode.PRESERVE);
-  }
-
   /**
-   * Returns once every item's metadata result is recorded and the primary artwork of the refresh
-   * has recorded results. Person and company artwork continues in the background.
+   * Returns once every item's metadata result is recorded and the primary artwork of the refresh's
+   * library operation has recorded results, including artwork that an earlier execution of the
+   * operation requested. Person and company artwork continues in the background.
    *
    * @throws LibraryRefreshFailedException if a result was not recorded
    * @throws InterruptedException if the refresh is interrupted; the admitted tasks are interrupted
    *     and joined first
    */
-  public void refreshLibrary(Library library, ImageRefreshMode imageRefreshMode)
+  public void refreshLibrary(Library library, LibraryOperation operation)
       throws InterruptedException {
     var artworkRun =
-        artworkRequestService.openRun(
-            "refresh of library '" + library.getName() + "'", imageRefreshMode);
+        artworkRequestService.openLibraryOperationRun(
+            "refresh of library '" + library.getName() + "'",
+            operation.imageRefreshMode().orElseThrow(),
+            operation.id());
     try (artworkRun;
         var admission = libraryOperationAdmissions.openRefreshAdmission(library)) {
       var refresh = new RefreshOperation(library, artworkRun, admission);
@@ -90,7 +88,7 @@ public class LibraryRefreshService {
       }
     }
 
-    artworkRunWaiter.awaitResults(artworkRun);
+    artworkRunWaiter.awaitLibraryOperationResults(artworkRun);
   }
 
   private record RefreshOperation(

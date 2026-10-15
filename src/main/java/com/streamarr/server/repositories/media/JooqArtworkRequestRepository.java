@@ -18,6 +18,7 @@ import com.streamarr.server.jooq.generated.enums.ItemResultOutcome;
 import com.streamarr.server.jooq.generated.enums.ItemResultStep;
 import com.streamarr.server.jooq.generated.tables.records.ArtworkRequestRecord;
 import com.streamarr.server.repositories.PostgresTransactionLocks;
+import com.streamarr.server.services.ArtworkPriority;
 import com.streamarr.server.services.ArtworkSources;
 import com.streamarr.server.services.NewArtworkRequest;
 import com.streamarr.server.services.PendingArtworkRequest;
@@ -25,6 +26,7 @@ import com.streamarr.server.services.StoredArtworkRequest;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
+import java.math.BigDecimal;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -246,6 +248,38 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
                     Optional.ofNullable(generations.get(target)),
                     results.getOrDefault(target, List.of())))
         .toList();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public long countPrimaryImagesAwaitingResultForLibraryOperation(UUID libraryOperationId) {
+    var resultsForTheOperation =
+        DSL.selectCount()
+            .from(ITEM_RESULT)
+            .where(ITEM_RESULT.ITEM_ID.eq(ARTWORK_REQUEST.TARGET_ID))
+            .and(ITEM_RESULT.ITEM_TYPE.eq(ARTWORK_REQUEST.TARGET_TYPE))
+            .and(ITEM_RESULT.STEP.eq(ItemResultStep.ARTWORK))
+            .and(ITEM_RESULT.ARTWORK_GENERATION.ge(ARTWORK_REQUEST.GENERATION))
+            .and(ITEM_RESULT.LIBRARY_OPERATION_ID.eq(libraryOperationId))
+            .<Integer>asField();
+    var awaitingImages =
+        DSL.greatest(ARTWORK_REQUEST.IMAGE_COUNT.minus(resultsForTheOperation), DSL.inline(0));
+    var awaiting =
+        dsl.select(DSL.coalesce(DSL.sum(awaitingImages), DSL.inline(BigDecimal.ZERO)))
+            .from(ARTWORK_REQUEST)
+            .where(ARTWORK_REQUEST.LIBRARY_OPERATION_ID.eq(libraryOperationId))
+            .and(isPrimaryRequest())
+            .fetchSingle()
+            .value1();
+    return awaiting.longValue();
+  }
+
+  private static Condition isPrimaryRequest() {
+    return ARTWORK_REQUEST.TARGET_TYPE.in(
+        Arrays.stream(ImageEntityType.values())
+            .filter(type -> ArtworkPriority.of(type) == ArtworkPriority.PRIMARY)
+            .map(MediaEnumMapping::toJooq)
+            .toList());
   }
 
   @Override
