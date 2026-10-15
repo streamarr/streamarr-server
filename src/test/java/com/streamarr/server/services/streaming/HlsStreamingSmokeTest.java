@@ -21,6 +21,7 @@ import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.RecordedStream;
+import com.streamarr.server.fixtures.ServerSettingsFixture;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
@@ -128,6 +129,7 @@ class HlsStreamingSmokeTest {
             .properties(properties)
             .runtimeRegistry(sessionRegistry)
             .sessionMutex(new MutexFactory<>())
+            .serverSettings(ServerSettingsFixture.defaultServerSettings())
             .build();
     streamingService =
         HlsStreamingService.builder()

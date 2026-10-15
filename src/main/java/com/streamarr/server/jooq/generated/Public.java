@@ -52,6 +52,7 @@ import com.streamarr.server.jooq.generated.tables.SeriesDirector;
 import com.streamarr.server.jooq.generated.tables.SeriesGenre;
 import com.streamarr.server.jooq.generated.tables.SeriesPerson;
 import com.streamarr.server.jooq.generated.tables.ServerBootstrap;
+import com.streamarr.server.jooq.generated.tables.ServerSettings;
 import com.streamarr.server.jooq.generated.tables.SessionProgress;
 import com.streamarr.server.jooq.generated.tables.UserAccount;
 import com.streamarr.server.jooq.generated.tables.WatchHistory;
@@ -320,6 +321,11 @@ public class Public extends SchemaImpl {
     public final ServerBootstrap SERVER_BOOTSTRAP = ServerBootstrap.SERVER_BOOTSTRAP;
 
     /**
+     * The table <code>public.server_settings</code>.
+     */
+    public final ServerSettings SERVER_SETTINGS = ServerSettings.SERVER_SETTINGS;
+
+    /**
      * The table <code>public.session_progress</code>.
      */
     public final SessionProgress SESSION_PROGRESS = SessionProgress.SESSION_PROGRESS;
@@ -405,6 +411,7 @@ public class Public extends SchemaImpl {
             SeriesGenre.SERIES_GENRE,
             SeriesPerson.SERIES_PERSON,
             ServerBootstrap.SERVER_BOOTSTRAP,
+            ServerSettings.SERVER_SETTINGS,
             SessionProgress.SESSION_PROGRESS,
             UserAccount.USER_ACCOUNT,
             WatchHistory.WATCH_HISTORY

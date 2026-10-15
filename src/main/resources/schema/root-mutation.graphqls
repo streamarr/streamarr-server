@@ -60,6 +60,7 @@ type Mutation {
     transferLastAccountAndDeleteHousehold(input: TransferLastAccountAndDeleteHouseholdInput!): TransferLastAccountAndDeleteHouseholdPayload
     deleteLastAccountAndHousehold(input: DeleteLastAccountAndHouseholdInput!): DeleteLastAccountAndHouseholdPayload
     deleteLastAccountAndHouseholdPreservingPersonalProfile(input: DeleteLastAccountAndHouseholdPreservingPersonalProfileInput!): DeleteLastAccountAndHouseholdPreservingPersonalProfilePayload
+    changeEncoderPreset(input: ChangeEncoderPresetInput!): ChangeEncoderPresetPayload
 }
 
 enum ImageRefreshMode {

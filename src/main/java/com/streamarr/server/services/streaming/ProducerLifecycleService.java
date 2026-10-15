@@ -10,6 +10,7 @@ import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.services.serversettings.ServerSettingsService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -40,6 +41,7 @@ public class ProducerLifecycleService {
   private final StreamingProperties properties;
   private final RuntimeStreamSessionRegistry runtimeRegistry;
   private final MutexFactory<UUID> sessionMutex;
+  private final ServerSettingsService serverSettings;
   @Builder.Default private final Clock clock = Clock.systemUTC();
   private final ConcurrentHashMap<VariantKey, VariantDeliveryState> recoveryStates =
       new ConcurrentHashMap<>();
@@ -453,7 +455,9 @@ public class ProducerLifecycleService {
 
   private TranscodeRequest replacementRequest(
       StreamSession session, ReplaceProducerCommand command) {
-    var request = baseRequest(session, command.variantLabel(), command.segmentIndex());
+    var request =
+        baseRequest(session, command.variantLabel(), command.segmentIndex())
+            .encoderPreset(pinEncoderPreset(session, command.variantLabel()));
 
     var variant =
         session.getVariants().stream()
@@ -584,6 +588,7 @@ public class ProducerLifecycleService {
             .width(probe.width())
             .height(probe.height())
             .bitrate(probe.bitrate())
+            .encoderPreset(pinEncoderPreset(session, variantLabel))
             .build();
     installHandle(session, variantLabel, transcodeExecutor.start(request));
   }
@@ -596,6 +601,7 @@ public class ProducerLifecycleService {
               .width(variant.width())
               .height(variant.height())
               .bitrate(variant.videoBitrate())
+              .encoderPreset(pinEncoderPreset(session, variant.label()))
               .build();
       installHandle(session, variant.label(), transcodeExecutor.start(request));
     }
@@ -623,9 +629,14 @@ public class ProducerLifecycleService {
         .framerate(probe.framerate())
         .transcodeDecision(session.getTranscodeDecision())
         .startSequenceNumber(startSequenceNumber)
-        .mediaSegmentCount(timeline.mediaSegmentCount())
-        .encoderPreset(
-            EncoderPreset.automaticFor(session.getTranscodeDecision().videoCodecFamily()));
+        .mediaSegmentCount(timeline.mediaSegmentCount());
+  }
+
+  private EncoderPreset pinEncoderPreset(StreamSession session, String variantLabel) {
+    return session.pinEncoderPreset(
+        variantLabel,
+        () ->
+            serverSettings.resolveEncoderPreset(session.getTranscodeDecision().videoCodecFamily()));
   }
 
   private void withSessionLock(UUID sessionId, Runnable action) {

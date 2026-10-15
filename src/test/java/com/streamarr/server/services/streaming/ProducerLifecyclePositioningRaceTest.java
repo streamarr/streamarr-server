@@ -10,6 +10,7 @@ import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
+import com.streamarr.server.fixtures.ServerSettingsFixture;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import java.time.Duration;
 import java.util.UUID;
@@ -50,6 +51,7 @@ class ProducerLifecyclePositioningRaceTest {
                     .build())
             .runtimeRegistry(runtimeRegistry)
             .sessionMutex(raceGate.mutexFactory())
+            .serverSettings(ServerSettingsFixture.defaultServerSettings())
             .build();
   }
 

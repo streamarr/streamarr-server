@@ -52,6 +52,7 @@ import com.streamarr.server.jooq.generated.tables.SeriesDirector;
 import com.streamarr.server.jooq.generated.tables.SeriesGenre;
 import com.streamarr.server.jooq.generated.tables.SeriesPerson;
 import com.streamarr.server.jooq.generated.tables.ServerBootstrap;
+import com.streamarr.server.jooq.generated.tables.ServerSettings;
 import com.streamarr.server.jooq.generated.tables.SessionProgress;
 import com.streamarr.server.jooq.generated.tables.UserAccount;
 import com.streamarr.server.jooq.generated.tables.WatchHistory;
@@ -302,6 +303,11 @@ public class Tables {
      * The table <code>public.server_bootstrap</code>.
      */
     public static final ServerBootstrap SERVER_BOOTSTRAP = ServerBootstrap.SERVER_BOOTSTRAP;
+
+    /**
+     * The table <code>public.server_settings</code>.
+     */
+    public static final ServerSettings SERVER_SETTINGS = ServerSettings.SERVER_SETTINGS;
 
     /**
      * The table <code>public.session_progress</code>.

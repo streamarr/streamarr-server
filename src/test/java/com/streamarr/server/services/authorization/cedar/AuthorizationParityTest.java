@@ -208,7 +208,8 @@ class AuthorizationParityTest {
           "libraryAdministration";
       case BLOCK_ESN_SERVER_WIDE, UNBLOCK_ESN_SERVER_WIDE, VIEW_SERVER_DEVICE_ADMINISTRATION ->
           "deviceAdministration";
-      case VIEW_SECURITY_AUDIT -> "serverAdministration";
+      case VIEW_SECURITY_AUDIT, VIEW_ENCODER_PRESET, CHANGE_ENCODER_PRESET ->
+          "serverAdministration";
       case VIEW_PROFILE_PICKER,
           SELECT_PROFILE,
           PLAYBACK,
@@ -346,6 +347,8 @@ class AuthorizationParityTest {
         new Intent.TransferProfile(id),
         new Intent.AdministrativelyDeleteProfile(id),
         new Intent.DeleteHousehold(id),
-        new Intent.ViewSecurityAudit());
+        new Intent.ViewSecurityAudit(),
+        new Intent.ViewEncoderPreset(),
+        new Intent.ChangeEncoderPreset());
   }
 }

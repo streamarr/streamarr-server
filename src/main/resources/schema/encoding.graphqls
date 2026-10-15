@@ -1,0 +1,56 @@
+# Encoding settings (ADR 0044; ADR 0026 shapes). Only a ServerAdmin reads or changes them.
+
+"A preset on the scale that every software encoder uses, from fastest to slowest."
+enum EncoderPreset {
+    ULTRAFAST
+    SUPERFAST
+    VERYFAST
+    FASTER
+    FAST
+    MEDIUM
+    SLOW
+    SLOWER
+    VERYSLOW
+}
+
+"Automatic, or one fixed preset from the scale."
+enum EncoderPresetChoice {
+    AUTOMATIC
+    ULTRAFAST
+    SUPERFAST
+    VERYFAST
+    FASTER
+    FAST
+    MEDIUM
+    SLOW
+    SLOWER
+    VERYSLOW
+}
+
+"The preset that Automatic uses for each video codec."
+type AutomaticEncoderPresets {
+    h264: EncoderPreset!
+    hevc: EncoderPreset!
+    av1: EncoderPreset!
+}
+
+"""
+The server's encoder preset. A change reaches only quality levels that start afterwards.
+A quality level that has already started keeps its preset.
+"""
+type EncoderPresetSetting {
+    preset: EncoderPresetChoice!
+    automatic: AutomaticEncoderPresets!
+}
+
+input ChangeEncoderPresetInput {
+    "A value of EncoderPresetChoice."
+    preset: String!
+}
+
+type ChangeEncoderPresetPayload {
+    encoderPresetSetting: EncoderPresetSetting
+    userErrors: [ChangeEncoderPresetError!]!
+}
+
+union ChangeEncoderPresetError = UnknownEncoderPresetError
