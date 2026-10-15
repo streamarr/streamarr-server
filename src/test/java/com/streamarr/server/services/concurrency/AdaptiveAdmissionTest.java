@@ -301,32 +301,17 @@ class AdaptiveAdmissionTest {
     var admission = admissionWith(FixedLimit.of(2));
     var first = new IllegalStateException("first admitted");
     var second = new IllegalStateException("second admitted");
-    var secondReported = new CountDownLatch(1);
-    var countingListener =
-        new CapturingListener() {
-          @Override
-          public void onReported(AdmittedTaskReport report) {
-            super.onReported(report);
-            secondReported.countDown();
-          }
-        };
-    var orderedAdmission =
-        AdaptiveAdmission.builder()
-            .limit(FixedLimit.of(2))
-            .nanoClock(clock)
-            .listener(countingListener)
-            .build();
     AdmittedTask<Integer> task =
         subject -> {
           if (subject == 0) {
-            assertThat(secondReported.await(BOUND.toNanos(), TimeUnit.NANOSECONDS)).isTrue();
+            listener.awaitReport();
             throw first;
           }
 
           throw second;
         };
 
-    var failures = orderedAdmission.forkAdmittedTasks(new CountingSubjects(2), task, THREADS);
+    var failures = admission.forkAdmittedTasks(new CountingSubjects(2), task, THREADS);
 
     assertThat(failures).containsExactly(first, second);
     assertThat(admission.inFlight()).isZero();
@@ -669,18 +654,18 @@ class AdaptiveAdmissionTest {
   }
 
   /** Captures what the admission emits to its listener, as metrics read it. */
-  private static class CapturingListener implements AdmissionListener {
+  private static final class CapturingListener implements AdmissionListener {
 
     private final BlockingQueue<AdmittedTaskReport> reports = new LinkedBlockingQueue<>();
     private final List<AdmittedTaskReport> allReports = new CopyOnWriteArrayList<>();
     private final AtomicInteger admitted = new AtomicInteger();
 
+    private final AtomicInteger closes = new AtomicInteger();
+
     @Override
     public void onAdmitted() {
       admitted.incrementAndGet();
     }
-
-    private final AtomicInteger closes = new AtomicInteger();
 
     @Override
     public void onReported(AdmittedTaskReport report) {

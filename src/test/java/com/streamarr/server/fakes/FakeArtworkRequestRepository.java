@@ -25,8 +25,6 @@ import java.util.Optional;
  */
 public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
 
-  private int artworkStateReads;
-
   private static final Comparator<ImageSource> SOURCE_ORDER =
       Comparator.comparing(ImageSource::imageType).thenComparing(ImageSource::key);
 
@@ -34,6 +32,7 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
   private final Map<ArtworkTarget, Instant> firstRequestedAt = new HashMap<>();
   private final FakeItemResultRepository itemResults;
   private long lastGeneration;
+  private int artworkStateReads;
 
   /** Holds the fake item results to this repository's generations, as the database does. */
   public FakeArtworkRequestRepository(FakeItemResultRepository itemResults) {

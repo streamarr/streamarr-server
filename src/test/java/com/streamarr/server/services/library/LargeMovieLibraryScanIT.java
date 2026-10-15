@@ -68,6 +68,17 @@ class LargeMovieLibraryScanIT extends AbstractScanningIntegrationTest {
   private static final Duration TMDB_DELAY = Duration.ofMillis(200);
   private static final Duration SCAN_BOUND = Duration.ofSeconds(90);
 
+  // Plain words keep the filename parser from reading part of a title as a year or release tag.
+  private static final List<String> TITLE_ADJECTIVES =
+      List.of(
+          "Amber", "Brisk", "Calm", "Dusky", "Eager", "Faint", "Gentle", "Hollow", "Ivory", "Jolly",
+          "Keen", "Lunar", "Mellow", "Nimble", "Olive", "Placid", "Quiet", "Rustic", "Silver",
+          "Tidal");
+  private static final List<String> TITLE_NOUNS =
+      List.of(
+          "Harbor", "Meadow", "Canyon", "Lantern", "Orchard", "Glacier", "Willow", "Summit",
+          "Prairie", "Thicket");
+
   @Autowired private LibraryManagementService libraryManagementService;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MovieRepository movieRepository;
@@ -140,17 +151,6 @@ class LargeMovieLibraryScanIT extends AbstractScanningIntegrationTest {
             .build());
   }
 
-  private static final List<String> TITLE_ADJECTIVES =
-      List.of(
-          "Amber", "Brisk", "Calm", "Dusky", "Eager", "Faint", "Gentle", "Hollow", "Ivory", "Jolly",
-          "Keen", "Lunar", "Mellow", "Nimble", "Olive", "Placid", "Quiet", "Rustic", "Silver",
-          "Tidal");
-  private static final List<String> TITLE_NOUNS =
-      List.of(
-          "Harbor", "Meadow", "Canyon", "Lantern", "Orchard", "Glacier", "Willow", "Summit",
-          "Prairie", "Thicket");
-
-  // Plain words keep the filename parser from reading part of a title as a year or release tag.
   private static String titleOf(int index) {
     return TITLE_ADJECTIVES.get(index / TITLE_NOUNS.size())
         + " "
