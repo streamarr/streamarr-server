@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.DecimalSeconds;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.StreamSession;
 import java.math.BigDecimal;
@@ -18,7 +19,6 @@ import org.springframework.stereotype.Service;
 public class HlsPlaylistService {
 
   private static final String AUDIO_GROUP_ID = "audio";
-  private static final int NANOSECOND_DIGITS = 9;
   private static final int EXTINF_DIGITS = 6;
 
   // RFC 8216 section 7: EXT-X-MAP in a playlist that is not I-frame-only needs version 6.
@@ -139,8 +139,7 @@ public class HlsPlaylistService {
   }
 
   private static BigDecimal extinfSeconds(Duration duration) {
-    return BigDecimal.valueOf(duration.toNanos(), NANOSECOND_DIGITS)
-        .setScale(EXTINF_DIGITS, RoundingMode.HALF_UP);
+    return DecimalSeconds.of(duration).setScale(EXTINF_DIGITS, RoundingMode.HALF_UP);
   }
 
   // RFC 8216 §4.3.3.1: every EXTINF, rounded to the nearest integer, must not exceed the target
