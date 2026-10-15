@@ -124,7 +124,7 @@ class EncoderPresetDispatchIT extends AbstractIntegrationTest {
     assertThat(replacement.getVariant().getEncoderPreset())
         .isEqualTo(EncoderPreset.ENCODER_PRESET_FASTER);
 
-    lifecycle.startVariantOnDemand(running.getSessionId(), "720p", "720p/segment2.m4s");
+    lifecycle.prepareRequestedVariant(running.getSessionId(), "720p", "720p/segment2.m4s");
 
     var later = worker.nextJobs(1).getFirst();
     assertThat(later.getVariant().getVariantLabel()).isEqualTo("720p");

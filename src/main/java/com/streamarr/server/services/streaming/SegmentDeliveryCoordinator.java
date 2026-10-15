@@ -29,11 +29,7 @@ public class SegmentDeliveryCoordinator {
       return refusal.get();
     }
 
-    if (SegmentNames.indexOf(segmentName).isPresent()) {
-      producerLifecycle.stopOtherVideoVariants(sessionId, variantLabel);
-    }
-
-    producerLifecycle.startVariantOnDemand(sessionId, variantLabel, segmentName);
+    producerLifecycle.prepareRequestedVariant(sessionId, variantLabel, segmentName);
     while (true) {
       var outcome = deliverOnce(sessionId, variantLabel, segmentName);
       if (outcome != null) {

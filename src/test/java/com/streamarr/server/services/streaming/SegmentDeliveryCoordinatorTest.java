@@ -18,16 +18,20 @@ import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture.StreamingRig;
+import com.streamarr.server.services.concurrency.MutexFactory;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -1121,6 +1125,146 @@ class SegmentDeliveryCoordinatorTest {
 
     assertThat(delivery).isInstanceOf(SegmentDelivery.SessionEnded.class);
     assertThat(runningVariants(session)).containsExactly("480p");
+  }
+
+  @Test
+  @DisplayName(
+      "Should leave one video variant running when media segment requests for two variants overlap")
+  void shouldLeaveOneVideoVariantRunningWhenMediaSegmentRequestsForTwoVariantsOverlap()
+      throws Exception {
+    var session = defaultLadderSessionBuilder().build();
+    var sessionId = session.getSessionId();
+    var gate = new SwitchGate(() -> !transcodeExecutor.isRunning(sessionId, "480p"));
+    var rig =
+        StreamingRigFixture.streamingRigBuilder()
+            .transcodeExecutor(transcodeExecutor)
+            .segmentStore(segmentStore)
+            .properties(properties)
+            .runtimeRegistry(runtimeRegistry)
+            .clock(clock)
+            .pollInterval(Duration.ofMillis(20))
+            .sessionMutex(gate.mutexFactory())
+            .build();
+    runtimeRegistry.save(session);
+    rig.lifecycle().startFirstListedVariant(session);
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var switchTo720p =
+          executor.submit(
+              () ->
+                  gate.gateCurrentThread(
+                      () -> rig.coordinator().deliver(sessionId, "720p", "720p/segment5.m4s")));
+      gate.awaitGatedOrStarted(transcodeExecutor, 2);
+      var startedBefore = transcodeExecutor.getStartedRequests().size();
+      var switchTo1080p =
+          executor.submit(
+              () -> rig.coordinator().deliver(sessionId, "1080p", "1080p/segment5.m4s"));
+      transcodeExecutor.awaitStartedRequestCount(startedBefore + 1);
+      segmentStore.addSegment(sessionId, "1080p/segment5.m4s", new byte[] {5});
+      assertThat(switchTo1080p.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+
+      gate.releaseAndAwaitHeldStep();
+      segmentStore.addSegment(sessionId, "720p/segment5.m4s", new byte[] {5});
+      switchTo720p.get(2, TimeUnit.SECONDS);
+    }
+
+    assertThat(runningVariants(session)).hasSize(1);
+  }
+
+  /**
+   * Holds one request's thread at the session mutex once the given condition holds, so a second
+   * request can run between the first request's steps.
+   */
+  private static final class SwitchGate {
+
+    private final BooleanSupplier holdWhen;
+    private final CountDownLatch gated = new CountDownLatch(1);
+    private final CountDownLatch released = new CountDownLatch(1);
+    private final CountDownLatch heldStepDone = new CountDownLatch(1);
+    private final ReentrantLock lock = new GateLock();
+    private volatile Thread gatedThread;
+
+    private SwitchGate(BooleanSupplier holdWhen) {
+      this.holdWhen = holdWhen;
+    }
+
+    private MutexFactory<UUID> mutexFactory() {
+      return new MutexFactory<>() {
+        @Override
+        public ReentrantLock getMutex(UUID sessionId) {
+          return lock;
+        }
+      };
+    }
+
+    private SegmentDelivery gateCurrentThread(Supplier<SegmentDelivery> request) {
+      gatedThread = Thread.currentThread();
+      return request.get();
+    }
+
+    private void awaitGatedOrStarted(FakeTranscodeExecutor executor, int startedRequestCount)
+        throws Exception {
+      CompletableFuture.anyOf(
+              CompletableFuture.runAsync(
+                  () -> {
+                    try {
+                      gated.await();
+                    } catch (InterruptedException e) {
+                      Thread.currentThread().interrupt();
+                    }
+                  }),
+              CompletableFuture.runAsync(
+                  () -> executor.awaitStartedRequestCount(startedRequestCount)))
+          .get(5, TimeUnit.SECONDS);
+    }
+
+    // Returns after the held step has run, so the test changes nothing during that step.
+    private void releaseAndAwaitHeldStep() throws InterruptedException {
+      var held = gated.getCount() == 0;
+      released.countDown();
+      if (held) {
+        assertThat(heldStepDone.await(5, TimeUnit.SECONDS))
+            .as("the held step must finish")
+            .isTrue();
+      }
+    }
+
+    private final class GateLock extends ReentrantLock {
+
+      private volatile boolean holdingHeldStep;
+
+      @Override
+      public void unlock() {
+        super.unlock();
+        if (Thread.currentThread() == gatedThread && holdingHeldStep) {
+          holdingHeldStep = false;
+          heldStepDone.countDown();
+        }
+      }
+
+      @Override
+      public void lock() {
+        if (Thread.currentThread() == gatedThread
+            && gated.getCount() > 0
+            && holdWhen.getAsBoolean()) {
+          gated.countDown();
+          try {
+            assertThat(released.await(5, TimeUnit.SECONDS))
+                .as("the switch gate must be released")
+                .isTrue();
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Interrupted while waiting at the switch gate", e);
+          }
+
+          super.lock();
+          holdingHeldStep = true;
+          return;
+        }
+
+        super.lock();
+      }
+    }
   }
 
   private void exhaustRecovery(StreamSession session) {

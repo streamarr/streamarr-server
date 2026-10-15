@@ -300,7 +300,7 @@ class ProducerLifecycleServiceTest {
     lifecycle.startFirstListedVariant(session);
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
-    lifecycle.startVariantOnDemand(session.getSessionId(), "720p", "720p/segment10.m4s");
+    lifecycle.prepareRequestedVariant(session.getSessionId(), "720p", "720p/segment10.m4s");
 
     assertThat(startedSince(startedBefore)).isEmpty();
     assertThat(session.getVariantHandle("720p")).isEmpty();
@@ -601,7 +601,7 @@ class ProducerLifecycleServiceTest {
   void shouldReplaceADeadVariantAtTheCurrentSegmentWhenItsInitializationSegmentIsRequested() {
     var session = startedLadderSession();
     var sessionId = session.getSessionId();
-    lifecycle.startVariantOnDemand(sessionId, "1080p", "1080p/init.mp4");
+    lifecycle.prepareRequestedVariant(sessionId, "1080p", "1080p/init.mp4");
     lifecycle.ensurePositioned(sessionId, "480p", "480p/segment50.m4s");
     transcodeExecutor.markDead(sessionId, "1080p");
     var startedBefore = transcodeExecutor.getStartedRequests().size();
@@ -661,7 +661,7 @@ class ProducerLifecycleServiceTest {
   @DisplayName("Should recover a suspended variant when its siblings keep the session live")
   void shouldRecoverSuspendedVariantWhenItsSiblingsKeepSessionLive() {
     var session = startedLadderSession();
-    lifecycle.startVariantOnDemand(session.getSessionId(), "1080p", "1080p/init.mp4");
+    lifecycle.prepareRequestedVariant(session.getSessionId(), "1080p", "1080p/init.mp4");
     var sibling = session.getVariantHandle("480p").orElseThrow();
     var suspended =
         session.getVariantHandle("1080p").orElseThrow().withStatus(TranscodeStatus.SUSPENDED);
@@ -1047,10 +1047,8 @@ class ProducerLifecycleServiceTest {
     serverSettings.changeEncoderPreset(serverAdmin, "SLOWER");
     transcodeExecutor.setExecutionTargets(List.of(NVENC_WORKER, LIBX264_WORKER));
 
-    lifecycle.stopOtherVideoVariants(sessionId, "720p");
-    lifecycle.startVariantOnDemand(sessionId, "720p", "720p/segment3.m4s");
-    lifecycle.stopOtherVideoVariants(sessionId, "480p");
-    lifecycle.startVariantOnDemand(sessionId, "480p", "480p/segment9.m4s");
+    lifecycle.prepareRequestedVariant(sessionId, "720p", "720p/segment3.m4s");
+    lifecycle.prepareRequestedVariant(sessionId, "480p", "480p/segment9.m4s");
 
     assertThat(transcodeExecutor.getStartedRequests())
         .extracting(

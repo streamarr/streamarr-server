@@ -322,12 +322,23 @@ public class ProducerLifecycleService {
   }
 
   /**
-   * Stops the job attempts of every other video variant of the stream session, as a media-segment
-   * request for {@code requestedVariantLabel} requires (ADR 0019). A label that the session does
-   * not offer stops nothing.
+   * Applies the on-demand rules of ADR 0019 to one segment request under one session lock. A
+   * media-segment request stops the job attempts of the other video variants. A request for a
+   * variant without a job attempt then starts that variant: at the requested media segment, or at
+   * the current segment for the initialization segment. A stored media segment starts nothing. A
+   * variant that does not start stays without a job attempt, so recovery answers the request as
+   * {@link RecoveryResult#VARIANT_NOT_RUNNING}.
    */
-  public void stopOtherVideoVariants(UUID sessionId, String requestedVariantLabel) {
-    withSessionLock(sessionId, () -> doStopOtherVideoVariants(sessionId, requestedVariantLabel));
+  public void prepareRequestedVariant(UUID sessionId, String variantLabel, String segmentName) {
+    withSessionLock(
+        sessionId,
+        () -> {
+          if (SegmentNames.indexOf(segmentName).isPresent()) {
+            doStopOtherVideoVariants(sessionId, variantLabel);
+          }
+
+          doStartVariantOnDemand(sessionId, variantLabel, segmentName);
+        });
   }
 
   private void doStopOtherVideoVariants(UUID sessionId, String requestedVariantLabel) {
@@ -362,16 +373,6 @@ public class ProducerLifecycleService {
     }
 
     session.removeVariantHandle(variantLabel);
-  }
-
-  /**
-   * Starts a variant that has no job attempt when the player requests one of its segments (ADR
-   * 0019): at the requested media segment, or at the current segment for the initialization
-   * segment. A stored media segment starts nothing. A failed start leaves the variant without a job
-   * attempt, so recovery answers the request as {@link RecoveryResult#VARIANT_NOT_RUNNING}.
-   */
-  public void startVariantOnDemand(UUID sessionId, String variantLabel, String segmentName) {
-    withSessionLock(sessionId, () -> doStartVariantOnDemand(sessionId, variantLabel, segmentName));
   }
 
   private void doStartVariantOnDemand(UUID sessionId, String variantLabel, String segmentName) {
