@@ -31,6 +31,7 @@ import com.streamarr.server.support.BoundedTask;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.SQLTransientConnectionException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +48,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("UnitTest")
@@ -699,6 +701,131 @@ class ArtworkRequestServiceTest {
   }
 
   @Nested
+  @DisplayName("Task runs")
+  class TaskRuns {
+
+    private final TransactionTemplate transactionTemplate =
+        new TransactionTemplate(new FakeTransactionManager());
+
+    @Test
+    @DisplayName(
+        "Should finish a task run's wait when only the artwork that the task requested is recorded")
+    void shouldFinishATaskRunsWaitWhenOnlyTheArtworkThatTheTaskRequestedIsRecorded()
+        throws Exception {
+      var operation = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
+      var finishedTask = operation.openTaskRun();
+      artworkRequestService.requestPrimaryArtwork(
+          finishedTask, movieArtwork(UUID.randomUUID(), POSTER));
+      finishedTask.close();
+      artwork.scheduling().holdScheduledSteps();
+      var pendingTask = operation.openTaskRun();
+      artworkRequestService.requestPrimaryArtwork(
+          pendingTask, movieArtwork(UUID.randomUUID(), POSTER));
+
+      BoundedTask.runWithin(
+          BOUND, () -> artwork.artworkRunWaiter().tryAwaitTaskResults(finishedTask));
+
+      assertThat(artwork.scheduling().pendingTargets()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("Should check a task run's results every task result check interval")
+    void shouldCheckATaskRunsResultsEveryTaskResultCheckInterval() throws Exception {
+      var sleeper = new CountingSleeper();
+      var waiting =
+          ArtworkFixture.builder()
+              .imageRepository(imageRepository)
+              .imageDownloader(imageDownloader)
+              .itemResults(itemResults)
+              .clock(clock)
+              .sleeper(sleeper)
+              .build();
+      waiting.scheduling().holdScheduledSteps();
+      sleeper.onSleep(_ -> waiting.scheduling().runPendingSteps());
+      var task =
+          waiting.artworkRequestService().openRun("scan", ImageRefreshMode.PRESERVE).openTaskRun();
+      waiting
+          .artworkRequestService()
+          .requestPrimaryArtwork(task, movieArtwork(UUID.randomUUID(), POSTER));
+      task.close();
+
+      BoundedTask.runWithin(BOUND, () -> waiting.artworkRunWaiter().tryAwaitTaskResults(task));
+
+      assertThat(sleeper.sleeps()).isNotEmpty().containsOnly(Duration.ofMillis(100));
+    }
+
+    @Test
+    @DisplayName(
+        "Should stop a task run's wait and leave its artwork to the operation's run when a read fails")
+    void shouldStopATaskRunsWaitAndLeaveItsArtworkToTheOperationsRunWhenAReadFails()
+        throws Exception {
+      var operation = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
+      var task = operation.openTaskRun();
+      artworkRequestService.requestPrimaryArtwork(task, movieArtwork(UUID.randomUUID(), POSTER));
+      task.close();
+      artwork.requests().failNextCompletionEvidenceReadWith(poolTimeout());
+
+      try (var wait =
+          BoundedTask.start(() -> artwork.artworkRunWaiter().tryAwaitTaskResults(task))) {
+        assertThat(wait.await(BOUND)).isFalse();
+      }
+
+      assertThat(artwork.closeAndAwait(operation).counts())
+          .isEqualTo(FinishedImageCounts.builder().saved(1).unavailable(1).build());
+    }
+
+    @Test
+    @DisplayName("Should count a task run's requests in the operation's run")
+    void shouldCountATaskRunsRequestsInTheOperationsRun() {
+      var operation = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
+      var keptMovieId = UUID.randomUUID();
+      imageRepository.save(imageBuilder(keptMovieId).key("/poster.jpg").path("movie/p").build());
+
+      try (var task = operation.openTaskRun()) {
+        artworkRequestService.requestPrimaryArtwork(
+            task, movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
+        artworkRequestService.requestPrimaryArtwork(task, movieArtwork(keptMovieId, POSTER));
+      }
+
+      assertThat(artwork.closeAndAwait(operation).counts())
+          .isEqualTo(FinishedImageCounts.builder().saved(2).skipped(1).unavailable(1).build());
+    }
+
+    @Test
+    @DisplayName(
+        "Should withdraw a task run's request from the operation's run when its transaction rolls back")
+    void shouldWithdrawATaskRunsRequestFromTheOperationsRunWhenItsTransactionRollsBack() {
+      artwork.scheduling().holdScheduledSteps();
+      var operation = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
+      var task = operation.openTaskRun();
+      var keptMovieId = UUID.randomUUID();
+      imageRepository.save(imageBuilder(keptMovieId).key("/poster.jpg").path("movie/p").build());
+
+      transactionTemplate.executeWithoutResult(
+          status -> {
+            status.setRollbackOnly();
+            artworkRequestService.requestPrimaryArtwork(
+                task, movieArtwork(UUID.randomUUID(), POSTER));
+            artworkRequestService.requestPrimaryArtwork(task, movieArtwork(keptMovieId, POSTER));
+          });
+      task.close();
+
+      assertThat(artwork.closeAndAwait(operation).counts()).isEqualTo(FinishedImageCounts.NONE);
+    }
+
+    @Test
+    @DisplayName("Should return at once without reading results when the task requested no artwork")
+    void shouldReturnAtOnceWithoutReadingResultsWhenTheTaskRequestedNoArtwork() throws Exception {
+      var task = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE).openTaskRun();
+      task.close();
+
+      artwork.artworkRunWaiter().tryAwaitTaskResults(task);
+
+      assertThat(artwork.requests().completionEvidenceReads()).isZero();
+    }
+  }
+
+  @Nested
   @DisplayName("Owning transactions")
   class OwningTransactions {
 
@@ -789,6 +916,11 @@ class ArtworkRequestServiceTest {
         .attemptedAt(clock.instant())
         .artworkGeneration(generation)
         .build();
+  }
+
+  private static CannotGetJdbcConnectionException poolTimeout() {
+    return new CannotGetJdbcConnectionException(
+        "simulated pool timeout", new SQLTransientConnectionException("connection not available"));
   }
 
   private ArtworkFixture artworkWith(TmdbImageDownloader downloader) {

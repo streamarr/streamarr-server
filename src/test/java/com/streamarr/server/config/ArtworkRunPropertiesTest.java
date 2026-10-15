@@ -26,27 +26,32 @@ class ArtworkRunPropertiesTest {
   static class ArtworkRunPropertiesConfiguration {}
 
   @Test
-  @DisplayName("Should check results every two seconds when nothing is configured")
-  void shouldCheckResultsEveryTwoSecondsWhenNothingIsConfigured() {
+  @DisplayName("Should use the default check intervals when nothing is configured")
+  void shouldUseTheDefaultCheckIntervalsWhenNothingIsConfigured() {
     var properties = ArtworkRunProperties.builder().build();
 
     assertThat(properties)
         .isEqualTo(
-            ArtworkRunProperties.builder().resultCheckInterval(Duration.ofSeconds(2)).build());
+            ArtworkRunProperties.builder()
+                .resultCheckInterval(Duration.ofSeconds(2))
+                .taskResultCheckInterval(Duration.ofMillis(100))
+                .build());
   }
 
   @Test
   @DisplayName(
-      "Should use the environment's result check interval when the packaged configuration reads it")
-  void shouldUseTheEnvironmentsResultCheckIntervalWhenThePackagedConfigurationReadsIt() {
+      "Should use the environment's check intervals when the packaged configuration reads them")
+  void shouldUseTheEnvironmentsCheckIntervalsWhenThePackagedConfigurationReadsThem() {
     PACKAGED_CONFIGURATION
-        .withPropertyValues("ARTWORK_RESULT_CHECK_INTERVAL=500ms")
+        .withPropertyValues(
+            "ARTWORK_RESULT_CHECK_INTERVAL=500ms", "ARTWORK_TASK_RESULT_CHECK_INTERVAL=50ms")
         .run(
             context ->
                 assertThat(context.getBean(ArtworkRunProperties.class))
                     .isEqualTo(
                         ArtworkRunProperties.builder()
                             .resultCheckInterval(Duration.ofMillis(500))
+                            .taskResultCheckInterval(Duration.ofMillis(50))
                             .build()));
   }
 
@@ -56,5 +61,13 @@ class ArtworkRunPropertiesTest {
     assertThatIllegalArgumentException()
         .isThrownBy(
             () -> ArtworkRunProperties.builder().resultCheckInterval(Duration.ZERO).build());
+  }
+
+  @Test
+  @DisplayName("Should reject the settings when the task result check interval is not positive")
+  void shouldRejectTheSettingsWhenTheTaskResultCheckIntervalIsNotPositive() {
+    assertThatIllegalArgumentException()
+        .isThrownBy(
+            () -> ArtworkRunProperties.builder().taskResultCheckInterval(Duration.ZERO).build());
   }
 }

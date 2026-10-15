@@ -34,13 +34,16 @@ import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Person;
+import com.streamarr.server.exceptions.LibraryRefreshFailedException;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
+import com.streamarr.server.fakes.CountingSleeper;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
+import com.streamarr.server.fakes.FixedLimitAdmissions;
 import com.streamarr.server.fakes.GatedImageDownloader;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.ArtworkFixture;
@@ -49,6 +52,7 @@ import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.concurrency.AdaptiveAdmissions;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.ImageVariantService;
 import com.streamarr.server.services.metadata.MetadataFetchOutcome;
@@ -61,18 +65,26 @@ import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResol
 import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.pagination.PaginationService;
 import com.streamarr.server.support.BoundedTask;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
+import java.sql.SQLTransientConnectionException;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.jdbc.CannotGetJdbcConnectionException;
 
 @Tag("UnitTest")
 @DisplayName("Library Refresh Service Tests")
@@ -91,6 +103,7 @@ class LibraryRefreshServiceTest {
   private GatedImageDownloader imageDownloader;
   private FakeItemResultRepository artworkResults;
   private ArtworkFixture artwork;
+  private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
 
   @BeforeEach
   void setUp() {
@@ -107,10 +120,16 @@ class LibraryRefreshServiceTest {
             .imageDownloader(imageDownloader)
             .itemResults(artworkResults)
             .build();
-    var artworkRequestService = artwork.artworkRequestService();
     seriesProviderResolver = mock(SeriesMetadataProviderResolver.class);
     movieProviderResolver = mock(MovieMetadataProviderResolver.class);
+    itemResults = new FakeItemResultRepository();
+    clock = new MutableClock();
+    refreshService = refreshServiceWith(artwork, admissionsWith(new AdaptiveAdmissions()));
+  }
 
+  private LibraryRefreshService refreshServiceWith(
+      ArtworkFixture artwork, LibraryOperationAdmissions admissions) {
+    var artworkRequestService = artwork.artworkRequestService();
     var creditService =
         CreditServiceFixture.creditServiceBuilder()
             .artworkRequestService(artworkRequestService)
@@ -152,20 +171,231 @@ class LibraryRefreshServiceTest {
             null,
             null);
 
-    itemResults = new FakeItemResultRepository();
-    clock = new MutableClock();
-    refreshService =
-        new LibraryRefreshService(
-            seriesRepository,
-            movieRepository,
-            seriesService,
-            movieService,
-            seriesProviderResolver,
-            movieProviderResolver,
-            artworkRequestService,
-            artwork.artworkRunWaiter(),
-            itemResults,
-            clock);
+    return LibraryRefreshService.builder()
+        .seriesRepository(seriesRepository)
+        .movieRepository(movieRepository)
+        .seriesService(seriesService)
+        .movieService(movieService)
+        .seriesMetadataProviderResolver(seriesProviderResolver)
+        .movieMetadataProviderResolver(movieProviderResolver)
+        .artworkRequestService(artworkRequestService)
+        .artworkRunWaiter(artwork.artworkRunWaiter())
+        .itemResults(itemResults)
+        .clock(clock)
+        .libraryOperationAdmissions(admissions)
+        .build();
+  }
+
+  private LibraryOperationAdmissions admissionsWith(AdaptiveAdmissions admissions) {
+    return LibraryOperationAdmissions.builder()
+        .meterRegistry(meterRegistry)
+        .admissions(admissions)
+        .build();
+  }
+
+  private double refreshReports() {
+    return meterRegistry
+        .find("streamarr.library.admission.reports")
+        .tag("operation", "refresh")
+        .counters()
+        .stream()
+        .mapToDouble(Counter::count)
+        .sum();
+  }
+
+  private double refreshReports(String report) {
+    return meterRegistry
+        .find("streamarr.library.admission.reports")
+        .tag("operation", "refresh")
+        .tag("report", report)
+        .counters()
+        .stream()
+        .mapToDouble(Counter::count)
+        .sum();
+  }
+
+  private double refreshAdmissions() {
+    var admitted =
+        meterRegistry
+            .find("streamarr.library.admission.admitted")
+            .tag("operation", "refresh")
+            .counter();
+    if (admitted == null) {
+      return 0;
+    }
+
+    return admitted.count();
+  }
+
+  @Nested
+  @DisplayName("Refresh admission")
+  class RefreshAdmissionTests {
+
+    @Test
+    @DisplayName("Should admit each movie through the limit when refreshing")
+    void shouldAdmitEachMovieThroughTheLimitWhenRefreshing() {
+      var library = buildMovieLibrary();
+      saveMovieWithTmdbId("Inception", "27205", library);
+      saveMovieWithTmdbId("Interstellar", "157336", library);
+      var reportsAtEachFetch = new CopyOnWriteArrayList<Double>();
+      when(movieProviderResolver.getMetadata(any(), eq(library)))
+          .thenAnswer(
+              invocation -> {
+                reportsAtEachFetch.add(refreshReports());
+                var tmdbId = invocation.getArgument(0, RemoteSearchResult.class).externalId();
+                return new MetadataFetchOutcome.Found<>(
+                    MetadataFixture.<Movie>metadataResultBuilder()
+                        .entity(Movie.builder().title("Refreshed " + tmdbId).build())
+                        .build());
+              });
+      var service = refreshServiceWith(artwork, admissionsWith(new FixedLimitAdmissions(1)));
+
+      service.refreshLibrary(library);
+
+      assertThat(reportsAtEachFetch).containsExactly(0.0, 1.0);
+      assertThat(refreshAdmissions()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("Should admit each series through the limit when refreshing")
+    void shouldAdmitEachSeriesThroughTheLimitWhenRefreshing() {
+      var library = buildSeriesLibrary();
+      saveSeriesWithTmdbId("Breaking Bad", "1396", library);
+      saveSeriesWithTmdbId("Better Call Saul", "60059", library);
+      var reportsAtEachFetch = new CopyOnWriteArrayList<Double>();
+      when(seriesProviderResolver.getMetadata(any(), eq(library)))
+          .thenAnswer(
+              invocation -> {
+                reportsAtEachFetch.add(refreshReports());
+                var tmdbId = invocation.getArgument(0, RemoteSearchResult.class).externalId();
+                return new MetadataFetchOutcome.Found<>(
+                    MetadataFixture.<Series>metadataResultBuilder()
+                        .entity(Series.builder().title("Refreshed " + tmdbId).build())
+                        .build());
+              });
+      when(seriesProviderResolver.getAvailableSeasonNumbers(any(), any()))
+          .thenReturn(new MetadataFetchOutcome.Found<>(List.of()));
+      var service = refreshServiceWith(artwork, admissionsWith(new FixedLimitAdmissions(1)));
+
+      service.refreshLibrary(library);
+
+      assertThat(reportsAtEachFetch).containsExactly(0.0, 1.0);
+      assertThat(refreshAdmissions()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("Should hold a refreshed movie's admission until its poster result is recorded")
+    void shouldHoldARefreshedMoviesAdmissionUntilItsPosterResultIsRecorded() throws Exception {
+      var library = buildMovieLibrary();
+      saveMovieWithTmdbId("Inception", "27205", library);
+      stubMovieMetadataWithPoster("27205", library);
+      var resultCheckSleeper = new CountingSleeper();
+      var heldArtwork =
+          ArtworkFixture.builder()
+              .imageRepository(imageRepository)
+              .imageDownloader(new GatedImageDownloader(createTestImage(600, 900)))
+              .sleeper(resultCheckSleeper)
+              .build();
+      heldArtwork.scheduling().holdScheduledSteps();
+      var inFlightWhilePosterPending = new AtomicReference<Double>();
+      resultCheckSleeper.onSleep(
+          _ -> {
+            inFlightWhilePosterPending.compareAndSet(null, refreshTasksInFlight());
+            heldArtwork.scheduling().runPendingSteps();
+          });
+      var service = refreshServiceWith(heldArtwork, admissionsWith(new AdaptiveAdmissions()));
+
+      BoundedTask.runWithin(Duration.ofSeconds(5), () -> service.refreshLibrary(library));
+
+      assertThat(inFlightWhilePosterPending).hasValue(1.0);
+      assertThat(heldArtwork.scheduling().pendingTargets()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should refresh every movie when a refresh task cannot read its artwork results")
+    void shouldRefreshEveryMovieWhenARefreshTaskCannotReadItsArtworkResults() throws Exception {
+      var library = buildMovieLibrary();
+      var first = saveMovieWithTmdbId("Inception", "27205", library);
+      var second = saveMovieWithTmdbId("Interstellar", "157336", library);
+      stubMovieMetadataWithPoster("27205", library);
+      stubMovieMetadataWithPoster("157336", library);
+      artwork
+          .requests()
+          .failNextCompletionEvidenceReadWith(
+              new CannotGetJdbcConnectionException(
+                  "simulated pool timeout",
+                  new SQLTransientConnectionException("connection not available")));
+      var service = refreshServiceWith(artwork, admissionsWith(new FixedLimitAdmissions(1)));
+
+      BoundedTask.runWithin(Duration.ofSeconds(5), () -> service.refreshLibrary(library));
+
+      assertThat(itemResults.findByItem(first.getId(), ImageEntityType.MOVIE)).isNotEmpty();
+      assertThat(itemResults.findByItem(second.getId(), ImageEntityType.MOVIE)).isNotEmpty();
+      assertThat(refreshReports("drop")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Should admit no further title and fail the refresh when a refresh task throws")
+    void shouldAdmitNoFurtherTitleAndFailTheRefreshWhenARefreshTaskThrows() {
+      var library = buildMovieLibrary();
+      saveMovieWithTmdbId("Inception", "27205", library);
+      saveMovieWithTmdbId("Interstellar", "157336", library);
+      var fetches = new AtomicInteger();
+      when(movieProviderResolver.getMetadata(any(), eq(library)))
+          .thenAnswer(
+              _ -> {
+                fetches.incrementAndGet();
+                return new MetadataFetchOutcome.NotFound<>();
+              });
+      var failure = new DataAccessResourceFailureException("database unavailable");
+      itemResults.failWritesWith(failure);
+      var service = refreshServiceWith(artwork, admissionsWith(new FixedLimitAdmissions(1)));
+
+      assertThatThrownBy(() -> service.refreshLibrary(library))
+          .isInstanceOf(LibraryRefreshFailedException.class)
+          .hasRootCause(failure);
+      assertThat(fetches).hasValue(1);
+      assertThat(refreshAdmissions()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName(
+        "Should fail the refresh and keep the interrupt when the refreshing thread is interrupted")
+    void shouldFailTheRefreshAndKeepTheInterruptWhenTheRefreshingThreadIsInterrupted() {
+      var library = buildMovieLibrary();
+      saveMovieWithTmdbId("Inception", "27205", library);
+      stubMovieMetadata("27205", library);
+
+      try {
+        Thread.currentThread().interrupt();
+
+        assertThatThrownBy(() -> refreshService.refreshLibrary(library))
+            .isInstanceOf(LibraryRefreshFailedException.class)
+            .hasCauseInstanceOf(InterruptedException.class);
+        assertThat(Thread.currentThread().isInterrupted()).isTrue();
+      } finally {
+        Thread.interrupted();
+      }
+    }
+
+    @Test
+    @DisplayName("Should take no admission for a title without a TMDB id")
+    void shouldTakeNoAdmissionForATitleWithoutATmdbId() {
+      var library = buildMovieLibrary();
+      movieRepository.save(Movie.builder().title("No TMDB ID").library(library).build());
+
+      refreshService.refreshLibrary(library);
+
+      assertThat(refreshAdmissions()).isZero();
+    }
+
+    private double refreshTasksInFlight() {
+      return meterRegistry
+          .get("streamarr.library.admission.in_flight")
+          .tag("operation", "refresh")
+          .gauge()
+          .value();
+    }
   }
 
   @Test

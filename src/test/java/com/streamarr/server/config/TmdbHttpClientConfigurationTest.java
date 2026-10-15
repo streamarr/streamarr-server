@@ -9,12 +9,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.github.mizosoft.methanol.HttpCache;
 import com.github.mizosoft.methanol.Methanol;
 import com.github.tomakehurst.wiremock.WireMockServer;
+import com.netflix.concurrency.limits.limit.FixedLimit;
 import com.streamarr.server.config.health.TmdbHealthProperties;
 import com.streamarr.server.config.http.RateLimitingInterceptor;
+import com.streamarr.server.services.concurrency.AdaptiveAdmission;
+import com.streamarr.server.services.concurrency.AdmissionListener;
+import com.streamarr.server.services.concurrency.AdmittedTaskReport;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
+import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -136,6 +146,93 @@ class TmdbHttpClientConfigurationTest {
               methanol ->
                   assertThat(methanol.interceptors())
                       .anyMatch(RateLimitingInterceptor.class::isInstance));
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should mark the admitted task retried when TMDB answers too many requests then succeeds")
+  void shouldMarkTheAdmittedTaskRetriedWhenTmdbAnswersTooManyRequestsThenSucceeds()
+      throws Exception {
+    wireMock.stubFor(
+        get("/movie/1")
+            .inScenario("rate limited")
+            .whenScenarioStateIs(STARTED)
+            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0"))
+            .willSetStateTo("retried"));
+    wireMock.stubFor(
+        get("/movie/1")
+            .inScenario("rate limited")
+            .whenScenarioStateIs("retried")
+            .willReturn(aResponse().withStatus(200)));
+
+    var outcome = sendInsideAnAdmittedTask("/movie/1");
+
+    assertThat(outcome.statusCode()).isEqualTo(200);
+    assertThat(outcome.report()).isEqualTo(AdmittedTaskReport.DROP);
+  }
+
+  @Test
+  @DisplayName("Should leave the retry mark unset when TMDB answers at once")
+  void shouldLeaveTheRetryMarkUnsetWhenTmdbAnswersAtOnce() throws Exception {
+    wireMock.stubFor(get("/movie/2").willReturn(aResponse().withStatus(200)));
+
+    var outcome = sendInsideAnAdmittedTask("/movie/2");
+
+    assertThat(outcome.statusCode()).isEqualTo(200);
+    assertThat(outcome.report()).isEqualTo(AdmittedTaskReport.LATENCY);
+  }
+
+  private record AdmittedRequestOutcome(int statusCode, AdmittedTaskReport report) {}
+
+  // The task itself reports latency, so a drop can come only from the retry mark.
+  private AdmittedRequestOutcome sendInsideAnAdmittedTask(String path) throws Exception {
+    var reports = new CopyOnWriteArrayList<AdmittedTaskReport>();
+    var statusCode = new AtomicInteger();
+    var request =
+        HttpRequest.newBuilder()
+            .uri(URI.create(wireMock.baseUrl() + path))
+            .timeout(LOCAL_SERVER_TIMEOUT)
+            .GET()
+            .build();
+    try (var cache = HttpCache.newBuilder().cacheOnMemory(1024).build();
+        var admission =
+            AdaptiveAdmission.builder()
+                .limit(FixedLimit.of(1))
+                .nanoClock(System::nanoTime)
+                .listener(
+                    new AdmissionListener() {
+                      @Override
+                      public void onReported(AdmittedTaskReport report) {
+                        reports.add(report);
+                      }
+                    })
+                .build()) {
+      var client = new TmdbHttpClientConfiguration().tmdbHttpClient(1000, 30, cache);
+
+      var failures =
+          admission.forkAdmittedTasks(
+              List.of(request).iterator(),
+              admitted -> {
+                statusCode.set(send(client, admitted).statusCode());
+                return AdmittedTaskReport.LATENCY;
+              },
+              Thread.ofVirtual().factory());
+
+      assertThat(failures).isEmpty();
+    }
+
+    assertThat(reports).hasSize(1);
+    return new AdmittedRequestOutcome(statusCode.get(), reports.getFirst());
+  }
+
+  // An admitted task may throw only unchecked exceptions and InterruptedException.
+  private static HttpResponse<Void> send(HttpClient client, HttpRequest request)
+      throws InterruptedException {
+    try {
+      return client.send(request, HttpResponse.BodyHandlers.discarding());
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
     }
   }
 

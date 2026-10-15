@@ -11,12 +11,18 @@ import java.util.Optional;
  * The primary artwork requested by one scan, refresh, or file discovery. The run collects what it
  * requested until it is closed; {@link ArtworkRunWaiter#awaitResults} then waits for the recorded
  * results, so a result recorded after a restart counts as well.
+ *
+ * <p>A task run collects what one admitted task of the operation requests. Everything it collects
+ * or withdraws is also collected or withdrawn by the operation's run, so the operation still counts
+ * all of its artwork, and {@link ArtworkRunWaiter#tryAwaitTaskResults} waits for the task's artwork
+ * alone.
  */
 public final class ArtworkRun implements AutoCloseable {
 
   private final String description;
   private final ImageRefreshMode imageRefreshMode;
   private final Clock clock;
+  private final Optional<ArtworkRun> operationRun;
 
   private final List<AwaitedArtwork> awaited = new ArrayList<>();
   private int keptImages;
@@ -27,6 +33,26 @@ public final class ArtworkRun implements AutoCloseable {
     this.description = description;
     this.imageRefreshMode = imageRefreshMode;
     this.clock = clock;
+    this.operationRun = Optional.empty();
+  }
+
+  private ArtworkRun(ArtworkRun operationRun) {
+    this.description = operationRun.description;
+    this.imageRefreshMode = operationRun.imageRefreshMode;
+    this.clock = operationRun.clock;
+    this.operationRun = Optional.of(operationRun);
+    // A task run starts empty and open, whatever its operation's run holds.
+    this.keptImages = 0;
+    this.firstRequestedAt = null;
+    this.closed = false;
+  }
+
+  /**
+   * Opens a run for one task of this operation, with the same refresh mode. The task closes it when
+   * it will request no more artwork; this run stays open.
+   */
+  public ArtworkRun openTaskRun() {
+    return new ArtworkRun(this);
   }
 
   public ImageRefreshMode imageRefreshMode() {
@@ -63,6 +89,7 @@ public final class ArtworkRun implements AutoCloseable {
   synchronized void register(AwaitedArtwork artwork) {
     startRequest();
     awaited.add(artwork);
+    operationRun.ifPresent(run -> run.register(artwork));
   }
 
   /**
@@ -73,16 +100,19 @@ public final class ArtworkRun implements AutoCloseable {
   synchronized void countKeptImages(int kept) {
     startRequest();
     keptImages += kept;
+    operationRun.ifPresent(run -> run.countKeptImages(kept));
   }
 
   /** Removes artwork whose request rolled back with the transaction that made it. */
   synchronized void withdraw(AwaitedArtwork artwork) {
     awaited.remove(artwork);
+    operationRun.ifPresent(run -> run.withdraw(artwork));
   }
 
   /** Removes kept images whose request rolled back with the transaction that made it. */
   synchronized void withdrawKeptImages(int kept) {
     keptImages -= kept;
+    operationRun.ifPresent(run -> run.withdrawKeptImages(kept));
   }
 
   private void startRequest() {

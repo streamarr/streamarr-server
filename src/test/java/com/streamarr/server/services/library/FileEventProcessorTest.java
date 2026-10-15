@@ -145,12 +145,27 @@ class FileEventProcessorTest {
     var mutationTransactions =
         new MutationTransactions(new FakeTransactionManager(), new ConstraintViolationTranslator());
 
+    var fileDiscoveryRuns =
+        FileDiscoveryRunsFixture.fileDiscoveryRunsBuilder()
+            .artwork(ArtworkFixture.builder().build())
+            .mediaFiles(mediaFileRepository)
+            .outcomes(probeOutcomes)
+            .probeTaskRequests(probeTaskRequests)
+            .fileSystem(fileSystem)
+            .build();
     var libraryManagementService =
         LibraryManagementService.builder()
-            .ignoredFileValidator(ignoredFileValidator)
-            .videoExtensionValidator(videoExtensionValidator)
-            .movieFileProcessor(movieFileProcessor)
-            .seriesFileProcessor(seriesFileProcessor)
+            .libraryFileWalk(
+                LibraryFileWalk.builder()
+                    .ignoredFileValidator(ignoredFileValidator)
+                    .videoExtensionValidator(videoExtensionValidator)
+                    .movieFileProcessor(movieFileProcessor)
+                    .seriesFileProcessor(seriesFileProcessor)
+                    .mediaFileRepository(mediaFileRepository)
+                    .fileSystem(fileSystem)
+                    .fileDiscoveryRuns(fileDiscoveryRuns)
+                    .mutexFactoryProvider(new MutexFactoryProvider())
+                    .build())
             .libraryRepository(libraryRepository)
             .libraryMetadataRepository(new FakeLibraryMetadataRepository())
             .mediaFileRepository(mediaFileRepository)
@@ -162,14 +177,7 @@ class FileEventProcessorTest {
             .fileSystem(fileSystem)
             .libraryMutationTransaction(new FakeLibraryMutationTransaction())
             .mutationTransactions(mutationTransactions)
-            .fileDiscoveryRuns(
-                FileDiscoveryRunsFixture.fileDiscoveryRunsBuilder()
-                    .artwork(ArtworkFixture.builder().build())
-                    .mediaFiles(mediaFileRepository)
-                    .outcomes(probeOutcomes)
-                    .probeTaskRequests(probeTaskRequests)
-                    .fileSystem(fileSystem)
-                    .build())
+            .fileDiscoveryRuns(fileDiscoveryRuns)
             .build();
 
     eventProcessor =

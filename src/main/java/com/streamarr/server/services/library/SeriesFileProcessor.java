@@ -70,29 +70,33 @@ public class SeriesFileProcessor {
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
 
-  public void process(FileDiscovery discovery, MediaFile mediaFile) {
+  public MatchingOutcome process(FileDiscovery discovery, MediaFile mediaFile) {
     var filepath = FilepathCodec.pathOf(mediaFile.getFilepathUri());
     var parseResult = episodePathMetadataParser.parse(filepath);
 
     if (parseResult.isEmpty()) {
-      markMatchingFailed(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_PARSING_FAILED));
+      var outcome =
+          markMatchingFailed(
+              mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_PARSING_FAILED));
       log.error(
           "Failed to parse episode info from MediaFile id: {} at path: '{}'",
           mediaFile.getId(),
           mediaFile.getFilepathUri());
-      return;
+      return outcome;
     }
 
     var parsed = parseResult.get();
     var isDateOnly = isDateOnlyEpisode(parsed);
 
     if (parsed.getEpisodeNumber().isEmpty() && !isDateOnly) {
-      markMatchingFailed(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_PARSING_FAILED));
+      var outcome =
+          markMatchingFailed(
+              mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_PARSING_FAILED));
       log.error(
           "Failed to parse episode info from MediaFile id: {} at path: '{}'",
           mediaFile.getId(),
           mediaFile.getFilepathUri());
-      return;
+      return outcome;
     }
 
     var seasonFolderName = FilepathCodec.parentNameOf(mediaFile.getFilepathUri());
@@ -103,40 +107,45 @@ public class SeriesFileProcessor {
             seriesFolderNameOf(mediaFile.getFilepathUri(), seasonParseResult), parsed);
 
     if (parserResult.title() == null || parserResult.title().isBlank()) {
-      markMatchingFailed(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_PARSING_FAILED));
+      var outcome =
+          markMatchingFailed(
+              mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_PARSING_FAILED));
       log.error(
           "Could not determine series name from MediaFile id: {} at path: '{}'",
           mediaFile.getId(),
           mediaFile.getFilepathUri());
-      return;
+      return outcome;
     }
 
     var searchOutcome = seriesMetadataProviderResolver.search(discovery.library(), parserResult);
 
-    switch (searchOutcome) {
+    return switch (searchOutcome) {
       case NotFound _ -> {
-        markMatchingFailed(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_NOT_FOUND));
+        var outcome =
+            markMatchingFailed(mediaFile, MatchingFailure.of(MediaFileStatus.METADATA_NOT_FOUND));
         log.error(
             "Failed to find TMDB match for series '{}' from MediaFile id: {} at path: '{}'",
             parserResult.title(),
             mediaFile.getId(),
             mediaFile.getFilepathUri());
+        yield outcome;
       }
       case TemporarilyUnavailable unavailable -> {
-        markMatchingFailed(
-            mediaFile,
-            new MatchingFailure(MediaFileStatus.METADATA_UNAVAILABLE, unavailable.reason()));
+        var outcome =
+            markMatchingFailed(
+                mediaFile,
+                new MatchingFailure(MediaFileStatus.METADATA_UNAVAILABLE, unavailable.reason()));
         log.error(
             "Metadata provider unavailable for series '{}' from MediaFile id: {} at path: '{}'",
             parserResult.title(),
             mediaFile.getId(),
             mediaFile.getFilepathUri(),
             unavailable.cause());
+        yield outcome;
       }
       case Found(var searchResult) -> {
         if (isDateOnly) {
-          processDateOnlyEpisode(discovery, mediaFile, searchResult, parsed);
-          return;
+          yield processDateOnlyEpisode(discovery, mediaFile, searchResult, parsed);
         }
 
         var episodeNumber = parsed.getEpisodeNumber().getAsInt();
@@ -149,13 +158,14 @@ public class SeriesFileProcessor {
             episodeNumber,
             mediaFile.getId());
 
-        enrichSeriesMetadata(discovery, mediaFile, searchResult, seasonNumber, episodeNumber)
-            .ifPresent(failure -> markMatchingFailed(mediaFile, failure));
+        yield markIfNotMatched(
+            mediaFile,
+            enrichSeriesMetadata(discovery, mediaFile, searchResult, seasonNumber, episodeNumber));
       }
-    }
+    };
   }
 
-  private void processDateOnlyEpisode(
+  private MatchingOutcome processDateOnlyEpisode(
       FileDiscovery discovery,
       MediaFile mediaFile,
       RemoteSearchResult searchResult,
@@ -170,8 +180,7 @@ public class SeriesFileProcessor {
           parseResult.getDate(),
           searchResult.externalId(),
           mediaFile.getId());
-      markMatchingFailed(mediaFile, matchingFailureOf(mediaFile, dateResolution));
-      return;
+      return markMatchingFailed(mediaFile, matchingFailureOf(mediaFile, dateResolution));
     }
 
     log.info(
@@ -182,13 +191,14 @@ public class SeriesFileProcessor {
         searchResult.externalId(),
         mediaFile.getId());
 
-    enrichSeriesMetadata(
+    return markIfNotMatched(
+        mediaFile,
+        enrichSeriesMetadata(
             discovery,
             mediaFile,
             searchResult,
             resolution.seasonNumber(),
-            resolution.episodeNumber())
-        .ifPresent(failure -> markMatchingFailed(mediaFile, failure));
+            resolution.episodeNumber()));
   }
 
   private int resolveSeasonNumber(
@@ -241,7 +251,7 @@ public class SeriesFileProcessor {
     return VideoFileParserResult.builder().title(episodeResult.getSeriesName()).build();
   }
 
-  private Optional<MatchingFailure> enrichSeriesMetadata(
+  private MatchingOutcome enrichSeriesMetadata(
       FileDiscovery discovery,
       MediaFile mediaFile,
       RemoteSearchResult searchResult,
@@ -256,7 +266,7 @@ public class SeriesFileProcessor {
       var seriesOutcome = findOrCreateSeries(discovery, searchResult);
 
       if (!(seriesOutcome instanceof MetadataFetchOutcome.Found(var series))) {
-        return Optional.of(matchingFailureOf(mediaFile, seriesOutcome));
+        return new MatchingOutcome.NotMatched(matchingFailureOf(mediaFile, seriesOutcome));
       }
 
       var seasonOpt = seasonRepository.findBySeriesIdAndSeasonNumber(series.getId(), seasonNumber);
@@ -266,7 +276,7 @@ public class SeriesFileProcessor {
               discovery.library(), searchResult.externalId(), seasonNumber, seasonOpt);
 
       if (!(effectiveSeason instanceof MetadataFetchOutcome.Found(var effectiveSeasonNumber))) {
-        return Optional.of(matchingFailureOf(mediaFile, effectiveSeason));
+        return new MatchingOutcome.NotMatched(matchingFailureOf(mediaFile, effectiveSeason));
       }
 
       if (effectiveSeasonNumber != seasonNumber) {
@@ -283,21 +293,21 @@ public class SeriesFileProcessor {
                           discovery, searchResult.externalId(), effectiveSeasonNumber, series));
 
       if (!(seasonOutcome instanceof MetadataFetchOutcome.Found(var season))) {
-        return Optional.of(matchingFailureOf(mediaFile, seasonOutcome));
+        return new MatchingOutcome.NotMatched(matchingFailureOf(mediaFile, seasonOutcome));
       }
 
       var episode = findOrCreateEpisode(season, discovery.library(), episodeNumber);
 
       mediaFile.setMediaId(episode.getId());
       markAsMatched(mediaFile);
-      return Optional.empty();
+      return new MatchingOutcome.Matched();
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
       log.error("Enrichment interrupted for MediaFile id: {}", mediaFile.getId(), ex);
-      return Optional.empty();
+      return new MatchingOutcome.Interrupted();
     } catch (Exception ex) {
       log.error("Failure enriching series metadata for MediaFile id: {}", mediaFile.getId(), ex);
-      return Optional.of(
+      return new MatchingOutcome.NotMatched(
           new MatchingFailure(MediaFileStatus.ENRICHMENT_FAILED, ItemFailureReason.TEMPORARY));
     } finally {
       if (externalIdMutex.isHeldByCurrentThread()) {
@@ -389,7 +399,15 @@ public class SeriesFileProcessor {
     mediaFileRepository.save(mediaFile);
   }
 
-  private void markMatchingFailed(MediaFile mediaFile, MatchingFailure failure) {
-    mediaFileRepository.tryMarkMatchingFailed(mediaFile.getId(), failure);
+  private MatchingOutcome markIfNotMatched(MediaFile mediaFile, MatchingOutcome outcome) {
+    if (outcome instanceof MatchingOutcome.NotMatched(var failure)) {
+      mediaFileRepository.tryMarkMatchingFailed(mediaFile.getId(), failure);
+    }
+
+    return outcome;
+  }
+
+  private MatchingOutcome markMatchingFailed(MediaFile mediaFile, MatchingFailure failure) {
+    return markIfNotMatched(mediaFile, new MatchingOutcome.NotMatched(failure));
   }
 }
