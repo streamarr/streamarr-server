@@ -16,8 +16,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * Mints the signed snapshot (ADR 0024) from a validated {@link TokenContext}; it reads nothing from
- * the database. The identity services that build the context are responsible for the Household and
- * Profile having been checked live.
+ * the database. Callers are responsible for having checked the Household and Profile live before
+ * they build the context.
  */
 @Service
 @RequiredArgsConstructor
@@ -36,8 +36,9 @@ public class AccessTokenIssuer {
   /**
    * Mints a context-change token whose lifetime is capped by the token that authorized the change:
    * {@code expiresAt = min(now + TTL, sourceExpiresAt)}. Selection changes context, never authority
-   * — an uncapped reissue would let repeated selection extend access indefinitely. Only setup,
-   * login, and refresh start a fresh TTL.
+   * — an uncapped reissue would let repeated selection extend access indefinitely. Only {@link
+   * #issue} starts a fresh TTL; callers use it when they create a session or redeem a refresh
+   * token.
    */
   public AccessToken issueDerived(TokenContext context, Instant sourceExpiresAt) {
     var now = clock.instant().truncatedTo(ChronoUnit.SECONDS);
