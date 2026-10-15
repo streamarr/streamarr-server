@@ -1,22 +1,29 @@
 package com.streamarr.server.repositories.media;
 
 import static com.streamarr.server.jooq.generated.tables.ItemResult.ITEM_RESULT;
+import static com.streamarr.server.repositories.media.MediaEnumMapping.toDomain;
+import static com.streamarr.server.repositories.media.MediaEnumMapping.toJooq;
 
+import com.streamarr.server.config.ArtworkRequestLockProperties;
+import com.streamarr.server.domain.media.ArtworkResultCounts;
+import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.ImageEntityType;
-import com.streamarr.server.domain.media.ImageType;
-import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
-import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.enums.ItemResultFailureReason;
 import com.streamarr.server.jooq.generated.enums.ItemResultOutcome;
 import com.streamarr.server.jooq.generated.enums.ItemResultStep;
 import com.streamarr.server.jooq.generated.tables.records.ItemResultRecord;
+import com.streamarr.server.repositories.PostgresTransactionLocks;
+import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.InsertOnDuplicateSetMoreStep;
 import org.jooq.impl.DSL;
@@ -29,6 +36,8 @@ public class JooqItemResultRepository implements ItemResultRepository {
 
   private final DSLContext dsl;
   private final ItemLocks itemLocks;
+  private final PostgresTransactionLocks transactionLocks;
+  private final ArtworkRequestLockProperties requestLock;
 
   @Override
   @Transactional
@@ -49,6 +58,64 @@ public class JooqItemResultRepository implements ItemResultRepository {
     upsert(result).execute();
   }
 
+  @Override
+  @Transactional
+  public boolean trySaveArtworkResults(ArtworkStepsAttempt attempt, List<ItemResult> results) {
+    return transactionLocks.withLockWaitLimit(
+        requestLock.timeout(),
+        () -> {
+          if (!itemLocks.tryLockArtworkGeneration(attempt.target(), attempt.generation())) {
+            return false;
+          }
+
+          results.forEach(result -> upsert(result).where(replacesStoredArtworkResult()).execute());
+          return true;
+        });
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Map<ImageEntityType, ArtworkResultCounts> countArtworkOutcomesRecordedSince(
+      Instant since) {
+    var counts = new EnumMap<ImageEntityType, Map<ItemResultOutcome, Long>>(ImageEntityType.class);
+    dsl.select(ITEM_RESULT.ITEM_TYPE, ITEM_RESULT.OUTCOME, DSL.count())
+        .from(ITEM_RESULT)
+        .where(ITEM_RESULT.STEP.eq(ItemResultStep.ARTWORK))
+        .and(ITEM_RESULT.RECORDED_AT.ge(since.atOffset(ZoneOffset.UTC)))
+        .groupBy(ITEM_RESULT.ITEM_TYPE, ITEM_RESULT.OUTCOME)
+        .forEach(
+            row ->
+                counts
+                    .computeIfAbsent(
+                        toDomain(row.value1()), _ -> new EnumMap<>(ItemResultOutcome.class))
+                    .put(row.value2(), row.value3().longValue()));
+    var resultCounts = new EnumMap<ImageEntityType, ArtworkResultCounts>(ImageEntityType.class);
+    counts.forEach(
+        (itemType, byOutcome) ->
+            resultCounts.put(
+                itemType,
+                new ArtworkResultCounts(
+                    byOutcome.getOrDefault(ItemResultOutcome.SUCCEEDED, 0L),
+                    byOutcome.getOrDefault(ItemResultOutcome.UNAVAILABLE, 0L),
+                    byOutcome.getOrDefault(ItemResultOutcome.FAILED, 0L))));
+    return resultCounts;
+  }
+
+  // A result replaces one of an older generation. Within one generation it replaces only an
+  // earlier attempt's result, and never a saved image's result with a failure: overlapping
+  // attempts can store their results in either order.
+  private static Condition replacesStoredArtworkResult() {
+    var ofOlderGeneration =
+        ITEM_RESULT.ARTWORK_GENERATION.lt(DSL.excluded(ITEM_RESULT.ARTWORK_GENERATION));
+    var ofEarlierAttempt = ITEM_RESULT.ATTEMPTED_AT.le(DSL.excluded(ITEM_RESULT.ATTEMPTED_AT));
+    var replacesSavedImageWithFailure =
+        ITEM_RESULT
+            .OUTCOME
+            .eq(ItemResultOutcome.SUCCEEDED)
+            .and(DSL.excluded(ITEM_RESULT.OUTCOME).ne(ItemResultOutcome.SUCCEEDED));
+    return ofOlderGeneration.or(ofEarlierAttempt.andNot(replacesSavedImageWithFailure));
+  }
+
   private InsertOnDuplicateSetMoreStep<ItemResultRecord> upsert(ItemResult result) {
     return dsl.insertInto(ITEM_RESULT)
         .set(toRecord(result))
@@ -58,6 +125,7 @@ public class JooqItemResultRepository implements ItemResultRepository {
         .set(ITEM_RESULT.FAILURE_REASON, DSL.excluded(ITEM_RESULT.FAILURE_REASON))
         .set(ITEM_RESULT.DETAIL, DSL.excluded(ITEM_RESULT.DETAIL))
         .set(ITEM_RESULT.SOURCE_KEY, DSL.excluded(ITEM_RESULT.SOURCE_KEY))
+        .set(ITEM_RESULT.ARTWORK_GENERATION, DSL.excluded(ITEM_RESULT.ARTWORK_GENERATION))
         .set(ITEM_RESULT.ATTEMPTED_AT, DSL.excluded(ITEM_RESULT.ATTEMPTED_AT))
         .set(ITEM_RESULT.RECORDED_AT, DSL.currentOffsetDateTime());
   }
@@ -68,7 +136,7 @@ public class JooqItemResultRepository implements ItemResultRepository {
     return dsl.selectFrom(ITEM_RESULT)
         .where(ITEM_RESULT.ITEM_ID.eq(itemId))
         .and(ITEM_RESULT.ITEM_TYPE.eq(toJooq(itemType)))
-        .fetch(JooqItemResultRepository::toDomain);
+        .fetch(ItemResultRecords::toDomain);
   }
 
   private ItemResultRecord toRecord(ItemResult result) {
@@ -81,6 +149,7 @@ public class JooqItemResultRepository implements ItemResultRepository {
     }
 
     row.setSourceKey(result.sourceKey());
+    row.setArtworkGeneration(result.artworkGeneration());
     row.setAttemptedAt(result.attemptedAt().atOffset(ZoneOffset.UTC));
     switch (result.outcome()) {
       case ItemOutcome.Succeeded _ -> row.setOutcome(ItemResultOutcome.SUCCEEDED);
@@ -93,43 +162,5 @@ public class JooqItemResultRepository implements ItemResultRepository {
     }
 
     return row;
-  }
-
-  // The generated enums share names with the domain enums they mirror.
-  @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static com.streamarr.server.jooq.generated.enums.ImageEntityType toJooq(
-      ImageEntityType itemType) {
-    return com.streamarr.server.jooq.generated.enums.ImageEntityType.lookupLiteral(itemType.name());
-  }
-
-  @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static com.streamarr.server.jooq.generated.enums.ImageType toJooq(ImageType imageType) {
-    return com.streamarr.server.jooq.generated.enums.ImageType.lookupLiteral(imageType.name());
-  }
-
-  private static ItemResult toDomain(ItemResultRecord row) {
-    var result =
-        ItemResult.builder()
-            .itemId(row.getItemId())
-            .itemType(ImageEntityType.valueOf(row.getItemType().getLiteral()))
-            .step(ItemStep.valueOf(row.getStep().getLiteral()))
-            .outcome(toOutcome(row))
-            .sourceKey(row.getSourceKey())
-            .attemptedAt(row.getAttemptedAt().toInstant());
-    if (row.getImageType() != null) {
-      result.imageType(ImageType.valueOf(row.getImageType().getLiteral()));
-    }
-
-    return result.build();
-  }
-
-  private static ItemOutcome toOutcome(ItemResultRecord row) {
-    return switch (row.getOutcome()) {
-      case SUCCEEDED -> new ItemOutcome.Succeeded();
-      case UNAVAILABLE -> new ItemOutcome.Unavailable();
-      case FAILED ->
-          new ItemOutcome.Failed(
-              ItemFailureReason.valueOf(row.getFailureReason().getLiteral()), row.getDetail());
-    };
   }
 }

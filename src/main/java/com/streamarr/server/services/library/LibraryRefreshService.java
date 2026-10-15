@@ -16,8 +16,9 @@ import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.ArtworkRequestService;
 import com.streamarr.server.services.ArtworkRun;
-import com.streamarr.server.services.ArtworkService;
+import com.streamarr.server.services.ArtworkRunWaiter;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeasonWithEpisodesRequest;
 import com.streamarr.server.services.SeriesService;
@@ -32,7 +33,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -53,7 +53,8 @@ public class LibraryRefreshService {
   private final MovieService movieService;
   private final SeriesMetadataProviderResolver seriesMetadataProviderResolver;
   private final MovieMetadataProviderResolver movieMetadataProviderResolver;
-  private final ArtworkService artworkService;
+  private final ArtworkRequestService artworkRequestService;
+  private final ArtworkRunWaiter artworkRunWaiter;
   private final ItemResultRepository itemResults;
   private final Clock clock;
 
@@ -62,14 +63,15 @@ public class LibraryRefreshService {
   }
 
   /**
-   * Returns once every item's metadata result is recorded and the required artwork of the refresh
-   * has saved results. Person and company artwork continues in the background.
+   * Returns once every item's metadata result is recorded and the primary artwork of the refresh
+   * has recorded results. Person and company artwork continues in the background.
    *
    * @throws LibraryRefreshFailedException if a result was not recorded or the wait is interrupted
    */
   public void refreshLibrary(Library library, ImageRefreshMode imageRefreshMode) {
     var artworkRun =
-        artworkService.openRun("refresh of library '" + library.getName() + "'", imageRefreshMode);
+        artworkRequestService.openRun(
+            "refresh of library '" + library.getName() + "'", imageRefreshMode);
     try (artworkRun) {
       switch (library.getType()) {
         case SERIES -> refreshSeriesLibrary(library, artworkRun);
@@ -78,17 +80,15 @@ public class LibraryRefreshService {
       }
     }
 
-    awaitRequiredArtwork(library, artworkRun);
+    awaitPrimaryArtwork(library, artworkRun);
   }
 
-  private static void awaitRequiredArtwork(Library library, ArtworkRun artworkRun) {
+  private void awaitPrimaryArtwork(Library library, ArtworkRun artworkRun) {
     try {
-      artworkRun.completion().get();
+      artworkRunWaiter.awaitResults(artworkRun);
     } catch (InterruptedException exception) {
       Thread.currentThread().interrupt();
       throw new LibraryRefreshFailedException(library.getName(), exception);
-    } catch (ExecutionException exception) {
-      throw new LibraryRefreshFailedException(library.getName(), exception.getCause());
     }
   }
 

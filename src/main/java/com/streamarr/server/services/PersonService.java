@@ -5,14 +5,12 @@ import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
-import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,7 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class PersonService {
 
   private final PersonRepository personRepository;
-  private final ApplicationEventPublisher eventPublisher;
+  private final ArtworkRequestService artworkRequestService;
 
   /**
    * Returns the saved people in the order of {@code persons}. Each distinct source id is saved
@@ -70,7 +68,7 @@ public class PersonService {
 
     renameBeforeNextInsert(saved, person.getName());
 
-    publishImageEvent(saved, imageSources, imageRefreshMode);
+    requestArtwork(saved, imageSources, imageRefreshMode);
     return saved;
   }
 
@@ -91,14 +89,20 @@ public class PersonService {
     }
   }
 
-  private void publishImageEvent(
+  // The request joins the metadata transaction, in the same source-id order as the upserts, so a
+  // rollback leaves no request behind and concurrent scans take the request locks in one order.
+  private void requestArtwork(
       Person person, List<ImageSource> imageSources, ImageRefreshMode imageRefreshMode) {
     if (imageSources.isEmpty()) {
       return;
     }
 
-    eventPublisher.publishEvent(
-        new MetadataEnrichedEvent(
-            person.getId(), ImageEntityType.PERSON, imageSources, imageRefreshMode));
+    artworkRequestService.requestBackgroundArtwork(
+        ArtworkSources.builder()
+            .targetId(person.getId())
+            .targetType(ImageEntityType.PERSON)
+            .sources(imageSources)
+            .build(),
+        imageRefreshMode);
   }
 }

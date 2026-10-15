@@ -152,6 +152,11 @@ public class ItemResult extends TableImpl<ItemResultRecord> {
      */
     public final TableField<ItemResultRecord, UUID> COMPANY_ID = createField(DSL.name("company_id"), SQLDataType.UUID, this, "");
 
+    /**
+     * The column <code>public.item_result.artwork_generation</code>.
+     */
+    public final TableField<ItemResultRecord, Long> ARTWORK_GENERATION = createField(DSL.name("artwork_generation"), SQLDataType.BIGINT, this, "");
+
     private ItemResult(Name alias, Table<ItemResultRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -309,6 +314,7 @@ public class ItemResult extends TableImpl<ItemResultRecord> {
     @Override
     public List<Check<ItemResultRecord>> getChecks() {
         return Arrays.asList(
+            Internal.createCheck(this, DSL.name("item_result_artwork_names_generation"), "(((step = 'ARTWORK'::item_result_step) = (artwork_generation IS NOT NULL)))", true),
             Internal.createCheck(this, DSL.name("item_result_artwork_names_image_type"), "(((step = 'ARTWORK'::item_result_step) = (image_type IS NOT NULL)))", true),
             Internal.createCheck(this, DSL.name("item_result_failure_names_reason"), "(((outcome = 'FAILED'::item_result_outcome) = (failure_reason IS NOT NULL)))", true)
         );

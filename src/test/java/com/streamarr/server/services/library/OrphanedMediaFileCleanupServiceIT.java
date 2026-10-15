@@ -4,13 +4,17 @@ import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.media.ArtworkStepsAttempt;
+import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.fixtures.ArtworkStepsAttemptFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -21,17 +25,20 @@ import com.streamarr.server.services.filepath.FilepathCodec;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Instant;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Orphaned Media File Cleanup Service Integration Tests")
 class OrphanedMediaFileCleanupServiceIT extends AbstractIntegrationTest {
 
+  @Autowired private TransactionTemplate transactionTemplate;
+  @Autowired private ArtworkRequestRepository artworkRequests;
   @Autowired private OrphanedMediaFileCleanupService orphanedMediaFileCleanupService;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MovieRepository movieRepository;
@@ -108,7 +115,7 @@ class OrphanedMediaFileCleanupServiceIT extends AbstractIntegrationTest {
             movie.getId(),
             ImageEntityType.MOVIE,
             "/poster.jpg");
-    imageService.saveImages(poster.images(), Instant.parse("2026-09-23T10:00:00Z"));
+    imageService.saveImages(poster.images(), requestedAttempt(poster.images()));
     assertThat(itemResults.findByItem(movie.getId(), ImageEntityType.MOVIE)).isNotEmpty();
 
     orphanedMediaFileCleanupService.onScanCompleted(new ScanCompletedEvent(library.getId()));
@@ -127,5 +134,10 @@ class OrphanedMediaFileCleanupServiceIT extends AbstractIntegrationTest {
         .filepathUri(FilepathCodec.encode(path))
         .filename(path.getFileName().toString())
         .status(MediaFileStatus.MATCHED);
+  }
+
+  private ArtworkStepsAttempt requestedAttempt(List<Image> images) {
+    return ArtworkStepsAttemptFixture.requestedAttemptFor(
+        transactionTemplate, artworkRequests, images);
   }
 }

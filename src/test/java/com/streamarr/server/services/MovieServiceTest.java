@@ -26,7 +26,7 @@ import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
-import com.streamarr.server.fixtures.ArtworkServiceFixture;
+import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
@@ -43,7 +43,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 import org.jooq.SortOrder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -59,7 +58,8 @@ class MovieServiceTest {
   private FakeMovieRepository movieRepository;
   private FakeImageRepository imageRepository;
   private FakeTmdbHttpService imageDownloader;
-  private ArtworkService artworkService;
+  private ArtworkFixture artwork;
+  private ArtworkRequestService artworkRequestService;
   private ArtworkRun artworkRun;
   private MovieService movieService;
 
@@ -69,12 +69,13 @@ class MovieServiceTest {
     imageRepository = new FakeImageRepository();
     imageDownloader = new FakeTmdbHttpService();
     imageDownloader.setImageData(createTestImage(600, 900));
-    artworkService =
-        ArtworkServiceFixture.artworkServiceBuilder()
+    artwork =
+        ArtworkFixture.builder()
             .imageRepository(imageRepository)
             .imageDownloader(imageDownloader)
             .build();
-    artworkRun = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+    artworkRequestService = artwork.artworkRequestService();
+    artworkRun = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
     var paginationService = new PaginationService();
     var fileSystem = Jimfs.newFileSystem(Configuration.unix());
     var imageService =
@@ -89,7 +90,7 @@ class MovieServiceTest {
             movieRepository,
             CreditServiceFixture.creditServiceBuilder().build(),
             paginationService,
-            artworkService,
+            artworkRequestService,
             imageService,
             null,
             null,
@@ -102,7 +103,6 @@ class MovieServiceTest {
   @AfterEach
   void tearDown() {
     artworkRun.close();
-    artworkService.shutdown();
   }
 
   @Nested
@@ -846,7 +846,7 @@ class MovieServiceTest {
       var saved = movieService.createMovieWithAssociations(metadataResult, mediaFile(), artworkRun);
 
       assertThat(awaitArtwork().counts())
-          .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+          .isEqualTo(FinishedImageCounts.builder().saved(1).unavailable(1).build());
       assertThat(imageRepository.findByEntityIdAndEntityType(saved.getId(), ImageEntityType.MOVIE))
           .extracting(Image::getImageType)
           .containsOnly(ImageType.POSTER);
@@ -860,7 +860,8 @@ class MovieServiceTest {
 
       movieService.createMovieWithAssociations(metadataResult, mediaFile(), artworkRun);
 
-      assertThat(awaitArtwork().counts()).isEqualTo(ArtworkCounts.builder().unavailable(2).build());
+      assertThat(awaitArtwork().counts())
+          .isEqualTo(FinishedImageCounts.builder().unavailable(2).build());
       assertThat(imageDownloader.getDownloadCount()).isZero();
     }
 
@@ -968,7 +969,7 @@ class MovieServiceTest {
       movieService.refreshMovieMetadata(existing, metadataResult, artworkRun);
 
       assertThat(awaitArtwork().counts())
-          .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+          .isEqualTo(FinishedImageCounts.builder().saved(1).unavailable(1).build());
       assertThat(
               imageRepository.findByEntityIdAndEntityType(existing.getId(), ImageEntityType.MOVIE))
           .extracting(Image::getImageType)
@@ -985,7 +986,7 @@ class MovieServiceTest {
           new MetadataResult<>(
               Movie.builder().title("Inception").build(), imageSources, Map.of(), Map.of());
 
-      var forcedRun = artworkService.openRun("refresh", ImageRefreshMode.FORCE_REFRESH);
+      var forcedRun = artworkRequestService.openRun("refresh", ImageRefreshMode.FORCE_REFRESH);
 
       movieService.refreshMovieMetadata(existing, metadataResult, forcedRun);
 
@@ -1007,7 +1008,8 @@ class MovieServiceTest {
 
       movieService.refreshMovieMetadata(existing, metadataResult, artworkRun);
 
-      assertThat(awaitArtwork().counts()).isEqualTo(ArtworkCounts.builder().unavailable(2).build());
+      assertThat(awaitArtwork().counts())
+          .isEqualTo(FinishedImageCounts.builder().unavailable(2).build());
     }
   }
 
@@ -1015,9 +1017,8 @@ class MovieServiceTest {
     return closeAndAwait(artworkRun);
   }
 
-  private static ArtworkRunSummary closeAndAwait(ArtworkRun run) {
-    run.close();
-    return run.completion().orTimeout(5, TimeUnit.SECONDS).join();
+  private ArtworkRunSummary closeAndAwait(ArtworkRun run) {
+    return artwork.closeAndAwait(run);
   }
 
   private static MediaFile mediaFile() {

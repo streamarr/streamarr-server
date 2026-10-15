@@ -5,14 +5,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.media.AmbientColors;
+import com.streamarr.server.domain.media.ArtworkStepsAttempt;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
+import com.streamarr.server.fixtures.ArtworkStepsAttemptFixture;
 import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.ImageService.ProcessedImage;
-import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -29,13 +32,12 @@ import org.springframework.transaction.support.TransactionTemplate;
 @DisplayName("Ambient Image Persistence Integration Tests")
 class AmbientImagePersistenceIT extends AbstractIntegrationTest {
 
-  private static final Instant ATTEMPTED_AT = Instant.parse("2026-09-23T10:00:00Z");
-
   @Autowired private ImageService imageService;
   @Autowired private MovieService movieService;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MovieRepository movieRepository;
   @Autowired private TransactionTemplate transactions;
+  @Autowired private ArtworkRequestRepository artworkRequests;
 
   private UUID entityId;
 
@@ -54,7 +56,7 @@ class AmbientImagePersistenceIT extends AbstractIntegrationTest {
   void shouldPreserveEveryNamedAmbientSwatchWhenArtworkIsSaved() {
     var expected = colors().build();
 
-    imageService.saveImages(artwork(expected).images(), ATTEMPTED_AT);
+    imageService.saveImages(artwork(expected).images(), requestedAttempt());
 
     assertThat(readAmbientColors()).contains(expected);
   }
@@ -62,7 +64,7 @@ class AmbientImagePersistenceIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should replace every named ambient swatch when artwork is replaced")
   void shouldReplaceEveryNamedAmbientSwatchWhenArtworkIsReplaced() {
-    imageService.saveImages(artwork(colors().build()).images(), ATTEMPTED_AT);
+    imageService.saveImages(artwork(colors().build()).images(), requestedAttempt());
     var expected =
         colors()
             .primary("#e9b658")
@@ -72,7 +74,7 @@ class AmbientImagePersistenceIT extends AbstractIntegrationTest {
             .lightMuted("#d8c8a8")
             .build();
 
-    imageService.replaceImages(artwork(expected), ATTEMPTED_AT);
+    imageService.replaceImages(artwork(expected), requestedAttempt());
 
     assertThat(readAmbientColors()).contains(expected);
   }
@@ -83,7 +85,7 @@ class AmbientImagePersistenceIT extends AbstractIntegrationTest {
     var expected =
         colors().darkVibrant(null).darkMuted(null).lightVibrant(null).lightMuted(null).build();
 
-    imageService.saveImages(artwork(expected).images(), ATTEMPTED_AT);
+    imageService.saveImages(artwork(expected).images(), requestedAttempt());
 
     assertThat(readAmbientColors()).contains(expected);
   }
@@ -91,9 +93,14 @@ class AmbientImagePersistenceIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should omit ambient colors when artwork has no palette")
   void shouldOmitAmbientColorsWhenArtworkHasNoPalette() {
-    imageService.saveImages(artwork(null).images(), ATTEMPTED_AT);
+    imageService.saveImages(artwork(null).images(), requestedAttempt());
 
     assertThat(readAmbientColors()).isEmpty();
+  }
+
+  private ArtworkStepsAttempt requestedAttempt() {
+    return ArtworkStepsAttemptFixture.requestedAttemptFor(
+        transactions, artworkRequests, new ArtworkTarget(entityId, ImageEntityType.MOVIE));
   }
 
   private Optional<AmbientColors> readAmbientColors() {

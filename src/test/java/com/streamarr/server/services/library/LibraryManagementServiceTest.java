@@ -58,7 +58,7 @@ import com.streamarr.server.fakes.RecordingMetadataProvider;
 import com.streamarr.server.fakes.RecordingSeriesMetadataProvider;
 import com.streamarr.server.fakes.SecurityExceptionFileSystem;
 import com.streamarr.server.fakes.ThrowingFileSystemWrapper;
-import com.streamarr.server.fixtures.ArtworkServiceFixture;
+import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
@@ -66,7 +66,7 @@ import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
-import com.streamarr.server.services.ArtworkService;
+import com.streamarr.server.services.ArtworkRequestService;
 import com.streamarr.server.services.CreditService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
@@ -178,13 +178,14 @@ class LibraryManagementServiceTest {
   private final MutationTransactions mutationTransactions =
       new MutationTransactions(transactionManager, new ConstraintViolationTranslator());
   private final FakeImageRepository fakeImageRepository = new FakeImageRepository();
-  private final ArtworkService artworkService = artworkServiceWith(fakeImageRepository);
+  private final ArtworkFixture artwork = artworkWith(fakeImageRepository);
+  private final ArtworkRequestService artworkRequestService = artwork.artworkRequestService();
   private final MovieService movieService =
       new MovieService(
           fakeMovieRepository,
           creditService,
           null,
-          artworkService,
+          artworkRequestService,
           null,
           null,
           null,
@@ -212,7 +213,7 @@ class LibraryManagementServiceTest {
       new FakeMediaFileContainerInfoRepository();
   private final FakeProbeTaskRequests probeTaskRequests = succeedingProbeRequests(probeOutcomes);
   private final CountingSleeper probeCheckSleeper = new CountingSleeper();
-  private final FileDiscoveryRuns fileDiscoveryRuns = fileDiscoveryRunsWith(artworkService);
+  private final FileDiscoveryRuns fileDiscoveryRuns = fileDiscoveryRunsWith(artwork);
 
   private final LibraryManagementService libraryManagementService = serviceBuilder().build();
 
@@ -848,7 +849,7 @@ class LibraryManagementServiceTest {
       var imageRepository = new FakeImageRepository();
       var service =
           libraryManagementServiceWithArtwork(
-              ArtworkServiceFixture.artworkServiceBuilder()
+              ArtworkFixture.builder()
                   .imageRepository(imageRepository)
                   .imageDownloader(downloader)
                   .build());
@@ -872,20 +873,35 @@ class LibraryManagementServiceTest {
     }
 
     @Test
-    @DisplayName("Should become unhealthy when a required artwork result cannot be saved")
-    void shouldBecomeUnhealthyWhenARequiredArtworkResultCannotBeSaved() throws Exception {
+    @DisplayName(
+        "Should finish the scan healthy when a retried artwork step stores the result that failed to save")
+    void shouldFinishTheScanHealthyWhenARetriedArtworkStepStoresTheResultThatFailedToSave()
+        throws Exception {
       createMovieFile(createRootLibraryDirectory(), "About Time", "About Time (2013).mkv");
       var itemResults = new FakeItemResultRepository();
-      itemResults.failWritesWith(new DataAccessResourceFailureException("database unavailable"));
-      var service =
-          libraryManagementServiceWithArtwork(
-              ArtworkServiceFixture.artworkServiceBuilder().itemResults(itemResults).build());
+      itemResults.failArtworkResultWritesWith(
+          new DataAccessResourceFailureException("database unavailable"), 1);
+      var imageDownloader = new FakeTmdbHttpService();
+      imageDownloader.setImageData(createTestImage(600, 900));
+      var retried =
+          ArtworkFixture.builder()
+              .itemResults(itemResults)
+              .imageDownloader(imageDownloader)
+              .build();
+      var service = libraryManagementServiceWithArtwork(retried);
       matchMovieWithPoster("About Time");
 
-      service.scanLibrary(savedLibraryId);
+      try (var scan = BoundedTask.start(() -> service.scanLibrary(savedLibraryId))) {
+        retried.scheduling().awaitUnfinishedAttempt(SCAN_BOUND);
+        assertThat(libraryStatus()).isEqualTo(LibraryStatus.SCANNING);
 
-      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
-      assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
+        retried.scheduling().runPendingSteps();
+
+        scan.await(SCAN_BOUND);
+      }
+
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+      assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).hasSize(1);
     }
 
     @Test
@@ -941,13 +957,13 @@ class LibraryManagementServiceTest {
     return fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus();
   }
 
-  private LibraryManagementService libraryManagementServiceWithArtwork(ArtworkService artwork) {
+  private LibraryManagementService libraryManagementServiceWithArtwork(ArtworkFixture artwork) {
     var artworkMovieService =
         new MovieService(
             fakeMovieRepository,
             creditService,
             null,
-            artwork,
+            artwork.artworkRequestService(),
             null,
             null,
             null,
@@ -1864,7 +1880,8 @@ class LibraryManagementServiceTest {
               movieService,
               mock(SeriesMetadataProviderResolver.class),
               fakeMovieMetadataProviderResolver,
-              artworkService,
+              artworkRequestService,
+              artwork.artworkRunWaiter(),
               new FakeItemResultRepository(),
               Clock.systemUTC());
       var service = libraryManagementServiceWithRefreshService(refreshService);
@@ -2070,7 +2087,7 @@ class LibraryManagementServiceTest {
     private final AtomicReference<Thread> executingThread = new AtomicReference<>();
 
     private BlockingLibraryRefreshService() {
-      super(null, null, null, null, null, null, null, null, null);
+      super(null, null, null, null, null, null, null, null, null, null);
     }
 
     @Override
@@ -2109,7 +2126,7 @@ class LibraryManagementServiceTest {
     private final AtomicReference<ImageRefreshMode> imageRefreshMode = new AtomicReference<>();
 
     private RecordingLibraryRefreshService() {
-      super(null, null, null, null, null, null, null, null, null);
+      super(null, null, null, null, null, null, null, null, null, null);
     }
 
     @Override
@@ -2138,9 +2155,9 @@ class LibraryManagementServiceTest {
     return requests;
   }
 
-  private FileDiscoveryRuns fileDiscoveryRunsWith(ArtworkService artwork) {
+  private FileDiscoveryRuns fileDiscoveryRunsWith(ArtworkFixture artwork) {
     return FileDiscoveryRunsFixture.fileDiscoveryRunsBuilder()
-        .artworkService(artwork)
+        .artwork(artwork)
         .mediaFiles(fakeMediaFileRepository)
         .outcomes(probeOutcomes)
         .probeTaskRequests(probeTaskRequests)
@@ -2149,10 +2166,10 @@ class LibraryManagementServiceTest {
         .build();
   }
 
-  private static ArtworkService artworkServiceWith(FakeImageRepository imageRepository) {
+  private static ArtworkFixture artworkWith(FakeImageRepository imageRepository) {
     var imageDownloader = new FakeTmdbHttpService();
     imageDownloader.setImageData(createTestImage(600, 900));
-    return ArtworkServiceFixture.artworkServiceBuilder()
+    return ArtworkFixture.builder()
         .imageRepository(imageRepository)
         .imageDownloader(imageDownloader)
         .build();

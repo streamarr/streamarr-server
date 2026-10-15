@@ -45,7 +45,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 @DisplayName("Concurrent Media Title Save Integration Tests")
 class ConcurrentMediaTitleSaveIT extends AbstractIntegrationTest {
 
-  @Autowired private ArtworkService artworkService;
+  @Autowired private ArtworkRequestService artworkRequestService;
   @Autowired private MovieService movieService;
   @Autowired private SeriesService seriesService;
   @Autowired private MovieRepository movieRepository;
@@ -169,7 +169,7 @@ class ConcurrentMediaTitleSaveIT extends AbstractIntegrationTest {
                 .build());
 
     Movie movie;
-    try (var artworkRun = artworkService.openRun("refresh", ImageRefreshMode.PRESERVE);
+    try (var artworkRun = artworkRequestService.openRun("refresh", ImageRefreshMode.PRESERVE);
         var otherMediaTitle = HeldCreditInsert.open(dataSource)) {
       otherMediaTitle.lockForRename(PERSON, personIds.lower());
 
@@ -187,7 +187,7 @@ class ConcurrentMediaTitleSaveIT extends AbstractIntegrationTest {
 
   private <T> T saveWhileAnotherMediaTitleSavesTheGenresInOppositeOrder(
       Function<ArtworkRun, T> mediaTitleSave) throws SQLException {
-    try (var artworkRun = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+    try (var artworkRun = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
         var otherMediaTitle = HeldCreditInsert.open(dataSource)) {
       otherMediaTitle.insert(GENRE, genreIds.lower());
 

@@ -10,6 +10,8 @@ import static com.streamarr.server.jooq.generated.tables.Movie.MOVIE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
+import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
+import com.streamarr.server.config.ArtworkPrioritySchedulers;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
@@ -22,7 +24,9 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.ArtworkPriority;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.support.ArtworkSchedulerStarter;
 import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.BoundedTask;
 import java.io.IOException;
@@ -31,6 +35,8 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import lombok.Builder;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
@@ -62,6 +68,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   @Autowired private AuditColumnFixtures auditColumns;
   @Autowired private ProbeExecution probeExecution;
   @Autowired private ApplicationContext applicationContext;
+  @Autowired private ArtworkPrioritySchedulers artworkPrioritySchedulers;
 
   @TempDir Path tempDir;
 
@@ -70,6 +77,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   @BeforeEach
   void cleanupDatabase() {
     wireMock.resetAll();
+    jdbcTemplate.update("DELETE FROM primary_artwork_scheduled_tasks");
     mediaFileRepository.deleteAll();
     movieRepository.deleteAll();
     libraryRepository.deleteAll();
@@ -219,18 +227,44 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should become unhealthy when the database cannot save an item error during a scan")
-  void shouldBecomeUnhealthyWhenTheDatabaseCannotSaveAnItemErrorDuringAScan() throws Exception {
+  @DisplayName(
+      "Should finish the scan healthy when a retried artwork step stores the results the database rejected")
+  void shouldFinishTheScanHealthyWhenARetriedArtworkStepStoresTheResultsTheDatabaseRejected()
+      throws Exception {
     var library = createLibraryWithMatchingMovieFile().library();
     stubTmdbMovieMetadata("27205", "Inception");
+    startProbeScheduler();
+    var rejectedAttempt = new CompletableFuture<ExecutionComplete>();
+    artworkPrioritySchedulers.stop();
+    var artworkScheduler =
+        ArtworkSchedulerStarter.fromContext(applicationContext)
+            .start(ArtworkPriority.PRIMARY, completedInto(rejectedAttempt));
+    rejectItemErrors();
 
-    rejectItemErrorsWhile(
-        () ->
-            BoundedTask.runWithin(
-                SCAN_BOUND, () -> libraryManagementService.scanLibrary(library.getId())));
+    try (var scan =
+        BoundedTask.start(() -> libraryManagementService.scanLibrary(library.getId()))) {
+      rejectedAttempt.get(SCAN_BOUND.toSeconds(), TimeUnit.SECONDS);
+      assertThat(failedArtworkAttempts()).isOne();
+      assertThat(libraryRepository.findById(library.getId()).orElseThrow().getStatus())
+          .isEqualTo(LibraryStatus.SCANNING);
+      acceptItemErrors();
+
+      scan.await(SCAN_BOUND);
+    } finally {
+      acceptItemErrors();
+      artworkScheduler.stop();
+      artworkPrioritySchedulers.start();
+    }
 
     assertThat(libraryRepository.findById(library.getId()).orElseThrow().getStatus())
-        .isEqualTo(LibraryStatus.UNHEALTHY);
+        .isEqualTo(LibraryStatus.HEALTHY);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM item_result WHERE step = 'ARTWORK' AND outcome ="
+                    + " 'UNAVAILABLE' AND item_id = ?",
+                Integer.class,
+                movieRepository.findAll().getFirst().getId()))
+        .isEqualTo(2);
   }
 
   // --- Helpers ---
@@ -262,11 +296,11 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     auditColumns.clearActors(LIBRARY, DSL.trueCondition());
   }
 
-  // The movie has no poster or backdrop, so the scan must record them as unavailable.
-  private void rejectItemErrorsWhile(BoundedTask.Action action) throws Exception {
+  // The movie has no poster or backdrop, so its artwork steps must store them as unavailable.
+  private void rejectItemErrors() {
     jdbcTemplate.execute(
         """
-        CREATE FUNCTION reject_item_error() RETURNS trigger AS $$
+        CREATE OR REPLACE FUNCTION reject_item_error() RETURNS trigger AS $$
         BEGIN
           RAISE EXCEPTION 'simulated item error write failure';
         END
@@ -277,12 +311,27 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
         CREATE TRIGGER reject_item_error BEFORE INSERT OR UPDATE ON item_result
         FOR EACH ROW WHEN (NEW.outcome <> 'SUCCEEDED') EXECUTE FUNCTION reject_item_error()
         """);
-    try {
-      action.run();
-    } finally {
-      jdbcTemplate.execute("DROP TRIGGER reject_item_error ON item_result");
-      jdbcTemplate.execute("DROP FUNCTION reject_item_error()");
-    }
+  }
+
+  private void acceptItemErrors() {
+    jdbcTemplate.execute("DROP TRIGGER IF EXISTS reject_item_error ON item_result");
+    jdbcTemplate.execute("DROP FUNCTION IF EXISTS reject_item_error()");
+  }
+
+  private static AbstractSchedulerListener completedInto(
+      CompletableFuture<ExecutionComplete> completed) {
+    return new AbstractSchedulerListener() {
+      @Override
+      public void onExecutionComplete(ExecutionComplete complete) {
+        completed.complete(complete);
+      }
+    };
+  }
+
+  private int failedArtworkAttempts() {
+    return jdbcTemplate.queryForObject(
+        "SELECT coalesce(max(consecutive_failures), 0) FROM primary_artwork_scheduled_tasks",
+        Integer.class);
   }
 
   private record LibraryWithMovieFile(Library library, Path movieFile) {

@@ -48,7 +48,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class SeriesServiceIT extends AbstractIntegrationTest {
 
-  @Autowired private ArtworkService artworkService;
+  @Autowired private ArtworkRequestService artworkRequestService;
   @Autowired private SeriesService seriesService;
   @Autowired private SeriesRepository seriesRepository;
   @Autowired private SeasonRepository seasonRepository;
@@ -1232,7 +1232,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
       var metadataResult = new MetadataResult<>(freshSeries, List.of(), Map.of(), Map.of());
 
       Series refreshed;
-      try (var artworkRun = artworkService.openRun("refresh", ImageRefreshMode.PRESERVE)) {
+      try (var artworkRun = artworkRequestService.openRun("refresh", ImageRefreshMode.PRESERVE)) {
         refreshed = seriesService.refreshSeriesMetadata(series, metadataResult, artworkRun);
       }
 

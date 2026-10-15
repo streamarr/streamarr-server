@@ -1,6 +1,6 @@
 package com.streamarr.server.fakes;
 
-import com.streamarr.server.services.library.Sleeper;
+import com.streamarr.server.services.concurrency.Sleeper;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;

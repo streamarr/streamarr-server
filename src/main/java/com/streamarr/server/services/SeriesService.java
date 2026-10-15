@@ -40,7 +40,7 @@ public class SeriesService {
   private final SeriesRepository seriesRepository;
   private final CreditService creditService;
   private final PaginationService paginationService;
-  private final ArtworkService artworkService;
+  private final ArtworkRequestService artworkRequestService;
   private final ImageService imageService;
   private final SeasonRepository seasonRepository;
   private final EpisodeRepository episodeRepository;
@@ -79,11 +79,11 @@ public class SeriesService {
 
     var savedSeries = seriesRepository.saveAndFlush(series);
 
-    artworkService.fetchRequired(
+    artworkRequestService.requestPrimaryArtwork(
         artworkRun,
         ArtworkSources.builder()
-            .entityId(savedSeries.getId())
-            .entityType(ImageEntityType.SERIES)
+            .targetId(savedSeries.getId())
+            .targetType(ImageEntityType.SERIES)
             .sources(metadataResult.imageSources())
             .build());
 
@@ -106,11 +106,11 @@ public class SeriesService {
                 .library(library)
                 .build());
 
-    artworkService.fetchRequired(
+    artworkRequestService.requestPrimaryArtwork(
         request.artworkRun(),
         ArtworkSources.builder()
-            .entityId(season.getId())
-            .entityType(ImageEntityType.SEASON)
+            .targetId(season.getId())
+            .targetType(ImageEntityType.SEASON)
             .sources(details.imageSources())
             .build());
 
@@ -129,8 +129,8 @@ public class SeriesService {
                         .build())
             .toList();
 
-    var savedEpisodes = episodeRepository.saveAll(episodes);
-    fetchEpisodeArtwork(savedEpisodes, request);
+    var savedEpisodes = episodeRepository.saveAllAndFlush(episodes);
+    requestEpisodeArtwork(savedEpisodes, request);
 
     return season;
   }
@@ -155,11 +155,11 @@ public class SeriesService {
         .copyTo(existing);
 
     var saved = seriesRepository.saveAndFlush(existing);
-    artworkService.fetchRequired(
+    artworkRequestService.requestPrimaryArtwork(
         artworkRun,
         ArtworkSources.builder()
-            .entityId(saved.getId())
-            .entityType(ImageEntityType.SERIES)
+            .targetId(saved.getId())
+            .targetType(ImageEntityType.SERIES)
             .sources(metadataResult.imageSources())
             .build());
     return saved;
@@ -181,11 +181,11 @@ public class SeriesService {
     season.setAirDate(details.airDate());
 
     var savedSeason = seasonRepository.saveAndFlush(season);
-    artworkService.fetchRequired(
+    artworkRequestService.requestPrimaryArtwork(
         request.artworkRun(),
         ArtworkSources.builder()
-            .entityId(savedSeason.getId())
-            .entityType(ImageEntityType.SEASON)
+            .targetId(savedSeason.getId())
+            .targetType(ImageEntityType.SEASON)
             .sources(details.imageSources())
             .build());
 
@@ -211,12 +211,12 @@ public class SeriesService {
             .toList();
 
     var savedEpisodes = episodeRepository.saveAllAndFlush(episodes);
-    fetchEpisodeArtwork(savedEpisodes, request);
+    requestEpisodeArtwork(savedEpisodes, request);
 
     return savedSeason;
   }
 
-  private void fetchEpisodeArtwork(
+  private void requestEpisodeArtwork(
       List<? extends Episode> episodes, SeasonWithEpisodesRequest request) {
     for (var episode : episodes) {
       request.details().episodes().stream()
@@ -224,11 +224,11 @@ public class SeriesService {
           .findFirst()
           .ifPresent(
               details ->
-                  artworkService.fetchRequired(
+                  artworkRequestService.requestPrimaryArtwork(
                       request.artworkRun(),
                       ArtworkSources.builder()
-                          .entityId(episode.getId())
-                          .entityType(ImageEntityType.EPISODE)
+                          .targetId(episode.getId())
+                          .targetType(ImageEntityType.EPISODE)
                           .sources(details.imageSources())
                           .build()));
     }

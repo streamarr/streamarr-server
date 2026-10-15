@@ -1,12 +1,15 @@
 package com.streamarr.server.repositories.media;
 
+import static com.streamarr.server.jooq.generated.tables.ArtworkRequest.ARTWORK_REQUEST;
 import static com.streamarr.server.jooq.generated.tables.Company.COMPANY;
 import static com.streamarr.server.jooq.generated.tables.Episode.EPISODE;
 import static com.streamarr.server.jooq.generated.tables.Movie.MOVIE;
 import static com.streamarr.server.jooq.generated.tables.Person.PERSON;
 import static com.streamarr.server.jooq.generated.tables.Season.SEASON;
 import static com.streamarr.server.jooq.generated.tables.Series.SERIES;
+import static com.streamarr.server.repositories.media.MediaEnumMapping.toJooq;
 
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import java.util.List;
 import java.util.UUID;
@@ -36,6 +39,26 @@ class ItemLocks {
         .from(id.getTable())
         .where(id.eq(itemId))
         .forKeyShare()
+        .fetchOptional()
+        .isPresent();
+  }
+
+  /**
+   * Keeps the target from being deleted and its artwork request from being replaced or completed
+   * until the transaction ends. Returns {@code false} when the target no longer exists or its
+   * artwork request no longer has {@code generation}.
+   */
+  boolean tryLockArtworkGeneration(ArtworkTarget target, long generation) {
+    if (!tryLockAgainstDeletion(target.targetId(), target.targetType())) {
+      return false;
+    }
+
+    return dsl.selectOne()
+        .from(ARTWORK_REQUEST)
+        .where(ARTWORK_REQUEST.TARGET_ID.eq(target.targetId()))
+        .and(ARTWORK_REQUEST.TARGET_TYPE.eq(toJooq(target.targetType())))
+        .and(ARTWORK_REQUEST.GENERATION.eq(generation))
+        .forShare()
         .fetchOptional()
         .isPresent();
   }

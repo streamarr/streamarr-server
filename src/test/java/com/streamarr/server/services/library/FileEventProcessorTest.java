@@ -20,7 +20,7 @@ import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeProbeTaskRequests;
 import com.streamarr.server.fakes.FakeTransactionManager;
-import com.streamarr.server.fixtures.ArtworkServiceFixture;
+import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
@@ -164,7 +164,7 @@ class FileEventProcessorTest {
             .mutationTransactions(mutationTransactions)
             .fileDiscoveryRuns(
                 FileDiscoveryRunsFixture.fileDiscoveryRunsBuilder()
-                    .artworkService(ArtworkServiceFixture.artworkServiceBuilder().build())
+                    .artwork(ArtworkFixture.builder().build())
                     .mediaFiles(mediaFileRepository)
                     .outcomes(probeOutcomes)
                     .probeTaskRequests(probeTaskRequests)

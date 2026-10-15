@@ -4,6 +4,7 @@ import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -33,10 +34,7 @@ import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Person;
-import com.streamarr.server.exceptions.ArtworkResultNotSavedException;
-import com.streamarr.server.exceptions.LibraryRefreshFailedException;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
-import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
@@ -45,7 +43,7 @@ import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.GatedImageDownloader;
 import com.streamarr.server.fakes.MutableClock;
-import com.streamarr.server.fixtures.ArtworkServiceFixture;
+import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.services.ImageService;
@@ -57,7 +55,6 @@ import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
-import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
@@ -88,12 +85,12 @@ class LibraryRefreshServiceTest {
   private SeriesMetadataProviderResolver seriesProviderResolver;
   private MovieMetadataProviderResolver movieProviderResolver;
   private LibraryRefreshService refreshService;
-  private CapturingEventPublisher eventPublisher;
   private FakeImageRepository imageRepository;
   private FakeItemResultRepository itemResults;
   private MutableClock clock;
   private GatedImageDownloader imageDownloader;
   private FakeItemResultRepository artworkResults;
+  private ArtworkFixture artwork;
 
   @BeforeEach
   void setUp() {
@@ -101,21 +98,23 @@ class LibraryRefreshServiceTest {
     movieRepository = new FakeMovieRepository();
     seasonRepository = new FakeSeasonRepository();
     episodeRepository = new FakeEpisodeRepository();
-    eventPublisher = new CapturingEventPublisher();
     imageRepository = new FakeImageRepository();
     imageDownloader = new GatedImageDownloader(createTestImage(600, 900));
     artworkResults = new FakeItemResultRepository();
-    var artworkService =
-        ArtworkServiceFixture.artworkServiceBuilder()
+    artwork =
+        ArtworkFixture.builder()
             .imageRepository(imageRepository)
             .imageDownloader(imageDownloader)
             .itemResults(artworkResults)
             .build();
+    var artworkRequestService = artwork.artworkRequestService();
     seriesProviderResolver = mock(SeriesMetadataProviderResolver.class);
     movieProviderResolver = mock(MovieMetadataProviderResolver.class);
 
     var creditService =
-        CreditServiceFixture.creditServiceBuilder().eventPublisher(eventPublisher).build();
+        CreditServiceFixture.creditServiceBuilder()
+            .artworkRequestService(artworkRequestService)
+            .build();
     var fileSystem = Jimfs.newFileSystem(Configuration.unix());
     var imageService =
         new ImageService(
@@ -130,7 +129,7 @@ class LibraryRefreshServiceTest {
             seriesRepository,
             creditService,
             new PaginationService(),
-            artworkService,
+            artworkRequestService,
             imageService,
             seasonRepository,
             episodeRepository,
@@ -144,7 +143,7 @@ class LibraryRefreshServiceTest {
             movieRepository,
             creditService,
             new PaginationService(),
-            artworkService,
+            artworkRequestService,
             imageService,
             null,
             null,
@@ -163,7 +162,8 @@ class LibraryRefreshServiceTest {
             movieService,
             seriesProviderResolver,
             movieProviderResolver,
-            artworkService,
+            artworkRequestService,
+            artwork.artworkRunWaiter(),
             itemResults,
             clock);
   }
@@ -582,16 +582,31 @@ class LibraryRefreshServiceTest {
   }
 
   @Test
-  @DisplayName("Should fail the refresh when a required artwork result cannot be saved")
-  void shouldFailTheRefreshWhenARequiredArtworkResultCannotBeSaved() {
+  @DisplayName(
+      "Should finish the refresh when a retried artwork step stores the result that failed to save")
+  void shouldFinishTheRefreshWhenARetriedArtworkStepStoresTheResultThatFailedToSave()
+      throws Exception {
     var library = buildMovieLibrary();
-    saveMovieWithTmdbId("Inception", "27205", library);
+    var movie = saveMovieWithTmdbId("Inception", "27205", library);
     stubMovieMetadataWithPoster("27205", library);
-    artworkResults.failWritesWith(new DataAccessResourceFailureException("database unavailable"));
+    artworkResults.failArtworkResultWritesWith(
+        new DataAccessResourceFailureException("database unavailable"), 1);
 
-    assertThatThrownBy(() -> refreshService.refreshLibrary(library))
-        .isInstanceOf(LibraryRefreshFailedException.class)
-        .hasCauseInstanceOf(ArtworkResultNotSavedException.class);
+    try (var refresh =
+        BoundedTask.start(
+            () -> {
+              refreshService.refreshLibrary(library);
+              return artworkResults.findByItem(movie.getId(), ImageEntityType.MOVIE).stream()
+                  .filter(result -> result.step() == ItemStep.ARTWORK)
+                  .map(ItemResult::outcome)
+                  .toList();
+            })) {
+      artwork.scheduling().awaitUnfinishedAttempt(Duration.ofSeconds(5));
+      artwork.scheduling().runPendingSteps();
+
+      assertThat(refresh.await(Duration.ofSeconds(5)))
+          .containsExactlyInAnyOrder(new ItemOutcome.Succeeded(), new ItemOutcome.Unavailable());
+    }
   }
 
   @Test
@@ -615,8 +630,9 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName(
-      "Should propagate image refresh mode when refreshing movie, person, and company artwork")
-  void shouldPropagateImageRefreshModeWhenRefreshingMoviePersonAndCompanyArtwork() {
+      "Should replace movie artwork and fetch person and company artwork when a refresh forces"
+          + " image refresh")
+  void shouldReplaceMovieArtworkAndFetchPersonAndCompanyArtworkWhenARefreshForcesImageRefresh() {
     var library = buildMovieLibrary();
     var movie = saveMovieWithTmdbId("Inception", "27205", library);
     var stored =
@@ -649,12 +665,13 @@ class LibraryRefreshServiceTest {
 
     refreshService.refreshLibrary(library, ImageRefreshMode.FORCE_REFRESH);
 
-    assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class))
-        .hasSize(2)
-        .allSatisfy(
-            event -> assertThat(event.imageRefreshMode()).isEqualTo(ImageRefreshMode.FORCE_REFRESH))
-        .extracting(MetadataEnrichedEvent::entityType)
-        .containsExactlyInAnyOrder(ImageEntityType.PERSON, ImageEntityType.COMPANY);
+    assertThat(artworkResults.findAll())
+        .filteredOn(result -> result.step() == ItemStep.ARTWORK)
+        .filteredOn(result -> result.itemType() != ImageEntityType.MOVIE)
+        .extracting(ItemResult::itemType, ItemResult::outcome)
+        .containsExactlyInAnyOrder(
+            tuple(ImageEntityType.PERSON, new ItemOutcome.Succeeded()),
+            tuple(ImageEntityType.COMPANY, new ItemOutcome.Succeeded()));
     await()
         .atMost(Duration.ofSeconds(5))
         .untilAsserted(

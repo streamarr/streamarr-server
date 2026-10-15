@@ -26,7 +26,7 @@ import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
-import com.streamarr.server.fixtures.ArtworkServiceFixture;
+import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
@@ -44,7 +44,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 import org.jooq.SortOrder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -62,7 +61,8 @@ class SeriesServiceTest {
   private FakeEpisodeRepository episodeRepository;
   private FakeImageRepository imageRepository;
   private FakeTmdbHttpService imageDownloader;
-  private ArtworkService artworkService;
+  private ArtworkFixture artwork;
+  private ArtworkRequestService artworkRequestService;
   private ArtworkRun artworkRun;
   private SeriesService seriesService;
 
@@ -74,12 +74,13 @@ class SeriesServiceTest {
     imageRepository = new FakeImageRepository();
     imageDownloader = new FakeTmdbHttpService();
     imageDownloader.setImageData(createTestImage(600, 900));
-    artworkService =
-        ArtworkServiceFixture.artworkServiceBuilder()
+    artwork =
+        ArtworkFixture.builder()
             .imageRepository(imageRepository)
             .imageDownloader(imageDownloader)
             .build();
-    artworkRun = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+    artworkRequestService = artwork.artworkRequestService();
+    artworkRun = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
     var paginationService = new PaginationService();
     var fileSystem = Jimfs.newFileSystem(Configuration.unix());
     var imageService =
@@ -94,7 +95,7 @@ class SeriesServiceTest {
             seriesRepository,
             CreditServiceFixture.creditServiceBuilder().build(),
             paginationService,
-            artworkService,
+            artworkRequestService,
             imageService,
             seasonRepository,
             episodeRepository,
@@ -107,7 +108,6 @@ class SeriesServiceTest {
   @AfterEach
   void tearDown() {
     artworkRun.close();
-    artworkService.shutdown();
   }
 
   @Nested
@@ -269,7 +269,7 @@ class SeriesServiceTest {
       var saved = seriesService.createSeriesWithAssociations(metadataResult, artworkRun);
 
       assertThat(awaitArtwork().counts())
-          .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+          .isEqualTo(FinishedImageCounts.builder().saved(1).unavailable(1).build());
       assertThat(imageTypesOf(saved.getId(), ImageEntityType.SERIES))
           .containsOnly(ImageType.POSTER);
     }
@@ -282,7 +282,8 @@ class SeriesServiceTest {
 
       seriesService.createSeriesWithAssociations(metadataResult, artworkRun);
 
-      assertThat(awaitArtwork().counts()).isEqualTo(ArtworkCounts.builder().unavailable(2).build());
+      assertThat(awaitArtwork().counts())
+          .isEqualTo(FinishedImageCounts.builder().unavailable(2).build());
       assertThat(imageDownloader.getDownloadCount()).isZero();
     }
 
@@ -308,7 +309,7 @@ class SeriesServiceTest {
       var season = seriesService.createSeasonWithEpisodes(seasonRequest(series, details, library));
 
       assertThat(awaitArtwork().counts())
-          .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+          .isEqualTo(FinishedImageCounts.builder().saved(1).unavailable(1).build());
       assertThat(imageTypesOf(season.getId(), ImageEntityType.SEASON))
           .containsOnly(ImageType.POSTER);
     }
@@ -372,7 +373,8 @@ class SeriesServiceTest {
 
       seriesService.createSeasonWithEpisodes(seasonRequest(series, details, library));
 
-      assertThat(awaitArtwork().counts()).isEqualTo(ArtworkCounts.builder().unavailable(2).build());
+      assertThat(awaitArtwork().counts())
+          .isEqualTo(FinishedImageCounts.builder().unavailable(2).build());
       assertThat(imageDownloader.getDownloadCount()).isZero();
     }
 
@@ -450,7 +452,7 @@ class SeriesServiceTest {
       assertThat(season.getSeasonNumber()).isZero();
       assertThat(episodeRepository.findBySeasonIdOrderByEpisodeNumber(season.getId())).isEmpty();
 
-      assertThat(awaitArtwork().counts()).isEqualTo(ArtworkCounts.builder().saved(1).build());
+      assertThat(awaitArtwork().counts()).isEqualTo(FinishedImageCounts.builder().saved(1).build());
       assertThat(imageTypesOf(season.getId(), ImageEntityType.SEASON))
           .containsOnly(ImageType.POSTER);
     }
@@ -489,7 +491,7 @@ class SeriesServiceTest {
       var season = seriesService.createSeasonWithEpisodes(seasonRequest(series, details, library));
 
       assertThat(awaitArtwork().counts())
-          .isEqualTo(ArtworkCounts.builder().saved(2).unavailable(2).build());
+          .isEqualTo(FinishedImageCounts.builder().saved(2).unavailable(2).build());
       var savedEpisodes = episodeRepository.findBySeasonIdOrderByEpisodeNumber(season.getId());
       assertThat(savedEpisodes)
           .extracting(
@@ -601,7 +603,7 @@ class SeriesServiceTest {
       seriesService.refreshSeriesMetadata(existing, metadataResult, artworkRun);
 
       assertThat(awaitArtwork().counts())
-          .isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
+          .isEqualTo(FinishedImageCounts.builder().saved(1).unavailable(1).build());
       assertThat(imageTypesOf(existing.getId(), ImageEntityType.SERIES))
           .containsOnly(ImageType.POSTER);
     }
@@ -615,7 +617,8 @@ class SeriesServiceTest {
 
       seriesService.refreshSeriesMetadata(existing, metadataResult, artworkRun);
 
-      assertThat(awaitArtwork().counts()).isEqualTo(ArtworkCounts.builder().unavailable(2).build());
+      assertThat(awaitArtwork().counts())
+          .isEqualTo(FinishedImageCounts.builder().unavailable(2).build());
     }
 
     @Test
@@ -797,7 +800,7 @@ class SeriesServiceTest {
 
       var season = seriesService.refreshSeasonWithEpisodes(seasonRequest(series, details, library));
 
-      assertThat(awaitArtwork().counts()).isEqualTo(ArtworkCounts.builder().saved(2).build());
+      assertThat(awaitArtwork().counts()).isEqualTo(FinishedImageCounts.builder().saved(2).build());
       assertThat(imageTypesOf(season.getId(), ImageEntityType.SEASON))
           .containsOnly(ImageType.POSTER);
       assertThat(episodeRepository.findBySeasonIdOrderByEpisodeNumber(season.getId()))
@@ -820,8 +823,7 @@ class SeriesServiceTest {
   }
 
   private ArtworkRunSummary awaitArtwork() {
-    artworkRun.close();
-    return artworkRun.completion().orTimeout(5, TimeUnit.SECONDS).join();
+    return artwork.closeAndAwait(artworkRun);
   }
 
   private List<ImageType> imageTypesOf(UUID entityId, ImageEntityType entityType) {

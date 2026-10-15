@@ -1,19 +1,30 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.media.ArtworkStepsAttempt;
+import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.exceptions.ObsoleteArtworkStepsAttemptException;
 import com.streamarr.server.repositories.media.ImageRepository;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BiPredicate;
 
 public class FakeImageRepository extends FakeJpaRepository<Image> implements ImageRepository {
 
   private boolean failOnInsertAllIfAbsent;
   private boolean failOnReplaceLogicalArtwork;
+  private BiPredicate<ArtworkTarget, Long> currentArtworkGeneration = (_, _) -> true;
+
+  /** Decides whether an attempt's generation is still the target's pending artwork request. */
+  public void checkArtworkGenerationsWith(
+      BiPredicate<ArtworkTarget, Long> currentArtworkGeneration) {
+    this.currentArtworkGeneration = currentArtworkGeneration;
+  }
 
   public void setFailOnInsertAllIfAbsent(boolean failOnInsertAllIfAbsent) {
     this.failOnInsertAllIfAbsent = failOnInsertAllIfAbsent;
@@ -24,10 +35,12 @@ public class FakeImageRepository extends FakeJpaRepository<Image> implements Ima
   }
 
   @Override
-  public Set<UUID> insertAllIfAbsent(List<Image> images) {
+  public Set<UUID> insertAllIfAbsent(List<Image> images, ArtworkStepsAttempt attempt) {
     if (failOnInsertAllIfAbsent) {
       throw new RuntimeException("Simulated insertAllIfAbsent failure");
     }
+
+    requireCurrentGeneration(attempt);
 
     var insertedImageIds = new HashSet<UUID>();
 
@@ -42,10 +55,12 @@ public class FakeImageRepository extends FakeJpaRepository<Image> implements Ima
   }
 
   @Override
-  public List<String> replaceLogicalArtwork(List<Image> images) {
+  public List<String> replaceLogicalArtwork(List<Image> images, ArtworkStepsAttempt attempt) {
     if (failOnReplaceLogicalArtwork) {
       throw new RuntimeException("Simulated logical artwork replacement failure");
     }
+
+    requireCurrentGeneration(attempt);
     if (images.isEmpty()) {
       return List.of();
     }
@@ -58,6 +73,12 @@ public class FakeImageRepository extends FakeJpaRepository<Image> implements Ima
     existing.forEach(image -> database.remove(image.getId()));
     saveAll(images);
     return replacedPaths;
+  }
+
+  private void requireCurrentGeneration(ArtworkStepsAttempt attempt) {
+    if (!currentArtworkGeneration.test(attempt.target(), attempt.generation())) {
+      throw new ObsoleteArtworkStepsAttemptException(attempt);
+    }
   }
 
   private boolean isDuplicate(Image image) {

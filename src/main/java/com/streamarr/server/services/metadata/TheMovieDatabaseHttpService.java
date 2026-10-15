@@ -3,6 +3,7 @@ package com.streamarr.server.services.metadata;
 import com.github.mizosoft.methanol.CacheControl;
 import com.github.mizosoft.methanol.MutableRequest;
 import com.streamarr.server.domain.ExternalSourceType;
+import com.streamarr.server.exceptions.ImageDownloadException;
 import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.metadata.tmdb.TmdbCredits;
 import com.streamarr.server.services.metadata.tmdb.TmdbFailure;
@@ -18,6 +19,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Clock;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -47,18 +49,21 @@ public class TheMovieDatabaseHttpService implements TmdbImageDownloader {
 
   private final HttpClient client;
   private final ObjectMapper objectMapper;
+  private final Clock clock;
 
   public TheMovieDatabaseHttpService(
       @Value("${tmdb.api.token:}") String tmdbApiToken,
       @Value("${tmdb.api.base-url}") String tmdbApiBaseUrl,
       @Value("${tmdb.image.base-url:https://image.tmdb.org/t/p/original}") String tmdbImageBaseUrl,
       @Qualifier("tmdb") HttpClient client,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      Clock clock) {
     this.tmdbApiToken = tmdbApiToken;
     this.tmdbApiBaseUrl = tmdbApiBaseUrl;
     this.tmdbImageBaseUrl = tmdbImageBaseUrl;
     this.client = client;
     this.objectMapper = objectMapper;
+    this.clock = clock;
   }
 
   public TmdbSearchResults searchForMovie(VideoFileParserResult videoFileParserResult)
@@ -146,8 +151,10 @@ public class TheMovieDatabaseHttpService implements TmdbImageDownloader {
     var response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
 
     if (response.statusCode() != 200) {
-      throw new TmdbApiException(
-          response.statusCode(), "Failed to download image: " + pathFragment);
+      throw new ImageDownloadException(
+          response.statusCode(),
+          pathFragment,
+          RetryAfter.parse(response.headers().firstValue("Retry-After"), clock.instant()));
     }
 
     return response.body();

@@ -2,12 +2,16 @@ package com.streamarr.server.repositories.media;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.config.ImageProperties;
+import com.streamarr.server.fixtures.ArtworkStepsAttemptFixture;
 import com.streamarr.server.fixtures.ImageFixture;
+import com.streamarr.server.repositories.PostgresTransactionLocks;
 import java.util.List;
 import java.util.UUID;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 import org.jooq.tools.jdbc.MockConnection;
+import org.jooq.tools.jdbc.MockExecuteContext;
 import org.jooq.tools.jdbc.MockResult;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -22,7 +26,10 @@ class ImageRepositoryCustomImplTest {
   void shouldReturnNoReplacedPathsWhenReplacementIsEmpty() {
     var repository = new ImageRepositoryCustomImpl(null, null, null, null);
 
-    assertThat(repository.replaceLogicalArtwork(List.of())).isEmpty();
+    assertThat(
+            repository.replaceLogicalArtwork(
+                List.of(), ArtworkStepsAttemptFixture.attemptFor(List.of())))
+        .isEmpty();
   }
 
   @Test
@@ -36,12 +43,34 @@ class ImageRepositoryCustomImplTest {
             .path("poster-small.jpg")
             .build();
 
-    try (var connection = new MockConnection(_ -> new MockResult[] {new MockResult(1)})) {
+    try (var connection = new MockConnection(ImageRepositoryCustomImplTest::lockedOrInserted)) {
+      var dsl = DSL.using(connection, SQLDialect.POSTGRES);
       var repository =
           new ImageRepositoryCustomImpl(
-              DSL.using(connection, SQLDialect.POSTGRES), null, null, null);
+              dsl,
+              new ImageProperties("/data/images"),
+              new PostgresTransactionLocks(dsl),
+              new ItemLocks(dsl));
 
-      assertThat(repository.insertAllIfAbsent(List.of(image))).containsExactly(imageId);
+      assertThat(
+              repository.insertAllIfAbsent(
+                  List.of(image), ArtworkStepsAttemptFixture.attemptFor(List.of(image))))
+          .containsExactly(imageId);
     }
+  }
+
+  // Each lock query finds its row, and every other statement reports one changed row.
+  private static MockResult[] lockedOrInserted(MockExecuteContext context) {
+    if (!context.sql().toLowerCase().startsWith("select")) {
+      return new MockResult[] {new MockResult(1)};
+    }
+
+    var create = DSL.using(SQLDialect.POSTGRES);
+    var one = DSL.field("one", Integer.class);
+    var result = create.newResult(one);
+    var row = create.newRecord(one);
+    row.set(one, 1);
+    result.add(row);
+    return new MockResult[] {new MockResult(1, result)};
   }
 }

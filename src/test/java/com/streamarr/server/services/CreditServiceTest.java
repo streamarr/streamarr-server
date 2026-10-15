@@ -11,20 +11,20 @@ import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
-import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeCompanyRepository;
 import com.streamarr.server.fakes.FakeGenreRepository;
 import com.streamarr.server.fakes.FakePersonRepository;
+import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
-import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -37,7 +37,7 @@ class CreditServiceTest {
   private FakePersonRepository personRepository;
   private FakeGenreRepository genreRepository;
   private FakeCompanyRepository companyRepository;
-  private CapturingEventPublisher eventPublisher;
+  private ArtworkFixture artwork;
   private CreditService creditService;
 
   @BeforeEach
@@ -45,14 +45,25 @@ class CreditServiceTest {
     personRepository = new FakePersonRepository();
     genreRepository = new FakeGenreRepository();
     companyRepository = new FakeCompanyRepository();
-    eventPublisher = new CapturingEventPublisher();
+    artwork = ArtworkFixture.builder().build();
+    artwork.scheduling().holdScheduledSteps();
     creditService =
         CreditServiceFixture.creditServiceBuilder()
             .personRepository(personRepository)
             .genreRepository(genreRepository)
             .companyRepository(companyRepository)
-            .eventPublisher(eventPublisher)
+            .artworkRequestService(artwork.artworkRequestService())
             .build();
+  }
+
+  private static StoredArtworkRequest backgroundRequest(
+      ArtworkSources artwork, ImageRefreshMode mode) {
+    return StoredArtworkRequest.builder().artwork(artwork).refreshMode(mode).generation(0).build();
+  }
+
+  private static ArtworkSources artworkOf(
+      UUID itemId, ImageEntityType itemType, List<ImageSource> sources) {
+    return ArtworkSources.builder().targetId(itemId).targetType(itemType).sources(sources).build();
   }
 
   @Test
@@ -107,12 +118,11 @@ class CreditServiceTest {
         creditService.getOrCreateCredits(
             requestFor(credits).personImageSources(Map.of("300", profile)).build());
 
-    assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class))
+    assertThat(artwork.requests().requests())
+        .usingRecursiveFieldByFieldElementComparatorIgnoringFields("generation")
         .containsExactly(
-            new MetadataEnrichedEvent(
-                saved.cast().getFirst().getId(),
-                ImageEntityType.PERSON,
-                profile,
+            backgroundRequest(
+                artworkOf(saved.cast().getFirst().getId(), ImageEntityType.PERSON, profile),
                 ImageRefreshMode.PRESERVE));
   }
 
@@ -156,17 +166,14 @@ class CreditServiceTest {
                 .imageRefreshMode(ImageRefreshMode.FORCE_REFRESH)
                 .build());
 
-    assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class))
+    assertThat(artwork.requests().requests())
+        .usingRecursiveFieldByFieldElementComparatorIgnoringFields("generation")
         .containsExactlyInAnyOrder(
-            new MetadataEnrichedEvent(
-                saved.cast().getFirst().getId(),
-                ImageEntityType.PERSON,
-                profile,
+            backgroundRequest(
+                artworkOf(saved.cast().getFirst().getId(), ImageEntityType.PERSON, profile),
                 ImageRefreshMode.FORCE_REFRESH),
-            new MetadataEnrichedEvent(
-                saved.studios().iterator().next().getId(),
-                ImageEntityType.COMPANY,
-                logo,
+            backgroundRequest(
+                artworkOf(saved.studios().iterator().next().getId(), ImageEntityType.COMPANY, logo),
                 ImageRefreshMode.FORCE_REFRESH));
   }
 
@@ -181,7 +188,7 @@ class CreditServiceTest {
     assertThat(saved.directors()).isEmpty();
     assertThat(saved.genres()).isEmpty();
     assertThat(saved.studios()).isEmpty();
-    assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class)).isEmpty();
+    assertThat(artwork.requests().requests()).isEmpty();
   }
 
   @Test

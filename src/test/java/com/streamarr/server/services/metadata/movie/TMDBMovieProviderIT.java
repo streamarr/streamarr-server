@@ -28,6 +28,7 @@ import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.io.IOException;
 import java.net.http.HttpClient;
+import java.time.Clock;
 import java.time.LocalDate;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -57,7 +58,8 @@ class TMDBMovieProviderIT {
             wireMock.baseUrl(),
             wireMock.baseUrl(),
             HttpClient.newHttpClient(),
-            new ObjectMapper());
+            new ObjectMapper(),
+            Clock.systemUTC());
     provider = new TMDBMovieProvider(httpService, new TmdbSearchDelegate(httpService));
     savedLibrary = LibraryFixtureCreator.buildFakeLibrary();
   }

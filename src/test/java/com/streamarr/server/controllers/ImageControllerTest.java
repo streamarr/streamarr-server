@@ -1,6 +1,7 @@
 package com.streamarr.server.controllers;
 
 import static com.streamarr.server.fakes.TestImages.createTestImage;
+import static com.streamarr.server.fixtures.ArtworkStepsAttemptFixture.attemptFor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.http.HttpHeaders.IF_NONE_MATCH;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -177,7 +178,7 @@ class ImageControllerTest {
     var firstResult =
         imageService.processImage(
             firstImageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
-    imageService.saveImages(firstResult.images(), ATTEMPTED_AT);
+    imageService.saveImages(firstResult.images(), attemptFor(firstResult.images()));
 
     var image =
         imageRepository
@@ -197,7 +198,7 @@ class ImageControllerTest {
     var secondResult =
         secondImageService.processImage(
             secondImageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
-    secondImageService.saveImages(secondResult.images(), ATTEMPTED_AT);
+    secondImageService.saveImages(secondResult.images(), attemptFor(secondResult.images()));
 
     assertThat(secondImageService.readImageFile(image))
         .isEqualTo(firstResponse.getResponse().getContentAsByteArray());

@@ -69,9 +69,27 @@ image:
   storage-path: ${IMAGE_STORAGE_PATH:}
   replacement-lock-timeout: ${IMAGE_REPLACEMENT_LOCK_TIMEOUT:5s}
 
+# CPU-heavy work, such as decoding and resizing images, holds one of these permits while it runs.
+# Primary work gets a freed permit before background work. 0 means one per available processor.
+cpu:
+  permits: ${CPU_PERMITS:0}
+
 artwork:
-  secondary-concurrency: ${ARTWORK_SECONDARY_CONCURRENCY:4}
+  # Artwork steps run as db-scheduler task instances on two schedulers with their own tables:
+  # primary artwork (movies, series, seasons and episodes) and background artwork (people and
+  # companies). Each thread count caps how many targets' steps run at once on that scheduler.
+  scheduling:
+    primary-threads: ${ARTWORK_PRIMARY_THREADS:16}
+    background-threads: ${ARTWORK_BACKGROUND_THREADS:4}
+  runs:
+    # How often a scan or refresh that waits for primary artwork checks its recorded results.
+    result-check-interval: ${ARTWORK_RESULT_CHECK_INTERVAL:2s}
   progress-log-interval: ${ARTWORK_PROGRESS_LOG_INTERVAL:30s}
+  request-lock:
+    # How long saving an artwork request or an attempt's artwork results waits for the target's
+    # request lock and request row before it fails. A failed save is retried by the target's
+    # scheduled task, or fails the metadata transaction that requested the artwork.
+    timeout: ${ARTWORK_LOCK_TIMEOUT:5s}
 
 streaming:
   max-concurrent-transcodes: ${STREAMING_MAX_CONCURRENT_TRANSCODES:8}
