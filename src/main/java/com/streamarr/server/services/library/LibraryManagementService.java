@@ -5,6 +5,8 @@ import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
+import com.streamarr.server.exceptions.LibraryOperationNotScheduledException;
+import com.streamarr.server.exceptions.LibraryOperationNotStartedException;
 import com.streamarr.server.repositories.LibraryMetadataRepository;
 import com.streamarr.server.repositories.LibraryOperationRepository;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -71,6 +73,9 @@ public class LibraryManagementService {
    * LibraryAddedEvent} reaches the AFTER_COMMIT listeners that start watching. Two concurrent adds
    * of the same path race on the unique index; the loser's violation is translated after rollback
    * into {@code PathAlreadyRegistered}, and it stores no scan and performs no side effect.
+   *
+   * @throws LibraryOperationNotStartedException when the first scan cannot be scheduled, so the
+   *     transaction adds no library
    */
   public Outcome<Library, AddLibraryRejection> addLibrary(
       AuthenticatedIdentity identity, Library library) {
@@ -89,6 +94,15 @@ public class LibraryManagementService {
             .filepathUri(FilepathCodec.encode(path.orElseThrow()))
             .status(LibraryStatus.HEALTHY)
             .build();
+    try {
+      return insertWithFirstScan(identity, libraryToSave);
+    } catch (LibraryOperationNotScheduledException e) {
+      throw new LibraryOperationNotStartedException(e);
+    }
+  }
+
+  private Outcome<Library, AddLibraryRejection> insertWithFirstScan(
+      AuthenticatedIdentity identity, Library libraryToSave) {
     return mutationTransactions.write(
         () ->
             libraryMutationTransaction.execute(

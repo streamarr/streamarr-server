@@ -22,6 +22,8 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
+import com.streamarr.server.exceptions.LibraryOperationNotScheduledException;
+import com.streamarr.server.exceptions.LibraryOperationNotStartedException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.CountingSleeper;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
@@ -831,6 +833,33 @@ class LibraryManagementServiceTest {
       assertThat(capturingEventPublisher.getEventsOfType(LibraryStatusChangedEvent.class))
           .extracting(LibraryStatusChangedEvent::libraryId)
           .containsExactly(savedLibrary.getId());
+    }
+
+    @Test
+    @DisplayName(
+        "Should throw LibraryOperationNotStartedException and roll back the add when the first"
+            + " scan cannot be scheduled")
+    void shouldThrowLibraryOperationNotStartedAndRollBackTheAddWhenTheFirstScanCannotBeScheduled()
+        throws IOException {
+      var newLibraryPath = fileSystem.getPath("/unscheduled-library");
+      Files.createDirectories(newLibraryPath);
+      var library =
+          LibraryFixtureCreator.unsavedLibraryBuilder()
+              .name("Unscheduled Library")
+              .filepathUri(newLibraryPath.toString())
+              .build();
+      var schedulingFailure =
+          new LibraryOperationNotScheduledException(
+              UUID.randomUUID(), new IllegalStateException("task table unavailable"));
+      libraryOperationScheduling.failNextWith(schedulingFailure);
+
+      var thrown = catchThrowable(() -> libraryManagementService.addLibrary(identity, library));
+
+      assertThat(thrown)
+          .isInstanceOf(LibraryOperationNotStartedException.class)
+          .hasCause(schedulingFailure);
+      assertThat(transactionManager.commits()).isZero();
+      assertThat(transactionManager.rollbacks()).isEqualTo(1);
     }
 
     @Test
