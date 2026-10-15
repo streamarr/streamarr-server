@@ -10,12 +10,12 @@ import static org.awaitility.Awaitility.await;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.TestFixtureWork;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -77,7 +77,7 @@ class SetupServiceConcurrencyIT extends AbstractIntegrationTest {
             commandBuilder(suffix, "a").build(), //
             commandBuilder(suffix, "b").build());
 
-    var executor = Executors.newFixedThreadPool(commands.size());
+    var executor = TestFixtureWork.newFixedThreadPoolRunningAsTestFixtureActor(commands.size());
     var startLatch = new CountDownLatch(1);
     var doneLatch = new CountDownLatch(commands.size());
     var exceptions = new CopyOnWriteArrayList<Exception>();
@@ -132,7 +132,7 @@ class SetupServiceConcurrencyIT extends AbstractIntegrationTest {
     var suffix = String.valueOf(System.nanoTime());
     var command = commandBuilder(suffix, "same").build();
     var commands = List.of(command, command);
-    var executor = Executors.newFixedThreadPool(commands.size());
+    var executor = TestFixtureWork.newFixedThreadPoolRunningAsTestFixtureActor(commands.size());
     var startLatch = new CountDownLatch(1);
     var doneLatch = new CountDownLatch(commands.size());
     var exceptions = new CopyOnWriteArrayList<Exception>();

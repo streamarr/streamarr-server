@@ -26,6 +26,7 @@ import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
+import com.streamarr.server.support.TestFixtureWork;
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -35,7 +36,6 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
@@ -328,7 +328,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
         lockArtworkRows(rowLockConnection, entityId);
         var rowLockerPid = backendPid(rowLockConnection);
 
-        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
           try {
             var cyan =
                 executor.submit(

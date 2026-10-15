@@ -31,10 +31,10 @@ import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
+import com.streamarr.server.support.TestFixtureWork;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.jooq.DSLContext;
@@ -94,7 +94,7 @@ class HouseholdDeletionConcurrencyIT extends AbstractIntegrationTest {
                     .reason("join donor Household")
                     .build()))
         .isEqualTo(Outcome.accepted(joining.household().getId()));
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
         var held =
             PostgresLockTestSupport.lockRow(
                 RowLockTarget.builder()
@@ -178,7 +178,7 @@ class HouseholdDeletionConcurrencyIT extends AbstractIntegrationTest {
     var source = auth.createIdentity();
     var identity = auth.freshIdentityOf(admin);
     var sourceId = source.household().getId();
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
         var held =
             PostgresLockTestSupport.lockRow(
                 RowLockTarget.builder()
@@ -313,7 +313,7 @@ class HouseholdDeletionConcurrencyIT extends AbstractIntegrationTest {
             .accountId(admin.account().getId())
             .profileId(replacement.profile().getId())
             .build());
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
         var held =
             PostgresLockTestSupport.lockRow(
                 RowLockTarget.builder()
@@ -428,7 +428,7 @@ class HouseholdDeletionConcurrencyIT extends AbstractIntegrationTest {
                 .set(HOUSEHOLD.NAME, "Destination")
                 .execute());
     var identity = auth.freshIdentityOf(admin);
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
         var held =
             PostgresLockTestSupport.lockRow(
                 RowLockTarget.builder()

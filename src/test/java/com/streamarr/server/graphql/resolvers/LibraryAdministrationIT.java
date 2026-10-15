@@ -18,6 +18,7 @@ import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockProbe;
+import com.streamarr.server.support.TestFixtureWork;
 import jakarta.persistence.EntityManager;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -26,7 +27,6 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -277,7 +277,7 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
     var removalGate = blockingLibraryRemovalListener.holdBeforeCommit();
     var lockProbe = new PostgresLockProbe(entityManager, jdbcTemplate);
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       try {
         var removal =
             executor.submit(

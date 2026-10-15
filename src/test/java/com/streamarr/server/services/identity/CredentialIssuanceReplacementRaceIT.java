@@ -31,12 +31,12 @@ import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.ControlledClockConfiguration;
 import com.streamarr.server.support.PostgresLockTestSupport.HeldRowLock;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
+import com.streamarr.server.support.TestFixtureWork;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.jooq.DSLContext;
@@ -100,7 +100,7 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
             .secretDigest(issued.digest())
             .build());
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
         var issuanceLock = holdInvitationIssuanceLock(recipientEmail)) {
       var replacement =
           executor.submit(
@@ -144,7 +144,7 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
     existing.setExpiresAt(expiresAt);
     invitationRepository.saveAndFlush(existing);
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
         var issuanceLock = holdInvitationIssuanceLock(recipientEmail)) {
       var replacement =
           executor.submit(
@@ -175,7 +175,7 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
     existing.setExpiresAt(expiresAt);
     resetCodeRepository.saveAndFlush(existing);
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
         var lock = lockRow(rowLock("user_account", resetTarget.account().getId()))) {
       var replacement =
           executor.submit(
@@ -225,7 +225,7 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
     var recipientEmail = "replacement-race@example.com";
     var blocker = saveBlockingInvitation(recipientEmail);
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
         var lock = lockRow(rowLock("account_invitation", blocker.getId()))) {
       var first =
           executor.submit(
@@ -268,7 +268,7 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
     resetTarget = authTestSupport.createIdentity();
     var blocker = saveBlockingResetCode();
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
         var lock = lockRow(rowLock("password_reset_code", blocker.getId()))) {
       var first =
           executor.submit(

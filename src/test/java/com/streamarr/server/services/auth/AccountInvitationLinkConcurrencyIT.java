@@ -42,6 +42,7 @@ import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.TestFixtureWork;
 import java.sql.Connection;
 import java.time.Duration;
 import java.time.Instant;
@@ -50,7 +51,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
@@ -141,7 +141,7 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
 
     try (var connection = dataSource.getConnection();
         var statement = connection.createStatement();
-        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       connection.setAutoCommit(false);
       var blockerPid = backendPid(connection);
       statement.execute("LOCK TABLE user_account IN SHARE MODE");
@@ -169,7 +169,7 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
     var acceptedCode = pendingLinkInvitation(orphan, FIRST_RIVAL_EMAIL);
 
     try (var issuanceLock = holdInvitationIssuanceLock(SECOND_RIVAL_EMAIL);
-        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var issuance =
           executor.submit(
               () ->
@@ -202,7 +202,7 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
             .build();
 
     try (var issuanceLock = holdInvitationIssuanceLock(STALE_REOFFER_EMAIL);
-        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var issuance =
           executor.submit(
               () ->
@@ -272,7 +272,7 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
         var statement =
             connection.prepareStatement(
                 "SELECT household_id FROM household_guard WHERE household_id = ? FOR UPDATE");
-        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       connection.setAutoCommit(false);
       var blockerPid = backendPid(connection);
       statement.setObject(1, targetAdmin.household().getId());
@@ -316,7 +316,7 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
     installShareInsertBarrier(orphan.getId(), targetHouseholdId);
 
     try (var insertBarrier = holdShareInsertBarrier();
-        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var offer =
           executor.submit(
               () ->
@@ -430,7 +430,7 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
     installAccountInsertBarrier();
 
     try (var insertBarrier = holdAccountInsertBarrier();
-        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var sourceAcceptance =
           executor.submit(() -> invitationService.accept(acceptCommand(sourceCode)));
       var targetAcceptance =
@@ -463,7 +463,7 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
     var code = pendingLinkInvitation(orphan, SHARE_RACE_EMAIL);
 
     try (var sessionLock = holdAuthSessionLock(targetAdmin.session().getId());
-        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var selection =
           executor.submit(
               () ->

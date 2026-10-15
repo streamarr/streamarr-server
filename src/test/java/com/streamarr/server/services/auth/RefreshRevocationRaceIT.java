@@ -18,6 +18,7 @@ import com.streamarr.server.repositories.auth.RefreshTokenRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupportConfig;
+import com.streamarr.server.support.TestFixtureWork;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
@@ -26,7 +27,6 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.jooq.DSLContext;
@@ -136,7 +136,7 @@ class RefreshRevocationRaceIT extends AbstractIntegrationTest {
     var gate = holdRefreshRotation();
 
     RefreshResult.Rotated rotated;
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
         gate) {
       var refresh = executor.submit(() -> refreshTokenService.redeem(issued.rawToken()));
       await()
@@ -170,7 +170,7 @@ class RefreshRevocationRaceIT extends AbstractIntegrationTest {
   }
 
   private void raceRefreshAgainstRevocation(String rawToken, UUID sessionId) {
-    try (var executor = Executors.newFixedThreadPool(2)) {
+    try (var executor = TestFixtureWork.newFixedThreadPoolRunningAsTestFixtureActor(2)) {
       var startLatch = new CountDownLatch(1);
       var doneLatch = new CountDownLatch(2);
       var errors = new CopyOnWriteArrayList<Throwable>();

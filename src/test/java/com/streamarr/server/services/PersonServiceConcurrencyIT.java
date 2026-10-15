@@ -10,12 +10,12 @@ import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.support.HeldCreditInsert;
 import com.streamarr.server.support.OrderedSourceIds;
+import com.streamarr.server.support.TestFixtureWork;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -37,7 +37,7 @@ class PersonServiceConcurrencyIT extends AbstractIntegrationTest {
   void shouldCreateSinglePersonWhenConcurrentInsertsRaceOnSameSourceId() {
     var sourceId = "concurrent-person-" + System.nanoTime();
     var threadCount = 5;
-    var executor = Executors.newFixedThreadPool(threadCount);
+    var executor = TestFixtureWork.newFixedThreadPoolRunningAsTestFixtureActor(threadCount);
     var startLatch = new CountDownLatch(1);
     var doneLatch = new CountDownLatch(threadCount);
     var results = new CopyOnWriteArrayList<List<Person>>();

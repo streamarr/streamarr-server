@@ -12,6 +12,7 @@ import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.TestFixtureWork;
 import com.streamarr.server.support.security.WithAccountContext;
 import java.sql.Connection;
 import java.time.Duration;
@@ -20,7 +21,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.jooq.DSLContext;
@@ -168,7 +168,7 @@ class ProfileHouseholdShareRepositoryCustomImplIT extends AbstractIntegrationTes
       var failures = Collections.synchronizedList(new ArrayList<Throwable>());
       installMembershipShareInsertBarrier(ids);
 
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+      try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
           var insertBarrier = holdMembershipShareInsertBarrier()) {
         var first = executor.submit(() -> ensureMembershipShare(ids, failures));
         var second = executor.submit(() -> ensureMembershipShare(ids, failures));

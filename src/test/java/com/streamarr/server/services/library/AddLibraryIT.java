@@ -17,13 +17,13 @@ import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.TestFixtureWork;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
@@ -85,7 +85,7 @@ class AddLibraryIT extends AbstractIntegrationTest {
         .when(repositorySpy)
         .save(any(Library.class));
     List<Future<Outcome<Library, AddLibraryRejection>>> attempts;
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       attempts =
           List.of(
               executor.submit(

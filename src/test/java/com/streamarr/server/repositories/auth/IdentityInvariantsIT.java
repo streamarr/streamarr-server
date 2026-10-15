@@ -25,6 +25,7 @@ import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupportConfig;
 import com.streamarr.server.support.ConstraintViolations;
+import com.streamarr.server.support.TestFixtureWork;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -33,7 +34,6 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -139,7 +139,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
             .build();
 
     List<Future<Boolean>> attempts;
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       attempts =
           List.of(
               executor.submit(() -> demoteAfter(race, first.account().getId())),
@@ -253,7 +253,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
             .build();
 
     List<Future<Boolean>> attempts;
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       attempts =
           List.of(
               executor.submit(() -> disableServerAdminAfter(race, first.account().getId())),
@@ -330,7 +330,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
             .build();
 
     List<Future<Boolean>> attempts;
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       attempts =
           List.of(
               executor.submit(

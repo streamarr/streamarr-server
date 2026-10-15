@@ -15,10 +15,10 @@ import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.CredentialAttemptRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.TestFixtureWork;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
@@ -70,7 +70,7 @@ class CredentialAdmissionConcurrencyIT extends AbstractIntegrationTest {
     var second = instance(probe);
     var correct = command(fixtures.password());
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
         var holder = dataSource.getConnection()) {
       holder.setAutoCommit(false);
       try (var statement = holder.createStatement()) {

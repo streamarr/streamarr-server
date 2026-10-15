@@ -32,13 +32,13 @@ import com.streamarr.server.services.identity.ProfileLifecycleService.TransferPr
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.TestFixtureWork;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -88,7 +88,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
               .build());
 
       Outcome<?, ?> transfer;
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
         var pendingTransfer =
             executor.submit(
                 () ->
@@ -133,7 +133,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
               .build());
 
       Outcome<?, ?> transfer;
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
         var pendingTransfer =
             executor.submit(
                 () ->
@@ -190,7 +190,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
           .revokeAllByAccount(eq(mover.getId()), any(String.class), any(Instant.class));
 
       Object deletion;
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
         var pendingDeletion =
             executor.submit(
                 () ->
@@ -292,7 +292,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
 
       Object firstAttempt;
       Object secondAttempt;
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
         var pendingFirst =
             executor.submit(
                 () ->
@@ -405,7 +405,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
           .write(any(), any());
 
       Object transfer;
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
         var pendingTransfer =
             executor.submit(
                 () ->
@@ -470,7 +470,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
           .write(any(), any());
 
       Object transfer;
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
         var pendingTransfer =
             executor.submit(
                 () ->
@@ -546,7 +546,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
           .invalidatePendingByProfileId(eq(orphan.getId()), any(String.class), any(Instant.class));
 
       Object deletion;
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
         var pendingDeletion =
             executor.submit(
                 () ->
@@ -603,7 +603,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
 
       Object firstAttempt;
       Object secondAttempt;
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
         var first =
             executor.submit(
                 () ->
@@ -691,7 +691,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
               eq(household.account().getId()), any(String.class), any(Instant.class));
 
       Object selfDeletion;
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
         var pendingSelfDeletion =
             executor.submit(
                 () ->
@@ -759,7 +759,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
 
       Object firstAttempt;
       Object secondAttempt;
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
         var first =
             executor.submit(
                 () ->
@@ -853,7 +853,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
 
       Object firstAttempt;
       Object secondAttempt;
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
         var first =
             executor.submit(
                 () ->

@@ -18,12 +18,12 @@ import com.streamarr.server.services.auth.RefreshTokenService;
 import com.streamarr.server.services.auth.TokenContext;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupportConfig;
+import com.streamarr.server.support.TestFixtureWork;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -263,7 +263,7 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
     var arrival = new CountDownLatch(1);
     gatedIssuer.holdIssuanceAt(gate, arrival);
 
-    try (var executor = Executors.newFixedThreadPool(2)) {
+    try (var executor = TestFixtureWork.newFixedThreadPoolRunningAsTestFixtureActor(2)) {
       var refreshDone = new CountDownLatch(1);
       var logoutDone = new CountDownLatch(1);
       var refreshResult = new AtomicReference<TokenRefreshService.RefreshedTokens>();
@@ -313,7 +313,7 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
     var arrival = new CountDownLatch(1);
     gatedIssuer.holdIssuanceAt(gate, arrival);
 
-    try (var executor = Executors.newFixedThreadPool(2)) {
+    try (var executor = TestFixtureWork.newFixedThreadPoolRunningAsTestFixtureActor(2)) {
       var refreshDone = new CountDownLatch(1);
       var logoutStarted = new CountDownLatch(1);
       var logoutDone = new CountDownLatch(1);

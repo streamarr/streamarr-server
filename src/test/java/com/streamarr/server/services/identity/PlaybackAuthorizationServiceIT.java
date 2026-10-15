@@ -20,11 +20,11 @@ import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.streaming.PlaybackAuthorityGate;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupportConfig;
+import com.streamarr.server.support.TestFixtureWork;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -204,7 +204,7 @@ class PlaybackAuthorizationServiceIT extends AbstractIntegrationTest {
     var updateFlushed = new CountDownLatch(1);
     var commit = new CountDownLatch(1);
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var unshare =
           executor.submit(
               () ->
