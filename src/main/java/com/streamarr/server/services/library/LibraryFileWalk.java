@@ -85,6 +85,7 @@ public class LibraryFileWalk {
           stream
               .flatMap(file -> regularFile(file).stream())
               .filter(listed -> !ignoredFileValidator.shouldIgnore(listed.path()))
+              .filter(listed -> keepSupportedOrWarn(listed.path()))
               .map(listed -> executor.submit(() -> processListedFile(discovery, listed)))
               .toList();
       awaitFileProcessing(library, tasks);
@@ -102,6 +103,10 @@ public class LibraryFileWalk {
    * @return whether the file was matched against the metadata provider
    */
   public boolean processDiscoveredFile(Library library, Path path) {
+    if (!keepSupportedOrWarn(path)) {
+      return false;
+    }
+
     try (var discovery = fileDiscoveryRuns.open("file discovery in", library)) {
       return processFile(discovery, path, discovery.probeRun()::request);
     }
@@ -158,15 +163,6 @@ public class LibraryFileWalk {
 
   private boolean processFile(FileDiscovery discovery, Path path, Consumer<UUID> requestProbe) {
     var library = discovery.library();
-
-    if (!hasSupportedExtension(path)) {
-      log.warn(
-          "Unsupported file extension: {} for filepath {}.",
-          getExtension(path),
-          path.toAbsolutePath());
-      return false;
-    }
-
     var mediaFile = findOrCreateMediaFile(library, path);
     requestProbe.accept(mediaFile.getId());
 
@@ -181,6 +177,19 @@ public class LibraryFileWalk {
     }
 
     return true;
+  }
+
+  // Files with other extensions are not media files, so they get no task and no media_file row.
+  private boolean keepSupportedOrWarn(Path path) {
+    if (hasSupportedExtension(path)) {
+      return true;
+    }
+
+    log.warn(
+        "Unsupported file extension: {} for filepath {}.",
+        getExtension(path),
+        path.toAbsolutePath());
+    return false;
   }
 
   private boolean hasSupportedExtension(Path path) {
