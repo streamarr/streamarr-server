@@ -4,6 +4,7 @@ import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.defaultIdentityBuilder;
 import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -31,6 +32,7 @@ import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
+import com.streamarr.server.exceptions.LibraryScanFailedException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.CountingSleeper;
@@ -264,22 +266,13 @@ class LibraryManagementServiceTest {
   }
 
   @Test
-  @DisplayName("Should report every file processing failure when multiple tasks fail")
-  void shouldReportEveryFileProcessingFailureWhenMultipleTasksFail() throws Exception {
+  @DisplayName(
+      "Should fail the scan and return every admission when every admitted file task throws")
+  void shouldFailTheScanAndReturnEveryAdmissionWhenEveryAdmittedFileTaskThrows() throws Exception {
     var rootPath = createRootLibraryDirectory();
     createMovieFile(rootPath, "First Movie", "First Movie (2024).mkv");
     createMovieFile(rootPath, "Second Movie", "Second Movie (2024).mkv");
-    var failuresReady = new CountDownLatch(2);
-
-    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenAnswer(
-            invocation -> {
-              var parsedFile = invocation.getArgument(0, VideoFileParserResult.class);
-              failuresReady.countDown();
-              assertThat(failuresReady.await(5, TimeUnit.SECONDS)).isTrue();
-              throw new RuntimeException("simulated failure: " + parsedFile.title());
-            });
+    failEverySearchOnceBothFilesSearch();
 
     libraryManagementService.scanLibrary(savedLibraryId);
 
@@ -287,6 +280,37 @@ class LibraryManagementServiceTest {
     assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
     assertThat(scanAdmissions()).isEqualTo(2);
     assertThat(scanReports("ignored")).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("Should report every failed file task when the file walk fails")
+  void shouldReportEveryFailedFileTaskWhenTheFileWalkFails() throws Exception {
+    var rootPath = createRootLibraryDirectory();
+    createMovieFile(rootPath, "First Movie", "First Movie (2024).mkv");
+    createMovieFile(rootPath, "Second Movie", "Second Movie (2024).mkv");
+    failEverySearchOnceBothFilesSearch();
+    var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+    var fileWalk = fileWalkBuilder().build();
+
+    var failure = catchThrowable(() -> fileWalk.discoverFiles(library));
+
+    assertThat(failure)
+        .isInstanceOf(LibraryScanFailedException.class)
+        .hasMessageStartingWith("2 file processing tasks failed");
+    assertThat(failure.getSuppressed()).hasSize(1);
+  }
+
+  private void failEverySearchOnceBothFilesSearch() {
+    var failuresReady = new CountDownLatch(2);
+    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
+        .thenAnswer(
+            invocation -> {
+              var parsedFile = invocation.getArgument(0, VideoFileParserResult.class);
+              failuresReady.countDown();
+              assertThat(failuresReady.await(5, TimeUnit.SECONDS)).isTrue();
+              throw new IllegalStateException("simulated failure: " + parsedFile.title());
+            });
   }
 
   @Test

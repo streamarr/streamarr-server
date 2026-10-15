@@ -726,6 +726,29 @@ class ArtworkRequestServiceTest {
     }
 
     @Test
+    @DisplayName("Should check a task run's results every task result check interval")
+    void shouldCheckATaskRunsResultsEveryTaskResultCheckInterval() throws Exception {
+      var sleeper = new CountingSleeper();
+      var waiting =
+          ArtworkFixture.builder()
+              .imageRepository(imageRepository)
+              .imageDownloader(imageDownloader)
+              .itemResults(itemResults)
+              .clock(clock)
+              .sleeper(sleeper)
+              .build();
+      waiting.scheduling().holdScheduledSteps();
+      sleeper.onSleep(_ -> waiting.scheduling().runPendingSteps());
+      var task = waiting.artworkService().openRun("scan", ImageRefreshMode.PRESERVE).openTaskRun();
+      waiting.artworkService().requestPrimaryArtwork(task, movieArtwork(UUID.randomUUID(), POSTER));
+      task.close();
+
+      BoundedTask.runWithin(BOUND, () -> waiting.artworkRuns().awaitTaskResults(task));
+
+      assertThat(sleeper.sleeps()).isNotEmpty().containsOnly(Duration.ofMillis(100));
+    }
+
+    @Test
     @DisplayName("Should count a task run's requests in the operation's run")
     void shouldCountATaskRunsRequestsInTheOperationsRun() {
       var operation = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
