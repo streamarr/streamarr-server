@@ -1202,20 +1202,20 @@ class SegmentDeliveryCoordinatorTest {
       return request.get();
     }
 
+    // Waits on the gate's latch in bounded steps, so no thread stays parked when the request never
+    // reaches the gate.
     private void awaitGatedOrStarted(FakeTranscodeExecutor executor, int startedRequestCount)
-        throws Exception {
-      CompletableFuture.anyOf(
-              CompletableFuture.runAsync(
-                  () -> {
-                    try {
-                      gated.await();
-                    } catch (InterruptedException e) {
-                      Thread.currentThread().interrupt();
-                    }
-                  }),
-              CompletableFuture.runAsync(
-                  () -> executor.awaitStartedRequestCount(startedRequestCount)))
-          .get(5, TimeUnit.SECONDS);
+        throws InterruptedException {
+      var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+      while (!gated.await(10, TimeUnit.MILLISECONDS)) {
+        if (executor.getStartedRequests().size() >= startedRequestCount) {
+          return;
+        }
+
+        assertThat(System.nanoTime())
+            .as("the request must reach the switch gate or start its variant")
+            .isLessThan(deadline);
+      }
     }
 
     // Returns after the held step has run, so the test changes nothing during that step.
