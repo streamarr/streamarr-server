@@ -217,11 +217,11 @@ public class ArtworkSteps {
         attempt.item().itemId(),
         failure.reason(),
         cause.toString());
-    var retryAfter = Optional.<Duration>empty();
-    if (failure instanceof ArtworkFailure.Retryable retryable) {
-      retryAfter = retryable.retryAfter();
-    }
-
+    var retryAfter =
+        switch (failure) {
+          case ArtworkFailure.Retryable(var after) -> after;
+          case ArtworkFailure.Terminal _ -> Optional.<Duration>empty();
+        };
     return new StepOutcome.ResultToStore(
         result(attempt, planned.imageType(), ItemOutcome.Failed.of(failure.reason(), cause))
             .sourceKey(planned.source().key())

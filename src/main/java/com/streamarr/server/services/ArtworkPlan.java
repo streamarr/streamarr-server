@@ -4,10 +4,10 @@ import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Stream;
 import lombok.NonNull;
 
 /**
@@ -49,18 +49,21 @@ public record ArtworkPlan(@NonNull List<PlannedImage> images) {
       @NonNull ArtworkSources artwork,
       @NonNull Map<ImageType, List<Image>> storedImagesByType,
       @NonNull ImageRefreshMode refreshMode) {
-    var images = new ArrayList<PlannedImage>();
-    for (var imageType : artwork.missingImageTypes()) {
-      images.add(
-          planWithoutSource(imageType, storedImagesByType.containsKey(imageType), refreshMode));
-    }
-
-    for (var source : artwork.sources()) {
-      var stored = storedImagesByType.getOrDefault(source.imageType(), List.of());
-      images.add(planWithSource(source, stored, refreshMode));
-    }
-
-    return new ArtworkPlan(images);
+    var withoutSource =
+        artwork.missingImageTypes().stream()
+            .map(
+                imageType ->
+                    planWithoutSource(
+                        imageType, storedImagesByType.containsKey(imageType), refreshMode));
+    var withSource =
+        artwork.sources().stream()
+            .map(
+                source ->
+                    planWithSource(
+                        source,
+                        storedImagesByType.getOrDefault(source.imageType(), List.of()),
+                        refreshMode));
+    return new ArtworkPlan(Stream.concat(withoutSource, withSource).toList());
   }
 
   private static PlannedImage planWithoutSource(

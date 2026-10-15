@@ -14,6 +14,8 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public final class PostgresTransactionLocks {
 
+  private static final String LOCK_TIMEOUT = "lock_timeout";
+
   private final DSLContext dsl;
 
   public void lock(long key) {
@@ -35,7 +37,7 @@ public final class PostgresTransactionLocks {
 
   /** Bounds every lock wait in the current transaction, not just the advisory lock's. */
   public void limitLockWait(Duration lockTimeout) {
-    dsl.setLocal(DSL.name("lock_timeout"), DSL.inline(lockTimeout.toMillis() + "ms")).execute();
+    dsl.setLocal(DSL.name(LOCK_TIMEOUT), DSL.inline(lockTimeout.toMillis() + "ms")).execute();
   }
 
   /**
@@ -45,7 +47,7 @@ public final class PostgresTransactionLocks {
    */
   public <T> T withLockWaitLimit(Duration lockTimeout, Supplier<T> work) {
     var earlierLockTimeout =
-        dsl.select(DSL.function("current_setting", String.class, DSL.inline("lock_timeout")))
+        dsl.select(DSL.function("current_setting", String.class, DSL.inline(LOCK_TIMEOUT)))
             .fetchSingle()
             .value1();
     limitLockWait(lockTimeout);
@@ -54,7 +56,7 @@ public final class PostgresTransactionLocks {
             DSL.function(
                 "set_config",
                 String.class,
-                DSL.inline("lock_timeout"),
+                DSL.inline(LOCK_TIMEOUT),
                 DSL.val(earlierLockTimeout),
                 DSL.inline(true)))
         .execute();

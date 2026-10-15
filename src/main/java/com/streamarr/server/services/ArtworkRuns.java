@@ -9,6 +9,7 @@ import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.services.concurrency.Sleeper;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -88,7 +89,7 @@ public class ArtworkRuns {
   // Returns the results that finish the requested artwork, or nothing while it is still pending.
   private static Optional<List<ItemResult>> finishedResults(
       ArtworkState state, RequestedArtwork requested) {
-    var resultsByType = new HashMap<ImageType, ItemResult>();
+    var resultsByType = new EnumMap<ImageType, ItemResult>(ImageType.class);
     state.artworkResults().stream()
         .filter(result -> result.artworkGeneration() >= requested.generation())
         .filter(result -> requested.awaitedImageTypes().contains(result.imageType()))
