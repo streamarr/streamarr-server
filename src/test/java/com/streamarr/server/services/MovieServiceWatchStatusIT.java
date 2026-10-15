@@ -49,6 +49,8 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
   @Autowired private MovieService movieService;
   @Autowired private AuditColumnFixtures auditColumns;
 
+  private static final Instant WATCHED_MOVIE_COMPLETED_AT = Instant.parse("2026-01-01T00:00:00Z");
+
   private AuthTestSupport.TestIdentity identity;
   private UUID profileId;
 
@@ -71,7 +73,7 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
         WatchHistory.builder()
             .profileId(profileId)
             .collectableId(watchedMovie.getId())
-            .watchedAt(Instant.now())
+            .watchedAt(WATCHED_MOVIE_COMPLETED_AT)
             .durationSeconds(7200)
             .build());
 
@@ -186,15 +188,11 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
 
       var page = movieService.getMoviesWithFilter(buildForwardOptions(20, filter));
 
-      // inProgressMovie has session_progress (most recent activity).
-      // watchedMovie has no session_progress (only watch_history — not used for sort).
-      // unwatchedMovie has no activity at all.
-      // Both nulls sort last under nullsLast; order between them is not guaranteed.
-      var titles = page.items().stream().map(item -> item.item().getTitle()).toList();
-      assertThat(titles).hasSize(3);
-      assertThat(titles.getFirst()).isEqualTo("In Progress Movie");
-      assertThat(titles.subList(1, 3))
-          .containsExactlyInAnyOrder("Watched Movie", "Unwatched Movie");
+      // inProgressMovie's session progress is newer than watchedMovie's completion.
+      // unwatchedMovie has no activity, so it sorts last under nullsLast.
+      assertThat(page.items())
+          .extracting(item -> item.item().getTitle())
+          .containsExactly("In Progress Movie", "Watched Movie", "Unwatched Movie");
     }
 
     @Test
