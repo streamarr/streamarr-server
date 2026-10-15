@@ -119,7 +119,7 @@ public class ImageService {
    * attempt already stored artwork of the type, that artwork stays and the result names its key.
    *
    * @throws com.streamarr.server.exceptions.ObsoleteArtworkStepsAttemptException if a newer artwork
-   *     request replaced the attempt's generation or the item was deleted
+   *     request replaced the attempt's generation or the target was deleted
    */
   @Transactional(propagation = Propagation.REQUIRES_NEW)
   public void saveImages(List<Image> images, ArtworkStepsAttempt attempt) {
@@ -146,7 +146,7 @@ public class ImageService {
    * replacement to commit wins (ADR 0031), and its result is the one stored.
    *
    * @throws com.streamarr.server.exceptions.ObsoleteArtworkStepsAttemptException if a newer artwork
-   *     request replaced the attempt's generation or the item was deleted
+   *     request replaced the attempt's generation or the target was deleted
    */
   @Transactional(propagation = Propagation.REQUIRES_NEW)
   public void replaceImages(ProcessedImage replacement, ArtworkStepsAttempt attempt) {

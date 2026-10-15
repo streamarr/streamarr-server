@@ -68,7 +68,7 @@ public class ArtworkRunWaiter {
     return summary;
   }
 
-  // Removes each target whose requested artwork is finished from pending, and counts its results.
+  // Removes each target whose awaited artwork is finished from pending, and counts its results.
   private FinishedImageCounts countFinishedArtwork(
       Map<ArtworkTarget, AwaitedArtwork> pending, FinishedImageCounts counts) {
     var total = counts;
@@ -87,7 +87,7 @@ public class ArtworkRunWaiter {
     return total;
   }
 
-  // Returns the results that finish the requested artwork, or nothing while it is still pending.
+  // Returns the results that finish the awaited artwork, or nothing while it is still pending.
   private static Optional<List<ItemResult>> finishedResults(
       ArtworkCompletionEvidence evidence, AwaitedArtwork awaited) {
     var resultsByType = new EnumMap<ImageType, ItemResult>(ImageType.class);

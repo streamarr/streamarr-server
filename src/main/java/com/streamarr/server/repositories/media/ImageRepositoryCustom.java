@@ -13,7 +13,7 @@ public interface ImageRepositoryCustom {
    * Inserts the images that do not exist yet and returns their ids.
    *
    * @throws com.streamarr.server.exceptions.ObsoleteArtworkStepsAttemptException if the attempt's
-   *     generation is no longer the item's pending artwork request or the item no longer exists
+   *     generation is no longer the target's pending artwork request or the target no longer exists
    */
   Set<UUID> insertAllIfAbsent(List<Image> images, ArtworkStepsAttempt attempt);
 
@@ -21,7 +21,7 @@ public interface ImageRepositoryCustom {
    * Replaces one logical artwork and returns the paths of the replaced images.
    *
    * @throws com.streamarr.server.exceptions.ObsoleteArtworkStepsAttemptException if the attempt's
-   *     generation is no longer the item's pending artwork request or the item no longer exists
+   *     generation is no longer the target's pending artwork request or the target no longer exists
    */
   List<String> replaceLogicalArtwork(List<Image> images, ArtworkStepsAttempt attempt);
 
