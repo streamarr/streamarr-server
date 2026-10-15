@@ -27,6 +27,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -107,6 +108,34 @@ class WatchStateMutationIT extends AbstractIntegrationTest {
 
     expectMarkedItem(mark(MARK_UNWATCHED, itemId), MARK_UNWATCHED, kind, itemId)
         .andExpect(jsonPath("$.data.markUnwatched.item.watchStatus").value("UNWATCHED"));
+  }
+
+  @Test
+  @DisplayName(
+      "Should return each item in its resulting state when one request marks it watched then"
+          + " unwatched")
+  void shouldReturnEachItemInItsResultingStateWhenOneRequestMarksItWatchedThenUnwatched()
+      throws Exception {
+    var movieId = createItem(ItemKind.MOVIE);
+    var markBothQuery =
+        """
+        mutation {
+          watched: markWatched(input: {itemId: "%1$s"}) {
+            item { ... on Movie { watchStatus } }
+          }
+          unwatched: markUnwatched(input: {itemId: "%1$s"}) {
+            item { ... on Movie { watchStatus } }
+          }
+        }
+        """
+            .formatted(movieId);
+
+    mockMvc
+        .perform(graphqlRequest(authTestSupport.profileBearer(identity), markBothQuery))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.watched.item.watchStatus").value("WATCHED"))
+        .andExpect(jsonPath("$.data.unwatched.item.watchStatus").value("UNWATCHED"));
   }
 
   @ParameterizedTest(name = "{0}")
