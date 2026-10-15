@@ -55,6 +55,8 @@ import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
@@ -1282,6 +1284,56 @@ class HlsStreamingServiceTest {
     assertThat(service.createSession(oneMore))
         .isEqualTo(
             Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should start no job attempt past the transcode limit when an initialization segment request needs a variant")
+  void
+      shouldStartNoJobAttemptPastTheTranscodeLimitWhenAnInitializationSegmentRequestNeedsAVariant() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .framerate(OptionalDouble.of(23.976))
+            .videoCodec("hevc")
+            .bitrate(8_000_000L)
+            .build());
+    var first = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    var delivery = coordinator.deliver(first.getSessionId(), "1080p", "1080p/init.mp4");
+
+    assertThat(delivery).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
+    assertThat(first.getVariantHandles()).containsOnlyKeys("480p");
+  }
+
+  @Test
+  @DisplayName(
+      "Should start the requested variant at the transcode limit when its media segment request stops the stream session's other variant")
+  void
+      shouldStartTheRequestedVariantAtTheTranscodeLimitWhenItsMediaSegmentRequestStopsTheStreamSessionsOtherVariant()
+          throws Exception {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .framerate(OptionalDouble.of(23.976))
+            .videoCodec("hevc")
+            .bitrate(8_000_000L)
+            .build());
+    var first = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    var delivery =
+        CompletableFuture.supplyAsync(
+            () -> coordinator.deliver(first.getSessionId(), "1080p", "1080p/segment1.m4s"));
+    transcodeExecutor.awaitStartedRequestCount(startedBefore + 1);
+    segmentStore.addSegment(first.getSessionId(), "1080p/segment1.m4s", new byte[] {1});
+
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(first.getVariantHandles()).containsOnlyKeys("1080p");
   }
 
   @Test

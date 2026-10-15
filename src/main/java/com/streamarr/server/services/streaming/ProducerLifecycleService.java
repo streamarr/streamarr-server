@@ -326,9 +326,9 @@ public class ProducerLifecycleService {
    * Applies the on-demand rules of ADR 0019 to one segment request under one session lock. A
    * media-segment request stops the job attempts of the other video variants. A request for a
    * variant without a job attempt then starts that variant: at the requested media segment, or at
-   * the current segment for the initialization segment. A stored media segment starts nothing. A
-   * variant that does not start stays without a job attempt, so recovery answers the request as
-   * {@link RecoveryResult#VARIANT_NOT_RUNNING}.
+   * the current segment for the initialization segment. A stored media segment starts nothing, and
+   * neither does a full transcode limit. A variant that does not start stays without a job attempt,
+   * so recovery answers the request as {@link RecoveryResult#VARIANT_NOT_RUNNING}.
    */
   public void prepareRequestedVariant(UUID sessionId, String variantLabel, String segmentName) {
     withSessionLock(
@@ -384,6 +384,15 @@ public class ProducerLifecycleService {
 
     var startSequenceNumber =
         SegmentNames.indexOf(segmentName).orElseGet(session::getCurrentSegment);
+    if (!hasConfiguredTranscodeSlotFor(session)) {
+      log.warn(
+          "Transcode limit reached: session {} variant {} did not start at segment {}",
+          sessionId,
+          variantLabel,
+          startSequenceNumber);
+      return;
+    }
+
     try {
       startVariant(session, variantLabel, startSequenceNumber);
     } catch (TranscodeException e) {
@@ -414,6 +423,10 @@ public class ProducerLifecycleService {
 
     return SegmentNames.indexOf(segmentName).isEmpty()
         || !segmentStore.segmentExists(session.getSessionId(), segmentName);
+  }
+
+  private boolean hasConfiguredTranscodeSlotFor(StreamSession session) {
+    return !requiresTranscode(session) || freeConfiguredTranscodeSlots() > 0;
   }
 
   /**

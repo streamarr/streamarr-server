@@ -308,6 +308,23 @@ class ProducerLifecycleServiceTest {
 
   @Test
   @DisplayName(
+      "Should start a remux stream session's variant on demand when transcodes fill the transcode limit")
+  void shouldStartARemuxStreamSessionsVariantOnDemandWhenTranscodesFillTheTranscodeLimit() {
+    startedLadderSession();
+    startedLadderSession();
+    startedLadderSession();
+    var remuxSession = defaultSessionBuilder().build();
+    runtimeRegistry.save(remuxSession);
+
+    lifecycle.prepareRequestedVariant(
+        remuxSession.getSessionId(), StreamSession.defaultVariant(), "segment4.m4s");
+
+    assertThat(transcodeExecutor.getStartedRequests().getLast().startSequenceNumber()).isEqualTo(4);
+    assertThat(remuxSession.getVariantHandle(StreamSession.defaultVariant())).isPresent();
+  }
+
+  @Test
+  @DisplayName(
       "Should start nothing when positioning a variant that the stream session does not offer")
   void shouldStartNothingWhenPositioningAVariantThatTheStreamSessionDoesNotOffer() {
     var session = startedLadderSession();
