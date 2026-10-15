@@ -19,6 +19,7 @@ import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.security.TestIdentityConstants;
 import com.streamarr.server.support.security.WithProfileContext;
 import jakarta.persistence.EntityManager;
+import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
@@ -46,6 +47,8 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
   @Autowired private EntityManager entityManager;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private AuditColumnFixtures auditColumns;
+
+  private static final Instant EARLIER_REPORT_AT = Instant.parse("2026-01-01T00:00:00Z");
 
   private AuthTestSupport.TestIdentity identity;
   private UUID profileId;
@@ -215,18 +218,79 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
 
       entityManager.clear();
 
-      sessionProgressRepository.upsertProgress(
-          upsertBuilder(sessionId, fixture.mediaFileId())
-              .positionSeconds(600)
-              .percentComplete(50.0)
-              .durationSeconds(1200)
-              .build());
+      var changed =
+          sessionProgressRepository.upsertProgress(
+              upsertBuilder(sessionId, fixture.mediaFileId())
+                  .positionSeconds(600)
+                  .percentComplete(50.0)
+                  .durationSeconds(1200)
+                  .build());
 
       entityManager.clear();
 
       var progress = sessionProgressRepository.findBySessionId(sessionId).orElseThrow();
+      assertThat(changed).isTrue();
       assertThat(progress.getPositionSeconds()).isEqualTo(600);
       assertThat(progress.getPercentComplete()).isEqualTo(50.0);
+    }
+
+    @Test
+    @DisplayName("Should keep the row unchanged when a repeated report carries the same position")
+    void shouldKeepRowUnchangedWhenRepeatedReportCarriesTheSamePosition() {
+      var fixture = createMovieWithFile();
+      var sessionId = UUID.randomUUID();
+      var report =
+          upsertBuilder(sessionId, fixture.mediaFileId())
+              .positionSeconds(300)
+              .percentComplete(25.0)
+              .durationSeconds(1200)
+              .build();
+
+      try {
+        upsertInTransaction(report);
+        auditColumns.overwriteLastModifiedOn(
+            SESSION_PROGRESS, SESSION_PROGRESS.SESSION_ID.eq(sessionId), EARLIER_REPORT_AT);
+
+        var changed =
+            transactionTemplate.execute(_ -> sessionProgressRepository.upsertProgress(report));
+
+        var progress = sessionProgressRepository.findBySessionId(sessionId).orElseThrow();
+        assertThat(changed).isFalse();
+        assertThat(progress.getLastModifiedOn()).isEqualTo(EARLIER_REPORT_AT);
+      } finally {
+        deleteProgressAndMovie(sessionId, fixture);
+      }
+    }
+
+    @Test
+    @DisplayName("Should update the row when a repeated report carries a new duration")
+    void shouldUpdateRowWhenRepeatedReportCarriesANewDuration() {
+      var fixture = createMovieWithFile();
+      var sessionId = UUID.randomUUID();
+      var report =
+          upsertBuilder(sessionId, fixture.mediaFileId())
+              .positionSeconds(300)
+              .percentComplete(25.0)
+              .durationSeconds(1200);
+
+      try {
+        upsertInTransaction(report.build());
+        auditColumns.overwriteLastModifiedOn(
+            SESSION_PROGRESS, SESSION_PROGRESS.SESSION_ID.eq(sessionId), EARLIER_REPORT_AT);
+
+        var changed =
+            transactionTemplate.execute(
+                _ ->
+                    sessionProgressRepository.upsertProgress(
+                        report.percentComplete(20.0).durationSeconds(1500).build()));
+
+        var progress = sessionProgressRepository.findBySessionId(sessionId).orElseThrow();
+        assertThat(changed).isTrue();
+        assertThat(progress.getDurationSeconds()).isEqualTo(1500);
+        assertThat(progress.getLastModifiedOn()).isAfter(EARLIER_REPORT_AT);
+      } finally {
+        deleteProgressAndMovie(sessionId, fixture);
+      }
     }
 
     // A test-managed transaction begins before the signed-in Profile is installed, so these

@@ -1,10 +1,13 @@
 package com.streamarr.server.repositories.streaming;
 
 import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
+import static org.jooq.impl.DSL.excluded;
+import static org.jooq.impl.DSL.row;
 
 import java.util.Collection;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
 
 @RequiredArgsConstructor
@@ -27,8 +30,23 @@ public class SessionProgressRepositoryCustomImpl implements SessionProgressRepos
             .set(SESSION_PROGRESS.POSITION_SECONDS, progress.positionSeconds())
             .set(SESSION_PROGRESS.PERCENT_COMPLETE, progress.percentComplete())
             .set(SESSION_PROGRESS.DURATION_SECONDS, progress.durationSeconds())
+            .where(reportChangesProgress())
             .execute();
     return rowsAffected > 0;
+  }
+
+  // A repeated report leaves the row and its last-modified time alone. The time then still tells
+  // which of two devices moved the position last.
+  private static Condition reportChangesProgress() {
+    return row(
+            SESSION_PROGRESS.POSITION_SECONDS,
+            SESSION_PROGRESS.PERCENT_COMPLETE,
+            SESSION_PROGRESS.DURATION_SECONDS)
+        .isDistinctFrom(
+            row(
+                excluded(SESSION_PROGRESS.POSITION_SECONDS),
+                excluded(SESSION_PROGRESS.PERCENT_COMPLETE),
+                excluded(SESSION_PROGRESS.DURATION_SECONDS)));
   }
 
   @Override
