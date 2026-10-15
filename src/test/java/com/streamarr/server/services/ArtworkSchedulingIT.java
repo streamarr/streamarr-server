@@ -168,9 +168,14 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
             + " SET picked = true, picked_by = 'crashed-server',"
             + " last_heartbeat = now() - interval '1 hour'");
 
-    startPrimaryScheduler(new AbstractSchedulerListener() {});
+    var completed = new CompletableFuture<ExecutionComplete>();
+
+    startPrimaryScheduler(completedInto(completed));
 
     assertThat(awaitRun(run).counts()).isEqualTo(ArtworkCounts.builder().saved(2).build());
+    // The run sees each result once it is stored; the execution's completion removes the task
+    // afterwards.
+    completed.get(BOUND.toSeconds(), TimeUnit.SECONDS);
     assertThat(scheduledArtworkTasks(PRIMARY_TABLE)).isZero();
   }
 
