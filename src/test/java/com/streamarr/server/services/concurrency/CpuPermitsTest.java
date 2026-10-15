@@ -52,8 +52,8 @@ class CpuPermitsTest {
 
   @Test
   @DisplayName(
-      "Should give a freed permit to a waiting primary acquirer before an earlier background one")
-  void shouldGiveAFreedPermitToAWaitingPrimaryAcquirerBeforeAnEarlierBackgroundOne()
+      "Should give a freed permit to the waiting primary acquirer when an earlier background one also waits")
+  void shouldGiveAFreedPermitToTheWaitingPrimaryAcquirerWhenAnEarlierBackgroundOneAlsoWaits()
       throws Exception {
     var permits = new CpuPermits(1);
     var order = new CopyOnWriteArrayList<String>();
@@ -124,14 +124,14 @@ class CpuPermitsTest {
   }
 
   @Test
-  @DisplayName("Should reject fewer than one permit")
-  void shouldRejectFewerThanOnePermit() {
+  @DisplayName("Should reject the permits when fewer than one is configured")
+  void shouldRejectThePermitsWhenFewerThanOneIsConfigured() {
     assertThatThrownBy(() -> new CpuPermits(0)).isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
-  @DisplayName("Should reject work without a priority")
-  void shouldRejectWorkWithoutAPriority() {
+  @DisplayName("Should reject work when it has no priority")
+  void shouldRejectWorkWhenItHasNoPriority() {
     var permits = new CpuPermits(1);
 
     assertThatThrownBy(() -> permits.runWithPermit(null, () -> "poster"))

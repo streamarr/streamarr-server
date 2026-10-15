@@ -28,7 +28,7 @@ public class FakeItemResultRepository implements ItemResultRepository {
 
   private final Map<Key, ItemResult> results = new ConcurrentHashMap<>();
   private final Map<Key, Instant> recordedAt = new ConcurrentHashMap<>();
-  private volatile Clock recordingClock = Clock.systemUTC();
+  private volatile Clock storageClock = Clock.systemUTC();
   private final AtomicReference<RuntimeException> writeFailure = new AtomicReference<>();
   private final AtomicReference<RuntimeException> artworkResultsFailure = new AtomicReference<>();
   private final AtomicInteger remainingArtworkResultsFailures = new AtomicInteger();
@@ -71,7 +71,7 @@ public class FakeItemResultRepository implements ItemResultRepository {
           return result;
         });
     if (recorded.get()) {
-      recordedAt.put(keyOf(result), recordingClock.instant());
+      recordedAt.put(keyOf(result), storageClock.instant());
     }
 
     return recorded.get();
@@ -85,7 +85,7 @@ public class FakeItemResultRepository implements ItemResultRepository {
     }
 
     results.put(keyOf(result), result);
-    recordedAt.put(keyOf(result), recordingClock.instant());
+    recordedAt.put(keyOf(result), storageClock.instant());
   }
 
   @Override
@@ -130,9 +130,11 @@ public class FakeItemResultRepository implements ItemResultRepository {
     return tallies;
   }
 
-  /** Records when each result was stored, as the database's {@code recorded_at} does. */
-  public void recordResultsAt(Clock clock) {
-    this.recordingClock = clock;
+  /**
+   * Stamps each stored result with the clock's time, as the database's {@code recorded_at} does.
+   */
+  public void stampStoredResultsWith(Clock clock) {
+    this.storageClock = clock;
   }
 
   private static ArtworkOutcomeTally tallyOf(ItemOutcome outcome) {

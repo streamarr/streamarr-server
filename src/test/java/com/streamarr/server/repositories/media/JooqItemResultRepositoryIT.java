@@ -261,8 +261,9 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should replace a result of an older generation whatever its attempt time")
-  void shouldReplaceAResultOfAnOlderGenerationWhateverItsAttemptTime() {
+  @DisplayName(
+      "Should replace a result when it belongs to an older generation whatever its attempt time")
+  void shouldReplaceAResultWhenItBelongsToAnOlderGenerationWhateverItsAttemptTime() {
     var itemId = savedMovieId();
     itemResults.overwrite(
         artwork(itemId, ImageType.POSTER)

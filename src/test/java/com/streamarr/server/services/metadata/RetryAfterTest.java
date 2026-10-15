@@ -52,8 +52,8 @@ class RetryAfterTest {
   }
 
   @Test
-  @DisplayName("Should reject a missing header or clock reading")
-  void shouldRejectAMissingHeaderOrClockReading() {
+  @DisplayName("Should reject a parse when its header or clock reading is missing")
+  void shouldRejectAParseWhenItsHeaderOrClockReadingIsMissing() {
     var noHeader = Optional.<String>empty();
 
     assertThatNullPointerException().isThrownBy(() -> RetryAfter.parse(null, NOW));

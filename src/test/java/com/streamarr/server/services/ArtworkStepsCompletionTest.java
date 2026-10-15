@@ -102,8 +102,9 @@ class ArtworkStepsCompletionTest {
   }
 
   @Test
-  @DisplayName("Should run an interrupted attempt again at once without counting a failure")
-  void shouldRunAnInterruptedAttemptAgainAtOnceWithoutCountingAFailure() {
+  @DisplayName(
+      "Should run an attempt again at once without counting a failure when it was interrupted")
+  void shouldRunAnAttemptAgainAtOnceWithoutCountingAFailureWhenItWasInterrupted() {
     var generation = request("/poster.jpg");
 
     complete(new ArtworkStepsOutcome.Interrupted(generation), execution(2));
@@ -169,8 +170,8 @@ class ArtworkStepsCompletionTest {
   }
 
   @Test
-  @DisplayName("Should reject a completion built without its collaborators")
-  void shouldRejectACompletionBuiltWithoutItsCollaborators() {
+  @DisplayName("Should reject a completion when a collaborator is missing")
+  void shouldRejectACompletionWhenACollaboratorIsMissing() {
     var transactionManager = new FakeTransactionManager();
     var clock = Clock.fixed(NOW, ZoneOffset.UTC);
 

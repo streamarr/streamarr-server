@@ -215,8 +215,8 @@ public interface ArtworkRequestRepositoryContract {
   }
 
   @Test
-  @DisplayName("Should count the images that pending requests ask for by item type")
-  default void shouldCountTheImagesThatPendingRequestsAskForByItemType() {
+  @DisplayName("Should count pending images by item type when requests are pending")
+  default void shouldCountPendingImagesByItemTypeWhenRequestsArePending() {
     save(createMovie(), ImageRefreshMode.PRESERVE, POSTER);
     save(createMovie(), ImageRefreshMode.PRESERVE, POSTER, BACKDROP);
     var person = createPerson();

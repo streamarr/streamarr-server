@@ -49,8 +49,10 @@ class ArtworkFailureTest {
 
   @ParameterizedTest
   @ValueSource(ints = {400, 401, 403, 404, 410})
-  @DisplayName("Should classify another client error as a terminal download failure")
-  void shouldClassifyAnotherClientErrorAsATerminalDownloadFailure(int statusCode) {
+  @DisplayName(
+      "Should classify the failure as a terminal download failure when the host answers another client error")
+  void shouldClassifyTheFailureAsATerminalDownloadFailureWhenTheHostAnswersAnotherClientError(
+      int statusCode) {
     var failure =
         ArtworkFailure.classify(
             new ImageDownloadException(statusCode, "/poster.jpg", Optional.empty()));
@@ -67,16 +69,17 @@ class ArtworkFailureTest {
   }
 
   @Test
-  @DisplayName("Should classify an undecodable image as terminal invalid media")
-  void shouldClassifyAnUndecodableImageAsTerminalInvalidMedia() {
+  @DisplayName(
+      "Should classify the failure as terminal invalid media when the image cannot be decoded")
+  void shouldClassifyTheFailureAsTerminalInvalidMediaWhenTheImageCannotBeDecoded() {
     var failure = ArtworkFailure.classify(new ImageProcessingException("Failed to decode"));
 
     assertThat(failure).isEqualTo(new Terminal(ItemFailureReason.INVALID_MEDIA));
   }
 
   @Test
-  @DisplayName("Should classify a storage write failure as retryable")
-  void shouldClassifyAStorageWriteFailureAsRetryable() {
+  @DisplayName("Should classify the failure as retryable when storage cannot be written")
+  void shouldClassifyTheFailureAsRetryableWhenStorageCannotBeWritten() {
     var failure = ArtworkFailure.classify(new ImageStorageException(new IOException("disk full")));
 
     assertThat(failure).isEqualTo(new Retryable(Optional.empty()));
@@ -91,8 +94,8 @@ class ArtworkFailureTest {
   }
 
   @Test
-  @DisplayName("Should record a retryable failure as temporary")
-  void shouldRecordARetryableFailureAsTemporary() {
+  @DisplayName("Should store the failure reason as temporary when the failure is retryable")
+  void shouldStoreTheFailureReasonAsTemporaryWhenTheFailureIsRetryable() {
     assertThat(new Retryable(Optional.empty()).reason()).isEqualTo(ItemFailureReason.TEMPORARY);
   }
 
@@ -121,15 +124,15 @@ class ArtworkFailureTest {
   }
 
   @Test
-  @DisplayName("Should reject a missing cause or Retry-After")
-  void shouldRejectAMissingCauseOrRetryAfter() {
+  @DisplayName("Should reject a classification when its cause or Retry-After is missing")
+  void shouldRejectAClassificationWhenItsCauseOrRetryAfterIsMissing() {
     assertThatNullPointerException().isThrownBy(() -> ArtworkFailure.classify(null));
     assertThatNullPointerException().isThrownBy(() -> ArtworkFailure.retryDelay(0, null));
   }
 
   @Test
-  @DisplayName("Should reject a download failure without its path or Retry-After")
-  void shouldRejectADownloadFailureWithoutItsPathOrRetryAfter() {
+  @DisplayName("Should reject a download failure when its path or Retry-After is missing")
+  void shouldRejectADownloadFailureWhenItsPathOrRetryAfterIsMissing() {
     var noDelay = Optional.<Duration>empty();
 
     assertThatNullPointerException()

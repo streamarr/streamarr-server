@@ -57,13 +57,13 @@ class CreditServiceTest {
   }
 
   private static PendingArtworkRequest backgroundRequest(
-      UUID itemId, ImageEntityType itemType, List<ImageSource> sources, ImageRefreshMode mode) {
-    return PendingArtworkRequest.builder()
-        .artwork(
-            ArtworkSources.builder().entityId(itemId).entityType(itemType).sources(sources).build())
-        .refreshMode(mode)
-        .generation(0)
-        .build();
+      ArtworkSources artwork, ImageRefreshMode mode) {
+    return PendingArtworkRequest.builder().artwork(artwork).refreshMode(mode).generation(0).build();
+  }
+
+  private static ArtworkSources artworkOf(
+      UUID itemId, ImageEntityType itemType, List<ImageSource> sources) {
+    return ArtworkSources.builder().entityId(itemId).entityType(itemType).sources(sources).build();
   }
 
   @Test
@@ -122,9 +122,7 @@ class CreditServiceTest {
         .usingRecursiveFieldByFieldElementComparatorIgnoringFields("generation")
         .containsExactly(
             backgroundRequest(
-                saved.cast().getFirst().getId(),
-                ImageEntityType.PERSON,
-                profile,
+                artworkOf(saved.cast().getFirst().getId(), ImageEntityType.PERSON, profile),
                 ImageRefreshMode.PRESERVE));
   }
 
@@ -172,14 +170,10 @@ class CreditServiceTest {
         .usingRecursiveFieldByFieldElementComparatorIgnoringFields("generation")
         .containsExactlyInAnyOrder(
             backgroundRequest(
-                saved.cast().getFirst().getId(),
-                ImageEntityType.PERSON,
-                profile,
+                artworkOf(saved.cast().getFirst().getId(), ImageEntityType.PERSON, profile),
                 ImageRefreshMode.FORCE_REFRESH),
             backgroundRequest(
-                saved.studios().iterator().next().getId(),
-                ImageEntityType.COMPANY,
-                logo,
+                artworkOf(saved.studios().iterator().next().getId(), ImageEntityType.COMPANY, logo),
                 ImageRefreshMode.FORCE_REFRESH));
   }
 

@@ -25,8 +25,8 @@ class ArtworkStepsTaskTest {
   private static final UUID ITEM_ID = UUID.fromString("6f1d7a52-9c1e-4c55-8f0b-0b3a7d1e2c11");
 
   @Test
-  @DisplayName("Should name a task instance after the item's type and id")
-  void shouldNameATaskInstanceAfterTheItemsTypeAndId() {
+  @DisplayName("Should name a task instance after the item's type and id when an item is scheduled")
+  void shouldNameATaskInstanceAfterTheItemsTypeAndIdWhenAnItemIsScheduled() {
     var item = new ArtworkItem(ITEM_ID, ImageEntityType.PERSON);
 
     assertThat(ArtworkStepsTask.instanceId(item))
@@ -34,16 +34,16 @@ class ArtworkStepsTaskTest {
   }
 
   @Test
-  @DisplayName("Should name the task it creates")
-  void shouldNameTheTaskItCreates() {
+  @DisplayName("Should name the task when it is created")
+  void shouldNameTheTaskWhenItIsCreated() {
     var task = ArtworkStepsTask.create("primary-artwork-steps", steps(), completion());
 
     assertThat(task.getName()).isEqualTo("primary-artwork-steps");
   }
 
   @Test
-  @DisplayName("Should reject a task without its name, steps or completion")
-  void shouldRejectATaskWithoutItsNameStepsOrCompletion() {
+  @DisplayName("Should reject a task when its name, steps or completion is missing")
+  void shouldRejectATaskWhenItsNameStepsOrCompletionIsMissing() {
     var steps = steps();
     var completion = completion();
 
@@ -60,8 +60,8 @@ class ArtworkStepsTaskTest {
   @EnumSource(
       value = ImageEntityType.class,
       names = {"MOVIE", "SERIES", "SEASON", "EPISODE"})
-  @DisplayName("Should give movie, series, season and episode artwork primary priority")
-  void shouldGiveMovieSeriesSeasonAndEpisodeArtworkPrimaryPriority(ImageEntityType itemType) {
+  @DisplayName("Should give primary priority when the item is a movie, series, season or episode")
+  void shouldGivePrimaryPriorityWhenTheItemIsAMovieSeriesSeasonOrEpisode(ImageEntityType itemType) {
     assertThat(ArtworkPriority.of(itemType)).isEqualTo(ArtworkPriority.PRIMARY);
   }
 
@@ -69,14 +69,14 @@ class ArtworkStepsTaskTest {
   @EnumSource(
       value = ImageEntityType.class,
       names = {"PERSON", "COMPANY"})
-  @DisplayName("Should give person and company artwork background priority")
-  void shouldGivePersonAndCompanyArtworkBackgroundPriority(ImageEntityType itemType) {
+  @DisplayName("Should give background priority when the item is a person or company")
+  void shouldGiveBackgroundPriorityWhenTheItemIsAPersonOrCompany(ImageEntityType itemType) {
     assertThat(ArtworkPriority.of(itemType)).isEqualTo(ArtworkPriority.BACKGROUND);
   }
 
   @Test
-  @DisplayName("Should reject requested artwork without its item or awaited image types")
-  void shouldRejectRequestedArtworkWithoutItsItemOrAwaitedImageTypes() {
+  @DisplayName("Should reject requested artwork when its item or awaited image types are missing")
+  void shouldRejectRequestedArtworkWhenItsItemOrAwaitedImageTypesAreMissing() {
     var item = new ArtworkItem(ITEM_ID, ImageEntityType.MOVIE);
     var awaited = Set.of(ImageType.POSTER);
 

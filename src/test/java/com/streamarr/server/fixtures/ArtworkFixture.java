@@ -69,7 +69,7 @@ public record ArtworkFixture(
     var results = Objects.requireNonNullElseGet(itemResults, FakeItemResultRepository::new);
     var resultSleeper = Objects.requireNonNullElse(sleeper, ArtworkFixture::yieldUntilInterrupted);
 
-    results.recordResultsAt(artworkClock);
+    results.stampStoredResultsWith(artworkClock);
     var requests = new FakeArtworkRequestRepository(results);
     images.checkArtworkGenerationsWith(requests::isPendingGeneration);
     var imageService =
@@ -89,7 +89,7 @@ public record ArtworkFixture(
             .clock(artworkClock)
             .build();
     var scheduling = new FakeArtworkScheduling();
-    scheduling.runStepsWith(steps, requests);
+    scheduling.runStepsWith(steps, requests, artworkClock);
     return new ArtworkFixture(
         new ArtworkService(requests, scheduling, imageService, artworkClock),
         ArtworkRuns.builder()

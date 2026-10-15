@@ -49,20 +49,20 @@ class ArtworkPropertiesTest {
   }
 
   @Test
-  @DisplayName("Should reject a primary scheduler without a thread")
-  void shouldRejectAPrimarySchedulerWithoutAThread() {
+  @DisplayName("Should reject the settings when the primary scheduler has no thread")
+  void shouldRejectTheSettingsWhenThePrimarySchedulerHasNoThread() {
     assertThatIllegalArgumentException().isThrownBy(() -> new ArtworkProperties(0, 4, null));
   }
 
   @Test
-  @DisplayName("Should reject a background scheduler without a thread")
-  void shouldRejectABackgroundSchedulerWithoutAThread() {
+  @DisplayName("Should reject the settings when the background scheduler has no thread")
+  void shouldRejectTheSettingsWhenTheBackgroundSchedulerHasNoThread() {
     assertThatIllegalArgumentException().isThrownBy(() -> new ArtworkProperties(16, 0, null));
   }
 
   @Test
-  @DisplayName("Should reject a result check interval that is not positive")
-  void shouldRejectAResultCheckIntervalThatIsNotPositive() {
+  @DisplayName("Should reject the settings when the result check interval is not positive")
+  void shouldRejectTheSettingsWhenTheResultCheckIntervalIsNotPositive() {
     assertThatIllegalArgumentException()
         .isThrownBy(() -> new ArtworkProperties(16, 4, Duration.ZERO));
   }

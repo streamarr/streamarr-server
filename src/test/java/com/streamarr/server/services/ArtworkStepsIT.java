@@ -79,8 +79,9 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should save the image and its result for the request's generation")
-  void shouldSaveTheImageAndItsResultForTheRequestsGeneration() {
+  @DisplayName(
+      "Should save the image and its result for the request's generation when the download succeeds")
+  void shouldSaveTheImageAndItsResultForTheRequestsGenerationWhenTheDownloadSucceeds() {
     stubImage("/poster.jpg");
     var generation = request("/poster.jpg", ImageRefreshMode.PRESERVE);
 
@@ -254,8 +255,9 @@ class ArtworkStepsIT extends AbstractWireMockIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should report artwork progress from stored requests and results after a restart")
-  void shouldReportArtworkProgressFromStoredRequestsAndResultsAfterARestart() {
+  @DisplayName(
+      "Should report artwork progress from stored requests and results when the server restarts")
+  void shouldReportArtworkProgressFromStoredRequestsAndResultsWhenTheServerRestarts() {
     stubImage("/poster.jpg");
     request("/poster.jpg", ImageRefreshMode.PRESERVE);
     var clock = new MutableClock(new AtomicReference<>(Instant.now()));

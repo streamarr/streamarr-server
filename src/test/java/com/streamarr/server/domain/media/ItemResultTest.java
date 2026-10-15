@@ -16,32 +16,32 @@ import org.junit.jupiter.params.provider.EnumSource;
 class ItemResultTest {
 
   @Test
-  @DisplayName("Should reject an artwork result without an artwork generation")
-  void shouldRejectAnArtworkResultWithoutAnArtworkGeneration() {
+  @DisplayName("Should reject an artwork result when it names no artwork generation")
+  void shouldRejectAnArtworkResultWhenItNamesNoArtworkGeneration() {
     var result = artwork().artworkGeneration(null);
 
     assertThatIllegalArgumentException().isThrownBy(result::build);
   }
 
   @Test
-  @DisplayName("Should reject an artwork result without an image type")
-  void shouldRejectAnArtworkResultWithoutAnImageType() {
+  @DisplayName("Should reject an artwork result when it names no image type")
+  void shouldRejectAnArtworkResultWhenItNamesNoImageType() {
     var result = artwork().imageType(null);
 
     assertThatIllegalArgumentException().isThrownBy(result::build);
   }
 
   @Test
-  @DisplayName("Should reject a metadata result that names an artwork generation")
-  void shouldRejectAMetadataResultThatNamesAnArtworkGeneration() {
+  @DisplayName("Should reject a metadata result when it names an artwork generation")
+  void shouldRejectAMetadataResultWhenItNamesAnArtworkGeneration() {
     var result = metadata().artworkGeneration(1L);
 
     assertThatIllegalArgumentException().isThrownBy(result::build);
   }
 
   @Test
-  @DisplayName("Should reject a metadata result that names an image type")
-  void shouldRejectAMetadataResultThatNamesAnImageType() {
+  @DisplayName("Should reject a metadata result when it names an image type")
+  void shouldRejectAMetadataResultWhenItNamesAnImageType() {
     var result = metadata().imageType(ImageType.POSTER);
 
     assertThatIllegalArgumentException().isThrownBy(result::build);

@@ -874,9 +874,8 @@ class LibraryManagementServiceTest {
 
     @Test
     @DisplayName(
-        "Should finish the scan healthy after a retried artwork step stores the result that failed"
-            + " to save")
-    void shouldFinishTheScanHealthyAfterARetriedArtworkStepStoresTheResultThatFailedToSave()
+        "Should finish the scan healthy when a retried artwork step stores the result that failed to save")
+    void shouldFinishTheScanHealthyWhenARetriedArtworkStepStoresTheResultThatFailedToSave()
         throws Exception {
       createMovieFile(createRootLibraryDirectory(), "About Time", "About Time (2013).mkv");
       var itemResults = new FakeItemResultRepository();

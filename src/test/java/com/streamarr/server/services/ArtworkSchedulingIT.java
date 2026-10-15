@@ -9,7 +9,6 @@ import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.kagkarlsson.scheduler.CurrentlyExecuting;
-import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.streamarr.server.AbstractWireMockIntegrationTest;
@@ -36,8 +35,8 @@ import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.TmdbImageDownloader;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
+import com.streamarr.server.support.ArtworkSchedulerStarter;
 import com.streamarr.server.support.BoundedTask;
-import com.streamarr.server.support.UnstartedSchedulerConfiguration;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -50,17 +49,15 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.env.Environment;
+import org.springframework.context.ApplicationContext;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
@@ -68,8 +65,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
 
   private static final Duration BOUND = Duration.ofSeconds(20);
-  private static final String PRIMARY_TABLE = "primary_artwork_scheduled_tasks";
-  private static final String BACKGROUND_TABLE = "background_artwork_scheduled_tasks";
+  private static final String PRIMARY_TABLE = ArtworkSchedulerStarter.PRIMARY_TABLE;
+  private static final String BACKGROUND_TABLE = ArtworkSchedulerStarter.BACKGROUND_TABLE;
   private static final String PROBE_TABLE = "scheduled_tasks";
   private static final ImageSource POSTER = new TmdbImageSource(ImageType.POSTER, "/poster.jpg");
   private static final ImageSource BACKDROP =
@@ -88,12 +85,9 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MovieRepository movieRepository;
   @Autowired private PersonRepository personRepository;
-  @Autowired private DbSchedulerCustomizer customizer;
-  @Autowired private DataSource dataSource;
-  @Autowired private PlatformTransactionManager transactionManager;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private JdbcTemplate jdbcTemplate;
-  @Autowired private Environment environment;
+  @Autowired private ApplicationContext applicationContext;
 
   private final List<ArtworkScheduler> startedSchedulers = new ArrayList<>();
   private UUID movieId;
@@ -103,16 +97,23 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   @BeforeEach
   void setUp() {
     contextSchedulers.stop();
-    jdbcTemplate.update("DELETE FROM " + PRIMARY_TABLE);
-    jdbcTemplate.update("DELETE FROM " + BACKGROUND_TABLE);
+    deleteArtworkRequestsAndTasks();
     wireMock.resetAll();
     movieId = SavedMediaFixture.saveMovie(libraryRepository, movieRepository).getId();
   }
 
+  // Requests left pending would run on the context's schedulers in later test classes.
   @AfterEach
   void tearDown() {
     startedSchedulers.forEach(ArtworkScheduler::stop);
+    deleteArtworkRequestsAndTasks();
     contextSchedulers.start();
+  }
+
+  private void deleteArtworkRequestsAndTasks() {
+    jdbcTemplate.update("DELETE FROM artwork_request");
+    jdbcTemplate.update("DELETE FROM " + PRIMARY_TABLE);
+    jdbcTemplate.update("DELETE FROM " + BACKGROUND_TABLE);
   }
 
   @Test
@@ -174,9 +175,8 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should record a temporary failure and save the image later when the host answers too many"
-          + " requests past the client's retries")
-  void shouldRecordATemporaryFailureAndSaveTheImageLaterWhenTheHostAnswersTooManyRequests()
+      "Should store a temporary failure and save the image later when the host answers too many requests")
+  void shouldStoreATemporaryFailureAndSaveTheImageLaterWhenTheHostAnswersTooManyRequests()
       throws Exception {
     stubTooManyRequestsThenImage("/poster.jpg", 6);
     stubImage("/backdrop.jpg", Duration.ZERO);
@@ -217,9 +217,8 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should save nothing from a preserving attempt that finishes after a forced refresh, and"
-          + " wait for the refresh's own results")
-  void shouldSaveNothingFromAPreservingAttemptThatFinishesAfterAForcedRefresh() throws Exception {
+      "Should save nothing from a preserving attempt when it finishes after a forced refresh")
+  void shouldSaveNothingFromAPreservingAttemptWhenItFinishesAfterAForcedRefresh() throws Exception {
     imageRepository.save(
         imageBuilder(movieId).key("/poster.jpg").path("movie/poster-small.jpg").build());
     stubImage("/poster.jpg", Duration.ZERO);
@@ -320,8 +319,8 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep artwork executions out of the table whose threads run probes")
-  void shouldKeepArtworkExecutionsOutOfTheTableWhoseThreadsRunProbes() {
+  @DisplayName("Should keep artwork executions out of the probe table when artwork is requested")
+  void shouldKeepArtworkExecutionsOutOfTheProbeTableWhenArtworkIsRequested() {
     var probeExecutionsBefore = scheduledArtworkTasks(PROBE_TABLE);
     var personId =
         personRepository
@@ -370,24 +369,11 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
 
   private ArtworkScheduler startPrimaryScheduler(
       ArtworkSteps steps, AbstractSchedulerListener listener) {
-    var properties = UnstartedSchedulerConfiguration.schedulerProperties(environment);
-    properties.setShutdownMaxWait(Duration.ofMillis(200));
-    properties.setPollingInterval(Duration.ofMillis(100));
     var scheduler =
-        ArtworkScheduler.builder()
-            .schedulerProperties(properties)
-            .customizer(customizer)
-            .dataSource(dataSource)
-            .transactionManager(transactionManager)
+        ArtworkSchedulerStarter.fromContext(applicationContext).toBuilder()
             .steps(steps)
-            .requests(requests)
-            .tableName(PRIMARY_TABLE)
-            .taskName("primary-artwork-steps")
-            .threads(2)
-            .clock(Clock.systemUTC())
-            .listeners(List.of(listener))
-            .build();
-    scheduler.start();
+            .build()
+            .start(ArtworkPriority.PRIMARY, listener);
     startedSchedulers.add(scheduler);
     return scheduler;
   }

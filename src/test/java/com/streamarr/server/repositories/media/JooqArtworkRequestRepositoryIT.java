@@ -55,8 +55,8 @@ class JooqArtworkRequestRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should start a new generation after a changed request waits for the row lock")
-  void shouldStartANewGenerationAfterAChangedRequestWaitsForTheRowLock() throws Exception {
+  @DisplayName("Should start a new generation when a changed request waits for the row lock")
+  void shouldStartANewGenerationWhenAChangedRequestWaitsForTheRowLock() throws Exception {
     var movieId = savedMovieId();
     var first = save(posterOf(movieId, "/poster.jpg"));
 

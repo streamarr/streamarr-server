@@ -103,8 +103,8 @@ class ArtworkServiceTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("primaryImageTypes")
-    @DisplayName("Should record unavailable when the provider has no primary image")
-    void shouldRecordUnavailableWhenTheProviderHasNoPrimaryImage(
+    @DisplayName("Should store unavailable when the provider has no primary image")
+    void shouldStoreUnavailableWhenTheProviderHasNoPrimaryImage(
         ImageEntityType entityType, List<ImageType> primaryImageTypes) {
       var entityId = UUID.randomUUID();
       var sources =
@@ -303,9 +303,8 @@ class ArtworkServiceTest {
 
     @Test
     @DisplayName(
-        "Should save nothing from an attempt whose generation a forced refresh replaced while it"
-            + " downloaded")
-    void shouldSaveNothingFromAnAttemptWhoseGenerationAForcedRefreshReplacedWhileItDownloaded()
+        "Should save nothing from an attempt when a forced refresh replaces its generation while it downloads")
+    void shouldSaveNothingFromAnAttemptWhenAForcedRefreshReplacesItsGenerationWhileItDownloads()
         throws Exception {
       var downloader = new GatedImageDownloader(createTestImage(600, 900));
       downloader.holdPathsStartingWith("/poster");
@@ -429,8 +428,8 @@ class ArtworkServiceTest {
     }
 
     @Test
-    @DisplayName("Should time a run from its first request until its last result is recorded")
-    void shouldTimeARunFromItsFirstRequestUntilItsLastResultIsRecorded() {
+    @DisplayName("Should measure a run from its first request when its last result is stored")
+    void shouldMeasureARunFromItsFirstRequestWhenItsLastResultIsStored() {
       artwork.scheduling().holdScheduledSteps();
       var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
       clock.advance(Duration.ofSeconds(10));
@@ -455,8 +454,9 @@ class ArtworkServiceTest {
     }
 
     @Test
-    @DisplayName("Should keep waiting while a result cannot be stored and finish after a retry")
-    void shouldKeepWaitingWhileAResultCannotBeStoredAndFinishAfterARetry() throws Exception {
+    @DisplayName(
+        "Should keep waiting while a result cannot be stored and finish when a retry stores it")
+    void shouldKeepWaitingWhileAResultCannotBeStoredAndFinishWhenARetryStoresIt() throws Exception {
       itemResults.failArtworkResultWritesWith(
           new DataAccessResourceFailureException("database unavailable"), 1);
       var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
@@ -508,8 +508,8 @@ class ArtworkServiceTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("backgroundImageTypes")
-    @DisplayName("Should record unavailable when the provider has no background image")
-    void shouldRecordUnavailableWhenTheProviderHasNoBackgroundImage(
+    @DisplayName("Should store unavailable when the provider has no background image")
+    void shouldStoreUnavailableWhenTheProviderHasNoBackgroundImage(
         ImageEntityType entityType, ImageType imageType) {
       var entityId = UUID.randomUUID();
       var sources =
@@ -545,8 +545,9 @@ class ArtworkServiceTest {
     }
 
     @Test
-    @DisplayName("Should count pending background images apart from primary images")
-    void shouldCountPendingBackgroundImagesApartFromPrimaryImages() {
+    @DisplayName(
+        "Should count pending background images apart from primary images when both are pending")
+    void shouldCountPendingBackgroundImagesApartFromPrimaryImagesWhenBothArePending() {
       artwork.scheduling().holdScheduledSteps();
       artworkService.requestBackgroundArtwork(
           personArtwork("/profile.jpg"), ImageRefreshMode.PRESERVE);
@@ -568,8 +569,8 @@ class ArtworkServiceTest {
     }
 
     @Test
-    @DisplayName("Should report pending images from the first report that finds them")
-    void shouldReportPendingImagesFromTheFirstReportThatFindsThem() {
+    @DisplayName("Should start the busy period when the first report finds pending images")
+    void shouldStartTheBusyPeriodWhenTheFirstReportFindsPendingImages() {
       artwork.scheduling().holdScheduledSteps();
       var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
       artworkService.requestPrimaryArtwork(run, movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
@@ -589,8 +590,8 @@ class ArtworkServiceTest {
     }
 
     @Test
-    @DisplayName("Should finish the busy period with the results recorded since it started")
-    void shouldFinishTheBusyPeriodWithTheResultsRecordedSinceItStarted() {
+    @DisplayName("Should finish the busy period with its stored results when nothing is pending")
+    void shouldFinishTheBusyPeriodWithItsStoredResultsWhenNothingIsPending() {
       itemResults.overwrite(succeeded(UUID.randomUUID(), ImageType.POSTER, 1));
       clock.advance(Duration.ofSeconds(1));
       artwork.scheduling().holdScheduledSteps();
@@ -615,8 +616,8 @@ class ArtworkServiceTest {
     }
 
     @Test
-    @DisplayName("Should report primary and background artwork separately")
-    void shouldReportPrimaryAndBackgroundArtworkSeparately() {
+    @DisplayName("Should report primary and background artwork separately when both are pending")
+    void shouldReportPrimaryAndBackgroundArtworkSeparatelyWhenBothArePending() {
       artwork.scheduling().holdScheduledSteps();
       var run = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
       artworkService.requestPrimaryArtwork(run, movieArtwork(UUID.randomUUID(), POSTER, BACKDROP));
@@ -676,8 +677,8 @@ class ArtworkServiceTest {
   }
 
   @Test
-  @DisplayName("Should route each item type to its artwork priority")
-  void shouldRouteEachItemTypeToItsArtworkPriority() {
+  @DisplayName("Should route steps to the scheduler of their priority when they are scheduled")
+  void shouldRouteStepsToTheSchedulerOfTheirPriorityWhenTheyAreScheduled() {
     assertThat(
             Stream.of(ImageEntityType.values())
                 .collect(Collectors.toMap(type -> type, ArtworkPriority::of)))

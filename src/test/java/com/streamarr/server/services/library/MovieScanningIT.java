@@ -8,9 +8,10 @@ import static com.streamarr.server.jooq.generated.tables.BaseCollectable.BASE_CO
 import static com.streamarr.server.jooq.generated.tables.Library.LIBRARY;
 import static com.streamarr.server.jooq.generated.tables.Movie.MOVIE;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
+import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
+import com.streamarr.server.config.ArtworkSchedulers;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
@@ -23,7 +24,9 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.ArtworkPriority;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.support.ArtworkSchedulerStarter;
 import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.BoundedTask;
 import java.io.IOException;
@@ -32,6 +35,8 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import lombok.Builder;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
@@ -63,6 +68,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   @Autowired private AuditColumnFixtures auditColumns;
   @Autowired private ProbeExecution probeExecution;
   @Autowired private ApplicationContext applicationContext;
+  @Autowired private ArtworkSchedulers artworkSchedulers;
 
   @TempDir Path tempDir;
 
@@ -222,20 +228,23 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should finish the scan healthy after a retried artwork step stores the results the database"
-          + " rejected")
-  void shouldFinishTheScanHealthyAfterARetriedArtworkStepStoresTheResultsTheDatabaseRejected()
+      "Should finish the scan healthy when a retried artwork step stores the results the database rejected")
+  void shouldFinishTheScanHealthyWhenARetriedArtworkStepStoresTheResultsTheDatabaseRejected()
       throws Exception {
     var library = createLibraryWithMatchingMovieFile().library();
     stubTmdbMovieMetadata("27205", "Inception");
     startProbeScheduler();
+    var rejectedAttempt = new CompletableFuture<ExecutionComplete>();
+    artworkSchedulers.stop();
+    var artworkScheduler =
+        ArtworkSchedulerStarter.fromContext(applicationContext)
+            .start(ArtworkPriority.PRIMARY, completedInto(rejectedAttempt));
     rejectItemErrors();
 
     try (var scan =
         BoundedTask.start(() -> libraryManagementService.scanLibrary(library.getId()))) {
-      // The rejected attempt runs on an artwork scheduler thread; its failure count is the
-      // stored trace that it ran.
-      await().atMost(SCAN_BOUND).until(() -> failedArtworkAttempts() > 0);
+      rejectedAttempt.get(SCAN_BOUND.toSeconds(), TimeUnit.SECONDS);
+      assertThat(failedArtworkAttempts()).isOne();
       assertThat(libraryRepository.findById(library.getId()).orElseThrow().getStatus())
           .isEqualTo(LibraryStatus.SCANNING);
       acceptItemErrors();
@@ -243,6 +252,8 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
       scan.await(SCAN_BOUND);
     } finally {
       acceptItemErrors();
+      artworkScheduler.stop();
+      artworkSchedulers.start();
     }
 
     assertThat(libraryRepository.findById(library.getId()).orElseThrow().getStatus())
@@ -305,6 +316,16 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   private void acceptItemErrors() {
     jdbcTemplate.execute("DROP TRIGGER IF EXISTS reject_item_error ON item_result");
     jdbcTemplate.execute("DROP FUNCTION IF EXISTS reject_item_error()");
+  }
+
+  private static AbstractSchedulerListener completedInto(
+      CompletableFuture<ExecutionComplete> completed) {
+    return new AbstractSchedulerListener() {
+      @Override
+      public void onExecutionComplete(ExecutionComplete complete) {
+        completed.complete(complete);
+      }
+    };
   }
 
   private int failedArtworkAttempts() {

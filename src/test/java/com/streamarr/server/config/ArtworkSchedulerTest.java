@@ -35,16 +35,16 @@ class ArtworkSchedulerTest {
         "clock",
         "listeners"
       })
-  @DisplayName("Should reject an artwork scheduler built without a required collaborator")
-  void shouldRejectAnArtworkSchedulerBuiltWithoutARequiredCollaborator(String missing) {
+  @DisplayName("Should reject an artwork scheduler when a required collaborator is missing")
+  void shouldRejectAnArtworkSchedulerWhenARequiredCollaboratorIsMissing(String missing) {
     var builder = builderWithout(missing);
 
     assertThatNullPointerException().isThrownBy(builder::build).withMessageContaining(missing);
   }
 
   @Test
-  @DisplayName("Should reject artwork schedulers without a primary scheduler")
-  void shouldRejectArtworkSchedulersWithoutAPrimaryScheduler() {
+  @DisplayName("Should reject artwork schedulers when the primary scheduler is missing")
+  void shouldRejectArtworkSchedulersWhenThePrimarySchedulerIsMissing() {
     var withoutPrimary = ArtworkSchedulers.builder();
 
     assertThatNullPointerException()

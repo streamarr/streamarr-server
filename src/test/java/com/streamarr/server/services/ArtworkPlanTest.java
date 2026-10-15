@@ -120,8 +120,8 @@ class ArtworkPlanTest {
   }
 
   @Test
-  @DisplayName("Should reject a plan without its artwork, stored images or refresh mode")
-  void shouldRejectAPlanWithoutItsArtworkStoredImagesOrRefreshMode() {
+  @DisplayName("Should reject a plan when its artwork, stored images or refresh mode is missing")
+  void shouldRejectAPlanWhenItsArtworkStoredImagesOrRefreshModeIsMissing() {
     var artwork = movieArtwork(POSTER);
     var noneStored = Map.<ImageType, List<Image>>of();
 

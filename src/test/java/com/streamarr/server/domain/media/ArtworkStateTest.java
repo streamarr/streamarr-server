@@ -17,8 +17,8 @@ class ArtworkStateTest {
       new ArtworkItem(UUID.randomUUID(), ImageEntityType.MOVIE);
 
   @Test
-  @DisplayName("Should reject a state without its item, pending generation or results")
-  void shouldRejectAStateWithoutItsItemPendingGenerationOrResults() {
+  @DisplayName("Should reject a state when its item, pending generation or results are missing")
+  void shouldRejectAStateWhenItsItemPendingGenerationOrResultsAreMissing() {
     var none = Optional.<Long>empty();
     var noResults = List.<ItemResult>of();
 

@@ -581,9 +581,8 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName(
-      "Should finish the refresh after a retried artwork step stores the result that failed to"
-          + " save")
-  void shouldFinishTheRefreshAfterARetriedArtworkStepStoresTheResultThatFailedToSave()
+      "Should finish the refresh when a retried artwork step stores the result that failed to save")
+  void shouldFinishTheRefreshWhenARetriedArtworkStepStoresTheResultThatFailedToSave()
       throws Exception {
     var library = buildMovieLibrary();
     var movie = saveMovieWithTmdbId("Inception", "27205", library);
