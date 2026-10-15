@@ -1,7 +1,13 @@
 package com.streamarr.server.repositories.audit;
 
+import static com.streamarr.server.jooq.generated.tables.BaseCollectable.BASE_COLLECTABLE;
+import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
+import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
+import static com.streamarr.server.support.TestFixtureAuditActorConfiguration.TEST_FIXTURE_ACTOR_ID;
+import static com.streamarr.server.support.TestFixtureAuditActorConfiguration.nameTestFixtureActorIn;
 import static com.streamarr.server.support.security.SignedInAccount.callSignedInAs;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.Library;
@@ -9,8 +15,14 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import javax.sql.DataSource;
 import lombok.Builder;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
@@ -19,6 +31,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** Managed entities see the audit columns the trigger wrote, within the writing transaction. */
@@ -30,6 +43,8 @@ class AuditColumnEntityIT extends AbstractIntegrationTest {
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
+  @Autowired private DataSource dataSource;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   private Library library;
   private UUID movieId;
@@ -72,6 +87,50 @@ class AuditColumnEntityIT extends AbstractIntegrationTest {
     assertThat(seen.createdOn()).isEqualTo(inserted.transactionTime());
     assertThat(seen.lastModifiedBy()).isEqualTo(modifier);
     assertThat(seen.lastModifiedOn()).isEqualTo(seen.transactionTime());
+  }
+
+  @Test
+  @DisplayName("Should leave the modifier to a concurrent writer when only the movie table changes")
+  void shouldLeaveTheModifierToAConcurrentWriterWhenOnlyTheMovieTableChanges() throws Exception {
+    callSignedInAs(UUID.randomUUID(), this::insertMovieAndObserveIt);
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var parentFirstWriter = dataSource.getConnection()) {
+      parentFirstWriter.setAutoCommit(false);
+      nameTestFixtureActorIn(parentFirstWriter);
+      execute(parentFirstWriter, "UPDATE base_collectable SET title = 'Retitled' WHERE id = ?");
+
+      var movieOnlyChange =
+          executor.submit(
+              () -> callSignedInAs(UUID.randomUUID(), this::changeTaglineAndObserveTheMovie));
+      var parentFirstWriterPid = backendPid(parentFirstWriter);
+      await()
+          .atMost(Duration.ofSeconds(10))
+          .until(
+              () ->
+                  movieOnlyChange.isDone()
+                      || waitersBehind(jdbcTemplate, parentFirstWriterPid, "%") == 1);
+
+      execute(parentFirstWriter, "UPDATE movie SET tagline = 'Parent first' WHERE id = ?");
+      parentFirstWriter.commit();
+
+      movieOnlyChange.get(10, TimeUnit.SECONDS);
+    }
+
+    assertThat(
+            dsl.select(BASE_COLLECTABLE.LAST_MODIFIED_BY)
+                .from(BASE_COLLECTABLE)
+                .where(BASE_COLLECTABLE.ID.eq(movieId))
+                .fetchSingle()
+                .value1())
+        .isEqualTo(TEST_FIXTURE_ACTOR_ID);
+  }
+
+  private void execute(Connection connection, String sql) throws SQLException {
+    try (var statement = connection.prepareStatement(sql)) {
+      statement.setObject(1, movieId);
+      statement.executeUpdate();
+    }
   }
 
   private ObservedAuditColumns insertMovieAndObserveIt() {

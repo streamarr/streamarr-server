@@ -98,16 +98,27 @@ CREATE TRIGGER fill_audit_columns BEFORE INSERT OR UPDATE ON watch_history
 
 -- Movies, series, seasons and episodes keep their audit columns in base_collectable. A change
 -- that touches only the subtype table still names its modifier there.
+--
+-- This trigger runs while the transaction holds the subtype row, and Hibernate locks
+-- base_collectable before the subtype row when both change. Waiting here for the base_collectable
+-- row could deadlock, so the touch skips a row that another transaction holds. That transaction
+-- is changing the same item and names its own modifier when it commits.
 CREATE FUNCTION touch_collectable_when_subtype_changes()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS
 $$
 BEGIN
-    UPDATE base_collectable
-    SET last_modified_on = now()
+    PERFORM 1
+    FROM base_collectable
     WHERE id = NEW.id
-      AND last_modified_on IS DISTINCT FROM now();
+      AND last_modified_on IS DISTINCT FROM now()
+    FOR NO KEY UPDATE SKIP LOCKED;
+
+    IF FOUND THEN
+        UPDATE base_collectable SET last_modified_on = now() WHERE id = NEW.id;
+    END IF;
+
     RETURN NULL;
 END;
 $$;
