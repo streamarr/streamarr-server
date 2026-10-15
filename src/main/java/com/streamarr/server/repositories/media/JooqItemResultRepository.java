@@ -1,15 +1,14 @@
 package com.streamarr.server.repositories.media;
 
 import static com.streamarr.server.jooq.generated.tables.ItemResult.ITEM_RESULT;
+import static com.streamarr.server.repositories.media.MediaEnumMapping.toDomain;
+import static com.streamarr.server.repositories.media.MediaEnumMapping.toJooq;
 
 import com.streamarr.server.domain.media.ArtworkAttempt;
 import com.streamarr.server.domain.media.ArtworkOutcomeTally;
 import com.streamarr.server.domain.media.ImageEntityType;
-import com.streamarr.server.domain.media.ImageType;
-import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
-import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.enums.ItemResultFailureReason;
 import com.streamarr.server.jooq.generated.enums.ItemResultOutcome;
@@ -89,8 +88,7 @@ public class JooqItemResultRepository implements ItemResultRepository {
             row ->
                 counts
                     .computeIfAbsent(
-                        ImageEntityType.valueOf(row.value1().getLiteral()),
-                        _ -> new EnumMap<>(ItemResultOutcome.class))
+                        toDomain(row.value1()), _ -> new EnumMap<>(ItemResultOutcome.class))
                     .put(row.value2(), row.value3().longValue()));
     var tallies = new EnumMap<ImageEntityType, ArtworkOutcomeTally>(ImageEntityType.class);
     counts.forEach(
@@ -124,7 +122,7 @@ public class JooqItemResultRepository implements ItemResultRepository {
     return dsl.selectFrom(ITEM_RESULT)
         .where(ITEM_RESULT.ITEM_ID.eq(itemId))
         .and(ITEM_RESULT.ITEM_TYPE.eq(toJooq(itemType)))
-        .fetch(JooqItemResultRepository::toDomain);
+        .fetch(ItemResultRecords::toDomain);
   }
 
   private ItemResultRecord toRecord(ItemResult result) {
@@ -150,44 +148,5 @@ public class JooqItemResultRepository implements ItemResultRepository {
     }
 
     return row;
-  }
-
-  // The generated enums share names with the domain enums they mirror.
-  @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static com.streamarr.server.jooq.generated.enums.ImageEntityType toJooq(
-      ImageEntityType itemType) {
-    return com.streamarr.server.jooq.generated.enums.ImageEntityType.lookupLiteral(itemType.name());
-  }
-
-  @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static com.streamarr.server.jooq.generated.enums.ImageType toJooq(ImageType imageType) {
-    return com.streamarr.server.jooq.generated.enums.ImageType.lookupLiteral(imageType.name());
-  }
-
-  static ItemResult toDomain(ItemResultRecord row) {
-    var result =
-        ItemResult.builder()
-            .itemId(row.getItemId())
-            .itemType(ImageEntityType.valueOf(row.getItemType().getLiteral()))
-            .step(ItemStep.valueOf(row.getStep().getLiteral()))
-            .outcome(toOutcome(row))
-            .sourceKey(row.getSourceKey())
-            .attemptedAt(row.getAttemptedAt().toInstant())
-            .artworkGeneration(row.getArtworkGeneration());
-    if (row.getImageType() != null) {
-      result.imageType(ImageType.valueOf(row.getImageType().getLiteral()));
-    }
-
-    return result.build();
-  }
-
-  private static ItemOutcome toOutcome(ItemResultRecord row) {
-    return switch (row.getOutcome()) {
-      case SUCCEEDED -> new ItemOutcome.Succeeded();
-      case UNAVAILABLE -> new ItemOutcome.Unavailable();
-      case FAILED ->
-          new ItemOutcome.Failed(
-              ItemFailureReason.valueOf(row.getFailureReason().getLiteral()), row.getDetail());
-    };
   }
 }

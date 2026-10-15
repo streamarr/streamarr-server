@@ -3,6 +3,8 @@ package com.streamarr.server.repositories.media;
 import static com.streamarr.server.jooq.generated.Sequences.ARTWORK_REQUEST_GENERATION;
 import static com.streamarr.server.jooq.generated.tables.ArtworkRequest.ARTWORK_REQUEST;
 import static com.streamarr.server.jooq.generated.tables.ItemResult.ITEM_RESULT;
+import static com.streamarr.server.repositories.media.MediaEnumMapping.toDomain;
+import static com.streamarr.server.repositories.media.MediaEnumMapping.toJooq;
 
 import com.streamarr.server.domain.media.ArtworkItem;
 import com.streamarr.server.domain.media.ArtworkState;
@@ -42,18 +44,14 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
 
-  // Every attempt either writes or finds the row that a concurrent writer committed, so it loops
-  // only while other transactions keep replacing or completing the same request.
-  private static final int MAX_SAVE_ATTEMPTS = 8;
+  // Writers of an item's request and the completion of its scheduled task take this lock before
+  // the request row, so a completion that finds no request cannot miss a request being inserted.
+  private static final int REQUEST_LOCK_NAMESPACE = 0x41525452;
 
   private static final Comparator<ImageSource> SOURCE_ORDER =
       Comparator.comparing(ImageSource::imageType).thenComparing(ImageSource::key);
 
   private record StoredSources(List<ImageType> imageTypes, List<String> keys) {}
-
-  // Writers of an item's request and the completion of its scheduled task take this lock before
-  // the request row, so a completion that finds no request cannot miss a request being inserted.
-  private static final int REQUEST_LOCK_NAMESPACE = 0x41525452;
 
   private final DSLContext dsl;
   private final PostgresTransactionLocks transactionLocks;
@@ -69,37 +67,39 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
     }
 
     lockRequest(artwork.item());
-    for (var attempt = 0; attempt < MAX_SAVE_ATTEMPTS; attempt++) {
-      var inserted = tryInsert(artwork, sources, refreshMode, requestedAt);
-      if (inserted.isPresent()) {
-        return new SavedArtworkRequest.NewGeneration(inserted.get());
-      }
-
-      var pending = findRow(artwork.item());
-      if (pending.isEmpty()) {
-        continue;
-      }
-
-      var row = pending.get();
-      if (coversRequest(row, sources, refreshMode)) {
-        return new SavedArtworkRequest.Unchanged(row.getGeneration());
-      }
-
-      var replaced =
-          tryReplace(
-              row,
-              artwork,
-              sources,
-              strongerOf(toDomain(row.getImageRefreshMode()), refreshMode),
-              requestedAt);
-      if (replaced.isPresent()) {
-        return new SavedArtworkRequest.NewGeneration(replaced.get());
-      }
+    var newGeneration =
+        dsl.insertInto(ARTWORK_REQUEST)
+            .set(ARTWORK_REQUEST.ITEM_ID, artwork.entityId())
+            .set(ARTWORK_REQUEST.ITEM_TYPE, toJooq(artwork.entityType()))
+            .set(ARTWORK_REQUEST.IMAGE_REFRESH_MODE, toJooq(refreshMode))
+            .set(ARTWORK_REQUEST.SOURCE_IMAGE_TYPES, toJooq(sources.imageTypes()))
+            .set(ARTWORK_REQUEST.SOURCE_KEYS, sources.keys().toArray(String[]::new))
+            .set(ARTWORK_REQUEST.IMAGE_COUNT, artwork.requestedImageTypes().size())
+            .set(ARTWORK_REQUEST.GENERATION, ARTWORK_REQUEST_GENERATION.nextval())
+            .set(ARTWORK_REQUEST.REQUESTED_AT, requestedAt.atOffset(ZoneOffset.UTC))
+            .onConflict(ARTWORK_REQUEST.ITEM_ID, ARTWORK_REQUEST.ITEM_TYPE)
+            .doUpdate()
+            .set(
+                ARTWORK_REQUEST.IMAGE_REFRESH_MODE,
+                DSL.greatest(
+                    ARTWORK_REQUEST.IMAGE_REFRESH_MODE,
+                    DSL.excluded(ARTWORK_REQUEST.IMAGE_REFRESH_MODE)))
+            .set(
+                ARTWORK_REQUEST.SOURCE_IMAGE_TYPES,
+                DSL.excluded(ARTWORK_REQUEST.SOURCE_IMAGE_TYPES))
+            .set(ARTWORK_REQUEST.SOURCE_KEYS, DSL.excluded(ARTWORK_REQUEST.SOURCE_KEYS))
+            .set(ARTWORK_REQUEST.IMAGE_COUNT, DSL.excluded(ARTWORK_REQUEST.IMAGE_COUNT))
+            .set(ARTWORK_REQUEST.GENERATION, ARTWORK_REQUEST_GENERATION.nextval())
+            .set(ARTWORK_REQUEST.REQUESTED_AT, DSL.excluded(ARTWORK_REQUEST.REQUESTED_AT))
+            .where(changesPendingRequest())
+            .returning(ARTWORK_REQUEST.GENERATION)
+            .fetchOptional(ARTWORK_REQUEST.GENERATION);
+    if (newGeneration.isPresent()) {
+      return new SavedArtworkRequest.NewGeneration(newGeneration.get());
     }
 
-    throw new IllegalStateException(
-        "Artwork request for %s %s kept changing while it was saved"
-            .formatted(artwork.entityType(), artwork.entityId()));
+    // The conflicting row covers the request; the upsert locked it, so it is still there.
+    return new SavedArtworkRequest.Unchanged(findRow(artwork.item()).orElseThrow().getGeneration());
   }
 
   @Override
@@ -148,6 +148,8 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
       return List.of();
     }
 
+    // Generations are read before results: a step stores its results before its completion
+    // deletes the request, so an item read without a request has every result it will get.
     var itemIds = items.stream().map(ArtworkItem::itemId).distinct().toList();
     var generations = new HashMap<ArtworkItem, Long>();
     dsl.select(ARTWORK_REQUEST.ITEM_ID, ARTWORK_REQUEST.ITEM_TYPE, ARTWORK_REQUEST.GENERATION)
@@ -161,7 +163,7 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
     dsl.selectFrom(ITEM_RESULT)
         .where(ITEM_RESULT.ITEM_ID.in(itemIds))
         .and(ITEM_RESULT.STEP.eq(ItemResultStep.ARTWORK))
-        .fetch(JooqItemResultRepository::toDomain)
+        .fetch(ItemResultRecords::toDomain)
         .forEach(
             result ->
                 results
@@ -191,44 +193,15 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
     return counts;
   }
 
-  private Optional<Long> tryInsert(
-      ArtworkSources artwork,
-      StoredSources sources,
-      ImageRefreshMode refreshMode,
-      Instant requestedAt) {
-    return dsl.insertInto(ARTWORK_REQUEST)
-        .set(ARTWORK_REQUEST.ITEM_ID, artwork.entityId())
-        .set(ARTWORK_REQUEST.ITEM_TYPE, toJooq(artwork.entityType()))
-        .set(ARTWORK_REQUEST.IMAGE_REFRESH_MODE, toJooq(refreshMode))
-        .set(ARTWORK_REQUEST.SOURCE_IMAGE_TYPES, toJooq(sources.imageTypes()))
-        .set(ARTWORK_REQUEST.SOURCE_KEYS, sources.keys().toArray(String[]::new))
-        .set(ARTWORK_REQUEST.IMAGE_COUNT, artwork.requestedImageTypes().size())
-        .set(ARTWORK_REQUEST.GENERATION, ARTWORK_REQUEST_GENERATION.nextval())
-        .set(ARTWORK_REQUEST.REQUESTED_AT, requestedAt.atOffset(ZoneOffset.UTC))
-        .onConflictDoNothing()
-        .returning(ARTWORK_REQUEST.GENERATION)
-        .fetchOptional(ARTWORK_REQUEST.GENERATION);
-  }
-
-  // The generation condition makes the replacement fail when a concurrent writer replaced or
-  // completed the row after it was read; the caller then reads the row again.
-  private Optional<Long> tryReplace(
-      ArtworkRequestRecord pending,
-      ArtworkSources artwork,
-      StoredSources sources,
-      ImageRefreshMode refreshMode,
-      Instant requestedAt) {
-    return dsl.update(ARTWORK_REQUEST)
-        .set(ARTWORK_REQUEST.IMAGE_REFRESH_MODE, toJooq(refreshMode))
-        .set(ARTWORK_REQUEST.SOURCE_IMAGE_TYPES, toJooq(sources.imageTypes()))
-        .set(ARTWORK_REQUEST.SOURCE_KEYS, sources.keys().toArray(String[]::new))
-        .set(ARTWORK_REQUEST.IMAGE_COUNT, artwork.requestedImageTypes().size())
-        .set(ARTWORK_REQUEST.GENERATION, ARTWORK_REQUEST_GENERATION.nextval())
-        .set(ARTWORK_REQUEST.REQUESTED_AT, requestedAt.atOffset(ZoneOffset.UTC))
-        .where(identifies(artwork.item()))
-        .and(ARTWORK_REQUEST.GENERATION.eq(pending.getGeneration()))
-        .returning(ARTWORK_REQUEST.GENERATION)
-        .fetchOptional(ARTWORK_REQUEST.GENERATION);
+  // A pending request covers a new one with the same sources and an equal or weaker refresh mode.
+  private static Condition changesPendingRequest() {
+    return ARTWORK_REQUEST
+        .SOURCE_IMAGE_TYPES
+        .isDistinctFrom(DSL.excluded(ARTWORK_REQUEST.SOURCE_IMAGE_TYPES))
+        .or(ARTWORK_REQUEST.SOURCE_KEYS.isDistinctFrom(DSL.excluded(ARTWORK_REQUEST.SOURCE_KEYS)))
+        .or(
+            DSL.excluded(ARTWORK_REQUEST.IMAGE_REFRESH_MODE)
+                .gt(ARTWORK_REQUEST.IMAGE_REFRESH_MODE));
   }
 
   private void lockRequest(ArtworkItem item) {
@@ -257,14 +230,6 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
     return refreshMode.compareTo(toDomain(pending.getImageRefreshMode())) <= 0;
   }
 
-  private static ImageRefreshMode strongerOf(ImageRefreshMode pending, ImageRefreshMode requested) {
-    if (requested.compareTo(pending) > 0) {
-      return requested;
-    }
-
-    return pending;
-  }
-
   private static StoredSources storedSources(ArtworkSources artwork) {
     var sorted = artwork.sources().stream().sorted(SOURCE_ORDER).toList();
     return new StoredSources(
@@ -274,9 +239,7 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
 
   private static StoredSources sourcesOf(ArtworkRequestRecord row) {
     return new StoredSources(
-        Arrays.stream(row.getSourceImageTypes())
-            .map(imageType -> ImageType.valueOf(imageType.getLiteral()))
-            .toList(),
+        Arrays.stream(row.getSourceImageTypes()).map(MediaEnumMapping::toDomain).toList(),
         List.of(row.getSourceKeys()));
   }
 
@@ -298,41 +261,5 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
         .refreshMode(toDomain(row.getImageRefreshMode()))
         .generation(row.getGeneration())
         .build();
-  }
-
-  // The generated enums share names with the domain enums they mirror.
-  @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static com.streamarr.server.jooq.generated.enums.ImageEntityType toJooq(
-      ImageEntityType itemType) {
-    return com.streamarr.server.jooq.generated.enums.ImageEntityType.lookupLiteral(itemType.name());
-  }
-
-  @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static com.streamarr.server.jooq.generated.enums.ImageType[] toJooq(
-      List<ImageType> imageTypes) {
-    return imageTypes.stream()
-        .map(
-            imageType ->
-                com.streamarr.server.jooq.generated.enums.ImageType.lookupLiteral(imageType.name()))
-        .toArray(com.streamarr.server.jooq.generated.enums.ImageType[]::new);
-  }
-
-  @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static com.streamarr.server.jooq.generated.enums.ImageRefreshMode toJooq(
-      ImageRefreshMode refreshMode) {
-    return com.streamarr.server.jooq.generated.enums.ImageRefreshMode.lookupLiteral(
-        refreshMode.name());
-  }
-
-  @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static ImageEntityType toDomain(
-      com.streamarr.server.jooq.generated.enums.ImageEntityType itemType) {
-    return ImageEntityType.valueOf(itemType.getLiteral());
-  }
-
-  @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static ImageRefreshMode toDomain(
-      com.streamarr.server.jooq.generated.enums.ImageRefreshMode refreshMode) {
-    return ImageRefreshMode.valueOf(refreshMode.getLiteral());
   }
 }

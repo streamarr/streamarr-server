@@ -7,6 +7,7 @@ import static com.streamarr.server.jooq.generated.tables.Movie.MOVIE;
 import static com.streamarr.server.jooq.generated.tables.Person.PERSON;
 import static com.streamarr.server.jooq.generated.tables.Season.SEASON;
 import static com.streamarr.server.jooq.generated.tables.Series.SERIES;
+import static com.streamarr.server.repositories.media.MediaEnumMapping.toJooq;
 
 import com.streamarr.server.domain.media.ArtworkItem;
 import com.streamarr.server.domain.media.ImageEntityType;
@@ -68,13 +69,6 @@ class ItemLocks {
    */
   List<UUID> lockForDeletion(TableField<?, UUID> id, Condition items) {
     return dsl.select(id).from(id.getTable()).where(items).orderBy(id).forUpdate().fetch(id);
-  }
-
-  // The generated enum shares its name with the domain enum it mirrors.
-  @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static com.streamarr.server.jooq.generated.enums.ImageEntityType toJooq(
-      ImageEntityType itemType) {
-    return com.streamarr.server.jooq.generated.enums.ImageEntityType.lookupLiteral(itemType.name());
   }
 
   private static TableField<?, UUID> idOf(ImageEntityType itemType) {
