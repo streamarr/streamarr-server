@@ -15,7 +15,6 @@ import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.streamarr.server.AbstractWireMockIntegrationTest;
 import com.streamarr.server.config.ArtworkScheduler;
 import com.streamarr.server.config.ArtworkSchedulers;
-import com.streamarr.server.config.ArtworkSchedulingConfiguration;
 import com.streamarr.server.domain.media.ArtworkItem;
 import com.streamarr.server.domain.media.ArtworkState;
 import com.streamarr.server.domain.media.ImageEntityType;
@@ -32,10 +31,13 @@ import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.concurrency.CpuPermits;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.services.metadata.TmdbImageDownloader;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.support.BoundedTask;
+import com.streamarr.server.support.UnstartedSchedulerConfiguration;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -66,6 +68,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
 
   private static final Duration BOUND = Duration.ofSeconds(20);
+  private static final String PRIMARY_TABLE = "primary_artwork_scheduled_tasks";
+  private static final String BACKGROUND_TABLE = "background_artwork_scheduled_tasks";
+  private static final String PROBE_TABLE = "scheduled_tasks";
   private static final ImageSource POSTER = new TmdbImageSource(ImageType.POSTER, "/poster.jpg");
   private static final ImageSource BACKDROP =
       new TmdbImageSource(ImageType.BACKDROP, "/backdrop.jpg");
@@ -74,6 +79,9 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   @Autowired private ArtworkService artworkService;
   @Autowired private ArtworkRuns artworkRuns;
   @Autowired private ArtworkSteps artworkSteps;
+  @Autowired private ImageService imageService;
+  @Autowired private TmdbImageDownloader imageDownloader;
+  @Autowired private CpuPermits cpuPermits;
   @Autowired private ArtworkRequestRepository requests;
   @Autowired private ItemResultRepository itemResults;
   @Autowired private ImageRepository imageRepository;
@@ -95,8 +103,8 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   @BeforeEach
   void setUp() {
     contextSchedulers.stop();
-    jdbcTemplate.update("DELETE FROM primary_artwork_scheduled_tasks");
-    jdbcTemplate.update("DELETE FROM background_artwork_scheduled_tasks");
+    jdbcTemplate.update("DELETE FROM " + PRIMARY_TABLE);
+    jdbcTemplate.update("DELETE FROM " + BACKGROUND_TABLE);
     wireMock.resetAll();
     movieId = SavedMediaFixture.saveMovie(libraryRepository, movieRepository).getId();
   }
@@ -153,13 +161,15 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
     stubImage("/backdrop.jpg", Duration.ZERO);
     var run = requestMovieArtwork(ImageRefreshMode.PRESERVE, POSTER, BACKDROP);
     jdbcTemplate.update(
-        "UPDATE primary_artwork_scheduled_tasks SET picked = true, picked_by = 'crashed-server',"
+        "UPDATE "
+            + PRIMARY_TABLE
+            + " SET picked = true, picked_by = 'crashed-server',"
             + " last_heartbeat = now() - interval '1 hour'");
 
     startPrimaryScheduler(new AbstractSchedulerListener() {});
 
     assertThat(awaitRun(run).counts()).isEqualTo(ArtworkCounts.builder().saved(2).build());
-    assertThat(scheduledArtworkTasks("primary_artwork_scheduled_tasks")).isZero();
+    assertThat(scheduledArtworkTasks(PRIMARY_TABLE)).isZero();
   }
 
   @Test
@@ -246,7 +256,7 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
     startPrimaryScheduler(completedInto(completed));
 
     completed.get(BOUND.toSeconds(), TimeUnit.SECONDS);
-    assertThat(scheduledArtworkTasks("primary_artwork_scheduled_tasks")).isZero();
+    assertThat(scheduledArtworkTasks(PRIMARY_TABLE)).isZero();
     assertThat(wireMock.getAllServeEvents()).isEmpty();
   }
 
@@ -257,7 +267,14 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
     requestMovieArtwork(ImageRefreshMode.PRESERVE, POSTER);
     var unreadable = new DataAccessResourceFailureException("database unavailable");
     var failingSteps =
-        artworkSteps.toBuilder().requests(new UnreadableRequests(requests, unreadable)).build();
+        ArtworkSteps.builder()
+            .requests(new UnreadableRequests(requests, unreadable))
+            .itemResults(itemResults)
+            .imageService(imageService)
+            .imageDownloader(imageDownloader)
+            .cpuPermits(cpuPermits)
+            .clock(Clock.systemUTC())
+            .build();
     var completed = new CompletableFuture<ExecutionComplete>();
     var beforeAttempt = Instant.now();
 
@@ -305,7 +322,7 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   @Test
   @DisplayName("Should keep artwork executions out of the table whose threads run probes")
   void shouldKeepArtworkExecutionsOutOfTheTableWhoseThreadsRunProbes() {
-    var probeExecutionsBefore = scheduledArtworkTasks("scheduled_tasks");
+    var probeExecutionsBefore = scheduledArtworkTasks(PROBE_TABLE);
     var personId =
         personRepository
             .saveAndFlush(
@@ -326,9 +343,9 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
                     .build(),
                 ImageRefreshMode.PRESERVE));
 
-    assertThat(scheduledArtworkTasks("primary_artwork_scheduled_tasks")).isOne();
-    assertThat(scheduledArtworkTasks("background_artwork_scheduled_tasks")).isOne();
-    assertThat(scheduledArtworkTasks("scheduled_tasks")).isEqualTo(probeExecutionsBefore);
+    assertThat(scheduledArtworkTasks(PRIMARY_TABLE)).isOne();
+    assertThat(scheduledArtworkTasks(BACKGROUND_TABLE)).isOne();
+    assertThat(scheduledArtworkTasks(PROBE_TABLE)).isEqualTo(probeExecutionsBefore);
   }
 
   @Test
@@ -344,7 +361,7 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
         });
 
     assertThat(requests.findRequest(movie())).isEmpty();
-    assertThat(scheduledArtworkTasks("primary_artwork_scheduled_tasks")).isZero();
+    assertThat(scheduledArtworkTasks(PRIMARY_TABLE)).isZero();
   }
 
   private ArtworkScheduler startPrimaryScheduler(AbstractSchedulerListener listener) {
@@ -353,7 +370,7 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
 
   private ArtworkScheduler startPrimaryScheduler(
       ArtworkSteps steps, AbstractSchedulerListener listener) {
-    var properties = ArtworkSchedulingConfiguration.schedulerProperties(environment);
+    var properties = UnstartedSchedulerConfiguration.schedulerProperties(environment);
     properties.setShutdownMaxWait(Duration.ofMillis(200));
     properties.setPollingInterval(Duration.ofMillis(100));
     var scheduler =
@@ -364,8 +381,8 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
             .transactionManager(transactionManager)
             .steps(steps)
             .requests(requests)
-            .tableName(ArtworkSchedulingConfiguration.PRIMARY_TABLE)
-            .taskName(ArtworkSchedulingConfiguration.PRIMARY_TASK)
+            .tableName(PRIMARY_TABLE)
+            .taskName("primary-artwork-steps")
             .threads(2)
             .clock(Clock.systemUTC())
             .listeners(List.of(listener))
@@ -417,13 +434,12 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
 
   private int consecutiveFailures() {
     return jdbcTemplate.queryForObject(
-        "SELECT consecutive_failures FROM primary_artwork_scheduled_tasks", Integer.class);
+        "SELECT consecutive_failures FROM " + PRIMARY_TABLE, Integer.class);
   }
 
   private Instant nextExecutionTime() {
     return jdbcTemplate
-        .queryForObject(
-            "SELECT execution_time FROM primary_artwork_scheduled_tasks", OffsetDateTime.class)
+        .queryForObject("SELECT execution_time FROM " + PRIMARY_TABLE, OffsetDateTime.class)
         .toInstant();
   }
 

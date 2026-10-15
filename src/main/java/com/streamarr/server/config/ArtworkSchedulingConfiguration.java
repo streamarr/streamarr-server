@@ -6,6 +6,7 @@ import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.services.ArtworkSteps;
 import java.time.Clock;
 import java.util.List;
+import java.util.function.Supplier;
 import javax.sql.DataSource;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
@@ -17,10 +18,10 @@ import org.springframework.transaction.PlatformTransactionManager;
 @Configuration(proxyBeanMethods = false)
 public class ArtworkSchedulingConfiguration {
 
-  public static final String PRIMARY_TABLE = "primary_artwork_scheduled_tasks";
-  public static final String BACKGROUND_TABLE = "background_artwork_scheduled_tasks";
-  public static final String PRIMARY_TASK = "primary-artwork-steps";
-  public static final String BACKGROUND_TASK = "background-artwork-steps";
+  private static final String PRIMARY_TABLE = "primary_artwork_scheduled_tasks";
+  private static final String BACKGROUND_TABLE = "background_artwork_scheduled_tasks";
+  private static final String PRIMARY_TASK = "primary-artwork-steps";
+  private static final String BACKGROUND_TASK = "background-artwork-steps";
 
   @Bean
   @SuppressWarnings("java:S107") // Spring injects each collaborator by type.
@@ -33,36 +34,39 @@ public class ArtworkSchedulingConfiguration {
       Clock clock,
       ArtworkProperties properties,
       Environment environment) {
-    var builder =
-        ArtworkScheduler.builder()
-            .customizer(customizer)
-            .dataSource(dataSource)
-            .transactionManager(transactionManager)
-            .steps(steps)
-            .requests(requests)
-            .clock(clock)
-            .listeners(List.of());
+    // Each scheduler gets its own builder and settings, because building one changes its settings.
+    Supplier<ArtworkScheduler.ArtworkSchedulerBuilder> newScheduler =
+        () ->
+            ArtworkScheduler.builder()
+                .schedulerProperties(schedulerProperties(environment))
+                .customizer(customizer)
+                .dataSource(dataSource)
+                .transactionManager(transactionManager)
+                .steps(steps)
+                .requests(requests)
+                .clock(clock)
+                .listeners(List.of());
     return ArtworkSchedulers.builder()
         .primary(
-            builder
-                .schedulerProperties(schedulerProperties(environment))
+            newScheduler
+                .get()
                 .tableName(PRIMARY_TABLE)
                 .taskName(PRIMARY_TASK)
                 .threads(properties.primaryThreads())
                 .build())
         .background(
-            builder
-                .schedulerProperties(schedulerProperties(environment))
+            newScheduler
+                .get()
                 .tableName(BACKGROUND_TABLE)
                 .taskName(BACKGROUND_TASK)
                 .threads(properties.backgroundThreads())
                 .build())
-        .autoStartup(schedulerProperties(environment).isEnabled())
+        .autoStartup(environment.getProperty("db-scheduler.enabled", Boolean.class, true))
         .build();
   }
 
-  /** The db-scheduler settings the starter reads, bound even when the starter is off. */
-  public static DbSchedulerProperties schedulerProperties(Environment environment) {
+  // The db-scheduler settings the starter reads, bound even when the starter is off.
+  private static DbSchedulerProperties schedulerProperties(Environment environment) {
     return Binder.get(environment)
         .bind("db-scheduler", Bindable.of(DbSchedulerProperties.class))
         .orElseGet(DbSchedulerProperties::new);

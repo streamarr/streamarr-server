@@ -7,6 +7,7 @@ import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerProperties;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fixtures.ArtworkFixture;
 import java.time.Clock;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.DisplayName;
@@ -31,7 +32,8 @@ class ArtworkSchedulerTest {
         "requests",
         "tableName",
         "taskName",
-        "clock"
+        "clock",
+        "listeners"
       })
   @DisplayName("Should reject an artwork scheduler built without a required collaborator")
   void shouldRejectAnArtworkSchedulerBuiltWithoutARequiredCollaborator(String missing) {
@@ -62,9 +64,10 @@ class ArtworkSchedulerTest {
                 builder -> builder.transactionManager(new FakeTransactionManager()),
             "steps", builder -> builder.steps(artwork.steps()),
             "requests", builder -> builder.requests(artwork.requests()),
-            "tableName", builder -> builder.tableName(ArtworkSchedulingConfiguration.PRIMARY_TABLE),
-            "taskName", builder -> builder.taskName(ArtworkSchedulingConfiguration.PRIMARY_TASK),
-            "clock", builder -> builder.clock(Clock.systemUTC()));
+            "tableName", builder -> builder.tableName("primary_artwork_scheduled_tasks"),
+            "taskName", builder -> builder.taskName("primary-artwork-steps"),
+            "clock", builder -> builder.clock(Clock.systemUTC()),
+            "listeners", builder -> builder.listeners(List.of()));
     var builder = ArtworkScheduler.builder().threads(1);
     collaborators.forEach(
         (name, setIt) -> {

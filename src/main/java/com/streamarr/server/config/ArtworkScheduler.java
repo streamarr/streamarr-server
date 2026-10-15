@@ -74,7 +74,7 @@ public final class ArtworkScheduler {
       @NonNull String taskName,
       int threads,
       @NonNull Clock clock,
-      List<SchedulerListener> listeners) {
+      @NonNull List<SchedulerListener> listeners) {
     var transactionalDataSource = new SchedulerTransactionDataSource(dataSource);
     var serializer = customizer.serializer().orElseThrow();
     var artworkTasks =
@@ -103,7 +103,7 @@ public final class ArtworkScheduler {
             .build();
     schedulerProperties.setTableName(tableName);
     schedulerProperties.setThreads(threads);
-    var schedulerListeners = listenersOrNone(listeners);
+    var schedulerListeners = List.copyOf(listeners);
     Supplier<Scheduler> newScheduler =
         () ->
             DbSchedulerConfigurationSupport.buildScheduler(
@@ -116,14 +116,6 @@ public final class ArtworkScheduler {
                 schedulerListeners,
                 List.of());
     return new ArtworkScheduler(task, client, newScheduler, clock);
-  }
-
-  private static List<SchedulerListener> listenersOrNone(List<SchedulerListener> listeners) {
-    if (listeners == null) {
-      return List.of();
-    }
-
-    return List.copyOf(listeners);
   }
 
   /**
