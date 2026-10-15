@@ -99,11 +99,22 @@ class EncoderPresetDispatchIT extends AbstractIntegrationTest {
 
   @AfterEach
   void tearDown() throws Exception {
-    worker.close();
-    channel.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
-    server.close();
+    if (worker != null) {
+      worker.close();
+    }
+
+    if (channel != null) {
+      channel.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
+    }
+
+    if (server != null) {
+      server.close();
+    }
+
     resetServerSettings(dsl);
-    authTestSupport.deleteIdentity(serverAdmin);
+    if (serverAdmin != null) {
+      authTestSupport.deleteIdentity(serverAdmin);
+    }
   }
 
   @Test
