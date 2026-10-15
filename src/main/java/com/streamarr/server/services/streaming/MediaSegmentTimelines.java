@@ -21,7 +21,8 @@ final class MediaSegmentTimelines {
 
   /**
    * A stream copy's segments open at the source keyframes. The transcode decision copies the video
-   * only when the keyframes are known and open every segment, so a copy session always has them.
+   * only when the keyframes are known and open every grid interval except possibly the last, so a
+   * copy session always has them.
    */
   static MediaSegmentTimeline of(StreamSession session, StreamingProperties properties) {
     var probe = session.getMediaProbe();

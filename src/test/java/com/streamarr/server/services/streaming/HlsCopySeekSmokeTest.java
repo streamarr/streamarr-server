@@ -61,7 +61,7 @@ class HlsCopySeekSmokeTest {
   private static final String SEEK_SEGMENT_NAME = SegmentNames.mediaSegmentName(SEEK_SEGMENT);
 
   // 24 fps with keyframes forced off the 6 s grid: each 6 s interval holds one keyframe, and the
-  // copy segments last 7.5, 5.5, 7.5, 5.5, 5 and 4 s.
+  // copy segments last 7.5, 5.5, 7.5, 5.5, 5 and 5 s.
   private static final List<String> IRREGULAR_MATROSKA =
       source(
           "rate=24",
@@ -215,17 +215,16 @@ class HlsCopySeekSmokeTest {
             "irregular-keyframes.mkv",
             IRREGULAR_MATROSKA,
             KeyframePositionSource.CONTAINER_INDEX,
-            List.of(7.5, 5.5, 7.5, 5.5, 5.0, 4.0)),
+            List.of(7.5, 5.5, 7.5, 5.5, 5.0, 5.0)),
         Arguments.of(
             "boundary-keyframes.ts",
             BOUNDARY_MPEG_TS,
             KeyframePositionSource.PACKET_SCAN,
-            List.of(6.0, 6.0, 7.0, 6.0, 5.0, 5.0)));
+            List.of(6.0, 6.0, 7.0, 6.0, 5.0, 6.0)));
   }
 
-  // The AAC encoder's priming samples make each container about 23 ms longer than its video. At
-  // 36 s, that tail would form a seventh grid interval without a keyframe, and the server would
-  // encode the video.
+  // The AAC encoder's priming samples make each container about 23 ms longer than its 36 s video.
+  // That tail forms a seventh grid interval without a keyframe, which joins the last copy segment.
   private static List<String> source(
       String frameRate, List<String> keyframeArguments, List<String> formatArguments) {
     var arguments =
@@ -234,11 +233,11 @@ class HlsCopySeekSmokeTest {
                 "-f",
                 "lavfi",
                 "-i",
-                "testsrc=size=160x90:duration=35:" + frameRate,
+                "testsrc=size=160x90:duration=36:" + frameRate,
                 "-f",
                 "lavfi",
                 "-i",
-                "sine=frequency=440:duration=35",
+                "sine=frequency=440:duration=36",
                 "-c:v",
                 "libx264",
                 "-g",

@@ -64,7 +64,8 @@ public class TranscodeDecisionService {
   }
 
   // A stream copy's segments can start only at source keyframes (ADR 0037), so the video is copied
-  // only when the known keyframes open every segment of the grid.
+  // only when the known keyframes open every interval of the grid except possibly the last. A last
+  // interval without a keyframe joins the copy segment before it, which then runs to the media end.
   private Optional<StreamCopyRefusal> streamCopyRefusal(MediaProbe source) {
     return switch (source.keyframes()) {
       case KeyframeKnowledge.Known(var positions) ->
@@ -80,7 +81,8 @@ public class TranscodeDecisionService {
       KeyframePositions positions, MediaSegmentTimeline.PlainGrid grid) {
     return switch (KeyframeSegmentBoundaries.forStreamCopy(
         positions, grid.targetSegmentDurationSeconds())) {
-      case StreamCopySegments.Starts starts when !opensEverySegment(grid, positions, starts) ->
+      case StreamCopySegments.Starts starts
+          when !opensEveryIntervalButTheLast(grid, positions, starts) ->
           Optional.of(StreamCopyRefusal.INTERVAL_WITHOUT_KEYFRAME);
       case StreamCopySegments.Starts _ -> Optional.empty();
       case StreamCopySegments.IntervalWithoutKeyframe _ ->
@@ -94,18 +96,20 @@ public class TranscodeDecisionService {
     };
   }
 
-  private static boolean opensEverySegment(
+  private static boolean opensEveryIntervalButTheLast(
       MediaSegmentTimeline.PlainGrid grid,
       KeyframePositions positions,
       StreamCopySegments.Starts starts) {
-    return grid.openedAt(positions, starts).mediaSegmentCount() == grid.mediaSegmentCount();
+    var copySegmentCount = grid.openedAt(positions, starts).mediaSegmentCount();
+    return copySegmentCount > 0 && copySegmentCount >= grid.mediaSegmentCount() - 1;
   }
 
   private void countStreamCopyRefusal(StreamCopyRefusal refusal) {
     Counter.builder(STREAM_COPY_REFUSALS_METRIC)
         .description(
             "Stream copies of a video codec the client plays, refused because the source's"
-                + " keyframes are not known or cannot open every advertised segment")
+                + " keyframes are not known or leave a grid interval before the last one"
+                + " without a keyframe")
         .tag("reason", refusal.name().toLowerCase(Locale.ROOT))
         .register(meterRegistry)
         .increment();

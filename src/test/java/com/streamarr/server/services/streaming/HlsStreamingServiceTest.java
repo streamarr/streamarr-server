@@ -175,13 +175,39 @@ class HlsStreamingServiceTest {
 
   @Test
   @DisplayName(
-      "Should encode the video when the playlist advertises a segment after the last keyframe")
-  void shouldEncodeTheVideoWhenThePlaylistAdvertisesASegmentAfterTheLastKeyframe() {
-    // The playlist advertises four 6 s segments for 20 s, but no keyframe opens [18 s, 20 s).
+      "Should end the copy playlist at the last keyframe's segment when no keyframe opens the"
+          + " final grid interval")
+  void shouldEndTheCopyPlaylistAtTheLastKeyframesSegmentWhenNoKeyframeOpensTheFinalGridInterval() {
+    // The 6 s grid divides 20 s into four intervals. No keyframe opens [18 s, 20 s), so that
+    // interval joins the segment that the keyframe at 12 s opens.
     probeResults.setDefaultProbe(
         defaultProbeBuilder()
             .duration(Duration.ofSeconds(20))
             .keyframes(ProbeFixture.keyframesEvery(Duration.ofSeconds(6), Duration.ofSeconds(12)))
+            .build());
+    var file = seedMediaFile();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var playlist = mediaPlaylist(session);
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(extinfDurations(playlist)).containsExactly("6.000000", "6.000000", "8.000000");
+    // RFC 8216 §4.3.3.1: each EXTINF, rounded to the nearest integer, fits the target duration.
+    assertThat(playlist).contains("#EXT-X-TARGETDURATION:8\n");
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(TranscodeRequest::mediaSegmentCount)
+        .isEqualTo(3);
+  }
+
+  @Test
+  @DisplayName("Should encode the video when the source's keyframes stop long before the media end")
+  void shouldEncodeTheVideoWhenTheSourcesKeyframesStopLongBeforeTheMediaEnd() {
+    // A copy would advertise one final segment from 6 s to the end of the 2 h source.
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .duration(Duration.ofMinutes(120))
+            .keyframes(keyframesAtMillis(0, 6_000))
             .build());
     var file = seedMediaFile();
 
