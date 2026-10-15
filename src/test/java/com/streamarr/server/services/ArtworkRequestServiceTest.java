@@ -763,7 +763,7 @@ class ArtworkRequestServiceTest {
       var task = operation.openTaskRun();
       artworkRequestService.requestPrimaryArtwork(task, movieArtwork(UUID.randomUUID(), POSTER));
       task.close();
-      artwork.requests().failNextArtworkStateReadWith(poolTimeout());
+      artwork.requests().failNextCompletionEvidenceReadWith(poolTimeout());
 
       try (var wait =
           BoundedTask.start(() -> artwork.artworkRunWaiter().tryAwaitTaskResults(task))) {
@@ -821,7 +821,7 @@ class ArtworkRequestServiceTest {
 
       artwork.artworkRunWaiter().tryAwaitTaskResults(task);
 
-      assertThat(artwork.requests().artworkStateReads()).isZero();
+      assertThat(artwork.requests().completionEvidenceReads()).isZero();
     }
   }
 

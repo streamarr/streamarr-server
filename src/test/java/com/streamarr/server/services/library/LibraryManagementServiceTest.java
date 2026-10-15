@@ -1075,7 +1075,7 @@ class LibraryManagementServiceTest {
 
       assertThat(scanReports("ignored")).isEqualTo(1);
       assertThat(allScanReports()).isEqualTo(1);
-      assertThat(artwork.requests().artworkStateReads()).isZero();
+      assertThat(artwork.requests().completionEvidenceReads()).isZero();
     }
 
     @Test
@@ -1121,7 +1121,7 @@ class LibraryManagementServiceTest {
       var posterArtwork = ArtworkFixture.builder().imageDownloader(imageDownloader).build();
       posterArtwork
           .requests()
-          .failNextArtworkStateReadWith(
+          .failNextCompletionEvidenceReadWith(
               new CannotGetJdbcConnectionException(
                   "simulated pool timeout",
                   new SQLTransientConnectionException("connection not available")));

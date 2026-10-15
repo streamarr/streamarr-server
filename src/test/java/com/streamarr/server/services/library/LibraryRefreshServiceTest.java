@@ -321,7 +321,7 @@ class LibraryRefreshServiceTest {
       stubMovieMetadataWithPoster("157336", library);
       artwork
           .requests()
-          .failNextArtworkStateReadWith(
+          .failNextCompletionEvidenceReadWith(
               new CannotGetJdbcConnectionException(
                   "simulated pool timeout",
                   new SQLTransientConnectionException("connection not available")));

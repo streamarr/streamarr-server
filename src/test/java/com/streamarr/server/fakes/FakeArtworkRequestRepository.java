@@ -32,8 +32,8 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
   private final Map<ArtworkTarget, Instant> firstRequestedAt = new HashMap<>();
   private final FakeItemResultRepository itemResults;
   private long lastGeneration;
-  private int artworkStateReads;
-  private RuntimeException nextArtworkStateReadFailure;
+  private int completionEvidenceReads;
+  private RuntimeException nextCompletionEvidenceReadFailure;
 
   /** Holds the fake item results to this repository's generations, as the database does. */
   public FakeArtworkRequestRepository(FakeItemResultRepository itemResults) {
@@ -41,14 +41,14 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
     itemResults.checkArtworkGenerationsWith(this::isPendingGeneration);
   }
 
-  /** Fails the next read of the recorded artwork states with {@code failure}. */
-  public synchronized void failNextArtworkStateReadWith(RuntimeException failure) {
-    nextArtworkStateReadFailure = failure;
+  /** Fails the next read of the artwork completion evidence with {@code failure}. */
+  public synchronized void failNextCompletionEvidenceReadWith(RuntimeException failure) {
+    nextCompletionEvidenceReadFailure = failure;
   }
 
-  /** Returns how many times the recorded artwork states were read. */
-  public synchronized int artworkStateReads() {
-    return artworkStateReads;
+  /** Returns how many times the artwork completion evidence was read. */
+  public synchronized int completionEvidenceReads() {
+    return completionEvidenceReads;
   }
 
   /** Returns every stored artwork request. */
@@ -119,10 +119,10 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
   @Override
   public synchronized List<ArtworkCompletionEvidence> findCompletionEvidence(
       Collection<ArtworkTarget> targets) {
-    artworkStateReads++;
-    var failure = nextArtworkStateReadFailure;
+    completionEvidenceReads++;
+    var failure = nextCompletionEvidenceReadFailure;
     if (failure != null) {
-      nextArtworkStateReadFailure = null;
+      nextCompletionEvidenceReadFailure = null;
       throw failure;
     }
 

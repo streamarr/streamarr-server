@@ -56,8 +56,8 @@ import org.springframework.test.context.TestPropertySource;
       "spring.datasource.hikari.connection-timeout=1000",
       "tmdb.api.requests-per-second=10000",
       // Artwork threads share the four connections and are not admitted.
-      "artwork.primary-threads=2",
-      "artwork.background-threads=1"
+      "artwork.scheduling.primary-threads=2",
+      "artwork.scheduling.background-threads=1"
     })
 class LargeMovieLibraryScanIT extends AbstractScanningIntegrationTest {
 

@@ -87,7 +87,7 @@ Each admitted task reports exactly one outcome, which returns its admission:
 
 A task keeps its admission until the primary artwork it requested has recorded results, so its latency includes that artwork.
 A series file task waits for every series, season and episode image it requested.
-The task checks its results every `artwork.task-result-check-interval` (100 ms by default), and a task that requested no artwork reads nothing.
+The task checks its results every `artwork.runs.task-result-check-interval` (100 ms by default), and a task that requested no artwork reads nothing.
 A failed read stops that task's wait, and the operation reads the same results again when it waits for its artwork at its end.
 
 A recorded failure does not fail the operation.
