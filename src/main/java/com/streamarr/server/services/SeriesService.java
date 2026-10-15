@@ -27,9 +27,11 @@ import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationService;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -267,6 +269,12 @@ public class SeriesService {
   @Transactional(readOnly = true)
   public Optional<Series> findById(UUID id) {
     return seriesRepository.findById(id);
+  }
+
+  /** Returns the given series ids whose series has no provider id. */
+  @Transactional(readOnly = true)
+  public Set<UUID> findUnmatchedSeriesIds(Collection<UUID> seriesIds) {
+    return seriesRepository.findUnmatchedSeriesIds(seriesIds);
   }
 
   @Transactional(readOnly = true)

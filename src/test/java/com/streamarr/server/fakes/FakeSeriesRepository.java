@@ -8,15 +8,27 @@ import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.jooq.SortOrder;
 
 public class FakeSeriesRepository extends FakeJpaRepository<Series> implements SeriesRepository {
+
+  @Override
+  public Set<UUID> findUnmatchedSeriesIds(Collection<UUID> ids) {
+    return database.values().stream()
+        .filter(item -> ids.contains(item.getId()))
+        .filter(item -> item.getExternalIds().isEmpty())
+        .map(Series::getId)
+        .collect(Collectors.toSet());
+  }
 
   @Override
   public Optional<Series> findByTmdbId(String tmdbId) {
