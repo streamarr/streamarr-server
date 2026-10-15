@@ -187,19 +187,7 @@ class TransactionAuditActorBindingIT extends AbstractIntegrationTest {
   }
 
   private static CompletableFuture<Void> runOnNewThread(ThreadKind threadKind, Runnable work) {
-    var outcome = new CompletableFuture<Void>();
-    threadKind
-        .newBuilder()
-        .start(
-            () -> {
-              try {
-                work.run();
-                outcome.complete(null);
-              } catch (RuntimeException failure) {
-                outcome.completeExceptionally(failure);
-              }
-            });
-    return outcome;
+    return CompletableFuture.runAsync(work, task -> threadKind.newBuilder().start(task));
   }
 
   private void insertGenre(String sourceId) {
