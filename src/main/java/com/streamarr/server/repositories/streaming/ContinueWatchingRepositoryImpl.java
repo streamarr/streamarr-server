@@ -2,14 +2,14 @@ package com.streamarr.server.repositories.streaming;
 
 import static com.streamarr.server.jooq.generated.tables.MediaFile.MEDIA_FILE;
 import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
-import static org.jooq.impl.DSL.max;
 
+import com.streamarr.server.domain.streaming.CollectableScope;
+import com.streamarr.server.repositories.LastWatchedExpression;
 import com.streamarr.server.repositories.WatchStateConditions;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
-import org.jooq.SortOrder;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -20,9 +20,11 @@ public class ContinueWatchingRepositoryImpl implements ContinueWatchingRepositor
 
   @Override
   public List<UUID> findCollectableIds(UUID profileId, int limit) {
-    var lastActivity = max(SESSION_PROGRESS.LAST_MODIFIED_ON);
+    var itemId = MEDIA_FILE.MEDIA_ID;
+    var lastWatchedAt =
+        LastWatchedExpression.lastWatchedAt(profileId, CollectableScope.DIRECT_MEDIA, itemId);
 
-    return dsl.select(MEDIA_FILE.MEDIA_ID, lastActivity)
+    return dsl.select(itemId)
         .from(SESSION_PROGRESS)
         .innerJoin(MEDIA_FILE)
         .on(SESSION_PROGRESS.MEDIA_FILE_ID.eq(MEDIA_FILE.ID))
@@ -31,10 +33,10 @@ public class ContinueWatchingRepositoryImpl implements ContinueWatchingRepositor
                 .PROFILE_ID
                 .eq(profileId)
                 .and(SESSION_PROGRESS.POSITION_SECONDS.greaterThan(0))
-                .and(WatchStateConditions.hasResumePosition(profileId, MEDIA_FILE.MEDIA_ID)))
-        .groupBy(MEDIA_FILE.MEDIA_ID)
-        .orderBy(lastActivity.sort(SortOrder.DESC))
+                .and(WatchStateConditions.hasResumePosition(profileId, itemId)))
+        .groupBy(itemId)
+        .orderBy(lastWatchedAt.desc(), itemId.desc())
         .limit(limit)
-        .fetch(MEDIA_FILE.MEDIA_ID);
+        .fetch(itemId);
   }
 }

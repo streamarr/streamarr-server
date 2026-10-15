@@ -13,6 +13,7 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.domain.streaming.WatchHistory;
 import com.streamarr.server.domain.streaming.WatchStatus;
@@ -30,6 +31,7 @@ import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -40,6 +42,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -48,7 +51,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 /**
  * Pins the watchStatus field, the watch status filter, Continue Watching and watchProgress to one
  * rule: progress counts only when it is newer than the latest completion that has not been
- * dismissed.
+ * dismissed. Continue Watching also follows the lastWatchedAt field's order.
  */
 @Tag("IntegrationTest")
 @DisplayName("Watch State Parity Integration Tests")
@@ -261,6 +264,42 @@ class WatchStateParityIT extends AbstractIntegrationTest {
           .as("watch status filter %s", candidate)
           .isEqualTo(candidate == status);
     }
+  }
+
+  @Test
+  @DisplayName("Should order Continue Watching by the lastWatchedAt field, newest first")
+  void shouldOrderContinueWatchingByTheLastWatchedAtFieldNewestFirst() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var created =
+        Stream.of(
+                Activity.builder().name("early").progress(new ProgressAt(600, 11)).build(),
+                Activity.builder().name("late").progress(new ProgressAt(600, 13)).build(),
+                Activity.builder()
+                    .name("rewatch")
+                    .completion(new CompletionAt(10, false))
+                    .progress(new ProgressAt(600, 12))
+                    .build())
+            .map(
+                activity -> {
+                  var movie = createMovieWithFile(library);
+                  applyActivity(movie, activity);
+                  return movie.getId();
+                })
+            .toList();
+
+    var ids = continueWatchingIds();
+    var lastWatchedAt =
+        watchStatusService.getLastWatchedAtForItems(profileId, CollectableScope.DIRECT_MEDIA, ids);
+    // PostgreSQL orders uuid values byte by byte, which matches their text order.
+    var expected =
+        ids.stream()
+            .sorted(
+                Comparator.comparing((UUID id) -> lastWatchedAt.get(id))
+                    .thenComparing(UUID::toString)
+                    .reversed())
+            .toList();
+
+    assertThat(ids).containsAll(created).containsExactlyElementsOf(expected);
   }
 
   private void applyActivity(BaseCollectable<?> item, Activity activity) {
