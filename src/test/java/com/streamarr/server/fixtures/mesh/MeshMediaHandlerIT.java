@@ -1,5 +1,7 @@
 package com.streamarr.server.fixtures.mesh;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.streamCopyDecision;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,6 +21,7 @@ import com.streamarr.transcode.v1.ProbeStreamInfo;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
+import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
@@ -167,7 +170,11 @@ class MeshMediaHandlerIT {
       worker.start();
       await()
           .atMost(10, TimeUnit.SECONDS)
-          .until(() -> !rig.server.eligibleWorkers(MeshValidationServer.SOURCE_ID).isEmpty());
+          .until(
+              () ->
+                  !rig.server
+                      .eligibleWorkers(MeshValidationServer.SOURCE_ID, streamCopyDecision())
+                      .isEmpty());
 
       var response = rig.requestMedia("/media/segment");
 
@@ -237,7 +244,10 @@ class MeshMediaHandlerIT {
                       .setCapabilities(
                           WorkerCapabilities.newBuilder()
                               .addSourceNamespaceIds(toProto(MeshValidationServer.SOURCE_ID))
-                              .addProbeVersions(1)))
+                              .addProbeVersions(1)
+                              .addVideoEncoders(
+                                  softwareEncoder(
+                                      VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264"))))
               .build());
       worker.accepted.get(5, TimeUnit.SECONDS);
     }

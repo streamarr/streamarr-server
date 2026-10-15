@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
@@ -259,14 +260,14 @@ class SegmentRecoveryConcurrencyTest {
     private Runnable onNextLookup;
 
     @Override
-    public Set<ExecutionTargetId> executionTargets() {
+    public Set<ExecutionTargetId> executionTargets(TranscodeDecision decision) {
       var publication = onNextLookup;
       onNextLookup = null;
       if (publication != null) {
         publication.run();
       }
 
-      return super.executionTargets();
+      return super.executionTargets(decision);
     }
   }
 
@@ -319,13 +320,13 @@ class SegmentRecoveryConcurrencyTest {
       }
 
       @Override
-      public Set<ExecutionTargetId> executionTargets() {
+      public Set<ExecutionTargetId> executionTargets(TranscodeDecision decision) {
         if (Thread.currentThread() == first && pauseLookup.compareAndSet(true, false)) {
           lookingUpTargets.countDown();
           await(continueRecovery);
         }
 
-        return super.executionTargets();
+        return super.executionTargets(decision);
       }
 
       @Override

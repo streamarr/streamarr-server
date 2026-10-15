@@ -1,5 +1,6 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
@@ -10,12 +11,14 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public class FakeTranscodeExecutor implements TranscodeExecutor {
@@ -36,9 +39,13 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final Set<ExecutionTargetId> refusingTargets = ConcurrentHashMap.newKeySet();
   private Set<ExecutionTargetId> executionTargets =
       new LinkedHashSet<>(Set.of(ExecutionTargetId.LOCAL));
+  private final Map<ExecutionTargetId, Set<String>> encodableVideoCodecFamiliesByTarget =
+      new ConcurrentHashMap<>();
   private final AtomicLong livenessChecks = new AtomicLong();
   private final Object observationMonitor = new Object();
   private int availableSlots = TranscodeExecutor.UNBOUNDED_SLOTS;
+  private final Map<String, Integer> encodeSlotsByVideoCodecFamily =
+      new ConcurrentHashMap<>(unboundedEncodeSlots(Set.of("h264", "hevc", "av1")));
   private boolean healthy = true;
   private volatile boolean failUntargetedStarts;
 
@@ -52,7 +59,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public TranscodeHandle start(TranscodeRequest request, ExecutionTargetId target) {
-    if (refusingTargets.contains(target)) {
+    if (refusingTargets.contains(target) || !canRun(target, request.transcodeDecision())) {
       throw new TranscodeException("Target " + target.value() + " refused the transcode");
     }
     startedTargets.add(target);
@@ -60,6 +67,10 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   }
 
   private TranscodeHandle doStart(TranscodeRequest request) {
+    if (encodesVideo(request.transcodeDecision()) && !tryTakeEncodeSlot(request)) {
+      throw new TranscodeException("No connected transcode worker can encode this variant");
+    }
+
     startedRequests.add(request);
     var key = new ProcessKey(request.sessionId(), request.variantLabel());
     running.add(key);
@@ -173,17 +184,88 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     return availableSlots;
   }
 
+  @Override
+  public int availableSlots(TranscodeDecision decision) {
+    if (!encodesVideo(decision)) {
+      return availableSlots;
+    }
+
+    var encodeSlots = encodeSlotsByVideoCodecFamily.getOrDefault(decision.videoCodecFamily(), 0);
+    return Math.min(availableSlots, encodeSlots);
+  }
+
   public void setAvailableSlots(int availableSlots) {
     this.availableSlots = availableSlots;
   }
 
   @Override
-  public Set<ExecutionTargetId> executionTargets() {
-    return new LinkedHashSet<>(executionTargets);
+  public Set<ExecutionTargetId> executionTargets(TranscodeDecision decision) {
+    return executionTargets.stream()
+        .filter(target -> canRun(target, decision))
+        .collect(Collectors.toCollection(LinkedHashSet::new));
   }
 
   public void setExecutionTargets(List<ExecutionTargetId> targets) {
     executionTargets = new LinkedHashSet<>(targets);
+  }
+
+  /** The target refuses an encode of any other family. A target left unset encodes every one. */
+  public void setTargetEncodableVideoCodecFamilies(ExecutionTargetId target, Set<String> families) {
+    encodableVideoCodecFamiliesByTarget.put(target, Set.copyOf(families));
+  }
+
+  private boolean canRun(ExecutionTargetId target, TranscodeDecision decision) {
+    var families = encodableVideoCodecFamiliesByTarget.get(target);
+    return !encodesVideo(decision)
+        || families == null
+        || families.contains(decision.videoCodecFamily());
+  }
+
+  @Override
+  public Set<String> encodableVideoCodecFamilies() {
+    return encodeSlotsByVideoCodecFamily.entrySet().stream()
+        .filter(entry -> entry.getValue() > 0)
+        .map(Map.Entry::getKey)
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
+  /** Every listed family gets unbounded encode slots; any other family has none. */
+  public void setEncodableVideoCodecFamilies(Set<String> families) {
+    setEncodeSlots(unboundedEncodeSlots(families));
+  }
+
+  /**
+   * Free encode slots for each video codec family, as if each family's encoder ran on its own
+   * worker. Each started encode takes one slot from its family.
+   */
+  public void setEncodeSlots(Map<String, Integer> slotsByVideoCodecFamily) {
+    encodeSlotsByVideoCodecFamily.clear();
+    encodeSlotsByVideoCodecFamily.putAll(slotsByVideoCodecFamily);
+  }
+
+  private synchronized boolean tryTakeEncodeSlot(TranscodeRequest request) {
+    var family = request.transcodeDecision().videoCodecFamily();
+    var slots = encodeSlotsByVideoCodecFamily.getOrDefault(family, 0);
+    if (slots <= 0) {
+      return false;
+    }
+
+    if (slots != UNBOUNDED_SLOTS) {
+      encodeSlotsByVideoCodecFamily.put(family, slots - 1);
+    }
+
+    return true;
+  }
+
+  private static Map<String, Integer> unboundedEncodeSlots(Set<String> families) {
+    return families.stream().collect(Collectors.toMap(Function.identity(), _ -> UNBOUNDED_SLOTS));
+  }
+
+  private static boolean encodesVideo(TranscodeDecision decision) {
+    return switch (decision.transcodeMode()) {
+      case VIDEO_TRANSCODE, FULL_TRANSCODE -> true;
+      case REMUX, AUDIO_TRANSCODE -> false;
+    };
   }
 
   public void refuseTarget(ExecutionTargetId target) {

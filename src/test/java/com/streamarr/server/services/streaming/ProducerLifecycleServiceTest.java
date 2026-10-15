@@ -29,6 +29,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
@@ -585,6 +586,28 @@ class ProducerLifecycleServiceTest {
 
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
     assertThat(transcodeExecutor.getStartedTargets()).containsExactly(newTarget);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep an exhausted encode exhausted when the only new target cannot encode its codec family")
+  void shouldKeepAnExhaustedEncodeExhaustedWhenTheOnlyNewTargetCannotEncodeItsCodecFamily() {
+    var session = defaultSessionBuilder().transcodeDecision(fullTranscodeDecision("av1")).build();
+    runtimeRegistry.save(session);
+    lifecycle.startAll(session, 0);
+    recover(session);
+    clock.advance(Duration.ofSeconds(16));
+    recover(session);
+    clock.advance(Duration.ofSeconds(16));
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.EXHAUSTED);
+    var h264OnlyTarget = new ExecutionTargetId("h264-only-worker");
+    transcodeExecutor.setTargetEncodableVideoCodecFamilies(h264OnlyTarget, Set.of("h264"));
+    transcodeExecutor.setExecutionTargets(List.of(ExecutionTargetId.LOCAL, h264OnlyTarget));
+
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.EXHAUSTED);
+
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
+    assertThat(transcodeExecutor.getStartedTargets()).containsExactly(ExecutionTargetId.LOCAL);
   }
 
   @Test

@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.streamCopyDecision;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -390,12 +391,13 @@ class WorkerSessionGrpcServiceTest {
     var job = variantJob(sourceNamespaceId);
     assertThat(registry.dispatch(job)).isTrue();
     var streamSessionId = fromProto(job.getStreamSessionId());
-    var establishedWorkers = registry.eligibleWorkers(sourceNamespaceId);
+    var establishedWorkers = registry.eligibleWorkers(sourceNamespaceId, streamCopyDecision());
 
     session.onNext(registration);
 
     // A re-registration would mint a new worker session and abandon the job it was running.
-    assertThat(registry.eligibleWorkers(sourceNamespaceId)).isEqualTo(establishedWorkers);
+    assertThat(registry.eligibleWorkers(sourceNamespaceId, streamCopyDecision()))
+        .isEqualTo(establishedWorkers);
     assertThat(registry.isRunning(streamSessionId, job.getVariant().getVariantLabel())).isTrue();
   }
 

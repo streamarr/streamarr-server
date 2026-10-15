@@ -1,5 +1,6 @@
 package com.streamarr.server.fixtures.mesh;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 
 import com.streamarr.server.services.streaming.remote.protocol.WorkerIdentityMetadata;
@@ -9,6 +10,7 @@ import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeContainerInfo;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
+import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
@@ -193,7 +195,10 @@ public final class MeshValidationClient {
                       .setCapabilities(
                           WorkerCapabilities.newBuilder()
                               .addSourceNamespaceIds(toProto(MeshValidationServer.SOURCE_ID))
-                              .addProbeVersions(1)))
+                              .addProbeVersions(1)
+                              .addVideoEncoders(
+                                  softwareEncoder(
+                                      VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264"))))
               .build());
     }
 

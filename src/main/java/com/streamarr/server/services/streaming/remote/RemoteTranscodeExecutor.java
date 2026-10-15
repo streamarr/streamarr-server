@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
+import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
@@ -71,7 +72,19 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
-  public Set<ExecutionTargetId> executionTargets() {
-    return workerServer.eligibleWorkers(sourceNamespaceId);
+  public int availableSlots(TranscodeDecision decision) {
+    return workerServer.availableSlots(
+        sourceNamespaceId, RemoteVariantJobMapper.decision(decision));
+  }
+
+  @Override
+  public Set<ExecutionTargetId> executionTargets(TranscodeDecision decision) {
+    return workerServer.eligibleWorkers(
+        sourceNamespaceId, RemoteVariantJobMapper.decision(decision));
+  }
+
+  @Override
+  public Set<String> encodableVideoCodecFamilies() {
+    return workerServer.encodableVideoCodecFamilies(sourceNamespaceId);
   }
 }

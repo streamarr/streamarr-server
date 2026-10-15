@@ -8,6 +8,7 @@ import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.CancelProbeCommand;
+import com.streamarr.transcode.v1.EncoderKind;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
@@ -16,11 +17,15 @@ import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.StartProbeCommand;
 import com.streamarr.transcode.v1.StartVariantCommand;
 import com.streamarr.transcode.v1.StopVariantCommand;
+import com.streamarr.transcode.v1.TranscodeDecision;
+import com.streamarr.transcode.v1.TranscodeMode;
 import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
+import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerSessionAccepted;
+import com.streamarr.transcode.v1.WorkerVerifiedVideoEncoder;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import io.micrometer.core.instrument.Counter;
@@ -204,10 +209,11 @@ final class LiveWorkerConnectionRegistry {
     return true;
   }
 
-  Set<ExecutionTargetId> eligibleWorkers(UUID sourceNamespaceId) {
+  Set<ExecutionTargetId> eligibleWorkers(UUID sourceNamespaceId, TranscodeDecision decision) {
     var sourceNamespace = toProto(sourceNamespaceId);
     return connections.values().stream()
         .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
+        .filter(connection -> connection.canEncode(decision))
         .map(connection -> new ExecutionTargetId(connection.workerSessionId().toString()))
         .collect(Collectors.toCollection(LinkedHashSet::new));
   }
@@ -246,10 +252,42 @@ final class LiveWorkerConnectionRegistry {
         .anyMatch(connection -> connection.canAccessSourceNamespace(sourceNamespace));
   }
 
+  Set<String> encodableVideoCodecFamilies(UUID sourceNamespaceId) {
+    var sourceNamespace = toProto(sourceNamespaceId);
+    return connections.values().stream()
+        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
+        .filter(connection -> connection.availableSlots() > 0)
+        .flatMap(connection -> connection.encodableVideoCodecFamilies.stream())
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
+  private static boolean isCountedForEncodes(WorkerVerifiedVideoEncoder encoder) {
+    return encoder.getBackend().getKind() == EncoderKind.ENCODER_KIND_SOFTWARE
+        || encoder.getKeyframeVerified();
+  }
+
+  private static Optional<String> videoCodecFamilyName(VideoCodecFamily family) {
+    return switch (family) {
+      case VIDEO_CODEC_FAMILY_H264 -> Optional.of("h264");
+      case VIDEO_CODEC_FAMILY_HEVC -> Optional.of("hevc");
+      case VIDEO_CODEC_FAMILY_AV1 -> Optional.of("av1");
+      case VIDEO_CODEC_FAMILY_UNSPECIFIED, UNRECOGNIZED -> Optional.empty();
+    };
+  }
+
   int availableSlots(UUID sourceNamespaceId) {
     var sourceNamespace = toProto(sourceNamespaceId);
     return connections.values().stream()
         .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
+        .mapToInt(WorkerConnection::availableSlots)
+        .sum();
+  }
+
+  int availableSlots(UUID sourceNamespaceId, TranscodeDecision decision) {
+    var sourceNamespace = toProto(sourceNamespaceId);
+    return connections.values().stream()
+        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
+        .filter(connection -> connection.canEncode(decision))
         .mapToInt(WorkerConnection::availableSlots)
         .sum();
   }
@@ -288,6 +326,7 @@ final class LiveWorkerConnectionRegistry {
     private final WorkerIdentity worker;
     private final Set<Uuid> sourceNamespaceIds;
     private final Set<Integer> probeVersions;
+    private final Set<String> encodableVideoCodecFamilies;
     private final int maximumActiveVariants;
     private final StreamObserver<EstablishWorkerSessionResponse> responseObserver;
 
@@ -302,6 +341,12 @@ final class LiveWorkerConnectionRegistry {
       worker = registration.getWorker();
       sourceNamespaceIds = Set.copyOf(registration.getCapabilities().getSourceNamespaceIdsList());
       probeVersions = Set.copyOf(registration.getCapabilities().getProbeVersionsList());
+      encodableVideoCodecFamilies =
+          registration.getCapabilities().getVideoEncodersList().stream()
+              .filter(LiveWorkerConnectionRegistry::isCountedForEncodes)
+              .map(encoder -> videoCodecFamilyName(encoder.getBackend().getCodecFamily()))
+              .flatMap(Optional::stream)
+              .collect(Collectors.toUnmodifiableSet());
       maximumActiveVariants = registration.getAvailableSlots();
       this.responseObserver = responseObserver;
     }
@@ -318,7 +363,7 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private synchronized boolean tryDispatch(VariantJob job) {
-      if (!canAccessSource(job) || availableSlots() == 0) {
+      if (!canAccessSource(job) || !canEncode(job.getDecision()) || availableSlots() == 0) {
         return false;
       }
 
@@ -511,6 +556,13 @@ final class LiveWorkerConnectionRegistry {
 
     private boolean canAccessSource(VariantJob job) {
       return job.hasSource() && canAccessSourceNamespace(job.getSource().getSourceNamespaceId());
+    }
+
+    private boolean canEncode(TranscodeDecision decision) {
+      var encodesVideo =
+          decision.getMode() == TranscodeMode.TRANSCODE_MODE_VIDEO_TRANSCODE
+              || decision.getMode() == TranscodeMode.TRANSCODE_MODE_FULL_TRANSCODE;
+      return !encodesVideo || encodableVideoCodecFamilies.contains(decision.getVideoCodecFamily());
     }
 
     private boolean canAccessSourceNamespace(Uuid sourceNamespaceId) {

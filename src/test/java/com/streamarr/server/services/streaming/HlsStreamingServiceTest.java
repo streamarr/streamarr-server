@@ -48,10 +48,13 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -393,6 +396,13 @@ class HlsStreamingServiceTest {
         .build();
   }
 
+  private static StreamingOptions av1AndH264AutoOptions() {
+    return StreamingOptions.builder()
+        .quality(VideoQuality.AUTO)
+        .supportedCodecs(List.of("av1", "h264"))
+        .build();
+  }
+
   private MediaFile seedMediaFile() {
     var file =
         MediaFile.builder()
@@ -477,6 +487,128 @@ class HlsStreamingServiceTest {
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     assertThat(session.getTranscodeDecision()).isNotNull();
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode H.264 and start no AV1 job when the client declares AV1 and no worker-verified encoder encodes AV1")
+  void shouldEncodeH264AndStartNoAv1JobWhenClientDeclaresAv1AndNoWorkerVerifiedEncoderEncodesAv1() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).videoCodec("hevc").build());
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("h264"));
+    var file = seedMediaFile();
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.AUTO)
+            .supportedCodecs(List.of("av1", "h264"))
+            .build();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
+
+    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo("h264");
+    assertThat(transcodeExecutor.getStartedRequests())
+        .isNotEmpty()
+        .extracting(request -> request.transcodeDecision().videoCodecFamily())
+        .containsOnly("h264");
+  }
+
+  @ParameterizedTest(name = "encodable {0} → {1}")
+  @CsvSource(
+      delimiter = '|',
+      value = {"h264,av1 | av1", "h264 | h264", "h264,hevc | h264"})
+  @DisplayName(
+      "Should encode the first declared codec that a worker-verified encoder encodes, ending at H.264, when the client declares only AV1")
+  void shouldEncodeFirstDeclaredCodecThatAWorkerVerifiedEncoderEncodesWhenClientDeclaresOnlyAv1(
+      String encodableFamilies, String expectedFamily) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).videoCodec("hevc").build());
+    transcodeExecutor.setEncodableVideoCodecFamilies(
+        Stream.of(encodableFamilies.split(",")).collect(Collectors.toSet()));
+    var file = seedMediaFile();
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.HIGH_720P)
+            .supportedCodecs(List.of("av1"))
+            .build();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
+
+    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo(expectedFamily);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(request -> request.transcodeDecision().videoCodecFamily())
+        .containsOnly(expectedFamily);
+  }
+
+  @Test
+  @DisplayName(
+      "Should size the ladder to the AV1 encode slots when workers that encode only H.264 have more free slots")
+  void shouldSizeTheLadderToTheAv1EncodeSlotsWhenWorkersThatEncodeOnlyH264HaveMoreFreeSlots() {
+    transcodeExecutor.setAvailableSlots(4);
+    transcodeExecutor.setEncodeSlots(Map.of("h264", 3, "av1", 1));
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .framerate(OptionalDouble.of(23.976))
+            .videoCodec("hevc")
+            .bitrate(8_000_000L)
+            .build());
+    var file = seedMediaFile();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), av1AndH264AutoOptions());
+
+    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo("av1");
+    assertThat(session.getVariants()).hasSize(1);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(request -> request.transcodeDecision().videoCodecFamily())
+        .isEqualTo("av1");
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode H.264 when every worker that encodes the declared AV1 has no free slot")
+  void shouldEncodeH264WhenEveryWorkerThatEncodesTheDeclaredAv1HasNoFreeSlot() {
+    transcodeExecutor.setAvailableSlots(3);
+    transcodeExecutor.setEncodeSlots(Map.of("h264", 3, "av1", 0));
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .framerate(OptionalDouble.of(23.976))
+            .videoCodec("hevc")
+            .bitrate(8_000_000L)
+            .build());
+    var file = seedMediaFile();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), av1AndH264AutoOptions());
+
+    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo("h264");
+    assertThat(session.getVariants()).hasSizeGreaterThan(1);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .hasSameSizeAs(session.getVariants())
+        .extracting(request -> request.transcodeDecision().videoCodecFamily())
+        .containsOnly("h264");
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject the session for lack of capacity when only workers that cannot encode H.264 have free slots")
+  void shouldRejectTheSessionForLackOfCapacityWhenOnlyWorkersThatCannotEncodeH264HaveFreeSlots() {
+    transcodeExecutor.setAvailableSlots(2);
+    transcodeExecutor.setEncodeSlots(Map.of("h264", 0, "av1", 2));
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).videoCodec("hevc").build());
+    var file = seedMediaFile();
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.HIGH_720P)
+            .supportedCodecs(List.of("h264"))
+            .build();
+
+    var outcome =
+        service.createSession(createStreamSessionCommand(file.getId(), UUID.randomUUID(), options));
+
+    assertThat(outcome)
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
 
   @Test

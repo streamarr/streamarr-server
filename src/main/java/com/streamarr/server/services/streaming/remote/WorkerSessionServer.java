@@ -106,9 +106,11 @@ public final class WorkerSessionServer implements AutoCloseable {
     return workerConnections.dispatchTo(target, job);
   }
 
-  public synchronized Set<ExecutionTargetId> eligibleWorkers(UUID sourceNamespaceId) {
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  public synchronized Set<ExecutionTargetId> eligibleWorkers(
+      UUID sourceNamespaceId, com.streamarr.transcode.v1.TranscodeDecision decision) {
     requireStarted();
-    return workerConnections.eligibleWorkers(sourceNamespaceId);
+    return workerConnections.eligibleWorkers(sourceNamespaceId, decision);
   }
 
   public synchronized boolean stopVariant(UUID streamSessionId, String variantLabel) {
@@ -131,9 +133,21 @@ public final class WorkerSessionServer implements AutoCloseable {
     return workerConnections.hasConnectedWorker(sourceNamespaceId);
   }
 
+  public synchronized Set<String> encodableVideoCodecFamilies(UUID sourceNamespaceId) {
+    requireStarted();
+    return workerConnections.encodableVideoCodecFamilies(sourceNamespaceId);
+  }
+
   public synchronized int availableSlots(UUID sourceNamespaceId) {
     requireStarted();
     return workerConnections.availableSlots(sourceNamespaceId);
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  public synchronized int availableSlots(
+      UUID sourceNamespaceId, com.streamarr.transcode.v1.TranscodeDecision decision) {
+    requireStarted();
+    return workerConnections.availableSlots(sourceNamespaceId, decision);
   }
 
   private void requireStarted() {

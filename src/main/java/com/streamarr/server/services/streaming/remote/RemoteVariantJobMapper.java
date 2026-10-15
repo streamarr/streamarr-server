@@ -8,6 +8,7 @@ import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.SubtitleMode;
+import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.transcode.v1.ContainerFormat;
@@ -33,7 +34,7 @@ final class RemoteVariantJobMapper {
         .setJobId(toProto(logicalJobId(request)))
         .setJobAttemptId(toProto(request.attemptId()))
         .setSource(sourceMapper.map(request.sourcePath()))
-        .setDecision(decision(request))
+        .setDecision(decision(request.transcodeDecision()))
         .setVariant(variant(request))
         .setExecution(execution(request))
         .build();
@@ -45,8 +46,7 @@ final class RemoteVariantJobMapper {
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static com.streamarr.transcode.v1.TranscodeDecision decision(TranscodeRequest request) {
-    var decision = request.transcodeDecision();
+  static com.streamarr.transcode.v1.TranscodeDecision decision(TranscodeDecision decision) {
     return com.streamarr.transcode.v1.TranscodeDecision.newBuilder()
         .setMode(mode(decision.transcodeMode()))
         .setVideoCodecFamily(decision.videoCodecFamily())
