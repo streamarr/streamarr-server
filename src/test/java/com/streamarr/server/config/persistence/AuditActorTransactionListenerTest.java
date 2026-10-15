@@ -1,6 +1,7 @@
 package com.streamarr.server.config.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 import com.streamarr.server.domain.audit.AuditActor;
 import com.streamarr.server.repositories.audit.TransactionAuditActor;
@@ -8,9 +9,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
+import org.jooq.exception.DataAccessException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.transaction.support.DefaultTransactionStatus;
@@ -27,7 +32,7 @@ class AuditActorTransactionListenerTest {
     var actor = new AuditActor.Account(UUID.randomUUID());
     var transaction = readWriteTransaction();
 
-    listenerResolving(Optional.of(actor)).afterBegin(transaction, null);
+    listenerResolving(actor).afterBegin(transaction, null);
 
     assertThat(transactionAuditActor.boundActors).containsExactly(actor);
     assertThat(transaction.isRollbackOnly()).isFalse();
@@ -36,7 +41,7 @@ class AuditActorTransactionListenerTest {
   @Test
   @DisplayName("Should bind nothing when no actor resolves")
   void shouldBindNothingWhenNoActorResolves() {
-    listenerResolving(Optional.empty()).afterBegin(readWriteTransaction(), null);
+    listenerResolvingNoActor().afterBegin(readWriteTransaction(), null);
 
     assertThat(transactionAuditActor.boundActors).isEmpty();
   }
@@ -44,7 +49,7 @@ class AuditActorTransactionListenerTest {
   @Test
   @DisplayName("Should bind nothing when the transaction is read-only")
   void shouldBindNothingWhenTheTransactionIsReadOnly() {
-    listenerResolving(Optional.of(new AuditActor.System())).afterBegin(transaction(true), null);
+    listenerResolving(new AuditActor.System()).afterBegin(readOnlyTransaction(), null);
 
     assertThat(transactionAuditActor.boundActors).isEmpty();
   }
@@ -52,35 +57,51 @@ class AuditActorTransactionListenerTest {
   @Test
   @DisplayName("Should bind nothing when the transaction failed to begin")
   void shouldBindNothingWhenTheTransactionFailedToBegin() {
-    listenerResolving(Optional.of(new AuditActor.System()))
+    listenerResolving(new AuditActor.System())
         .afterBegin(
             readWriteTransaction(), new CannotCreateTransactionException("connection refused"));
 
     assertThat(transactionAuditActor.boundActors).isEmpty();
   }
 
-  @Test
-  @DisplayName("Should mark the transaction rollback-only when binding the actor fails")
-  void shouldMarkTheTransactionRollbackOnlyWhenBindingTheActorFails() {
-    transactionAuditActor.failure = new DataAccessResourceFailureException("connection closed");
+  @ParameterizedTest
+  @MethodSource("bindingFailures")
+  @DisplayName("Should leave the transaction to the audit trigger when binding the actor fails")
+  void shouldLeaveTheTransactionToTheAuditTriggerWhenBindingTheActorFails(
+      RuntimeException failure) {
+    transactionAuditActor.failure = failure;
     var transaction = readWriteTransaction();
+    var listener = listenerResolving(new AuditActor.System());
 
-    listenerResolving(Optional.of(new AuditActor.System())).afterBegin(transaction, null);
+    assertThatCode(() -> listener.afterBegin(transaction, null)).doesNotThrowAnyException();
 
-    assertThat(transaction.isRollbackOnly()).isTrue();
+    assertThat(transactionAuditActor.boundActors).isEmpty();
+    assertThat(transaction.isRollbackOnly()).isFalse();
   }
 
-  private AuditActorTransactionListener listenerResolving(Optional<AuditActor> actor) {
-    return new AuditActorTransactionListener(() -> actor, transactionAuditActor);
+  private static Stream<RuntimeException> bindingFailures() {
+    return Stream.of(
+        new DataAccessResourceFailureException("connection closed"),
+        new DataAccessException("set_config failed"),
+        new IllegalStateException("binder unavailable"));
+  }
+
+  private AuditActorTransactionListener listenerResolving(AuditActor actor) {
+    return new AuditActorTransactionListener(() -> Optional.of(actor), transactionAuditActor);
+  }
+
+  private AuditActorTransactionListener listenerResolvingNoActor() {
+    return new AuditActorTransactionListener(Optional::empty, transactionAuditActor);
   }
 
   private static DefaultTransactionStatus readWriteTransaction() {
-    return transaction(false);
+    return new DefaultTransactionStatus(
+        "audit-actor-test", new Object(), true, true, false, false, false, null);
   }
 
-  private static DefaultTransactionStatus transaction(boolean readOnly) {
+  private static DefaultTransactionStatus readOnlyTransaction() {
     return new DefaultTransactionStatus(
-        "audit-actor-test", new Object(), true, true, false, readOnly, false, null);
+        "audit-actor-test", new Object(), true, true, false, true, false, null);
   }
 
   private static final class FakeTransactionAuditActor implements TransactionAuditActor {
