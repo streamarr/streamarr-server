@@ -13,10 +13,10 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.core.env.Environment;
 
 /**
- * Starts a library-operation scheduler on the shared table, built as the application builds its
- * own, with a listener that a test waits on. A shutdown interrupts its executions after 200 ms. A
- * test that starts one stops the context's scheduler first, so that it does not pick the test's
- * executions.
+ * Starts a library-operation scheduler on the shared table, built as the application builds its own
+ * scheduler. The test passes a listener and waits for the listener's signals. A shutdown interrupts
+ * the scheduler's executions after 200 ms. A test that starts such a scheduler stops the context's
+ * scheduler first, so that the context's scheduler does not pick the test's executions.
  */
 @Builder(toBuilder = true)
 public record LibraryOperationSchedulerStarter(
@@ -36,7 +36,7 @@ public record LibraryOperationSchedulerStarter(
         .build();
   }
 
-  /** Starts a scheduler that runs library operations; the caller stops it. */
+  /** Starts a scheduler that runs library operations. The caller stops the scheduler. */
   public LibraryOperationScheduler start(SchedulerListener listener) {
     var properties = UnstartedSchedulerConfiguration.schedulerProperties(environment);
     properties.setShutdownMaxWait(Duration.ofMillis(200));

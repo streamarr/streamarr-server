@@ -25,7 +25,8 @@ import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
  * Starts a scan or a refresh through {@link LibraryOperationService} and returns once the
- * transaction that ends it has committed. The context's library-operation scheduler runs it.
+ * transaction that ends the operation has committed. The context's library-operation scheduler runs
+ * the operation.
  */
 @RequiredArgsConstructor
 public class LibraryOperationDriver {

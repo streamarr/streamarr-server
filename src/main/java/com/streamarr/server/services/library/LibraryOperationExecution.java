@@ -23,12 +23,13 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * One execution of a stored library operation, independent of the scheduler that runs it. Every
- * execution walks the library from the start. A shutdown that interrupts the execution leaves the
- * operation stored, so the operation runs again when a scheduler starts. Otherwise one transaction
- * ends the operation: it gives the library its final status, deletes the operation, and publishes
- * the status change and the end of the scan or refresh for listeners that run after the commit. An
- * end that cannot be saved escapes, so the scheduler runs the operation again with backoff.
+ * One execution of a stored library operation, independent of the scheduler that runs the
+ * execution. Every execution walks the library from the start. A shutdown that interrupts the
+ * execution leaves the operation stored, so the operation runs again when a scheduler starts.
+ * Otherwise one transaction ends the operation: it gives the library its final status, deletes the
+ * operation, and publishes the status change and the end of the scan or refresh for listeners that
+ * run after the commit. An end that cannot be saved escapes, so the scheduler runs the operation
+ * again with backoff.
  */
 @Slf4j
 @Service
@@ -52,7 +53,7 @@ public class LibraryOperationExecution {
    *
    * @return {@link LibraryOperationExecutionResult.Ended} when the operation ended or no longer
    *     exists, or {@link LibraryOperationExecutionResult.Interrupted} when a shutdown interrupted
-   *     it; the interrupt flag is then set
+   *     the execution. The interrupt flag is then set.
    */
   public LibraryOperationExecutionResult execute(UUID libraryOperationId) {
     return libraryOperations

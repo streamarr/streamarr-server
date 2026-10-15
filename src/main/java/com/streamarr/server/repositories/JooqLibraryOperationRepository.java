@@ -198,7 +198,8 @@ public class JooqLibraryOperationRepository implements LibraryOperationRepositor
         .build();
   }
 
-  // The audit columns stay out: the library builder refuses them, and the trigger fills them.
+  // The mapping leaves out the audit columns. The library builder refuses audit values, and the
+  // audit trigger fills the audit columns.
   private static Library toLibrary(LibraryRecord row) {
     return Library.builder()
         .id(row.getId())

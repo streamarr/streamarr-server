@@ -58,7 +58,8 @@ class LibraryOperationServiceIT extends AbstractIntegrationTest {
   private AuthenticatedIdentity identity;
   private final List<UUID> createdLibraries = new ArrayList<>();
 
-  // Stored operations must stay stored while a test inspects them, so nothing executes them.
+  // Stored operations must stay stored while a test inspects the operations, so the context's
+  // scheduler stays stopped.
   @BeforeEach
   void setUp() {
     contextScheduler.stop();

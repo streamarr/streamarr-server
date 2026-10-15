@@ -31,7 +31,7 @@ CREATE TRIGGER fill_audit_columns BEFORE INSERT OR UPDATE ON library_operation
 
 -- db-scheduler's task table, as published for PostgreSQL by the library, for the scheduler that
 -- runs library operations. Its own threads keep an operation that waits for probes and artwork
--- off the threads that run them. The server never queries this table directly.
+-- off the threads that run probes and artwork. The server never queries this table directly.
 CREATE TABLE library_operation_scheduled_tasks
 (
     task_name            TEXT                     NOT NULL,
@@ -55,7 +55,8 @@ CREATE INDEX library_operation_scheduled_tasks_last_heartbeat_idx
     ON library_operation_scheduled_tasks (last_heartbeat);
 
 -- Scans and refreshes ran in memory before this migration, so no operation row backs a library
--- that still shows SCANNING or REFRESHING. Such a library ends UNHEALTHY, as a restart left it.
+-- that still shows SCANNING or REFRESHING. Such a library becomes UNHEALTHY, the status that a
+-- restart gave a busy library before this migration.
 SELECT set_config('streamarr.actor_id', 'b634c755-3c6a-4ff1-a0a7-3e812d0ed1b9', true);
 
 UPDATE library

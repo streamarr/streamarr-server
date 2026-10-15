@@ -10,7 +10,7 @@ import lombok.NonNull;
 
 /**
  * A stored scan or refresh of one library. It exists from the transaction that starts the work
- * until the transaction that ends it.
+ * until the transaction that ends the work.
  *
  * @param imageRefreshMode the refresh's image refresh mode; a scan has none
  * @param statusBeforeOperation the idle status the library showed when the operation started

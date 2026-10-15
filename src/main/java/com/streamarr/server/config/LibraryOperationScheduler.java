@@ -27,9 +27,9 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * The db-scheduler that runs library operations, with its own table and thread cap. An operation
  * holds its thread while it waits for probes and artwork, so operations never take the threads that
  * run probes or artwork steps. It is deliberately not a {@link Scheduler} bean: the db-scheduler
- * starter would back off from its own probe scheduler, or register the operation task on it. Each
- * start builds a new scheduler, because a stopped scheduler cannot start again. Executions are
- * scheduled through a client that works while the scheduler is stopped.
+ * starter would back off from its own probe scheduler, or register the operation task on the probe
+ * scheduler. Each start builds a new scheduler, because a stopped scheduler cannot start again.
+ * Executions are scheduled through a client that works while the scheduler is stopped.
  */
 public final class LibraryOperationScheduler implements LibraryOperationScheduling, SmartLifecycle {
 
