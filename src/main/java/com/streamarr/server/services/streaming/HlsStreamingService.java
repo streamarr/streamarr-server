@@ -8,7 +8,6 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
-import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -226,21 +225,11 @@ public class HlsStreamingService implements StreamingService {
     return !requiresTranscode(decision.transcodeMode()) || availableTranscodeSlots(decision) > 0;
   }
 
-  // Only running job attempts count against the limit: a suspended or stopped variant has none.
   private int availableTranscodeSlots(TranscodeDecision decision) {
-    var runningJobAttempts =
-        runtimeRegistry.findAll().stream()
-            .filter(s -> requiresTranscode(s.getTranscodeDecision().transcodeMode()))
-            .mapToLong(HlsStreamingService::countRunningJobAttempts)
-            .sum();
-    var configuredSlots = properties.maxConcurrentTranscodes() - runningJobAttempts;
-    return (int) Math.min(configuredSlots, transcodeExecutor.availableSlots(decision));
-  }
-
-  private static long countRunningJobAttempts(StreamSession session) {
-    return session.getVariantHandles().values().stream()
-        .filter(handle -> handle.status() == TranscodeStatus.ACTIVE)
-        .count();
+    return (int)
+        Math.min(
+            producerLifecycle.freeConfiguredTranscodeSlots(),
+            transcodeExecutor.availableSlots(decision));
   }
 
   private boolean requiresTranscode(TranscodeMode mode) {

@@ -5,6 +5,7 @@ import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
+import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.exceptions.TranscodeException;
@@ -413,6 +414,29 @@ public class ProducerLifecycleService {
 
     return SegmentNames.indexOf(segmentName).isEmpty()
         || !segmentStore.segmentExists(session.getSessionId(), segmentName);
+  }
+
+  /**
+   * The configured transcode limit minus the running job attempts of every transcoding stream
+   * session. A suspended or stopped variant has no running job attempt.
+   */
+  public long freeConfiguredTranscodeSlots() {
+    var runningJobAttempts =
+        runtimeRegistry.findAll().stream()
+            .filter(ProducerLifecycleService::requiresTranscode)
+            .mapToLong(ProducerLifecycleService::countRunningJobAttempts)
+            .sum();
+    return properties.maxConcurrentTranscodes() - runningJobAttempts;
+  }
+
+  private static boolean requiresTranscode(StreamSession session) {
+    return session.getTranscodeDecision().transcodeMode() != TranscodeMode.REMUX;
+  }
+
+  private static long countRunningJobAttempts(StreamSession session) {
+    return session.getVariantHandles().values().stream()
+        .filter(handle -> handle.status() == TranscodeStatus.ACTIVE)
+        .count();
   }
 
   public void ensurePositioned(UUID sessionId, String variantLabel, String segmentName) {
