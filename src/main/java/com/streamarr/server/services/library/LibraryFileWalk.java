@@ -112,11 +112,12 @@ public class LibraryFileWalk {
   }
 
   /**
-   * Matches a file that the file watcher discovered and waits for nothing.
+   * Tries to match a file that the file watcher discovered, and waits for nothing.
    *
-   * @return whether the file was matched against the metadata provider
+   * @return false when the file has an unsupported extension or was already matched, so nothing was
+   *     processed; true otherwise, whether or not matching then succeeded
    */
-  public boolean processDiscoveredFile(Library library, Path path) {
+  public boolean tryProcessDiscoveredFile(Library library, Path path) {
     if (!keepSupportedOrWarn(path)) {
       return false;
     }

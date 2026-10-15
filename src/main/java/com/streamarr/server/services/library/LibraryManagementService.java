@@ -369,7 +369,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
             .findById(libraryId)
             .orElseThrow(() -> new LibraryNotFoundException(libraryId));
 
-    if (libraryFileWalk.processDiscoveredFile(library, path)) {
+    if (libraryFileWalk.tryProcessDiscoveredFile(library, path)) {
       eventPublisher.publishEvent(new ItemProcessedEvent(libraryId));
     }
   }
