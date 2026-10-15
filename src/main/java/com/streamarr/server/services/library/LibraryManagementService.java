@@ -15,6 +15,7 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.concurrency.MutexFactory;
@@ -47,7 +48,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -209,7 +209,8 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
 
   @Override
   public void triggerAsyncScan(UUID libraryId) {
-    Thread.startVirtualThread(
+    SystemWork.startThreadRunningAsSystemActor(
+        "library-scan-" + libraryId,
         () -> {
           try {
             scanLibrary(libraryId);
@@ -228,7 +229,8 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
   }
 
   private void startAsyncRefresh(UUID libraryId, Runnable refresh) {
-    Thread.startVirtualThread(
+    SystemWork.startThreadRunningAsSystemActor(
+        "library-refresh-" + libraryId,
         () -> {
           try {
             refresh.run();
@@ -292,16 +294,22 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     mediaFileRepository.deleteAll(mediaFiles);
   }
 
+  /** Refreshes the library as the System actor, whoever calls this method. */
   public void refreshLibrary(UUID libraryId) {
     refreshLibrary(libraryId, libraryRefreshService::refreshLibrary);
   }
 
+  /** Refreshes the library as {@link #refreshLibrary(UUID)} does, with {@code imageRefreshMode}. */
   public void refreshLibrary(UUID libraryId, ImageRefreshMode imageRefreshMode) {
     refreshLibrary(
         libraryId, library -> libraryRefreshService.refreshLibrary(library, imageRefreshMode));
   }
 
   private void refreshLibrary(UUID libraryId, Consumer<Library> refresh) {
+    SystemWork.runAsSystemActor(() -> refreshItemsInLibrary(libraryId, refresh));
+  }
+
+  private void refreshItemsInLibrary(UUID libraryId, Consumer<Library> refresh) {
     if (!activeRefreshes.add(libraryId)) {
       throw new LibraryRefreshInProgressException(libraryId);
     }
@@ -362,7 +370,12 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     libraryRepository.save(library);
   }
 
+  /** Processes a file that the file watcher discovered, as the System actor. */
   public void processDiscoveredFile(UUID libraryId, Path path) {
+    SystemWork.runAsSystemActor(() -> processDiscoveredFileInLibrary(libraryId, path));
+  }
+
+  private void processDiscoveredFileInLibrary(UUID libraryId, Path path) {
     var library =
         libraryRepository
             .findById(libraryId)
@@ -375,7 +388,12 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     }
   }
 
+  /** Scans the library as the System actor, whoever calls this method. */
   public void scanLibrary(UUID libraryId) {
+    SystemWork.runAsSystemActor(() -> scanFilesInLibrary(libraryId));
+  }
+
+  private void scanFilesInLibrary(UUID libraryId) {
     if (!activeScans.add(libraryId)) {
       throw new LibraryScanInProgressException(libraryId);
     }
@@ -399,7 +417,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
   private FileDiscovery discoverFiles(Library library) {
     var discovery = fileDiscoveryRuns.open("scan of", library);
     try (discovery;
-        var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var executor = SystemWork.newExecutorRunningAsSystemActor("library-scan-file-");
         var stream = Files.walk(FilepathCodec.decode(fileSystem, library.getFilepathUri()))) {
 
       var tasks =

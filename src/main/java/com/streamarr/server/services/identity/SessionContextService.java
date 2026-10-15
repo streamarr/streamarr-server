@@ -13,7 +13,6 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenContext;
 import com.streamarr.server.services.authorization.ProfileSafetyRule;
-import java.time.Clock;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -35,7 +34,6 @@ public class SessionContextService {
   private final ProfileRepository profileRepository;
   private final AuthSessionRepository sessionRepository;
   private final ProfileHouseholdShareRepository shareRepository;
-  private final Clock clock;
 
   /**
    * Saves an authorized selection on the live session (the caller has already decided). The Profile
@@ -108,7 +106,7 @@ public class SessionContextService {
    * Shared by the selection services: writes the remembered context only while the session lives.
    */
   void persistSelection(AuthSession session) {
-    if (sessionRepository.updateSelectionIfLive(session, clock.instant())) {
+    if (sessionRepository.updateSelectionIfLive(session)) {
       return;
     }
 

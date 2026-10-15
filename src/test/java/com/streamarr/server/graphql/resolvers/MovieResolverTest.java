@@ -6,6 +6,8 @@ import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
+import com.streamarr.server.domain.AuditFieldSetter;
+import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -57,9 +59,9 @@ class MovieResolverTest {
   }
 
   @Test
-  @DisplayName("Should return background-created movie when creator absent")
+  @DisplayName("Should return null creator when the movie has no recorded creator")
   @SuppressWarnings("unchecked")
-  void shouldReturnBackgroundCreatedMovieWhenCreatorAbsent() {
+  void shouldReturnNullCreatorWhenMovieHasNoRecordedCreator() {
     var movieId = UUID.randomUUID();
     var movie = Movie.builder().title("Background Movie").build();
     movie.setId(movieId);
@@ -76,6 +78,24 @@ class MovieResolverTest {
     assertThat(movieData)
         .containsEntry("title", "Background Movie")
         .containsEntry("createdBy", null);
+  }
+
+  @Test
+  @DisplayName("Should return the System actor's id as creator when system work created the movie")
+  void shouldReturnSystemActorIdAsCreatorWhenSystemWorkCreatedMovie() {
+    var movieId = UUID.randomUUID();
+    var movie = Movie.builder().title("Scanned Movie").build();
+    movie.setId(movieId);
+    AuditFieldSetter.setCreatedBy(movie, SystemActor.ID);
+
+    when(movieService.findById(movieId)).thenReturn(Optional.of(movie));
+
+    String createdBy =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            String.format("{ movie(id: \"%s\") { createdBy } }", movieId), "data.movie.createdBy");
+
+    // Clients compare audit fields with this published id, so the test pins the literal value.
+    assertThat(createdBy).isEqualTo("b634c755-3c6a-4ff1-a0a7-3e812d0ed1b9");
   }
 
   @Test

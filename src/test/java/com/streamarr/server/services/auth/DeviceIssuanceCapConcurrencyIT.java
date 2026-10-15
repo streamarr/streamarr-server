@@ -10,12 +10,12 @@ import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupportConfig;
+import com.streamarr.server.support.TestFixtureWork;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
@@ -64,7 +64,7 @@ class DeviceIssuanceCapConcurrencyIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should wait for the existing issuance lock when creating a device code")
   void shouldWaitForExistingIssuanceLockWhenCreatingDeviceCode() throws Exception {
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
         var holder = dataSource.getConnection();
         var observer = dataSource.getConnection()) {
       holder.setAutoCommit(false);
@@ -111,7 +111,7 @@ class DeviceIssuanceCapConcurrencyIT extends AbstractIntegrationTest {
     var accepted = new ArrayList<IssuedDeviceCode>();
     var refused = new ArrayList<Throwable>();
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var futures = executor.invokeAll(attempts, 20, TimeUnit.SECONDS);
       assertThat(futures).noneMatch(Future::isCancelled);
       for (var future : futures) {

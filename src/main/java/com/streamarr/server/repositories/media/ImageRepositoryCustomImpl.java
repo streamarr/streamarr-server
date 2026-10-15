@@ -26,13 +26,11 @@ import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.data.domain.AuditorAware;
 
 @RequiredArgsConstructor
 public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
 
   private final DSLContext dsl;
-  private final AuditorAware<UUID> auditorAware;
   private final ImageProperties imageProperties;
   private final PostgresTransactionLocks transactionLocks;
   private final ItemLocks itemLocks;
@@ -43,10 +41,8 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
       return Set.of();
     }
 
-    var auditUser = auditorAware.getCurrentAuditor().orElse(null);
-
     return images.stream()
-        .filter(image -> insertIfAbsent(image, auditUser))
+        .filter(this::insertIfAbsent)
         .map(Image::getId)
         .collect(Collectors.toUnmodifiableSet());
   }
@@ -82,9 +78,7 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
         dsl.select(IMAGE.PATH).from(IMAGE).where(condition).forUpdate().fetch(IMAGE.PATH);
 
     dsl.deleteFrom(IMAGE).where(condition).execute();
-
-    var auditUser = auditorAware.getCurrentAuditor().orElse(null);
-    images.forEach(image -> dsl.insertInto(IMAGE).set(imageValues(image, auditUser)).execute());
+    images.forEach(image -> dsl.insertInto(IMAGE).set(imageValues(image)).execute());
 
     return replacedPaths;
   }
@@ -112,16 +106,16 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
     return dsl.select(IMAGE.PATH).from(IMAGE).where(owners).fetch(IMAGE.PATH);
   }
 
-  private boolean insertIfAbsent(Image image, UUID auditUser) {
+  private boolean insertIfAbsent(Image image) {
     return dsl.insertInto(IMAGE)
-            .set(imageValues(image, auditUser))
+            .set(imageValues(image))
             .onConflict(IMAGE.ENTITY_ID, IMAGE.IMAGE_TYPE, IMAGE.VARIANT)
             .doNothing()
             .execute()
         > 0;
   }
 
-  private Map<Field<?>, Object> imageValues(Image image, UUID auditUser) {
+  private Map<Field<?>, Object> imageValues(Image image) {
     var ambient = image.getAmbientColors();
 
     var values = new LinkedHashMap<Field<?>, Object>();
@@ -145,8 +139,6 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
     values.put(IMAGE.AMBIENT_LIGHT_VIBRANT, ambient.map(AmbientColors::lightVibrant).orElse(null));
     values.put(IMAGE.AMBIENT_LIGHT_MUTED, ambient.map(AmbientColors::lightMuted).orElse(null));
     values.put(IMAGE.PATH, image.getPath());
-    values.put(IMAGE.CREATED_BY, auditUser);
-    values.put(IMAGE.LAST_MODIFIED_BY, auditUser);
     return values;
   }
 }

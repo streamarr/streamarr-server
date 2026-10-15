@@ -17,9 +17,9 @@ import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.ImageService.ProcessedImage;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
+import com.streamarr.server.support.TestFixtureWork;
 import java.time.Instant;
 import java.util.UUID;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
@@ -90,7 +90,7 @@ class ItemArtworkDeletionIT extends AbstractIntegrationTest {
             .build();
 
     try (var imageLock = lockRow(posterRow);
-        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var replace = executor.submit(() -> imageService.replaceImages(replacement, ATTEMPTED_AT));
       awaitWaitersBehind(jdbcTemplate, imageLock.backendPid(), 1);
       var delete = executor.submit(() -> movieService.deleteMovieById(movieId));

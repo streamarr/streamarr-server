@@ -4,9 +4,9 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.exceptions.LibraryScanFailedException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.ArtworkService;
+import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -55,7 +55,7 @@ public class FileDiscoveryRuns {
   // Probes are checked while the artwork finishes, so each phase's timer stops with its own work.
   private ScanResults awaitRequiredResults(FileDiscovery discovery)
       throws InterruptedException, ExecutionException {
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = SystemWork.newExecutorRunningAsSystemActor("library-scan-probes-")) {
       var probes = executor.submit(() -> probeRuns.awaitResults(discovery.probeRun()));
       try {
         var artwork = discovery.artworkRun().completion().get();

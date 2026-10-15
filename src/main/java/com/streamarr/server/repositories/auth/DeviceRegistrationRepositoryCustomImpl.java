@@ -19,7 +19,6 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
-import org.springframework.data.domain.AuditorAware;
 
 @RequiredArgsConstructor
 public class DeviceRegistrationRepositoryCustomImpl implements DeviceRegistrationRepositoryCustom {
@@ -29,7 +28,6 @@ public class DeviceRegistrationRepositoryCustomImpl implements DeviceRegistratio
   private final DSLContext dsl;
   private final PostgresTransactionLocks transactionLocks;
   private final EntityManager entityManager;
-  private final AuditorAware<UUID> auditorAware;
 
   @Override
   public List<DeviceRegistration> findPageByHouseholdIdAndStatus(
@@ -101,8 +99,6 @@ public class DeviceRegistrationRepositoryCustomImpl implements DeviceRegistratio
         .set(DEVICE_REGISTRATION.REVOKED_AT, now.atOffset(ZoneOffset.UTC))
         .set(DEVICE_REGISTRATION.REVOKED_BY_ACCOUNT_ID, actorAccountId)
         .set(DEVICE_REGISTRATION.REVOCATION_REASON, reason)
-        .set(DEVICE_REGISTRATION.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
-        .set(DEVICE_REGISTRATION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
         .where(scope)
         .and(DEVICE_REGISTRATION.STATUS.eq(ACTIVE))
         .returning(DEVICE_REGISTRATION.ID)

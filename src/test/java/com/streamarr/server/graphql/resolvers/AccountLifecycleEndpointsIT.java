@@ -249,9 +249,11 @@ class AccountLifecycleEndpointsIT extends IdentityLifecycleEndpointTestSupport {
             .displayName("Stays")
             .role(HouseholdRole.ADMIN)
             .build());
-    dsl.insertInto(SERVER_BOOTSTRAP)
-        .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, admin.account().getId())
-        .execute();
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            dsl.insertInto(SERVER_BOOTSTRAP)
+                .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, admin.account().getId())
+                .execute());
 
     graphql(
             authTestSupport.freshAccountBearer(admin),

@@ -9,62 +9,41 @@ import java.util.Collection;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
-import org.springframework.data.domain.AuditorAware;
 
 @RequiredArgsConstructor
 public class WatchHistoryRepositoryCustomImpl implements WatchHistoryRepositoryCustom {
 
   private final DSLContext dsl;
-  private final AuditorAware<UUID> auditorAware;
 
   @Override
   public void batchInsert(
       UUID profileId, Collection<UUID> collectableIds, Instant watchedAt, int durationSeconds) {
-    var auditUser = auditorAware.getCurrentAuditor().orElse(null);
     var watchedAtOdt = watchedAt.atOffset(ZoneOffset.UTC);
-    var now = OffsetDateTime.now(ZoneOffset.UTC);
-
     var insert =
         dsl.insertInto(
                 WATCH_HISTORY,
                 WATCH_HISTORY.PROFILE_ID,
                 WATCH_HISTORY.COLLECTABLE_ID,
                 WATCH_HISTORY.WATCHED_AT,
-                WATCH_HISTORY.DURATION_SECONDS,
-                WATCH_HISTORY.CREATED_ON,
-                WATCH_HISTORY.CREATED_BY,
-                WATCH_HISTORY.LAST_MODIFIED_ON,
-                WATCH_HISTORY.LAST_MODIFIED_BY)
-            .values((UUID) null, null, null, null, null, null, null, null)
+                WATCH_HISTORY.DURATION_SECONDS)
+            .values((UUID) null, null, null, null)
             .onConflict(
                 WATCH_HISTORY.PROFILE_ID, WATCH_HISTORY.COLLECTABLE_ID, WATCH_HISTORY.WATCHED_AT)
             .doNothing();
 
     var batch = dsl.batch(insert);
     for (var collectableId : collectableIds) {
-      batch =
-          batch.bind(
-              profileId,
-              collectableId,
-              watchedAtOdt,
-              durationSeconds,
-              now,
-              auditUser,
-              now,
-              auditUser);
+      batch = batch.bind(profileId, collectableId, watchedAtOdt, durationSeconds);
     }
     batch.execute();
   }
 
   @Override
   public void dismissAll(UUID profileId, Collection<UUID> collectableIds) {
-    var auditUser = auditorAware.getCurrentAuditor().orElse(null);
     var now = OffsetDateTime.now(ZoneOffset.UTC);
 
     dsl.update(WATCH_HISTORY)
         .set(WATCH_HISTORY.DISMISSED_AT, now)
-        .set(WATCH_HISTORY.LAST_MODIFIED_ON, now)
-        .set(WATCH_HISTORY.LAST_MODIFIED_BY, auditUser)
         .where(WATCH_HISTORY.PROFILE_ID.eq(profileId))
         .and(WATCH_HISTORY.COLLECTABLE_ID.in(collectableIds))
         .and(WATCH_HISTORY.DISMISSED_AT.isNull())
@@ -75,8 +54,6 @@ public class WatchHistoryRepositoryCustomImpl implements WatchHistoryRepositoryC
   public void reassignProfile(UUID fromProfileId, UUID toProfileId) {
     dsl.update(WATCH_HISTORY)
         .set(WATCH_HISTORY.PROFILE_ID, toProfileId)
-        .set(WATCH_HISTORY.LAST_MODIFIED_ON, OffsetDateTime.now(ZoneOffset.UTC))
-        .set(WATCH_HISTORY.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
         .where(WATCH_HISTORY.PROFILE_ID.eq(fromProfileId))
         .execute();
   }

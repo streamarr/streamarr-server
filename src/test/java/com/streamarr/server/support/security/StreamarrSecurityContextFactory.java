@@ -24,11 +24,14 @@ final class StreamarrSecurityContextFactory {
             .contextHouseholdId(TestIdentityConstants.HOUSEHOLD_ID)
             .profileId(scope == TokenScope.PROFILE ? TestIdentityConstants.PROFILE_ID : null)
             .build();
+    return contextFor(identity);
+  }
 
+  static SecurityContext contextFor(AuthenticatedIdentity identity) {
     var context = SecurityContextHolder.createEmptyContext();
     context.setAuthentication(
         new StreamarrAuthenticationToken(
-            identity, null, List.of(new SimpleGrantedAuthority(scope.authority()))));
+            identity, null, List.of(new SimpleGrantedAuthority(identity.scope().authority()))));
     return context;
   }
 }

@@ -11,16 +11,13 @@ import com.streamarr.server.domain.auth.EsnBlock;
 import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationOptions;
+import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.security.WithAccountContext;
 import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Optional;
 import java.util.UUID;
-import org.jooq.DSLContext;
-import org.jooq.Record;
 import org.jooq.Table;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -37,7 +34,7 @@ class DeviceAdministrationPaginationIT extends AbstractIntegrationTest {
   @Autowired private DeviceRegistrationRepository registrationRepository;
   @Autowired private EsnBlockRepository esnBlockRepository;
   @Autowired private AuthTestSupport authTestSupport;
-  @Autowired private DSLContext dsl;
+  @Autowired private AuditColumnFixtures auditColumns;
 
   @Test
   @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -124,17 +121,11 @@ class DeviceAdministrationPaginationIT extends AbstractIntegrationTest {
     }
   }
 
-  private <R extends Record> void setCreatedOn(Table<R> table, UUID id, int secondsAfterEpoch) {
-    dsl.update(table)
-        .set(table.field("created_on", OffsetDateTime.class), timestamp(secondsAfterEpoch))
-        .where(table.field("id", UUID.class).eq(id))
-        .execute();
-  }
-
-  private static OffsetDateTime timestamp(int secondsAfterEpoch) {
-    return Instant.parse("2026-08-21T12:00:00Z")
-        .plusSeconds(secondsAfterEpoch)
-        .atOffset(ZoneOffset.UTC);
+  private void setCreatedOn(Table<?> table, UUID id, int secondsAfterEpoch) {
+    auditColumns.overwriteCreatedOn(
+        table,
+        table.field("id", UUID.class).eq(id),
+        Instant.parse("2026-08-21T12:00:00Z").plusSeconds(secondsAfterEpoch));
   }
 
   private static KeysetPaginationOptions forwardOptions(UUID cursorId) {

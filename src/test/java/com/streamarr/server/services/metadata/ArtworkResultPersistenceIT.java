@@ -30,6 +30,7 @@ import com.streamarr.server.services.ArtworkSources;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
+import com.streamarr.server.support.TestFixtureWork;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -39,7 +40,6 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
@@ -142,7 +142,7 @@ class ArtworkResultPersistenceIT extends AbstractWireMockIntegrationTest {
     var deletePid = new CompletableFuture<Integer>();
     var commitDelete = new CountDownLatch(1);
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var delete =
           executor.submit(
               () ->
@@ -197,7 +197,7 @@ class ArtworkResultPersistenceIT extends AbstractWireMockIntegrationTest {
             .build();
 
     try (var resultLock = lockRow(posterResult);
-        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var fetch =
           executor.submit(
               () ->

@@ -1,6 +1,7 @@
 package com.streamarr.server.services.watchprogress;
 
 import static com.streamarr.server.fixtures.SessionProgressFixture.progressBuilder;
+import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -13,7 +14,9 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.streaming.SaveWatchProgress;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
+import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.security.TestIdentityConstants;
 import com.streamarr.server.support.security.WithProfileContext;
 import jakarta.persistence.EntityManager;
 import java.util.Set;
@@ -26,8 +29,8 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.AuditorAware;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Watch Progress Integration Tests")
@@ -41,7 +44,8 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private WatchStatusService watchStatusService;
   @Autowired private EntityManager entityManager;
-  @Autowired private AuditorAware<UUID> auditorAware;
+  @Autowired private TransactionTemplate transactionTemplate;
+  @Autowired private AuditColumnFixtures auditColumns;
 
   private AuthTestSupport.TestIdentity identity;
   private UUID profileId;
@@ -225,59 +229,72 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
       assertThat(progress.getPercentComplete()).isEqualTo(50.0);
     }
 
+    // A test-managed transaction begins before the signed-in Profile is installed, so these
+    // writes run in transactions of their own.
     @Test
-    @Transactional
-    @DisplayName("Should populate audit fields when inserting new row on upsert")
-    void shouldPopulateAuditFieldsWhenInsertingNewRowOnUpsert() {
+    @DisplayName("Should name the signed-in account when an upsert inserts a new row")
+    void shouldNameSignedInAccountWhenAnUpsertInsertsANewRow() {
       var fixture = createMovieWithFile();
       var sessionId = UUID.randomUUID();
 
-      sessionProgressRepository.upsertProgress(
-          upsertBuilder(sessionId, fixture.mediaFileId())
-              .positionSeconds(300)
-              .percentComplete(25.0)
-              .durationSeconds(1200)
-              .build());
+      try {
+        upsertInTransaction(
+            upsertBuilder(sessionId, fixture.mediaFileId())
+                .positionSeconds(300)
+                .percentComplete(25.0)
+                .durationSeconds(1200)
+                .build());
 
-      entityManager.clear();
-
-      var progress = sessionProgressRepository.findBySessionId(sessionId).orElseThrow();
-      var expectedAuditor = auditorAware.getCurrentAuditor().orElseThrow();
-
-      assertThat(progress.getCreatedBy()).isEqualTo(expectedAuditor);
-      assertThat(progress.getLastModifiedBy()).isEqualTo(expectedAuditor);
+        var progress = sessionProgressRepository.findBySessionId(sessionId).orElseThrow();
+        assertThat(progress.getCreatedBy()).isEqualTo(TestIdentityConstants.ACCOUNT_ID);
+        assertThat(progress.getLastModifiedBy()).isEqualTo(TestIdentityConstants.ACCOUNT_ID);
+      } finally {
+        deleteProgressAndMovie(sessionId, fixture);
+      }
     }
 
     @Test
-    @Transactional
-    @DisplayName("Should update audit fields when existing row conflicts on upsert")
-    void shouldUpdateAuditFieldsWhenExistingRowConflictsOnUpsert() {
+    @DisplayName(
+        "Should keep the creator and name the signed-in account when an upsert updates a row")
+    void shouldKeepTheCreatorAndNameTheSignedInAccountWhenAnUpsertUpdatesARow() {
       var fixture = createMovieWithFile();
       var sessionId = UUID.randomUUID();
 
-      sessionProgressRepository.upsertProgress(
-          upsertBuilder(sessionId, fixture.mediaFileId())
-              .positionSeconds(300)
-              .percentComplete(25.0)
-              .durationSeconds(1200)
-              .build());
+      try {
+        upsertInTransaction(
+            upsertBuilder(sessionId, fixture.mediaFileId())
+                .positionSeconds(300)
+                .percentComplete(25.0)
+                .durationSeconds(1200)
+                .build());
+        // An empty stored creator differs from the signed-in account, so the assertions can tell
+        // a kept creator from one the update overwrote.
+        auditColumns.clearActors(SESSION_PROGRESS, SESSION_PROGRESS.SESSION_ID.eq(sessionId));
 
-      entityManager.clear();
+        upsertInTransaction(
+            upsertBuilder(sessionId, fixture.mediaFileId())
+                .positionSeconds(600)
+                .percentComplete(50.0)
+                .durationSeconds(1200)
+                .build());
 
-      sessionProgressRepository.upsertProgress(
-          upsertBuilder(sessionId, fixture.mediaFileId())
-              .positionSeconds(600)
-              .percentComplete(50.0)
-              .durationSeconds(1200)
-              .build());
+        var progress = sessionProgressRepository.findBySessionId(sessionId).orElseThrow();
+        assertThat(progress.getPositionSeconds()).isEqualTo(600);
+        assertThat(progress.getCreatedBy()).isNull();
+        assertThat(progress.getLastModifiedBy()).isEqualTo(TestIdentityConstants.ACCOUNT_ID);
+      } finally {
+        deleteProgressAndMovie(sessionId, fixture);
+      }
+    }
 
-      entityManager.clear();
+    private void upsertInTransaction(SaveWatchProgress progress) {
+      transactionTemplate.executeWithoutResult(
+          _ -> sessionProgressRepository.upsertProgress(progress));
+    }
 
-      var progress = sessionProgressRepository.findBySessionId(sessionId).orElseThrow();
-      var expectedAuditor = auditorAware.getCurrentAuditor().orElseThrow();
-
-      assertThat(progress.getLastModifiedBy()).isEqualTo(expectedAuditor);
-      assertThat(progress.getPositionSeconds()).isEqualTo(600);
+    private void deleteProgressAndMovie(UUID sessionId, MovieWithFile fixture) {
+      sessionProgressRepository.deleteBySessionId(sessionId);
+      movieRepository.deleteById(fixture.movie().getId());
     }
   }
 

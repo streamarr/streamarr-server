@@ -7,6 +7,7 @@ import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockAccountRow;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
 import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
+import static com.streamarr.server.support.TestFixtureAuditActorConfiguration.nameTestFixtureActorIn;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
@@ -30,12 +31,12 @@ import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.ControlledClockConfiguration;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
+import com.streamarr.server.support.TestFixtureWork;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
@@ -92,7 +93,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
     var issued = opaqueCodes.issue();
     var invitation = saveInvitation(issued);
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
         var lock = lockRow(rowLock("account_invitation", invitation.getId()))) {
       var acceptance =
           executor.submit(
@@ -131,7 +132,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
     var issued = opaqueCodes.issue();
     var invitation = saveInvitation(issued);
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
         var lock = lockRow(rowLock("account_invitation", invitation.getId()))) {
       var acceptance =
           executor.submit(
@@ -178,7 +179,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
             .map(AuthSession::getId)
             .toList();
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
         var lock = lockRow(rowLock("password_reset_code", resetCode.getId()))) {
       var first =
           executor.submit(() -> attempt(() -> redeem(issued.code(), "the replacement passphrase")));
@@ -234,7 +235,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
     resetCode.setExpiresAt(expiresAt);
     resetCodeRepository.saveAndFlush(resetCode);
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
         var lock = lockRow(rowLock("user_account", identity.account().getId()))) {
       var redemption =
           executor.submit(
@@ -270,7 +271,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
     var rowLocked = new CompletableFuture<Integer>();
     var releaseRow = new CountDownLatch(1);
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var accountUpdate =
           executor.submit(
               () ->
@@ -322,9 +323,10 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
                 .secretDigest(issued.digest())
                 .build());
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
         var disablement = dataSource.getConnection()) {
       disablement.setAutoCommit(false);
+      nameTestFixtureActorIn(disablement);
       lockAccountRow(disablement, issuerId);
       var acceptance =
           executor.submit(
@@ -408,6 +410,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
         var statement =
             connection.prepareStatement("UPDATE user_account SET display_name = ? WHERE id = ?")) {
       connection.setAutoCommit(false);
+      nameTestFixtureActorIn(connection);
       statement.setString(1, "Concurrent Display Name");
       statement.setObject(2, accountId);
       statement.executeUpdate();

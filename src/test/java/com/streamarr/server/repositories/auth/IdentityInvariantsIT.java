@@ -24,6 +24,8 @@ import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupportConfig;
+import com.streamarr.server.support.ConstraintViolations;
+import com.streamarr.server.support.TestFixtureWork;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -32,13 +34,11 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import lombok.Builder;
 import org.awaitility.Awaitility;
-import org.hibernate.exception.ConstraintViolationException;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
@@ -46,7 +46,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Isolated;
-import org.postgresql.util.PSQLException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -112,7 +111,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
                 transactionTemplate.executeWithoutResult(
                     _ -> userAccountRepository.deleteById(identity.account().getId())))
         .isInstanceOf(DataIntegrityViolationException.class)
-        .extracting(IdentityInvariantsIT::constraintName)
+        .extracting(ConstraintViolations::constraintName)
         .isEqualTo("chk_household_retains_account");
   }
 
@@ -124,7 +123,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
 
     assertThatThrownBy(() -> demote(accountId))
         .isInstanceOf(DataIntegrityViolationException.class)
-        .extracting(IdentityInvariantsIT::constraintName)
+        .extracting(ConstraintViolations::constraintName)
         .isEqualTo("chk_household_retains_admin");
   }
 
@@ -140,7 +139,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
             .build();
 
     List<Future<Boolean>> attempts;
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       attempts =
           List.of(
               executor.submit(() -> demoteAfter(race, first.account().getId())),
@@ -181,7 +180,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
                               .build());
                     }))
         .isInstanceOf(DataIntegrityViolationException.class)
-        .extracting(IdentityInvariantsIT::constraintName)
+        .extracting(ConstraintViolations::constraintName)
         .isEqualTo("chk_personal_profile_structural_share");
   }
 
@@ -205,7 +204,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
                       shareRepository.saveAndFlush(ending);
                     }))
         .isInstanceOf(DataIntegrityViolationException.class)
-        .extracting(IdentityInvariantsIT::constraintName)
+        .extracting(ConstraintViolations::constraintName)
         .isEqualTo("chk_structural_share_persists");
   }
 
@@ -216,9 +215,11 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
       "Should refuse disabling an Account when it is the last enabled ServerAdmin after bootstrap")
   void shouldRefuseDisablingAccountWhenItIsLastEnabledServerAdminAfterBootstrap() {
     var admin = createServerAdmin();
-    dsl.insertInto(SERVER_BOOTSTRAP)
-        .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, admin.account().getId())
-        .execute();
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            dsl.insertInto(SERVER_BOOTSTRAP)
+                .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, admin.account().getId())
+                .execute());
 
     assertThatThrownBy(
             () ->
@@ -230,7 +231,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
                       userAccountRepository.saveAndFlush(account);
                     }))
         .isInstanceOf(DataIntegrityViolationException.class)
-        .extracting(IdentityInvariantsIT::constraintName)
+        .extracting(ConstraintViolations::constraintName)
         .isEqualTo("chk_enabled_server_admin_remains");
   }
 
@@ -239,9 +240,11 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   void shouldKeepOneEnabledServerAdminWhenCrossHouseholdDemotionsRace() throws Exception {
     var first = createServerAdmin();
     var second = createServerAdmin();
-    dsl.insertInto(SERVER_BOOTSTRAP)
-        .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, first.account().getId())
-        .execute();
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            dsl.insertInto(SERVER_BOOTSTRAP)
+                .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, first.account().getId())
+                .execute());
     var race =
         ServerAdminRace.builder()
             .updatesReady(new CountDownLatch(2))
@@ -250,7 +253,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
             .build();
 
     List<Future<Boolean>> attempts;
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       attempts =
           List.of(
               executor.submit(() -> disableServerAdminAfter(race, first.account().getId())),
@@ -291,7 +294,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
                       userAccountRepository.saveAndFlush(account);
                     }))
         .isInstanceOf(DataIntegrityViolationException.class)
-        .extracting(IdentityInvariantsIT::constraintName)
+        .extracting(ConstraintViolations::constraintName)
         .isEqualTo("chk_restricted_account_holds_no_authority");
   }
 
@@ -327,7 +330,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
             .build();
 
     List<Future<Boolean>> attempts;
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       attempts =
           List.of(
               executor.submit(
@@ -376,7 +379,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
                       profileRepository.saveAndFlush(profile);
                     }))
         .isInstanceOf(DataIntegrityViolationException.class)
-        .extracting(IdentityInvariantsIT::constraintName)
+        .extracting(ConstraintViolations::constraintName)
         .isEqualTo("chk_profile_home_anchor");
   }
 
@@ -397,7 +400,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
                                 .householdId(admin.household().getId())
                                 .build())))
         .isInstanceOf(DataIntegrityViolationException.class)
-        .extracting(IdentityInvariantsIT::constraintName)
+        .extracting(ConstraintViolations::constraintName)
         .isEqualTo("chk_profile_home_anchor");
   }
 
@@ -423,7 +426,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
                         profileManagerRepository.deleteAll(
                             profileManagerRepository.findByProfileId(kid.getId()))))
         .isInstanceOf(DataIntegrityViolationException.class)
-        .extracting(IdentityInvariantsIT::constraintName)
+        .extracting(ConstraintViolations::constraintName)
         .isEqualTo("chk_profile_home_anchor");
   }
 
@@ -445,7 +448,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
                       profileManagerRepository.saveAndFlush(moving);
                     }))
         .isInstanceOf(DataIntegrityViolationException.class)
-        .extracting(IdentityInvariantsIT::constraintName)
+        .extracting(ConstraintViolations::constraintName)
         .isEqualTo("chk_profile_home_anchor");
   }
 
@@ -530,7 +533,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
                               .build());
                     }))
         .isInstanceOf(DataIntegrityViolationException.class)
-        .extracting(IdentityInvariantsIT::constraintName)
+        .extracting(ConstraintViolations::constraintName)
         .isEqualTo("chk_household_profile_names_unique");
   }
 
@@ -549,7 +552,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
                       profileRepository.saveAndFlush(profile);
                     }))
         .isInstanceOf(DataIntegrityViolationException.class)
-        .extracting(IdentityInvariantsIT::constraintName)
+        .extracting(ConstraintViolations::constraintName)
         .isEqualTo("chk_profile_pin_hash_not_blank");
   }
 
@@ -571,7 +574,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
                                 .authorizingAccountId(identity.account().getId())
                                 .build())))
         .isInstanceOf(DataIntegrityViolationException.class)
-        .extracting(IdentityInvariantsIT::constraintName)
+        .extracting(ConstraintViolations::constraintName)
         .isEqualTo("chk_device_registration_supported");
   }
 
@@ -666,7 +669,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
                                 .reason("stolen")
                                 .build())))
         .isInstanceOf(DataIntegrityViolationException.class)
-        .extracting(IdentityInvariantsIT::constraintName)
+        .extracting(ConstraintViolations::constraintName)
         .isEqualTo("chk_esn_block_leaves_no_device");
   }
 
@@ -703,7 +706,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
                                 .reason("stolen")
                                 .build())))
         .isInstanceOf(DataIntegrityViolationException.class)
-        .extracting(IdentityInvariantsIT::constraintName)
+        .extracting(ConstraintViolations::constraintName)
         .isEqualTo("chk_esn_block_leaves_no_device");
   }
 
@@ -895,7 +898,8 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
     try {
       attempt.get(30, TimeUnit.SECONDS);
     } catch (ExecutionException expectedForLoser) {
-      assertThat(constraintName(expectedForLoser)).isEqualTo("chk_household_retains_admin");
+      assertThat(ConstraintViolations.constraintName(expectedForLoser))
+          .isEqualTo("chk_household_retains_admin");
     }
   }
 
@@ -904,7 +908,8 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
     try {
       attempt.get(30, TimeUnit.SECONDS);
     } catch (ExecutionException expectedForLoser) {
-      assertThat(constraintName(expectedForLoser)).isEqualTo("chk_enabled_server_admin_remains");
+      assertThat(ConstraintViolations.constraintName(expectedForLoser))
+          .isEqualTo("chk_enabled_server_admin_remains");
     }
   }
 
@@ -913,7 +918,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
     try {
       attempt.get(30, TimeUnit.SECONDS);
     } catch (ExecutionException expectedForLoser) {
-      assertThat(constraintName(expectedForLoser))
+      assertThat(ConstraintViolations.constraintName(expectedForLoser))
           .isEqualTo("chk_restricted_account_holds_no_authority");
     }
   }
@@ -924,27 +929,6 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
     } catch (Exception _) {
       return false;
     }
-  }
-
-  /** The stable constraint name a deferred trigger raised, wherever the driver put it. */
-  static String constraintName(Throwable failure) {
-    Throwable cause = failure;
-    while (cause != null) {
-      if (cause instanceof ConstraintViolationException violation
-          && violation.getConstraintName() != null) {
-        return violation.getConstraintName();
-      }
-
-      if (cause instanceof PSQLException psql
-          && psql.getServerErrorMessage() != null
-          && psql.getServerErrorMessage().getConstraint() != null) {
-        return psql.getServerErrorMessage().getConstraint();
-      }
-
-      cause = cause.getCause();
-    }
-
-    return null;
   }
 
   private long adminCount(UUID householdId) {

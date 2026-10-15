@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
+import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.metadata.Rating;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.repositories.RatingRepository;
@@ -43,8 +44,9 @@ class RatingResolversTest {
   @DisplayName("Should return rating when valid ID provided")
   void shouldReturnRatingWhenValidIdProvided() {
     var ratingId = UUID.randomUUID();
-    var rating = Rating.builder().source("IMDb").value("8.5").createdBy(UUID.randomUUID()).build();
+    var rating = Rating.builder().source("IMDb").value("8.5").build();
     rating.setId(ratingId);
+    AuditFieldSetter.setCreatedBy(rating, UUID.randomUUID());
 
     when(ratingRepository.findById(ratingId)).thenReturn(Optional.of(rating));
 
@@ -79,27 +81,46 @@ class RatingResolversTest {
   @Test
   @DisplayName("Should create rating when valid input provided")
   void shouldCreateRatingWhenValidInputProvided() {
-    var userId = UUID.randomUUID();
-    var savedRating = Rating.builder().source("IMDb").value("8.5").createdBy(userId).build();
+    var savedRating = Rating.builder().source("IMDb").value("8.5").build();
     savedRating.setId(UUID.randomUUID());
 
     when(ratingRepository.save(any(Rating.class))).thenReturn(savedRating);
 
     String source =
         dgsQueryExecutor.executeAndExtractJsonPath(
-            String.format(
-                """
-                mutation {
-                  addRating(input: { source: "IMDb", value: "8.5", userId: "%s" }) {
-                    source
-                    value
-                  }
-                }
-                """,
-                userId),
+            """
+            mutation {
+              addRating(input: { source: "IMDb", value: "8.5" }) {
+                source
+                value
+              }
+            }
+            """,
             "data.addRating.source");
 
     assertThat(source).isEqualTo("IMDb");
+  }
+
+  @Test
+  @DisplayName("Should reject a rating author when the client supplies one")
+  void shouldRejectARatingAuthorWhenTheClientSuppliesOne() {
+    var savedRating = Rating.builder().source("IMDb").value("8.5").build();
+    savedRating.setId(UUID.randomUUID());
+    when(ratingRepository.save(any(Rating.class))).thenReturn(savedRating);
+
+    var result =
+        dgsQueryExecutor.execute(
+            String.format(
+                """
+                mutation {
+                  addRating(input: { source: "IMDb", value: "8.5", userId: "%s" }) { source }
+                }
+                """,
+                UUID.randomUUID()));
+
+    assertThat(result.getErrors())
+        .singleElement()
+        .satisfies(error -> assertThat(error.getMessage()).contains("userId"));
   }
 
   @Test

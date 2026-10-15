@@ -1,6 +1,8 @@
 package com.streamarr.server.controllers.auth;
 
+import static com.streamarr.server.jooq.generated.tables.PasswordResetCode.PASSWORD_RESET_CODE;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
+import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
 import static com.streamarr.server.support.AuthTestSupport.remoteAddr;
 import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
@@ -409,6 +411,18 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should keep an empty modifier when an invitation is declined")
+  void shouldKeepEmptyModifierWhenInvitationIsDeclined() throws Exception {
+    var code = issueInvitation("invitee@example.com");
+
+    mockMvc.perform(declineRequest(code)).andExpect(status().isNoContent());
+
+    var declined = invitationRepository.findAll().getFirst();
+    assertThat(declined.getCreatedBy()).isEqualTo(serverAdmin.account().getId());
+    assertThat(declined.getLastModifiedBy()).isNull();
+  }
+
+  @Test
   @DisplayName("Should replace the pending invitation when the same email is invited again")
   void shouldReplacePendingInvitationWhenSameEmailInvitedAgain() throws Exception {
     var first = issueInvitation("invitee@example.com");
@@ -683,6 +697,34 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
         .andExpect(status().isBadRequest());
 
     assertThat(journaledAttemptsFrom("198.51.100.72")).isZero();
+  }
+
+  @Test
+  @DisplayName("Should keep an empty actor when a password reset is redeemed")
+  void shouldKeepEmptyActorWhenPasswordResetIsRedeemed() throws Exception {
+    var resetting = authTestSupport.createIdentity();
+    try {
+      var accountId = resetting.account().getId();
+      var code = issuePasswordReset(accountId);
+
+      mockMvc.perform(redeemRequest(code)).andExpect(status().isNoContent());
+
+      assertThat(
+              dsl.select(PASSWORD_RESET_CODE.LAST_MODIFIED_BY)
+                  .from(PASSWORD_RESET_CODE)
+                  .where(PASSWORD_RESET_CODE.ACCOUNT_ID.eq(accountId))
+                  .fetch(PASSWORD_RESET_CODE.LAST_MODIFIED_BY))
+          .singleElement()
+          .isNull();
+      assertThat(
+              dsl.select(USER_ACCOUNT.LAST_MODIFIED_BY)
+                  .from(USER_ACCOUNT)
+                  .where(USER_ACCOUNT.ID.eq(accountId))
+                  .fetchSingle(USER_ACCOUNT.LAST_MODIFIED_BY))
+          .isNull();
+    } finally {
+      authTestSupport.deleteIdentity(resetting);
+    }
   }
 
   @Test

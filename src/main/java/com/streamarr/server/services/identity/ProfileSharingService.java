@@ -343,13 +343,13 @@ public class ProfileSharingService {
           // Unsharing returns affected sessions to the picker; a visitor whose Personal
           // Profile's share ended also loses the Household context itself.
           authSessionRepository.clearProfileSelectionFromLiveSessions(
-              share.getProfileId(), share.getHouseholdId(), now);
+              share.getProfileId(), share.getHouseholdId());
           userAccountRepository
               .findByPersonalProfileId(share.getProfileId())
               .ifPresent(
                   visitor -> {
                     authSessionRepository.clearHouseholdContextFromAccountSessions(
-                        visitor.getId(), share.getHouseholdId(), now);
+                        visitor.getId(), share.getHouseholdId());
                     registrationLifecycle.revokeAllByAccountAndHousehold(
                         visitor.getId(), share.getHouseholdId(), "share ended", now);
                   });

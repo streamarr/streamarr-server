@@ -1,5 +1,6 @@
 package com.streamarr.server.services;
 
+import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import jakarta.annotation.PreDestroy;
 import java.time.Clock;
@@ -31,7 +32,7 @@ public class ArtworkService {
   private final ArtworkProgress progress;
   private final Clock clock;
   private final ExecutorService requiredArtworkExecutor =
-      Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("required-artwork-", 0).factory());
+      SystemWork.newExecutorRunningAsSystemActor("required-artwork-");
 
   // The image client's rate limiter grants permits in arrival order, so an unbounded backlog of
   // person and company images would take permits ahead of required artwork. Bounding concurrent
@@ -48,7 +49,8 @@ public class ArtworkService {
     this.clock = clock;
     this.secondaryArtworkExecutor =
         Executors.newFixedThreadPool(
-            secondaryConcurrency, Thread.ofVirtual().name("secondary-artwork-", 0).factory());
+            secondaryConcurrency,
+            SystemWork.newThreadFactoryRunningAsSystemActor("secondary-artwork-"));
   }
 
   /** Opens a run that collects the required artwork of one scan, refresh, or file discovery. */

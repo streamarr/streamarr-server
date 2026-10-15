@@ -13,6 +13,7 @@ import com.streamarr.server.services.ArtworkResult.Saved;
 import com.streamarr.server.services.ArtworkResult.Skipped;
 import com.streamarr.server.services.ArtworkResult.Unavailable;
 import com.streamarr.server.services.ImageService.ProcessedImage;
+import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
@@ -25,7 +26,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
@@ -159,7 +159,7 @@ public class ArtworkFetcher {
       ArtworkSources artwork, List<PendingImageSource> pendingSources, Instant attemptedAt) {
     var downloads = new ArrayList<ImageDownload>();
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = SystemWork.newExecutorRunningAsSystemActor("artwork-download-")) {
       for (var pendingSource : pendingSources) {
         downloads.add(
             new ImageDownload(

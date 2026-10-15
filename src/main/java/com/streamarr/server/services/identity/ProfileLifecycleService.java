@@ -164,7 +164,7 @@ public class ProfileLifecycleService {
               .forEach(
                   share ->
                       authSessionRepository.clearProfileSelectionFromLiveSessions(
-                          profileId, share.getHouseholdId(), now));
+                          profileId, share.getHouseholdId()));
           invalidateProfileBoundArtifacts(profileId, PROFILE_DELETED, now);
           if (!profileRepository.tryDeleteUnlinked(profileId)) {
             throw profileDeletionRejection(profileId);
@@ -189,7 +189,7 @@ public class ProfileLifecycleService {
         .findByProfileIdAndHouseholdIdAndStatus(
             profileId, sourceHouseholdId, ProfileShareStatus.ACTIVE)
         .ifPresent(share -> shareRepository.tryEndActive(share.getId(), now));
-    authSessionRepository.clearProfileSelectionFromLiveSessions(profileId, sourceHouseholdId, now);
+    authSessionRepository.clearProfileSelectionFromLiveSessions(profileId, sourceHouseholdId);
   }
 
   private void makeAvailableAtHome(UUID profileId, UUID destinationHouseholdId, Instant now) {

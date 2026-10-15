@@ -14,14 +14,12 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
-import org.springframework.data.domain.AuditorAware;
 import org.springframework.transaction.annotation.Transactional;
 
 @RequiredArgsConstructor
 public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCustom {
 
   private final DSLContext dsl;
-  private final AuditorAware<UUID> auditorAware;
 
   private final EntityManager entityManager;
 
@@ -49,8 +47,6 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
                 AUTH_SESSION.REVOKED_REASON,
                 com.streamarr.server.jooq.generated.enums.SessionRevocationReason.valueOf(
                     reason.name()))
-            .set(AUTH_SESSION.LAST_MODIFIED_ON, nowOffset)
-            .set(AUTH_SESSION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
             .where(AUTH_SESSION.ID.eq(sessionId))
             .and(AUTH_SESSION.REVOKED_AT.isNull())
             .execute()
@@ -69,8 +65,6 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
             AUTH_SESSION.REVOKED_REASON,
             com.streamarr.server.jooq.generated.enums.SessionRevocationReason.valueOf(
                 reason.name()))
-        .set(AUTH_SESSION.LAST_MODIFIED_ON, nowOffset)
-        .set(AUTH_SESSION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
         .where(AUTH_SESSION.ACCOUNT_ID.eq(accountId))
         .and(AUTH_SESSION.REVOKED_AT.isNull())
         .execute();
@@ -91,22 +85,16 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
             AUTH_SESSION.REVOKED_REASON,
             com.streamarr.server.jooq.generated.enums.SessionRevocationReason.valueOf(
                 reason.name()))
-        .set(AUTH_SESSION.LAST_MODIFIED_ON, nowOffset)
-        .set(AUTH_SESSION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
         .where(AUTH_SESSION.REGISTRATION_ID.in(registrationIds))
         .and(AUTH_SESSION.REVOKED_AT.isNull())
         .execute();
   }
 
   @Override
-  public boolean updateSelectionIfLive(AuthSession session, Instant now) {
-    var nowOffset = now.atOffset(ZoneOffset.UTC);
-
+  public boolean updateSelectionIfLive(AuthSession session) {
     return dsl.update(AUTH_SESSION)
             .set(AUTH_SESSION.CONTEXT_HOUSEHOLD_ID, session.getContextHouseholdId())
             .set(AUTH_SESSION.SELECTED_PROFILE_ID, session.getSelectedProfileId())
-            .set(AUTH_SESSION.LAST_MODIFIED_ON, nowOffset)
-            .set(AUTH_SESSION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
             .where(AUTH_SESSION.ID.eq(session.getId()))
             .and(AUTH_SESSION.REVOKED_AT.isNull())
             .execute()
@@ -114,11 +102,9 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
   }
 
   @Override
-  public int clearProfileSelectionFromLiveSessions(UUID profileId, UUID householdId, Instant now) {
+  public int clearProfileSelectionFromLiveSessions(UUID profileId, UUID householdId) {
     return dsl.update(AUTH_SESSION)
         .setNull(AUTH_SESSION.SELECTED_PROFILE_ID)
-        .set(AUTH_SESSION.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
-        .set(AUTH_SESSION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
         .where(AUTH_SESSION.SELECTED_PROFILE_ID.eq(profileId))
         .and(AUTH_SESSION.CONTEXT_HOUSEHOLD_ID.eq(householdId))
         .and(AUTH_SESSION.REVOKED_AT.isNull())
@@ -126,13 +112,10 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
   }
 
   @Override
-  public int clearHouseholdContextFromAccountSessions(
-      UUID accountId, UUID householdId, Instant now) {
+  public int clearHouseholdContextFromAccountSessions(UUID accountId, UUID householdId) {
     return dsl.update(AUTH_SESSION)
         .setNull(AUTH_SESSION.CONTEXT_HOUSEHOLD_ID)
         .setNull(AUTH_SESSION.SELECTED_PROFILE_ID)
-        .set(AUTH_SESSION.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
-        .set(AUTH_SESSION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
         .where(AUTH_SESSION.ACCOUNT_ID.eq(accountId))
         .and(AUTH_SESSION.CONTEXT_HOUSEHOLD_ID.eq(householdId))
         .and(AUTH_SESSION.REVOKED_AT.isNull())

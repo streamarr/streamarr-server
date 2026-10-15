@@ -9,40 +9,46 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractWireMockIntegrationTest;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.auth.SystemActor;
+import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
-import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Required Artwork Integration Tests")
 class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
 
+  private static final long BOUND_SECONDS = 10;
+
   @Autowired private ArtworkService artworkService;
   @Autowired private MovieService movieService;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private TransactionTemplate transactionTemplate;
-  @Autowired private DataSource dataSource;
+  @Autowired private JdbcTemplate jdbcTemplate;
+  @Autowired private PersonRepository personRepository;
 
   private Library library;
 
@@ -66,7 +72,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
 
     var movie = movieService.createMovieWithAssociations(movieMetadata(), mediaFile(), artworkRun);
     artworkRun.close();
-    var summary = artworkRun.completion().get(10, TimeUnit.SECONDS);
+    var summary = artworkRun.completion().get(BOUND_SECONDS, TimeUnit.SECONDS);
 
     assertThat(summary.counts()).isEqualTo(ArtworkCounts.builder().saved(1).unavailable(1).build());
     assertThat(committedImageRows(movie.getId())).isEqualTo(ImageSize.values().length);
@@ -86,11 +92,47 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
                   movieMetadata(), mediaFile, artworkRun);
             });
     artworkRun.close();
-    var summary = artworkRun.completion().get(10, TimeUnit.SECONDS);
+    var summary = artworkRun.completion().get(BOUND_SECONDS, TimeUnit.SECONDS);
 
     assertThat(summary.counts()).isEqualTo(ArtworkCounts.builder().build());
     assertThat(committedImageRows(movie.getId())).isZero();
     assertThat(wireMock.findAll(getRequestedFor(urlPathEqualTo("/poster.jpg")))).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should name the System actor as creator when required artwork saves images")
+  void shouldNameSystemActorAsCreatorWhenRequiredArtworkSavesImages() throws Exception {
+    var artworkRun = artworkService.openRun("scan", ImageRefreshMode.PRESERVE);
+
+    var movie = movieService.createMovieWithAssociations(movieMetadata(), mediaFile(), artworkRun);
+    artworkRun.close();
+    artworkRun.completion().get(BOUND_SECONDS, TimeUnit.SECONDS);
+
+    assertThat(imageCreators(movie.getId()))
+        .hasSize(ImageSize.values().length)
+        .containsOnly(SystemActor.ID);
+  }
+
+  @Test
+  @DisplayName("Should name the System actor as creator when background artwork saves images")
+  void shouldNameSystemActorAsCreatorWhenBackgroundArtworkSavesImages() throws Exception {
+    var person =
+        personRepository.saveAndFlush(
+            Person.builder().name("Artwork Person").sourceId(UUID.randomUUID().toString()).build());
+    var artwork =
+        ArtworkSources.builder()
+            .entityId(person.getId())
+            .entityType(ImageEntityType.PERSON)
+            .sources(List.of(new TmdbImageSource(ImageType.PROFILE, "/poster.jpg")))
+            .build();
+
+    artworkService
+        .fetchSecondary(artwork, ImageRefreshMode.PRESERVE)
+        .get(BOUND_SECONDS, TimeUnit.SECONDS);
+
+    assertThat(imageCreators(person.getId()))
+        .hasSize(ImageSize.values().length)
+        .containsOnly(SystemActor.ID);
   }
 
   private MetadataResult<Movie> movieMetadata() {
@@ -111,15 +153,13 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
             .build());
   }
 
-  private int committedImageRows(UUID entityId) throws SQLException {
-    try (var connection = dataSource.getConnection();
-        var statement =
-            connection.prepareStatement("SELECT count(*) FROM image WHERE entity_id = ?")) {
-      statement.setObject(1, entityId);
-      try (var result = statement.executeQuery()) {
-        result.next();
-        return result.getInt(1);
-      }
-    }
+  private List<UUID> imageCreators(UUID entityId) {
+    return jdbcTemplate.queryForList(
+        "SELECT created_by FROM image WHERE entity_id = ?", UUID.class, entityId);
+  }
+
+  private int committedImageRows(UUID entityId) {
+    return jdbcTemplate.queryForObject(
+        "SELECT count(*) FROM image WHERE entity_id = ?", Integer.class, entityId);
   }
 }

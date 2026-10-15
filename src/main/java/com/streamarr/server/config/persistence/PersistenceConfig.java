@@ -1,17 +1,26 @@
 package com.streamarr.server.config.persistence;
 
-import java.util.UUID;
+import com.streamarr.server.repositories.audit.TransactionAuditActorBinder;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.domain.AuditorAware;
-import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
+import org.springframework.context.annotation.Lazy;
 
 @Configuration
-@EnableJpaAuditing
 public class PersistenceConfig {
 
   @Bean
-  public AuditorAware<UUID> auditorAware() {
-    return new SecurityAuditorAware();
+  public AuditActorSource auditActorSource() {
+    return new SecurityAuditActorSource();
+  }
+
+  // Lazy: the transaction manager resolves this listener while it is being created, and the
+  // jOOQ binding depends on the transaction manager.
+  @Bean
+  public AuditActorTransactionListener auditActorTransactionListener(
+      AuditActorSource auditActorSource,
+      @Lazy TransactionAuditActorBinder auditActorBinder,
+      MeterRegistry meterRegistry) {
+    return new AuditActorTransactionListener(auditActorSource, auditActorBinder, meterRegistry);
   }
 }

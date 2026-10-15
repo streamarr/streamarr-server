@@ -5,7 +5,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.DeviceAuthorization;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
+import com.streamarr.server.domain.auth.DeviceRegistration;
+import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
+import com.streamarr.server.repositories.auth.DeviceRegistrationRepository;
+import com.streamarr.server.support.AuthTestSupport;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
@@ -23,9 +27,42 @@ class DeviceAuthorizationSweeperIT extends AbstractIntegrationTest {
 
   @Autowired private DeviceAuthorizationRepository authorizationRepository;
 
+  @Autowired private DeviceRegistrationRepository registrationRepository;
+
+  @Autowired private AuthTestSupport authTestSupport;
+
   @AfterEach
   void deleteSeededRows() {
     authorizationRepository.deleteAll();
+  }
+
+  @Test
+  @DisplayName(
+      "Should name the System actor when the sweep clears an expired authorization from a"
+          + " registration")
+  void shouldNameSystemActorWhenSweepClearsAnExpiredAuthorizationFromARegistration() {
+    var identity = authTestSupport.createIdentity();
+    var expired = save(DeviceAuthorizationStatus.CONSUMED, Duration.ofMinutes(-5));
+    var registration =
+        registrationRepository.saveAndFlush(
+            DeviceRegistration.builder()
+                .esn("sweeper-esn-" + UUID.randomUUID())
+                .displayName("Living Room TV")
+                .householdId(identity.household().getId())
+                .authorizingAccountId(identity.account().getId())
+                .authorizationId(expired)
+                .build());
+
+    try {
+      sweeper.sweep();
+
+      var cleared = registrationRepository.findById(registration.getId()).orElseThrow();
+      assertThat(cleared.getAuthorizationId()).isNull();
+      assertThat(cleared.getLastModifiedBy()).isEqualTo(SystemActor.ID);
+    } finally {
+      registrationRepository.deleteById(registration.getId());
+      authTestSupport.deleteIdentity(identity);
+    }
   }
 
   @Test

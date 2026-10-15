@@ -24,11 +24,7 @@ public class RatingResolvers {
   public Rating addRating(@InputArgument("input") RatingInput ratingInput) {
     authorizationService.requireProfile();
     return ratingRepository.save(
-        Rating.builder()
-            .createdBy(parseUuid(ratingInput.getUserId()))
-            .source(ratingInput.getSource())
-            .value(ratingInput.getValue())
-            .build());
+        Rating.builder().source(ratingInput.getSource()).value(ratingInput.getValue()).build());
   }
 
   @DgsQuery

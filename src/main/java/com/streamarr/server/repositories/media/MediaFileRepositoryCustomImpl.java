@@ -18,7 +18,6 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
-import org.springframework.data.domain.AuditorAware;
 import org.springframework.transaction.annotation.Transactional;
 
 @RequiredArgsConstructor
@@ -26,7 +25,6 @@ public class MediaFileRepositoryCustomImpl implements MediaFileRepositoryCustom 
 
   private final DSLContext dsl;
   private final EntityManager entityManager;
-  private final AuditorAware<UUID> auditorAware;
 
   @Override
   public List<UUID> findMediaFileIdsByMediaIds(Collection<UUID> mediaIds) {
@@ -65,8 +63,6 @@ public class MediaFileRepositoryCustomImpl implements MediaFileRepositoryCustom 
     return dsl.update(MEDIA_FILE)
             .set(MEDIA_FILE.STATUS, toJooq(failure.status()))
             .set(MEDIA_FILE.FAILURE_REASON, reason)
-            .set(MEDIA_FILE.LAST_MODIFIED_ON, DSL.currentOffsetDateTime())
-            .set(MEDIA_FILE.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
             .where(MEDIA_FILE.ID.eq(mediaFileId))
             .and(MEDIA_FILE.STATUS.ne(toJooq(MediaFileStatus.MATCHED)))
             .execute()
