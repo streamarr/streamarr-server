@@ -26,6 +26,10 @@ public final class SystemWork {
   /**
    * Runs {@code work} on the calling thread as the System actor.
    *
+   * <p>Spring still reports a transaction as open while its after-commit callbacks and {@code
+   * AFTER_COMMIT} event listeners run, so those must hand system work to a thread from {@link
+   * #newExecutorRunningAsSystemActor} instead of calling this method.
+   *
    * @throws SystemWorkInsideTransactionException if the calling thread has an open transaction,
    *     because that transaction already named its actor
    */

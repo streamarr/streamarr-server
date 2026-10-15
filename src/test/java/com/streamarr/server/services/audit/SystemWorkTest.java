@@ -9,10 +9,16 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.AbstractPlatformTransactionManager;
+import org.springframework.transaction.support.DefaultTransactionStatus;
+import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("UnitTest")
 @DisplayName("System Work Tests")
@@ -58,6 +64,29 @@ class SystemWorkTest {
     }
 
     assertThat(ran).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should reject system work when an after-commit callback starts it")
+  void shouldRejectSystemWorkWhenAnAfterCommitCallbackStartsIt() {
+    var rejection = new AtomicReference<Throwable>();
+    var transactions = new TransactionTemplate(new ConnectionlessTransactionManager());
+
+    transactions.executeWithoutResult(
+        _ ->
+            TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                  @Override
+                  public void afterCommit() {
+                    try {
+                      SystemWork.runAsSystemActor(() -> {});
+                    } catch (SystemWorkInsideTransactionException exception) {
+                      rejection.set(exception);
+                    }
+                  }
+                }));
+
+    assertThat(rejection).hasValueMatching(SystemWorkInsideTransactionException.class::isInstance);
   }
 
   @Test
@@ -120,5 +149,23 @@ class SystemWorkTest {
       return new ObservedThread(
           Thread.currentThread().getName(), SystemWork.isRunningAsSystemActor());
     }
+  }
+
+  private static final class ConnectionlessTransactionManager
+      extends AbstractPlatformTransactionManager {
+
+    @Override
+    protected Object doGetTransaction() {
+      return new Object();
+    }
+
+    @Override
+    protected void doBegin(Object transaction, TransactionDefinition definition) {}
+
+    @Override
+    protected void doCommit(DefaultTransactionStatus status) {}
+
+    @Override
+    protected void doRollback(DefaultTransactionStatus status) {}
   }
 }
