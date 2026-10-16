@@ -140,7 +140,7 @@ Later changes keep arriving on the same operation.
 A failed non-null field passes its `null` up to the nearest nullable parent.
 A failed non-null field of a delivered library or removal makes the whole change `null`.
 A failed non-null field of a watch-state item makes only that item `null`, as <<Failed changes>> describes.
-Every subscription field is nullable, so the `null` never passes beyond the subscription field.
+Every subscription root field is nullable, and `items` holds nullable elements, so a `null` stops at the item or at the subscription field.
 graphql-java ends a subscription when a `null` reaches a non-null root field, so a non-null root would turn one failing field into a terminal `error` message.
 
 A client keeps the operation running through these messages:
