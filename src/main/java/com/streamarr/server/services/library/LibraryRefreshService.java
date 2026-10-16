@@ -209,15 +209,12 @@ public class LibraryRefreshService {
       MediaTitleToRefresh<Series> mediaTitle, Library library, ArtworkRun artworkRun) {
     var series = mediaTitle.entity();
     var tmdbId = mediaTitle.tmdbId();
-    var attemptedAt = clock.instant();
+    var result =
+        metadataResult(series.getId(), ImageEntityType.SERIES, artworkRun)
+            .attemptedAt(clock.instant());
     var outcome = refreshSeriesMetadata(series, tmdbId, library, artworkRun);
 
-    itemResults.trySave(
-        metadataResult(series.getId(), ImageEntityType.SERIES, artworkRun)
-            .outcome(outcome)
-            .attemptedAt(attemptedAt)
-            .build());
-    return outcome;
+    return saveMetadataResult(result, outcome);
   }
 
   private ItemOutcome refreshSeriesMetadata(
@@ -356,7 +353,13 @@ public class LibraryRefreshService {
     }
   }
 
+  // A failure while the task is interrupted comes from the shutdown, not from the title. The title
+  // keeps no result for the operation, so the next execution refreshes it.
   private ItemOutcome saveMetadataResult(ItemResult.ItemResultBuilder result, ItemOutcome outcome) {
+    if (outcome instanceof ItemOutcome.Failed && Thread.currentThread().isInterrupted()) {
+      return outcome;
+    }
+
     itemResults.trySave(result.outcome(outcome).build());
     return outcome;
   }

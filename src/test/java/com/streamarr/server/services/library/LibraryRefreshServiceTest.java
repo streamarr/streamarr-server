@@ -1125,6 +1125,50 @@ class LibraryRefreshServiceTest {
     }
 
     @Test
+    @DisplayName("Should refresh a movie again when a shutdown interrupted its fetch")
+    void shouldRefreshAMovieAgainWhenAShutdownInterruptedItsFetch() throws Exception {
+      var library = buildMovieLibrary();
+      saveMovieWithTmdbId("Inception", "27205", library);
+      when(movieProviderResolver.getMetadata(any(), eq(library)))
+          .thenAnswer(_ -> interruptedFetch());
+      var operation = refreshOf(library);
+      refreshService.refreshLibrary(library, operation);
+      var fetchedTmdbIds = stubEveryMovieFetch(library);
+
+      refreshService.refreshLibrary(library, operation);
+
+      assertThat(fetchedTmdbIds).containsExactly("27205");
+    }
+
+    @Test
+    @DisplayName("Should refresh a series again when a shutdown interrupted its fetch")
+    void shouldRefreshASeriesAgainWhenAShutdownInterruptedItsFetch() throws Exception {
+      var library = buildSeriesLibrary();
+      saveSeriesWithTmdbId("Old Title", "1399", library);
+      when(seriesProviderResolver.getMetadata(any(), eq(library)))
+          .thenAnswer(_ -> interruptedFetch());
+      var operation = refreshOf(library);
+      refreshService.refreshLibrary(library, operation);
+      var fetches = new AtomicInteger();
+      when(seriesProviderResolver.getMetadata(any(), eq(library)))
+          .thenAnswer(
+              _ -> {
+                fetches.incrementAndGet();
+                return new MetadataFetchOutcome.NotFound<>();
+              });
+
+      refreshService.refreshLibrary(library, operation);
+
+      assertThat(fetches).hasValue(1);
+    }
+
+    // A provider restores the interrupt flag and reports the interrupted fetch as a failure.
+    private static <T> MetadataFetchOutcome<T> interruptedFetch() {
+      Thread.currentThread().interrupt();
+      return new MetadataFetchOutcome.Failed<>(new InterruptedException("server stopping"));
+    }
+
+    @Test
     @DisplayName("Should stamp a series' metadata result with the refresh's library operation id")
     void shouldStampASeriesMetadataResultWithTheRefreshsLibraryOperationId() throws Exception {
       var library = buildSeriesLibrary();
