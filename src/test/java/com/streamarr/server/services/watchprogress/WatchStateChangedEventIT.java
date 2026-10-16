@@ -13,14 +13,17 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.PlaybackState;
+import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.WatchHistory;
 import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.services.watchprogress.events.WatchStateChangedEvent;
@@ -28,6 +31,7 @@ import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.security.WithProfileContext;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -70,6 +74,8 @@ class WatchStateChangedEventIT extends AbstractIntegrationTest {
   @Autowired private WatchStatusService watchStatusService;
   @Autowired private RuntimeStreamSessionRegistry runtimeRegistry;
   @Autowired private MovieRepository movieRepository;
+  @Autowired private MediaFileRepository mediaFileRepository;
+  @Autowired private SessionProgressRepository sessionProgressRepository;
   @Autowired private SeriesRepository seriesRepository;
   @Autowired private SeasonRepository seasonRepository;
   @Autowired private LibraryRepository libraryRepository;
@@ -192,6 +198,29 @@ class WatchStateChangedEventIT extends AbstractIntegrationTest {
     assertThat(completionsOf(movie.getId())).isEmpty();
   }
 
+  @Test
+  @DisplayName("Should save the position and publish nothing when a file without an item plays")
+  void shouldSaveThePositionAndPublishNothingWhenAFileWithoutAnItemPlays() {
+    var session = openSession(createFileWithoutItem());
+
+    report(session, PAUSED_POSITION_SECONDS, PlaybackState.PLAYING);
+
+    assertThat(savedPositionOf(session)).contains(PAUSED_POSITION_SECONDS);
+    assertThat(committed.events).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the stopped position and publish nothing when a file without an item finishes")
+  void shouldKeepTheStoppedPositionAndPublishNothingWhenAFileWithoutAnItemFinishes() {
+    var session = openSession(createFileWithoutItem());
+
+    report(session, FINISHED_POSITION_SECONDS, PlaybackState.STOPPED);
+
+    assertThat(savedPositionOf(session)).contains(FINISHED_POSITION_SECONDS);
+    assertThat(committed.events).isEmpty();
+  }
+
   @ParameterizedTest(name = "{0}")
   @EnumSource(EmptyContainer.class)
   @DisplayName(
@@ -296,14 +325,36 @@ class WatchStateChangedEventIT extends AbstractIntegrationTest {
             .build());
   }
 
+  private UUID createFileWithoutItem() {
+    return mediaFileRepository
+        .saveAndFlush(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .status(MediaFileStatus.METADATA_NOT_FOUND)
+                .filename("unmatched-" + UUID.randomUUID() + ".mkv")
+                .filepathUri("file:///media/" + UUID.randomUUID() + ".mkv")
+                .build())
+        .getId();
+  }
+
   private StreamSession openSession(Movie movie) {
+    return openSession(movie.getFiles().iterator().next().getId());
+  }
+
+  private StreamSession openSession(UUID mediaFileId) {
     var session =
         defaultSessionBuilder()
-            .mediaFileId(movie.getFiles().iterator().next().getId())
+            .mediaFileId(mediaFileId)
             .authority(playbackAuthorityFor(profileId))
             .build();
     runtimeRegistry.save(session);
     return session;
+  }
+
+  private Optional<Integer> savedPositionOf(StreamSession session) {
+    return sessionProgressRepository
+        .findBySessionId(session.getSessionId())
+        .map(SessionProgress::getPositionSeconds);
   }
 
   private void report(StreamSession session, int positionSeconds, PlaybackState state) {

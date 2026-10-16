@@ -2,7 +2,6 @@ package com.streamarr.server.services.watchprogress;
 
 import com.streamarr.server.config.WatchProgressProperties;
 import com.streamarr.server.domain.streaming.PlaybackState;
-import com.streamarr.server.exceptions.MediaFileNotFoundException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.streaming.SaveWatchProgress;
@@ -11,6 +10,7 @@ import com.streamarr.server.repositories.streaming.StreamSessionCompletion;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.services.watchprogress.events.WatchStateChangedEvent;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -100,7 +100,14 @@ public class SessionProgressService {
   }
 
   private void markSessionWatched(UUID profileId, PlaybackContext ctx) {
-    var collectableId = resolveCollectableId(ctx.mediaFileId());
+    var itemId = findItemId(ctx.mediaFileId());
+    // A completion names an item. Keep the position of a file without one instead.
+    if (itemId.isEmpty()) {
+      persistProgress(profileId, ctx);
+      return;
+    }
+
+    var collectableId = itemId.get();
     var deleted = sessionProgressRepository.deleteBySessionId(ctx.sessionId());
     var saved =
         watchHistoryRepository.saveStreamSessionCompletion(
@@ -136,17 +143,15 @@ public class SessionProgressService {
   }
 
   private void publishChange(UUID profileId, PlaybackContext ctx) {
-    publishChange(profileId, resolveCollectableId(ctx.mediaFileId()));
+    findItemId(ctx.mediaFileId()).ifPresent(itemId -> publishChange(profileId, itemId));
   }
 
   private void publishChange(UUID profileId, UUID collectableId) {
     eventPublisher.publishEvent(new WatchStateChangedEvent(profileId, Set.of(collectableId)));
   }
 
-  private UUID resolveCollectableId(UUID mediaFileId) {
-    return mediaFileRepository
-        .findMediaIdByMediaFileId(mediaFileId)
-        .orElseThrow(() -> new MediaFileNotFoundException(mediaFileId));
+  private Optional<UUID> findItemId(UUID mediaFileId) {
+    return mediaFileRepository.findMediaIdByMediaFileId(mediaFileId);
   }
 
   private enum StopDecision {

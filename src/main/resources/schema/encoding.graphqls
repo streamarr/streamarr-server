@@ -2,7 +2,6 @@
 
 "A preset on the scale that every software encoder uses, from fastest to slowest."
 enum EncoderPreset {
-    ULTRAFAST
     SUPERFAST
     VERYFAST
     FASTER
@@ -16,7 +15,6 @@ enum EncoderPreset {
 "Automatic, or one fixed preset from the scale."
 enum EncoderPresetChoice {
     AUTOMATIC
-    ULTRAFAST
     SUPERFAST
     VERYFAST
     FASTER
