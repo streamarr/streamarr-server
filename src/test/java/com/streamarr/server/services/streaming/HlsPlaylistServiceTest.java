@@ -37,6 +37,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -518,6 +519,82 @@ class HlsPlaylistServiceTest {
   }
 
   @Nested
+  @DisplayName("Video codec strings")
+  class VideoCodecStringTests {
+
+    private StreamSession encodedLadderAt(String videoCodecFamily, double frameRate) {
+      return StreamSessionFixture.abrSessionBuilder()
+          .mediaProbe(
+              StreamSessionFixture.defaultProbeBuilder()
+                  .framerate(OptionalDouble.of(frameRate))
+                  .build())
+          .transcodeDecision(StreamSessionFixture.fullTranscodeDecision(videoCodecFamily))
+          .build();
+    }
+
+    private static String streamInfFor(String playlist, String variantLabel) {
+      var lines = playlist.lines().toList();
+      var uri = variantLabel + "/stream.m3u8?t=test-token";
+      return lines.get(lines.indexOf(uri) - 1);
+    }
+
+    @ParameterizedTest(name = "{0} at {1} fps → {2} and {3}")
+    @CsvSource({
+      "h264, 60, avc1.64002A, avc1.640020",
+      "h264, 23.976, avc1.640028, avc1.64001F",
+      "av1, 60, av01.0.09M.08, av01.0.08M.08",
+      "av1, 23.976, av01.0.08M.08, av01.0.05M.08"
+    })
+    @DisplayName(
+        "Should advertise each encoded variant's own codec string when the ladder encodes the video")
+    void shouldAdvertiseEachEncodedVariantsOwnCodecStringWhenTheLadderEncodesTheVideo(
+        String videoCodecFamily,
+        double frameRate,
+        String codecString1080p,
+        String codecString720p) {
+      var session = encodedLadderAt(videoCodecFamily, frameRate);
+
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
+
+      assertThat(streamInfFor(playlist, "1080p"))
+          .contains("CODECS=\"" + codecString1080p + ",mp4a.40.2\"");
+      assertThat(streamInfFor(playlist, "720p"))
+          .contains("CODECS=\"" + codecString720p + ",mp4a.40.2\"");
+    }
+
+    @Test
+    @DisplayName(
+        "Should advertise the source-sized encode's codec string when the encode has no ladder")
+    void shouldAdvertiseTheSourceSizedEncodesCodecStringWhenTheEncodeHasNoLadder() {
+      var session =
+          StreamSessionFixture.defaultSessionBuilder()
+              .mediaProbe(
+                  StreamSessionFixture.defaultProbeBuilder()
+                      .framerate(OptionalDouble.of(60))
+                      .bitrate(5_000_000L)
+                      .build())
+              .transcodeDecision(StreamSessionFixture.fullTranscodeDecision("h264"))
+              .build();
+
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
+
+      assertThat(playlist).contains("CODECS=\"avc1.64002A,mp4a.40.2\"");
+    }
+
+    @ParameterizedTest(name = "{0} → {1}")
+    @CsvSource({"h264, avc1.640028", "hevc, hvc1.1.6.L120.90", "av1, av01.0.08M.08"})
+    @DisplayName("Should keep the codec family's fixed codec string when the session copies video")
+    void shouldKeepTheCodecFamilysFixedCodecStringWhenTheSessionCopiesVideo(
+        String videoCodecFamily, String codecString) {
+      var session = createSessionWithAudio(AudioDecision.none(), videoCodecFamily);
+
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
+
+      assertThat(playlist).contains("CODECS=\"" + codecString + "\"");
+    }
+  }
+
+  @Nested
   @DisplayName("EXT-X-INDEPENDENT-SEGMENTS")
   class IndependentSegmentsTests {
 
@@ -610,11 +687,11 @@ class HlsPlaylistServiceTest {
     }
 
     @Test
-    @DisplayName("Should write no tag when the variants come from libx265")
-    void shouldWriteNoTagWhenVariantsComeFromLibx265() {
-      var session = encodedLadder("hevc");
-      session.pinEncoder("1080p", WorkerVerifiedEncoderFixture.libx265());
-      session.pinEncoder("720p", WorkerVerifiedEncoderFixture.libx265());
+    @DisplayName("Should write no tag when no variant comes from a keyframe-verified encoder")
+    void shouldWriteNoTagWhenNoVariantComesFromKeyframeVerifiedEncoder() {
+      var session = encodedLadder("h264");
+      session.pinEncoder("1080p", WorkerVerifiedEncoderFixture.h264Nvenc());
+      session.pinEncoder("720p", WorkerVerifiedEncoderFixture.h264Nvenc());
 
       assertThat(service.generateMultivariantPlaylist(session, "test-token").lines())
           .doesNotContain(INDEPENDENT_SEGMENTS);
