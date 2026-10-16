@@ -85,28 +85,28 @@ public class LibraryManagementService {
       return Outcome.rejected(rejections);
     }
 
-    var folder = path.orElseThrow();
+    var requested = RequestedLibraryPath.probe(path.orElseThrow());
     var libraryToSave =
         library.toBuilder()
-            .filepathUri(FilepathCodec.encode(folder))
+            .filepathUri(FilepathCodec.encode(requested.path()))
             .status(LibraryStatus.HEALTHY)
             .build();
     try {
-      return insertWithFirstScan(identity, libraryToSave, folder);
+      return insertWithFirstScan(identity, libraryToSave, requested);
     } catch (LibraryOperationNotScheduledException e) {
       throw new LibraryOperationNotStartedException(e);
     }
   }
 
   private Outcome<Library, AddLibraryRejection> insertWithFirstScan(
-      AuthenticatedIdentity identity, Library libraryToSave, Path folder) {
+      AuthenticatedIdentity identity, Library libraryToSave, RequestedLibraryPath requested) {
     return mutationTransactions.write(
         () ->
             libraryMutationTransaction.execute(
                 identity,
                 new Intent.AddLibrary(),
                 () -> {
-                  refuseConflictingPath(folder);
+                  refuseConflictingPath(requested);
                   // The insert is flushed first, because the first scan locks the library's row.
                   var saved = libraryRepository.saveAndFlush(libraryToSave);
                   eventPublisher.publishEvent(
@@ -116,10 +116,10 @@ public class LibraryManagementService {
         _ -> Optional.empty());
   }
 
-  private void refuseConflictingPath(Path folder) {
+  private void refuseConflictingPath(RequestedLibraryPath requested) {
     var conflicts =
         LibraryPathConflicts.conflictsOf(
-            fileSystem, folder, libraryRepository.lockLibraryPathsForAddLibrary());
+            fileSystem, requested, libraryRepository.lockLibraryPathsForAddLibrary());
     if (!conflicts.isEmpty()) {
       throw MutationRejection.ofReasons(conflicts);
     }
