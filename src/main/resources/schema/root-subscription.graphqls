@@ -47,7 +47,7 @@ type Subscription {
 
     """
     The selected Profile's watch state changed. The Profile comes from the access token that opened
-    the socket; no argument names it. The caller needs a selected Profile and the
+    the socket; no argument names the Profile. The caller needs a selected Profile and the
     ViewProfileActivity permission for that Profile. The selected Profile has the permission while
     its Account is enabled.
 
@@ -55,10 +55,10 @@ type Subscription {
     to resolve. The change holds each movie or episode whose watchStatus, watchProgress or
     lastWatchedAt changed. It also holds the season and the series of each such episode, because
     their aggregate values may have changed. Every open socket of the Profile receives the change,
-    including the socket of the client that made it. Values are current values, not differences,
-    so a client may apply a change twice. The server reads the values when it delivers the change,
-    and it delivers one operation's changes in order, so the last change an operation receives
-    carries the latest values.
+    including the socket of the client that made the write. Values are current values, not
+    differences, so a client may apply a change twice. The server reads the values when it delivers
+    the change, and it delivers one operation's changes in order, so the last change an operation
+    receives carries the latest values.
 
     To build current state, subscribe first, then query `continueWatching` and the library views
     the client shows. Select the same fields in the change as in those queries.
