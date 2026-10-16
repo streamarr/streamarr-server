@@ -643,8 +643,9 @@ public class ProducerLifecycleService {
     }
 
     var probe = session.getMediaProbe();
-    request.width(probe.width());
-    request.height(probe.height());
+    var size = probe.displayedSize();
+    request.width(size.width());
+    request.height(size.height());
     request.bitrate(probe.bitrate());
     return request.build();
   }

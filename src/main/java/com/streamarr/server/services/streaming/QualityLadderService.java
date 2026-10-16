@@ -1,8 +1,11 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.stereotype.Service;
@@ -19,7 +22,9 @@ public class QualityLadderService {
           new QualityTier(480, 1_500_000L, 96_000L, "480p"),
           new QualityTier(360, 800_000L, 64_000L, "360p"));
 
-  public List<QualityVariant> generateVariants(MediaProbe source, StreamingOptions options) {
+  /** Sizes each variant from the picture that a player shows, after cropping and rotation. */
+  public List<QualityVariant> generateVariants(MediaProbe probe, StreamingOptions options) {
+    var source = probe.displayedSize();
     var maxHeight = resolveMaxHeight(source, options);
     var maxBitrate = resolveMaxBitrate(options);
 
@@ -54,7 +59,7 @@ public class QualityLadderService {
           QualityVariant.builder()
               .width(computeWidthForHeight(source, source.height()))
               .height(source.height())
-              .videoBitrate(source.bitrate())
+              .videoBitrate(probe.bitrate())
               .audioBitrate(64_000L)
               .label(source.height() + "p")
               .build());
@@ -63,7 +68,7 @@ public class QualityLadderService {
     return List.copyOf(variants);
   }
 
-  private int resolveMaxHeight(MediaProbe source, StreamingOptions options) {
+  private int resolveMaxHeight(PictureSize source, StreamingOptions options) {
     if (options.maxHeight() != null && options.maxHeight() > 0) {
       return Math.min(options.maxHeight(), source.height());
     }
@@ -71,12 +76,13 @@ public class QualityLadderService {
     return source.height();
   }
 
-  private int computeWidthForHeight(MediaProbe source, int targetHeight) {
-    int width = (int) Math.round((double) source.width() / source.height() * targetHeight);
-    if (width % 2 != 0) {
-      width++;
-    }
-    return width;
+  // The worker scales with scale=-2:<height>. FFmpeg computes that width as
+  // round(height * width / (2 * height)) * 2, rounding half away from zero.
+  private static int computeWidthForHeight(PictureSize source, int targetHeight) {
+    var halfWidth =
+        BigDecimal.valueOf((long) targetHeight * source.width())
+            .divide(BigDecimal.valueOf(2L * source.height()), 0, RoundingMode.HALF_UP);
+    return halfWidth.intValueExact() * 2;
   }
 
   private Integer resolveMaxBitrate(StreamingOptions options) {

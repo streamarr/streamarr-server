@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
@@ -284,6 +285,7 @@ class RemoteVariantJobMapperTest {
     assertThat(video.hasOutputDynamicRange()).isFalse();
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   @Test
   @DisplayName("Should send the source's dynamic range and stream when the job encodes the video")
   void shouldSendTheSourcesDynamicRangeAndStreamWhenTheJobEncodesTheVideo() {
@@ -405,6 +407,55 @@ class RemoteVariantJobMapperTest {
     assertThat(absent.hasDolbyVisionAbsent()).isTrue();
     assertThat(unspecified.getDolbyVisionCase())
         .isEqualTo(VideoDynamicRange.DolbyVisionCase.DOLBYVISION_NOT_SET);
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @Test
+  @DisplayName("Should send the exact output frame rate when the job encodes the video")
+  void shouldSendTheExactOutputFrameRateWhenTheJobEncodesTheVideo() {
+    var source =
+        VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+            .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(60_000, 1_001)))
+            .build();
+    var request =
+        encodeAttempt("h264")
+            .framerate(OptionalDouble.of(60_000.0 / 1_001))
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                    .videoCodecFamily("h264")
+                    .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
+                    .videoSource(Optional.of(source))
+                    .build())
+            .build();
+
+    var execution = mapper.map(request).getExecution();
+
+    assertThat(execution.getOutputFrameRate())
+        .isEqualTo(
+            com.streamarr.transcode.v1.Fraction.newBuilder()
+                .setNumerator(60_000)
+                .setDenominator(1_001)
+                .build());
+  }
+
+  @Test
+  @DisplayName("Should send no output frame rate when the job copies the video")
+  void shouldSendNoOutputFrameRateWhenTheJobCopiesTheVideo() {
+    var execution = mapper.map(copyAttempt().build()).getExecution();
+
+    assertThat(execution.hasOutputFrameRate()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should send no output frame rate when the job encodes a source that its probe gave no playback facts")
+  void shouldSendNoOutputFrameRateWhenTheJobEncodesASourceThatItsProbeGaveNoPlaybackFacts() {
+    var execution = mapper.map(encodeAttempt("h264").build()).getExecution();
+
+    assertThat(execution.hasOutputFrameRate()).isFalse();
+    assertThat(execution.getFramerate()).isEqualTo(60);
   }
 
   private static TranscodeRequest.TranscodeRequestBuilder encodeAttempt(String videoCodecFamily) {

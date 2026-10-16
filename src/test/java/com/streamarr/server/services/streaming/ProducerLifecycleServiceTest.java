@@ -34,12 +34,14 @@ import com.streamarr.server.fakes.FakeServerSettingsRepository;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.LongStream;
@@ -619,6 +621,31 @@ class ProducerLifecycleServiceTest {
     assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.EXHAUSTED);
 
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
+  }
+
+  @Test
+  @DisplayName(
+      "Should request the rotated size when a session without a ladder starts an upright phone recording")
+  void shouldRequestTheRotatedSizeWhenASessionWithoutALadderStartsAnUprightPhoneRecording() {
+    var session =
+        defaultSessionBuilder()
+            .mediaProbe(
+                defaultProbeBuilder()
+                    .videoPlaybackFacts(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                                .streamIndex(0)
+                                .rotationDegrees(OptionalInt.of(-90))
+                                .build()))
+                    .build())
+            .build();
+    runtimeRegistry.save(session);
+
+    lifecycle.startFirstListedVariant(session);
+
+    var request = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(request.width()).isEqualTo(1080);
+    assertThat(request.height()).isEqualTo(1920);
   }
 
   @Test

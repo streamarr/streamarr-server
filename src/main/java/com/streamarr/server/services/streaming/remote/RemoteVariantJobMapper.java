@@ -169,10 +169,32 @@ final class RemoteVariantJobMapper {
             .setStartSequenceNumber(request.startSequenceNumber())
             .setMediaSegmentCount(request.mediaSegmentCount());
     request.framerate().ifPresent(execution::setFramerate);
+    outputFrameRate(request).ifPresent(execution::setOutputFrameRate);
     request
         .keyframeSeekPosition()
         .ifPresent(position -> execution.setSeekPosition(protobufDuration(position)));
     return execution.build();
+  }
+
+  // The worker passes the exact fraction to FFmpeg. A copy keeps the source's timing and carries
+  // none.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static Optional<com.streamarr.transcode.v1.Fraction> outputFrameRate(
+      TranscodeRequest request) {
+    var decision = request.transcodeDecision();
+    if (decision.transcodeMode().copiesVideo()) {
+      return Optional.empty();
+    }
+
+    return decision
+        .videoSource()
+        .flatMap(facts -> facts.frameRateRule().outputFrameRate())
+        .map(
+            rate ->
+                com.streamarr.transcode.v1.Fraction.newBuilder()
+                    .setNumerator(rate.numerator())
+                    .setDenominator(rate.denominator())
+                    .build());
   }
 
   // The keyframe seek position is never negative, so its seconds and nanoseconds share a sign as
