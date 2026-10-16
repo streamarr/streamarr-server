@@ -803,6 +803,10 @@
                                 </database>
                                 <generate>
                                     <pojos>false</pojos>
+                                    <!-- Public would otherwise hold a field for every table. An enum array column
+                                         makes its table read Public.PUBLIC during class initialization, so the two
+                                         classes deadlock when two threads initialize them at once. -->
+                                    <globalTableReferences>false</globalTableReferences>
                                 </generate>
                                 <target>
                                     <packageName>com.streamarr.server.jooq.generated</packageName>
