@@ -35,7 +35,7 @@ class LibraryOperationShutdownDeploymentTest {
     var server = yaml(Path.of("docker-compose.yml")).path("services").path("streamarr-server");
 
     assertThat(server.path("stop_grace_period").asString()).isEqualTo("45s");
-    assertThat(GRACE_PERIOD).isGreaterThan(defaultDrainTimeout());
+    assertThat(defaultDrainTimeout()).isLessThan(GRACE_PERIOD);
   }
 
   @Test
@@ -48,7 +48,7 @@ class LibraryOperationShutdownDeploymentTest {
 
     assertThat(podSpec.path("terminationGracePeriodSeconds").asLong())
         .isEqualTo(GRACE_PERIOD.toSeconds());
-    assertThat(GRACE_PERIOD).isGreaterThan(defaultDrainTimeout());
+    assertThat(defaultDrainTimeout()).isLessThan(GRACE_PERIOD);
   }
 
   private static Duration defaultDrainTimeout() {
