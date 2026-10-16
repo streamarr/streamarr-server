@@ -53,14 +53,15 @@ public class PersistedProbeReader {
   public Map<UUID, ChapterKnowledge> findChapters(@NonNull Collection<UUID> mediaFileIds) {
     var stored = repository.findChapterKnowledge(mediaFileIds);
     var chapters = new HashMap<UUID, ChapterKnowledge>();
-    mediaFileIds.forEach(
-        mediaFileId ->
-            chapters.put(
-                mediaFileId, stored.getOrDefault(mediaFileId, new ChapterKnowledge.NotReported())));
+    mediaFileIds.forEach(mediaFileId -> chapters.put(mediaFileId, chaptersOf(stored, mediaFileId)));
     return chapters;
   }
 
   private ChapterKnowledge chapterKnowledge(UUID mediaFileId) {
-    return findChapters(List.of(mediaFileId)).get(mediaFileId);
+    return chaptersOf(repository.findChapterKnowledge(List.of(mediaFileId)), mediaFileId);
+  }
+
+  private static ChapterKnowledge chaptersOf(Map<UUID, ChapterKnowledge> stored, UUID mediaFileId) {
+    return stored.getOrDefault(mediaFileId, new ChapterKnowledge.NotReported());
   }
 }

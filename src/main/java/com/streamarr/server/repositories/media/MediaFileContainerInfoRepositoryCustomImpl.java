@@ -516,18 +516,18 @@ public class MediaFileContainerInfoRepositoryCustomImpl
     }
 
     dsl.executeInsert(row);
-    if (!(publication.outcome() instanceof ProbeOutcome.Success success)) {
+    if (!(publication.outcome()
+        instanceof ProbeOutcome.Success(var container, var streams, var keyframes))) {
       return;
     }
 
-    dsl.batchInsert(
-            success.streams().stream().map(stream -> toStreamRow(mediaFileId, stream)).toList())
+    dsl.batchInsert(streams.stream().map(stream -> toStreamRow(mediaFileId, stream)).toList())
         .execute();
-    if (success.keyframes() instanceof KeyframeKnowledge.Known(var positions)) {
+    if (keyframes instanceof KeyframeKnowledge.Known(var positions)) {
       insertKeyframePositions(mediaFileId, positions);
     }
 
-    if (success.container().chapters() instanceof ChapterKnowledge.Known(var chapters)
+    if (container.chapters() instanceof ChapterKnowledge.Known(var chapters)
         && !chapters.isEmpty()) {
       dsl.batchInsert(toChapterRows(mediaFileId, chapters)).execute();
     }
