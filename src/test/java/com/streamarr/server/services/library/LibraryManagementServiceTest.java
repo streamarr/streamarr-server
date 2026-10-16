@@ -114,6 +114,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 
@@ -849,20 +850,23 @@ class LibraryManagementServiceTest {
       }
     }
 
-    @Test
+    // Neither deepest name has an ASCII letter to swap, so the letter-case check reads the folder
+    // above it. Swapping the dotless i would name another folder on such a file system.
+    @ParameterizedTest
+    @ValueSource(strings = {"2024", "ı"})
     @DisplayName(
         "Should reject with an INSIDE overlap when the path differs in letter case on a file"
             + " system that ignores letter case")
-    void shouldRejectWithInsideOverlapWhenPathDiffersInLetterCaseOnCaseIgnoringFileSystem()
-        throws IOException {
+    void shouldRejectWithInsideOverlapWhenPathDiffersInLetterCaseOnCaseIgnoringFileSystem(
+        String deepestName) throws IOException {
       try (var caseIgnoringFileSystem = Jimfs.newFileSystem(Configuration.osX())) {
-        Files.createDirectories(caseIgnoringFileSystem.getPath("/media/Movies/2024"));
+        Files.createDirectories(caseIgnoringFileSystem.getPath("/media/Movies", deepestName));
         var service = serviceWith(caseIgnoringFileSystem);
         var registered =
             accepted(service.addLibrary(identity, libraryNamed("Movies", "/media/Movies")));
 
-        // The deepest name has no letter, so the letter-case check reads the folder above it.
-        var outcome = service.addLibrary(identity, libraryNamed("2024", "/MEDIA/movies/2024"));
+        var outcome =
+            service.addLibrary(identity, libraryNamed("Inner", "/MEDIA/movies/" + deepestName));
 
         assertThat(outcome)
             .isEqualTo(

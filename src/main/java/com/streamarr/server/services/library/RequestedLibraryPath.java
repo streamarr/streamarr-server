@@ -21,8 +21,9 @@ record RequestedLibraryPath(@NonNull Path path, boolean ignoresLetterCase) {
     return new RequestedLibraryPath(folder, ignoresLetterCaseAt(folder));
   }
 
-  // The deepest folder name with a letter decides: a file system that ignores letter case finds
-  // the same folder under that name with the case of every letter swapped.
+  // The deepest folder name with an ASCII letter decides: a file system that ignores letter case
+  // finds the same folder under that name with the case of every ASCII letter swapped. Other
+  // letters stay as they are, because their case pairs differ between file systems.
   private static boolean ignoresLetterCaseAt(Path folder) {
     return IntStream.iterate(folder.getNameCount(), count -> count > 0, count -> count - 1)
         .mapToObj(count -> folder.getRoot().resolve(folder.subpath(0, count)))
@@ -47,11 +48,15 @@ record RequestedLibraryPath(@NonNull Path path, boolean ignoresLetterCase) {
   }
 
   private static int swapLetterCase(int codePoint) {
-    if (Character.isUpperCase(codePoint)) {
+    if (codePoint >= 'A' && codePoint <= 'Z') {
       return Character.toLowerCase(codePoint);
     }
 
-    return Character.toUpperCase(codePoint);
+    if (codePoint >= 'a' && codePoint <= 'z') {
+      return Character.toUpperCase(codePoint);
+    }
+
+    return codePoint;
   }
 
   private record TwoSpellings(Path folder, Path swapped) {
