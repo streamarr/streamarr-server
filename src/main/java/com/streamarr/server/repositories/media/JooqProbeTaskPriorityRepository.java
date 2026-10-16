@@ -33,7 +33,7 @@ public class JooqProbeTaskPriorityRepository implements ProbeTaskPriorityReposit
             .where(TASK_NAME.eq(instance.getTaskName()))
             .and(TASK_INSTANCE.eq(instance.getId()))
             .and(PICKED.isFalse())
-            .and(PRIORITY.isNull().or(PRIORITY.lt(raised)))
+            .and(PRIORITY.lt(raised))
             .execute()
         == 1;
   }
