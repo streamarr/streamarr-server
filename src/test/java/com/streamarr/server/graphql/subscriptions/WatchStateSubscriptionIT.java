@@ -202,6 +202,81 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should deliver the later position last when a second progress report commits before the"
+          + " first change arrives")
+  void shouldDeliverLaterPositionLastWhenSecondReportCommitsBeforeFirstChangeArrives() {
+    var identity = createIdentity();
+    var episode = createEpisode();
+    var session = openStreamSession(identity, episode);
+    var subscriber = subscribedSocket(authTestSupport.profileBearer(identity));
+    var reporter = authTestSupport.profileBearer(identity);
+
+    reportPaused(reporter, session, PAUSED_POSITION_SECONDS);
+    reportPaused(reporter, session, LATER_POSITION_SECONDS);
+
+    var first = itemsById(nextChange(subscriber));
+    var last = itemsById(nextChange(subscriber));
+    assertThat(first).hasSize(3);
+    assertThat(positionOf(last, episode.getId())).isEqualTo(LATER_POSITION_SECONDS);
+    assertThat(positionOf(last, episode.getSeason().getId())).isEqualTo(LATER_POSITION_SECONDS);
+    assertThat(positionOf(last, episode.getSeason().getSeries().getId()))
+        .isEqualTo(LATER_POSITION_SECONDS);
+  }
+
+  @Test
+  @DisplayName("Should deliver the change to every open client of the Profile")
+  void shouldDeliverChangeToEveryOpenClientOfProfile() {
+    var identity = createIdentity();
+    var movie = createMovie();
+    var firstSubscriber = subscribedSocket(authTestSupport.profileBearer(identity));
+    var secondSubscriber = subscribedSocket(authTestSupport.profileBearer(identity));
+
+    markWatched(authTestSupport.profileBearer(identity), movie.getId());
+
+    assertThat(itemsById(nextChange(firstSubscriber))).containsOnlyKeys(movie.getId().toString());
+    assertThat(itemsById(nextChange(secondSubscriber))).containsOnlyKeys(movie.getId().toString());
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver every episode, each season and the series when the Profile marks the series"
+          + " watched")
+  void shouldDeliverEveryEpisodeEachSeasonAndSeriesWhenProfileMarksSeriesWatched() {
+    var identity = createIdentity();
+    var firstEpisode = createEpisode();
+    var season = firstEpisode.getSeason();
+    var series = season.getSeries();
+    var library = firstEpisode.getLibrary();
+    var secondSeason =
+        seasonRepository.saveAndFlush(
+            Season.builder().seasonNumber(2).series(series).library(library).build());
+    var secondEpisode =
+        episodeRepository.saveAndFlush(
+            Episode.builder()
+                .episodeNumber(1)
+                .title("Return")
+                .season(secondSeason)
+                .library(library)
+                .files(Set.of(buildFile(library)))
+                .build());
+    var subscriber = subscribedSocket(authTestSupport.profileBearer(identity));
+
+    markWatched(authTestSupport.profileBearer(identity), series.getId());
+
+    var items = itemsById(nextChange(subscriber));
+    assertThat(items)
+        .containsOnlyKeys(
+            firstEpisode.getId().toString(),
+            secondEpisode.getId().toString(),
+            season.getId().toString(),
+            secondSeason.getId().toString(),
+            series.getId().toString());
+    assertThat(items.values())
+        .allSatisfy(item -> assertThat(item.path("watchStatus").asString()).isEqualTo("WATCHED"));
+  }
+
+  @Test
   @DisplayName("Should send no change when a repeated progress report changes nothing")
   void shouldSendNoChangeWhenRepeatedProgressReportChangesNothing() {
     var identity = createIdentity();
