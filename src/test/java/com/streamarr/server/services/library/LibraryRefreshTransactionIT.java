@@ -7,15 +7,13 @@ import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
-import com.streamarr.server.domain.media.ArtworkResultCounts;
-import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ItemOutcome;
-import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.fakes.WriteFailingItemResultRepository;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.LibraryOperationFixture;
 import com.streamarr.server.fixtures.MetadataFixture;
@@ -37,23 +35,19 @@ import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolve
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.time.Clock;
-import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
-@DisplayName("Movie refresh transaction integration tests")
-class MovieRefreshTransactionIT extends AbstractIntegrationTest {
+@DisplayName("Library refresh transaction integration tests")
+class LibraryRefreshTransactionIT extends AbstractIntegrationTest {
 
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MovieRepository movieRepository;
@@ -106,21 +100,30 @@ class MovieRefreshTransactionIT extends AbstractIntegrationTest {
   }
 
   private LibraryRefreshService refreshServiceFailingTheFirstMetadataWrite() {
+    var failed = new AtomicBoolean();
+    return refreshServiceBuilder()
+        .movieMetadataProviderResolver(
+            new MovieMetadataProviderResolver(List.of(new RefreshedMovieProvider())))
+        .itemResults(
+            new WriteFailingItemResultRepository(
+                itemResults,
+                result -> result.step() == ItemStep.METADATA && failed.compareAndSet(false, true)))
+        .build();
+  }
+
+  private LibraryRefreshService.LibraryRefreshServiceBuilder refreshServiceBuilder() {
     return LibraryRefreshService.builder()
         .seriesRepository(seriesRepository)
         .movieRepository(movieRepository)
         .seriesService(seriesService)
         .movieService(movieService)
         .seriesMetadataProviderResolver(seriesMetadataProviderResolver)
-        .movieMetadataProviderResolver(
-            new MovieMetadataProviderResolver(List.of(new RefreshedMovieProvider())))
         .artworkRequestService(artworkRequestService)
         .artworkRunWaiter(artworkRunWaiter)
-        .itemResults(new FirstMetadataWriteFails(itemResults))
+        .itemResults(itemResults)
         .clock(Clock.systemUTC())
         .libraryOperationAdmissions(libraryOperationAdmissions)
-        .transactionTemplate(transactionTemplate)
-        .build();
+        .transactionTemplate(transactionTemplate);
   }
 
   private Movie saveMovieWithTmdbId(Library library, String title, String tmdbId) {
@@ -159,61 +162,6 @@ class MovieRefreshTransactionIT extends AbstractIntegrationTest {
     @Override
     public ExternalAgentStrategy getAgentStrategy() {
       return ExternalAgentStrategy.TMDB;
-    }
-  }
-
-  /** Fails the first write of a metadata result, as a lost connection would. */
-  private static final class FirstMetadataWriteFails implements ItemResultRepository {
-
-    private final ItemResultRepository delegate;
-    private final AtomicBoolean failed = new AtomicBoolean();
-
-    private FirstMetadataWriteFails(ItemResultRepository delegate) {
-      this.delegate = delegate;
-    }
-
-    @Override
-    public boolean trySave(ItemResult result) {
-      failIfFirstMetadataWrite(result);
-      return delegate.trySave(result);
-    }
-
-    @Override
-    public void overwrite(ItemResult result) {
-      failIfFirstMetadataWrite(result);
-      delegate.overwrite(result);
-    }
-
-    @Override
-    public boolean trySaveArtworkResults(ArtworkStepsAttempt attempt, List<ItemResult> results) {
-      return delegate.trySaveArtworkResults(attempt, results);
-    }
-
-    @Override
-    public List<ItemResult> findByItem(UUID itemId, ImageEntityType itemType) {
-      return delegate.findByItem(itemId, itemType);
-    }
-
-    @Override
-    public Set<UUID> findItemIdsWithMetadataResultForLibraryOperation(UUID libraryOperationId) {
-      return delegate.findItemIdsWithMetadataResultForLibraryOperation(libraryOperationId);
-    }
-
-    @Override
-    public ArtworkResultCounts countArtworkOutcomesForLibraryOperation(UUID libraryOperationId) {
-      return delegate.countArtworkOutcomesForLibraryOperation(libraryOperationId);
-    }
-
-    @Override
-    public Map<ImageEntityType, ArtworkResultCounts> countArtworkOutcomesRecordedSince(
-        Instant since) {
-      return delegate.countArtworkOutcomesRecordedSince(since);
-    }
-
-    private void failIfFirstMetadataWrite(ItemResult result) {
-      if (result.step() == ItemStep.METADATA && failed.compareAndSet(false, true)) {
-        throw new DataAccessResourceFailureException("simulated connection loss");
-      }
     }
   }
 }
