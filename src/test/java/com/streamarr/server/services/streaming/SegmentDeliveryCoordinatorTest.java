@@ -78,14 +78,18 @@ class SegmentDeliveryCoordinatorTest {
   }
 
   private StreamingRig rigWith(FakeTranscodeExecutor executor, FakeSegmentStore store) {
+    return rigBuilder(executor, store).build();
+  }
+
+  private StreamingRigFixture.StreamingRigBuilder rigBuilder(
+      FakeTranscodeExecutor executor, FakeSegmentStore store) {
     return StreamingRigFixture.streamingRigBuilder()
         .transcodeExecutor(executor)
         .segmentStore(store)
         .properties(properties)
         .runtimeRegistry(runtimeRegistry)
         .clock(clock)
-        .heldRequests(executor.heldSegmentRequests())
-        .build();
+        .heldRequests(executor.heldSegmentRequests());
   }
 
   // Stores the segment, then wakes the requests held on its variant, as a worker's upload does.
@@ -110,6 +114,14 @@ class SegmentDeliveryCoordinatorTest {
     heldRequests().wakeVariant(sessionId, StreamSession.defaultVariant());
   }
 
+  // Wakes the requests held on the default variant, then waits until one has looked again. A
+  // request looks again only after its previous pass has returned.
+  private void awaitNextLook(UUID sessionId) {
+    var looks = transcodeExecutor.livenessChecks();
+    heldRequests().wakeVariant(sessionId, StreamSession.defaultVariant());
+    transcodeExecutor.awaitLivenessCheckCount(looks + 1);
+  }
+
   // Uploads an earlier segment, then waits until the held request has looked at it as progress.
   private void uploadProgress(UUID sessionId, String segmentName) {
     var looks = transcodeExecutor.livenessChecks();
@@ -117,10 +129,16 @@ class SegmentDeliveryCoordinatorTest {
     transcodeExecutor.awaitLivenessCheckCount(looks + 1);
   }
 
-  // Removes the session and forgets it, as destroying the session does.
+  // Destroys the session as the service does. Its removal waits for the session mutex, so a
+  // replacement in flight cannot save the destroyed session back into the registry.
   private void destroy(UUID sessionId) {
-    runtimeRegistry.removeById(sessionId);
-    coordinator.forgetSession(sessionId);
+    HlsStreamingService.builder()
+        .segmentStore(segmentStore)
+        .runtimeRegistry(runtimeRegistry)
+        .producerLifecycle(lifecycle)
+        .deliveryCoordinator(coordinator)
+        .build()
+        .destroySession(sessionId);
   }
 
   private HeldSegmentRequests heldRequests() {
@@ -789,6 +807,9 @@ class SegmentDeliveryCoordinatorTest {
     var delivery = deliverAsync(sessionId, "segment0.m4s");
     try {
       transcodeExecutor.awaitStartedRequestCount(startsBefore + 1);
+      // Recovery starts the replacement's stall clock after its start returns. Moving the clock
+      // before the request looks again would start that clock late.
+      awaitNextLook(sessionId);
       var looks = transcodeExecutor.livenessChecks();
       advanceClockThenWake(sessionId, startupBudget.minusMillis(1));
       transcodeExecutor.awaitLivenessCheckCount(looks + 1);
@@ -842,6 +863,32 @@ class SegmentDeliveryCoordinatorTest {
     destroy(session.getSessionId());
 
     assertThat(delivery.get(1, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.SessionEnded.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should end a held request when its session is destroyed while recovery replaces the producer")
+  void shouldEndHeldRequestWhenItsSessionIsDestroyedWhileRecoveryReplacesTheProducer()
+      throws Exception {
+    var gatingExecutor = new EvidenceGatingExecutor();
+    var sessionMutex = new ContendedSessionMutex();
+    transcodeExecutor = gatingExecutor;
+    var rig =
+        rigBuilder(gatingExecutor, segmentStore).sessionMutex(sessionMutex.mutexFactory()).build();
+    lifecycle = rig.lifecycle();
+    coordinator = rig.coordinator();
+    var sessionId = startedSession().getSessionId();
+    gatingExecutor.markDead(sessionId);
+    gatingExecutor.holdTargetedStarts();
+
+    var delivery = deliverAsync(sessionId, "segment0.m4s");
+    gatingExecutor.awaitTargetedStartEntered();
+    var destroy = CompletableFuture.runAsync(() -> destroy(sessionId));
+    sessionMutex.awaitContention();
+    gatingExecutor.releaseTargetedStarts();
+
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.SessionEnded.class);
+    destroy.get(2, TimeUnit.SECONDS);
   }
 
   @Test
@@ -1466,6 +1513,41 @@ class SegmentDeliveryCoordinatorTest {
       }
 
       return result;
+    }
+  }
+
+  /** Signals when a thread waits for the session mutex while another thread holds it. */
+  private static final class ContendedSessionMutex {
+
+    private final CountDownLatch contended = new CountDownLatch(1);
+    private final ReentrantLock lock = new ContentionSignalingLock();
+
+    private MutexFactory<UUID> mutexFactory() {
+      return new MutexFactory<>() {
+        @Override
+        public ReentrantLock getMutex(UUID sessionId) {
+          return lock;
+        }
+      };
+    }
+
+    private void awaitContention() throws InterruptedException {
+      assertThat(contended.await(5, TimeUnit.SECONDS))
+          .as("a thread must wait for the session mutex")
+          .isTrue();
+    }
+
+    private final class ContentionSignalingLock extends ReentrantLock {
+
+      @Override
+      public void lock() {
+        if (tryLock()) {
+          return;
+        }
+
+        contended.countDown();
+        super.lock();
+      }
     }
   }
 
