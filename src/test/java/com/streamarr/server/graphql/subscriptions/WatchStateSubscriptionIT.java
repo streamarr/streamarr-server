@@ -160,11 +160,12 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should deliver the resume position of the episode, its season and its series when the"
-          + " Profile's other client reports progress")
-  void shouldDeliverResumePositionOfEpisodeSeasonAndSeriesWhenOtherClientReportsProgress() {
+      "Should deliver the subscribing Profile's resume position of the episode, its season and its"
+          + " series when another Profile has watched the episode")
+  void shouldDeliverSubscribingProfilesResumePositionWhenAnotherProfileHasWatchedEpisode() {
     var identity = createIdentity();
     var episode = createEpisode();
+    markWatched(authTestSupport.profileBearer(createIdentity()), episode.getId());
     var session = openStreamSession(identity, episode);
     var subscriber = subscribedSocket(authTestSupport.profileBearer(identity));
 
