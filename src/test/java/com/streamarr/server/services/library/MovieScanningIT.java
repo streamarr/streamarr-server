@@ -34,7 +34,6 @@ import com.streamarr.server.support.LibraryOperationDriver;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -42,7 +41,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import lombok.Builder;
 import org.jooq.impl.DSL;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -71,13 +69,10 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private AuditColumnFixtures auditColumns;
-  @Autowired private ProbeExecution probeExecution;
   @Autowired private ApplicationContext applicationContext;
   @Autowired private ArtworkPrioritySchedulers artworkPrioritySchedulers;
 
   @TempDir Path tempDir;
-
-  private ProbeSchedulerStarter.StartedProbeScheduler probeScheduler;
 
   @BeforeEach
   void cleanupDatabase() {
@@ -86,13 +81,6 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     mediaFileRepository.deleteAll();
     movieRepository.deleteAll();
     libraryRepository.deleteAll();
-  }
-
-  @AfterEach
-  void stopProbeScheduler() {
-    if (probeScheduler != null) {
-      probeScheduler.scheduler().stop();
-    }
   }
 
   @Test
@@ -277,14 +265,6 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   }
 
   // --- Helpers ---
-
-  // Probes run in db-scheduler, and a scan finishes only after its probes have stored results.
-  private void startProbeScheduler() {
-    jdbcTemplate.update("DELETE FROM scheduled_tasks");
-    probeScheduler =
-        ProbeSchedulerStarter.fromContext(applicationContext)
-            .start(probeExecution, new AbstractSchedulerListener() {}, Clock.systemUTC());
-  }
 
   // The scan must insert the genre, so a row left by an earlier run cannot answer for it.
   private void deleteUnsharedGenre() {

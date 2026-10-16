@@ -7,7 +7,6 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
@@ -24,7 +23,6 @@ import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -37,7 +35,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.ApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 
@@ -84,13 +81,9 @@ class LargeMovieLibraryScanIT extends AbstractScanningIntegrationTest {
   @Autowired private MovieRepository movieRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private JdbcTemplate jdbcTemplate;
-  @Autowired private ProbeExecution probeExecution;
-  @Autowired private ApplicationContext applicationContext;
   @Autowired private MeterRegistry meterRegistry;
 
   @TempDir Path tempDir;
-
-  private ProbeSchedulerStarter.StartedProbeScheduler probeScheduler;
 
   @BeforeEach
   void cleanupDatabase() {
@@ -99,11 +92,7 @@ class LargeMovieLibraryScanIT extends AbstractScanningIntegrationTest {
   }
 
   @AfterEach
-  void stopProbeSchedulerAndCleanup() {
-    if (probeScheduler != null) {
-      probeScheduler.scheduler().stop();
-    }
-
+  void cleanupScannedRows() {
     deleteScannedRows();
   }
 
@@ -247,14 +236,6 @@ class LargeMovieLibraryScanIT extends AbstractScanningIntegrationTest {
                     .withStatus(200)
                     .withHeader("Content-Type", "image/jpeg")
                     .withBody(createTestImage(600, 900))));
-  }
-
-  // Probes run in db-scheduler, and a scan finishes only after its probes have stored results.
-  private void startProbeScheduler() {
-    jdbcTemplate.update("DELETE FROM scheduled_tasks");
-    probeScheduler =
-        ProbeSchedulerStarter.fromContext(applicationContext)
-            .start(probeExecution, new AbstractSchedulerListener() {}, Clock.systemUTC());
   }
 
   private int savedMovieImages() {
