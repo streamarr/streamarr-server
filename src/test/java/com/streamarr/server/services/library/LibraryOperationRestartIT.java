@@ -138,7 +138,7 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
             authTestSupport.identityOf(admin), library.getId());
     // The file's task holds its admission until its artwork has results, so the restart comes
     // while the task waits for the poster and backdrop that it requested.
-    await().atMost(BOUND).until(() -> storedArtworkRequests() == 1);
+    await().atMost(BOUND).until(() -> artworkRequestsOfTheLibraryOperation() == 1);
     beforeRestart.stop();
     var libraryOperationId = storedLibraryOperationId();
 
@@ -413,8 +413,15 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
     return scheduler;
   }
 
-  private int storedArtworkRequests() {
-    return jdbcTemplate.queryForObject("SELECT count(*) FROM artwork_request", Integer.class);
+  // Requests that earlier test classes left for other targets stay out of the count.
+  private int artworkRequestsOfTheLibraryOperation() {
+    return jdbcTemplate.queryForObject(
+        """
+        SELECT count(*)
+        FROM artwork_request
+        JOIN library_operation ON library_operation.id = artwork_request.library_operation_id
+        """,
+        Integer.class);
   }
 
   private UUID storedLibraryOperationId() {
