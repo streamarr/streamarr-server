@@ -89,7 +89,9 @@ class HeldResponsesTest {
   @Test
   @DisplayName("Should fail when fewer responses are held within the bound")
   void shouldFailWhenFewerResponsesAreHeldWithinTheBound() {
-    assertThatThrownBy(() -> heldResponses.awaitHeldResponses(1, Duration.ofMillis(50)))
+    var shortBound = Duration.ofMillis(50);
+
+    assertThatThrownBy(() -> heldResponses.awaitHeldResponses(1, shortBound))
         .isInstanceOf(AssertionError.class)
         .hasMessage("0 of 1 responses were held within PT0.05S");
   }

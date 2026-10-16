@@ -1,5 +1,7 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static java.util.Objects.requireNonNullElse;
+
 import java.time.Duration;
 import lombok.Builder;
 import lombok.NonNull;
@@ -15,13 +17,11 @@ public record WorkerSessionServerConfiguration(
     WorkerSessionKeepalive keepalive) {
 
   public WorkerSessionServerConfiguration {
-    probeTimeout = probeTimeout == null ? Duration.ofMinutes(1) : probeTimeout;
-    keyframeScanTimeout =
-        keyframeScanTimeout == null ? Duration.ofMinutes(30) : keyframeScanTimeout;
-    probeCancellationTimeout =
-        probeCancellationTimeout == null ? Duration.ofSeconds(5) : probeCancellationTimeout;
-    startReportTimeout = startReportTimeout == null ? Duration.ofSeconds(10) : startReportTimeout;
-    keepalive = keepalive == null ? WorkerSessionKeepalive.DEFAULT : keepalive;
+    probeTimeout = requireNonNullElse(probeTimeout, Duration.ofMinutes(1));
+    keyframeScanTimeout = requireNonNullElse(keyframeScanTimeout, Duration.ofMinutes(30));
+    probeCancellationTimeout = requireNonNullElse(probeCancellationTimeout, Duration.ofSeconds(5));
+    startReportTimeout = requireNonNullElse(startReportTimeout, Duration.ofSeconds(10));
+    keepalive = requireNonNullElse(keepalive, WorkerSessionKeepalive.DEFAULT);
 
     if (probeTimeout.isZero() || probeTimeout.isNegative()) {
       throw new IllegalArgumentException("Worker probe timeout must be positive");
