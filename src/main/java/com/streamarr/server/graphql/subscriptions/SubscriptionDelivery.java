@@ -4,7 +4,6 @@ import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.function.Consumer;
 import java.util.function.ToDoubleFunction;
-import lombok.NonNull;
 import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
@@ -16,8 +15,7 @@ import reactor.core.scheduler.Scheduler;
  * thread that broadcasts. An operation that falls more than its buffer behind ends with {@link
  * SubscriptionOverflowException}.
  */
-record SubscriptionDelivery(
-    @NonNull String field, @NonNull Scheduler deliveryScheduler, int operationBuffer) {
+record SubscriptionDelivery(String field, Scheduler deliveryScheduler, int operationBuffer) {
 
   private static final String ACTIVE_REGISTRATIONS_METRIC =
       "streamarr.graphql.subscriptions.active";
