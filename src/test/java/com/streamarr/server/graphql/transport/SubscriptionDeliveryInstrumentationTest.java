@@ -120,6 +120,33 @@ class SubscriptionDeliveryInstrumentationTest {
 
   @Test
   @DisplayName(
+      "Should deliver the next value when a nullable field of an earlier value outlasts the"
+          + " delivery fetch timeout")
+  void shouldDeliverNextValueWhenNullableFieldOfEarlierValueOutlastsDeliveryFetchTimeout() {
+    var fetches = new AtomicInteger();
+    var graphQl =
+        graphQl(
+            _ ->
+                fetches.incrementAndGet() == 1
+                    ? new CompletableFuture<>()
+                    : CompletableFuture.completedFuture("current"));
+    var subscription =
+        ExecutionInput.newExecutionInput("subscription { change { value } }")
+            .graphQLContext(Map.of(GraphQlTransport.class, GraphQlTransport.WEBSOCKET))
+            .build();
+    Publisher<ExecutionResult> values = graphQl.execute(subscription).getData();
+
+    var delivered = Flux.from(values).collectList().block(BOUND);
+
+    assertThat(delivered).hasSize(2);
+    assertThat(delivered.getFirst().getErrors()).isNotEmpty();
+    assertThat(delivered.getLast().getErrors()).isEmpty();
+    assertThat(delivered.getLast().<Map<String, Map<String, Object>>>getData().get("change"))
+        .containsEntry("value", "current");
+  }
+
+  @Test
+  @DisplayName(
       "Should resolve a delivered value's fields as the subscriber when the value arrives on"
           + " another thread")
   void shouldResolveDeliveredValuesFieldsAsSubscriberWhenValueArrivesOnAnotherThread() {

@@ -14,7 +14,7 @@ import org.springframework.util.unit.DataSize;
  *     socket with 4101
  * @param deliveryFetchTimeout how long one asynchronous field of a delivered change may take to
  *     resolve; a slower field resolves as an error on that change, so later changes of the
- *     operation are not held behind it
+ *     operation do not wait for the slow field
  */
 @ConfigurationProperties(prefix = "graphql.subscriptions")
 public record SubscriptionProperties(

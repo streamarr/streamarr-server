@@ -34,7 +34,7 @@ import org.springframework.stereotype.Component;
  * still applies within one execution. Queries and mutations keep their cache.
  *
  * <p>graphql-java sends an operation's results in the order the values arrived, so a later value
- * waits for an earlier one. Each asynchronous field of a delivered value is bounded by {@link
+ * waits for every earlier value. Each asynchronous field of a delivered value is bounded by {@link
  * SubscriptionProperties#deliveryFetchTimeout()}: a slower field resolves as an error on that value
  * instead of stalling the operation.
  */
