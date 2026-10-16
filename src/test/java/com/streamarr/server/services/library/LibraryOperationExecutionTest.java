@@ -125,6 +125,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.CannotGetJdbcConnectionException;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("UnitTest")
 @DisplayName("Library Operation Execution Tests")
@@ -1404,6 +1405,7 @@ class LibraryOperationExecutionTest {
               .itemResults(new FakeItemResultRepository())
               .clock(Clock.systemUTC())
               .libraryOperationAdmissions(admissionsWith(new AdaptiveAdmissions()))
+              .transactionTemplate(new TransactionTemplate(transactionManager))
               .build();
       var service = libraryManagementServiceWithRefreshService(refreshService);
 
@@ -1740,7 +1742,7 @@ class LibraryOperationExecutionTest {
     private volatile Runnable refreshAnswer = () -> {};
 
     private ScriptedLibraryRefreshService() {
-      super(null, null, null, null, null, null, null, null, null, null, null);
+      super(null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     private void failWith(RuntimeException failure) {

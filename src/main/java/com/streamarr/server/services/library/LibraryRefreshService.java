@@ -26,6 +26,7 @@ import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.concurrency.AdaptiveAdmission;
 import com.streamarr.server.services.concurrency.AdmittedTaskReport;
 import com.streamarr.server.services.metadata.MetadataFetchOutcome;
+import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
@@ -39,6 +40,7 @@ import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Refreshes each movie or series from its provider and records the metadata result for that item.
@@ -64,6 +66,7 @@ public class LibraryRefreshService {
   private final ItemResultRepository itemResults;
   private final Clock clock;
   private final LibraryOperationAdmissions libraryOperationAdmissions;
+  private final TransactionTemplate transactionTemplate;
 
   /**
    * Returns once every item's metadata result is recorded and the primary artwork of the refresh's
@@ -305,40 +308,57 @@ public class LibraryRefreshService {
       MediaTitleToRefresh<Movie> mediaTitle, Library library, ArtworkRun artworkRun) {
     var movie = mediaTitle.entity();
     var tmdbId = mediaTitle.tmdbId();
-    var attemptedAt = clock.instant();
-    var outcome = refreshMovieMetadata(movie, tmdbId, library, artworkRun);
-
-    itemResults.trySave(
+    var result =
         metadataResult(movie.getId(), ImageEntityType.MOVIE, artworkRun)
-            .outcome(outcome)
-            .attemptedAt(attemptedAt)
-            .build());
-    return outcome;
+            .attemptedAt(clock.instant());
+    MetadataFetchOutcome<MetadataResult<Movie>> fetched;
+    try {
+      fetched =
+          movieMetadataProviderResolver.getMetadata(
+              searchResult(tmdbId, movie.getTitle()), library);
+    } catch (RuntimeException ex) {
+      log.error(
+          "Failed to fetch metadata for movie '{}' TMDB id '{}'", movie.getTitle(), tmdbId, ex);
+      return saveMetadataResult(result, ItemOutcome.Failed.of(ItemFailureReason.TEMPORARY, ex));
+    }
+
+    return switch (fetched) {
+      case MetadataFetchOutcome.Found(var metadataResult) ->
+          saveRefreshedMovie(movie, metadataResult, artworkRun, result);
+      case MetadataFetchOutcome.NotFound<?> _ -> {
+        log.error("TMDB no longer has movie '{}' TMDB id '{}'", movie.getTitle(), tmdbId);
+        yield saveMetadataResult(result, new ItemOutcome.Unavailable());
+      }
+      case MetadataFetchOutcome.Failed<?> failed -> {
+        log.error("Failed to fetch metadata for movie '{}' TMDB id '{}'", movie.getTitle(), tmdbId);
+        yield saveMetadataResult(result, failed.toItemOutcome());
+      }
+    };
   }
 
-  private ItemOutcome refreshMovieMetadata(
-      Movie movie, String tmdbId, Library library, ArtworkRun artworkRun) {
+  // The movie, its artwork request and its metadata result commit together, so an execution after
+  // a restart never refreshes a movie whose result is missing, or skips one whose refresh is lost.
+  private ItemOutcome saveRefreshedMovie(
+      Movie movie,
+      MetadataResult<Movie> metadataResult,
+      ArtworkRun artworkRun,
+      ItemResult.ItemResultBuilder result) {
     try {
-      return switch (movieMetadataProviderResolver.getMetadata(
-          searchResult(tmdbId, movie.getTitle()), library)) {
-        case MetadataFetchOutcome.Found(var metadataResult) -> {
-          movieService.refreshMovieMetadata(movie, metadataResult, artworkRun);
-          yield new ItemOutcome.Succeeded();
-        }
-        case MetadataFetchOutcome.NotFound<?> _ -> {
-          log.error("TMDB no longer has movie '{}' TMDB id '{}'", movie.getTitle(), tmdbId);
-          yield new ItemOutcome.Unavailable();
-        }
-        case MetadataFetchOutcome.Failed<?> failed -> {
-          log.error(
-              "Failed to fetch metadata for movie '{}' TMDB id '{}'", movie.getTitle(), tmdbId);
-          yield failed.toItemOutcome();
-        }
-      };
+      transactionTemplate.executeWithoutResult(
+          _ -> {
+            movieService.refreshMovieMetadata(movie, metadataResult, artworkRun);
+            itemResults.overwrite(result.outcome(new ItemOutcome.Succeeded()).build());
+          });
+      return new ItemOutcome.Succeeded();
     } catch (RuntimeException ex) {
-      log.error("Failed to refresh movie '{}' TMDB id '{}'", movie.getTitle(), tmdbId, ex);
-      return ItemOutcome.Failed.of(ItemFailureReason.TEMPORARY, ex);
+      log.error("Failed to refresh movie '{}'", movie.getTitle(), ex);
+      return saveMetadataResult(result, ItemOutcome.Failed.of(ItemFailureReason.TEMPORARY, ex));
     }
+  }
+
+  private ItemOutcome saveMetadataResult(ItemResult.ItemResultBuilder result, ItemOutcome outcome) {
+    itemResults.trySave(result.outcome(outcome).build());
+    return outcome;
   }
 
   private static RemoteSearchResult searchResult(String tmdbId, String title) {

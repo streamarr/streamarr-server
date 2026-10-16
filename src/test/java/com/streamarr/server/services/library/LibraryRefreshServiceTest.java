@@ -43,6 +43,7 @@ import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
+import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.FixedLimitAdmissions;
 import com.streamarr.server.fakes.GatedImageDownloader;
 import com.streamarr.server.fakes.MutableClock;
@@ -87,6 +88,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.CannotGetJdbcConnectionException;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("UnitTest")
 @DisplayName("Library Refresh Service Tests")
@@ -185,6 +187,7 @@ class LibraryRefreshServiceTest {
         .itemResults(itemResults)
         .clock(clock)
         .libraryOperationAdmissions(admissions)
+        .transactionTemplate(new TransactionTemplate(new FakeTransactionManager()))
         .build();
   }
 
