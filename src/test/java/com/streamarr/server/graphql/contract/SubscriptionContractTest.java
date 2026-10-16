@@ -20,7 +20,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The subscription schema contract from ADR 0042: every field is ServerAdmin only and documented,
- * delivers a non-null value, and identifies a removed library by id alone.
+ * is nullable so a field error never ends the operation, and identifies a removed library by id
+ * alone.
  */
 @Tag("UnitTest")
 @DisplayName("Subscription Contract Tests")
@@ -47,10 +48,11 @@ class SubscriptionContractTest {
   }
 
   @Test
-  @DisplayName("Should deliver a non-null value when any subscription field emits")
-  void shouldDeliverNonNullValueWhenAnySubscriptionFieldEmits() {
+  @DisplayName("Should declare a nullable type when any subscription field is defined")
+  void shouldDeclareNullableTypeWhenAnySubscriptionFieldIsDefined() {
     assertThat(subscriptionFields())
-        .allSatisfy(field -> assertThat(field.getType()).isInstanceOf(NonNullType.class));
+        .isNotEmpty()
+        .allSatisfy(field -> assertThat(field.getType()).isNotInstanceOf(NonNullType.class));
   }
 
   @Test
