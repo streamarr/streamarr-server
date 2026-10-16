@@ -55,6 +55,7 @@ import com.streamarr.transcode.v1.ProbeFailure;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
+import com.zaxxer.hikari.HikariDataSource;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.nio.file.FileSystems;
@@ -97,7 +98,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
   private static final UUID OTHER_WORKER_ID =
       UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
   // More threads than any test has probes, so only the workers' probe capacity limits the picks.
-  private static final int THREADS_BEYOND_PROBE_CAPACITY = 16;
+  private static final int THREADS_BEYOND_PROBE_CAPACITY = 32;
 
   @TempDir Path sourceRoot;
 
@@ -544,6 +545,41 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
               assertThat(pending.getExecutionTime()).isBeforeOrEqualTo(clock.instant());
             });
     assertThat(completions).as("No probe execution ran").isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should hold no database connection for a probe in flight when more probes run at once than"
+          + " the connection pool holds")
+  void shouldHoldNoDatabaseConnectionForAProbeInFlightWhenMoreProbesRunAtOnceThanThePoolHolds()
+      throws Exception {
+    var pool = dataSource.unwrap(HikariDataSource.class);
+    var probeCapacity = pool.getMaximumPoolSize() + 5;
+    assertThat(probeCapacity).isLessThan(THREADS_BEYOND_PROBE_CAPACITY);
+    for (var index = 0; index < probeCapacity; index++) {
+      scheduling.request(request(createMediaFile("held-" + index + ".mkv")));
+    }
+
+    try (var server = startedServer(new SimpleMeterRegistry());
+        var worker = probeWorker(server).probeCapacity(probeCapacity).build()) {
+      startSchedulerPickingFrom(server);
+      var held = startedProbes(worker, probeCapacity);
+
+      assertThat(server.probeCapacity(SOURCE_NAMESPACE_ID, ProbeVersion.CURRENT).running())
+          .as("Every probe reached the worker while the others waited for their results")
+          .isEqualTo(probeCapacity);
+      assertThat(pool.getHikariPoolMXBean().getActiveConnections())
+          .as("No probe waiting at the worker holds a pooled connection")
+          .isLessThan(pool.getMaximumPoolSize());
+      assertThat(dsl.selectOne().fetchSingle().value1())
+          .as("The pool still serves an unrelated query")
+          .isEqualTo(1);
+
+      held.forEach(probe -> worker.reply(invalidMedia(probe)));
+      for (var index = 0; index < probeCapacity; index++) {
+        assertThat(nextCompletion().getResult()).isEqualTo(ExecutionComplete.Result.OK);
+      }
+    }
   }
 
   private void whenOneUnitOfProbeCapacityServesTwoProbes(BusyWorkerScenario scenario)
