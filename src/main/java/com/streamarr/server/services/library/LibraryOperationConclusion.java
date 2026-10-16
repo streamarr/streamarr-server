@@ -5,18 +5,31 @@ import java.util.Locale;
 
 /** How a library operation ends. */
 public enum LibraryOperationConclusion {
-  FINISHED(LibraryStatus.HEALTHY),
-  FAILED(LibraryStatus.UNHEALTHY);
+  FINISHED,
+  FAILED,
+  STOPPED;
 
-  private final LibraryStatus libraryStatus;
-
-  LibraryOperationConclusion(LibraryStatus libraryStatus) {
-    this.libraryStatus = libraryStatus;
+  /**
+   * Returns how an operation with a stored stop ends: a finished operation ends stopped, and a
+   * failed operation stays failed.
+   */
+  public LibraryOperationConclusion afterStop() {
+    return switch (this) {
+      case FINISHED, STOPPED -> STOPPED;
+      case FAILED -> FAILED;
+    };
   }
 
-  /** The status the library shows once an operation ends this way. */
-  public LibraryStatus libraryStatus() {
-    return libraryStatus;
+  /**
+   * Returns the status the library shows once an operation ends this way. A stopped operation gives
+   * back the status the library showed before the operation started.
+   */
+  public LibraryStatus libraryStatus(LibraryStatus statusBeforeOperation) {
+    return switch (this) {
+      case FINISHED -> LibraryStatus.HEALTHY;
+      case FAILED -> LibraryStatus.UNHEALTHY;
+      case STOPPED -> statusBeforeOperation;
+    };
   }
 
   String tagValue() {

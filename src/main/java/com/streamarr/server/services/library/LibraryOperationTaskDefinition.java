@@ -15,9 +15,11 @@ import lombok.NonNull;
 /**
  * The db-scheduler task definition that runs library operations. Each operation has one scheduled
  * task, whose instance id and data are the operation's id. An execution that ends removes the task.
- * An execution that a shutdown interrupted is due again at once without counting a failure, so it
- * runs when a scheduler starts. An execution that throws runs again with backoff, and a crashed
- * server's execution runs again once db-scheduler finds it dead.
+ * A shutdown drains the execution: the scheduler's shutdown state ends the execution's admission,
+ * and the scheduler interrupts what still runs after its shutdown wait. An execution that a
+ * shutdown drained or interrupted is due again at once without counting a failure, so it runs when
+ * a scheduler starts. An execution that throws runs again with backoff, and a crashed server's
+ * execution runs again once db-scheduler finds it dead.
  */
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class LibraryOperationTaskDefinition {
@@ -28,7 +30,12 @@ public final class LibraryOperationTaskDefinition {
       @NonNull LibraryOperationExecution execution, @NonNull Clock clock) {
     return Tasks.custom(NAME, UUID.class)
         .onFailure(failureHandler(clock))
-        .execute((instance, _) -> completionFor(execution.execute(instance.getData()), clock));
+        .execute(
+            (instance, context) ->
+                completionFor(
+                    execution.execute(
+                        instance.getData(), context.getSchedulerState()::isShuttingDown),
+                    clock));
   }
 
   /** The scheduled task of the library operation. */

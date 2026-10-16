@@ -49,4 +49,16 @@ public class LibraryAdministrationService {
     authorizationService.requireAllowed(identity, new Intent.RefreshLibrary(libraryId));
     return libraryOperationService.startLibraryRefresh(identity, libraryId, imageRefreshMode);
   }
+
+  public Outcome<Library, LibraryOperationStopRejection> stopLibraryScan(
+      AuthenticatedIdentity identity, UUID libraryId) {
+    authorizationService.requireAllowed(identity, new Intent.StopLibraryScan(libraryId));
+    return libraryOperationService.stopLibraryScan(identity, libraryId);
+  }
+
+  public Outcome<Library, LibraryOperationStopRejection> stopLibraryRefresh(
+      AuthenticatedIdentity identity, UUID libraryId) {
+    authorizationService.requireAllowed(identity, new Intent.StopLibraryRefresh(libraryId));
+    return libraryOperationService.stopLibraryRefresh(identity, libraryId);
+  }
 }

@@ -10,7 +10,10 @@ import com.streamarr.server.services.events.library.ScanEndedEvent;
 import com.streamarr.server.services.library.LibraryOperationMetrics.ExecutionResult;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
+import java.util.function.Function;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,22 +24,24 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * One execution of a stored library operation, independent of the scheduler that runs the
- * execution. Every execution walks the library from the start. A shutdown that interrupts the
- * execution leaves the operation stored, so the operation runs again when a scheduler starts.
- * Otherwise the finishing steps run, and then one transaction ends the operation, as failed when
- * the scan or refresh threw (ADR 0027) or the library folder failed its check before a finishing
- * step, and as finished otherwise. The transaction locks the library's row, gives the library its
- * final status, deletes the operation, and then recalculates the letter index. It also publishes
- * the status change and the end of the scan or refresh for listeners that run after the commit. An
- * end that cannot be saved escapes, so the scheduler runs the operation again with backoff.
+ * execution. Every execution walks the library from the start, unless a ServerAdmin's stop is
+ * stored with the operation. The walk admits no further task once the stop is stored or the
+ * scheduler shuts down, and the tasks it admitted finish their foreground steps (ADR 0027). A
+ * shutdown leaves the operation stored, so the operation runs again when a scheduler starts. An
+ * execution that finds the stop stored when it starts admits no task and waits only for the primary
+ * artwork that earlier executions of the operation requested. Otherwise the finishing steps run,
+ * and then one transaction ends the operation: as failed when the scan or refresh threw or the
+ * library folder failed its check before a finishing step, as stopped when the stop is stored, and
+ * as finished otherwise. The transaction locks the library's row, gives the library its final
+ * status, deletes the operation, and then recalculates the letter index. It also publishes the
+ * status change and the end of the scan or refresh for listeners that run after the commit. An end
+ * that cannot be saved escapes, so the scheduler runs the operation again with backoff.
  */
 @Slf4j
 @Service
 @Builder
 @RequiredArgsConstructor
 public class LibraryOperationExecution {
-
-  private static final AdmissionEnd UNTIL_EVERY_ITEM_IS_ADMITTED = () -> false;
 
   private final LibraryOperationRepository libraryOperations;
   private final LibraryRepository libraryRepository;
@@ -54,28 +59,34 @@ public class LibraryOperationExecution {
   /**
    * Runs the stored operation once.
    *
+   * @param shuttingDown reads whether the scheduler that runs the execution shuts down, which
+   *     drains the execution: it admits no further task and leaves the operation stored
    * @return {@link LibraryOperationExecutionResult.Ended} when the operation ended or no longer
-   *     exists, or {@link LibraryOperationExecutionResult.Interrupted} when a shutdown interrupted
-   *     the execution. The interrupt flag is then set.
+   *     exists, or {@link LibraryOperationExecutionResult.Interrupted} when a shutdown drained or
+   *     interrupted the execution. The interrupt flag is then set if a shutdown interrupted it.
    */
-  public LibraryOperationExecutionResult execute(UUID libraryOperationId) {
+  public LibraryOperationExecutionResult execute(
+      UUID libraryOperationId, BooleanSupplier shuttingDown) {
     return libraryOperations
         .findLibraryOperation(libraryOperationId)
-        .map(this::execute)
+        .map(operation -> execute(operation, shuttingDown))
         .orElseGet(LibraryOperationExecutionResult.Ended::new);
   }
 
-  private LibraryOperationExecutionResult execute(LibraryOperation operation) {
+  private LibraryOperationExecutionResult execute(
+      LibraryOperation operation, BooleanSupplier shuttingDown) {
     var library =
         libraryRepository
             .findById(operation.libraryId())
             .orElseThrow(() -> new LibraryNotFoundException(operation.libraryId()));
+    AdmissionEnd admissionEnd =
+        () -> shuttingDown.getAsBoolean() || libraryOperations.hasStoredStop(operation.id());
     LibraryOperationConclusion conclusion;
     try {
       conclusion =
           switch (operation.kind()) {
-            case SCAN -> scan(library, operation);
-            case REFRESH -> refresh(library, operation);
+            case SCAN -> scan(library, operation, admissionEnd);
+            case REFRESH -> refresh(library, operation, admissionEnd);
           };
     } catch (InterruptedException _) {
       Thread.currentThread().interrupt();
@@ -83,9 +94,15 @@ public class LibraryOperationExecution {
     }
 
     // A task that fails on an interrupted thread, for example because the connection pool refuses
-    // it a connection, failed because of the shutdown.
-    if (conclusion == LibraryOperationConclusion.FAILED && Thread.currentThread().isInterrupted()) {
+    // it a connection, failed because of the shutdown. A drained walk admitted only some tasks.
+    if (shuttingDown.getAsBoolean()
+        || conclusion == LibraryOperationConclusion.FAILED
+            && Thread.currentThread().isInterrupted()) {
       return interrupted(operation);
+    }
+
+    if (libraryOperations.hasStoredStop(operation.id())) {
+      conclusion = conclusion.afterStop();
     }
 
     conclusion = finishingStepsRunner.runFinishingSteps(operation, conclusion);
@@ -107,15 +124,14 @@ public class LibraryOperationExecution {
     return new LibraryOperationExecutionResult.Interrupted();
   }
 
-  private LibraryOperationConclusion scan(Library library, LibraryOperation operation)
+  private LibraryOperationConclusion scan(
+      Library library, LibraryOperation operation, AdmissionEnd admissionEnd)
       throws InterruptedException {
     log.info("Starting {} library scan.", library.getName());
     try {
-      libraryFolderCheck.requirePassed(library);
       var results =
           fileDiscoveryRuns.awaitResults(
-              libraryFileWalk.discoverFiles(library, operation.id(), UNTIL_EVERY_ITEM_IS_ADMITTED),
-              UNTIL_EVERY_ITEM_IS_ADMITTED);
+              discoverFilesUnlessStopped(library, operation, admissionEnd), admissionEnd);
       log.info("Finished {} library scan: {}.", library.getName(), results.describe());
       return LibraryOperationConclusion.FINISHED;
     } catch (RuntimeException e) {
@@ -124,11 +140,27 @@ public class LibraryOperationExecution {
     }
   }
 
-  private LibraryOperationConclusion refresh(Library library, LibraryOperation operation)
+  // An execution that finds the stop stored admits no task, so it neither checks nor walks the
+  // library folder. Its closed discovery waits only for the primary artwork of the operation.
+  private FileDiscovery discoverFilesUnlessStopped(
+      Library library, LibraryOperation operation, AdmissionEnd admissionEnd)
+      throws InterruptedException {
+    if (operation.stopRequested()) {
+      try (var discovery = fileDiscoveryRuns.openScan(library, operation.id())) {
+        return discovery;
+      }
+    }
+
+    libraryFolderCheck.requirePassed(library);
+    return libraryFileWalk.discoverFiles(library, operation.id(), admissionEnd);
+  }
+
+  private LibraryOperationConclusion refresh(
+      Library library, LibraryOperation operation, AdmissionEnd admissionEnd)
       throws InterruptedException {
     log.info("Starting {} library refresh.", library.getName());
     try {
-      libraryRefreshService.refreshLibrary(library, operation, UNTIL_EVERY_ITEM_IS_ADMITTED);
+      libraryRefreshService.refreshLibrary(library, operation, admissionEnd);
       log.info("Finished {} library refresh.", library.getName());
       return LibraryOperationConclusion.FINISHED;
     } catch (RuntimeException e) {
@@ -144,30 +176,35 @@ public class LibraryOperationExecution {
             .conclusion(conclusion)
             .endedAt(clock.instant())
             .build();
-    boolean ended;
+    Optional<LibraryOperationConclusion> ended;
     try {
       ended =
-          Boolean.TRUE.equals(
-              new TransactionTemplate(transactionManager).execute(_ -> tryEnd(operation, end)));
+          Optional.ofNullable(
+                  new TransactionTemplate(transactionManager).execute(_ -> tryEnd(operation, end)))
+              .flatMap(Function.identity());
     } catch (RuntimeException e) {
       metrics.countExecution(operation.kind(), ExecutionResult.END_FAILED);
       throw e;
     }
 
     metrics.countExecution(operation.kind(), ExecutionResult.ENDED);
-    if (ended) {
-      metrics.timeOperation(
-          operation.kind(), conclusion, Duration.between(operation.createdOn(), end.endedAt()));
-    }
+    ended.ifPresent(
+        endedWith ->
+            metrics.timeOperation(
+                operation.kind(),
+                endedWith,
+                Duration.between(operation.createdOn(), end.endedAt())));
   }
 
   // The letter index is recalculated last, under the library's row lock, because tasks that
-  // finished can change titles even when the operation failed. The recalculation follows the
-  // deletion of the operation, which waits for every finishing step that shares the operation's
-  // row, so it counts the titles that those steps removed.
-  private boolean tryEnd(LibraryOperation operation, LibraryOperationEnd end) {
-    if (!libraryOperations.tryEndLibraryOperation(end)) {
-      return false;
+  // finished can change titles even when the operation failed or stopped. The recalculation follows
+  // the deletion of the operation, which waits for every finishing step that shares the operation's
+  // key, so it counts the titles that those steps removed.
+  private Optional<LibraryOperationConclusion> tryEnd(
+      LibraryOperation operation, LibraryOperationEnd end) {
+    var ended = libraryOperations.tryEndLibraryOperation(end);
+    if (ended.isEmpty()) {
+      return ended;
     }
 
     var libraryId = operation.libraryId();
@@ -178,6 +215,6 @@ public class LibraryOperationExecution {
           case SCAN -> new ScanEndedEvent(libraryId);
           case REFRESH -> new RefreshEndedEvent(libraryId);
         });
-    return true;
+    return ended;
   }
 }

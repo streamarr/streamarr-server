@@ -35,6 +35,8 @@ type LibraryRemoval {
 enum LibraryStatus {
     SCANNING
     REFRESHING
+    "A ServerAdmin stopped the library's scan or refresh. Its admitted tasks finish, and then the library returns to the status it had before the scan or refresh started."
+    STOPPING
     HEALTHY
     UNHEALTHY
 }
@@ -172,6 +174,30 @@ type StartLibraryRefreshPayload {
 }
 
 union StartLibraryRefreshError = LibraryNotFoundError | LibraryBusyError | InvalidIdError
+
+input StopLibraryScanInput {
+    libraryId: ID!
+}
+
+"The library after the stop of its scan was stored. The library's status reads STOPPING until the scan's admitted tasks finish."
+type StopLibraryScanPayload {
+    library: Library
+    userErrors: [StopLibraryScanError!]!
+}
+
+union StopLibraryScanError = LibraryNotFoundError | LibraryScanNotInProgressError | InvalidIdError
+
+input StopLibraryRefreshInput {
+    libraryId: ID!
+}
+
+"The library after the stop of its refresh was stored. The library's status reads STOPPING until the refresh's admitted tasks finish."
+type StopLibraryRefreshPayload {
+    library: Library
+    userErrors: [StopLibraryRefreshError!]!
+}
+
+union StopLibraryRefreshError = LibraryNotFoundError | LibraryRefreshNotInProgressError | InvalidIdError
 
 input RemoveLibraryInput {
     libraryId: ID!

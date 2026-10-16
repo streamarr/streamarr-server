@@ -53,10 +53,24 @@ type LibraryNotFoundError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
-"The library runs a scan or a refresh. The request changes nothing, and no request waits in a queue."
+"The library runs or stops a scan or a refresh. The request changes nothing, and no request waits in a queue."
 type LibraryBusyError implements MutationError {
     message: String!
-    "The status the library shows while its scan or refresh runs."
+    "The status the library shows while its scan or refresh runs or stops."
+    status: LibraryStatus!
+}
+
+"No library scan runs, so the stop changes nothing. The message names the library refresh that runs instead, if one runs."
+type LibraryScanNotInProgressError implements MutationError {
+    message: String!
+    "The status the library shows."
+    status: LibraryStatus!
+}
+
+"No library refresh runs, so the stop changes nothing. The message names the library scan that runs instead, if one runs."
+type LibraryRefreshNotInProgressError implements MutationError {
+    message: String!
+    "The status the library shows."
     status: LibraryStatus!
 }
 

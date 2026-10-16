@@ -2,9 +2,12 @@ package com.streamarr.server.fixtures;
 
 import com.streamarr.server.fakes.FakeCompanyRepository;
 import com.streamarr.server.fakes.FakeGenreRepository;
+import com.streamarr.server.fakes.FakeLibraryOperationRepository;
+import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakePersonRepository;
 import com.streamarr.server.repositories.CompanyRepository;
 import com.streamarr.server.repositories.GenreRepository;
+import com.streamarr.server.repositories.LibraryOperationRepository;
 import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.services.ArtworkRequestService;
 import com.streamarr.server.services.CompanyService;
@@ -23,7 +26,8 @@ public final class CreditServiceFixture {
       PersonRepository personRepository,
       GenreRepository genreRepository,
       CompanyRepository companyRepository,
-      ArtworkRequestService artworkRequestService) {
+      ArtworkRequestService artworkRequestService,
+      LibraryOperationRepository libraryOperationRepository) {
     var people = personRepository;
     if (people == null) {
       people = new FakePersonRepository();
@@ -44,9 +48,15 @@ public final class CreditServiceFixture {
       artwork = ArtworkFixture.builder().build().artworkRequestService();
     }
 
+    var libraryOperations = libraryOperationRepository;
+    if (libraryOperations == null) {
+      libraryOperations = new FakeLibraryOperationRepository(new FakeLibraryRepository());
+    }
+
     return new CreditService(
         new PersonService(people, artwork),
         new GenreService(genres),
-        new CompanyService(companies, artwork));
+        new CompanyService(companies, artwork),
+        libraryOperations);
   }
 }

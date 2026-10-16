@@ -148,7 +148,7 @@ class LibraryItemCountsIT extends AbstractIntegrationTest {
     itemProcessing.onItemProcessed(new ItemProcessedEvent(library.getId()));
     var totalWhileScanning = totalOf(library);
 
-    SystemWork.runAsSystemActor(() -> libraryOperationExecution.execute(scanId));
+    SystemWork.runAsSystemActor(() -> libraryOperationExecution.execute(scanId, () -> false));
 
     assertThat(totalWhileScanning).isOne();
     assertThat(libraries.findById(library.getId()).orElseThrow().getStatus())

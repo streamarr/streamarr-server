@@ -150,6 +150,20 @@ public class LibraryOperationRecord extends UpdatableRecordImpl<LibraryOperation
         return (UUID) get(8);
     }
 
+    /**
+     * Setter for <code>public.library_operation.stop_requested</code>.
+     */
+    public void setStopRequested(Boolean value) {
+        set(9, value);
+    }
+
+    /**
+     * Getter for <code>public.library_operation.stop_requested</code>.
+     */
+    public Boolean getStopRequested() {
+        return (Boolean) get(9);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -173,7 +187,7 @@ public class LibraryOperationRecord extends UpdatableRecordImpl<LibraryOperation
     /**
      * Create a detached, initialised LibraryOperationRecord
      */
-    public LibraryOperationRecord(UUID id, UUID libraryId, LibraryOperationKind kind, ImageRefreshMode imageRefreshMode, LibraryStatus statusBeforeOperation, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy) {
+    public LibraryOperationRecord(UUID id, UUID libraryId, LibraryOperationKind kind, ImageRefreshMode imageRefreshMode, LibraryStatus statusBeforeOperation, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, Boolean stopRequested) {
         super(LibraryOperation.LIBRARY_OPERATION);
 
         setId(id);
@@ -185,6 +199,7 @@ public class LibraryOperationRecord extends UpdatableRecordImpl<LibraryOperation
         setCreatedBy(createdBy);
         setLastModifiedOn(lastModifiedOn);
         setLastModifiedBy(lastModifiedBy);
+        setStopRequested(stopRequested);
         resetTouchedOnNotNull();
     }
 }
