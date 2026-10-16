@@ -192,6 +192,41 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
   }
 
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "mutation { startLibraryScan(input: {libraryId: \\\"%s\\\"}) { library { id } } }",
+        "mutation { startLibraryRefresh(input: {libraryId: \\\"%s\\\"}) { library { id } } }",
+        "mutation { removeLibrary(input: {libraryId: \\\"%s\\\"}) { removedLibraryId } }",
+        "mutation { addLibrary(input: {name: \\\"Denied\\\", filepath: \\\"file:///denied\\\","
+            + " type: MOVIE, backend: LOCAL}) { library { id } } }"
+      })
+  @DisplayName(
+      "Should refuse library administration with FORBIDDEN and leave the libraries unchanged when"
+          + " the ServerAdmin's session is device-bound")
+  void shouldRefuseLibraryAdministrationWhenServerAdminsSessionIsDeviceBound(String mutation)
+      throws Exception {
+    identity = authTestSupport.createAdminIdentity();
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var librariesBefore = libraryRepository.count();
+
+    try {
+      postGraphQl(
+              mutation.formatted(library.getId()),
+              authTestSupport.deviceBoundProfileBearer(identity))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
+
+      assertThat(libraryRepository.findById(library.getId()))
+          .hasValueSatisfying(
+              stored -> assertThat(stored.getStatus()).isEqualTo(library.getStatus()));
+      assertThat(libraryRepository.count()).isEqualTo(librariesBefore);
+      assertThat(libraryOperationsOf(library.getId())).isZero();
+    } finally {
+      libraryRepository.deleteById(library.getId());
+    }
+  }
+
   @Test
   @DisplayName("Should preserve library when remove is denied")
   void shouldPreserveLibraryWhenRemoveDeniedForUserRole() throws Exception {
@@ -482,6 +517,11 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
     } finally {
       postGraphQl(removeLibraryMutation(libraryId), adminToken).andExpect(status().isOk());
     }
+  }
+
+  private int libraryOperationsOf(UUID libraryId) {
+    return jdbcTemplate.queryForObject(
+        "SELECT count(*) FROM library_operation WHERE library_id = ?", Integer.class, libraryId);
   }
 
   private void demoteToUser(AuthTestSupport.TestIdentity identity) {
