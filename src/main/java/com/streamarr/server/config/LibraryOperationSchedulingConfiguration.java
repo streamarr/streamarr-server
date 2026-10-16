@@ -16,7 +16,8 @@ public class LibraryOperationSchedulingConfiguration {
 
   /**
    * Runs library operations on their own scheduler, which starts with the application only while
-   * db-scheduler is enabled.
+   * db-scheduler is enabled. A shutdown drains the scheduler's operations for the configured
+   * timeout before it interrupts them.
    */
   @Bean
   public LibraryOperationScheduler libraryOperationScheduler(
@@ -31,6 +32,7 @@ public class LibraryOperationSchedulingConfiguration {
         Binder.get(environment)
             .bind("db-scheduler", Bindable.of(DbSchedulerProperties.class))
             .orElseGet(DbSchedulerProperties::new);
+    schedulerProperties.setShutdownMaxWait(properties.shutdownDrainTimeout());
     return LibraryOperationScheduler.builder()
         .schedulerProperties(schedulerProperties)
         .customizer(customizer)

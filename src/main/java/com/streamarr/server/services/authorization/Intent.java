@@ -23,6 +23,10 @@ public sealed interface Intent {
 
   record RefreshLibrary(UUID libraryId) implements UnitIntent {}
 
+  record StopLibraryScan(UUID libraryId) implements UnitIntent {}
+
+  record StopLibraryRefresh(UUID libraryId) implements UnitIntent {}
+
   /** View library administration: server-wide library status, additions and removals. */
   record ViewLibraryAdministration() implements UnitIntent {}
 

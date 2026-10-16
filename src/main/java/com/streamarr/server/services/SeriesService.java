@@ -80,7 +80,8 @@ public class SeriesService {
     var series = metadataResult.entity();
     creditService
         .getOrCreateCredits(
-            MediaTitleCreditsRequest.fromMetadataResult(metadataResult, ImageRefreshMode.PRESERVE))
+            MediaTitleCreditsRequest.fromMetadataResult(
+                metadataResult, ImageRefreshMode.PRESERVE, artworkRun))
         .copyTo(series);
 
     var savedSeries = seriesRepository.saveAndFlush(series);
@@ -157,7 +158,7 @@ public class SeriesService {
     creditService
         .getOrCreateCredits(
             MediaTitleCreditsRequest.fromMetadataResult(
-                metadataResult, artworkRun.imageRefreshMode()))
+                metadataResult, artworkRun.imageRefreshMode(), artworkRun))
         .copyTo(existing);
 
     var saved = seriesRepository.saveAndFlush(existing);

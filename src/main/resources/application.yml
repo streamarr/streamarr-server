@@ -221,6 +221,7 @@ library:
   # status and wait for a thread.
   operation-scheduling:
     threads: ${LIBRARY_OPERATION_THREADS:8}
+    shutdown-drain-timeout: ${LIBRARY_OPERATION_SHUTDOWN_DRAIN_TIMEOUT:30s}
   watcher:
     stabilization-period-seconds: ${LIBRARY_WATCHER_STABILIZATION_PERIOD:30}
     poll-interval-seconds: ${LIBRARY_WATCHER_POLL_INTERVAL:5}

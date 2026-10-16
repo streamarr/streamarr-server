@@ -3,9 +3,11 @@ package com.streamarr.server.services.library;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
+import com.github.kagkarlsson.scheduler.SchedulerState;
 import com.github.kagkarlsson.scheduler.event.SchedulerListeners;
 import com.github.kagkarlsson.scheduler.task.Execution;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
+import com.github.kagkarlsson.scheduler.task.ExecutionContext;
 import com.github.kagkarlsson.scheduler.task.ExecutionOperations;
 import com.github.kagkarlsson.scheduler.task.RescheduleUpdate;
 import com.github.kagkarlsson.scheduler.task.Task;
@@ -40,7 +42,10 @@ class LibraryOperationTaskDefinitionTest {
   void shouldRemoveTheTaskWhenTheExecutionEnds() {
     var scheduled = scheduledExecution(0);
 
-    task.execute(LibraryOperationTaskDefinition.instance(task, LIBRARY_OPERATION_ID), null)
+    task.execute(
+            LibraryOperationTaskDefinition.instance(task, LIBRARY_OPERATION_ID),
+            new ExecutionContext(
+                new SchedulerState.SettableSchedulerState(), scheduled, null, null))
         .complete(ExecutionComplete.success(scheduled, NOW, NOW), operations(scheduled));
 
     assertThat(libraryOperationTasks.removed()).containsExactly(scheduled);

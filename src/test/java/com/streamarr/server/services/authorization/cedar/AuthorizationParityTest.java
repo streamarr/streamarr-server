@@ -204,6 +204,8 @@ class AuthorizationParityTest {
           REMOVE_LIBRARY,
           SCAN_LIBRARY,
           REFRESH_LIBRARY,
+          STOP_LIBRARY_SCAN,
+          STOP_LIBRARY_REFRESH,
           VIEW_LIBRARY_ADMINISTRATION ->
           "libraryAdministration";
       case BLOCK_ESN_SERVER_WIDE, UNBLOCK_ESN_SERVER_WIDE, VIEW_SERVER_DEVICE_ADMINISTRATION ->
@@ -289,6 +291,8 @@ class AuthorizationParityTest {
         new Intent.RemoveLibrary(libraryId),
         new Intent.ScanLibrary(libraryId),
         new Intent.RefreshLibrary(libraryId),
+        new Intent.StopLibraryScan(libraryId),
+        new Intent.StopLibraryRefresh(libraryId),
         new Intent.ViewLibraryAdministration(),
         new Intent.ViewProfilePicker(),
         new Intent.SelectProfile(id, false),

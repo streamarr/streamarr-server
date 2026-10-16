@@ -41,6 +41,7 @@ import com.streamarr.server.services.library.LibraryManagementService;
 import com.streamarr.server.services.library.LibraryOperationKind;
 import com.streamarr.server.services.library.LibraryOperationRejection;
 import com.streamarr.server.services.library.LibraryOperationService;
+import com.streamarr.server.services.library.LibraryOperationStopRejection;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.pagination.MediaPage;
@@ -52,7 +53,6 @@ import com.streamarr.server.support.security.WithAccountContext;
 import com.streamarr.server.support.security.WithProfileContext;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -312,6 +312,57 @@ class LibraryResolverTest {
           .contains(new Intent.RemoveLibrary(libraryId));
     }
 
+    @ParameterizedTest(name = "Should return the library STOPPING with no userErrors when {0} runs")
+    @EnumSource(
+        value = LibraryOperationMutation.class,
+        names = {"STOP_LIBRARY_SCAN", "STOP_LIBRARY_REFRESH"})
+    @DisplayName(
+        "Should return the library STOPPING with no userErrors through the stop's own intent when a"
+            + " stop is stored")
+    void shouldReturnTheLibraryStoppingWithNoUserErrorsWhenAStopIsStored(
+        LibraryOperationMutation mutation) {
+      var libraryId = UUID.randomUUID();
+      var kind = LibraryOperationKind.SCAN;
+      Intent intent = new Intent.StopLibraryScan(libraryId);
+      if (mutation == LibraryOperationMutation.STOP_LIBRARY_REFRESH) {
+        kind = LibraryOperationKind.REFRESH;
+        intent = new Intent.StopLibraryRefresh(libraryId);
+      }
+
+      var payload = payloadOf(mutation, libraryId.toString());
+
+      assertThat(payload)
+          .containsEntry("library", Map.of("id", libraryId.toString(), "status", "STOPPING"))
+          .containsEntry("userErrors", List.of());
+      assertThat(FAKE_LIBRARY_OPERATION_SERVICE.stopRequests())
+          .containsExactly(new StopRequest(libraryId, kind));
+      assertThat(authorizationDecider.recordedIntents()).contains(intent);
+    }
+
+    @ParameterizedTest(name = "Should return {3} for {0} when the library shows {1}")
+    @MethodSource(
+        "com.streamarr.server.graphql.resolvers.LibraryResolverTest#notInProgressRefusals")
+    @DisplayName(
+        "Should return the not-in-progress error naming the running kind and no result when no"
+            + " operation of the requested kind runs")
+    @SuppressWarnings("checkstyle:fullyQualifiedName")
+    void shouldReturnTheNotInProgressErrorNamingTheRunningKindWhenNoOperationOfTheKindRuns(
+        LibraryOperationMutation mutation,
+        LibraryStatus status,
+        Optional<LibraryOperationKind> runningKind,
+        String typename,
+        String message) {
+      FAKE_LIBRARY_OPERATION_SERVICE.rejectStopsWith(
+          new LibraryOperationStopRejection.NotInProgress(status, runningKind));
+
+      var payload = payloadOf(mutation, UUID.randomUUID().toString());
+
+      assertThat(payload).containsEntry("library", null);
+      assertThat(userErrorsOf(payload))
+          .singleElement()
+          .isEqualTo(Map.of("__typename", typename, "message", message, "status", status.name()));
+    }
+
     @ParameterizedTest(
         name = "Should return LibraryNotFoundError and no result when {0} names a missing library")
     @EnumSource(LibraryOperationMutation.class)
@@ -320,6 +371,8 @@ class LibraryResolverTest {
     void shouldReturnLibraryNotFoundErrorAndNoResultWhenLibraryIsMissing(
         LibraryOperationMutation mutation) {
       rejectEveryRequestWith(new LibraryOperationRejection.LibraryNotFound());
+      FAKE_LIBRARY_OPERATION_SERVICE.rejectStopsWith(
+          new LibraryOperationStopRejection.LibraryNotFound());
 
       var payload = payloadOf(mutation, UUID.randomUUID().toString());
 
@@ -374,6 +427,7 @@ class LibraryResolverTest {
                   "message", "Enter a valid ID.",
                   "inputPath", List.of("libraryId")));
       assertThat(FAKE_LIBRARY_OPERATION_SERVICE.startedLibraryIds()).isEmpty();
+      assertThat(FAKE_LIBRARY_OPERATION_SERVICE.stopRequests()).isEmpty();
       assertThat(FAKE_LIBRARY_MANAGEMENT_SERVICE.removedLibraryIds()).isEmpty();
     }
 
@@ -391,6 +445,7 @@ class LibraryResolverTest {
           .satisfies(error -> assertThat(error.getExtensions()).containsEntry("code", "FORBIDDEN"));
       assertThat(result.<Map<String, Object>>getData()).containsEntry(mutation.fieldName(), null);
       assertThat(FAKE_LIBRARY_OPERATION_SERVICE.startedLibraryIds()).isEmpty();
+      assertThat(FAKE_LIBRARY_OPERATION_SERVICE.stopRequests()).isEmpty();
       assertThat(FAKE_LIBRARY_MANAGEMENT_SERVICE.removedLibraryIds()).isEmpty();
     }
 
@@ -599,7 +654,10 @@ class LibraryResolverTest {
   }
 
   static Stream<Arguments> libraryBusyRefusals() {
-    return Arrays.stream(LibraryOperationMutation.values())
+    return Stream.of(
+            LibraryOperationMutation.START_LIBRARY_SCAN,
+            LibraryOperationMutation.START_LIBRARY_REFRESH,
+            LibraryOperationMutation.REMOVE_LIBRARY)
         .flatMap(
             mutation ->
                 Stream.of(
@@ -612,31 +670,89 @@ class LibraryResolverTest {
                         mutation,
                         LibraryOperationKind.REFRESH,
                         LibraryStatus.REFRESHING,
-                        "A library refresh is already in progress.")));
+                        "A library refresh is already in progress."),
+                    Arguments.of(
+                        mutation,
+                        LibraryOperationKind.SCAN,
+                        LibraryStatus.STOPPING,
+                        "A library scan is stopping."),
+                    Arguments.of(
+                        mutation,
+                        LibraryOperationKind.REFRESH,
+                        LibraryStatus.STOPPING,
+                        "A library refresh is stopping.")));
+  }
+
+  static Stream<Arguments> notInProgressRefusals() {
+    return Stream.of(
+        Arguments.of(
+            LibraryOperationMutation.STOP_LIBRARY_SCAN,
+            LibraryStatus.HEALTHY,
+            Optional.empty(),
+            "LibraryScanNotInProgressError",
+            "No library scan is in progress, so there is nothing to stop."),
+        Arguments.of(
+            LibraryOperationMutation.STOP_LIBRARY_SCAN,
+            LibraryStatus.REFRESHING,
+            Optional.of(LibraryOperationKind.REFRESH),
+            "LibraryScanNotInProgressError",
+            "No library scan is in progress, so there is nothing to stop. A library refresh is in"
+                + " progress."),
+        Arguments.of(
+            LibraryOperationMutation.STOP_LIBRARY_SCAN,
+            LibraryStatus.STOPPING,
+            Optional.of(LibraryOperationKind.REFRESH),
+            "LibraryScanNotInProgressError",
+            "No library scan is in progress, so there is nothing to stop. A library refresh is"
+                + " stopping."),
+        Arguments.of(
+            LibraryOperationMutation.STOP_LIBRARY_REFRESH,
+            LibraryStatus.UNHEALTHY,
+            Optional.empty(),
+            "LibraryRefreshNotInProgressError",
+            "No library refresh is in progress, so there is nothing to stop."),
+        Arguments.of(
+            LibraryOperationMutation.STOP_LIBRARY_REFRESH,
+            LibraryStatus.SCANNING,
+            Optional.of(LibraryOperationKind.SCAN),
+            "LibraryRefreshNotInProgressError",
+            "No library refresh is in progress, so there is nothing to stop. A library scan is in"
+                + " progress."),
+        Arguments.of(
+            LibraryOperationMutation.STOP_LIBRARY_REFRESH,
+            LibraryStatus.STOPPING,
+            Optional.of(LibraryOperationKind.SCAN),
+            "LibraryRefreshNotInProgressError",
+            "No library refresh is in progress, so there is nothing to stop. A library scan is"
+                + " stopping."));
   }
 
   /** The three library operation mutations, each selecting its result and its user errors. */
   enum LibraryOperationMutation {
-    START_LIBRARY_SCAN("startLibraryScan", "library", "library { id status }"),
-    START_LIBRARY_REFRESH("startLibraryRefresh", "library", "library { id status }"),
-    REMOVE_LIBRARY("removeLibrary", "removedLibraryId", "removedLibraryId");
+    START_LIBRARY_SCAN("startLibraryScan", "library { id status }", "LibraryBusyError"),
+    START_LIBRARY_REFRESH("startLibraryRefresh", "library { id status }", "LibraryBusyError"),
+    STOP_LIBRARY_SCAN("stopLibraryScan", "library { id status }", "LibraryScanNotInProgressError"),
+    STOP_LIBRARY_REFRESH(
+        "stopLibraryRefresh", "library { id status }", "LibraryRefreshNotInProgressError"),
+    REMOVE_LIBRARY("removeLibrary", "removedLibraryId", "LibraryBusyError");
 
     private final String fieldName;
-    private final String resultField;
     private final String resultSelection;
+    private final String errorWithStatus;
 
-    LibraryOperationMutation(String fieldName, String resultField, String resultSelection) {
+    LibraryOperationMutation(String fieldName, String resultSelection, String errorWithStatus) {
       this.fieldName = fieldName;
-      this.resultField = resultField;
       this.resultSelection = resultSelection;
+      this.errorWithStatus = errorWithStatus;
     }
 
     String fieldName() {
       return fieldName;
     }
 
+    // The result field is the first word of the result's selection.
     String resultField() {
-      return resultField;
+      return resultSelection.split(" ")[0];
     }
 
     String document(String libraryId) {
@@ -648,12 +764,12 @@ class LibraryResolverTest {
                 __typename
                 ... on MutationError { message }
                 ... on InputMutationError { inputPath }
-                ... on LibraryBusyError { status }
+                ... on %s { status }
               }
             }
           }
           """
-          .formatted(fieldName, libraryId, resultSelection);
+          .formatted(fieldName, libraryId, resultSelection, errorWithStatus);
     }
 
     @Override
@@ -1191,9 +1307,11 @@ class LibraryResolverTest {
   private static final class FakeLibraryOperationService extends LibraryOperationService {
 
     private final List<UUID> startedLibraryIds = new ArrayList<>();
+    private final List<StopRequest> stopRequests = new ArrayList<>();
     private RefreshRequest refreshRequest;
     private RuntimeException startFailure;
     private LibraryOperationRejection rejection;
+    private LibraryOperationStopRejection stopRejection;
 
     private FakeLibraryOperationService() {
       super(null, null, null, null, null, null);
@@ -1210,6 +1328,29 @@ class LibraryResolverTest {
         AuthenticatedIdentity identity, UUID libraryId, ImageRefreshMode imageRefreshMode) {
       refreshRequest = new RefreshRequest(libraryId, imageRefreshMode);
       return start(libraryId, LibraryStatus.REFRESHING);
+    }
+
+    @Override
+    public Outcome<Library, LibraryOperationStopRejection> stopLibraryScan(
+        AuthenticatedIdentity identity, UUID libraryId) {
+      return stop(new StopRequest(libraryId, LibraryOperationKind.SCAN));
+    }
+
+    @Override
+    public Outcome<Library, LibraryOperationStopRejection> stopLibraryRefresh(
+        AuthenticatedIdentity identity, UUID libraryId) {
+      return stop(new StopRequest(libraryId, LibraryOperationKind.REFRESH));
+    }
+
+    private Outcome<Library, LibraryOperationStopRejection> stop(StopRequest request) {
+      stopRequests.add(request);
+      if (stopRejection != null) {
+        return Outcome.rejected(stopRejection);
+      }
+
+      var library = Library.builder().status(LibraryStatus.STOPPING).build();
+      library.setId(request.libraryId());
+      return Outcome.accepted(library);
     }
 
     private Outcome<Library, LibraryOperationRejection> start(
@@ -1244,15 +1385,27 @@ class LibraryResolverTest {
       rejection = libraryOperationRejection;
     }
 
+    private void rejectStopsWith(LibraryOperationStopRejection libraryOperationStopRejection) {
+      stopRejection = libraryOperationStopRejection;
+    }
+
+    private List<StopRequest> stopRequests() {
+      return List.copyOf(stopRequests);
+    }
+
     private void reset() {
       startedLibraryIds.clear();
+      stopRequests.clear();
       refreshRequest = null;
       startFailure = null;
       rejection = null;
+      stopRejection = null;
     }
   }
 
   private record RefreshRequest(UUID libraryId, ImageRefreshMode imageRefreshMode) {}
+
+  private record StopRequest(UUID libraryId, LibraryOperationKind kind) {}
 
   private Library buildMovieLibrary(UUID libraryId) {
     var library =

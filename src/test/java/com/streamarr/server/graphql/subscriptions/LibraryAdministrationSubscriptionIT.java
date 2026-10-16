@@ -227,6 +227,37 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should deliver SCANNING, STOPPING and then the status before the scan when a ServerAdmin"
+          + " stops a scan")
+  void shouldDeliverScanningStoppingAndThenTheStatusBeforeTheScanWhenAServerAdminStopsAScan() {
+    var bearer = adminBearer();
+    var library = saveLibrary(libraryDirectory);
+    var socket = statusSubscribedSocket(bearer);
+
+    // The stopped scheduler keeps the scan stored until the stop is stored.
+    libraryOperationScheduler.stop();
+    try {
+      http.execute(bearer, scanMutation(library.getId()));
+      assertThat(nextStatusChange(socket, library.getId()).path("status").asString())
+          .isEqualTo("SCANNING");
+
+      var stopped = http.execute(bearer, stopScanMutation(library.getId()));
+
+      var payload = stopped.path("data").path("stopLibraryScan");
+      assertThat(payload.path("library").path("status").asString()).isEqualTo("STOPPING");
+      assertThat(payload.path("userErrors").isEmpty()).isTrue();
+      assertThat(nextStatusChange(socket, library.getId()).path("status").asString())
+          .isEqualTo("STOPPING");
+    } finally {
+      libraryOperationScheduler.start();
+    }
+
+    assertThat(nextStatusChange(socket, library.getId()).path("status").asString())
+        .isEqualTo("HEALTHY");
+  }
+
+  @Test
   @DisplayName("Should deliver UNHEALTHY when a scan fails")
   void shouldDeliverUnhealthyWhenScanFails() {
     var bearer = adminBearer();
@@ -552,6 +583,18 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     return """
         mutation {
           startLibraryScan(input: { libraryId: "%s" }) {
+            library { status }
+            userErrors { __typename }
+          }
+        }
+        """
+        .formatted(libraryId);
+  }
+
+  private static String stopScanMutation(UUID libraryId) {
+    return """
+        mutation {
+          stopLibraryScan(input: { libraryId: "%s" }) {
             library { status }
             userErrors { __typename }
           }
