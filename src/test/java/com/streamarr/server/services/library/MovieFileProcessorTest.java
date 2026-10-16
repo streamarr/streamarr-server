@@ -46,6 +46,7 @@ import java.io.IOException;
 import java.nio.file.FileSystems;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -254,12 +255,13 @@ class MovieFileProcessorTest {
   @Test
   @DisplayName("Should clear the earlier failure reason when the movie is matched")
   void shouldClearTheEarlierFailureReasonWhenTheMovieIsMatched() {
-    var library = LibraryFixtureCreator.buildFakeLibrary();
+    var library =
+        LibraryFixtureCreator.buildFakeLibrary().toBuilder().id(UUID.randomUUID()).build();
     var mediaFile = saveMovieFile(library);
     mediaFile.setStatus(MediaFileStatus.ENRICHMENT_FAILED);
     mediaFile.setFailureReason(ItemFailureReason.TEMPORARY);
     stubSearchFound();
-    fakeMovieRepository.save(movieWithTmdbId("123"));
+    fakeMovieRepository.save(movieWithTmdbId(library, "123"));
 
     movieFileProcessor.process(discoveryOf(library), mediaFile);
 
@@ -329,9 +331,10 @@ class MovieFileProcessorTest {
                     .build()));
   }
 
-  private static Movie movieWithTmdbId(String tmdbId) {
+  private static Movie movieWithTmdbId(Library library, String tmdbId) {
     return Movie.builder()
         .title("About Time")
+        .library(library)
         .externalIds(
             Set.of(
                 ExternalIdentifier.builder()

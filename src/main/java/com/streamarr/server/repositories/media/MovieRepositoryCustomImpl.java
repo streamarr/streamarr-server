@@ -83,7 +83,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     return results;
   }
 
-  public Optional<Movie> findByTmdbId(String tmdbId) {
+  public Optional<Movie> findInLibraryByTmdbId(UUID libraryId, String tmdbId) {
     var query =
         context
             .select(MOVIE.asterisk(), BASE_COLLECTABLE.asterisk())
@@ -96,7 +96,8 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
                 EXTERNAL_IDENTIFIER
                     .EXTERNAL_SOURCE_TYPE
                     .eq(inline(ExternalSourceType.TMDB))
-                    .and(EXTERNAL_IDENTIFIER.EXTERNAL_ID.eq(tmdbId)))
+                    .and(EXTERNAL_IDENTIFIER.EXTERNAL_ID.eq(tmdbId))
+                    .and(BASE_COLLECTABLE.LIBRARY_ID.eq(libraryId)))
             .limit(1);
 
     var results = JooqQueryHelper.nativeQuery(entityManager, query, Movie.class);

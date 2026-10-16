@@ -102,7 +102,8 @@ class SeriesFileProcessorTest {
                     .externalSourceType(ExternalSourceType.TMDB)
                     .build()));
 
-    when(seriesService.findByTmdbId(anyString())).thenReturn(Optional.empty());
+    when(seriesService.findInLibraryByTmdbId(eq(library.getId()), anyString()))
+        .thenReturn(Optional.empty());
 
     when(seriesMetadataProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
         .thenAnswer(
@@ -147,7 +148,8 @@ class SeriesFileProcessorTest {
                     .externalSourceType(ExternalSourceType.TMDB)
                     .build()));
 
-    when(seriesService.findByTmdbId(anyString())).thenReturn(Optional.empty());
+    when(seriesService.findInLibraryByTmdbId(eq(library.getId()), anyString()))
+        .thenReturn(Optional.empty());
 
     when(seriesMetadataProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
         .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("simulated fetch failure")));
@@ -164,7 +166,7 @@ class SeriesFileProcessorTest {
     var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
     var mediaFile = saveEpisodeFile(library, "Breaking%20Bad/Season%2001/Breaking.Bad.S01E01.mkv");
     stubSearchFound("Breaking Bad", "1396");
-    when(seriesService.findByTmdbId("1396")).thenReturn(Optional.empty());
+    when(seriesService.findInLibraryByTmdbId(library.getId(), "1396")).thenReturn(Optional.empty());
     when(seriesMetadataProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
         .thenReturn(new MetadataFetchOutcome.NotFound<>());
 
@@ -179,7 +181,8 @@ class SeriesFileProcessorTest {
     var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
     var mediaFile = saveEpisodeFile(library, "Breaking%20Bad/Season%2001/Breaking.Bad.S01E01.mkv");
     stubSearchFound("Breaking Bad", "1396");
-    when(seriesService.findByTmdbId("1396")).thenThrow(new IllegalStateException("db hiccup"));
+    when(seriesService.findInLibraryByTmdbId(library.getId(), "1396"))
+        .thenThrow(new IllegalStateException("db hiccup"));
 
     seriesFileProcessor.process(discoveryOf(library), mediaFile);
 
@@ -193,7 +196,7 @@ class SeriesFileProcessorTest {
     var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
     var mediaFile = saveEpisodeFile(library, "Breaking%20Bad/Season%2009/Breaking.Bad.S09E01.mkv");
     stubSearchFound("Breaking Bad", "1396");
-    when(seriesService.findByTmdbId("1396"))
+    when(seriesService.findInLibraryByTmdbId(library.getId(), "1396"))
         .thenReturn(Optional.of(Series.builder().id(UUID.randomUUID()).build()));
     when(seriesMetadataProvider.getSeasonDetails(isNull(), eq("1396"), eq(9)))
         .thenReturn(new MetadataFetchOutcome.NotFound<>());
@@ -231,7 +234,8 @@ class SeriesFileProcessorTest {
                     .externalSourceType(ExternalSourceType.TMDB)
                     .build()));
 
-    when(seriesService.findByTmdbId("2224")).thenReturn(Optional.of(series));
+    when(seriesService.findInLibraryByTmdbId(library.getId(), "2224"))
+        .thenReturn(Optional.of(series));
 
     when(seriesMetadataProvider.resolveSeasonNumber(isNull(), eq("2224"), eq(2020)))
         .thenReturn(new MetadataFetchOutcome.NotFound<>());
@@ -269,7 +273,8 @@ class SeriesFileProcessorTest {
                     .externalSourceType(ExternalSourceType.TMDB)
                     .build()));
 
-    when(seriesService.findByTmdbId("93544")).thenReturn(Optional.of(series));
+    when(seriesService.findInLibraryByTmdbId(library.getId(), "93544"))
+        .thenReturn(Optional.of(series));
 
     when(seriesMetadataProvider.getSeasonDetails(isNull(), eq("93544"), eq(4)))
         .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("simulated fetch failure")));
@@ -387,7 +392,7 @@ class SeriesFileProcessorTest {
     var mediaFile =
         saveEpisodeFile(library, "The%20Daily%20Show/Season%202020/The.Daily.Show.S01E01.mkv");
     stubSearchFound("The Daily Show", "2224");
-    when(seriesService.findByTmdbId("2224"))
+    when(seriesService.findInLibraryByTmdbId(library.getId(), "2224"))
         .thenReturn(Optional.of(Series.builder().id(UUID.randomUUID()).build()));
     when(seriesMetadataProvider.resolveSeasonNumber(isNull(), eq("2224"), eq(2020)))
         .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("Connection reset")));
@@ -404,7 +409,7 @@ class SeriesFileProcessorTest {
     var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
     var mediaFile = saveEpisodeFile(library, "Breaking%20Bad/Season%2001/Breaking.Bad.S01E01.mkv");
     stubSearchFound("Breaking Bad", "1396");
-    when(seriesService.findByTmdbId("1396")).thenReturn(Optional.empty());
+    when(seriesService.findInLibraryByTmdbId(library.getId(), "1396")).thenReturn(Optional.empty());
     when(seriesMetadataProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
         .thenReturn(
             new MetadataFetchOutcome.Failed<>(new TmdbApiException(401, "Invalid API key")));

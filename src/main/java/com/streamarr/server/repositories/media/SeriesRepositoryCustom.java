@@ -11,7 +11,7 @@ import java.util.UUID;
 
 public interface SeriesRepositoryCustom {
 
-  Optional<Series> findByTmdbId(String tmdbId);
+  Optional<Series> findInLibraryByTmdbId(UUID libraryId, String tmdbId);
 
   List<Series> seekWithFilter(MediaPaginationOptions options);
 

@@ -210,7 +210,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
               .size(2048L)
               .build();
 
-      var found = seriesService.findByTmdbId("1399");
+      var found = seriesService.findInLibraryByTmdbId(savedLibrary.getId(), "1399");
 
       assertThat(found).isPresent();
 
@@ -222,7 +222,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("Should return empty when series not found by TMDB ID")
     void shouldReturnEmptyWhenSeriesNotFoundByTmdbId() {
-      var result = seriesService.findByTmdbId("99999");
+      var result = seriesService.findInLibraryByTmdbId(savedLibrary.getId(), "99999");
 
       assertThat(result).isEmpty();
     }
@@ -243,7 +243,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
                           .build()))
               .build());
 
-      var result = seriesService.findByTmdbId(tmdbId);
+      var result = seriesService.findInLibraryByTmdbId(savedLibrary.getId(), tmdbId);
 
       assertThat(result).isPresent();
       assertThat(result.get().getTitle()).isEqualTo("Findable Series");
@@ -252,9 +252,55 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("Should return empty when no series with TMDB ID")
     void shouldReturnEmptyWhenNoSeriesWithTmdbId() {
-      var result = seriesService.findByTmdbId("nonexistent-" + UUID.randomUUID());
+      var result =
+          seriesService.findInLibraryByTmdbId(
+              savedLibrary.getId(), "nonexistent-" + UUID.randomUUID());
 
       assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should return empty when only another library holds a series with the TMDB ID")
+    void shouldReturnEmptyWhenOnlyAnotherLibraryHoldsSeriesWithTmdbId() {
+      var tmdbId = "other-library-" + UUID.randomUUID();
+      saveSeriesWithTmdbId(saveSeriesLibrary(), tmdbId);
+
+      var result = seriesService.findInLibraryByTmdbId(saveSeriesLibrary().getId(), tmdbId);
+
+      assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+        "Should find the library's own series when another library also holds a series with the"
+            + " TMDB ID")
+    void shouldFindLibrarysOwnSeriesWhenAnotherLibraryAlsoHoldsSeriesWithTmdbId() {
+      var tmdbId = "both-libraries-" + UUID.randomUUID();
+      var library = saveSeriesLibrary();
+      saveSeriesWithTmdbId(saveSeriesLibrary(), tmdbId);
+      var ownSeries = saveSeriesWithTmdbId(library, tmdbId);
+
+      var result = seriesService.findInLibraryByTmdbId(library.getId(), tmdbId);
+
+      assertThat(result).get().extracting(Series::getId).isEqualTo(ownSeries.getId());
+    }
+
+    private Library saveSeriesLibrary() {
+      return libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+    }
+
+    private Series saveSeriesWithTmdbId(Library library, String tmdbId) {
+      return seriesRepository.saveAndFlush(
+          Series.builder()
+              .title("Shared Series")
+              .library(library)
+              .externalIds(
+                  Set.of(
+                      ExternalIdentifier.builder()
+                          .externalSourceType(ExternalSourceType.TMDB)
+                          .externalId(tmdbId)
+                          .build()))
+              .build());
     }
 
     @Test

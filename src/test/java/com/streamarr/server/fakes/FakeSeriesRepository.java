@@ -31,8 +31,10 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
   }
 
   @Override
-  public Optional<Series> findByTmdbId(String tmdbId) {
+  public Optional<Series> findInLibraryByTmdbId(UUID libraryId, String tmdbId) {
     return database.values().stream()
+        .filter(
+            series -> series.getLibrary() != null && libraryId.equals(series.getLibrary().getId()))
         .filter(
             series ->
                 series.getExternalIds().stream()

@@ -57,9 +57,13 @@ public class MovieService {
   private final ReviewRepository reviewRepository;
   private final WatchHistoryRepository watchHistoryRepository;
 
+  /**
+   * Attaches the file to the movie with this TMDB id in the file's own library. Versions of a title
+   * in one library share its movie. A movie in another library never takes the file.
+   */
   @Transactional
   public Optional<Movie> addMediaFileToMovieByTmdbId(String id, MediaFile mediaFile) {
-    var movie = movieRepository.findByTmdbId(id);
+    var movie = movieRepository.findInLibraryByTmdbId(mediaFile.getLibraryId(), id);
 
     if (movie.isEmpty()) {
       log.debug("No movie found with TMDB ID: {}", id);

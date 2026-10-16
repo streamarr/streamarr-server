@@ -78,7 +78,8 @@ class MovieRepositoryIT extends AbstractIntegrationTest {
             .library(savedLibrary)
             .build());
 
-    var result = movieRepository.findByTmdbId(fakeExternalId.getExternalId());
+    var result =
+        movieRepository.findInLibraryByTmdbId(savedLibrary.getId(), fakeExternalId.getExternalId());
 
     assertThat(result).isPresent();
     assertThat(result.get().getExternalIds()).hasSize(1);
@@ -114,7 +115,7 @@ class MovieRepositoryIT extends AbstractIntegrationTest {
             .library(savedLibrary)
             .build());
 
-    var result = movieRepository.findByTmdbId(sharedId);
+    var result = movieRepository.findInLibraryByTmdbId(savedLibrary.getId(), sharedId);
 
     assertThat(result).isPresent();
     assertThat(result.get().getTitle()).isEqualTo("TMDB Movie");

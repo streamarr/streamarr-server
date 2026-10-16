@@ -391,7 +391,7 @@ class LibraryManagementServiceTest {
             .build();
     var metadataProvider = new RecordingSeriesMetadataProvider();
     metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
-    when(seriesService.findByTmdbId("2001")).thenReturn(Optional.empty());
+    when(seriesService.findInLibraryByTmdbId(library.getId(), "2001")).thenReturn(Optional.empty());
     var service =
         libraryManagementServiceWith(movieFileProcessor, seriesFileProcessorWith(metadataProvider));
     var seriesPath =
@@ -418,7 +418,7 @@ class LibraryManagementServiceTest {
             .build();
     var metadataProvider = new RecordingSeriesMetadataProvider();
     metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
-    when(seriesService.findByTmdbId("2002")).thenReturn(Optional.empty());
+    when(seriesService.findInLibraryByTmdbId(library.getId(), "2002")).thenReturn(Optional.empty());
     var service =
         libraryManagementServiceWith(movieFileProcessor, seriesFileProcessorWith(metadataProvider));
     var filepathUri =
