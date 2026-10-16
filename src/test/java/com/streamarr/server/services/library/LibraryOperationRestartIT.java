@@ -330,6 +330,7 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
     for (var seasonNumber = 1; seasonNumber <= 4; seasonNumber++) {
       wireMock.stubFor(tmdbSeasonDetails(seasonNumber));
     }
+
     wireMock.stubFor(held(tmdbSeasonDetails(3)));
     var beforeRestart = startScheduler(new AbstractSchedulerListener() {});
 
