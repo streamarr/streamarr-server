@@ -15,11 +15,17 @@ import java.util.concurrent.TimeUnit;
 import org.dataloader.DataLoader;
 import org.dataloader.DataLoaderRegistry;
 import org.dataloader.registries.ScheduledDataLoaderRegistry;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
 /**
- * Executes each value a subscription delivers against current data, in delivery order, without
- * letting one slow value hold back the values after it.
+ * Executes each value a subscription delivers against current data, as the caller who subscribed,
+ * in delivery order, without letting one slow value hold back the values after it.
+ *
+ * <p>The values arrive on delivery threads, which carry no security context. Each field of a
+ * delivered value runs with the security context captured when the operation subscribed, so field
+ * resolvers read the subscriber's identity and Profile as they do in a query.
  *
  * <p>All values of one operation run against the operation's one DataLoader registry, and the
  * executions of two values may overlap. A cached loader would answer a later value with an earlier
@@ -34,6 +40,8 @@ import org.springframework.stereotype.Component;
  */
 @Component
 class SubscriptionDeliveryInstrumentation extends SimplePerformantInstrumentation {
+
+  private static final String SUBSCRIBER_SECURITY_CONTEXT = "streamarr.subscriberSecurityContext";
 
   private final Duration deliveryFetchTimeout;
 
@@ -51,6 +59,7 @@ class SubscriptionDeliveryInstrumentation extends SimplePerformantInstrumentatio
       return executionInput;
     }
 
+    context.put(SUBSCRIBER_SECURITY_CONTEXT, captureSecurityContext());
     context.put(SubscriptionExecutionStrategy.KEEP_SUBSCRIPTION_EVENTS_ORDERED, true);
     disableDataLoaderCachingForWebSocketRequests(executionInput.getDataLoaderRegistry());
     return executionInput;
@@ -61,13 +70,32 @@ class SubscriptionDeliveryInstrumentation extends SimplePerformantInstrumentatio
       DataFetcher<?> dataFetcher,
       InstrumentationFieldFetchParameters parameters,
       InstrumentationState state) {
-    var operation = parameters.getExecutionContext().getOperationDefinition().getOperation();
+    var executionContext = parameters.getExecutionContext();
+    var operation = executionContext.getOperationDefinition().getOperation();
     var isRootField = parameters.getExecutionStepInfo().getPath().getLevel() == 1;
     if (operation != Operation.SUBSCRIPTION || isRootField) {
       return dataFetcher;
     }
 
-    return environment -> boundByDeliveryFetchTimeout(dataFetcher.get(environment));
+    SecurityContext subscriberContext =
+        executionContext
+            .getGraphQLContext()
+            .getOrDefault(SUBSCRIBER_SECURITY_CONTEXT, SecurityContextHolder.createEmptyContext());
+    return environment -> {
+      var deliveryThreadContext = SecurityContextHolder.getContext();
+      SecurityContextHolder.setContext(subscriberContext);
+      try {
+        return boundByDeliveryFetchTimeout(dataFetcher.get(environment));
+      } finally {
+        SecurityContextHolder.setContext(deliveryThreadContext);
+      }
+    };
+  }
+
+  private static SecurityContext captureSecurityContext() {
+    var captured = SecurityContextHolder.createEmptyContext();
+    captured.setAuthentication(SecurityContextHolder.getContext().getAuthentication());
+    return captured;
   }
 
   private Object boundByDeliveryFetchTimeout(Object value) {
