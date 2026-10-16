@@ -1,5 +1,15 @@
 package com.streamarr.server.repositories.media;
 
+import static com.streamarr.server.jooq.generated.tables.BaseCollectable.BASE_COLLECTABLE;
+import static com.streamarr.server.jooq.generated.tables.ExternalIdentifier.EXTERNAL_IDENTIFIER;
+import static com.streamarr.server.jooq.generated.tables.MediaFile.MEDIA_FILE;
+import static com.streamarr.server.jooq.generated.tables.Movie.MOVIE;
+import static com.streamarr.server.jooq.generated.tables.MovieCompany.MOVIE_COMPANY;
+import static com.streamarr.server.jooq.generated.tables.MovieDirector.MOVIE_DIRECTOR;
+import static com.streamarr.server.jooq.generated.tables.MovieGenre.MOVIE_GENRE;
+import static com.streamarr.server.jooq.generated.tables.MoviePerson.MOVIE_PERSON;
+import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
+import static com.streamarr.server.jooq.generated.tables.WatchHistory.WATCH_HISTORY;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.max;
@@ -8,7 +18,6 @@ import static org.jooq.impl.DSL.not;
 import static org.jooq.impl.DSL.select;
 
 import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.jooq.generated.Tables;
 import com.streamarr.server.jooq.generated.enums.ExternalSourceType;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import com.streamarr.server.services.pagination.MediaFilter;
@@ -47,9 +56,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     }
 
     var orderByColumns =
-        new SortField[] {
-          buildOrderBy(filter), Tables.BASE_COLLECTABLE.ID.sort(filter.getSortDirection())
-        };
+        new SortField[] {buildOrderBy(filter), BASE_COLLECTABLE.ID.sort(filter.getSortDirection())};
 
     var seekCondition =
         JooqQueryHelper.buildSeekCondition(
@@ -58,9 +65,9 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     var query =
         context
             .select()
-            .from(Tables.MOVIE)
-            .innerJoin(Tables.BASE_COLLECTABLE)
-            .on(Tables.MOVIE.ID.eq(Tables.BASE_COLLECTABLE.ID))
+            .from(MOVIE)
+            .innerJoin(BASE_COLLECTABLE)
+            .on(MOVIE.ID.eq(BASE_COLLECTABLE.ID))
             .where(seekCondition)
             .and(JooqQueryHelper.libraryCondition(filter.getLibraryId()))
             .and(
@@ -83,17 +90,17 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
   public Optional<Movie> findByTmdbId(String tmdbId) {
     var query =
         context
-            .select(Tables.MOVIE.asterisk(), Tables.BASE_COLLECTABLE.asterisk())
-            .from(Tables.MOVIE)
-            .innerJoin(Tables.BASE_COLLECTABLE)
-            .on(Tables.MOVIE.ID.eq(Tables.BASE_COLLECTABLE.ID))
-            .join(Tables.EXTERNAL_IDENTIFIER)
-            .on(Tables.EXTERNAL_IDENTIFIER.ENTITY_ID.eq(Tables.MOVIE.ID))
+            .select(MOVIE.asterisk(), BASE_COLLECTABLE.asterisk())
+            .from(MOVIE)
+            .innerJoin(BASE_COLLECTABLE)
+            .on(MOVIE.ID.eq(BASE_COLLECTABLE.ID))
+            .join(EXTERNAL_IDENTIFIER)
+            .on(EXTERNAL_IDENTIFIER.ENTITY_ID.eq(MOVIE.ID))
             .where(
-                Tables.EXTERNAL_IDENTIFIER
+                EXTERNAL_IDENTIFIER
                     .EXTERNAL_SOURCE_TYPE
                     .eq(inline(ExternalSourceType.TMDB))
-                    .and(Tables.EXTERNAL_IDENTIFIER.EXTERNAL_ID.eq(tmdbId)))
+                    .and(EXTERNAL_IDENTIFIER.EXTERNAL_ID.eq(tmdbId)))
             .limit(1);
 
     var results = JooqQueryHelper.nativeQuery(entityManager, query, Movie.class);
@@ -110,15 +117,15 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     var orderByColumns =
         new SortField[] {
           buildOrderBy(options.getMediaFilter()),
-          Tables.BASE_COLLECTABLE.ID.sort(options.getMediaFilter().getSortDirection())
+          BASE_COLLECTABLE.ID.sort(options.getMediaFilter().getSortDirection())
         };
 
     var query =
         context
             .select()
-            .from(Tables.MOVIE)
-            .innerJoin(Tables.BASE_COLLECTABLE)
-            .on(Tables.MOVIE.ID.eq(Tables.BASE_COLLECTABLE.ID))
+            .from(MOVIE)
+            .innerJoin(BASE_COLLECTABLE)
+            .on(MOVIE.ID.eq(BASE_COLLECTABLE.ID))
             .where(JooqQueryHelper.libraryCondition(options.getMediaFilter().getLibraryId()))
             .and(
                 JooqQueryHelper.startLetterCondition(
@@ -143,15 +150,15 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     var reversed = JooqQueryHelper.reverseFilter(filter);
     var orderByColumns =
         new SortField[] {
-          buildOrderBy(reversed), Tables.BASE_COLLECTABLE.ID.sort(reversed.getSortDirection())
+          buildOrderBy(reversed), BASE_COLLECTABLE.ID.sort(reversed.getSortDirection())
         };
 
     var query =
         context
             .select()
-            .from(Tables.MOVIE)
-            .innerJoin(Tables.BASE_COLLECTABLE)
-            .on(Tables.MOVIE.ID.eq(Tables.BASE_COLLECTABLE.ID))
+            .from(MOVIE)
+            .innerJoin(BASE_COLLECTABLE)
+            .on(MOVIE.ID.eq(BASE_COLLECTABLE.ID))
             .where(predecessorCondition.get())
             .and(JooqQueryHelper.libraryCondition(filter.getLibraryId()))
             .and(filterConditions(filter))
@@ -168,45 +175,44 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     condition =
         condition.and(
             JooqQueryHelper.semiJoinCondition(
-                Tables.MOVIE.ID,
-                Tables.MOVIE_GENRE,
-                Tables.MOVIE_GENRE.MOVIE_ID,
-                Tables.MOVIE_GENRE.GENRE_ID,
+                MOVIE.ID,
+                MOVIE_GENRE,
+                MOVIE_GENRE.MOVIE_ID,
+                MOVIE_GENRE.GENRE_ID,
                 filter.getGenreIds()));
 
-    condition =
-        condition.and(JooqQueryHelper.yearCondition(Tables.MOVIE.RELEASE_DATE, filter.getYears()));
+    condition = condition.and(JooqQueryHelper.yearCondition(MOVIE.RELEASE_DATE, filter.getYears()));
 
     condition =
         condition.and(
             JooqQueryHelper.contentRatingCondition(
-                Tables.MOVIE.CONTENT_RATING_VALUE, filter.getContentRatings()));
+                MOVIE.CONTENT_RATING_VALUE, filter.getContentRatings()));
 
     condition =
         condition.and(
             JooqQueryHelper.semiJoinCondition(
-                Tables.MOVIE.ID,
-                Tables.MOVIE_COMPANY,
-                Tables.MOVIE_COMPANY.MOVIE_ID,
-                Tables.MOVIE_COMPANY.COMPANY_ID,
+                MOVIE.ID,
+                MOVIE_COMPANY,
+                MOVIE_COMPANY.MOVIE_ID,
+                MOVIE_COMPANY.COMPANY_ID,
                 filter.getStudioIds()));
 
     condition =
         condition.and(
             JooqQueryHelper.semiJoinCondition(
-                Tables.MOVIE.ID,
-                Tables.MOVIE_DIRECTOR,
-                Tables.MOVIE_DIRECTOR.MOVIE_ID,
-                Tables.MOVIE_DIRECTOR.PERSON_ID,
+                MOVIE.ID,
+                MOVIE_DIRECTOR,
+                MOVIE_DIRECTOR.MOVIE_ID,
+                MOVIE_DIRECTOR.PERSON_ID,
                 filter.getDirectorIds()));
 
     condition =
         condition.and(
             JooqQueryHelper.semiJoinCondition(
-                Tables.MOVIE.ID,
-                Tables.MOVIE_PERSON,
-                Tables.MOVIE_PERSON.MOVIE_ID,
-                Tables.MOVIE_PERSON.PERSON_ID,
+                MOVIE.ID,
+                MOVIE_PERSON,
+                MOVIE_PERSON.MOVIE_ID,
+                MOVIE_PERSON.PERSON_ID,
                 filter.getCastMemberIds()));
 
     condition = condition.and(JooqQueryHelper.unmatchedCondition(filter.getUnmatched()));
@@ -225,27 +231,27 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
 
     var isWatched =
         exists(
-            select(Tables.WATCH_HISTORY.ID)
-                .from(Tables.WATCH_HISTORY)
+            select(WATCH_HISTORY.ID)
+                .from(WATCH_HISTORY)
                 .where(
-                    Tables.WATCH_HISTORY
+                    WATCH_HISTORY
                         .COLLECTABLE_ID
-                        .eq(Tables.BASE_COLLECTABLE.ID)
-                        .and(Tables.WATCH_HISTORY.PROFILE_ID.eq(profileId))
-                        .and(Tables.WATCH_HISTORY.DISMISSED_AT.isNull())));
+                        .eq(BASE_COLLECTABLE.ID)
+                        .and(WATCH_HISTORY.PROFILE_ID.eq(profileId))
+                        .and(WATCH_HISTORY.DISMISSED_AT.isNull())));
 
     var hasProgress =
         exists(
-            select(Tables.SESSION_PROGRESS.ID)
-                .from(Tables.SESSION_PROGRESS)
-                .innerJoin(Tables.MEDIA_FILE)
-                .on(Tables.SESSION_PROGRESS.MEDIA_FILE_ID.eq(Tables.MEDIA_FILE.ID))
+            select(SESSION_PROGRESS.ID)
+                .from(SESSION_PROGRESS)
+                .innerJoin(MEDIA_FILE)
+                .on(SESSION_PROGRESS.MEDIA_FILE_ID.eq(MEDIA_FILE.ID))
                 .where(
-                    Tables.MEDIA_FILE
+                    MEDIA_FILE
                         .MEDIA_ID
-                        .eq(Tables.BASE_COLLECTABLE.ID)
-                        .and(Tables.SESSION_PROGRESS.PROFILE_ID.eq(profileId))
-                        .and(Tables.SESSION_PROGRESS.POSITION_SECONDS.greaterThan(0))));
+                        .eq(BASE_COLLECTABLE.ID)
+                        .and(SESSION_PROGRESS.PROFILE_ID.eq(profileId))
+                        .and(SESSION_PROGRESS.POSITION_SECONDS.greaterThan(0))));
 
     return switch (watchStatus) {
       case WATCHED -> isWatched;
@@ -256,15 +262,15 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
 
   private Field<?> lastWatchedField(MediaFilter filter) {
     var profileId = requireProfileId(filter.getProfileId());
-    return select(max(Tables.SESSION_PROGRESS.LAST_MODIFIED_ON))
-        .from(Tables.SESSION_PROGRESS)
-        .innerJoin(Tables.MEDIA_FILE)
-        .on(Tables.SESSION_PROGRESS.MEDIA_FILE_ID.eq(Tables.MEDIA_FILE.ID))
+    return select(max(SESSION_PROGRESS.LAST_MODIFIED_ON))
+        .from(SESSION_PROGRESS)
+        .innerJoin(MEDIA_FILE)
+        .on(SESSION_PROGRESS.MEDIA_FILE_ID.eq(MEDIA_FILE.ID))
         .where(
-            Tables.MEDIA_FILE
+            MEDIA_FILE
                 .MEDIA_ID
-                .eq(Tables.BASE_COLLECTABLE.ID)
-                .and(Tables.SESSION_PROGRESS.PROFILE_ID.eq(profileId)))
+                .eq(BASE_COLLECTABLE.ID)
+                .and(SESSION_PROGRESS.PROFILE_ID.eq(profileId)))
         .asField();
   }
 
@@ -275,20 +281,17 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     }
 
     var resolvedProfileId = requireProfileId(profileId);
-    var maxField = max(Tables.SESSION_PROGRESS.LAST_MODIFIED_ON);
+    var maxField = max(SESSION_PROGRESS.LAST_MODIFIED_ON);
 
     return context
-        .select(Tables.MEDIA_FILE.MEDIA_ID, maxField)
-        .from(Tables.SESSION_PROGRESS)
-        .innerJoin(Tables.MEDIA_FILE)
-        .on(Tables.SESSION_PROGRESS.MEDIA_FILE_ID.eq(Tables.MEDIA_FILE.ID))
+        .select(MEDIA_FILE.MEDIA_ID, maxField)
+        .from(SESSION_PROGRESS)
+        .innerJoin(MEDIA_FILE)
+        .on(SESSION_PROGRESS.MEDIA_FILE_ID.eq(MEDIA_FILE.ID))
         .where(
-            Tables.MEDIA_FILE
-                .MEDIA_ID
-                .in(movieIds)
-                .and(Tables.SESSION_PROGRESS.PROFILE_ID.eq(resolvedProfileId)))
-        .groupBy(Tables.MEDIA_FILE.MEDIA_ID)
-        .fetchMap(Tables.MEDIA_FILE.MEDIA_ID, r -> toInstant(r.get(maxField)));
+            MEDIA_FILE.MEDIA_ID.in(movieIds).and(SESSION_PROGRESS.PROFILE_ID.eq(resolvedProfileId)))
+        .groupBy(MEDIA_FILE.MEDIA_ID)
+        .fetchMap(MEDIA_FILE.MEDIA_ID, r -> toInstant(r.get(maxField)));
   }
 
   private static UUID requireProfileId(@NonNull UUID profileId) {
@@ -302,9 +305,9 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
   private Field<?> sortField(MediaFilter filter) {
     return switch (filter.getSortBy()) {
       case TITLE -> JooqQueryHelper.titleSortField();
-      case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON;
-      case RELEASE_DATE -> Tables.MOVIE.RELEASE_DATE;
-      case RUNTIME -> Tables.MOVIE.RUNTIME;
+      case ADDED -> BASE_COLLECTABLE.CREATED_ON;
+      case RELEASE_DATE -> MOVIE.RELEASE_DATE;
+      case RUNTIME -> MOVIE.RUNTIME;
       case LAST_WATCHED -> lastWatchedField(filter);
     };
   }
@@ -314,9 +317,9 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
 
     return switch (filter.getSortBy()) {
       case TITLE -> JooqQueryHelper.titleSortField().sort(direction);
-      case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON.sort(direction);
-      case RELEASE_DATE -> Tables.MOVIE.RELEASE_DATE.sort(direction).nullsLast();
-      case RUNTIME -> Tables.MOVIE.RUNTIME.sort(direction).nullsLast();
+      case ADDED -> BASE_COLLECTABLE.CREATED_ON.sort(direction);
+      case RELEASE_DATE -> MOVIE.RELEASE_DATE.sort(direction).nullsLast();
+      case RUNTIME -> MOVIE.RUNTIME.sort(direction).nullsLast();
       case LAST_WATCHED -> lastWatchedField(filter).sort(direction).nullsLast();
     };
   }

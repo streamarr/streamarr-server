@@ -1,6 +1,6 @@
 package com.streamarr.server.services.auth;
 
-import static com.streamarr.server.jooq.generated.Tables.DEVICE_REGISTRATION;
+import static com.streamarr.server.jooq.generated.tables.DeviceRegistration.DEVICE_REGISTRATION;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 

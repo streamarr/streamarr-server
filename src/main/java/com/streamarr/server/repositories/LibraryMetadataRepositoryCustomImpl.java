@@ -1,5 +1,7 @@
 package com.streamarr.server.repositories;
 
+import static com.streamarr.server.jooq.generated.tables.BaseCollectable.BASE_COLLECTABLE;
+import static com.streamarr.server.jooq.generated.tables.LibraryMetadata.LIBRARY_METADATA;
 import static org.jooq.impl.DSL.count;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.left;
@@ -8,7 +10,6 @@ import static org.jooq.impl.DSL.when;
 
 import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.LibraryMetadata;
-import com.streamarr.server.jooq.generated.Tables;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -35,7 +36,7 @@ public class LibraryMetadataRepositoryCustomImpl implements LibraryMetadataRepos
   }
 
   private List<LibraryMetadata> queryLetterCounts(UUID libraryId) {
-    var firstChar = left(Tables.BASE_COLLECTABLE.TITLE_SORT, inline(1));
+    var firstChar = left(BASE_COLLECTABLE.TITLE_SORT, inline(1));
 
     Field<String> letterExpression =
         when(firstChar.likeRegex(inline("[a-zA-Z]")), upper(firstChar)).otherwise(inline("HASH"));
@@ -43,8 +44,8 @@ public class LibraryMetadataRepositoryCustomImpl implements LibraryMetadataRepos
     List<Record2<String, Integer>> results =
         context
             .select(letterExpression.as("letter"), count().as("item_count"))
-            .from(Tables.BASE_COLLECTABLE)
-            .where(Tables.BASE_COLLECTABLE.LIBRARY_ID.eq(libraryId))
+            .from(BASE_COLLECTABLE)
+            .where(BASE_COLLECTABLE.LIBRARY_ID.eq(libraryId))
             .groupBy(letterExpression)
             .orderBy(letterExpression)
             .fetch();
@@ -72,7 +73,7 @@ public class LibraryMetadataRepositoryCustomImpl implements LibraryMetadataRepos
   }
 
   private void persistLetterCounts(UUID libraryId, List<LibraryMetadata> entries) {
-    var lm = Tables.LIBRARY_METADATA;
+    var lm = LIBRARY_METADATA;
 
     if (!entries.isEmpty()) {
       var upserts =

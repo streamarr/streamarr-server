@@ -1,6 +1,6 @@
 package com.streamarr.server.repositories;
 
-import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE_STREAM_INFO;
+import static com.streamarr.server.jooq.generated.tables.MediaFileStreamInfo.MEDIA_FILE_STREAM_INFO;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
