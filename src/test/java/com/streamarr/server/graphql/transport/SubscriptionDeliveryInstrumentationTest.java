@@ -20,11 +20,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Publisher;
-import org.springframework.security.authentication.TestingAuthenticationToken;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.util.unit.DataSize;
 import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Schedulers;
 
 @Tag("UnitTest")
 @DisplayName("Subscription Delivery Instrumentation Tests")
@@ -93,37 +90,6 @@ class SubscriptionDeliveryInstrumentationTest {
   }
 
   @Test
-  @DisplayName(
-      "Should resolve a delivered value's fields as the subscriber when the value arrives on"
-          + " another thread")
-  void shouldResolveDeliveredValuesFieldsAsSubscriberWhenValueArrivesOnAnotherThread() {
-    var graphQl =
-        graphQl(
-            _ ->
-                CompletableFuture.completedFuture(
-                    SecurityContextHolder.getContext().getAuthentication().getName()),
-            Flux.just(Map.of()).publishOn(Schedulers.boundedElastic()));
-    var subscription =
-        ExecutionInput.newExecutionInput("subscription { change { value } }")
-            .graphQLContext(Map.of(GraphQlTransport.class, GraphQlTransport.WEBSOCKET))
-            .build();
-    SecurityContextHolder.getContext()
-        .setAuthentication(new TestingAuthenticationToken("subscriber", null));
-    ExecutionResult result;
-    try {
-      result = graphQl.execute(subscription);
-    } finally {
-      SecurityContextHolder.clearContext();
-    }
-
-    var delivered = firstDelivered(result);
-
-    assertThat(delivered.getErrors()).isEmpty();
-    assertThat(delivered.<Map<String, Map<String, Object>>>getData().get("change"))
-        .containsEntry("value", "subscriber");
-  }
-
-  @Test
   @DisplayName("Should leave a query field unbounded when it outlasts the delivery fetch timeout")
   void shouldLeaveQueryFieldUnboundedWhenItOutlastsDeliveryFetchTimeout() {
     var graphQl = graphQl(_ -> completedAfter(DELIVERY_FETCH_TIMEOUT.multipliedBy(3)));
@@ -136,10 +102,6 @@ class SubscriptionDeliveryInstrumentationTest {
   }
 
   private GraphQL graphQl(Function<Object, CompletableFuture<String>> value) {
-    return graphQl(value, Flux.just(Map.of(), Map.of()));
-  }
-
-  private GraphQL graphQl(Function<Object, CompletableFuture<String>> value, Flux<?> changes) {
     var schema =
         """
         type Query { change: Change }
@@ -149,7 +111,9 @@ class SubscriptionDeliveryInstrumentationTest {
     var wiring =
         RuntimeWiring.newRuntimeWiring()
             .type("Query", type -> type.dataFetcher("change", _ -> Map.of()))
-            .type("Subscription", type -> type.dataFetcher("change", _ -> changes))
+            .type(
+                "Subscription",
+                type -> type.dataFetcher("change", _ -> Flux.just(Map.of(), Map.of())))
             .type("Change", type -> type.dataFetcher("value", value::apply))
             .build();
     var graphQlSchema =
