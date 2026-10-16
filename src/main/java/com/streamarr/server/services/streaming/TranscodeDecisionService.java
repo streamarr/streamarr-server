@@ -60,17 +60,27 @@ public class TranscodeDecisionService {
         .videoCodecFamily(videoCodecFamily)
         .audioDecision(audioDecision)
         .subtitleDecision(subtitleDecision)
+        .videoSource(source.videoPlaybackFacts())
         .build();
   }
 
   private boolean decideVideoCopy(MediaProbe source, List<String> supportedCodecs) {
-    if (!supportedCodecs.contains(source.videoCodec())) {
+    if (!supportedCodecs.contains(source.videoCodec()) || !permitsCopyUntilHdrCopies(source)) {
       return false;
     }
 
     var refusal = streamCopyRefusal(source);
     refusal.ifPresent(this::countStreamCopyRefusal);
     return refusal.isEmpty();
+  }
+
+  // A probe before version 4 reports no playback facts. Its results keep the copy decision that
+  // predates the interim rule, and probe version 4 deletes them (streamarr/streamarr-server#501).
+  private static boolean permitsCopyUntilHdrCopies(MediaProbe source) {
+    return source
+        .videoPlaybackFacts()
+        .map(facts -> InterimVideoCopyRule.permitsCopy(source.videoCodec(), facts))
+        .orElse(true);
   }
 
   // A stream copy's segments can start only at source keyframes (ADR 0037), so the video is copied
