@@ -10,6 +10,7 @@ import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import java.time.Clock;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -37,16 +38,21 @@ abstract class AbstractScanningIntegrationTest extends AbstractWireMockIntegrati
     return new FakeSegmentStore();
   }
 
+  @BeforeEach
+  void clearScheduledProbeTasks() {
+    scanningContext.getBean(JdbcTemplate.class).update("DELETE FROM scheduled_tasks");
+  }
+
   @AfterEach
   void stopStartedProbeScheduler() {
     if (probeScheduler != null) {
       probeScheduler.scheduler().stop();
+      probeScheduler = null;
     }
   }
 
   // Probes run in db-scheduler, and a scan finishes only after its probes have stored results.
   protected void startProbeScheduler() {
-    scanningContext.getBean(JdbcTemplate.class).update("DELETE FROM scheduled_tasks");
     probeScheduler =
         ProbeSchedulerStarter.fromContext(scanningContext)
             .start(

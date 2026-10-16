@@ -93,6 +93,7 @@ class LargeMovieLibraryScanIT extends AbstractScanningIntegrationTest {
 
   @AfterEach
   void cleanupScannedRows() {
+    stopStartedProbeScheduler();
     deleteScannedRows();
   }
 
