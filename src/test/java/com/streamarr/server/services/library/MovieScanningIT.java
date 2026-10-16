@@ -22,13 +22,17 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fakes.AdvanceableSystemClock;
+import com.streamarr.server.fixtures.SessionProgressFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.services.ArtworkPriority;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.ArtworkSchedulerStarter;
 import com.streamarr.server.support.AuditColumnFixtures;
+import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.BoundedTask;
 import com.streamarr.server.support.LibraryOperationDriver;
 import java.io.IOException;
@@ -41,6 +45,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import lombok.Builder;
 import org.jooq.impl.DSL;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -71,8 +76,12 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   @Autowired private AuditColumnFixtures auditColumns;
   @Autowired private ApplicationContext applicationContext;
   @Autowired private ArtworkPrioritySchedulers artworkPrioritySchedulers;
+  @Autowired private SessionProgressRepository sessionProgressRepository;
+  @Autowired private AuthTestSupport authTestSupport;
 
   @TempDir Path tempDir;
+
+  private AuthTestSupport.TestIdentity admin;
 
   @BeforeEach
   void cleanupDatabase() {
@@ -81,6 +90,51 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     mediaFileRepository.deleteAll();
     movieRepository.deleteAll();
     libraryRepository.deleteAll();
+  }
+
+  @AfterEach
+  void deleteAdmin() {
+    if (admin != null) {
+      authTestSupport.deleteIdentity(admin);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a library's movie, file and resume position when another library holding the"
+          + " same movie is removed")
+  void shouldKeepLibrarysMovieFileAndResumePositionWhenAnotherLibraryHoldingTheSameMovieIsRemoved()
+      throws IOException {
+    var removedLibrary = createMovieLibrary(tempDir.resolve("removed"));
+    var keptLibrary = createMovieLibrary(tempDir.resolve("kept"));
+    createMovieFile("removed/Inception (2010)", "Inception (2010).mkv");
+    var keptFile = createMovieFile("kept/Inception (2010)", "Inception (2010).mkv");
+    stubTmdbMovieSearch("Inception", "27205", "Inception", "2010-07-16");
+    stubTmdbMovieMetadata("27205", "Inception");
+    startProbeScheduler();
+    libraryOperationDriver.scanToEnd(removedLibrary.getId());
+    libraryOperationDriver.scanToEnd(keptLibrary.getId());
+    admin = authTestSupport.createAdminIdentity();
+    var resumePosition = saveResumePosition(keptFile);
+
+    var removal =
+        libraryManagementService.removeLibrary(
+            authTestSupport.identityOf(admin), removedLibrary.getId());
+
+    assertThat(removal).isEqualTo(new Outcome.Accepted<>(removedLibrary.getId()));
+    assertThat(sessionProgressRepository.findById(resumePosition))
+        .as("resume position in the kept library's file")
+        .isPresent();
+    var keptMovies = movieRepository.findByLibrary_Id(keptLibrary.getId());
+    assertThat(keptMovies)
+        .as("kept library's movies")
+        .extracting(Movie::getTitle)
+        .containsExactly("Inception");
+    assertThat(mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(keptFile)))
+        .as("kept library's file")
+        .get()
+        .extracting(MediaFile::getMediaId)
+        .isEqualTo(keptMovies.getFirst().getId());
   }
 
   @Test
@@ -347,13 +401,29 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     return new LibraryWithMovieFile(library, movieFile);
   }
 
-  private Library createMovieLibrary() {
+  private UUID saveResumePosition(Path file) {
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(file)).orElseThrow();
+    return sessionProgressRepository
+        .saveAndFlush(
+            SessionProgressFixture.progressBuilder(admin.profile().getId(), mediaFile.getId())
+                .positionSeconds(1800)
+                .build())
+        .getId();
+  }
+
+  private Library createMovieLibrary() throws IOException {
+    return createMovieLibrary(tempDir);
+  }
+
+  private Library createMovieLibrary(Path root) throws IOException {
+    Files.createDirectories(root);
     return libraryRepository.saveAndFlush(
         Library.builder()
             .name("Movies")
             .backend(LibraryBackend.LOCAL)
             .status(LibraryStatus.HEALTHY)
-            .filepathUri(FilepathCodec.encode(tempDir))
+            .filepathUri(FilepathCodec.encode(root))
             .externalAgentStrategy(ExternalAgentStrategy.TMDB)
             .type(MediaType.MOVIE)
             .build());

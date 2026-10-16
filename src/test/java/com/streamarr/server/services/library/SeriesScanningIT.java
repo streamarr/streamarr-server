@@ -14,15 +14,23 @@ import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
+import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.fixtures.SessionProgressFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.LibraryOperationDriver;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -42,8 +50,13 @@ class SeriesScanningIT extends AbstractScanningIntegrationTest {
   @Autowired private SeasonRepository seasonRepository;
   @Autowired private EpisodeRepository episodeRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
+  @Autowired private LibraryOperationDriver libraryOperationDriver;
+  @Autowired private SessionProgressRepository sessionProgressRepository;
+  @Autowired private AuthTestSupport authTestSupport;
 
   @TempDir Path tempDir;
+
+  private AuthTestSupport.TestIdentity admin;
 
   @BeforeEach
   void cleanupDatabase() {
@@ -53,6 +66,69 @@ class SeriesScanningIT extends AbstractScanningIntegrationTest {
     seasonRepository.deleteAll();
     seriesRepository.deleteAll();
     libraryRepository.deleteAll();
+  }
+
+  @AfterEach
+  void deleteAdmin() {
+    if (admin != null) {
+      authTestSupport.deleteIdentity(admin);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a library's series, episode file and resume position when another library"
+          + " holding the series is removed")
+  void
+      shouldKeepLibrarysSeriesEpisodeFileAndResumePositionWhenAnotherLibraryHoldingTheSeriesIsRemoved()
+          throws IOException {
+    var removedLibrary = createSeriesLibrary(tempDir.resolve("removed"));
+    var keptLibrary = createSeriesLibrary(tempDir.resolve("kept"));
+    createSeriesFile("removed/Breaking Bad", "Season 01", "breaking.bad.s01e01.mkv");
+    var keptFile = createSeriesFile("kept/Breaking Bad", "Season 01", "breaking.bad.s01e01.mkv");
+    stubTmdbSearch("Breaking Bad", "1396", "Breaking Bad");
+    stubTmdbSeriesMetadata("1396", "Breaking Bad");
+    stubTmdbSeasonDetails("1396", 1, buildSeason1Response());
+    scanEachToEnd(removedLibrary, keptLibrary);
+    admin = authTestSupport.createAdminIdentity();
+    var resumePosition = saveResumePosition(keptFile);
+
+    var removal = removeLibrary(removedLibrary);
+
+    assertThat(removal).isEqualTo(new Outcome.Accepted<>(removedLibrary.getId()));
+    assertThat(sessionProgressRepository.findById(resumePosition))
+        .as("resume position in the kept library's file")
+        .isPresent();
+    var keptSeries = onlySeriesIn(keptLibrary);
+    assertThat(fileOf(keptFile).getMediaId()).isEqualTo(episodeIdOf(keptSeries, 1, 1));
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a library's episode under its own series when another library holding the"
+          + " series without that season is removed")
+  void shouldKeepLibrarysEpisodeUnderItsOwnSeriesWhenAnotherLibraryWithoutThatSeasonIsRemoved()
+      throws IOException {
+    var removedLibrary = createSeriesLibrary(tempDir.resolve("removed"));
+    var keptLibrary = createSeriesLibrary(tempDir.resolve("kept"));
+    createSeriesFile("removed/Breaking Bad", "Season 01", "breaking.bad.s01e01.mkv");
+    var keptFile = createSeriesFile("kept/Breaking Bad", "Season 02", "breaking.bad.s02e01.mkv");
+    stubTmdbSearch("Breaking Bad", "1396", "Breaking Bad");
+    stubTmdbSeriesMetadata("1396", "Breaking Bad");
+    stubTmdbSeasonDetails("1396", 1, buildSeason1Response());
+    stubTmdbSeasonDetails("1396", 2, buildSeason2Response());
+    scanEachToEnd(removedLibrary, keptLibrary);
+    admin = authTestSupport.createAdminIdentity();
+
+    var removal = removeLibrary(removedLibrary);
+
+    assertThat(removal).isEqualTo(new Outcome.Accepted<>(removedLibrary.getId()));
+    var keptFileEpisodeId = fileOf(keptFile).getMediaId();
+    assertThat(episodeRepository.findById(keptFileEpisodeId))
+        .as("episode of the kept library's file")
+        .isPresent();
+    var keptSeries = onlySeriesIn(keptLibrary);
+    assertThat(keptFileEpisodeId).isEqualTo(episodeIdOf(keptSeries, 2, 1));
   }
 
   @Test
@@ -600,13 +676,61 @@ class SeriesScanningIT extends AbstractScanningIntegrationTest {
 
   // --- Helpers ---
 
-  private Library createSeriesLibrary() {
+  private void scanEachToEnd(Library... libraries) {
+    startProbeScheduler();
+    for (var library : libraries) {
+      libraryOperationDriver.scanToEnd(library.getId());
+    }
+  }
+
+  private Outcome<UUID, LibraryOperationRejection> removeLibrary(Library library) {
+    return libraryManagementService.removeLibrary(
+        authTestSupport.identityOf(admin), library.getId());
+  }
+
+  private UUID saveResumePosition(Path file) {
+    return sessionProgressRepository
+        .saveAndFlush(
+            SessionProgressFixture.progressBuilder(admin.profile().getId(), fileOf(file).getId())
+                .positionSeconds(1800)
+                .build())
+        .getId();
+  }
+
+  private MediaFile fileOf(Path file) {
+    return mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(file)).orElseThrow();
+  }
+
+  private Series onlySeriesIn(Library library) {
+    var series = seriesRepository.findByLibrary_Id(library.getId());
+    assertThat(series)
+        .as("series in the library at %s", library.getFilepathUri())
+        .extracting(Series::getTitle)
+        .containsExactly("Breaking Bad");
+    return series.getFirst();
+  }
+
+  private UUID episodeIdOf(Series series, int seasonNumber, int episodeNumber) {
+    var season =
+        seasonRepository.findBySeriesIdAndSeasonNumber(series.getId(), seasonNumber).orElseThrow();
+    return episodeRepository
+        .findBySeasonIdAndEpisodeNumber(season.getId(), episodeNumber)
+        .orElseThrow()
+        .getId();
+  }
+
+  private Library createSeriesLibrary() throws IOException {
+    return createSeriesLibrary(tempDir);
+  }
+
+  private Library createSeriesLibrary(Path root) throws IOException {
+    Files.createDirectories(root);
     return libraryRepository.saveAndFlush(
         Library.builder()
             .name("TV Shows")
             .backend(LibraryBackend.LOCAL)
             .status(LibraryStatus.HEALTHY)
-            .filepathUri(FilepathCodec.encode(tempDir))
+            .filepathUri(FilepathCodec.encode(root))
             .externalAgentStrategy(ExternalAgentStrategy.TMDB)
             .type(MediaType.SERIES)
             .build());
