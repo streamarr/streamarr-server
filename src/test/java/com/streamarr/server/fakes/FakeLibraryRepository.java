@@ -4,6 +4,7 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.repositories.LibraryRepository;
 import java.sql.SQLException;
+import java.util.Comparator;
 import java.util.List;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -29,6 +30,15 @@ public class FakeLibraryRepository extends FakeJpaRepository<Library> implements
     }
 
     return super.save(entity);
+  }
+
+  @Override
+  public List<Library> lockLibraryPathsForAddLibrary() {
+    return database.values().stream()
+        .sorted(
+            Comparator.comparing(Library::getName, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(Library::getId))
+        .toList();
   }
 
   @Override
