@@ -8,6 +8,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.support.CpuPermitWaiters.backgroundWaiters;
 import static com.streamarr.server.support.CpuPermitWaiters.primaryWaiters;
+import static com.streamarr.server.support.HeldResponses.held;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
@@ -195,13 +196,13 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
       "Should save the poster while a backlog of person photos and company logos downloads")
   void shouldSaveThePosterWhileABacklogOfPersonPhotosAndCompanyLogosDownloads() throws Exception {
     wireMock.stubFor(
-        get(urlPathMatching("/backlog-.*"))
-            .willReturn(
-                aResponse()
-                    .withStatus(200)
-                    .withHeader("Content-Type", "image/jpeg")
-                    .withFixedDelay(3_000)
-                    .withBody(createTestImage(600, 900))));
+        held(
+            get(urlPathMatching("/backlog-.*"))
+                .willReturn(
+                    aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "image/jpeg")
+                        .withBody(createTestImage(600, 900)))));
     var backlog = new ArrayList<ArtworkTarget>();
     for (var index = 0; index < 6; index++) {
       var person =
@@ -229,6 +230,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
             requestBacklogArtwork(backlog.get(index), index);
           }
         });
+    heldResponses.awaitHeldResponses(1, Duration.ofSeconds(BOUND_SECONDS));
     var artworkRun =
         artworkRequestService.openLibraryOperationRun(
             "scan", ImageRefreshMode.PRESERVE, UUID.randomUUID());

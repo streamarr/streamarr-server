@@ -2,6 +2,7 @@ package com.streamarr.server.config;
 
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.server.services.streaming.remote.WorkerSessionKeepalive;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -24,6 +25,9 @@ public class WorkerSessionConfiguration {
             .keyframeScanTimeout(properties.keyframeScanTimeout())
             .probeCancellationTimeout(properties.probeCancellationTimeout())
             .startReportTimeout(properties.startReportTimeout())
+            .keepalive(
+                new WorkerSessionKeepalive(
+                    properties.keepalive().time(), properties.keepalive().timeout()))
             .build();
     return new WorkerSessionServer(configuration, segmentStore, meterRegistry);
   }

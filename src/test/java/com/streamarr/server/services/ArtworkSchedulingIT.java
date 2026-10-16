@@ -6,11 +6,12 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;
+import static com.streamarr.server.support.HeldResponses.held;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.github.kagkarlsson.scheduler.CurrentlyExecuting;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
+import com.github.tomakehurst.wiremock.client.MappingBuilder;
 import com.streamarr.server.AbstractWireMockIntegrationTest;
 import com.streamarr.server.config.ArtworkPrioritySchedulers;
 import com.streamarr.server.config.ArtworkScheduler;
@@ -26,6 +27,7 @@ import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.domain.media.PendingArtworkRequest;
 import com.streamarr.server.domain.metadata.Person;
+import com.streamarr.server.fakes.AdvanceableSystemClock;
 import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.PersonRepository;
@@ -42,7 +44,6 @@ import com.streamarr.server.support.ArtworkSchedulerStarter;
 import com.streamarr.server.support.BoundedTask;
 import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -68,6 +69,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
 
   private static final Duration BOUND = Duration.ofSeconds(20);
+  private static final Duration FIRST_RETRY_DELAY = Duration.ofSeconds(5);
   private static final String PRIMARY_TABLE = ArtworkSchedulerStarter.PRIMARY_TABLE;
   private static final String BACKGROUND_TABLE = ArtworkSchedulerStarter.BACKGROUND_TABLE;
   private static final String PROBE_TABLE = "scheduled_tasks";
@@ -125,26 +127,17 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
           + " downloads finish")
   void shouldSaveThePosterAndBackdropWithTheirResultsWhenTheServerRestartsBeforeDownloadsFinish()
       throws Exception {
-    stubImage("/poster.jpg", Duration.ofSeconds(10));
-    stubImage("/backdrop.jpg", Duration.ofSeconds(10));
-    var started = new CompletableFuture<Void>();
-    var beforeRestart =
-        startPrimaryScheduler(
-            new AbstractSchedulerListener() {
-              @Override
-              public void onExecutionStart(CurrentlyExecuting execution) {
-                started.complete(null);
-              }
-            });
+    stubHeldImage("/poster.jpg");
+    stubHeldImage("/backdrop.jpg");
+    var beforeRestart = startPrimaryScheduler(new AbstractSchedulerListener() {});
     var run = requestMovieArtwork(ImageRefreshMode.PRESERVE, POSTER, BACKDROP);
-    started.get(BOUND.toSeconds(), TimeUnit.SECONDS);
+    heldResponses.awaitHeldResponses(1, BOUND);
 
     beforeRestart.stop();
 
     assertThat(imageRepository.findByEntityIdAndEntityType(movieId, ImageEntityType.MOVIE))
         .isEmpty();
-    stubImage("/poster.jpg", Duration.ZERO);
-    stubImage("/backdrop.jpg", Duration.ZERO);
+    heldResponses.release();
     startPrimaryScheduler(new AbstractSchedulerListener() {});
 
     var summary = awaitRun(run);
@@ -161,8 +154,8 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   @Test
   @DisplayName("Should run the steps again when a crashed server left their execution picked")
   void shouldRunTheStepsAgainWhenACrashedServerLeftTheirExecutionPicked() throws Exception {
-    stubImage("/poster.jpg", Duration.ZERO);
-    stubImage("/backdrop.jpg", Duration.ZERO);
+    stubImage("/poster.jpg");
+    stubImage("/backdrop.jpg");
     var run = requestMovieArtwork(ImageRefreshMode.PRESERVE, POSTER, BACKDROP);
     jdbcTemplate.update(
         "UPDATE "
@@ -187,10 +180,12 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   void shouldStoreATemporaryFailureAndSaveTheImageLaterWhenTheHostAnswersTooManyRequests()
       throws Exception {
     stubTooManyRequestsThenImage("/poster.jpg", 6);
-    stubImage("/backdrop.jpg", Duration.ZERO);
+    stubImage("/backdrop.jpg");
     var failed = new CompletableFuture<ExecutionComplete>();
     var saved = new CompletableFuture<ExecutionComplete>();
+    var clock = new AdvanceableSystemClock();
     startPrimaryScheduler(
+        primaryScheduler().clock(clock).build(),
         new AbstractSchedulerListener() {
           @Override
           public void onExecutionComplete(ExecutionComplete completed) {
@@ -214,6 +209,9 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
             ItemOutcome.Failed.class,
             outcome -> assertThat(outcome.reason()).isEqualTo(ItemFailureReason.TEMPORARY));
     assertThat(consecutiveFailures()).isOne();
+    assertThat(retryDelay()).isEqualTo(FIRST_RETRY_DELAY);
+
+    clock.advance(FIRST_RETRY_DELAY);
 
     saved.get(BOUND.toSeconds(), TimeUnit.SECONDS);
 
@@ -230,21 +228,15 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   void shouldSaveNothingFromAPreservingAttemptWhenItFinishesAfterAForcedRefresh() throws Exception {
     imageRepository.save(
         imageBuilder(movieId).key("/poster.jpg").path("movie/poster-small.jpg").build());
-    stubImage("/poster.jpg", Duration.ZERO);
-    stubImage("/backdrop.jpg", Duration.ofSeconds(3));
-    var started = new CompletableFuture<Void>();
-    startPrimaryScheduler(
-        new AbstractSchedulerListener() {
-          @Override
-          public void onExecutionStart(CurrentlyExecuting execution) {
-            started.complete(null);
-          }
-        });
+    stubImage("/poster.jpg");
+    stubHeldImage("/backdrop.jpg");
+    startPrimaryScheduler(new AbstractSchedulerListener() {});
     requestMovieArtwork(ImageRefreshMode.PRESERVE, POSTER, BACKDROP);
     var preserveGeneration = requests.findRequest(movie()).orElseThrow().generation();
-    started.get(BOUND.toSeconds(), TimeUnit.SECONDS);
+    heldResponses.awaitHeldResponses(1, BOUND);
 
     var forced = requestMovieArtwork(ImageRefreshMode.FORCE_REFRESH, POSTER, BACKDROP);
+    heldResponses.release();
 
     assertThat(awaitRun(forced).counts()).isEqualTo(FinishedImageCounts.builder().saved(2).build());
     assertThat(itemResults.findByItem(movieId, ImageEntityType.MOVIE))
@@ -284,14 +276,14 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
             .clock(Clock.systemUTC())
             .build();
     var completed = new CompletableFuture<ExecutionComplete>();
-    var beforeAttempt = Instant.now();
 
-    startPrimaryScheduler(failingSteps, completedInto(completed));
+    startPrimaryScheduler(
+        primaryScheduler().stepsRunner(failingSteps).build(), completedInto(completed));
 
     assertThat(completed.get(BOUND.toSeconds(), TimeUnit.SECONDS).getCause()).contains(unreadable);
     assertThat(requests.findRequest(movie())).isPresent();
     assertThat(consecutiveFailures()).isOne();
-    assertThat(nextExecutionTime()).isAfter(beforeAttempt.plusSeconds(4));
+    assertThat(retryDelay()).isEqualTo(FIRST_RETRY_DELAY);
   }
 
   @Test
@@ -300,7 +292,7 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
           + " starting scheduler picks them")
   void shouldSaveTheArtworkWhenItsStepsAreScheduledAgainWhileAStartingSchedulerPicksThem()
       throws Exception {
-    stubImage("/poster.jpg", Duration.ZERO);
+    stubImage("/poster.jpg");
     var run = requestMovieArtwork(ImageRefreshMode.PRESERVE, POSTER);
     var completed = new CompletableFuture<ExecutionComplete>();
     var scheduler = startPrimaryScheduler(completedInto(completed));
@@ -375,18 +367,19 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   }
 
   private ArtworkScheduler startPrimaryScheduler(AbstractSchedulerListener listener) {
-    return startPrimaryScheduler(artworkStepsRunner, listener);
+    return startPrimaryScheduler(primaryScheduler().build(), listener);
   }
 
   private ArtworkScheduler startPrimaryScheduler(
-      ArtworkStepsRunner stepsRunner, AbstractSchedulerListener listener) {
-    var scheduler =
-        ArtworkSchedulerStarter.fromContext(applicationContext).toBuilder()
-            .stepsRunner(stepsRunner)
-            .build()
-            .start(ArtworkPriority.PRIMARY, listener);
+      ArtworkSchedulerStarter starter, AbstractSchedulerListener listener) {
+    var scheduler = starter.start(ArtworkPriority.PRIMARY, listener);
     startedSchedulers.add(scheduler);
     return scheduler;
+  }
+
+  private ArtworkSchedulerStarter.ArtworkSchedulerStarterBuilder primaryScheduler() {
+    return ArtworkSchedulerStarter.fromContext(applicationContext).toBuilder()
+        .stepsRunner(artworkStepsRunner);
   }
 
   private ArtworkRun requestMovieArtwork(ImageRefreshMode refreshMode, ImageSource... sources) {
@@ -434,10 +427,13 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
         "SELECT consecutive_failures FROM " + PRIMARY_TABLE, Integer.class);
   }
 
-  private Instant nextExecutionTime() {
-    return jdbcTemplate
-        .queryForObject("SELECT execution_time FROM " + PRIMARY_TABLE, OffsetDateTime.class)
-        .toInstant();
+  private Duration retryDelay() {
+    return jdbcTemplate.queryForObject(
+        "SELECT execution_time, last_failure FROM " + PRIMARY_TABLE,
+        (row, _) ->
+            Duration.between(
+                row.getObject("last_failure", OffsetDateTime.class),
+                row.getObject("execution_time", OffsetDateTime.class)));
   }
 
   private static AbstractSchedulerListener completedInto(
@@ -495,15 +491,21 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
     return jdbcTemplate.queryForObject("SELECT count(*) FROM " + table, Integer.class);
   }
 
-  private void stubImage(String path, Duration delay) {
-    wireMock.stubFor(
-        get(urlPathEqualTo(path))
-            .willReturn(
-                aResponse()
-                    .withStatus(200)
-                    .withHeader("Content-Type", "image/jpeg")
-                    .withFixedDelay((int) delay.toMillis())
-                    .withBody(createTestImage(600, 900))));
+  private void stubImage(String path) {
+    wireMock.stubFor(imageAt(path));
+  }
+
+  private void stubHeldImage(String path) {
+    wireMock.stubFor(held(imageAt(path)));
+  }
+
+  private static MappingBuilder imageAt(String path) {
+    return get(urlPathEqualTo(path))
+        .willReturn(
+            aResponse()
+                .withStatus(200)
+                .withHeader("Content-Type", "image/jpeg")
+                .withBody(createTestImage(600, 900)));
   }
 
   // The HTTP client retries a 429 five times, so the first attempt ends with the sixth answer.

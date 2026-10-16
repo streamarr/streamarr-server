@@ -9,6 +9,7 @@ import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -36,7 +37,9 @@ class WorkerSessionConfigurationTest {
     "probe-cancellation-timeout,0s",
     "probe-cancellation-timeout,-1s",
     "start-report-timeout,0s",
-    "start-report-timeout,-1s"
+    "start-report-timeout,-1s",
+    "keepalive.timeout,0s",
+    "keepalive.timeout,-1s"
   })
   @DisplayName("Should reject a nonpositive worker session deadline when starting the listener")
   void shouldRejectNonpositiveWorkerSessionDeadlineWhenStartingListener(
@@ -52,6 +55,54 @@ class WorkerSessionConfigurationTest {
                   .isInstanceOf(IllegalArgumentException.class)
                   .hasMessageContaining("must be positive");
             });
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"-1s", "0s", "9999ms"})
+  @DisplayName("Should reject a keepalive time shorter than ten seconds when starting the listener")
+  void shouldRejectKeepaliveTimeShorterThanTenSecondsWhenStartingListener(String time) {
+    contextRunner
+        .withPropertyValues(
+            "streaming.worker-session.port=0", "streaming.worker-session.keepalive.time=" + time)
+        .run(
+            context -> {
+              assertThat(context).hasFailed();
+              assertThat(context.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(IllegalArgumentException.class)
+                  .hasMessage("Worker keepalive time must be at least 10 seconds");
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should start the listener when the keepalive time is ten seconds and its timeout short")
+  void shouldStartListenerWhenKeepaliveTimeIsTenSecondsAndItsTimeoutShort() {
+    contextRunner
+        .withPropertyValues(
+            "streaming.worker-session.port=0",
+            "streaming.worker-session.keepalive.time=10s",
+            "streaming.worker-session.keepalive.timeout=1s")
+        .run(
+            context -> {
+              assertThat(context).hasNotFailed();
+              assertThat(context.getBean(WorkerSessionServer.class).port()).isPositive();
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the worker keepalive at thirty seconds with a ten second timeout when none is"
+          + " configured")
+  void shouldKeepWorkerKeepaliveAtThirtySecondsWithTenSecondTimeoutWhenNoneIsConfigured() {
+    contextRunner
+        .withPropertyValues("streaming.worker-session.port=0")
+        .run(
+            context ->
+                assertThat(context.getBean(WorkerSessionProperties.class).keepalive())
+                    .isEqualTo(
+                        new WorkerSessionProperties.Keepalive(
+                            Duration.ofSeconds(30), Duration.ofSeconds(10))));
   }
 
   @ParameterizedTest
