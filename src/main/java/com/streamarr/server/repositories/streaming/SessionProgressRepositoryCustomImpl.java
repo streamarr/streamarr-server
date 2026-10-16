@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.streaming;
 
 import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
+import static com.streamarr.server.jooq.generated.tables.WatchHistory.WATCH_HISTORY;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.row;
 
@@ -14,9 +15,15 @@ import org.jooq.DSLContext;
 public class SessionProgressRepositoryCustomImpl implements SessionProgressRepositoryCustom {
 
   private final DSLContext dsl;
+  private final StreamSessionLock streamSessionLock;
 
   @Override
   public boolean upsertProgress(SaveWatchProgress progress) {
+    streamSessionLock.lock(progress.sessionId());
+    if (hasCompletion(progress.sessionId())) {
+      return false;
+    }
+
     var rowsAffected =
         dsl.insertInto(SESSION_PROGRESS)
             .set(SESSION_PROGRESS.SESSION_ID, progress.sessionId())
@@ -49,8 +56,13 @@ public class SessionProgressRepositoryCustomImpl implements SessionProgressRepos
                 excluded(SESSION_PROGRESS.DURATION_SECONDS)));
   }
 
+  private boolean hasCompletion(UUID sessionId) {
+    return dsl.fetchExists(WATCH_HISTORY, WATCH_HISTORY.STREAM_SESSION_ID.eq(sessionId));
+  }
+
   @Override
   public int deleteBySessionId(UUID sessionId) {
+    streamSessionLock.lock(sessionId);
     return dsl.deleteFrom(SESSION_PROGRESS)
         .where(SESSION_PROGRESS.SESSION_ID.eq(sessionId))
         .execute();

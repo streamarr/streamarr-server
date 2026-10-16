@@ -13,6 +13,18 @@ import java.util.function.Predicate;
 public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProgress>
     implements SessionProgressRepository {
 
+  private final Predicate<UUID> hasStreamSessionCompletion;
+
+  /** A repository that sees no completions, so every progress report is saved. */
+  public FakeSessionProgressRepository() {
+    this.hasStreamSessionCompletion = _ -> false;
+  }
+
+  /** A repository that saves no progress for a stream session once it saved its completion. */
+  public FakeSessionProgressRepository(FakeWatchHistoryRepository watchHistory) {
+    this.hasStreamSessionCompletion = watchHistory::hasStreamSessionCompletion;
+  }
+
   @Override
   public List<SessionProgress> findByProfileIdOrderByLastModifiedOnDesc(UUID profileId) {
     return database.values().stream()
@@ -45,6 +57,10 @@ public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProg
 
   @Override
   public boolean upsertProgress(SaveWatchProgress progress) {
+    if (hasStreamSessionCompletion.test(progress.sessionId())) {
+      return false;
+    }
+
     var existing = findBySessionId(progress.sessionId());
     if (existing.isPresent()) {
       return updateWhenChanged(existing.get(), progress);

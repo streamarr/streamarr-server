@@ -21,6 +21,7 @@ import org.jooq.Record2;
 public class WatchHistoryRepositoryCustomImpl implements WatchHistoryRepositoryCustom {
 
   private final DSLContext dsl;
+  private final StreamSessionLock streamSessionLock;
 
   @Override
   public int batchInsert(UUID profileId, Collection<UUID> collectableIds, int durationSeconds) {
@@ -54,6 +55,7 @@ public class WatchHistoryRepositoryCustomImpl implements WatchHistoryRepositoryC
 
   @Override
   public int saveStreamSessionCompletion(StreamSessionCompletion completion) {
+    streamSessionLock.lock(completion.streamSessionId());
     return dsl.insertInto(WATCH_HISTORY)
         .set(WATCH_HISTORY.STREAM_SESSION_ID, completion.streamSessionId())
         .set(WATCH_HISTORY.PROFILE_ID, completion.profileId())

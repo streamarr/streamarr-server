@@ -59,8 +59,8 @@ class SessionProgressServiceTest {
   @BeforeEach
   void setUp() {
     runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
-    sessionProgressRepository = new FakeSessionProgressRepository();
     watchHistoryRepository = new FakeWatchHistoryRepository();
+    sessionProgressRepository = new FakeSessionProgressRepository(watchHistoryRepository);
     mediaFileRepository = new FakeMediaFileRepository();
     movieRepository = new FakeMovieRepository();
     episodeRepository = new FakeEpisodeRepository();
@@ -699,19 +699,17 @@ class SessionProgressServiceTest {
 
     @Test
     @DisplayName(
-        "Should clear progress and publish a change when a repeated stop follows a later report")
-    void shouldClearProgressAndPublishAChangeWhenARepeatedStopFollowsALaterReport() {
+        "Should save no progress and publish nothing when a report follows the completing stop")
+    void shouldSaveNoProgressAndPublishNothingWhenAReportFollowsTheCompletingStop() {
       var session = addSession();
       markAsWatched(session);
-      service.reportStreamSessionTimeline(
-          PROFILE_ID, session.getSessionId(), 6000, PlaybackState.PLAYING);
       eventPublisher.clear();
 
-      markAsWatched(session);
+      service.reportStreamSessionTimeline(
+          PROFILE_ID, session.getSessionId(), 6000, PlaybackState.PLAYING);
 
-      assertThat(watchHistoryRepository.count()).isEqualTo(1);
       assertThat(sessionProgressRepository.findBySessionId(session.getSessionId())).isEmpty();
-      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class)).hasSize(1);
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class)).isEmpty();
     }
 
     @Test

@@ -144,12 +144,15 @@ class WatchStateChangedEventIT extends AbstractIntegrationTest {
           transactionTemplate.execute(
               _ -> {
                 report(session, FINISHED_POSITION_SECONDS, PlaybackState.STOPPED);
+                var completingBackendPid = currentBackendPid();
                 var pending =
                     executor.submit(
                         () -> report(session, FINISHED_POSITION_SECONDS, PlaybackState.STOPPED));
-                // The retry either waits on this uncommitted completion or has already saved a
+                // The retry either waits behind this uncommitted completion or has already saved a
                 // second completion.
-                await().atMost(BOUND).until(() -> pending.isDone() || isCompletionWaitingOnLock());
+                await()
+                    .atMost(BOUND)
+                    .until(() -> pending.isDone() || isWaitingBehind(completingBackendPid));
                 return pending;
               });
 
@@ -257,7 +260,11 @@ class WatchStateChangedEventIT extends AbstractIntegrationTest {
     return watchHistoryRepository.findByProfileIdAndCollectableIdIn(profileId, List.of(itemId));
   }
 
-  private boolean isCompletionWaitingOnLock() {
+  private int currentBackendPid() {
+    return dsl.fetchSingle("SELECT pg_backend_pid()").get(0, Integer.class);
+  }
+
+  private boolean isWaitingBehind(int blockerPid) {
     dsl.execute("SELECT pg_stat_clear_snapshot()");
     return dsl.fetchSingle(
             """
@@ -265,9 +272,10 @@ class WatchStateChangedEventIT extends AbstractIntegrationTest {
               SELECT 1
               FROM pg_stat_activity
               WHERE wait_event_type = 'Lock'
-                AND query ILIKE '%insert%watch_history%'
+                AND ? = ANY(pg_blocking_pids(pid))
             )
-            """)
+            """,
+            blockerPid)
         .get(0, Boolean.class);
   }
 

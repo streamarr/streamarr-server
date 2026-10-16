@@ -69,10 +69,7 @@ public class FakeWatchHistoryRepository extends FakeJpaRepository<WatchHistory>
 
   @Override
   public int saveStreamSessionCompletion(StreamSessionCompletion completion) {
-    var alreadySaved =
-        database.values().stream()
-            .anyMatch(wh -> completion.streamSessionId().equals(wh.getStreamSessionId()));
-    if (alreadySaved) {
+    if (hasStreamSessionCompletion(completion.streamSessionId())) {
       return 0;
     }
 
@@ -85,6 +82,11 @@ public class FakeWatchHistoryRepository extends FakeJpaRepository<WatchHistory>
             .durationSeconds(completion.durationSeconds())
             .build());
     return 1;
+  }
+
+  public boolean hasStreamSessionCompletion(UUID streamSessionId) {
+    return database.values().stream()
+        .anyMatch(wh -> streamSessionId.equals(wh.getStreamSessionId()));
   }
 
   @Override
