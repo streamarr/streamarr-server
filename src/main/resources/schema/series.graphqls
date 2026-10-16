@@ -21,4 +21,10 @@ type Series implements BaseCollectable {
     images(type: ImageType): [Image]!
     watchProgress: WatchProgress
     watchStatus: WatchStatus!
+    """
+    When the selected Profile last watched any episode of this series, as an ISO-8601 instant.
+    The value is the latest lastWatchedAt among the episodes. The LAST_WATCHED sort orders series
+    by this value. Null when the Profile has not watched any episode of this series.
+    """
+    lastWatchedAt: String
 }

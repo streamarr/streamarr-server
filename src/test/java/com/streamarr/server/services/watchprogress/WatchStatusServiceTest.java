@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Season;
-import com.streamarr.server.domain.streaming.CollectableScope;
+import com.streamarr.server.domain.streaming.WatchHistory;
 import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
@@ -20,8 +20,10 @@ import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.watchprogress.events.WatchStateChangedEvent;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -44,6 +46,8 @@ class WatchStatusServiceTest {
   private WatchStatusService service;
 
   private static final UUID PROFILE_ID = UUID.randomUUID();
+  private static final Instant EARLIER = Instant.parse("2026-01-01T00:00:00Z");
+  private static final Instant LATER = Instant.parse("2026-02-01T00:00:00Z");
 
   @BeforeEach
   void setUp() {
@@ -72,17 +76,17 @@ class WatchStatusServiceTest {
   class WatchHistoryTests {
 
     @Test
-    @DisplayName("Should create watch history entry when marking watched explicitly")
-    void shouldCreateWatchHistoryEntryWhenMarkingWatchedExplicitly() {
-      var movieId = UUID.randomUUID();
+    @DisplayName("Should save a completion without a duration when marking a movie watched")
+    void shouldSaveACompletionWithoutADurationWhenMarkingAMovieWatched() {
+      var movieId = movieRepository.save(buildMovie()).getId();
 
-      service.markWatched(PROFILE_ID, movieId, CollectableScope.DIRECT_MEDIA, Instant.now(), 7200);
+      service.markWatched(PROFILE_ID, movieId);
 
       var history =
           watchHistoryRepository.findFirstByProfileIdAndCollectableIdOrderByWatchedAtDesc(
               PROFILE_ID, movieId);
       assertThat(history).isPresent();
-      assertThat(history.get().getDurationSeconds()).isEqualTo(7200);
+      assertThat(history.get().getDurationSeconds()).isZero();
       assertThat(history.get().getDismissedAt()).isNull();
     }
 
@@ -93,7 +97,7 @@ class WatchStatusServiceTest {
       episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
       episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
 
-      service.markWatched(PROFILE_ID, season.getId(), CollectableScope.SEASON, Instant.now(), 3600);
+      service.markWatched(PROFILE_ID, season.getId());
 
       assertThat(watchHistoryRepository.count()).isEqualTo(2);
     }
@@ -101,13 +105,12 @@ class WatchStatusServiceTest {
     @Test
     @DisplayName("Should derive watched status from watch history")
     void shouldDeriveWatchedStatusFromWatchHistory() {
-      var movie = buildMovie();
+      var movie = movieRepository.save(buildMovie());
       mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
-      service.markWatched(
-          PROFILE_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, Instant.now(), 7200);
+      service.markWatched(PROFILE_ID, movie.getId());
 
-      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId()));
+      var result = service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId()));
       assertThat(result).containsEntry(movie.getId(), WatchStatus.WATCHED);
     }
 
@@ -117,35 +120,131 @@ class WatchStatusServiceTest {
       var movie = movieRepository.save(buildMovie());
       mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
-      service.markWatched(
-          PROFILE_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, Instant.now(), 7200);
+      service.markWatched(PROFILE_ID, movie.getId());
       service.markUnwatched(PROFILE_ID, movie.getId());
 
-      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId()));
+      var result = service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId()));
       assertThat(result).containsEntry(movie.getId(), WatchStatus.UNWATCHED);
     }
 
     @Test
-    @DisplayName("Should keep watched status during re-watch with active session progress")
-    void shouldKeepWatchedStatusDuringReWatchWithActiveSessionProgress() {
+    @DisplayName("Should show a rewatch in progress when progress is newer than the completion")
+    void shouldShowRewatchInProgressWhenProgressIsNewerThanTheCompletion() {
       var movie = buildMovie();
       var mf = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
+      saveCompletion(movie.getId(), EARLIER);
+      saveProgress(mf.getId(), 1800, LATER);
 
-      service.markWatched(
-          PROFILE_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, Instant.now(), 7200);
+      assertThat(service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId())))
+          .containsEntry(movie.getId(), WatchStatus.IN_PROGRESS);
+      assertThat(service.getProgressForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId())))
+          .extractingByKey(movie.getId())
+          .extracting(WatchProgressDto::positionSeconds)
+          .isEqualTo(1800);
+    }
 
-      // Simulate active re-watch session
-      sessionProgressRepository.save(
-          progressBuilder(PROFILE_ID, mf.getId()).positionSeconds(1800).build());
+    @Test
+    @DisplayName("Should show the movie watched without progress when the completion is newer")
+    void shouldShowMovieWatchedWithoutProgressWhenTheCompletionIsNewer() {
+      var movie = buildMovie();
+      var mf = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
+      saveProgress(mf.getId(), 1800, EARLIER);
+      saveCompletion(movie.getId(), LATER);
 
-      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId()));
-      assertThat(result).containsEntry(movie.getId(), WatchStatus.WATCHED);
+      assertThat(service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId())))
+          .containsEntry(movie.getId(), WatchStatus.WATCHED);
+      assertThat(service.getProgressForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId())))
+          .doesNotContainKey(movie.getId());
+    }
+
+    @Test
+    @DisplayName("Should show the movie watched when progress and completion share one time")
+    void shouldShowMovieWatchedWhenProgressAndCompletionShareOneTime() {
+      var movie = buildMovie();
+      var mf = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
+      saveProgress(mf.getId(), 1800, EARLIER);
+      saveCompletion(movie.getId(), EARLIER);
+
+      assertThat(service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId())))
+          .containsEntry(movie.getId(), WatchStatus.WATCHED);
+    }
+
+    @Test
+    @DisplayName("Should count older progress again when the newer completion is dismissed")
+    void shouldCountOlderProgressAgainWhenTheNewerCompletionIsDismissed() {
+      var movie = buildMovie();
+      var mf = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
+      saveProgress(mf.getId(), 1800, EARLIER);
+      var completion = saveCompletion(movie.getId(), LATER);
+      completion.setDismissedAt(LATER);
+
+      assertThat(service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId())))
+          .containsEntry(movie.getId(), WatchStatus.IN_PROGRESS);
     }
   }
 
   @Nested
-  @DisplayName("Batch Watch Status for Direct Media")
-  class BatchWatchStatusForDirectMedia {
+  @DisplayName("Watch State Changed Events")
+  class WatchStateChangedEvents {
+
+    @Test
+    @DisplayName("Should publish every episode id once when a series is marked watched")
+    void shouldPublishEveryEpisodeIdOnceWhenASeriesIsMarkedWatched() {
+      var series = seriesRepository.save(buildSeries());
+      var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
+      var s2 = seasonRepository.save(Season.builder().seasonNumber(2).series(series).build());
+      var first = episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
+      var second = episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
+
+      service.markWatched(PROFILE_ID, series.getId());
+
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class))
+          .containsExactly(
+              new WatchStateChangedEvent(PROFILE_ID, Set.of(first.getId(), second.getId())));
+    }
+
+    @Test
+    @DisplayName("Should publish a change naming the movie when the movie is marked unwatched")
+    void shouldPublishAChangeNamingTheMovieWhenTheMovieIsMarkedUnwatched() {
+      var movie = movieRepository.save(buildMovie());
+      mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
+      service.markWatched(PROFILE_ID, movie.getId());
+      eventPublisher.clear();
+
+      service.markUnwatched(PROFILE_ID, movie.getId());
+
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class))
+          .containsExactly(new WatchStateChangedEvent(PROFILE_ID, Set.of(movie.getId())));
+    }
+
+    @Test
+    @DisplayName("Should publish a change when marking unwatched deletes only progress")
+    void shouldPublishAChangeWhenMarkingUnwatchedDeletesOnlyProgress() {
+      var movie = movieRepository.save(buildMovie());
+      var file = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
+      saveProgress(file.getId(), 600, EARLIER);
+
+      service.markUnwatched(PROFILE_ID, movie.getId());
+
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class))
+          .containsExactly(new WatchStateChangedEvent(PROFILE_ID, Set.of(movie.getId())));
+    }
+
+    @Test
+    @DisplayName("Should publish nothing when an unwatched movie is marked unwatched")
+    void shouldPublishNothingWhenAnUnwatchedMovieIsMarkedUnwatched() {
+      var movie = movieRepository.save(buildMovie());
+      mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
+
+      service.markUnwatched(PROFILE_ID, movie.getId());
+
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class)).isEmpty();
+    }
+  }
+
+  @Nested
+  @DisplayName("Batch Watch Status for Movies and Episodes")
+  class BatchWatchStatusForMoviesAndEpisodes {
 
     @Test
     @DisplayName("Should return in progress when media files have progress")
@@ -160,7 +259,7 @@ class WatchStatusServiceTest {
       sessionProgressRepository.save(
           progressBuilder(PROFILE_ID, mf2.getId()).positionSeconds(600).build());
 
-      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId()));
+      var result = service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId()));
 
       assertThat(result).containsEntry(movie.getId(), WatchStatus.IN_PROGRESS);
     }
@@ -172,7 +271,7 @@ class WatchStatusServiceTest {
 
       mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
-      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId()));
+      var result = service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId()));
 
       assertThat(result).containsEntry(movie.getId(), WatchStatus.UNWATCHED);
     }
@@ -188,7 +287,7 @@ class WatchStatusServiceTest {
       sessionProgressRepository.save(
           progressBuilder(PROFILE_ID, mf1.getId()).positionSeconds(300).build());
 
-      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId()));
+      var result = service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId()));
 
       assertThat(result).hasSize(1).containsEntry(movie.getId(), WatchStatus.IN_PROGRESS);
     }
@@ -206,7 +305,8 @@ class WatchStatusServiceTest {
           progressBuilder(PROFILE_ID, mf1.getId()).positionSeconds(300).build());
 
       var result =
-          service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie1.getId(), movie2.getId()));
+          service.getWatchStatusForMoviesAndEpisodes(
+              PROFILE_ID, List.of(movie1.getId(), movie2.getId()));
 
       assertThat(result)
           .containsEntry(movie1.getId(), WatchStatus.IN_PROGRESS)
@@ -217,7 +317,7 @@ class WatchStatusServiceTest {
     @DisplayName("Should return unwatched when no media files exist")
     void shouldReturnUnwatchedWhenNoMediaFilesExist() {
       var unknownId = UUID.randomUUID();
-      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(unknownId));
+      var result = service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(unknownId));
 
       assertThat(result).containsEntry(unknownId, WatchStatus.UNWATCHED);
     }
@@ -307,7 +407,7 @@ class WatchStatusServiceTest {
       var outcome = service.markWatched(PROFILE_ID, movie.getId());
 
       assertThat(outcome).isEqualTo(Outcome.accepted(movie));
-      assertThat(service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId())))
+      assertThat(service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId())))
           .containsEntry(movie.getId(), WatchStatus.WATCHED);
     }
 
@@ -333,7 +433,7 @@ class WatchStatusServiceTest {
       var outcome = service.markUnwatched(PROFILE_ID, movie.getId());
 
       assertThat(outcome).isEqualTo(Outcome.accepted(movie));
-      assertThat(service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId())))
+      assertThat(service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId())))
           .containsEntry(movie.getId(), WatchStatus.UNWATCHED);
     }
 
@@ -373,6 +473,19 @@ class WatchStatusServiceTest {
 
       assertThat(outcome).isEqualTo(Outcome.accepted(season));
       assertThat(watchHistoryRepository.count()).isZero();
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should write no history when marking a series without seasons watched by ID")
+    void shouldWriteNoHistoryWhenMarkingASeriesWithoutSeasonsWatchedById() {
+      var series = seriesRepository.save(buildSeries());
+
+      var outcome = service.markWatched(PROFILE_ID, series.getId());
+
+      assertThat(outcome).isEqualTo(Outcome.accepted(series));
+      assertThat(watchHistoryRepository.count()).isZero();
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class)).isEmpty();
     }
 
     @Test
@@ -388,15 +501,15 @@ class WatchStatusServiceTest {
     }
 
     @Test
-    @DisplayName("Should dismiss all episode history when marking season unwatched explicitly")
-    void shouldDismissAllEpisodeHistoryWhenMarkingSeasonUnwatchedExplicitly() {
+    @DisplayName("Should dismiss all episode history when marking season unwatched by id")
+    void shouldDismissAllEpisodeHistoryWhenMarkingSeasonUnwatchedById() {
       var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
       var first = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
       var second =
           episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
-      service.markWatched(PROFILE_ID, season.getId(), CollectableScope.SEASON, Instant.now(), 3600);
+      service.markWatched(PROFILE_ID, season.getId());
 
-      service.markUnwatched(PROFILE_ID, season.getId(), CollectableScope.SEASON);
+      service.markUnwatched(PROFILE_ID, season.getId());
 
       var history =
           watchHistoryRepository.findByProfileIdAndCollectableIdIn(
@@ -416,13 +529,13 @@ class WatchStatusServiceTest {
     @Test
     @DisplayName("Should return watched when every episode across seasons has history")
     void shouldReturnWatchedWhenEveryEpisodeAcrossSeasonsHasHistory() {
-      var series = buildSeries();
+      var series = seriesRepository.save(buildSeries());
       var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
       var s2 = seasonRepository.save(Season.builder().seasonNumber(2).series(series).build());
       episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
       episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
 
-      service.markWatched(PROFILE_ID, series.getId(), CollectableScope.SERIES, Instant.now(), 3600);
+      service.markWatched(PROFILE_ID, series.getId());
 
       var result = service.getWatchStatusForSeries(PROFILE_ID, List.of(series.getId()));
       assertThat(result).containsEntry(series.getId(), WatchStatus.WATCHED);
@@ -437,8 +550,7 @@ class WatchStatusServiceTest {
           episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
       episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
 
-      service.markWatched(
-          PROFILE_ID, watched.getId(), CollectableScope.DIRECT_MEDIA, Instant.now(), 3600);
+      service.markWatched(PROFILE_ID, watched.getId());
 
       var result = service.getWatchStatusForSeries(PROFILE_ID, List.of(series.getId()));
       assertThat(result).containsEntry(series.getId(), WatchStatus.IN_PROGRESS);
@@ -479,22 +591,54 @@ class WatchStatusServiceTest {
     }
 
     @Test
-    @DisplayName("Should prefer most recent session when duplicate progress rows share media file")
-    void shouldPreferMostRecentSessionWhenDuplicateProgressRowsShareMediaFile() {
+    @DisplayName(
+        "Should resume at the latest session with a position when the newest session has none")
+    void shouldResumeAtLatestSessionWithAPositionWhenTheNewestSessionHasNone() {
       var movie = buildMovie();
       var file = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
+      saveProgress(file.getId(), 900, EARLIER);
+      saveProgress(file.getId(), 0, LATER);
 
-      var stale =
-          sessionProgressRepository.save(
-              progressBuilder(PROFILE_ID, file.getId()).positionSeconds(900).build());
-      AuditFieldSetter.setLastModifiedOn(stale, Instant.parse("2026-01-01T00:00:00Z"));
-      var latest =
-          sessionProgressRepository.save(
-              progressBuilder(PROFILE_ID, file.getId()).positionSeconds(0).build());
-      AuditFieldSetter.setLastModifiedOn(latest, Instant.parse("2026-02-01T00:00:00Z"));
+      assertThat(service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId())))
+          .containsEntry(movie.getId(), WatchStatus.IN_PROGRESS);
+      assertThat(service.getProgressForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId())))
+          .extractingByKey(movie.getId())
+          .extracting(WatchProgressDto::positionSeconds)
+          .isEqualTo(900);
+    }
 
-      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId()));
-      assertThat(result).containsEntry(movie.getId(), WatchStatus.UNWATCHED);
+    @Test
+    @DisplayName("Should show the season in progress when a watched episode is being rewatched")
+    void shouldShowSeasonInProgressWhenAWatchedEpisodeIsBeingRewatched() {
+      var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
+      var episode =
+          episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+      var file = mediaFileRepository.save(buildMatchedMediaFile(episode.getId()));
+      saveCompletion(episode.getId(), EARLIER);
+      saveProgress(file.getId(), 600, LATER);
+
+      assertThat(service.getWatchStatusForSeasons(PROFILE_ID, List.of(season.getId())))
+          .containsEntry(season.getId(), WatchStatus.IN_PROGRESS);
+      assertThat(service.getAggregateProgressForSeasons(PROFILE_ID, List.of(season.getId())))
+          .extractingByKey(season.getId())
+          .extracting(WatchProgressDto::positionSeconds)
+          .isEqualTo(600);
+    }
+
+    @Test
+    @DisplayName("Should show the season watched without progress when completions are newer")
+    void shouldShowSeasonWatchedWithoutProgressWhenCompletionsAreNewer() {
+      var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
+      var episode =
+          episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+      var file = mediaFileRepository.save(buildMatchedMediaFile(episode.getId()));
+      saveProgress(file.getId(), 600, EARLIER);
+      saveCompletion(episode.getId(), LATER);
+
+      assertThat(service.getWatchStatusForSeasons(PROFILE_ID, List.of(season.getId())))
+          .containsEntry(season.getId(), WatchStatus.WATCHED);
+      assertThat(service.getAggregateProgressForSeasons(PROFILE_ID, List.of(season.getId())))
+          .doesNotContainKey(season.getId());
     }
   }
 
@@ -575,5 +719,22 @@ class WatchStatusServiceTest {
           .containsEntry(series1.getId(), WatchStatus.IN_PROGRESS)
           .containsEntry(series2.getId(), WatchStatus.UNWATCHED);
     }
+  }
+
+  private void saveProgress(UUID mediaFileId, int positionSeconds, Instant lastModifiedOn) {
+    var progress =
+        sessionProgressRepository.save(
+            progressBuilder(PROFILE_ID, mediaFileId).positionSeconds(positionSeconds).build());
+    AuditFieldSetter.setLastModifiedOn(progress, lastModifiedOn);
+  }
+
+  private WatchHistory saveCompletion(UUID collectableId, Instant watchedAt) {
+    return watchHistoryRepository.save(
+        WatchHistory.builder()
+            .profileId(PROFILE_ID)
+            .collectableId(collectableId)
+            .watchedAt(watchedAt)
+            .durationSeconds(7200)
+            .build());
   }
 }

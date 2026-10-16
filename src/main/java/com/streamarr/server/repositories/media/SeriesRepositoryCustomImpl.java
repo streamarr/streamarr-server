@@ -1,37 +1,36 @@
 package com.streamarr.server.repositories.media;
 
+import static com.streamarr.server.domain.streaming.WatchStatus.UNWATCHED;
+import static com.streamarr.server.domain.streaming.WatchStatus.WATCHED;
 import static com.streamarr.server.jooq.generated.tables.BaseCollectable.BASE_COLLECTABLE;
 import static com.streamarr.server.jooq.generated.tables.Episode.EPISODE;
 import static com.streamarr.server.jooq.generated.tables.ExternalIdentifier.EXTERNAL_IDENTIFIER;
-import static com.streamarr.server.jooq.generated.tables.MediaFile.MEDIA_FILE;
 import static com.streamarr.server.jooq.generated.tables.Season.SEASON;
 import static com.streamarr.server.jooq.generated.tables.Series.SERIES;
 import static com.streamarr.server.jooq.generated.tables.SeriesCompany.SERIES_COMPANY;
 import static com.streamarr.server.jooq.generated.tables.SeriesDirector.SERIES_DIRECTOR;
 import static com.streamarr.server.jooq.generated.tables.SeriesGenre.SERIES_GENRE;
 import static com.streamarr.server.jooq.generated.tables.SeriesPerson.SERIES_PERSON;
-import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
-import static com.streamarr.server.jooq.generated.tables.WatchHistory.WATCH_HISTORY;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.inline;
-import static org.jooq.impl.DSL.max;
 import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.not;
 import static org.jooq.impl.DSL.select;
 
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.streaming.CollectableScope;
+import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.jooq.generated.enums.ExternalSourceType;
 import com.streamarr.server.repositories.JooqQueryHelper;
+import com.streamarr.server.repositories.LastWatchedExpression;
+import com.streamarr.server.repositories.WatchStateConditions;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import jakarta.persistence.EntityManager;
-import java.time.Instant;
 import java.time.OffsetDateTime;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.NonNull;
@@ -232,125 +231,41 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
 
     var profileId = requireProfileId(filter.getProfileId());
 
-    var fullyWatched = seriesHasEpisodes().and(not(seriesHasUnwatchedEpisode(profileId)));
-    var hasAnyWatchActivity = anyEpisodeWatched(profileId).or(anyEpisodeHasProgress(profileId));
+    var fullyWatched = seriesHasEpisodes().and(not(anyEpisodeOfSeriesIsNot(profileId, WATCHED)));
+    var fullyUnwatched = not(anyEpisodeOfSeriesIsNot(profileId, UNWATCHED));
 
     return switch (watchStatus) {
       case WATCHED -> fullyWatched;
-      case IN_PROGRESS -> hasAnyWatchActivity.and(not(fullyWatched));
-      case UNWATCHED -> not(hasAnyWatchActivity);
+      case IN_PROGRESS -> not(fullyWatched).and(not(fullyUnwatched));
+      case UNWATCHED -> fullyUnwatched;
     };
   }
 
   private static Condition seriesHasEpisodes() {
+    return anyEpisodeOfSeries(noCondition());
+  }
+
+  private static Condition anyEpisodeOfSeriesIsNot(UUID profileId, WatchStatus status) {
+    return anyEpisodeOfSeries(
+        not(WatchStateConditions.watchStatusIs(profileId, EPISODE.ID, status)));
+  }
+
+  private static Condition anyEpisodeOfSeries(Condition episodeCondition) {
     return exists(
         select(EPISODE.ID)
             .from(EPISODE)
             .innerJoin(SEASON)
             .on(EPISODE.SEASON_ID.eq(SEASON.ID))
-            .where(SEASON.SERIES_ID.eq(BASE_COLLECTABLE.ID)));
+            .where(SEASON.SERIES_ID.eq(BASE_COLLECTABLE.ID).and(episodeCondition)));
   }
 
-  private static Condition seriesHasUnwatchedEpisode(UUID profileId) {
-    return exists(
-        select(EPISODE.ID)
-            .from(EPISODE)
-            .innerJoin(SEASON)
-            .on(EPISODE.SEASON_ID.eq(SEASON.ID))
-            .where(SEASON.SERIES_ID.eq(BASE_COLLECTABLE.ID).and(not(episodeIsWatched(profileId)))));
-  }
-
-  private static Condition episodeIsWatched(UUID profileId) {
-    return exists(
-        select(WATCH_HISTORY.ID)
-            .from(WATCH_HISTORY)
-            .where(
-                WATCH_HISTORY
-                    .COLLECTABLE_ID
-                    .eq(EPISODE.ID)
-                    .and(WATCH_HISTORY.PROFILE_ID.eq(profileId))
-                    .and(WATCH_HISTORY.DISMISSED_AT.isNull())));
-  }
-
-  private static Condition anyEpisodeWatched(UUID profileId) {
-    return exists(
-        select(WATCH_HISTORY.ID)
-            .from(WATCH_HISTORY)
-            .innerJoin(EPISODE)
-            .on(WATCH_HISTORY.COLLECTABLE_ID.eq(EPISODE.ID))
-            .innerJoin(SEASON)
-            .on(EPISODE.SEASON_ID.eq(SEASON.ID))
-            .where(
-                SEASON
-                    .SERIES_ID
-                    .eq(BASE_COLLECTABLE.ID)
-                    .and(WATCH_HISTORY.PROFILE_ID.eq(profileId))
-                    .and(WATCH_HISTORY.DISMISSED_AT.isNull())));
-  }
-
-  private static Condition anyEpisodeHasProgress(UUID profileId) {
-    return exists(
-        select(SESSION_PROGRESS.ID)
-            .from(SESSION_PROGRESS)
-            .innerJoin(MEDIA_FILE)
-            .on(SESSION_PROGRESS.MEDIA_FILE_ID.eq(MEDIA_FILE.ID))
-            .innerJoin(EPISODE)
-            .on(MEDIA_FILE.MEDIA_ID.eq(EPISODE.ID))
-            .innerJoin(SEASON)
-            .on(EPISODE.SEASON_ID.eq(SEASON.ID))
-            .where(
-                SEASON
-                    .SERIES_ID
-                    .eq(BASE_COLLECTABLE.ID)
-                    .and(SESSION_PROGRESS.PROFILE_ID.eq(profileId))
-                    .and(SESSION_PROGRESS.POSITION_SECONDS.greaterThan(0))));
-  }
-
-  private Field<?> lastWatchedField(MediaFilter filter) {
-    var profileId = requireProfileId(filter.getProfileId());
-    return select(max(SESSION_PROGRESS.LAST_MODIFIED_ON))
-        .from(SESSION_PROGRESS)
-        .innerJoin(MEDIA_FILE)
-        .on(SESSION_PROGRESS.MEDIA_FILE_ID.eq(MEDIA_FILE.ID))
-        .innerJoin(EPISODE)
-        .on(MEDIA_FILE.MEDIA_ID.eq(EPISODE.ID))
-        .innerJoin(SEASON)
-        .on(EPISODE.SEASON_ID.eq(SEASON.ID))
-        .where(
-            SEASON.SERIES_ID.eq(BASE_COLLECTABLE.ID).and(SESSION_PROGRESS.PROFILE_ID.eq(profileId)))
-        .asField();
-  }
-
-  @Override
-  public Map<UUID, Instant> findLastWatchedBySeriesIds(UUID profileId, Collection<UUID> seriesIds) {
-    if (seriesIds == null || seriesIds.isEmpty()) {
-      return Map.of();
-    }
-
-    var resolvedProfileId = requireProfileId(profileId);
-    var maxField = max(SESSION_PROGRESS.LAST_MODIFIED_ON);
-
-    return context
-        .select(SEASON.SERIES_ID, maxField)
-        .from(SESSION_PROGRESS)
-        .innerJoin(MEDIA_FILE)
-        .on(SESSION_PROGRESS.MEDIA_FILE_ID.eq(MEDIA_FILE.ID))
-        .innerJoin(EPISODE)
-        .on(MEDIA_FILE.MEDIA_ID.eq(EPISODE.ID))
-        .innerJoin(SEASON)
-        .on(EPISODE.SEASON_ID.eq(SEASON.ID))
-        .where(
-            SEASON.SERIES_ID.in(seriesIds).and(SESSION_PROGRESS.PROFILE_ID.eq(resolvedProfileId)))
-        .groupBy(SEASON.SERIES_ID)
-        .fetchMap(SEASON.SERIES_ID, r -> toInstant(r.get(maxField)));
+  private static Field<OffsetDateTime> lastWatchedAt(MediaFilter filter) {
+    return LastWatchedExpression.lastWatchedAt(
+        requireProfileId(filter.getProfileId()), CollectableScope.SERIES, BASE_COLLECTABLE.ID);
   }
 
   private static UUID requireProfileId(@NonNull UUID profileId) {
     return profileId;
-  }
-
-  private static Instant toInstant(OffsetDateTime value) {
-    return value == null ? null : value.toInstant();
   }
 
   private Field<?> sortField(MediaFilter filter) {
@@ -359,7 +274,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
       case ADDED -> BASE_COLLECTABLE.CREATED_ON;
       case RELEASE_DATE -> SERIES.FIRST_AIR_DATE;
       case RUNTIME -> SERIES.RUNTIME;
-      case LAST_WATCHED -> lastWatchedField(filter);
+      case LAST_WATCHED -> lastWatchedAt(filter);
     };
   }
 
@@ -371,7 +286,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
       case ADDED -> BASE_COLLECTABLE.CREATED_ON.sort(direction);
       case RELEASE_DATE -> SERIES.FIRST_AIR_DATE.sort(direction).nullsLast();
       case RUNTIME -> SERIES.RUNTIME.sort(direction).nullsLast();
-      case LAST_WATCHED -> lastWatchedField(filter).sort(direction).nullsLast();
+      case LAST_WATCHED -> lastWatchedAt(filter).sort(direction).nullsLast();
     };
   }
 }

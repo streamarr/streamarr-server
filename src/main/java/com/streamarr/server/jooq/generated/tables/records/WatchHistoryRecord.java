@@ -161,6 +161,20 @@ public class WatchHistoryRecord extends UpdatableRecordImpl<WatchHistoryRecord> 
         return (OffsetDateTime) get(9);
     }
 
+    /**
+     * Setter for <code>public.watch_history.stream_session_id</code>.
+     */
+    public void setStreamSessionId(UUID value) {
+        set(10, value);
+    }
+
+    /**
+     * Getter for <code>public.watch_history.stream_session_id</code>.
+     */
+    public UUID getStreamSessionId() {
+        return (UUID) get(10);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -184,7 +198,7 @@ public class WatchHistoryRecord extends UpdatableRecordImpl<WatchHistoryRecord> 
     /**
      * Create a detached, initialised WatchHistoryRecord
      */
-    public WatchHistoryRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID profileId, UUID collectableId, OffsetDateTime watchedAt, Integer durationSeconds, OffsetDateTime dismissedAt) {
+    public WatchHistoryRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID profileId, UUID collectableId, OffsetDateTime watchedAt, Integer durationSeconds, OffsetDateTime dismissedAt, UUID streamSessionId) {
         super(WatchHistory.WATCH_HISTORY);
 
         setId(id);
@@ -197,6 +211,7 @@ public class WatchHistoryRecord extends UpdatableRecordImpl<WatchHistoryRecord> 
         setWatchedAt(watchedAt);
         setDurationSeconds(durationSeconds);
         setDismissedAt(dismissedAt);
+        setStreamSessionId(streamSessionId);
         resetTouchedOnNotNull();
     }
 }

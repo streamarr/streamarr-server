@@ -10,4 +10,12 @@ type Episode {
     images(type: ImageType): [Image]!
     watchProgress: WatchProgress
     watchStatus: WatchStatus!
+    """
+    When the selected Profile last watched this episode, as an ISO-8601 instant. It is the later
+    of the latest completion or manual mark that has not been dismissed and the latest session
+    progress with a position. Progress older than that completion does not count. Continue
+    Watching orders by this value, newest first, then by id. Null when the Profile has not
+    watched this episode.
+    """
+    lastWatchedAt: String
 }

@@ -373,6 +373,7 @@ class MovieFileProcessorTest {
             null,
             null,
             null,
+            null,
             null);
 
     return new MovieFileProcessor(

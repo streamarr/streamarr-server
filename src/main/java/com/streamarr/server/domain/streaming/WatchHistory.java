@@ -27,4 +27,5 @@ public class WatchHistory extends BaseAuditableEntity<WatchHistory> {
   private Instant watchedAt;
   private int durationSeconds;
   private Instant dismissedAt;
+  private UUID streamSessionId;
 }

@@ -25,6 +25,8 @@ import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
@@ -56,6 +58,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
   private UUID profileId;
   private static final Instant MOVIE_ACTIVITY_AT = Instant.parse("2026-01-01T00:00:00Z");
   private static final Instant EPISODE_ACTIVITY_AT = Instant.parse("2026-02-01T00:00:00Z");
+  private static final int TIED_TITLE_COUNT = 6;
 
   private Library movieLibrary;
   private Library seriesLibrary;
@@ -288,6 +291,45 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
       assertThat(results)
           .extracting(BaseCollectable::getId)
           .containsExactly(inProgressEpisode.getId(), inProgressMovie.getId());
+    }
+
+    @Test
+    @DisplayName("Should break a last-watched tie by id when titles were last watched at one time")
+    void shouldBreakALastWatchedTieByIdWhenTitlesWereLastWatchedAtOneTime() {
+      var tiedIdentity = authTestSupport.createIdentity();
+      var tiedProfileId = tiedIdentity.profile().getId();
+      try {
+        var movieIds = new ArrayList<UUID>();
+        for (var index = 0; index < TIED_TITLE_COUNT; index++) {
+          var movie = createMovieWithFile("Tied Movie " + index);
+          var fileId = movie.getFiles().iterator().next().getId();
+          saveProgress(tiedProfileId, fileId);
+          pinSessionProgressTimestamp(fileId, MOVIE_ACTIVITY_AT);
+          movieIds.add(movie.getId());
+        }
+
+        // PostgreSQL orders uuid values byte by byte, which matches their text order.
+        var expected =
+            movieIds.stream().sorted(Comparator.comparing(UUID::toString).reversed()).toList();
+
+        var results = continueWatchingService.getContinueWatching(tiedProfileId, 20);
+
+        assertThat(results).extracting(BaseCollectable::getId).containsExactlyElementsOf(expected);
+      } finally {
+        authTestSupport.deleteIdentity(tiedIdentity);
+      }
+    }
+
+    private void saveProgress(UUID owner, UUID mediaFileId) {
+      sessionProgressRepository.saveAndFlush(
+          SessionProgress.builder()
+              .sessionId(UUID.randomUUID())
+              .profileId(owner)
+              .mediaFileId(mediaFileId)
+              .positionSeconds(600)
+              .percentComplete(20.0)
+              .durationSeconds(3000)
+              .build());
     }
   }
 

@@ -159,6 +159,7 @@ class LibraryRefreshServiceTest {
             null,
             null,
             null,
+            null,
             null);
 
     var movieService =
@@ -168,6 +169,7 @@ class LibraryRefreshServiceTest {
             new PaginationService(),
             artworkRequestService,
             imageService,
+            null,
             null,
             null,
             null,

@@ -8,9 +8,22 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProgress>
     implements SessionProgressRepository {
+
+  private final Predicate<UUID> hasStreamSessionCompletion;
+
+  /** A repository that sees no completions, so every progress report is saved. */
+  public FakeSessionProgressRepository() {
+    this.hasStreamSessionCompletion = _ -> false;
+  }
+
+  /** A repository that saves no progress for a stream session once it saved its completion. */
+  public FakeSessionProgressRepository(FakeWatchHistoryRepository watchHistory) {
+    this.hasStreamSessionCompletion = watchHistory::hasStreamSessionCompletion;
+  }
 
   @Override
   public List<SessionProgress> findByProfileIdOrderByLastModifiedOnDesc(UUID profileId) {
@@ -35,24 +48,22 @@ public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProg
   }
 
   @Override
-  public void deleteByProfileIdAndMediaFileIds(UUID profileId, Collection<UUID> mediaFileIds) {
-    database
-        .entrySet()
-        .removeIf(
-            entry ->
-                profileId.equals(entry.getValue().getProfileId())
-                    && mediaFileIds.contains(entry.getValue().getMediaFileId()));
+  public int deleteByProfileIdAndMediaFileIds(UUID profileId, Collection<UUID> mediaFileIds) {
+    return removeWhere(
+        progress ->
+            profileId.equals(progress.getProfileId())
+                && mediaFileIds.contains(progress.getMediaFileId()));
   }
 
   @Override
   public boolean upsertProgress(SaveWatchProgress progress) {
+    if (hasStreamSessionCompletion.test(progress.sessionId())) {
+      return false;
+    }
+
     var existing = findBySessionId(progress.sessionId());
     if (existing.isPresent()) {
-      var sp = existing.get();
-      sp.setPositionSeconds(progress.positionSeconds());
-      sp.setPercentComplete(progress.percentComplete());
-      sp.setDurationSeconds(progress.durationSeconds());
-      return true;
+      return updateWhenChanged(existing.get(), progress);
     }
 
     save(
@@ -67,9 +78,29 @@ public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProg
     return true;
   }
 
+  private boolean updateWhenChanged(SessionProgress sp, SaveWatchProgress progress) {
+    if (sp.getPositionSeconds() == progress.positionSeconds()
+        && Double.compare(sp.getPercentComplete(), progress.percentComplete()) == 0
+        && sp.getDurationSeconds() == progress.durationSeconds()) {
+      return false;
+    }
+
+    sp.setPositionSeconds(progress.positionSeconds());
+    sp.setPercentComplete(progress.percentComplete());
+    sp.setDurationSeconds(progress.durationSeconds());
+    save(sp);
+    return true;
+  }
+
   @Override
-  public void deleteBySessionId(UUID sessionId) {
-    database.entrySet().removeIf(entry -> sessionId.equals(entry.getValue().getSessionId()));
+  public int deleteBySessionId(UUID sessionId) {
+    return removeWhere(progress -> sessionId.equals(progress.getSessionId()));
+  }
+
+  private int removeWhere(Predicate<SessionProgress> matches) {
+    var sizeBefore = database.size();
+    database.entrySet().removeIf(entry -> matches.test(entry.getValue()));
+    return sizeBefore - database.size();
   }
 
   @Override

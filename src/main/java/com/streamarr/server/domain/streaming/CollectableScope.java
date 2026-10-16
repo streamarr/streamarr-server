@@ -1,7 +1,7 @@
 package com.streamarr.server.domain.streaming;
 
 public enum CollectableScope {
-  DIRECT_MEDIA,
+  MOVIE_OR_EPISODE,
   SEASON,
   SERIES
 }

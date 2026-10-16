@@ -1,19 +1,29 @@
 package com.streamarr.server.repositories.streaming;
 
 import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
+import static com.streamarr.server.jooq.generated.tables.WatchHistory.WATCH_HISTORY;
+import static org.jooq.impl.DSL.excluded;
+import static org.jooq.impl.DSL.row;
 
 import java.util.Collection;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
 
 @RequiredArgsConstructor
 public class SessionProgressRepositoryCustomImpl implements SessionProgressRepositoryCustom {
 
   private final DSLContext dsl;
+  private final StreamSessionLock streamSessionLock;
 
   @Override
   public boolean upsertProgress(SaveWatchProgress progress) {
+    streamSessionLock.lock(progress.sessionId());
+    if (hasCompletion(progress.sessionId())) {
+      return false;
+    }
+
     var rowsAffected =
         dsl.insertInto(SESSION_PROGRESS)
             .set(SESSION_PROGRESS.SESSION_ID, progress.sessionId())
@@ -27,18 +37,40 @@ public class SessionProgressRepositoryCustomImpl implements SessionProgressRepos
             .set(SESSION_PROGRESS.POSITION_SECONDS, progress.positionSeconds())
             .set(SESSION_PROGRESS.PERCENT_COMPLETE, progress.percentComplete())
             .set(SESSION_PROGRESS.DURATION_SECONDS, progress.durationSeconds())
+            .where(reportChangesProgress())
             .execute();
     return rowsAffected > 0;
   }
 
-  @Override
-  public void deleteBySessionId(UUID sessionId) {
-    dsl.deleteFrom(SESSION_PROGRESS).where(SESSION_PROGRESS.SESSION_ID.eq(sessionId)).execute();
+  // A repeated report leaves the row and its last-modified time alone. The time then still tells
+  // which of two devices moved the position last.
+  private static Condition reportChangesProgress() {
+    return row(
+            SESSION_PROGRESS.POSITION_SECONDS,
+            SESSION_PROGRESS.PERCENT_COMPLETE,
+            SESSION_PROGRESS.DURATION_SECONDS)
+        .isDistinctFrom(
+            row(
+                excluded(SESSION_PROGRESS.POSITION_SECONDS),
+                excluded(SESSION_PROGRESS.PERCENT_COMPLETE),
+                excluded(SESSION_PROGRESS.DURATION_SECONDS)));
+  }
+
+  private boolean hasCompletion(UUID sessionId) {
+    return dsl.fetchExists(WATCH_HISTORY, WATCH_HISTORY.STREAM_SESSION_ID.eq(sessionId));
   }
 
   @Override
-  public void deleteByProfileIdAndMediaFileIds(UUID profileId, Collection<UUID> mediaFileIds) {
-    dsl.deleteFrom(SESSION_PROGRESS)
+  public int deleteBySessionId(UUID sessionId) {
+    streamSessionLock.lock(sessionId);
+    return dsl.deleteFrom(SESSION_PROGRESS)
+        .where(SESSION_PROGRESS.SESSION_ID.eq(sessionId))
+        .execute();
+  }
+
+  @Override
+  public int deleteByProfileIdAndMediaFileIds(UUID profileId, Collection<UUID> mediaFileIds) {
+    return dsl.deleteFrom(SESSION_PROGRESS)
         .where(SESSION_PROGRESS.PROFILE_ID.eq(profileId))
         .and(SESSION_PROGRESS.MEDIA_FILE_ID.in(mediaFileIds))
         .execute();

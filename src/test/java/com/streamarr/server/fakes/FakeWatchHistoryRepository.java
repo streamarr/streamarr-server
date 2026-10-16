@@ -1,11 +1,14 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.domain.streaming.WatchHistory;
+import com.streamarr.server.repositories.streaming.StreamSessionCompletion;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -34,9 +37,14 @@ public class FakeWatchHistoryRepository extends FakeJpaRepository<WatchHistory>
   }
 
   @Override
-  public void batchInsert(
-      UUID profileId, Collection<UUID> collectableIds, Instant watchedAt, int durationSeconds) {
+  public int batchInsert(UUID profileId, Collection<UUID> collectableIds, int durationSeconds) {
+    var watchedAt = Instant.now();
+    var saved = 0;
     for (var collectableId : collectableIds) {
+      if (hasCompletionAt(profileId, collectableId, watchedAt)) {
+        continue;
+      }
+
       save(
           WatchHistory.builder()
               .profileId(profileId)
@@ -44,19 +52,56 @@ public class FakeWatchHistoryRepository extends FakeJpaRepository<WatchHistory>
               .watchedAt(watchedAt)
               .durationSeconds(durationSeconds)
               .build());
+      saved++;
     }
+
+    return saved;
+  }
+
+  private boolean hasCompletionAt(UUID profileId, UUID collectableId, Instant watchedAt) {
+    return database.values().stream()
+        .anyMatch(
+            wh ->
+                profileId.equals(wh.getProfileId())
+                    && collectableId.equals(wh.getCollectableId())
+                    && watchedAt.equals(wh.getWatchedAt()));
   }
 
   @Override
-  public void dismissAll(UUID profileId, Collection<UUID> collectableIds) {
+  public int saveStreamSessionCompletion(StreamSessionCompletion completion) {
+    if (hasStreamSessionCompletion(completion.streamSessionId())) {
+      return 0;
+    }
+
+    save(
+        WatchHistory.builder()
+            .streamSessionId(completion.streamSessionId())
+            .profileId(completion.profileId())
+            .collectableId(completion.collectableId())
+            .watchedAt(Instant.now())
+            .durationSeconds(completion.durationSeconds())
+            .build());
+    return 1;
+  }
+
+  public boolean hasStreamSessionCompletion(UUID streamSessionId) {
+    return database.values().stream()
+        .anyMatch(wh -> streamSessionId.equals(wh.getStreamSessionId()));
+  }
+
+  @Override
+  public int dismissAll(UUID profileId, Collection<UUID> collectableIds) {
     var now = Instant.now();
-    database.values().stream()
-        .filter(
-            wh ->
-                profileId.equals(wh.getProfileId())
-                    && collectableIds.contains(wh.getCollectableId())
-                    && wh.getDismissedAt() == null)
-        .forEach(wh -> wh.setDismissedAt(now));
+    var dismissed =
+        database.values().stream()
+            .filter(
+                wh ->
+                    profileId.equals(wh.getProfileId())
+                        && collectableIds.contains(wh.getCollectableId())
+                        && wh.getDismissedAt() == null)
+            .toList();
+    dismissed.forEach(wh -> wh.setDismissedAt(now));
+    return dismissed.size();
   }
 
   @Override
@@ -64,5 +109,11 @@ public class FakeWatchHistoryRepository extends FakeJpaRepository<WatchHistory>
     database.values().stream()
         .filter(wh -> fromProfileId.equals(wh.getProfileId()))
         .forEach(wh -> wh.setProfileId(toProfileId));
+  }
+
+  @Override
+  public Map<UUID, Instant> findLastWatchedByItemIds(
+      UUID profileId, CollectableScope scope, Collection<UUID> itemIds) {
+    throw new UnsupportedOperationException("LAST_WATCHED not yet implemented in fake");
   }
 }

@@ -18,10 +18,10 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.repositories.streaming.SaveWatchProgress;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.support.AuthTestSupport;
-import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -32,6 +32,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Watch Status Service Integration Tests")
@@ -46,6 +47,7 @@ class WatchStatusServiceIT extends AbstractIntegrationTest {
   @Autowired private SessionProgressRepository sessionProgressRepository;
   @Autowired private WatchStatusService watchStatusService;
   @Autowired private AuthTestSupport authTestSupport;
+  @Autowired private TransactionTemplate transactionTemplate;
 
   private Library library;
   private AuthTestSupport.TestIdentity identity;
@@ -87,20 +89,94 @@ class WatchStatusServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should insert history once when marking series watched twice at same instant")
-  void shouldInsertHistoryOnceWhenMarkingSeriesWatchedTwiceAtSameInstant() {
+  @DisplayName("Should insert history once when marking series watched twice in one transaction")
+  void shouldInsertHistoryOnceWhenMarkingSeriesWatchedTwiceInOneTransaction() {
     var series = createSeries("Idempotent Series");
     var season = createSeason(series, 1);
     var episodeIds = List.of(createEpisode(season, 1).getId(), createEpisode(season, 2).getId());
-    var watchedAt = Instant.parse("2026-07-07T12:00:00Z");
 
-    watchStatusService.markWatched(
-        profileId, series.getId(), CollectableScope.SERIES, watchedAt, 0);
-    watchStatusService.markWatched(
-        profileId, series.getId(), CollectableScope.SERIES, watchedAt, 0);
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          watchStatusService.markWatched(profileId, series.getId());
+          watchStatusService.markWatched(profileId, series.getId());
+        });
 
     assertThat(watchHistoryRepository.findByProfileIdAndCollectableIdIn(profileId, episodeIds))
         .hasSize(2);
+  }
+
+  @Test
+  @DisplayName("Should count only the completions stored when one transaction repeats a mark")
+  void shouldCountOnlyTheCompletionsStoredWhenOneTransactionRepeatsAMark() {
+    var season = createSeason(createSeries("Counted Series"), 1);
+    var episodeIds = List.of(createEpisode(season, 1).getId(), createEpisode(season, 2).getId());
+
+    var counts =
+        transactionTemplate.execute(
+            _ ->
+                List.of(
+                    watchHistoryRepository.batchInsert(profileId, episodeIds, 0),
+                    watchHistoryRepository.batchInsert(profileId, episodeIds, 0)));
+
+    assertThat(counts).containsExactly(2, 0);
+  }
+
+  @Test
+  @DisplayName("Should count only the completions dismissed when a dismissal repeats")
+  void shouldCountOnlyTheCompletionsDismissedWhenADismissalRepeats() {
+    var season = createSeason(createSeries("Dismissed Series"), 1);
+    var episodeIds = List.of(createEpisode(season, 1).getId(), createEpisode(season, 2).getId());
+    transactionTemplate.executeWithoutResult(
+        _ -> watchHistoryRepository.batchInsert(profileId, episodeIds, 0));
+
+    var counts =
+        transactionTemplate.execute(
+            _ ->
+                List.of(
+                    watchHistoryRepository.dismissAll(profileId, episodeIds),
+                    watchHistoryRepository.dismissAll(profileId, episodeIds)));
+
+    assertThat(counts).containsExactly(2, 0);
+  }
+
+  @Test
+  @DisplayName("Should return no last-watched times when no items are requested")
+  void shouldReturnNoLastWatchedTimesWhenNoItemsAreRequested() {
+    assertThat(
+            watchStatusService.getLastWatchedAtForItems(
+                profileId, CollectableScope.MOVIE_OR_EPISODE, List.of()))
+        .isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should stamp a completion and session progress with one clock when one transaction writes"
+          + " both")
+  void shouldStampCompletionAndSessionProgressWithOneClockWhenOneTransactionWritesBoth() {
+    var series = createSeries("One Clock Series");
+    var episode = createEpisodeWithFile(createSeason(series, 1), 1);
+    var sessionId = UUID.randomUUID();
+
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          sessionProgressRepository.upsertProgress(
+              SaveWatchProgress.builder()
+                  .sessionId(sessionId)
+                  .profileId(profileId)
+                  .mediaFileId(episode.getFiles().iterator().next().getId())
+                  .positionSeconds(600)
+                  .percentComplete(25.0)
+                  .durationSeconds(2400)
+                  .build());
+          watchStatusService.markWatched(profileId, episode.getId());
+        });
+
+    var progress = sessionProgressRepository.findBySessionId(sessionId).orElseThrow();
+    var completion =
+        watchHistoryRepository
+            .findFirstByProfileIdAndCollectableIdOrderByWatchedAtDesc(profileId, episode.getId())
+            .orElseThrow();
+    assertThat(completion.getWatchedAt()).isEqualTo(progress.getLastModifiedOn());
   }
 
   @Test

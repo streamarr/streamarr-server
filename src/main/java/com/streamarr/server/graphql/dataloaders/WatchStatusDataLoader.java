@@ -50,7 +50,8 @@ public class WatchStatusDataLoader implements MappedBatchLoader<WatchStatusLoade
   private Map<UUID, WatchStatus> loadByScope(
       UUID profileId, CollectableScope scope, List<UUID> entityIds) {
     return switch (scope) {
-      case DIRECT_MEDIA -> watchStatusService.getWatchStatusForDirectMedia(profileId, entityIds);
+      case MOVIE_OR_EPISODE ->
+          watchStatusService.getWatchStatusForMoviesAndEpisodes(profileId, entityIds);
       case SEASON -> watchStatusService.getWatchStatusForSeasons(profileId, entityIds);
       case SERIES -> watchStatusService.getWatchStatusForSeries(profileId, entityIds);
     };

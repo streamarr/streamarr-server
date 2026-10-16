@@ -8,6 +8,7 @@ import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
+import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.repositories.CompanyRepository;
 import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.PersonRepository;
@@ -15,6 +16,7 @@ import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.pagination.LetterJumpResolver;
@@ -48,6 +50,7 @@ public class SeriesService {
   private final PersonRepository personRepository;
   private final GenreRepository genreRepository;
   private final CompanyRepository companyRepository;
+  private final WatchHistoryRepository watchHistoryRepository;
 
   @Transactional
   public Series saveSeriesWithMediaFile(Series series, MediaFile mediaFile) {
@@ -340,8 +343,10 @@ public class SeriesService {
     if (filter.getSortBy() != OrderMediaBy.LAST_WATCHED || seriesList.isEmpty()) {
       return Map.of();
     }
-    return seriesRepository.findLastWatchedBySeriesIds(
-        filter.getProfileId(), seriesList.stream().map(Series::getId).toList());
+    return watchHistoryRepository.findLastWatchedByItemIds(
+        filter.getProfileId(),
+        CollectableScope.SERIES,
+        seriesList.stream().map(Series::getId).toList());
   }
 
   private Object getOrderByValue(
