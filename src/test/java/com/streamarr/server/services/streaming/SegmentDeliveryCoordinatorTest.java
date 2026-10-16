@@ -121,10 +121,16 @@ class SegmentDeliveryCoordinatorTest {
     transcodeExecutor.awaitLivenessCheckCount(looks + 1);
   }
 
-  // Removes the session and forgets it, as destroying the session does.
+  // Destroys the session as the service does. Its removal waits for the session mutex, so a
+  // replacement in flight cannot save the destroyed session back into the registry.
   private void destroy(UUID sessionId) {
-    runtimeRegistry.removeById(sessionId);
-    coordinator.forgetSession(sessionId);
+    HlsStreamingService.builder()
+        .segmentStore(segmentStore)
+        .runtimeRegistry(runtimeRegistry)
+        .producerLifecycle(lifecycle)
+        .deliveryCoordinator(coordinator)
+        .build()
+        .destroySession(sessionId);
   }
 
   private HeldSegmentRequests heldRequests() {
@@ -850,6 +856,32 @@ class SegmentDeliveryCoordinatorTest {
 
   @Test
   @DisplayName(
+      "Should end a held request when its session is destroyed while recovery replaces the producer")
+  void shouldEndHeldRequestWhenItsSessionIsDestroyedWhileRecoveryReplacesTheProducer()
+      throws Exception {
+    var gatingExecutor = new EvidenceGatingExecutor();
+    var sessionMutex = new ContendedSessionMutex();
+    transcodeExecutor = gatingExecutor;
+    var rig =
+        rigBuilder(gatingExecutor, segmentStore).sessionMutex(sessionMutex.mutexFactory()).build();
+    lifecycle = rig.lifecycle();
+    coordinator = rig.coordinator();
+    var sessionId = startedSession().getSessionId();
+    gatingExecutor.markDead(sessionId);
+    gatingExecutor.holdTargetedStarts();
+
+    var delivery = deliverAsync(sessionId, "segment0.m4s");
+    gatingExecutor.awaitTargetedStartEntered();
+    var destroy = CompletableFuture.runAsync(() -> destroy(sessionId));
+    sessionMutex.awaitContention();
+    gatingExecutor.releaseTargetedStarts();
+
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.SessionEnded.class);
+    destroy.get(2, TimeUnit.SECONDS);
+  }
+
+  @Test
+  @DisplayName(
       "Should return cancelled and restore the interrupt without touching the producer when delivering a segment")
   void shouldReturnCancelledAndRestoreTheInterruptWithoutTouchingTheProducerWhenDeliveringSegment()
       throws Exception {
@@ -1470,6 +1502,41 @@ class SegmentDeliveryCoordinatorTest {
       }
 
       return result;
+    }
+  }
+
+  /** Signals when a thread waits for the session mutex while another thread holds it. */
+  private static final class ContendedSessionMutex {
+
+    private final CountDownLatch contended = new CountDownLatch(1);
+    private final ReentrantLock lock = new ContentionSignalingLock();
+
+    private MutexFactory<UUID> mutexFactory() {
+      return new MutexFactory<>() {
+        @Override
+        public ReentrantLock getMutex(UUID sessionId) {
+          return lock;
+        }
+      };
+    }
+
+    private void awaitContention() throws InterruptedException {
+      assertThat(contended.await(5, TimeUnit.SECONDS))
+          .as("a thread must wait for the session mutex")
+          .isTrue();
+    }
+
+    private final class ContentionSignalingLock extends ReentrantLock {
+
+      @Override
+      public void lock() {
+        if (tryLock()) {
+          return;
+        }
+
+        contended.countDown();
+        super.lock();
+      }
     }
   }
 
