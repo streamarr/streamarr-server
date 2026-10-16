@@ -672,6 +672,32 @@ class HlsStreamingServiceTest {
     assertThat(playlist).contains("CODECS=\"avc1.640028," + codecsParameter + "\"");
   }
 
+  @ParameterizedTest
+  @CsvSource({"h264, 60", "h264, 23.976", "av1, 60", "av1, 29.97"})
+  @DisplayName(
+      "Should advertise the codec string that the started encode forces when the session encodes a ladder")
+  void shouldAdvertiseTheCodecStringThatTheStartedEncodeForcesWhenTheSessionEncodesALadder(
+      String videoCodecFamily, double frameRate) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").framerate(OptionalDouble.of(frameRate)).build());
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of(videoCodecFamily));
+    var file = seedMediaFile();
+    var options = StreamingOptions.builder().supportedCodecs(List.of(videoCodecFamily)).build();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
+    var playlist =
+        new HlsPlaylistService(StreamingProperties.builder().build())
+            .generateMultivariantPlaylist(session, "token")
+            .lines()
+            .toList();
+    var started = transcodeExecutor.getStartedRequests().getFirst();
+    var codecString = started.videoEncodeDecision().orElseThrow().codecString();
+
+    assertThat(session.getVariants()).hasSizeGreaterThan(1);
+    assertThat(playlist.get(playlist.indexOf(started.variantLabel() + "/stream.m3u8?t=token") - 1))
+        .contains("CODECS=\"" + codecString + ",");
+  }
+
   @Test
   @DisplayName("Should start transcode when creating session")
   void shouldStartTranscodeWhenCreatingSession() {

@@ -686,6 +686,7 @@ class WorkerSessionServerIT {
         TranscodeRequest.builder()
             .sessionId(UUID.randomUUID())
             .sourcePath(Path.of("/media/movie.mkv"))
+            .framerate(OptionalDouble.of(23.976))
             .transcodeDecision(decision)
             .encoderPreset(EncoderPreset.FASTER)
             .build();
@@ -711,6 +712,7 @@ class WorkerSessionServerIT {
         TranscodeRequest.builder()
             .sessionId(UUID.randomUUID())
             .sourcePath(Path.of("/media/movie.mkv"))
+            .framerate(OptionalDouble.of(23.976))
             .transcodeDecision(fullTranscodeH264Decision().build())
             .targetSegmentDuration(6)
             .startSequenceNumber(2)
@@ -966,6 +968,7 @@ class WorkerSessionServerIT {
             TranscodeRequest.builder()
                 .sessionId(UUID.randomUUID())
                 .sourcePath(Path.of("/media/movie.mkv"))
+                .framerate(OptionalDouble.of(23.976))
                 .transcodeDecision(fullTranscodeH264Decision().build())
                 .encoderPreset(EncoderPreset.FASTER)
                 .pinnedEncoder(Optional.of(WorkerVerifiedEncoderFixture.libx264()))
@@ -988,6 +991,7 @@ class WorkerSessionServerIT {
     return TranscodeRequest.builder()
         .sessionId(UUID.randomUUID())
         .sourcePath(Path.of("/media/movie.mkv"))
+        .framerate(OptionalDouble.of(23.976))
         .transcodeDecision(decision.build())
         .encoderPreset(EncoderPreset.FASTER)
         .build();
