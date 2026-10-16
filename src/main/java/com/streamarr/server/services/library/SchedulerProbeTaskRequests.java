@@ -64,20 +64,24 @@ public class SchedulerProbeTaskRequests implements ProbeTaskRequests {
   }
 
   private void enqueue(ProbeTaskRequest request) {
+    enqueue(request, task.instance(request.mediaFileId().toString(), request));
+  }
+
+  // Returns false when the media file no longer exists, so no probe is requested.
+  private boolean enqueue(ProbeTaskRequest request, TaskInstance<ProbeTaskRequest> instance) {
     if (!outcomes.trySaveProbeRequest(request.mediaFileId(), request.inputs())) {
-      return;
+      return false;
     }
 
-    var instance = task.instance(request.mediaFileId().toString(), request);
     if (client.scheduleIfNotExists(instance, clock.instant())) {
-      return;
+      return true;
     }
 
     var pending = client.getScheduledExecution(instance);
     if (pending
         .filter(existing -> existing.isPicked() || request.equals(existing.getData()))
         .isPresent()) {
-      return;
+      return true;
     }
 
     var now = clock.instant();
@@ -85,6 +89,7 @@ public class SchedulerProbeTaskRequests implements ProbeTaskRequests {
         instance,
         request,
         pending.map(ScheduledExecution::getExecutionTime).filter(now::isBefore).orElse(now));
+    return true;
   }
 
   private void replacePendingInputs(

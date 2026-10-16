@@ -118,8 +118,14 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
 
   SchedulerClient startScheduler(
       ProbeExecution execution, AbstractSchedulerListener listener, Clock clock) {
+    return startScheduler(execution, listener, clock, 2);
+  }
+
+  SchedulerClient startScheduler(
+      ProbeExecution execution, AbstractSchedulerListener listener, Clock clock, int threads) {
     var started =
-        ProbeSchedulerStarter.fromContext(applicationContext).start(execution, listener, clock);
+        ProbeSchedulerStarter.fromContext(applicationContext)
+            .start(execution, listener, clock, threads);
     scheduler = started.scheduler();
     return started.client();
   }
