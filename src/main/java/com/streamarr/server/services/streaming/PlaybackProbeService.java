@@ -60,23 +60,20 @@ public class PlaybackProbeService {
       UUID mediaFileId, Instant requestedAt) {
     var deadline = requestedAt.plus(properties.probeWaitLimit());
     while (true) {
-      var nextEnd = attemptEnds.next(mediaFileId);
-      var stored = reader.find(mediaFileId);
-      if (stored.isPresent()) {
-        return playable(stored.get());
-      }
+      try (var nextEnd = attemptEnds.next(mediaFileId)) {
+        var stored = reader.find(mediaFileId);
+        if (stored.isPresent()) {
+          return playable(stored.get());
+        }
 
-      if (hasEndedWithoutOutcome(mediaFileId, requestedAt)) {
-        return notReady();
-      }
+        if (hasEndedWithoutOutcome(mediaFileId, requestedAt)) {
+          return notReady();
+        }
 
-      var remaining = Duration.between(clock.instant(), deadline);
-      if (!remaining.isPositive()) {
-        return notReady();
-      }
-
-      if (!tryAwait(nextEnd, remaining)) {
-        return notReady();
+        var remaining = Duration.between(clock.instant(), deadline);
+        if (!remaining.isPositive() || !tryAwait(nextEnd, remaining)) {
+          return notReady();
+        }
       }
     }
   }

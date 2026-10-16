@@ -27,6 +27,7 @@ import com.streamarr.server.services.events.library.MediaFileProbeTaskRequested;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.ProbeAttemptEnds;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -61,7 +62,8 @@ class PlaybackProbeServiceTest {
   private final MutableClock clock = new MutableClock();
   private final FakeMediaFileContainerInfoRepository outcomes =
       new FakeMediaFileContainerInfoRepository();
-  private final ProbeAttemptEnds attemptEnds = new ProbeAttemptEnds();
+  private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+  private final ProbeAttemptEnds attemptEnds = new ProbeAttemptEnds(meterRegistry);
   private final CapturingEventPublisher events = new CapturingEventPublisher();
   private final CompletableFuture<Void> probeRequested = new CompletableFuture<>();
   private final ExecutorService playbackThreads = Executors.newVirtualThreadPerTaskExecutor();
@@ -159,6 +161,7 @@ class PlaybackProbeServiceTest {
       assertThat(probeOf(playback.get(10, TimeUnit.SECONDS)).videoCodec()).isEqualTo("h264");
       assertThat(events.getEventsOfType(MediaFileProbeTaskRequested.class))
           .containsExactly(new MediaFileProbeTaskRequested(mediaFileId));
+      assertThat(probeWaits()).isZero();
     }
 
     @Test
@@ -187,6 +190,7 @@ class PlaybackProbeServiceTest {
 
       assertThat(playback.get(10, TimeUnit.SECONDS)).isEqualTo(notReady());
       assertThat(probeState().requested()).contains(REQUESTED_INPUTS);
+      assertThat(probeWaits()).isZero();
     }
 
     @Test
@@ -200,6 +204,7 @@ class PlaybackProbeServiceTest {
               .build();
 
       assertThat(readInBackground(service).get(10, TimeUnit.SECONDS)).isEqualTo(notReady());
+      assertThat(probeWaits()).isZero();
     }
 
     @Test
@@ -279,6 +284,36 @@ class PlaybackProbeServiceTest {
 
       assertThat(interruptedPlayback.get(10, TimeUnit.SECONDS))
           .isEqualTo(new InterruptedRead(notReady(), true));
+      assertThat(probeWaits()).isZero();
+    }
+
+    @Test
+    @DisplayName("Should leave no wait behind when the probe that two viewers wait for finishes")
+    void shouldLeaveNoWaitBehindWhenTheProbeThatTwoViewersWaitForFinishes() throws Exception {
+      var secondViewerRequested = new CompletableFuture<Void>();
+      var service =
+          serviceBuilder()
+              .probeWorkers(
+                  _ -> {
+                    if (probeRequested.isDone()) {
+                      secondViewerRequested.complete(null);
+                    }
+
+                    probeRequested.complete(null);
+                    return true;
+                  })
+              .build();
+      var firstViewer = readInBackground(service);
+      probeRequested.get(10, TimeUnit.SECONDS);
+      var secondViewer = readInBackground(service);
+      secondViewerRequested.get(10, TimeUnit.SECONDS);
+
+      outcomes.store(success());
+      attemptEnds.signalEnd(mediaFileId);
+
+      assertThat(probeOf(firstViewer.get(10, TimeUnit.SECONDS)).videoCodec()).isEqualTo("h264");
+      assertThat(probeOf(secondViewer.get(10, TimeUnit.SECONDS)).videoCodec()).isEqualTo("h264");
+      assertThat(probeWaits()).isZero();
     }
 
     @Test
@@ -342,6 +377,10 @@ class PlaybackProbeServiceTest {
                     .failedAt(clock.instant())
                     .build()))
         .isTrue();
+  }
+
+  private double probeWaits() {
+    return meterRegistry.get("streamarr.playback.probe_waits").gauge().value();
   }
 
   private ProbeState probeState() {

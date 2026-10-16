@@ -6,6 +6,7 @@ import com.github.kagkarlsson.scheduler.task.Execution;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.github.kagkarlsson.scheduler.task.TaskInstance;
 import com.streamarr.server.services.probe.ProbeAttemptEnds;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
@@ -18,7 +19,7 @@ import org.junit.jupiter.api.Test;
 class ProbeAttemptEndListenerTest {
 
   private final UUID mediaFileId = UUID.randomUUID();
-  private final ProbeAttemptEnds attemptEnds = new ProbeAttemptEnds();
+  private final ProbeAttemptEnds attemptEnds = new ProbeAttemptEnds(new SimpleMeterRegistry());
   private final ProbeAttemptEndListener listener = new ProbeAttemptEndListener(attemptEnds);
 
   @Test
