@@ -219,6 +219,14 @@ class KeyedSubscriptionBroadcasterTest {
   }
 
   @Test
+  @DisplayName("Should refuse a registration or a broadcast when the key is missing")
+  void shouldRefuseRegistrationOrBroadcastWhenKeyIsMissing() {
+    assertThatThrownBy(() -> broadcaster.register(null)).isInstanceOf(NullPointerException.class);
+    assertThatThrownBy(() -> broadcaster.broadcast(null, "value"))
+        .isInstanceOf(NullPointerException.class);
+  }
+
+  @Test
   @DisplayName("Should refuse to build when the operation buffer is not positive")
   void shouldRefuseToBuildWhenOperationBufferIsNotPositive() {
     var builder = broadcasterBuilder().deliveryScheduler(deliveryScheduler).operationBuffer(0);
