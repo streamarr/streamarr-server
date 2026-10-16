@@ -335,6 +335,36 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should deliver each Profile only its own changes when two Profiles of one Household mark"
+          + " movies watched")
+  void shouldDeliverEachProfileOnlyItsOwnChangesWhenTwoProfilesOfOneHouseholdMarkMoviesWatched() {
+    var householdAdmin = createIdentity();
+    var householdMember = authTestSupport.createHouseholdMemberIdentity(householdAdmin);
+    identities.add(householdMember);
+    var adminMovie = createMovie();
+    var memberMovie = createMovie();
+    var sentinel = createMovie();
+    var adminBearer = authTestSupport.profileBearer(householdAdmin);
+    var memberBearer = authTestSupport.profileBearer(householdMember);
+    var adminSubscriber = subscribedSocket(adminBearer);
+    var memberSubscriber = subscribedSocket(memberBearer);
+
+    markWatched(adminBearer, adminMovie.getId());
+    markWatched(memberBearer, memberMovie.getId());
+    markWatched(adminBearer, sentinel.getId());
+
+    assertThat(householdMember.household().getId()).isEqualTo(householdAdmin.household().getId());
+    assertThat(householdMember.profile().getId()).isNotEqualTo(householdAdmin.profile().getId());
+    assertThat(itemsById(nextChange(memberSubscriber)))
+        .containsOnlyKeys(memberMovie.getId().toString());
+    assertThat(itemsById(nextChange(adminSubscriber)))
+        .containsOnlyKeys(adminMovie.getId().toString());
+    assertThat(itemsById(nextChange(adminSubscriber)))
+        .containsOnlyKeys(sentinel.getId().toString());
+  }
+
+  @Test
+  @DisplayName(
       "Should deliver the movie with its library and unmatched fact when the Profile marks it"
           + " watched")
   void shouldDeliverMovieWithItsLibraryAndUnmatchedFactWhenProfileMarksItWatched() {

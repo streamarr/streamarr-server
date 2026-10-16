@@ -109,16 +109,19 @@ class CedarAuthorizationDeciderTest {
         .isEqualTo(new Decision.Denied<>(Decision.DenialReason.POLICY));
   }
 
-  @Test
-  @DisplayName("Should deny viewing library administration when the session is device-bound")
-  void shouldDenyLibraryAdministrationViewWhenSessionIsDeviceBound() {
+  @ParameterizedTest
+  @MethodSource("libraryAdministrationIntents")
+  @DisplayName(
+      "Should deny library administration when the enabled ServerAdmin's session is device-bound")
+  void shouldDenyLibraryAdministrationWhenEnabledServerAdminsSessionIsDeviceBound(
+      Intent.UnitIntent intent) {
     var identity =
         AuthenticatedIdentityFixture.profileScopedBuilder()
             .accountId(liveAccount(true, true))
             .registrationId(Optional.of(UUID.randomUUID()))
             .build();
 
-    assertThat(decider.decide(identity, new Intent.ViewLibraryAdministration()))
+    assertThat(decider.decide(identity, intent))
         .isEqualTo(new Decision.Denied<>(Decision.DenialReason.POLICY));
   }
 

@@ -51,6 +51,7 @@ import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.fixtures.LibraryOperationFixture;
 import com.streamarr.server.fixtures.MetadataFixture;
+import com.streamarr.server.services.ArtworkSources;
 import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
@@ -922,6 +923,90 @@ class LibraryRefreshServiceTest {
                     .extracting(Image::getId)
                     .isNotEmpty()
                     .doesNotContain(stored.getId()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should fetch the movie's metadata and finish on the forced refresh's artwork when an older"
+          + " request that keeps stored artwork finishes after the refresh starts")
+  void shouldFinishOnTheForcedRefreshsArtworkWhenAnOlderPreservingRequestFinishesAfterItStarts()
+      throws Exception {
+    var library = buildMovieLibrary();
+    var movie = saveMovieWithTmdbId("Inception", "27205", library);
+    stubMovieMetadataWithPoster("27205", library);
+    var downloader = new GatedImageDownloader(createTestImage(600, 900));
+    downloader.holdPathsStartingWith("/poster");
+    var resultCheckSleeper = new CountingSleeper();
+    var heldArtwork =
+        ArtworkFixture.builder()
+            .imageRepository(imageRepository)
+            .imageDownloader(downloader)
+            .itemResults(artworkResults)
+            .sleeper(resultCheckSleeper)
+            .build();
+    heldArtwork.scheduling().holdScheduledSteps();
+    var artworkRequestService = heldArtwork.artworkRequestService();
+    var movieArtwork =
+        ArtworkSources.builder()
+            .targetId(movie.getId())
+            .targetType(ImageEntityType.MOVIE)
+            .sources(List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))
+            .build();
+    artworkRequestService.requestPrimaryArtwork(
+        artworkRequestService.openRun("file discovery", ImageRefreshMode.PRESERVE), movieArtwork);
+    var olderGeneration =
+        heldArtwork.requests().findRequest(movieArtwork.target()).orElseThrow().generation();
+    var service = refreshServiceWith(heldArtwork, admissionsWith(new AdaptiveAdmissions()));
+    var refresh = refreshOf(library, ImageRefreshMode.FORCE_REFRESH);
+
+    try (var olderAttempt = BoundedTask.start(() -> heldArtwork.scheduling().runPendingSteps())) {
+      downloader.awaitHeldDownloads(1, Duration.ofSeconds(5));
+      // The refresh checks for results only after it requested the movie's artwork, so the older
+      // attempt finishes after the refresh started.
+      resultCheckSleeper.onSleep(
+          sleeps -> {
+            if (sleeps == 1) {
+              downloader.releaseHeldDownloads();
+              awaitWithin(olderAttempt);
+            }
+
+            heldArtwork.scheduling().runPendingSteps();
+          });
+
+      BoundedTask.runWithin(Duration.ofSeconds(5), () -> service.refreshLibrary(library, refresh));
+    } finally {
+      downloader.releaseHeldDownloads();
+    }
+
+    assertThat(itemResults.find(movie.getId(), ItemStep.METADATA, null))
+        .hasValueSatisfying(
+            result -> {
+              assertThat(result.outcome()).isEqualTo(new ItemOutcome.Succeeded());
+              assertThat(result.libraryOperationId()).contains(refresh.id());
+            });
+    assertThat(artworkResults.findByItem(movie.getId(), ImageEntityType.MOVIE))
+        .filteredOn(result -> result.step() == ItemStep.ARTWORK)
+        .isNotEmpty()
+        .allSatisfy(
+            result -> {
+              assertThat(result.artworkGeneration()).isGreaterThan(olderGeneration);
+              assertThat(result.libraryOperationId()).contains(refresh.id());
+            });
+    assertThat(imagesOf(movie.getId(), ImageEntityType.MOVIE))
+        .extracting(Image::getImageType)
+        .isNotEmpty()
+        .containsOnly(ImageType.POSTER);
+  }
+
+  private static void awaitWithin(BoundedTask<?> task) {
+    try {
+      task.await(Duration.ofSeconds(5));
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new AssertionError("Interrupted while the older artwork attempt ran", e);
+    } catch (Exception e) {
+      throw new AssertionError("The older artwork attempt did not finish", e);
+    }
   }
 
   @Test
