@@ -12,27 +12,17 @@ import graphql.schema.DataFetcher;
 import java.time.Duration;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
-import org.dataloader.DataLoader;
-import org.dataloader.DataLoaderRegistry;
-import org.dataloader.registries.ScheduledDataLoaderRegistry;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
 /**
- * Executes each value a subscription delivers against current data, as the caller who subscribed,
- * in delivery order, without letting one slow value hold back the values after it.
+ * Executes each value a subscription delivers as the caller who subscribed, in delivery order,
+ * without letting one slow value hold back the values after it.
  *
  * <p>The values arrive on delivery threads, which carry no security context. Each field of a
  * delivered value runs with the security context captured when the operation subscribed, so field
  * resolvers read the subscriber's identity and Profile as they do in a query.
- *
- * <p>All values of one operation run against the operation's one DataLoader registry, and the
- * executions of two values may overlap. A cached loader would answer a later value with an earlier
- * value's data, and clearing the cache between values would race with an overlapping execution. So
- * WebSocket requests, which carry only subscriptions, get DataLoaders without caching; batching
- * still applies within one execution. Queries keep their cache, and mutations empty it before each
- * root field.
  *
  * <p>graphql-java sends an operation's results in the order the values arrived, so a later value
  * waits for every earlier value. Each asynchronous field of a delivered value is bounded by {@link
@@ -62,7 +52,6 @@ class SubscriptionDeliveryInstrumentation extends SimplePerformantInstrumentatio
 
     context.put(SUBSCRIBER_SECURITY_CONTEXT, captureSecurityContext());
     context.put(SubscriptionExecutionStrategy.KEEP_SUBSCRIPTION_EVENTS_ORDERED, true);
-    disableDataLoaderCachingForWebSocketRequests(executionInput.getDataLoaderRegistry());
     return executionInput;
   }
 
@@ -108,35 +97,5 @@ class SubscriptionDeliveryInstrumentation extends SimplePerformantInstrumentatio
         .toCompletableFuture()
         .copy()
         .orTimeout(deliveryFetchTimeout.toMillis(), TimeUnit.MILLISECONDS);
-  }
-
-  private static void disableDataLoaderCachingForWebSocketRequests(DataLoaderRegistry registry) {
-    registry
-        .getDataLoadersMap()
-        .forEach((name, loader) -> replace(registry, name, uncached(loader)));
-  }
-
-  // DGS builds a ScheduledDataLoaderRegistry, which keys each dispatch predicate by DataLoader
-  // instance. A replacement without its predicate falls back to the registry's default, which
-  // never dispatches it.
-  private static void replace(
-      DataLoaderRegistry registry, String name, DataLoader<?, ?> replacement) {
-    if (!(registry instanceof ScheduledDataLoaderRegistry scheduled)) {
-      registry.register(name, replacement);
-      return;
-    }
-
-    var original = scheduled.getDataLoader(name);
-    var predicate =
-        scheduled
-            .getDataLoaderPredicates()
-            .getOrDefault(original, scheduled.getDispatchPredicate());
-    scheduled.unregister(name);
-    scheduled.register(name, replacement, predicate);
-  }
-
-  private static <K, V> DataLoader<K, V> uncached(DataLoader<K, V> loader) {
-    var options = loader.getOptions().transform(builder -> builder.setCachingEnabled(false));
-    return loader.transform(builder -> builder.options(options));
   }
 }

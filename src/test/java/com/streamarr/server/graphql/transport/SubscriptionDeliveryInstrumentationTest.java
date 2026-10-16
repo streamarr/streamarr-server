@@ -16,13 +16,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
-import java.util.stream.Collectors;
-import org.dataloader.DataLoader;
-import org.dataloader.DataLoaderFactory;
-import org.dataloader.DataLoaderRegistry;
-import org.dataloader.MappedBatchLoader;
-import org.dataloader.registries.DispatchPredicate;
-import org.dataloader.registries.ScheduledDataLoaderRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -39,61 +32,15 @@ class SubscriptionDeliveryInstrumentationTest {
 
   private static final Duration DELIVERY_FETCH_TIMEOUT = Duration.ofMillis(100);
   private static final Duration BOUND = Duration.ofSeconds(5);
-  private static final String LOADER = "counter";
 
   private final SubscriptionDeliveryInstrumentation instrumentation =
       new SubscriptionDeliveryInstrumentation(
           new SubscriptionProperties(64, 32, DataSize.ofMegabytes(1), DELIVERY_FETCH_TIMEOUT));
 
   @Test
-  @DisplayName("Should load the key again for each request when the request uses the WebSocket")
-  void shouldLoadKeyAgainForEachRequestWhenRequestUsesWebSocket() {
-    var batches = new AtomicInteger();
-    var registry = registryCountingBatches(batches);
-
-    instrumentation.instrumentExecutionInput(
-        input(registry, GraphQlTransport.WEBSOCKET), null, null);
-
-    assertThat(loadAndDispatch(registry)).isEqualTo(1);
-    assertThat(loadAndDispatch(registry)).isEqualTo(2);
-  }
-
-  @Test
-  @DisplayName(
-      "Should keep dispatching each loader when a scheduled registry dispatches by loader predicate")
-  void shouldKeepDispatchingEachLoaderWhenScheduledRegistryDispatchesByLoaderPredicate() {
-    var batches = new AtomicInteger();
-    var registry =
-        ScheduledDataLoaderRegistry.newScheduledRegistry()
-            .dispatchPredicate(DispatchPredicate.DISPATCH_NEVER)
-            .register(LOADER, countingLoader(batches), DispatchPredicate.DISPATCH_ALWAYS)
-            .build();
-
-    try (registry) {
-      instrumentation.instrumentExecutionInput(
-          input(registry, GraphQlTransport.WEBSOCKET), null, null);
-
-      assertThat(loadAndDispatchAll(registry)).isEqualTo(1);
-      assertThat(loadAndDispatchAll(registry)).isEqualTo(2);
-    }
-  }
-
-  @Test
-  @DisplayName("Should answer the key from the cache when the request uses HTTP")
-  void shouldAnswerKeyFromCacheWhenRequestUsesHttp() {
-    var batches = new AtomicInteger();
-    var registry = registryCountingBatches(batches);
-
-    instrumentation.instrumentExecutionInput(input(registry, GraphQlTransport.HTTP), null, null);
-
-    assertThat(loadAndDispatch(registry)).isEqualTo(1);
-    assertThat(loadAndDispatch(registry)).isEqualTo(1);
-  }
-
-  @Test
   @DisplayName("Should keep subscription values in order when the request uses the WebSocket")
   void shouldKeepSubscriptionValuesInOrderWhenRequestUsesWebSocket() {
-    var input = input(new DataLoaderRegistry(), GraphQlTransport.WEBSOCKET);
+    var input = webSocketInput();
 
     instrumentation.instrumentExecutionInput(input, null, null);
 
@@ -220,42 +167,9 @@ class SubscriptionDeliveryInstrumentationTest {
     return Flux.from(values).blockFirst(BOUND);
   }
 
-  private static ExecutionInput input(DataLoaderRegistry registry, GraphQlTransport transport) {
+  private static ExecutionInput webSocketInput() {
     return ExecutionInput.newExecutionInput("{ __typename }")
-        .graphQLContext(Map.of(GraphQlTransport.class, transport))
-        .dataLoaderRegistry(registry)
+        .graphQLContext(Map.of(GraphQlTransport.class, GraphQlTransport.WEBSOCKET))
         .build();
-  }
-
-  private static DataLoaderRegistry registryCountingBatches(AtomicInteger batches) {
-    var registry = new DataLoaderRegistry();
-    registry.register(LOADER, countingLoader(batches));
-    return registry;
-  }
-
-  private static DataLoader<String, Integer> countingLoader(AtomicInteger batches) {
-    MappedBatchLoader<String, Integer> loader =
-        keys -> {
-          var batch = batches.incrementAndGet();
-          return CompletableFuture.completedFuture(
-              keys.stream().collect(Collectors.toMap(Function.identity(), _ -> batch)));
-        };
-    return DataLoaderFactory.newMappedDataLoader(loader);
-  }
-
-  // Dispatches through the registry, so the registry's dispatch predicates apply.
-  private static int loadAndDispatchAll(DataLoaderRegistry registry) {
-    DataLoader<String, Integer> loader = registry.getDataLoader(LOADER);
-    var value = loader.load("key");
-    registry.dispatchAll();
-    return value.orTimeout(BOUND.toMillis(), TimeUnit.MILLISECONDS).join();
-  }
-
-  // The value the batch that answered the load carried: a new batch means the key was loaded again.
-  private static int loadAndDispatch(DataLoaderRegistry registry) {
-    DataLoader<String, Integer> loader = registry.getDataLoader(LOADER);
-    var value = loader.load("key");
-    loader.dispatch();
-    return value.orTimeout(BOUND.toMillis(), TimeUnit.MILLISECONDS).join();
   }
 }
