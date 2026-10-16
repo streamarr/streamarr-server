@@ -48,9 +48,13 @@ final class LibraryPathConflicts {
     return Optional.empty();
   }
 
-  // Compares whole names, so /media/movies2 does not start with /media/movies.
+  // Compares the roots and then whole names, so /media/movies2 does not start with /media/movies.
   private static boolean startsWith(Path path, Path prefix, boolean ignoreLetterCase) {
     if (prefix.getNameCount() > path.getNameCount()) {
+      return false;
+    }
+
+    if (!isSameName(path.getRoot(), prefix.getRoot(), ignoreLetterCase)) {
       return false;
     }
 
