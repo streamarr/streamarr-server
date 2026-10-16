@@ -154,14 +154,11 @@ class LibraryRefreshTransactionIT extends AbstractIntegrationTest {
     var series = saveSeriesWithTmdbId(library);
     var operation = LibraryOperationFixture.refreshBuilder(library.getId()).build();
     var metadataWrites = new AtomicInteger();
+    var refreshService =
+        refreshServiceWith(
+            result -> result.step() == ItemStep.METADATA && metadataWrites.getAndIncrement() > 0);
 
-    assertThatThrownBy(
-            () ->
-                refreshServiceWith(
-                        result ->
-                            result.step() == ItemStep.METADATA
-                                && metadataWrites.getAndIncrement() > 0)
-                    .refreshLibrary(library, operation))
+    assertThatThrownBy(() -> refreshService.refreshLibrary(library, operation))
         .isInstanceOf(LibraryRefreshFailedException.class);
     assertThat(seasonMetadataOutcomes(series, operation))
         .containsExactly(Map.entry(1, "SUCCEEDED"));
