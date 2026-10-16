@@ -1,7 +1,9 @@
 package com.streamarr.server.config;
 
+import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.KeyframePacketScanner;
+import com.streamarr.server.services.streaming.ProbeCapacitySource;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import java.nio.file.Path;
@@ -27,6 +29,14 @@ public class RemoteProbeConfiguration {
   public KeyframePacketScanner keyframePacketScanner(
       WorkerSessionServer workerSessionServer, RemoteTranscodeProperties properties) {
     return remoteFfprobeService(workerSessionServer, properties)::scanKeyframePackets;
+  }
+
+  /** The probe capacity of the connected workers that run the server's current probe version. */
+  @Bean
+  public ProbeCapacitySource probeCapacitySource(
+      WorkerSessionServer workerSessionServer, RemoteTranscodeProperties properties) {
+    var sourceNamespaceId = properties.sourceNamespaceId();
+    return () -> workerSessionServer.probeCapacity(sourceNamespaceId, ProbeVersion.CURRENT);
   }
 
   private static RemoteFfprobeService remoteFfprobeService(

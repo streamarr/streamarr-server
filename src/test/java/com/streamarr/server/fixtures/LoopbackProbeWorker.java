@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeCapacityChanged;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
@@ -33,9 +34,20 @@ public final class LoopbackProbeWorker implements AutoCloseable {
       new LinkedBlockingQueue<>();
   private final CompletableFuture<Status> terminated = new CompletableFuture<>();
 
+  /**
+   * Registers a worker session that advertises the probe version, the playback slots and the probe
+   * capacity. The worker is {@code WORKER_ID} unless the test names another worker.
+   */
   @Builder
-  private LoopbackProbeWorker(int port, int probeVersion, int availableSlots) throws Exception {
-    channel = plaintextChannelBuilder(port, WORKER_ID).build();
+  private LoopbackProbeWorker(
+      int port, int probeVersion, int availableSlots, int probeCapacity, UUID workerId)
+      throws Exception {
+    var worker = WORKER_ID;
+    if (workerId != null) {
+      worker = workerId;
+    }
+
+    channel = plaintextChannelBuilder(port, worker).build();
     requests =
         TranscodeWorkerServiceGrpc.newStub(channel)
             .establishWorkerSession(
@@ -60,9 +72,10 @@ public final class LoopbackProbeWorker implements AutoCloseable {
             .setRegistration(
                 WorkerRegistration.newBuilder()
                     .setAvailableSlots(availableSlots)
+                    .setProbeCapacity(probeCapacity)
                     .setWorker(
                         WorkerIdentity.newBuilder()
-                            .setWorkerId(toProto(WORKER_ID))
+                            .setWorkerId(toProto(worker))
                             .setBootId(toProto(UUID.randomUUID())))
                     .setCapabilities(
                         WorkerCapabilities.newBuilder()
@@ -80,6 +93,19 @@ public final class LoopbackProbeWorker implements AutoCloseable {
     var response = responses.poll(timeout.toNanos(), TimeUnit.NANOSECONDS);
     assertThat(response).isNotNull();
     return response;
+  }
+
+  /** Whether every command that the server sent so far was taken by {@link #nextResponse}. */
+  public boolean hasNoResponse() {
+    return responses.isEmpty();
+  }
+
+  public void changeProbeCapacity(int probeCapacity) {
+    requests.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setProbeCapacityChanged(
+                ProbeCapacityChanged.newBuilder().setProbeCapacity(probeCapacity))
+            .build());
   }
 
   public void reply(ProbeAttemptResult result) {

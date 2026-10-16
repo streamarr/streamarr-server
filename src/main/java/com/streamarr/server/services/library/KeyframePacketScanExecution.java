@@ -62,10 +62,11 @@ public class KeyframePacketScanExecution {
                   .attemptId(UUID.randomUUID())
                   .probeVersion(request.probeVersion())
                   .build());
-    } catch (ProbeWorkersBusyException _) {
+    } catch (ProbeWorkersBusyException waiting) {
       log.debug(
-          "Deferring keyframe packet scan for media file {}: all compatible workers are busy",
-          request.mediaFileId());
+          "Deferring keyframe packet scan for media file {}: {}",
+          request.mediaFileId(),
+          waiting.getMessage());
       return new KeyframePacketScanResult.Deferred();
     } catch (ProbeTimedOutException _) {
       log.warn("Keyframe packet scan for media file {} timed out", request.mediaFileId());

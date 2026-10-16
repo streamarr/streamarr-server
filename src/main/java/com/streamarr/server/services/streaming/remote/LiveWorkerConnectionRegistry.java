@@ -9,11 +9,13 @@ import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
+import com.streamarr.server.services.streaming.ProbeCapacity;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeCapacityChanged;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
@@ -30,7 +32,10 @@ import com.streamarr.transcode.v1.WorkerSessionAccepted;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Duration;
+import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -56,6 +61,16 @@ final class LiveWorkerConnectionRegistry {
       "streamarr.streaming.initialization_segment_mismatches";
   private static final String ENCODER_BACKEND_MISMATCH_METRIC =
       "streamarr.streaming.encoder_backend_mismatches";
+  private static final String PROBE_CAPACITY_METRIC = "streamarr.probes.capacity";
+  private static final String RUNNING_PROBES_METRIC = "streamarr.probes.running";
+  private static final String DEFERRED_PROBES_METRIC = "streamarr.probes.deferred";
+  // A probe refused for one of these reasons runs again later, when a worker can take it.
+  private static final Set<ProbeRefusal> WAITING_FOR_WORKER =
+      EnumSet.of(
+          ProbeRefusal.WORKERS_BUSY,
+          ProbeRefusal.NO_COMPATIBLE_WORKER,
+          ProbeRefusal.NO_CONNECTED_WORKER);
+  private static final Duration DEFERRAL_WARNING_INTERVAL = Duration.ofMinutes(1);
   private static final Executor PROBE_DEADLINE_CALLBACKS =
       command -> Thread.ofVirtual().name("worker-probe-deadline").start(command);
   private final long probeTimeoutNanos;
@@ -65,12 +80,16 @@ final class LiveWorkerConnectionRegistry {
   private final Counter initializationSegmentMismatches;
   private final Counter encoderBackendMismatches;
   private final HeldSegmentRequests heldRequests;
+  private final MeterRegistry meterRegistry;
+  private final ProbeDeferralWarnings deferralWarnings =
+      new ProbeDeferralWarnings(DEFERRAL_WARNING_INTERVAL);
 
   LiveWorkerConnectionRegistry(
       @NonNull WorkerSessionServerConfiguration configuration,
       @NonNull MeterRegistry meterRegistry,
       @NonNull HeldSegmentRequests heldRequests) {
     this.heldRequests = heldRequests;
+    this.meterRegistry = meterRegistry;
     probeTimeoutNanos = configuration.probeTimeout().toNanos();
     keyframeScanTimeoutNanos = configuration.keyframeScanTimeout().toNanos();
     probeCancellationTimeoutNanos = configuration.probeCancellationTimeout().toNanos();
@@ -87,6 +106,13 @@ final class LiveWorkerConnectionRegistry {
                 "Job attempts stopped because the worker reported an encoder backend other than"
                     + " the one pinned for the variant")
             .register(meterRegistry);
+    Gauge.builder(
+            PROBE_CAPACITY_METRIC, this, LiveWorkerConnectionRegistry::advertisedProbeCapacity)
+        .description("The probes that the connected workers run at once, in total")
+        .register(meterRegistry);
+    Gauge.builder(RUNNING_PROBES_METRIC, this, LiveWorkerConnectionRegistry::runningProbes)
+        .description("The probes, keyframe packet scans included, running on connected workers")
+        .register(meterRegistry);
   }
 
   private final ConcurrentHashMap<UUID, WorkerConnection> connections = new ConcurrentHashMap<>();
@@ -111,8 +137,13 @@ final class LiveWorkerConnectionRegistry {
 
       abandonedJobs = replaced == null ? List.of() : replaced.abandonAllJobsWithoutWaiting();
     }
+    warnIfNoProbeCapacity(workerId, registration.getProbeCapacity());
     if (replaced == null) {
-      log.info("Worker {} connected", workerId);
+      log.info(
+          "Worker {} connected with a probe capacity of {} and {} playback slots",
+          workerId,
+          registration.getProbeCapacity(),
+          registration.getAvailableSlots());
       return connection.workerSessionId();
     }
 
@@ -124,6 +155,29 @@ final class LiveWorkerConnectionRegistry {
         workerId,
         abandonedJobs.size());
     return connection.workerSessionId();
+  }
+
+  private static void warnIfNoProbeCapacity(UUID workerId, int probeCapacity) {
+    if (probeCapacity == 0) {
+      log.warn("Worker {} advertises a probe capacity of 0, so it receives no probes", workerId);
+    }
+  }
+
+  /**
+   * Replaces the probe capacity of the worker's current session. Returns false, and changes
+   * nothing, when the report comes from a session that is no longer current.
+   */
+  boolean tryChangeProbeCapacity(
+      UUID workerId, UUID workerSessionId, ProbeCapacityChanged changed) {
+    var connection = connections.get(workerId);
+    if (connection == null || !connection.workerSessionId().equals(workerSessionId)) {
+      return false;
+    }
+
+    connection.changeProbeCapacity(changed.getProbeCapacity());
+    log.debug("Worker {} changed its probe capacity to {}", workerId, changed.getProbeCapacity());
+    warnIfNoProbeCapacity(workerId, changed.getProbeCapacity());
+    return true;
   }
 
   private void rollbackRegistration(
@@ -190,7 +244,50 @@ final class LiveWorkerConnectionRegistry {
       }
     }
 
+    countIfWaitingForWorker(refusal);
     return new ProbeDispatch.Refused(refusal);
+  }
+
+  private void countIfWaitingForWorker(ProbeRefusal refusal) {
+    if (!WAITING_FOR_WORKER.contains(refusal)) {
+      return;
+    }
+
+    meterRegistry.counter(DEFERRED_PROBES_METRIC, "reason", refusal.name()).increment();
+    deferralWarnings
+        .tryTakeDeferredCount(refusal, System.nanoTime())
+        .ifPresent(
+            deferred ->
+                log.warn(
+                    "{} ({}), so probes wait. Probes deferred since the previous warning: {}",
+                    refusal.description(),
+                    refusal.name(),
+                    deferred));
+  }
+
+  /**
+   * The probe capacity of the connected workers that run probes of the version in the namespace.
+   */
+  ProbeCapacity probeCapacity(UUID sourceNamespaceId, int probeVersion) {
+    var sourceNamespace = toProto(sourceNamespaceId);
+    var capacities =
+        connections.values().stream()
+            .filter(connection -> connection.canRunProbes(sourceNamespace, probeVersion))
+            .map(WorkerConnection::probeCapacity)
+            .toList();
+    return ProbeCapacity.builder()
+        .advertised(capacities.stream().mapToInt(ProbeCapacity::advertised).sum())
+        .running(capacities.stream().mapToInt(ProbeCapacity::running).sum())
+        .runningPacketScans(capacities.stream().mapToInt(ProbeCapacity::runningPacketScans).sum())
+        .build();
+  }
+
+  private int advertisedProbeCapacity() {
+    return connections.values().stream().mapToInt(WorkerConnection::advertisedProbeCapacity).sum();
+  }
+
+  private int runningProbes() {
+    return connections.values().stream().mapToInt(WorkerConnection::runningProbes).sum();
   }
 
   boolean completeProbe(UUID workerId, UUID workerSessionId, ProbeAttemptResult result) {
@@ -389,6 +486,8 @@ final class LiveWorkerConnectionRegistry {
     // report that names another backend withdraws the family's entry for this worker session.
     private final Map<String, WorkerVerifiedEncoder> countedEncoders;
     private final int maximumActiveVariants;
+    // A worker may report a new probe capacity at any time during its session.
+    private volatile int maximumActiveProbes;
     private final StreamObserver<EstablishWorkerSessionResponse> responseObserver;
 
     private final Map<UUID, VariantJob> activeVariants = new ConcurrentHashMap<>();
@@ -415,6 +514,7 @@ final class LiveWorkerConnectionRegistry {
                       Collectors.toUnmodifiableMap(
                           encoder -> encoder.backend().codecFamily(), Function.identity())));
       maximumActiveVariants = registration.getAvailableSlots();
+      maximumActiveProbes = registration.getProbeCapacity();
       this.responseObserver = responseObserver;
     }
 
@@ -453,12 +553,11 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private synchronized ProbeDispatch tryDispatchProbe(ProbeRequest request) {
-      if (!probeVersions.contains(request.getProbeVersion())
-          || !canAccessSourceNamespace(request.getSource().getSourceNamespaceId())) {
+      if (!canRunProbes(request.getSource().getSourceNamespaceId(), request.getProbeVersion())) {
         return new ProbeDispatch.Refused(ProbeRefusal.NO_COMPATIBLE_WORKER);
       }
 
-      if (availableSlots() == 0) {
+      if (availableProbeCapacity() == 0) {
         return new ProbeDispatch.Refused(ProbeRefusal.WORKERS_BUSY);
       }
 
@@ -713,7 +812,43 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private synchronized int availableSlots() {
-      return Math.max(0, maximumActiveVariants - activeVariants.size() - activeProbes.size());
+      return Math.max(0, maximumActiveVariants - activeVariants.size());
+    }
+
+    private synchronized int availableProbeCapacity() {
+      return Math.max(0, maximumActiveProbes - activeProbes.size());
+    }
+
+    // A worker that advertises no probe capacity runs no probes, whatever it supports.
+    private boolean canRunProbes(Uuid sourceNamespaceId, int probeVersion) {
+      return maximumActiveProbes > 0
+          && probeVersions.contains(probeVersion)
+          && canAccessSourceNamespace(sourceNamespaceId);
+    }
+
+    private int advertisedProbeCapacity() {
+      return maximumActiveProbes;
+    }
+
+    private synchronized void changeProbeCapacity(int probeCapacity) {
+      maximumActiveProbes = probeCapacity;
+    }
+
+    private int runningProbes() {
+      return activeProbes.size();
+    }
+
+    private ProbeCapacity probeCapacity() {
+      var running = List.copyOf(activeProbes.values());
+      return ProbeCapacity.builder()
+          .advertised(maximumActiveProbes)
+          .running(running.size())
+          .runningPacketScans(
+              (int)
+                  running.stream()
+                      .filter(probe -> probe.request().getScanKeyframePackets())
+                      .count())
+          .build();
     }
 
     private synchronized void stopStreamSession(UUID streamSessionId) {

@@ -73,10 +73,10 @@ public final class RemoteFfprobeService implements FfprobeService {
 
   private static RuntimeException refusal(ProbeRefusal reason) {
     return switch (reason) {
-      case WORKERS_BUSY -> new ProbeWorkersBusyException();
-      case NO_COMPATIBLE_WORKER ->
-          new ProbeExecutionException(ItemFailureReason.MISCONFIGURED, reason.description());
-      case INVALID_REQUEST, NO_CONNECTED_WORKER, WORKER_UNREACHABLE, ATTEMPT_IN_PROGRESS ->
+      // The probe waits for a worker without a failure, so it runs once a worker can take it.
+      case WORKERS_BUSY, NO_COMPATIBLE_WORKER, NO_CONNECTED_WORKER ->
+          new ProbeWorkersBusyException(reason.description());
+      case INVALID_REQUEST, WORKER_UNREACHABLE, ATTEMPT_IN_PROGRESS ->
           new ProbeExecutionException(ItemFailureReason.TEMPORARY, reason.description());
     };
   }

@@ -192,6 +192,7 @@ public final class MeshValidationClient {
                               .setWorkerId(toProto(workerId))
                               .setBootId(toProto(UUID.randomUUID())))
                       .setAvailableSlots(1)
+                      .setProbeCapacity(1)
                       .setCapabilities(
                           WorkerCapabilities.newBuilder()
                               .addSourceNamespaceIds(toProto(MeshValidationServer.SOURCE_ID))

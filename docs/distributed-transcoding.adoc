@@ -12,7 +12,7 @@ The standalone worker's inbound management port serves health checks. The server
 
 The server exposes one plaintext gRPC listener.
 `STREAMING_WORKER_SESSION_ADDRESS` defaults to `127.0.0.1` and `STREAMING_WORKER_SESSION_PORT` defaults to `9090`.
-The server can start without connected workers. Probe tasks retain their retry schedule until a capable worker connects.
+The server can start without connected workers. Probes stay pending until a capable worker connects.
 
 For colocated workers, keep the loopback address and share the server's network namespace.
 Every process that can reach this listener is trusted.
@@ -31,6 +31,39 @@ Plaintext traffic to the Pod IP must also be rejected.
 The mesh authenticates the worker ServiceAccount. The worker UUID remains a claimed instance identifier.
 An authorized worker can claim another worker's UUID. Workers in that role therefore share trust.
 ====
+
+== Probe capacity and playback slots
+
+Each worker advertises two separate limits when it connects:
+
+* *Playback slots* limit the job attempts that the worker runs at once.
+Set them with `TRANSCODE_WORKER_SLOTS` on the worker. The default is `1`.
+* *Probe capacity* limits the probes that the worker runs at once.
+Keyframe packet scans count as probes.
+Set it with `TRANSCODE_WORKER_PROBE_CAPACITY` on the worker.
+The default is the number of cores available to the worker minus 3, and at least 1.
+A worker can report a new probe capacity during its session, and the server sends new probes against the latest value.
+
+A probe never takes a playback slot, and a job attempt never takes probe capacity.
+A stream session can therefore start on a worker while a library scan probes many files on the same worker.
+
+The server runs as many probes at once as the connected compatible workers advertise in total.
+The probe scheduler picks a due probe only when a worker has free probe capacity.
+A probe that waits for capacity stays pending without a failure.
+When a probe finishes, the next due probe starts within `PROBE_POLLING_INTERVAL`, which defaults to `1s`.
+One server runs at most 128 probes at once, whatever the workers advertise.
+
+A worker that advertises a probe capacity of `0` receives no probes, and the server logs a warning when that worker connects.
+When no connected worker can run probes, due probes stay pending without a failure.
+They start at the first poll after a worker that can run them connects.
+A scan waits for its probes until then.
+
+The server logs the probe capacity and the playback slots of each worker that connects.
+While a scan waits for its probes, the server logs the scan's progress every 30 seconds: the probes saved, the probes waiting, the files probed per second, and the probe capacity of the connected workers.
+The progress line becomes a warning while no connected worker can run probes.
+When the server defers probes because every compatible worker is busy or no compatible worker is connected, it logs a warning with the reason and the number of deferred probes.
+The server logs that warning at most once a minute for each reason.
+The metrics `streamarr.probes.capacity`, `streamarr.probes.running`, and `streamarr.probes.deferred` report the same facts. The deferred count carries a `reason` tag.
 
 == Media and health
 
@@ -54,7 +87,7 @@ After three packet scans of a source time out or report no keyframes, the server
 Packet scans run on a scheduler of their own, so they never take the threads that run probes.
 `PROBE_MAX_CONCURRENT_KEYFRAME_PACKET_SCANS` sets how many scans each server runs at once. It defaults to `1`.
 `STREAMING_WORKER_SESSION_PROBE_CANCELLATION_TIMEOUT` allows `5s` for the worker to acknowledge termination.
-Until then, the probe retains its execution slot.
+Until then, the probe keeps its unit of probe capacity.
 A worker that misses this deadline is disconnected and fenced. Its other active jobs are abandoned and recover through the existing playback recovery path.
 Closing a worker connection cancels its probes and waits for their native processes to terminate.
 The server publishes no segment of an encode until the worker's start report names the encoder backend that the worker advertised.
@@ -62,14 +95,14 @@ The server publishes no segment of an encode until the worker's start report nam
 When the report names another backend, or does not arrive in time, the server refuses the upload.
 An unresponsive filesystem can delay worker shutdown.
 The server pings a worker after `STREAMING_WORKER_SESSION_KEEPALIVE_TIME` without hearing from it, and closes the connection when no acknowledgement arrives within `STREAMING_WORKER_SESSION_KEEPALIVE_TIMEOUT`.
-Closing a dead worker's connection releases its execution slots and upload reservations.
+Closing a dead worker's connection releases its playback slots, its probe capacity, and its upload reservations.
 The time defaults to `30s` and must be at least `10s`, the shortest that gRPC allows. The timeout defaults to `10s`.
 
 The server exposes Spring Boot probe groups at `/actuator/health/liveness` and `/actuator/health/readiness` on port `8080`.
 The standalone Spring Boot worker exposes the same paths on port `9091`.
 Worker readiness requires successful initialization and an accepted server session.
 A busy worker stays ready. Losing its server session changes readiness without failing liveness.
-The server still dispatches through the worker session using advertised capabilities and available slots.
+The server still dispatches through the worker session using the advertised capabilities, playback slots, and probe capacity.
 
 Keep worker availability out of the server's liveness and readiness groups.
 A server with zero workers must remain reachable so workers can connect.

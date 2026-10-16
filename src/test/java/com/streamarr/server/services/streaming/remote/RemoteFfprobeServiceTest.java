@@ -2,13 +2,11 @@ package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
-import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -55,8 +53,8 @@ class RemoteFfprobeServiceTest {
   }
 
   @Test
-  @DisplayName("Should report a temporary failure when no worker is connected")
-  void shouldReportTemporaryFailureWhenNoWorkerIsConnected() throws IOException {
+  @DisplayName("Should defer the probe without a failure when no worker is connected")
+  void shouldDeferTheProbeWithoutAFailureWhenNoWorkerIsConnected() throws IOException {
     var sourceRoot = Files.createDirectories(tempDir.resolve("movies"));
     try (var server =
         new WorkerSessionServer(
@@ -73,9 +71,7 @@ class RemoteFfprobeServiceTest {
               .build();
 
       assertThatThrownBy(() -> service.probe(request))
-          .isInstanceOfSatisfying(
-              ProbeExecutionException.class,
-              exception -> assertThat(exception.reason()).isEqualTo(ItemFailureReason.TEMPORARY))
+          .isExactlyInstanceOf(ProbeWorkersBusyException.class)
           .hasMessage(ProbeRefusal.NO_CONNECTED_WORKER.description());
     }
   }

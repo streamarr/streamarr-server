@@ -6,16 +6,19 @@ import com.streamarr.server.domain.task.RequestedProbe;
 import com.streamarr.server.domain.task.RequestedProbeResult;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.concurrency.Sleeper;
+import com.streamarr.server.services.streaming.ProbeCapacitySource;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
@@ -26,13 +29,17 @@ import org.springframework.stereotype.Service;
 @Service
 @Builder
 @RequiredArgsConstructor
+@Slf4j
 public class ProbeRuns {
+
+  private static final Duration PROGRESS_REPORT_INTERVAL = Duration.ofSeconds(30);
 
   private final MediaFileProbeTaskScheduler scheduler;
   private final MediaFileContainerInfoRepository outcomes;
   private final Sleeper sleeper;
   private final Clock clock;
   private final ProbeSchedulingProperties properties;
+  private final ProbeCapacitySource probeCapacity;
 
   public ProbeRun open() {
     return new ProbeRun(scheduler, clock);
@@ -40,11 +47,15 @@ public class ProbeRuns {
 
   /**
    * Waits until no probe of the run is pending. A file whose later change replaced the requested
-   * inputs, or that was removed, no longer belongs to the run.
+   * inputs, or that was removed, no longer belongs to the run. While it waits, the progress of the
+   * run, named by {@code description}, is logged at a fixed interval.
    */
-  public ProbeRunSummary awaitResults(ProbeRun run) throws InterruptedException {
-    var pending = new HashMap<>(run.requested());
+  public ProbeRunSummary awaitResults(ProbeRun run, String description)
+      throws InterruptedException {
+    var requested = run.requested();
+    var pending = new HashMap<>(requested);
     var counts = new EnumMap<RequestedProbeResult, Integer>(RequestedProbeResult.class);
+    var progressReports = new ProgressReportInterval(PROGRESS_REPORT_INTERVAL, clock.instant());
     while (true) {
       finishedProbes(pending)
           .forEach(
@@ -56,14 +67,48 @@ public class ProbeRuns {
         break;
       }
 
+      if (progressReports.tryTakeReport(clock.instant())) {
+        logProgress(
+            description,
+            ProbeRunProgress.builder()
+                .finished(requested.size() - pending.size())
+                .pending(pending.size())
+                .elapsed(elapsed(run))
+                .probeCapacity(probeCapacity.probeCapacity().advertised())
+                .build());
+      }
+
       sleeper.sleep(properties.resultCheckInterval());
     }
 
-    var elapsed =
-        run.firstRequestedAt()
-            .map(requestedAt -> Duration.between(requestedAt, clock.instant()))
-            .orElse(Duration.ZERO);
-    return ProbeRunSummary.builder().counts(counts).elapsed(elapsed).build();
+    return ProbeRunSummary.builder().counts(counts).elapsed(elapsed(run)).build();
+  }
+
+  private Duration elapsed(ProbeRun run) {
+    return run.firstRequestedAt()
+        .map(requestedAt -> Duration.between(requestedAt, clock.instant()))
+        .orElse(Duration.ZERO);
+  }
+
+  private static void logProgress(String description, ProbeRunProgress progress) {
+    if (progress.probeCapacity() == 0) {
+      log.warn(
+          "Probing for {}: {} of {} saved, {} waiting for a connected worker that can run probes",
+          description,
+          progress.finished(),
+          progress.finished() + progress.pending(),
+          progress.pending());
+      return;
+    }
+
+    log.info(
+        "Probing for {}: {} of {} saved, {} waiting, {} files per second, probe capacity {}",
+        description,
+        progress.finished(),
+        progress.finished() + progress.pending(),
+        progress.pending(),
+        String.format(Locale.ROOT, "%.1f", progress.filesPerSecond()),
+        progress.probeCapacity());
   }
 
   private Map<UUID, RequestedProbeResult> finishedProbes(Map<UUID, RequestedProbe> pending) {

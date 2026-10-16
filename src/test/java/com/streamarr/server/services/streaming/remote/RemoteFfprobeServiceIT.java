@@ -120,6 +120,7 @@ class RemoteFfprobeServiceIT {
               .port(server.port())
               .probeVersion(1)
               .availableSlots(3)
+              .probeCapacity(2)
               .build()) {
         var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
         assertThat(server.dispatch(variantJob())).isPresent();
@@ -238,23 +239,25 @@ class RemoteFfprobeServiceIT {
   }
 
   @Test
-  @DisplayName("Should fail for persisted retry when no worker is available")
-  void shouldFailForPersistedRetryWhenNoWorkerIsAvailable() throws Exception {
+  @DisplayName("Should defer the probe without a failure when no worker is available")
+  void shouldDeferTheProbeWithoutAFailureWhenNoWorkerIsAvailable() throws Exception {
     try (var server = server()) {
       server.start();
       var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
       var request = request().build();
 
       assertThatThrownBy(() -> service.probe(request))
-          .isExactlyInstanceOf(ProbeExecutionException.class)
+          .isExactlyInstanceOf(ProbeWorkersBusyException.class)
           .hasMessage("No worker is connected to probe the media source");
     }
   }
 
   @Test
   @DisplayName(
-      "Should fail for persisted retry when the connected worker lacks the requested probe version")
-  void shouldFailForPersistedRetryWhenConnectedWorkerLacksRequestedProbeVersion() throws Exception {
+      "Should defer the probe without a failure when the connected worker lacks the requested probe"
+          + " version")
+  void shouldDeferTheProbeWithoutAFailureWhenConnectedWorkerLacksRequestedProbeVersion()
+      throws Exception {
     try (var server = server()) {
       server.start();
       try (var _ = worker(server.port(), 7)) {
@@ -262,20 +265,20 @@ class RemoteFfprobeServiceIT {
         var request = request().probeVersion(1).build();
 
         assertThatThrownBy(() -> service.probe(request))
-            .isExactlyInstanceOf(ProbeExecutionException.class)
+            .isExactlyInstanceOf(ProbeWorkersBusyException.class)
             .hasMessage(
                 "No connected worker can read the source namespace at the requested probe"
-                    + " version")
-            .isInstanceOfSatisfying(
-                ProbeExecutionException.class,
-                thrown -> assertThat(thrown.reason()).isEqualTo(ItemFailureReason.MISCONFIGURED));
+                    + " version");
       }
     }
   }
 
   @Test
-  @DisplayName("Should report busy workers when the only compatible slot is already probing")
-  void shouldReportBusyWorkersWhenOnlyCompatibleSlotIsAlreadyProbing() throws Exception {
+  @DisplayName(
+      "Should report busy workers when the only unit of compatible probe capacity is already"
+          + " probing")
+  void shouldReportBusyWorkersWhenTheOnlyUnitOfCompatibleProbeCapacityIsAlreadyProbing()
+      throws Exception {
     try (var server = server();
         var calls = Executors.newVirtualThreadPerTaskExecutor()) {
       server.start();
@@ -645,6 +648,7 @@ class RemoteFfprobeServiceIT {
         .port(port)
         .probeVersion(probeVersion)
         .availableSlots(1)
+        .probeCapacity(1)
         .build();
   }
 

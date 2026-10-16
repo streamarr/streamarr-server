@@ -14,8 +14,8 @@ public record ProbeSchedulingProperties(
 
   private static final Duration DEFAULT_BUSY_WORKER_RETRY_DELAY = Duration.ofSeconds(5);
   private static final Duration DEFAULT_RESULT_CHECK_INTERVAL = Duration.ofSeconds(2);
-  // Probes, packet scans and variant jobs share worker slots. One scan at a time leaves the other
-  // slots to probes and playback.
+  // Keyframe packet scans use the workers' probe capacity, like probes. One scan at a time leaves
+  // the rest of the probe capacity to probes.
   private static final int DEFAULT_MAX_CONCURRENT_KEYFRAME_PACKET_SCANS = 1;
 
   public ProbeSchedulingProperties {

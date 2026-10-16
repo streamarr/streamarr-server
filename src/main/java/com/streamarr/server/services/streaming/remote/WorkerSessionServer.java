@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming.remote;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
+import com.streamarr.server.services.streaming.ProbeCapacity;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.VariantJob;
@@ -119,6 +120,14 @@ public final class WorkerSessionServer implements AutoCloseable {
   public synchronized ProbeDispatch dispatchProbe(ProbeRequest request) {
     requireStarted();
     return workerConnections.dispatchProbe(request);
+  }
+
+  /**
+   * The probe capacity of the connected workers that run probes of the version in the namespace. A
+   * server that has not started has no connected worker. The read never waits for a dispatch.
+   */
+  public ProbeCapacity probeCapacity(UUID sourceNamespaceId, int probeVersion) {
+    return workerConnections.probeCapacity(sourceNamespaceId, probeVersion);
   }
 
   public synchronized Optional<VariantDispatch> dispatchTo(
