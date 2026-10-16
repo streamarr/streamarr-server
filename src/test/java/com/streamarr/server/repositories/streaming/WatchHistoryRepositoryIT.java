@@ -79,6 +79,21 @@ class WatchHistoryRepositoryIT extends AbstractIntegrationTest {
     assertThat(completionsOf(collectableId)).isEqualTo(2);
   }
 
+  @Test
+  @DisplayName("Should save one manual mark when one batch names the same title twice")
+  void shouldSaveOneManualMarkWhenOneBatchNamesTheSameTitleTwice() {
+    var collectableId = UUID.randomUUID();
+
+    var marked =
+        transactionTemplate.execute(
+            _ ->
+                watchHistoryRepository.batchInsert(
+                    profileId, List.of(collectableId, collectableId), 0));
+
+    assertThat(marked).isEqualTo(1);
+    assertThat(completionsOf(collectableId)).isEqualTo(1);
+  }
+
   private StreamSessionCompletion.StreamSessionCompletionBuilder completionBuilder(
       UUID collectableId) {
     return StreamSessionCompletion.builder()

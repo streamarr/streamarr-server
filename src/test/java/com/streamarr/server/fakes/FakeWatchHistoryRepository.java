@@ -39,7 +39,12 @@ public class FakeWatchHistoryRepository extends FakeJpaRepository<WatchHistory>
   @Override
   public int batchInsert(UUID profileId, Collection<UUID> collectableIds, int durationSeconds) {
     var watchedAt = Instant.now();
+    var saved = 0;
     for (var collectableId : collectableIds) {
+      if (hasCompletionAt(profileId, collectableId, watchedAt)) {
+        continue;
+      }
+
       save(
           WatchHistory.builder()
               .profileId(profileId)
@@ -47,9 +52,19 @@ public class FakeWatchHistoryRepository extends FakeJpaRepository<WatchHistory>
               .watchedAt(watchedAt)
               .durationSeconds(durationSeconds)
               .build());
+      saved++;
     }
 
-    return collectableIds.size();
+    return saved;
+  }
+
+  private boolean hasCompletionAt(UUID profileId, UUID collectableId, Instant watchedAt) {
+    return database.values().stream()
+        .anyMatch(
+            wh ->
+                profileId.equals(wh.getProfileId())
+                    && collectableId.equals(wh.getCollectableId())
+                    && watchedAt.equals(wh.getWatchedAt()));
   }
 
   @Override
