@@ -1,6 +1,7 @@
 package com.streamarr.server.services.watchprogress;
 
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildMatchedMediaFile;
+import static com.streamarr.server.fixtures.MediaEntityFixture.buildMovie;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeries;
 import static com.streamarr.server.fixtures.SessionProgressFixture.progressBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -16,8 +17,10 @@ import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSeasonRepository;
+import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.fixtures.StreamSessionFixture;
@@ -44,8 +47,10 @@ class SessionProgressServiceTest {
   private FakeSessionProgressRepository sessionProgressRepository;
   private FakeWatchHistoryRepository watchHistoryRepository;
   private FakeMediaFileRepository mediaFileRepository;
+  private FakeMovieRepository movieRepository;
   private FakeEpisodeRepository episodeRepository;
   private FakeSeasonRepository seasonRepository;
+  private FakeSeriesRepository seriesRepository;
   private CapturingEventPublisher eventPublisher;
   private WatchStatusService watchStatusService;
   private SessionProgressService service;
@@ -58,16 +63,20 @@ class SessionProgressServiceTest {
     sessionProgressRepository = new FakeSessionProgressRepository();
     watchHistoryRepository = new FakeWatchHistoryRepository();
     mediaFileRepository = new FakeMediaFileRepository();
+    movieRepository = new FakeMovieRepository();
     episodeRepository = new FakeEpisodeRepository();
     seasonRepository = new FakeSeasonRepository();
+    seriesRepository = new FakeSeriesRepository();
     eventPublisher = new CapturingEventPublisher();
     watchStatusService =
         new WatchStatusService(
             sessionProgressRepository,
             watchHistoryRepository,
             mediaFileRepository,
+            movieRepository,
             episodeRepository,
             seasonRepository,
+            seriesRepository,
             eventPublisher);
     var properties = new WatchProgressProperties(5.0, 90.0, 300);
     service =
@@ -88,7 +97,7 @@ class SessionProgressServiceTest {
   }
 
   private void saveMediaFileForSession(StreamSession session) {
-    var mediaFile = buildMatchedMediaFile(UUID.randomUUID());
+    var mediaFile = buildMatchedMediaFile(movieRepository.save(buildMovie()).getId());
     mediaFile.setId(session.getMediaFileId());
     mediaFileRepository.save(mediaFile);
   }
@@ -543,7 +552,7 @@ class SessionProgressServiceTest {
     @Test
     @DisplayName("Should delete all progress when resetting movie")
     void shouldDeleteAllProgressWhenResettingMovie() {
-      var movieId = UUID.randomUUID();
+      var movieId = movieRepository.save(buildMovie()).getId();
       mediaFileRepository.save(buildMatchedMediaFile(movieId));
       var mediaFile = mediaFileRepository.findByMediaId(movieId).getFirst();
 
@@ -580,7 +589,7 @@ class SessionProgressServiceTest {
     @Test
     @DisplayName("Should delete all episode progress when resetting series")
     void shouldDeleteAllEpisodeProgressWhenResettingSeries() {
-      var series = buildSeries();
+      var series = seriesRepository.save(buildSeries());
       var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
       var s2 = seasonRepository.save(Season.builder().seasonNumber(2).series(series).build());
       var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());

@@ -20,7 +20,9 @@ import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
+import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.graphql.dataloaders.AggregateWatchProgressDataLoader;
@@ -127,8 +129,10 @@ class WatchProgressFieldResolverTest {
           sessionProgressRepository,
           watchHistoryRepository,
           mediaFileRepository,
+          new FakeMovieRepository(),
           episodeRepository,
           seasonRepository,
+          new FakeSeriesRepository(),
           eventPublisher);
     }
   }

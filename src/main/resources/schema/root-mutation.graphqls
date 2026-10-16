@@ -7,8 +7,10 @@ type Mutation {
     createStreamSession(input: CreateStreamSessionInput!): CreateStreamSessionPayload
     destroyStreamSession(sessionId: ID!): Boolean!
     reportStreamSessionTimeline(sessionId: ID!, positionSeconds: Int!, state: PlaybackState!): Boolean!
-    markWatched(id: ID!): Boolean!
-    markUnwatched(id: ID!): Boolean!
+    "Marks an item watched for the selected Profile. A season or a series marks each of its episodes."
+    markWatched(input: MarkWatchedInput!): MarkWatchedPayload
+    "Marks an item unwatched for the selected Profile and clears its resume position. A season or a series marks each of its episodes."
+    markUnwatched(input: MarkUnwatchedInput!): MarkUnwatchedPayload
     grantServerAdmin(input: GrantServerAdminInput!): GrantServerAdminPayload
     revokeServerAdmin(input: RevokeServerAdminInput!): RevokeServerAdminPayload
     grantHouseholdAdmin(input: GrantHouseholdAdminInput!): GrantHouseholdAdminPayload

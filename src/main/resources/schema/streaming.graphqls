@@ -63,3 +63,32 @@ type WatchProgress {
 }
 
 union ContinueWatchingMedia = Movie | Episode
+
+"An item whose watch state a Profile can change."
+union WatchStateItem = Movie | Episode | Season | Series
+
+input MarkWatchedInput {
+    "The ID of a movie, episode, season or series."
+    itemId: ID!
+}
+
+type MarkWatchedPayload {
+    "The marked item in its resulting state. The item is null when userErrors is not empty."
+    item: WatchStateItem
+    userErrors: [MarkWatchedError!]!
+}
+
+union MarkWatchedError = InvalidIdError | ItemNotFoundError
+
+input MarkUnwatchedInput {
+    "The ID of a movie, episode, season or series."
+    itemId: ID!
+}
+
+type MarkUnwatchedPayload {
+    "The marked item in its resulting state. The item is null when userErrors is not empty."
+    item: WatchStateItem
+    userErrors: [MarkUnwatchedError!]!
+}
+
+union MarkUnwatchedError = InvalidIdError | ItemNotFoundError
