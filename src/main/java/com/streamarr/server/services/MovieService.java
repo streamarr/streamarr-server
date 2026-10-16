@@ -154,6 +154,12 @@ public class MovieService {
     return movieRepository.findById(id);
   }
 
+  /** Returns the movies with the given ids; an id without a movie is left out. */
+  @Transactional(readOnly = true)
+  public List<Movie> findMoviesByIds(Collection<UUID> movieIds) {
+    return movieRepository.findAllById(movieIds);
+  }
+
   /** Returns the given movie ids whose movie has no provider id. */
   @Transactional(readOnly = true)
   public Set<UUID> findUnmatchedMovieIds(Collection<UUID> movieIds) {

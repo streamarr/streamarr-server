@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.defaultIdentityBuilder;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildEpisode;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildMovie;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeason;
@@ -18,6 +19,7 @@ import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
+import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
@@ -137,7 +139,8 @@ class WatchProgressFieldResolverTest {
           episodeRepository,
           seasonRepository,
           seriesRepository,
-          eventPublisher);
+          eventPublisher,
+          new FakeAuthorizationService(defaultIdentityBuilder().build()));
     }
   }
 

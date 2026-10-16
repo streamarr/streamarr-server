@@ -33,6 +33,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -269,6 +270,34 @@ public class SeriesService {
   @Transactional(readOnly = true)
   public Optional<Series> findById(UUID id) {
     return seriesRepository.findById(id);
+  }
+
+  /** Returns the episodes with the given ids; an id without an episode is left out. */
+  @Transactional(readOnly = true)
+  public List<Episode> findEpisodesByIds(Collection<UUID> episodeIds) {
+    return episodeRepository.findAllById(episodeIds);
+  }
+
+  /** Returns the seasons that hold the given episodes, each season once. */
+  @Transactional(readOnly = true)
+  public List<Season> findSeasonsByEpisodeIds(Collection<UUID> episodeIds) {
+    return seasonRepository.findAllById(findSeasonIdsByEpisodeIds(episodeIds));
+  }
+
+  /** Returns the series that hold the given episodes, each series once. */
+  @Transactional(readOnly = true)
+  public List<Series> findSeriesByEpisodeIds(Collection<UUID> episodeIds) {
+    var seriesIds =
+        seasonRepository.findAllById(findSeasonIdsByEpisodeIds(episodeIds)).stream()
+            .map(season -> season.getSeries().getId())
+            .collect(Collectors.toSet());
+    return seriesRepository.findAllById(seriesIds);
+  }
+
+  private Set<UUID> findSeasonIdsByEpisodeIds(Collection<UUID> episodeIds) {
+    return episodeRepository.findAllById(episodeIds).stream()
+        .map(episode -> episode.getSeason().getId())
+        .collect(Collectors.toSet());
   }
 
   /** Returns the given series ids whose series has no provider id. */
