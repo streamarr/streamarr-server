@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.exceptions.ResourceBusyException;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Optional;
 import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.DisplayName;
@@ -45,6 +46,37 @@ class MutationTransactionsTest {
             constraint -> "uq_thing".equals(constraint) ? Optional.of("taken") : Optional.empty());
 
     assertThat(outcome).isEqualTo(Outcome.rejected("taken"));
+    assertThat(transactionManager.rollbacks()).isEqualTo(1);
+    assertThat(transactionManager.commits()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should roll back and return the reason when the write unit rejects")
+  void shouldRollBackAndReturnReasonWhenWriteUnitRejects() {
+    var outcome =
+        transactions.<String, String>write(
+            () -> {
+              throw new MutationRejection("taken");
+            },
+            _ -> Optional.empty());
+
+    assertThat(outcome).isEqualTo(Outcome.rejected("taken"));
+    assertThat(transactionManager.rollbacks()).isEqualTo(1);
+    assertThat(transactionManager.commits()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should roll back and return every reason in order when the write unit rejects for several")
+  void shouldRollBackAndReturnEveryReasonInOrderWhenWriteUnitRejectsForSeveral() {
+    var outcome =
+        transactions.<String, String>write(
+            () -> {
+              throw MutationRejection.ofReasons(List.of("inside", "contains"));
+            },
+            _ -> Optional.empty());
+
+    assertThat(outcome).isEqualTo(Outcome.rejected(List.of("inside", "contains")));
     assertThat(transactionManager.rollbacks()).isEqualTo(1);
     assertThat(transactionManager.commits()).isZero();
   }
