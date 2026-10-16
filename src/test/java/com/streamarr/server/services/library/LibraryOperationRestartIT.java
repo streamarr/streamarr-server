@@ -8,6 +8,7 @@ import static com.streamarr.server.support.HeldResponses.held;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import com.github.kagkarlsson.scheduler.CurrentlyExecuting;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.github.tomakehurst.wiremock.client.MappingBuilder;
@@ -37,6 +38,7 @@ import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.ArtworkSchedulerStarter;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.LibraryOperationSchedulerStarter;
+import com.streamarr.server.support.security.SignedInAccount;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -45,6 +47,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -70,6 +73,7 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
   @Autowired private LibraryOperationService libraryOperationService;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private LibraryRepository libraryRepository;
+  @Autowired private LibraryOperationRepository libraryOperations;
   @Autowired private MovieRepository movieRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private ProbeExecution probeExecution;
@@ -212,6 +216,52 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
         .clock(Clock.systemUTC())
         .metrics(applicationContext.getBean(LibraryOperationMetrics.class))
         .build();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the ServerAdmin as the scan's requester when the scan runs again after the"
+          + " library-operation scheduler restarts")
+  void shouldKeepTheServerAdminAsTheScansRequesterWhenTheScanRunsAgainAfterARestart()
+      throws Exception {
+    var library = createMovieLibrary();
+    createMovieFile("Inception (2010)", "Inception (2010).mkv");
+    stubHeldTmdbMovieSearch();
+    stubTmdbMovieMetadata();
+    var beforeRestart = startScheduler(new AbstractSchedulerListener() {});
+    var outcome =
+        SignedInAccount.callSignedInAs(
+            admin.account().getId(),
+            () ->
+                libraryOperationService.startLibraryScan(
+                    authTestSupport.identityOf(admin), library.getId()));
+    heldResponses.awaitHeldResponses(1, BOUND);
+    beforeRestart.stop();
+    var requested =
+        libraryOperations.findLibraryOperation(storedLibraryOperationId()).orElseThrow();
+
+    heldResponses.release();
+    var readWhenRunAgain = new CompletableFuture<Optional<LibraryOperation>>();
+    var completed = new CompletableFuture<ExecutionComplete>();
+    startScheduler(
+        new AbstractSchedulerListener() {
+          @Override
+          public void onExecutionStart(CurrentlyExecuting execution) {
+            readWhenRunAgain.complete(libraryOperations.findLibraryOperation(requested.id()));
+          }
+
+          @Override
+          public void onExecutionComplete(ExecutionComplete complete) {
+            completed.complete(complete);
+          }
+        });
+    completed.get(BOUND.toSeconds(), TimeUnit.SECONDS);
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(requested.createdBy()).isEqualTo(admin.account().getId());
+    assertThat(readWhenRunAgain.get(BOUND.toSeconds(), TimeUnit.SECONDS)).contains(requested);
+    assertThat(libraryStatus(library)).isEqualTo(LibraryStatus.HEALTHY);
+    assertThat(storedLibraryOperations()).isZero();
   }
 
   @Test
