@@ -68,7 +68,7 @@ class SegmentRecoveryConcurrencyTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     registry.save(session);
-    rig.lifecycle().startAll(session, 0);
+    rig.lifecycle().startFirstListedVariant(session);
     executor.markDead(sessionId);
     rig.lifecycle().recover(sessionId, StreamSession.defaultVariant(), "init.mp4");
     var replacementAttempt = session.getHandle().orElseThrow().attemptId();
@@ -94,7 +94,7 @@ class SegmentRecoveryConcurrencyTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     registry.save(session);
-    rig.lifecycle().startAll(session, 0);
+    rig.lifecycle().startFirstListedVariant(session);
     var originalAttempt = session.getHandle().orElseThrow().attemptId();
     rig.lifecycle().recover(sessionId, StreamSession.defaultVariant(), "init.mp4");
     clock.advance(properties.producerStallThreshold().plus(properties.targetSegmentDuration()));
@@ -118,7 +118,7 @@ class SegmentRecoveryConcurrencyTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     registry.save(session);
-    rig.lifecycle().startAll(session, 0);
+    rig.lifecycle().startFirstListedVariant(session);
     executor.markDead(sessionId);
     if (refused) {
       executor.refuseTarget(ExecutionTargetId.LOCAL);
@@ -137,7 +137,8 @@ class SegmentRecoveryConcurrencyTest {
             threads.submit(
                 () -> {
                   seeking.countDown();
-                  rig.lifecycle().ensurePositioned(sessionId, "segment50.m4s");
+                  rig.lifecycle()
+                      .ensurePositioned(sessionId, StreamSession.defaultVariant(), "segment50.m4s");
                 });
         await(seeking);
         executor.proceed.countDown();
@@ -190,7 +191,7 @@ class SegmentRecoveryConcurrencyTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     registry.save(session);
-    lifecycle.startAll(session, 0);
+    lifecycle.startFirstListedVariant(session);
     lifecycle.recover(sessionId, StreamSession.defaultVariant(), "segment0.m4s");
     if (stalled) {
       clock.advance(properties.producerStallThreshold().plus(properties.targetSegmentDuration()));

@@ -1,11 +1,12 @@
 package com.streamarr.server.services.streaming;
 
-import static com.streamarr.server.fixtures.StreamSessionFixture.abrSessionBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.defaultLadderSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.sessionWithDurationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
@@ -17,16 +18,20 @@ import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture.StreamingRig;
+import com.streamarr.server.services.concurrency.MutexFactory;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -90,14 +95,7 @@ class SegmentDeliveryCoordinatorTest {
   private StreamSession startedSession() {
     var session = defaultSessionBuilder().build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 0);
-    return session;
-  }
-
-  private StreamSession startedAbrSession() {
-    var session = abrSessionBuilder().build();
-    runtimeRegistry.save(session);
-    lifecycle.startAll(session, 0);
+    lifecycle.startFirstListedVariant(session);
     return session;
   }
 
@@ -166,7 +164,7 @@ class SegmentDeliveryCoordinatorTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
-    rig.lifecycle().startAll(session, 0);
+    rig.lifecycle().startFirstListedVariant(session);
     destroyRaceRegistry.destroyAfterNextLookup(
         () -> {
           runtimeRegistry.removeById(sessionId);
@@ -204,7 +202,7 @@ class SegmentDeliveryCoordinatorTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
-    rig.lifecycle().startAll(session, 0);
+    rig.lifecycle().startFirstListedVariant(session);
     transcodeExecutor.setExecutionTargets(List.of(TARGET_A, TARGET_B));
     transcodeExecutor.refuseTarget(TARGET_A);
     transcodeExecutor.refuseTarget(TARGET_B);
@@ -257,7 +255,7 @@ class SegmentDeliveryCoordinatorTest {
           throws Exception {
     var sixtySecondSession = sessionWithDurationBuilder(60).build();
     runtimeRegistry.save(sixtySecondSession);
-    lifecycle.startAll(sixtySecondSession, 0);
+    lifecycle.startFirstListedVariant(sixtySecondSession);
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
     var delivery = deliverAsync(sixtySecondSession.getSessionId(), "segment10.m4s");
@@ -278,7 +276,7 @@ class SegmentDeliveryCoordinatorTest {
       throws Exception {
     var sixtySecondSession = sessionWithDurationBuilder(60).build();
     runtimeRegistry.save(sixtySecondSession);
-    lifecycle.startAll(sixtySecondSession, 0);
+    lifecycle.startFirstListedVariant(sixtySecondSession);
     segmentStore.addSegment(sixtySecondSession.getSessionId(), "segment10.m4s", new byte[] {10});
 
     var delivery = deliverAsync(sixtySecondSession.getSessionId(), "segment10.m4s");
@@ -362,24 +360,25 @@ class SegmentDeliveryCoordinatorTest {
   }
 
   @Test
-  @DisplayName(
-      "Should replace only the dead variant while its siblings keep running when delivering a segment")
-  void shouldReplaceOnlyTheDeadVariantWhileItsSiblingsKeepRunningWhenDeliveringSegment()
-      throws Exception {
-    var session = startedAbrSession();
-    transcodeExecutor.markDead(session.getSessionId(), "1080p");
+  @DisplayName("Should replace a dead variant with its own geometry when delivering a segment")
+  void shouldReplaceADeadVariantWithItsOwnGeometryWhenDeliveringASegment() throws Exception {
+    var session = startedLadderSession();
+    transcodeExecutor.markDead(session.getSessionId(), "480p");
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
-    var delivery = deliverAsync(session.getSessionId(), "1080p", "1080p/segment0.m4s");
+    var delivery = deliverAsync(session.getSessionId(), "480p", "480p/segment0.m4s");
     transcodeExecutor.awaitStartedRequestCount(startsBefore + 1);
-    segmentStore.addSegment(session.getSessionId(), "1080p/segment0.m4s", new byte[] {1});
+    segmentStore.addSegment(session.getSessionId(), "480p/segment0.m4s", new byte[] {1});
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
-    var replacement = transcodeExecutor.getStartedRequests().getLast();
-    assertThat(replacement.variantLabel()).isEqualTo("1080p");
-    assertThat(replacement.width()).isEqualTo(1920);
-    assertThat(transcodeExecutor.isRunning(session.getSessionId(), "720p")).isTrue();
-    assertThat(session.getVariantHandle("720p").orElseThrow().status())
+    assertThat(startedSince(startsBefore))
+        .singleElement()
+        .satisfies(
+            replacement -> {
+              assertThat(replacement.variantLabel()).isEqualTo("480p");
+              assertThat(replacement.width()).isEqualTo(854);
+            });
+    assertThat(session.getVariantHandle("480p").orElseThrow().status())
         .isEqualTo(TranscodeStatus.ACTIVE);
   }
 
@@ -452,7 +451,8 @@ class SegmentDeliveryCoordinatorTest {
       throws Exception {
     var session = defaultSessionBuilder().build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 900);
+    session.setCurrentSegment(900);
+    lifecycle.startFirstListedVariant(session);
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
     // init.mp4 resolves to the run's start index, so no earlier segment can ever exist -- the
@@ -751,7 +751,8 @@ class SegmentDeliveryCoordinatorTest {
       throws Exception {
     var session = defaultSessionBuilder().build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 2);
+    session.setCurrentSegment(2);
+    lifecycle.startFirstListedVariant(session);
     transcodeExecutor.markDead(session.getSessionId());
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
@@ -807,7 +808,7 @@ class SegmentDeliveryCoordinatorTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
-    rig.lifecycle().startAll(session, 0);
+    rig.lifecycle().startFirstListedVariant(session);
 
     transcodeExecutor.setExecutionTargets(List.of(TARGET_A, TARGET_B));
     transcodeExecutor.refuseTarget(TARGET_A);
@@ -878,7 +879,7 @@ class SegmentDeliveryCoordinatorTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
-    rig.lifecycle().startAll(session, 0);
+    rig.lifecycle().startFirstListedVariant(session);
     gatingExecutor.markDead(sessionId);
     var streamingService =
         HlsStreamingService.builder()
@@ -914,6 +915,356 @@ class SegmentDeliveryCoordinatorTest {
 
     assertThat(runtimeRegistry.findById(sessionId)).isEmpty();
     assertThat(gatingExecutor.getStopped()).contains(sessionId);
+  }
+
+  private StreamSession startedLadderSession() {
+    var session = defaultLadderSessionBuilder().build();
+    runtimeRegistry.save(session);
+    lifecycle.startFirstListedVariant(session);
+    return session;
+  }
+
+  private List<String> runningVariants(StreamSession session) {
+    return session.getVariants().stream()
+        .map(QualityVariant::label)
+        .filter(label -> transcodeExecutor.isRunning(session.getSessionId(), label))
+        .toList();
+  }
+
+  private List<TranscodeRequest> startedSince(int startedBefore) {
+    var started = transcodeExecutor.getStartedRequests();
+    return started.subList(startedBefore, started.size());
+  }
+
+  private void storeInitializationSegments(StreamSession session) {
+    for (var variant : session.getVariants()) {
+      segmentStore.addSegment(
+          session.getSessionId(), variant.label() + "/init.mp4", new byte[] {0x66});
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should start the variant at the requested segment when a media segment of a variant with no job attempt is requested")
+  void
+      shouldStartTheVariantAtTheRequestedSegmentWhenAMediaSegmentOfAVariantWithNoJobAttemptIsRequested()
+          throws Exception {
+    var session = startedLadderSession();
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    var delivery = deliverAsync(session.getSessionId(), "720p", "720p/segment7.m4s");
+    transcodeExecutor.awaitStartedRequestCount(startedBefore + 1);
+    segmentStore.addSegment(session.getSessionId(), "720p/segment7.m4s", new byte[] {7});
+
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(startedSince(startedBefore))
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.variantLabel()).isEqualTo("720p");
+              assertThat(request.startSequenceNumber()).isEqualTo(7);
+              assertThat(request.width()).isEqualTo(1280);
+            });
+    assertThat(runningVariants(session)).containsExactly("720p");
+  }
+
+  @Test
+  @DisplayName(
+      "Should start the variant at the current segment and stop no job attempt when the initialization segment of a variant with no job attempt is requested")
+  void
+      shouldStartTheVariantAtTheCurrentSegmentAndStopNoJobAttemptWhenTheInitializationSegmentOfAVariantWithNoJobAttemptIsRequested()
+          throws Exception {
+    var session = startedLadderSession();
+    var sessionId = session.getSessionId();
+    var seek = deliverAsync(sessionId, "480p", "480p/segment20.m4s");
+    transcodeExecutor.awaitStartedRequestCount(2);
+    segmentStore.addSegment(sessionId, "480p/segment20.m4s", new byte[] {20});
+    assertThat(seek.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    storeInitializationSegments(session);
+
+    var delivery = coordinator.deliver(sessionId, "1080p", "1080p/init.mp4");
+
+    assertThat(delivery).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(startedSince(2))
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.variantLabel()).isEqualTo("1080p");
+              assertThat(request.startSequenceNumber()).isEqualTo(20);
+            });
+    assertThat(runningVariants(session)).containsExactlyInAnyOrder("480p", "1080p");
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop the job attempts of every other video variant when a media segment of one video variant is requested")
+  void
+      shouldStopTheJobAttemptsOfEveryOtherVideoVariantWhenAMediaSegmentOfOneVideoVariantIsRequested()
+          throws Exception {
+    var session = startedLadderSession();
+    var sessionId = session.getSessionId();
+    storeInitializationSegments(session);
+    coordinator.deliver(sessionId, "1080p", "1080p/init.mp4");
+    coordinator.deliver(sessionId, "720p", "720p/init.mp4");
+    assertThat(runningVariants(session)).containsExactlyInAnyOrder("480p", "1080p", "720p");
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    var delivery = deliverAsync(sessionId, "360p", "360p/segment0.m4s");
+    transcodeExecutor.awaitStartedRequestCount(startedBefore + 1);
+    segmentStore.addSegment(sessionId, "360p/segment0.m4s", new byte[] {1});
+
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(runningVariants(session)).containsExactly("360p");
+    assertThat(session.getVariantHandles()).containsOnlyKeys("360p");
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop the other video variants and start nothing when the requested media segment is stored")
+  void shouldStopTheOtherVideoVariantsAndStartNothingWhenTheRequestedMediaSegmentIsStored() {
+    var session = startedLadderSession();
+    segmentStore.addSegment(session.getSessionId(), "720p/segment3.m4s", new byte[] {3});
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    var delivery = coordinator.deliver(session.getSessionId(), "720p", "720p/segment3.m4s");
+
+    assertThat(delivery).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(runningVariants(session)).isEmpty();
+    assertThat(startedSince(startedBefore)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should start the requested variant and drop the suspended variant when a suspended stream session receives a media request for another variant")
+  void
+      shouldStartTheRequestedVariantAndDropTheSuspendedVariantWhenASuspendedStreamSessionReceivesAMediaRequestForAnotherVariant()
+          throws Exception {
+    var session = startedLadderSession();
+    lifecycle.suspend(session.getSessionId());
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    var delivery = deliverAsync(session.getSessionId(), "1080p", "1080p/segment4.m4s");
+    transcodeExecutor.awaitStartedRequestCount(startedBefore + 1);
+    segmentStore.addSegment(session.getSessionId(), "1080p/segment4.m4s", new byte[] {4});
+
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(startedSince(startedBefore))
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.variantLabel()).isEqualTo("1080p");
+              assertThat(request.startSequenceNumber()).isEqualTo(4);
+            });
+    assertThat(session.getVariantHandles()).containsOnlyKeys("1080p");
+    assertThat(session.isSuspended()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should relocate only the requested variant when the player seeks")
+  void shouldRelocateOnlyTheRequestedVariantWhenThePlayerSeeks() throws Exception {
+    var session = startedLadderSession();
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    var delivery = deliverAsync(session.getSessionId(), "480p", "480p/segment100.m4s");
+    transcodeExecutor.awaitStartedRequestCount(startedBefore + 1);
+    segmentStore.addSegment(session.getSessionId(), "480p/segment100.m4s", new byte[] {1});
+
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(startedSince(startedBefore))
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.variantLabel()).isEqualTo("480p");
+              assertThat(request.startSequenceNumber()).isEqualTo(100);
+            });
+    assertThat(runningVariants(session)).containsExactly("480p");
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer a held request as unrecoverable without restarting its variant when a request for another video variant stops that variant")
+  void
+      shouldAnswerAHeldRequestAsUnrecoverableWithoutRestartingItsVariantWhenARequestForAnotherVideoVariantStopsThatVariant()
+          throws Exception {
+    var session = startedLadderSession();
+    var sessionId = session.getSessionId();
+    var held = deliverAsync(sessionId, "480p", "480p/segment1.m4s");
+    awaitLivenessChecks(1);
+
+    var switched = deliverAsync(sessionId, "720p", "720p/segment1.m4s");
+    transcodeExecutor.awaitStartedRequestCount(2);
+
+    assertThat(held.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    segmentStore.addSegment(sessionId, "720p/segment1.m4s", new byte[] {1});
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::variantLabel)
+        .containsExactly("480p", "720p");
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer unrecoverable when no worker can start the variant that a media segment request needs")
+  void shouldAnswerUnrecoverableWhenNoWorkerCanStartTheVariantThatAMediaSegmentRequestNeeds() {
+    var session = startedLadderSession();
+    transcodeExecutor.failUntargetedStarts();
+
+    var delivery = coordinator.deliver(session.getSessionId(), "720p", "720p/segment3.m4s");
+
+    assertThat(delivery).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(session.getVariantHandle("720p")).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop no job attempt when a media segment of a variant outside the ladder is requested")
+  void shouldStopNoJobAttemptWhenAMediaSegmentOfAVariantOutsideTheLadderIsRequested() {
+    var session = startedLadderSession();
+
+    var delivery = coordinator.deliver(session.getSessionId(), "2160p", "2160p/segment0.m4s");
+
+    assertThat(delivery).isInstanceOf(SegmentDelivery.SessionEnded.class);
+    assertThat(runningVariants(session)).containsExactly("480p");
+  }
+
+  @Test
+  @DisplayName(
+      "Should leave one video variant running when media segment requests for two variants overlap")
+  void shouldLeaveOneVideoVariantRunningWhenMediaSegmentRequestsForTwoVariantsOverlap()
+      throws Exception {
+    var session = defaultLadderSessionBuilder().build();
+    var sessionId = session.getSessionId();
+    var gate = new SwitchGate(() -> !transcodeExecutor.isRunning(sessionId, "480p"));
+    var rig =
+        StreamingRigFixture.streamingRigBuilder()
+            .transcodeExecutor(transcodeExecutor)
+            .segmentStore(segmentStore)
+            .properties(properties)
+            .runtimeRegistry(runtimeRegistry)
+            .clock(clock)
+            .pollInterval(Duration.ofMillis(20))
+            .sessionMutex(gate.mutexFactory())
+            .build();
+    runtimeRegistry.save(session);
+    rig.lifecycle().startFirstListedVariant(session);
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var switchTo720p =
+          executor.submit(
+              () ->
+                  gate.gateCurrentThread(
+                      () -> rig.coordinator().deliver(sessionId, "720p", "720p/segment5.m4s")));
+      gate.awaitGatedOrStarted(transcodeExecutor, 2);
+      var startedBefore = transcodeExecutor.getStartedRequests().size();
+      var switchTo1080p =
+          executor.submit(
+              () -> rig.coordinator().deliver(sessionId, "1080p", "1080p/segment5.m4s"));
+      transcodeExecutor.awaitStartedRequestCount(startedBefore + 1);
+      segmentStore.addSegment(sessionId, "1080p/segment5.m4s", new byte[] {5});
+      assertThat(switchTo1080p.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+
+      gate.releaseAndAwaitHeldStep();
+      segmentStore.addSegment(sessionId, "720p/segment5.m4s", new byte[] {5});
+      switchTo720p.get(2, TimeUnit.SECONDS);
+    }
+
+    assertThat(runningVariants(session)).hasSize(1);
+  }
+
+  /**
+   * Holds one request's thread at the session mutex once the given condition holds, so a second
+   * request can run between the first request's steps.
+   */
+  private static final class SwitchGate {
+
+    private final BooleanSupplier holdWhen;
+    private final CountDownLatch gated = new CountDownLatch(1);
+    private final CountDownLatch released = new CountDownLatch(1);
+    private final CountDownLatch heldStepDone = new CountDownLatch(1);
+    private final ReentrantLock lock = new GateLock();
+    private volatile Thread gatedThread;
+
+    private SwitchGate(BooleanSupplier holdWhen) {
+      this.holdWhen = holdWhen;
+    }
+
+    private MutexFactory<UUID> mutexFactory() {
+      return new MutexFactory<>() {
+        @Override
+        public ReentrantLock getMutex(UUID sessionId) {
+          return lock;
+        }
+      };
+    }
+
+    private SegmentDelivery gateCurrentThread(Supplier<SegmentDelivery> request) {
+      gatedThread = Thread.currentThread();
+      return request.get();
+    }
+
+    // Waits on the gate's latch in bounded steps, so no thread stays parked when the request never
+    // reaches the gate.
+    private void awaitGatedOrStarted(FakeTranscodeExecutor executor, int startedRequestCount)
+        throws InterruptedException {
+      var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+      while (!gated.await(10, TimeUnit.MILLISECONDS)) {
+        if (executor.getStartedRequests().size() >= startedRequestCount) {
+          return;
+        }
+
+        assertThat(System.nanoTime())
+            .as("the request must reach the switch gate or start its variant")
+            .isLessThan(deadline);
+      }
+    }
+
+    // Returns after the held step has run, so the test changes nothing during that step.
+    private void releaseAndAwaitHeldStep() throws InterruptedException {
+      var held = gated.getCount() == 0;
+      released.countDown();
+      if (held) {
+        assertThat(heldStepDone.await(5, TimeUnit.SECONDS))
+            .as("the held step must finish")
+            .isTrue();
+      }
+    }
+
+    private final class GateLock extends ReentrantLock {
+
+      private volatile boolean holdingHeldStep;
+
+      @Override
+      public void unlock() {
+        super.unlock();
+        if (Thread.currentThread() == gatedThread && holdingHeldStep) {
+          holdingHeldStep = false;
+          heldStepDone.countDown();
+        }
+      }
+
+      @Override
+      public void lock() {
+        if (Thread.currentThread() == gatedThread
+            && gated.getCount() > 0
+            && holdWhen.getAsBoolean()) {
+          gated.countDown();
+          try {
+            assertThat(released.await(5, TimeUnit.SECONDS))
+                .as("the switch gate must be released")
+                .isTrue();
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Interrupted while waiting at the switch gate", e);
+          }
+
+          super.lock();
+          holdingHeldStep = true;
+          return;
+        }
+
+        super.lock();
+      }
+    }
   }
 
   private void exhaustRecovery(StreamSession session) {

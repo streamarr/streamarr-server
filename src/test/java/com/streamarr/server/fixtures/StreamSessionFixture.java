@@ -62,6 +62,41 @@ public final class StreamSessionFixture {
                     .build()));
   }
 
+  /**
+   * An encoding session with the default ladder in the multivariant playlist's order: 480p first,
+   * then 1080p, 720p and 360p.
+   */
+  public static StreamSession.StreamSessionBuilder defaultLadderSessionBuilder() {
+    return defaultSessionBuilder()
+        .transcodeDecision(fullTranscodeDecision("h264"))
+        .variants(
+            List.of(
+                defaultVariantBuilder()
+                    .width(854)
+                    .height(480)
+                    .videoBitrate(1_500_000L)
+                    .label("480p")
+                    .build(),
+                defaultVariantBuilder()
+                    .width(1920)
+                    .height(1080)
+                    .videoBitrate(5_000_000L)
+                    .label("1080p")
+                    .build(),
+                defaultVariantBuilder()
+                    .width(1280)
+                    .height(720)
+                    .videoBitrate(3_000_000L)
+                    .label("720p")
+                    .build(),
+                defaultVariantBuilder()
+                    .width(640)
+                    .height(360)
+                    .videoBitrate(800_000L)
+                    .label("360p")
+                    .build()));
+  }
+
   public static MediaProbe.MediaProbeBuilder defaultProbeBuilder() {
     return MediaProbe.builder()
         .duration(DEFAULT_MEDIA_DURATION)

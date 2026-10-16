@@ -1,5 +1,6 @@
 package com.streamarr.server.domain.streaming;
 
+import static com.streamarr.server.fixtures.StreamSessionFixture.abrSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.buildActiveSession;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
@@ -73,6 +74,31 @@ class StreamSessionTest {
     session.setVariantHandle("720p", mintHandle(7L, TranscodeStatus.ACTIVE));
 
     assertThat(session.getVariantHandles()).containsKey("720p");
+  }
+
+  @Test
+  @DisplayName("Should offer only the ladder's variants when the stream session has a ladder")
+  void shouldOfferOnlyTheLaddersVariantsWhenTheStreamSessionHasALadder() {
+    var session = abrSessionBuilder().build();
+
+    assertThat(session.offersVariant("720p")).isTrue();
+    assertThat(session.offersVariant("2160p")).isFalse();
+    assertThat(session.offersVariant(StreamSession.defaultVariant())).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should offer only the default variant when the stream session has no ladder")
+  void shouldOfferOnlyTheDefaultVariantWhenTheStreamSessionHasNoLadder() {
+    var session = buildActiveSession();
+
+    assertThat(session.offersVariant(StreamSession.defaultVariant())).isTrue();
+    assertThat(session.offersVariant("720p")).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should start at segment 0 when no job attempt has started")
+  void shouldStartAtSegment0WhenNoJobAttemptHasStarted() {
+    assertThat(abrSessionBuilder().build().getCurrentSegment()).isZero();
   }
 
   @Test

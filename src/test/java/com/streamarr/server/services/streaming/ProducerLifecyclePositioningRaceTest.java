@@ -67,7 +67,11 @@ class ProducerLifecyclePositioningRaceTest {
           executor.submit(
               () ->
                   raceGate.blockAtLock(
-                      () -> lifecycle.ensurePositioned(session.getSessionId(), "segment100.m4s")));
+                      () ->
+                          lifecycle.ensurePositioned(
+                              session.getSessionId(),
+                              StreamSession.defaultVariant(),
+                              "segment100.m4s")));
       try {
         raceGate.awaitBlocked();
         assertThat(lifecycle.removeSession(session.getSessionId())).isTrue();
@@ -94,7 +98,11 @@ class ProducerLifecyclePositioningRaceTest {
           executor.submit(
               () ->
                   raceGate.blockAtLock(
-                      () -> lifecycle.ensurePositioned(session.getSessionId(), "segment100.m4s")));
+                      () ->
+                          lifecycle.ensurePositioned(
+                              session.getSessionId(),
+                              StreamSession.defaultVariant(),
+                              "segment100.m4s")));
       try {
         raceGate.awaitBlocked();
         segmentStore.addSegment(session.getSessionId(), "segment100.m4s", new byte[] {0x47});
@@ -123,7 +131,11 @@ class ProducerLifecyclePositioningRaceTest {
           executor.submit(
               () ->
                   raceGate.blockAtLock(
-                      () -> lifecycle.ensurePositioned(session.getSessionId(), "segment100.m4s")));
+                      () ->
+                          lifecycle.ensurePositioned(
+                              session.getSessionId(),
+                              StreamSession.defaultVariant(),
+                              "segment100.m4s")));
       try {
         raceGate.awaitBlocked();
         segmentStore.addSegment(session.getSessionId(), "segment96.m4s", new byte[] {0x47});
@@ -150,10 +162,15 @@ class ProducerLifecyclePositioningRaceTest {
           executor.submit(
               () ->
                   raceGate.blockAtLock(
-                      () -> lifecycle.ensurePositioned(session.getSessionId(), "segment5.m4s")));
+                      () ->
+                          lifecycle.ensurePositioned(
+                              session.getSessionId(),
+                              StreamSession.defaultVariant(),
+                              "segment5.m4s")));
       try {
         raceGate.awaitBlocked();
-        lifecycle.ensurePositioned(session.getSessionId(), "segment5.m4s");
+        lifecycle.ensurePositioned(
+            session.getSessionId(), StreamSession.defaultVariant(), "segment5.m4s");
       } finally {
         raceGate.release();
       }
@@ -175,7 +192,11 @@ class ProducerLifecyclePositioningRaceTest {
           executor.submit(
               () ->
                   raceGate.blockAtLock(
-                      () -> lifecycle.ensurePositioned(session.getSessionId(), "segment5.m4s")));
+                      () ->
+                          lifecycle.ensurePositioned(
+                              session.getSessionId(),
+                              StreamSession.defaultVariant(),
+                              "segment5.m4s")));
       try {
         raceGate.awaitBlocked();
         assertThat(lifecycle.removeSession(session.getSessionId())).isTrue();
@@ -192,7 +213,7 @@ class ProducerLifecyclePositioningRaceTest {
   private StreamSession startedSession() {
     var session = defaultSessionBuilder().build();
     runtimeRegistry.save(session);
-    lifecycle.startAll(session, 0);
+    lifecycle.startFirstListedVariant(session);
     return session;
   }
 

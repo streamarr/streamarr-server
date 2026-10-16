@@ -62,7 +62,7 @@ public class HlsPlaylistService {
     }
 
     for (var variant : session.getVariants()) {
-      var averageBandwidth = variant.videoBitrate() + audio.bitrate();
+      var averageBandwidth = variant.averageBandwidth(audio.bitrate());
       appendStreamInf(sb, averageBandwidth, variant.width(), variant.height(), codecs, hasAudio);
       sb.append(variant.label()).append("/stream.m3u8?t=").append(token).append("\n");
     }

@@ -4,10 +4,8 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPAC
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.WORKER_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChannelBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
-import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.abrSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
-import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static com.streamarr.server.support.ServerSettingsTestSupport.resetServerSettings;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -22,26 +20,11 @@ import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.ProducerLifecycleService;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.transcode.v1.EncoderPreset;
-import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
-import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
-import com.streamarr.transcode.v1.JobAttemptFailed;
-import com.streamarr.transcode.v1.JobAttemptFailure;
-import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
-import com.streamarr.transcode.v1.VariantJob;
-import com.streamarr.transcode.v1.VideoCodecFamily;
-import com.streamarr.transcode.v1.WorkerCapabilities;
-import com.streamarr.transcode.v1.WorkerIdentity;
-import com.streamarr.transcode.v1.WorkerRegistration;
 import io.grpc.ManagedChannel;
-import io.grpc.stub.StreamObserver;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
@@ -119,33 +102,34 @@ class EncoderPresetDispatchIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should keep the first preset for a replacement attempt and send the new preset to a later variant when the setting changes")
+      "Should keep the first preset for a replacement attempt and send the new preset to a variant that starts later when the setting changes")
   void shouldKeepFirstPresetForReplacementAndSendNewPresetToLaterVariantWhenSettingChanges()
       throws Exception {
     var running = startedSession();
-    var firstJobs = worker.nextJobs(running.getVariants().size());
-    assertThat(firstJobs)
-        .extracting(job -> job.getVariant().getEncoderPreset())
-        .containsOnly(EncoderPreset.ENCODER_PRESET_FASTER);
+    var firstJob = worker.nextJobs(1).getFirst();
+    assertThat(firstJob.getVariant().getVariantLabel()).isEqualTo("1080p");
+    assertThat(firstJob.getVariant().getEncoderPreset())
+        .isEqualTo(EncoderPreset.ENCODER_PRESET_FASTER);
 
     serverSettingsService.changeEncoderPreset(authTestSupport.identityOf(serverAdmin), "MEDIUM");
-    var failed = jobFor(firstJobs, "720p");
-    worker.reportFailed(failed);
+    worker.reportFailed(firstJob);
     await()
         .atMost(Duration.ofSeconds(5))
-        .until(() -> !server.isRunning(running.getSessionId(), "720p"));
-    lifecycle.recover(running.getSessionId(), "720p", "720p/segment2.m4s");
+        .until(() -> !server.isRunning(running.getSessionId(), "1080p"));
+    lifecycle.recover(running.getSessionId(), "1080p", "1080p/segment2.m4s");
 
     var replacement = worker.nextJobs(1).getFirst();
-    assertThat(replacement.getVariant().getVariantLabel()).isEqualTo("720p");
-    assertThat(replacement.getJobAttemptId()).isNotEqualTo(failed.getJobAttemptId());
+    assertThat(replacement.getVariant().getVariantLabel()).isEqualTo("1080p");
+    assertThat(replacement.getJobAttemptId()).isNotEqualTo(firstJob.getJobAttemptId());
     assertThat(replacement.getVariant().getEncoderPreset())
         .isEqualTo(EncoderPreset.ENCODER_PRESET_FASTER);
 
-    var later = startedSession();
-    assertThat(worker.nextJobs(later.getVariants().size()))
-        .extracting(job -> job.getVariant().getEncoderPreset())
-        .containsOnly(EncoderPreset.ENCODER_PRESET_MEDIUM);
+    lifecycle.prepareRequestedVariant(running.getSessionId(), "720p", "720p/segment2.m4s");
+
+    var later = worker.nextJobs(1).getFirst();
+    assertThat(later.getVariant().getVariantLabel()).isEqualTo("720p");
+    assertThat(later.getVariant().getEncoderPreset())
+        .isEqualTo(EncoderPreset.ENCODER_PRESET_MEDIUM);
   }
 
   private StreamSession startedSession() {
@@ -156,97 +140,7 @@ class EncoderPresetDispatchIT extends AbstractIntegrationTest {
             .transcodeDecision(fullTranscodeDecision("h264"))
             .build();
     registry.save(session);
-    lifecycle.startAll(session, 0);
+    lifecycle.startFirstListedVariant(session);
     return session;
-  }
-
-  private static VariantJob jobFor(List<VariantJob> jobs, String variantLabel) {
-    return jobs.stream()
-        .filter(job -> job.getVariant().getVariantLabel().equals(variantLabel))
-        .findFirst()
-        .orElseThrow();
-  }
-
-  private record LoopbackWorker(
-      StreamObserver<EstablishWorkerSessionRequest> requests,
-      BlockingQueue<EstablishWorkerSessionResponse> responses)
-      implements AutoCloseable {
-
-    static LoopbackWorker register(ManagedChannel channel) {
-      var responses = new LinkedBlockingQueue<EstablishWorkerSessionResponse>();
-      var requests =
-          TranscodeWorkerServiceGrpc.newStub(channel)
-              .establishWorkerSession(new QueueingObserver(responses));
-      requests.onNext(
-          EstablishWorkerSessionRequest.newBuilder()
-              .setRegistration(
-                  WorkerRegistration.newBuilder()
-                      .setWorker(
-                          WorkerIdentity.newBuilder()
-                              .setWorkerId(toProto(WORKER_ID))
-                              .setBootId(toProto(UUID.randomUUID())))
-                      .setCapabilities(
-                          WorkerCapabilities.newBuilder()
-                              .addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID))
-                              .addVideoEncoders(
-                                  softwareEncoder(
-                                      VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264")))
-                      .setAvailableSlots(8))
-              .build());
-      return new LoopbackWorker(requests, responses);
-    }
-
-    EstablishWorkerSessionResponse nextResponse() throws InterruptedException {
-      var response = responses.poll(5, TimeUnit.SECONDS);
-      assertThat(response).as("worker session response must arrive").isNotNull();
-      return response;
-    }
-
-    /** The next jobs the server starts on this worker, skipping stop commands. */
-    List<VariantJob> nextJobs(int count) throws InterruptedException {
-      var jobs = new ArrayList<VariantJob>();
-      while (jobs.size() < count) {
-        var response = nextResponse();
-        if (response.hasStartVariant()) {
-          jobs.add(response.getStartVariant().getJob());
-        }
-      }
-
-      return jobs;
-    }
-
-    void reportFailed(VariantJob job) {
-      requests.onNext(
-          EstablishWorkerSessionRequest.newBuilder()
-              .setJobAttemptFailed(
-                  JobAttemptFailed.newBuilder()
-                      .setJobAttemptId(job.getJobAttemptId())
-                      .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED))
-              .build());
-    }
-
-    @Override
-    public void close() {
-      requests.onCompleted();
-    }
-  }
-
-  private record QueueingObserver(BlockingQueue<EstablishWorkerSessionResponse> responses)
-      implements StreamObserver<EstablishWorkerSessionResponse> {
-
-    @Override
-    public void onNext(EstablishWorkerSessionResponse value) {
-      responses.add(value);
-    }
-
-    @Override
-    public void onError(Throwable throwable) {
-      // The test observes the session only through the commands it receives.
-    }
-
-    @Override
-    public void onCompleted() {
-      // The server ends the session when the test closes the channel.
-    }
   }
 }

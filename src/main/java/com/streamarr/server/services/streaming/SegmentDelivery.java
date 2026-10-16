@@ -35,8 +35,10 @@ public sealed interface SegmentDelivery {
   record SessionEnded() implements SegmentDelivery {}
 
   /**
-   * Recovery exhausted every eligible execution target, each consulted live at dispatch time (never
-   * a snapshot — ADR 0019); the request maps to 503.
+   * No job attempt can produce the segment for this request; the request maps to 503. Either
+   * recovery exhausted every eligible execution target, each consulted live at dispatch time (never
+   * a snapshot — ADR 0019), or the variant has no job attempt because its on-demand start failed or
+   * a request for another video variant stopped it.
    */
   record Unrecoverable() implements SegmentDelivery {}
 

@@ -783,7 +783,7 @@ class WorkerSessionServerIT {
                 .runtimeRegistry(runtimeRegistry)
                 .build()
                 .lifecycle();
-        lifecycle.startAll(session, 0);
+        lifecycle.startFirstListedVariant(session);
         var initial = libx264Worker.nextResponse().getStartVariant().getJob();
 
         try (var nvencWorker =
@@ -818,7 +818,8 @@ class WorkerSessionServerIT {
               .map(pin -> pin.backend().encoder())
               .contains("libx264");
 
-          lifecycle.ensurePositioned(session.getSessionId(), "segment100.m4s");
+          lifecycle.ensurePositioned(
+              session.getSessionId(), StreamSession.defaultVariant(), "segment100.m4s");
 
           assertThat(libx264Worker.nextResponse().hasStopVariant()).isTrue();
           assertThat(
