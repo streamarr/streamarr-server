@@ -1,6 +1,7 @@
 package com.streamarr.server.services.mutation;
 
 import com.streamarr.server.exceptions.ResourceBusyException;
+import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -51,7 +52,7 @@ public class MutationTransactions {
     try {
       return Outcome.accepted(transactionTemplate.execute(_ -> write.get()));
     } catch (MutationRejection rejected) {
-      return Outcome.rejected((R) rejected.rejection());
+      return Outcome.rejected((List<R>) rejected.rejections());
     } catch (DataIntegrityViolationException e) {
       var rejection = translator.constraintName(e).flatMap(rejectionFor);
       if (rejection.isEmpty()) {
