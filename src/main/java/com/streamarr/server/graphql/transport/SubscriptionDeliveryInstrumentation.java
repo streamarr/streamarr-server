@@ -31,7 +31,8 @@ import org.springframework.stereotype.Component;
  * executions of two values may overlap. A cached loader would answer a later value with an earlier
  * value's data, and clearing the cache between values would race with an overlapping execution. So
  * WebSocket requests, which carry only subscriptions, get DataLoaders without caching; batching
- * still applies within one execution. Queries and mutations keep their cache.
+ * still applies within one execution. Queries keep their cache, and mutations empty it before each
+ * root field.
  *
  * <p>graphql-java sends an operation's results in the order the values arrived, so a later value
  * waits for every earlier value. Each asynchronous field of a delivered value is bounded by {@link
