@@ -357,8 +357,9 @@ class LibraryRefreshServiceTest {
       var failure = new DataAccessResourceFailureException("database unavailable");
       itemResults.failWritesWith(failure);
       var service = refreshServiceWith(artwork, admissionsWith(new FixedLimitAdmissions(1)));
+      var refresh = refreshOf(library);
 
-      assertThatThrownBy(() -> service.refreshLibrary(library, refreshOf(library)))
+      assertThatThrownBy(() -> service.refreshLibrary(library, refresh))
           .isInstanceOf(LibraryRefreshFailedException.class)
           .hasRootCause(failure);
       assertThat(fetches).hasValue(1);
@@ -945,8 +946,9 @@ class LibraryRefreshServiceTest {
             .backend(LibraryBackend.LOCAL)
             .externalAgentStrategy(ExternalAgentStrategy.TMDB)
             .build();
+    var refresh = refreshOf(library);
 
-    assertThatThrownBy(() -> refreshService.refreshLibrary(library, refreshOf(library)))
+    assertThatThrownBy(() -> refreshService.refreshLibrary(library, refresh))
         .isInstanceOf(UnsupportedMediaTypeException.class);
   }
 

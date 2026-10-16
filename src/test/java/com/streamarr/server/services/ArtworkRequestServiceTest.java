@@ -1080,8 +1080,9 @@ class ArtworkRequestServiceTest {
     @DisplayName("Should reject a wait for a run that belongs to no library operation")
     void shouldRejectAWaitForARunThatBelongsToNoLibraryOperation() {
       var run = artworkRequestService.openRun("file discovery", ImageRefreshMode.PRESERVE);
+      var artworkRunWaiter = artwork.artworkRunWaiter();
 
-      assertThatThrownBy(() -> artwork.artworkRunWaiter().awaitLibraryOperationResults(run))
+      assertThatThrownBy(() -> artworkRunWaiter.awaitLibraryOperationResults(run))
           .isInstanceOf(IllegalArgumentException.class);
     }
 

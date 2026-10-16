@@ -158,22 +158,21 @@ public class LibraryRefreshService {
   // A media title that an earlier execution refreshed, or that has no TMDB id, takes no admission.
   private <T extends BaseCollectable<?>> List<MediaTitleToRefresh<T>> mediaTitlesToRefresh(
       RefreshOperation operation, List<T> mediaTitles, String kind) {
-    var withTmdbIds = new ArrayList<MediaTitleToRefresh<T>>();
-    for (var mediaTitle : mediaTitles) {
-      if (operation.refreshedItemIds().contains(mediaTitle.getId())) {
-        continue;
-      }
+    return mediaTitles.stream()
+        .filter(mediaTitle -> !operation.refreshedItemIds().contains(mediaTitle.getId()))
+        .flatMap(mediaTitle -> mediaTitleWithTmdbId(mediaTitle, kind).stream())
+        .toList();
+  }
 
-      var tmdbId = findTmdbId(mediaTitle);
-      if (tmdbId.isEmpty()) {
-        log.warn("No TMDB ID for {} '{}', skipping refresh", kind, mediaTitle.getTitle());
-        continue;
-      }
-
-      withTmdbIds.add(new MediaTitleToRefresh<>(mediaTitle, tmdbId.get()));
+  private <T extends BaseCollectable<?>> Optional<MediaTitleToRefresh<T>> mediaTitleWithTmdbId(
+      T mediaTitle, String kind) {
+    var tmdbId = findTmdbId(mediaTitle);
+    if (tmdbId.isEmpty()) {
+      log.warn("No TMDB ID for {} '{}', skipping refresh", kind, mediaTitle.getTitle());
+      return Optional.empty();
     }
 
-    return withTmdbIds;
+    return Optional.of(new MediaTitleToRefresh<>(mediaTitle, tmdbId.get()));
   }
 
   // Each task keeps its admission until the primary artwork it requested has recorded results.
