@@ -187,12 +187,7 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     var other = adminBearer();
     var library = saveLibrary(libraryDirectory);
     var movie = saveMovie(library);
-    var marked =
-        http.execute(
-            watcher,
-            "mutation { markWatched(input: {itemId: \"%s\"}) { userErrors { __typename } } }"
-                .formatted(movie.getId()));
-    assertThat(marked.path("data").path("markWatched").path("userErrors").isEmpty()).isTrue();
+    markWatched(watcher, movie);
     var watcherSocket = connect(watcher);
     watcherSocket.subscribe("status", PROFILE_FIELDS_SUBSCRIPTION);
     var otherSocket = connect(other);
@@ -519,6 +514,15 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
             .titleSort("Subscribed Movie")
             .library(library)
             .build());
+  }
+
+  private void markWatched(String bearer, Movie movie) {
+    var marked =
+        http.execute(
+            bearer,
+            "mutation { markWatched(input: {itemId: \"%s\"}) { userErrors { __typename } } }"
+                .formatted(movie.getId()));
+    assertThat(marked.path("data").path("markWatched").path("userErrors").isEmpty()).isTrue();
   }
 
   private static String scanMutation(UUID libraryId) {

@@ -21,8 +21,8 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
-@DisplayName("Mutation DataLoader Cache Instrumentation Tests")
-class MutationDataLoaderCacheInstrumentationTest {
+@DisplayName("DataLoader Cache Reset Instrumentation Tests")
+class DataLoaderCacheResetInstrumentationTest {
 
   private static final String SCHEMA =
       """
@@ -81,7 +81,7 @@ class MutationDataLoaderCacheInstrumentationTest {
         new SchemaGenerator().makeExecutableSchema(new SchemaParser().parse(SCHEMA), wiring);
     var graphQl =
         GraphQL.newGraphQL(schema)
-            .instrumentation(new MutationDataLoaderCacheInstrumentation())
+            .instrumentation(new DataLoaderCacheResetInstrumentation())
             .build();
     var stateLoader =
         DataLoaderFactory.<String, Integer>newDataLoader(

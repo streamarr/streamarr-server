@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
  * current field changed the data. Queries keep their cache.
  */
 @Component
-class MutationDataLoaderCacheInstrumentation extends SimplePerformantInstrumentation {
+class DataLoaderCacheResetInstrumentation extends SimplePerformantInstrumentation {
 
   @Override
   public InstrumentationContext<Object> beginFieldExecution(
