@@ -13,7 +13,11 @@ arrive in either order. `libraryStatusChanged` delivers the library as the serve
 the change, so a client may miss an intermediate status, but the last change it receives carries
 the latest status. A subscription never completes normally while the server runs.
 
-Errors end the operation:
+A field error does not end the operation. When a selected field of one change fails to resolve,
+the server delivers that change as null with errors, and later changes still arrive. A client
+skips the null change and may query `libraries` again to recover the state it missed.
+
+These errors end the operation:
 FORBIDDEN when the caller is not a ServerAdmin,
 AUTHORIZATION_UNAVAILABLE when authorization cannot be decided,
 SUBSCRIPTION_OVERFLOW when changes arrived faster than the server could resolve them,
@@ -22,18 +26,20 @@ After SUBSCRIPTION_OVERFLOW, subscribe again and query `libraries` again.
 """
 type Subscription {
     """
-    A library's status or scan times changed. Delivers the library after each change. ServerAdmin
-    only.
+    A library's status or scan times changed. Delivers the library after each change, or null with
+    errors when a selected field fails to resolve. ServerAdmin only.
     """
-    libraryStatusChanged: Library!
+    libraryStatusChanged: Library
 
     """
-    A library was added. Delivers the new library. ServerAdmin only.
+    A library was added. Delivers the new library, or null with errors when a selected field fails
+    to resolve. ServerAdmin only.
     """
-    libraryAdded: Library!
+    libraryAdded: Library
 
     """
-    A library was removed. Delivers the removed library's id. ServerAdmin only.
+    A library was removed. Delivers the removed library's id, or null with errors when a selected
+    field fails to resolve. ServerAdmin only.
     """
-    libraryRemoved: LibraryRemoval!
+    libraryRemoved: LibraryRemoval
 }
