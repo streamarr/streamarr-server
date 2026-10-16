@@ -54,7 +54,13 @@ message WorkerVerifiedVideoEncoder {
 message WorkerCapabilities {
   repeated Uuid source_namespace_ids = 1;
   // Supported nonzero versions of Streamarr's retained probe fields and their interpretation.
-  // These are independent of the installed FFmpeg and ffprobe versions.
+  // These are independent of the installed FFmpeg and ffprobe versions. The probe versions are 1, 3
+  // and 4. Version 3 adds keyframe positions. Version 4 adds the dynamic range, bit depth, chroma
+  // subsampling, rotation, container cropping and codec string of each stream, the HDR10 static
+  // metadata of each video stream, the end time of each audio and video stream, the sample rate
+  // and profile of each audio stream, the chosen video stream, the output frame rate and the
+  // container's chapters. Each version reports every fact of
+  // the versions before it. Version 2 is unused: no server requests it and no worker advertises it.
   repeated uint32 probe_versions = 2;
   // One entry for each codec family the worker can encode: the encoder backend that the worker
   // runs for every job of that codec family. Every entry, hardware or software, passed the worker's
@@ -141,6 +147,73 @@ enum VideoMode {
   VIDEO_MODE_ENCODE = 2;
 }
 
+// Whether a dynamic-range feature is present, as ADR 0036 defines it. UNSPECIFIED means that the
+// probe could not check. ABSENT means that the probe checked and found none.
+enum Presence {
+  PRESENCE_UNSPECIFIED = 0;
+  PRESENCE_ABSENT = 1;
+  PRESENCE_PRESENT = 2;
+}
+
+// The standard picture format that a player could use without the advanced HDR information. The
+// probe derives it from the signaled transfer and the Dolby Vision claim. When a Dolby Vision
+// compatibility identifier disagrees with the signaled transfer, the signaled transfer decides.
+enum CompatibleBase {
+  // The probe could not read the transfer and found no Dolby Vision claim.
+  COMPATIBLE_BASE_UNSPECIFIED = 0;
+  // The stream has no standard compatible base. Dolby Vision declares none, or the signaled
+  // transfer is unspecified while Dolby Vision is present, as in Dolby Vision profile 5.
+  COMPATIBLE_BASE_NONE = 1;
+  // A standard-dynamic-range transfer, such as BT.709.
+  COMPATIBLE_BASE_SDR = 2;
+  // SMPTE ST 2084, which covers HDR10 and PQ10.
+  COMPATIBLE_BASE_PQ = 3;
+  // ARIB STD-B67.
+  COMPATIBLE_BASE_HLG = 4;
+}
+
+// The Dolby Vision configuration record (dvcC or dvvC), kept whole. Every value in it is a claim.
+// The worker sets every field that the record holds. The numeric fields have explicit presence,
+// because 0 is a real base-layer compatibility identifier.
+message DolbyVisionConfiguration {
+  // The Dolby Vision profile, which is separate from the codec profile.
+  optional uint32 profile = 1;
+  // The Dolby Vision level, which is separate from the codec level.
+  optional uint32 level = 2;
+  optional uint32 base_layer_compatibility_id = 3;
+  // The record's bl_present_flag.
+  bool base_layer = 4;
+  // The record's el_present_flag.
+  bool enhancement_layer = 5;
+  // The record's rpu_present_flag.
+  bool rpu = 6;
+}
+
+// The probe checked for Dolby Vision and found no configuration record, no Dolby Vision sample
+// entry and no RPU in the samples. A probe that reads no samples never reports this arm.
+message DolbyVisionAbsent {}
+
+// The probe found a Dolby Vision configuration record, a Dolby Vision sample entry or an RPU in the
+// samples.
+message DolbyVisionPresent {
+  // The whole configuration record, or absent when the probe found no record.
+  DolbyVisionConfiguration declared = 1;
+  // Whether the samples hold Dolby Vision RPUs. UNSPECIFIED when the probe read no samples.
+  Presence observed_rpu = 2;
+}
+
+// The dynamic range of one video stream, as ADR 0036 defines it. A source video stream can hold
+// UNSPECIFIED values. A planned output never holds an UNSPECIFIED value.
+message VideoDynamicRange {
+  CompatibleBase compatible_base = 1;
+  Presence hdr10_plus = 2;
+  // No arm set means that Dolby Vision is unspecified: the probe could not check.
+  oneof dolby_vision {
+    DolbyVisionAbsent dolby_vision_absent = 3;
+    DolbyVisionPresent dolby_vision_present = 4;
+  }
+}
+
 // The server computes codec_profile, tier, level and codec_string. The worker never computes them.
 // mode says whether the worker copies or encodes the video. VIDEO_MODE_COPY goes with
 // TRANSCODE_MODE_REMUX and TRANSCODE_MODE_AUDIO_TRANSCODE. VIDEO_MODE_ENCODE goes with
@@ -152,6 +225,14 @@ enum VideoMode {
 // tier or level. A copy's codec_string is the one that the probe computed for the source stream.
 // The worker fails the job attempt with JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH when the codec string
 // of an initialization segment that it produces differs from codec_string.
+//
+// The worker chooses how to convert the picture from source_dynamic_range and
+// output_dynamic_range, as ADR 0013 decides, and never chooses a conversion on its own. The worker
+// fails the job attempt with JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION in these cases:
+// - an encode lacks source_dynamic_range or output_dynamic_range;
+// - output_dynamic_range holds an UNSPECIFIED compatible base, an UNSPECIFIED hdr10_plus, or no
+//   Dolby Vision arm;
+// - a copy carries output_dynamic_range.
 message VideoDecision {
   VideoMode mode = 6;
   VideoCodecFamily codec_family = 1;
@@ -161,6 +242,14 @@ message VideoDecision {
   optional uint32 level = 4;
   // The RFC 6381 codec string that the variant's playlist advertises, for example avc1.64002A.
   string codec_string = 5;
+  // The dynamic range of the chosen video stream, as the probe stored it.
+  VideoDynamicRange source_dynamic_range = 7;
+  // The dynamic range of the planned output. Only an encode carries it. A copy carries none until
+  // streamarr/streamarr-server#396 settles the planned output of a copy.
+  VideoDynamicRange output_dynamic_range = 8;
+  // The ProbeStreamInfo.index of the chosen video stream: its index in the container. The worker
+  // maps that stream. Until the server sets the field, the worker maps the first video stream.
+  optional uint32 stream_index = 9;
 }
 
 message TranscodeDecision {
@@ -225,6 +314,11 @@ message TranscodeExecution {
   // copies video, the server sends the decode time of the first source keyframe of the attempt's
   // first media segment. This version of the server sets the field for no other attempt.
   google.protobuf.Duration seek_position = 6;
+  // The output frame rate that the probe stored for the chosen video stream. The worker passes the
+  // exact fraction to FFmpeg and never converts it to a decimal. A job that copies the video
+  // carries none. output_frame_rate replaces framerate once the server sets it. When a job carries
+  // both, the worker uses output_frame_rate.
+  Fraction output_frame_rate = 7;
 }
 
 message VariantJob {
@@ -298,8 +392,8 @@ message ProbeRequest {
   uint32 probe_version = 2;
   MediaSourceRef source = 3;
   // When true, the worker finds keyframe positions by scanning every packet of the chosen video
-  // stream instead of reading the container index. Only the probe versions that report keyframe
-  // positions accept this flag. A worker answers the flag under any other probe version with
+  // stream instead of reading the container index. Only probe version 3 and later report keyframe
+  // positions and accept this flag. A worker answers the flag under probe version 1 with
   // PROBE_FAILURE_UNSUPPORTED_VERSION.
   bool scan_keyframe_packets = 4;
 }
@@ -308,8 +402,58 @@ message ProbeContainerInfo {
   optional string format = 1;
   google.protobuf.Duration duration = 2;
   optional int64 bitrate_bits_per_second = 3;
+  // The container's chapters, as ffprobe -show_chapters lists them, in ffprobe's order. Only probe
+  // version 4 and later report chapters. The worker keeps each chapter as ffprobe reports it. The
+  // worker never sorts, merges, clamps or generates chapters.
+  //
+  // A file controls its chapters and their titles, but the result must fit in one session message
+  // of at most 128 KiB. So the chapters of one result take at most 32,768 bytes in their protobuf
+  // encoding. When the chapters would take more, the worker reports no chapters and sets
+  // chapters_omitted.
+  repeated ProbeChapter chapters = 4;
+  // True when the container has chapters, but the worker omitted them because they exceed the
+  // chapter limit. When chapters is empty and chapters_omitted is false, the container has no
+  // chapters.
+  bool chapters_omitted = 5;
 }
 
+// One chapter of the container. Both times are on the timeline of ProbeKeyframePositionsPart, like
+// ProbeStreamInfo.end_time: the demuxer time minus the container's start time. The worker computes
+// each time from ffprobe's start or end ticks and the chapter's time base, and then subtracts the
+// container's start time. A chapter that starts before the container's start time therefore has a
+// negative start time.
+message ProbeChapter {
+  // Absent when ffprobe reports no start time.
+  google.protobuf.Duration start_time = 1;
+  // Absent when ffprobe reports no end time. When the container states no end for a chapter,
+  // FFmpeg ends the chapter at the next chapter's start or at the end of the file, and the worker
+  // reports that end.
+  google.protobuf.Duration end_time = 2;
+  // The chapter's title tag, such as a Matroska ChapString. A title holds at most 512 bytes of
+  // UTF-8. Absent when the chapter has no title tag, or when the tag is longer than 512 bytes. The
+  // worker never shortens a title.
+  optional string title = 3;
+}
+
+// An exact fraction whose terms are both positive. For example, 24000/1001 frames per second, or a
+// time base of 1/90000 seconds.
+message Fraction {
+  uint32 numerator = 1;
+  uint32 denominator = 2;
+}
+
+// How a video stream's pixel format samples chroma.
+enum ChromaSubsampling {
+  // ffprobe reported no pixel format, or a pixel format with another layout, such as an RGB format.
+  CHROMA_SUBSAMPLING_UNSPECIFIED = 0;
+  CHROMA_SUBSAMPLING_420 = 1;
+  CHROMA_SUBSAMPLING_422 = 2;
+  CHROMA_SUBSAMPLING_444 = 3;
+  // The pixel format has no chroma planes, as in gray.
+  CHROMA_SUBSAMPLING_MONOCHROME = 4;
+}
+
+// Only probe version 4 and later report the fields from dynamic_range to is_hearing_impaired.
 message ProbeStreamInfo {
   uint32 index = 1;
   string codec_type = 2;
@@ -322,6 +466,267 @@ message ProbeStreamInfo {
   optional double framerate = 9;
   bool is_default = 10;
   bool is_forced = 11;
+  // Video streams only. The probe reads the dynamic range from the stream's headers and
+  // configuration records and never reads the samples. So Dolby Vision is never ABSENT, and
+  // observed_rpu and hdr10_plus are UNSPECIFIED. Dolby Vision is unspecified when the probe finds
+  // neither a configuration record nor a Dolby Vision sample entry.
+  VideoDynamicRange dynamic_range = 12;
+  // Video streams only: the bit depth of a luma sample, from the pixel format. For example, 8 for
+  // yuv420p and 10 for yuv420p10le. Absent when ffprobe reports no pixel format.
+  optional uint32 bit_depth = 13;
+  // Video streams only, from the pixel format.
+  ChromaSubsampling chroma_subsampling = 14;
+  // Video streams only: the angle, in whole degrees from -180 to 180, by which the stream's display
+  // matrix rotates the picture counterclockwise, as ffprobe reports it. A phone recording held
+  // upright usually reports -90. Absent when the stream has no display matrix.
+  optional sint32 rotation_degrees = 15;
+  // Video and audio streams only: the exact RFC 6381 codec string that a stream copy of the stream
+  // carries, for example avc1.640028 or mp4a.40.2. The worker computes it from the stream's decoder
+  // configuration record, after the tag rule picks the copy's sample entry. A Dolby Vision copy
+  // with an SDR compatible base carries its base sample entry, so its codec string starts with
+  // hvc1 or avc1. Absent when the worker cannot compute a codec string for the stream's codec.
+  optional string codec_string = 16;
+  // Video and audio streams only: the media time at which the stream ends, where the container
+  // header states the stream's duration. The end time is the stream's start time plus that
+  // duration, measured from the container's start time, on the timeline of
+  // ProbeKeyframePositionsPart. Absent when the header states no duration for the stream. The
+  // worker never reports an estimate, such as a duration derived from the bitrate.
+  // streamarr/streamarr-server#511 uses the end time to find a stream that ends early.
+  google.protobuf.Duration end_time = 17;
+  // Audio streams only: the sample rate in hertz, from ffprobe's sample_rate. Absent when ffprobe
+  // reports no sample rate or reports 0. The server's MP3 copy rule needs the sample rate, because
+  // the fMP4 muxer refuses MP3 below 16 kHz and writes a different esds objectTypeIndication at or
+  // below 24 kHz.
+  optional uint32 sample_rate_hz = 18;
+  // Audio streams only: ffprobe's profile for the stream, kept as ffprobe prints it, for every
+  // audio codec. FFmpeg 8's names include LC, HE-AAC and xHE-AAC for AAC; DTS, DTS-HD MA and
+  // DTS-HD MA + DTS:X for DTS; Dolby Digital Plus + Dolby Atmos for E-AC-3; and Dolby TrueHD +
+  // Dolby Atmos for TrueHD. When FFmpeg has no name for the profile, ffprobe prints the profile's
+  // number, and the worker reports that number as text. Absent when ffprobe reports no profile.
+  // The server derives Atmos and the DTS variants from this text. The codec string never comes
+  // from it.
+  optional string audio_profile = 19;
+  // Video streams only: the crop that the container asks for, from ffprobe's Frame Cropping stream
+  // side data. A Matroska PixelCrop element or an MP4 clap box carries the crop. Absent when the
+  // stream has no Frame Cropping side data.
+  ContainerCropping container_cropping = 20;
+  // Video streams only: the mastering display color volume that the container declares, from
+  // ffprobe's Mastering display metadata stream side data. Absent when the stream has no such side
+  // data. MasteringDisplayColorVolume says where the side data comes from and what absent means.
+  MasteringDisplayColorVolume mastering_display = 21;
+  // Video streams only: the content light level that the container declares, from ffprobe's
+  // Content light level metadata stream side data. Absent when the stream has no such side data.
+  ContentLightLevel content_light_level = 22;
+  // Audio and subtitle streams only: the stream's title, which a menu shows to name the track. The
+  // worker reads two stream tags in this order. It takes the first tag whose value is not empty and
+  // not only white space. It compares tag keys without regard to case, as FFmpeg's metadata
+  // dictionary does.
+  //
+  // 1. title. ffprobe reports a Matroska TrackName and an MP4 track's ©nam atom as title.
+  // 2. name. ffprobe reports an MP4 or MOV track's udta name atom as name. FFmpeg's MP4 and MOV
+  //    muxers write a stream's title metadata into that atom, so ffprobe 8 reports such a title as
+  //    name, never as title.
+  //
+  // The worker reports the value of the chosen tag unchanged. Absent when neither tag gives a
+  // title. Also absent when the chosen value is longer than 512 bytes of UTF-8. The worker never
+  // shortens a title and never falls back to the next tag. Also absent on every stream when the
+  // worker sets ProbeMediaInfo.stream_titles_omitted. The worker never takes a title from the
+  // handler name. handler_name carries the handler name separately. This rule belongs to probe
+  // version 4, and a change to it needs a new probe version. Video streams report no title, because
+  // no consumer reads one.
+  optional string title = 23;
+  // Audio and subtitle streams only: the value of the stream's handler_name tag, unchanged. The
+  // worker compares tag keys without regard to case. ffprobe reports the name in an MP4 or MOV
+  // track's hdlr box as handler_name, and a Matroska file that FFmpeg remuxed from MP4 keeps that
+  // name as a HANDLER_NAME tag. Absent when the stream has no handler_name tag. Also absent when
+  // the value is longer than 512 bytes of UTF-8, and on every stream when the worker sets
+  // ProbeMediaInfo.stream_titles_omitted. The worker never shortens a handler name.
+  //
+  // Many muxers write a fixed name for the track's type into every hdlr box. FFmpeg 8 writes
+  // SoundHandler and SubtitleHandler. Other muxers write names such as USP Sound Handler, Core
+  // Media Audio or ISO Media file produced by Google Inc. Some handler names do name the track,
+  // such as English SDH or Surround. The worker reports every handler name as it is, an empty one
+  // included. The server decides which handler names are generic when it names a rendition. The
+  // list of generic names is open-ended. A rule in the worker would need a new probe version for
+  // each fix, and every file would need a new probe.
+  optional string handler_name = 24;
+  // Audio and subtitle streams only: whether the container marks the stream as made for viewers
+  // who are deaf or hard of hearing, from ffprobe's hearing_impaired disposition. Such a subtitle
+  // track usually holds SDH subtitles, which also describe sounds. The worker reads the disposition
+  // from its existing -show_streams run and needs no new ffprobe argument.
+  //
+  // FFmpeg 8.1 reads the flag from these sources:
+  // - Matroska: the FlagHearingImpaired element. FFmpeg's WebM muxer never writes that element.
+  // - MP4: a kind box with the scheme urn:mpeg:dash:role:2011 and the value caption. FFmpeg reads
+  //   that box as both the hearing_impaired and the captions disposition, and FFmpeg's MP4 muxer
+  //   writes it for either disposition. FFmpeg's MOV muxer writes no kind box. FFmpeg reads no
+  //   other MP4 box for the flag, such as the media characteristics that Apple tools write.
+  // - MPEG-TS: audio type 2 in an ISO 639 language descriptor, or a DVB subtitling type from 0x20
+  //   to 0x25.
+  //
+  // True when the disposition is 1, and false when it is 0. Absent on video streams, and absent
+  // when ffprobe reports no disposition for the stream. False means only that the container does
+  // not mark the stream. It never proves that a track lacks sound descriptions, because many SDH
+  // tracks carry no flag and some containers cannot carry one. In a 300-file library sample, the
+  // flag marked only 25 of the 78 text subtitle tracks whose flag or title said SDH. So the server
+  // also reads the title (streamarr/streamarr-server#60).
+  optional bool is_hearing_impaired = 25;
+}
+
+// The number of pixels that a container crop removes from each edge of the picture. width and
+// height stay the size before cropping. A crop in the codec's own headers, such as the H.264
+// frame cropping, is separate: width and height already exclude that crop. A transcode applies the
+// container crop by default, because FFmpeg's -apply_cropping option defaults to all. The quality
+// ladder and the playlist's RESOLUTION use the size after cropping, as they use the size after
+// rotation. The worker reports the values as ffprobe prints them and never checks them against
+// width and height.
+message ContainerCropping {
+  uint32 top = 1;
+  uint32 bottom = 2;
+  uint32 left = 3;
+  uint32 right = 4;
+}
+
+// The mastering display color volume of SMPTE ST 2086: one half of a stream's HDR10 static
+// metadata. ContentLightLevel holds the other half. Both are static values for the whole stream.
+// Neither is the raw color signaling. The transfer, primaries, matrix and range of the stream stay
+// out of probe version 4.
+//
+// Every value uses the unit of the HEVC mastering display color volume SEI message (payload type
+// 137), and every value fits its SEI field. So streamarr/streamarr-server#396 can write the values
+// into that SEI message unchanged, and every job attempt writes the same bytes.
+//
+// The worker reads the values from the stream side data that ffprobe's -show_streams reports. That
+// is the same ffprobe run that reports the stream's other facts. The side data comes from the
+// container: an MP4 mdcv box or the Matroska MasteringMetadata element. Some streams carry the
+// values only in their HEVC bitstream: in the SEI messages of the hvcC record or of the samples.
+// MPEG-TS and raw HEVC files always work this way. Those streams have no such side data. Probe
+// version 4 reads no frames, so it reports their mastering display as absent. Absent therefore
+// means that the container declares no mastering display. Absent does not mean that the stream
+// lacks static HDR metadata. So the server must not treat an absent value as proof of PQ10.
+//
+// ffprobe prints each value as a fraction. The worker multiplies the fraction by the number of
+// units in one whole: 50000 for a chromaticity coordinate, and 10000 for a luminance. The worker
+// then rounds to the nearest unit, and rounds a half up. An mdcv box stores the SEI units, so
+// ffprobe prints fractions over 50000 and 10000, and the conversion is exact. Matroska stores
+// floating-point numbers, so ffprobe prints reduced fractions, such as 177/250 for 35400 units.
+// The rounding recovers the units that a muxer wrote from an SEI message. The worker reports the
+// message only when ffprobe reports both the primaries and the luminance, and when every value
+// fits its SEI field. Otherwise mastering_display is absent.
+message MasteringDisplayColorVolume {
+  // The three display primaries. The SEI message lists them in the order green, blue, red.
+  ChromaticityCoordinates red = 1;
+  ChromaticityCoordinates green = 2;
+  ChromaticityCoordinates blue = 3;
+  ChromaticityCoordinates white_point = 4;
+  // The maximum display mastering luminance, in units of 0.0001 cd/m^2, from 0 to 4294967295. For
+  // example, 10000000 means 1000 cd/m^2.
+  uint32 max_luminance = 5;
+  // The minimum display mastering luminance, in units of 0.0001 cd/m^2, from 0 to 4294967295. For
+  // example, 50 means 0.005 cd/m^2.
+  uint32 min_luminance = 6;
+}
+
+// A CIE 1931 chromaticity, in units of 0.00002, as the SEI message stores display_primaries_x,
+// display_primaries_y, white_point_x and white_point_y. Each value lies from 0 to 50000. For
+// example, x 15635 and y 16450 is the D65 white point, 0.3127 and 0.329.
+message ChromaticityCoordinates {
+  uint32 x = 1;
+  uint32 y = 2;
+}
+
+// The content light level of CTA-861.3: the other half of a stream's HDR10 static metadata. Both
+// values are in cd/m^2, as the HEVC content light level information SEI message (payload type 144)
+// stores them. Each value lies from 0 to 65535. ffprobe prints integers, so the worker reports them
+// unchanged. The worker reports the message only when both values fit their SEI fields.
+//
+// The side data comes from an MP4 clli box or from the Matroska MaxCLL and MaxFALL elements. As
+// with MasteringDisplayColorVolume, absent means that the container declares no light level. A
+// declared 0 means that the mastering process did not compute that value. 0 is still a declared
+// value, so the message is present. ffprobe reports a Matroska light level only when MaxCLL and
+// MaxFALL are both nonzero.
+message ContentLightLevel {
+  // MaxCLL: the maximum content light level.
+  uint32 max_content_light_level = 1;
+  // MaxFALL: the maximum frame-average light level.
+  uint32 max_frame_average_light_level = 2;
+}
+
+// The order of the fields of an interlaced frame, as ffprobe reports field_order.
+enum FieldOrder {
+  // ffprobe reported unknown or no field order.
+  FIELD_ORDER_UNSPECIFIED = 0;
+  FIELD_ORDER_PROGRESSIVE = 1;
+  // Top field coded first and displayed first (ffprobe's tt).
+  FIELD_ORDER_TT = 2;
+  // Bottom field coded first and displayed first (ffprobe's bb).
+  FIELD_ORDER_BB = 3;
+  // Top field coded first, bottom field displayed first (ffprobe's tb).
+  FIELD_ORDER_TB = 4;
+  // Bottom field coded first, top field displayed first (ffprobe's bt).
+  FIELD_ORDER_BT = 5;
+}
+
+// The basis on which the frame-rate rule of ADR 0037 chose the output frame rate.
+enum OutputFrameRateBasis {
+  OUTPUT_FRAME_RATE_BASIS_UNSPECIFIED = 0;
+  // The declared rates agree on a listed rate, and Matroska's statistics, when present, agree too.
+  // streamarr/streamarr-transcode-worker#24 calls this basis "probe".
+  OUTPUT_FRAME_RATE_BASIS_DECLARED_RATES = 1;
+  // The rule scanned the packets, but Matroska's statistics say that the whole video stream runs
+  // faster than its first 30 s, so the rule kept the declared rate. The issue calls this basis
+  // "probe (tags)".
+  OUTPUT_FRAME_RATE_BASIS_MATROSKA_STATISTICS = 2;
+  // The rule snapped the motion rate that the packet scan measured. The issue calls this basis
+  // "scan".
+  OUTPUT_FRAME_RATE_BASIS_PACKET_SCAN = 3;
+  // The scan found fewer than 2 frames, so the rule snapped the average rate, or the base rate when
+  // the average rate is not usable. The issue calls this basis "fallback".
+  OUTPUT_FRAME_RATE_BASIS_DECLARED_RATE_FALLBACK = 4;
+  // The scan found fewer than 2 frames and neither declared rate is usable. The rule chose no rate.
+  OUTPUT_FRAME_RATE_BASIS_REFUSED = 5;
+}
+
+// Matroska's per-stream statistics tags, NUMBER_OF_FRAMES and DURATION, with any language suffix.
+message MatroskaStatistics {
+  optional uint64 number_of_frames = 1;
+  google.protobuf.Duration duration = 2;
+}
+
+// What the frame-rate rule's packet scan measured over the first 30 s of the chosen video stream.
+message FrameRatePacketScan {
+  // The motion rate in frames per second: the rate at which the video's motion actually runs.
+  // Absent when the scan found fewer than 2 frames.
+  optional double motion_rate = 1;
+  // The number of frames that the scan counted, after it dropped discarded and empty packets and
+  // merged field pairs.
+  uint32 scanned_frame_count = 2;
+  // The media time that the scan covered.
+  google.protobuf.Duration scanned_duration = 3;
+}
+
+// The inputs of the frame-rate rule for the chosen video stream.
+message FrameRateRuleInputs {
+  // ffprobe's r_frame_rate. Absent when ffprobe reports none or 0/0.
+  Fraction base_rate = 1;
+  // ffprobe's avg_frame_rate. Absent when ffprobe reports none or 0/0.
+  Fraction average_rate = 2;
+  FieldOrder field_order = 3;
+  // The stream's time base in seconds.
+  Fraction time_base = 4;
+  // Absent when the stream carries neither statistics tag.
+  MatroskaStatistics matroska_statistics = 5;
+  // Absent when the rule took the declared rates without a scan.
+  FrameRatePacketScan packet_scan = 6;
+}
+
+// The output frame rate that the frame-rate rule chose for the chosen video stream, with its basis
+// and inputs. The probe still succeeds when the rule refuses to choose a rate.
+message FrameRateRuleResult {
+  // Absent only when basis is OUTPUT_FRAME_RATE_BASIS_REFUSED.
+  Fraction output_frame_rate = 1;
+  OutputFrameRateBasis basis = 2;
+  FrameRateRuleInputs inputs = 3;
 }
 
 enum KeyframePositionSource {
@@ -411,8 +816,30 @@ message ProbeKeyframes {
 message ProbeMediaInfo {
   ProbeContainerInfo container = 1;
   repeated ProbeStreamInfo streams = 2;
-  // Present only for the probe versions that report keyframe positions.
+  // Present only for probe version 3 and later.
   ProbeKeyframes keyframes = 3;
+  // The ProbeStreamInfo.index of the chosen video stream: the first video stream that is not an
+  // attached picture, such as embedded cover art. Present only for probe version 4 and later. Under
+  // those versions, a file whose video streams are all attached pictures reports
+  // PROBE_FAILURE_NO_VIDEO_STREAM.
+  optional uint32 chosen_video_stream_index = 4;
+  // Present only for probe version 4 and later.
+  FrameRateRuleResult frame_rate_rule = 5;
+  // True when the worker omitted every stream title and every handler name, because the titles and
+  // handler names together exceed the limit. The flag covers ProbeStreamInfo.title and
+  // ProbeStreamInfo.handler_name, although its name mentions only titles. The titles and handler
+  // names of one result take at most 16,384 bytes: the sum of the bytes that each title and each
+  // handler name add to its stream's protobuf encoding. A value longer than 512 bytes counts for
+  // nothing, because the worker leaves it out first. When the values would take more, the worker
+  // reports no title and no handler name on any stream and sets stream_titles_omitted. When no
+  // stream has a title or a handler name and stream_titles_omitted is false, the streams have
+  // neither.
+  //
+  // A file controls its titles and handler names, but the result must fit in one session message
+  // of at most 128 KiB. A larger probe result closes the worker's session
+  // (streamarr/streamarr-server#554). So the 512-byte limit and this limit keep the values from
+  // filling the result. Only probe version 4 and later set this field.
+  bool stream_titles_omitted = 6;
 }
 
 message ProbeAttemptResult {
