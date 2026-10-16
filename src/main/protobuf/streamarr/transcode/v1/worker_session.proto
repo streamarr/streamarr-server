@@ -56,9 +56,10 @@ message WorkerCapabilities {
   // Supported nonzero versions of Streamarr's retained probe fields and their interpretation.
   // These are independent of the installed FFmpeg and ffprobe versions. The probe versions are 1, 3
   // and 4. Version 3 adds keyframe positions. Version 4 adds the dynamic range, bit depth, chroma
-  // subsampling, rotation, container cropping and codec string of each stream, the end time of
-  // each audio and video stream, the sample rate and profile of each audio stream, the chosen video
-  // stream, the output frame rate and the container's chapters. Each version reports every fact of
+  // subsampling, rotation, container cropping and codec string of each stream, the HDR10 static
+  // metadata of each video stream, the end time of each audio and video stream, the sample rate
+  // and profile of each audio stream, the chosen video stream, the output frame rate and the
+  // container's chapters. Each version reports every fact of
   // the versions before it. Version 2 is unused: no server requests it and no worker advertises it.
   repeated uint32 probe_versions = 2;
   // One entry for each codec family the worker can encode: the encoder backend that the worker
@@ -452,7 +453,7 @@ enum ChromaSubsampling {
   CHROMA_SUBSAMPLING_MONOCHROME = 4;
 }
 
-// Only probe version 4 and later report the fields from dynamic_range to container_cropping.
+// Only probe version 4 and later report the fields from dynamic_range to content_light_level.
 message ProbeStreamInfo {
   uint32 index = 1;
   string codec_type = 2;
@@ -509,6 +510,13 @@ message ProbeStreamInfo {
   // side data. A Matroska PixelCrop element or an MP4 clap box carries the crop. Absent when the
   // stream has no Frame Cropping side data.
   ContainerCropping container_cropping = 20;
+  // Video streams only: the mastering display color volume that the container declares, from
+  // ffprobe's Mastering display metadata stream side data. Absent when the stream has no such side
+  // data. MasteringDisplayColorVolume says where the side data comes from and what absent means.
+  MasteringDisplayColorVolume mastering_display = 21;
+  // Video streams only: the content light level that the container declares, from ffprobe's
+  // Content light level metadata stream side data. Absent when the stream has no such side data.
+  ContentLightLevel content_light_level = 22;
 }
 
 // The number of pixels that a container crop removes from each edge of the picture. width and
@@ -523,6 +531,71 @@ message ContainerCropping {
   uint32 bottom = 2;
   uint32 left = 3;
   uint32 right = 4;
+}
+
+// The mastering display color volume of SMPTE ST 2086: one half of a stream's HDR10 static
+// metadata. ContentLightLevel holds the other half. Both are static values for the whole stream.
+// Neither is the raw color signaling. The transfer, primaries, matrix and range of the stream stay
+// out of probe version 4.
+//
+// Every value uses the unit of the HEVC mastering display colour volume SEI message (payload type
+// 137), and every value fits its SEI field. So streamarr/streamarr-server#396 can write the values
+// into that SEI message unchanged, and every job attempt writes the same bytes.
+//
+// The worker reads the values from the stream side data that ffprobe's -show_streams reports. That
+// is the same ffprobe run that reports the stream's other facts. The side data comes from the
+// container: an MP4 mdcv box or the Matroska MasteringMetadata element. Some streams carry the
+// values only in their HEVC bitstream: in the SEI messages of the hvcC record or of the samples.
+// MPEG-TS and raw HEVC files always work this way. Those streams have no such side data. Probe
+// version 4 reads no frames, so it reports their mastering display as absent. Absent therefore
+// means that the container declares no mastering display. Absent does not mean that the stream
+// lacks static HDR metadata. So the server must not treat an absent value as proof of PQ10.
+//
+// ffprobe prints each value as a fraction. The worker multiplies the fraction by the number of
+// units in one whole: 50000 for a chromaticity coordinate, and 10000 for a luminance. The worker
+// then rounds to the nearest unit, and rounds a half up. An mdcv box stores the SEI units, so
+// ffprobe prints fractions over 50000 and 10000, and the conversion is exact. Matroska stores
+// floating-point numbers, so ffprobe prints reduced fractions, such as 177/250 for 35400 units.
+// The rounding recovers the units that a muxer wrote from an SEI message. The worker reports the
+// message only when ffprobe reports both the primaries and the luminance, and when every value
+// fits its SEI field. Otherwise mastering_display is absent.
+message MasteringDisplayColorVolume {
+  // The three display primaries. The SEI message lists them in the order green, blue, red.
+  ChromaticityCoordinates red = 1;
+  ChromaticityCoordinates green = 2;
+  ChromaticityCoordinates blue = 3;
+  ChromaticityCoordinates white_point = 4;
+  // The maximum display mastering luminance, in units of 0.0001 cd/m^2, from 0 to 4294967295. For
+  // example, 10000000 means 1000 cd/m^2.
+  uint32 max_luminance = 5;
+  // The minimum display mastering luminance, in units of 0.0001 cd/m^2, from 0 to 4294967295. For
+  // example, 50 means 0.005 cd/m^2.
+  uint32 min_luminance = 6;
+}
+
+// A CIE 1931 chromaticity, in units of 0.00002, as the SEI message stores display_primaries_x,
+// display_primaries_y, white_point_x and white_point_y. Each value lies from 0 to 50000. For
+// example, x 15635 and y 16450 is the D65 white point, 0.3127 and 0.329.
+message ChromaticityCoordinates {
+  uint32 x = 1;
+  uint32 y = 2;
+}
+
+// The content light level of CTA-861.3: the other half of a stream's HDR10 static metadata. Both
+// values are in cd/m^2, as the HEVC content light level information SEI message (payload type 144)
+// stores them. Each value lies from 0 to 65535. ffprobe prints integers, so the worker reports them
+// unchanged. The worker reports the message only when both values fit their SEI fields.
+//
+// The side data comes from an MP4 clli box or from the Matroska MaxCLL and MaxFALL elements. As
+// with MasteringDisplayColorVolume, absent means that the container declares no light level. A
+// declared 0 means that the mastering process did not compute that value. 0 is still a declared
+// value, so the message is present. ffprobe reports a Matroska light level only when MaxCLL and
+// MaxFALL are both nonzero.
+message ContentLightLevel {
+  // MaxCLL: the maximum content light level.
+  uint32 max_content_light_level = 1;
+  // MaxFALL: the maximum frame-average light level.
+  uint32 max_frame_average_light_level = 2;
 }
 
 // The order of the fields of an interlaced frame, as ffprobe reports field_order.

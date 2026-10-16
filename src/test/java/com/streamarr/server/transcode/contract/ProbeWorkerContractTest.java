@@ -5,8 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.protobuf.Duration;
 import com.streamarr.transcode.v1.ChromaSubsampling;
+import com.streamarr.transcode.v1.ChromaticityCoordinates;
 import com.streamarr.transcode.v1.CompatibleBase;
 import com.streamarr.transcode.v1.ContainerCropping;
+import com.streamarr.transcode.v1.ContentLightLevel;
 import com.streamarr.transcode.v1.DolbyVisionAbsent;
 import com.streamarr.transcode.v1.DolbyVisionConfiguration;
 import com.streamarr.transcode.v1.DolbyVisionPresent;
@@ -17,6 +19,7 @@ import com.streamarr.transcode.v1.Fraction;
 import com.streamarr.transcode.v1.FrameRatePacketScan;
 import com.streamarr.transcode.v1.FrameRateRuleInputs;
 import com.streamarr.transcode.v1.FrameRateRuleResult;
+import com.streamarr.transcode.v1.MasteringDisplayColorVolume;
 import com.streamarr.transcode.v1.MatroskaStatistics;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.OutputFrameRateBasis;
@@ -626,6 +629,76 @@ class ProbeWorkerContractTest {
   }
 
   @Test
+  @DisplayName(
+      "Should carry the HDR10 static metadata of a video stream in the units of its SEI messages when returning a probe version 4 result")
+  void shouldCarryHdr10StaticMetadataInSeiUnitsWhenReturningProbeVersion4Result() throws Exception {
+    var bt2020Mastering =
+        MasteringDisplayColorVolume.newBuilder()
+            .setRed(chromaticity(35_400, 14_600))
+            .setGreen(chromaticity(8_500, 39_850))
+            .setBlue(chromaticity(6_550, 2_300))
+            .setWhitePoint(chromaticity(15_635, 16_450))
+            .setMaxLuminance(40_000_000)
+            .setMinLuminance(50)
+            .build();
+    var lightLevel =
+        ContentLightLevel.newBuilder()
+            .setMaxContentLightLevel(1_000)
+            .setMaxFrameAverageLightLevel(400)
+            .build();
+    var hdr10 =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(0)
+            .setCodecType("video")
+            .setCodec("hevc")
+            .setMasteringDisplay(bt2020Mastering)
+            .setContentLightLevel(lightLevel)
+            .build();
+    var sdr = ProbeStreamInfo.newBuilder().setIndex(1).setCodecType("video").build();
+
+    var decoded =
+        ProbeAttemptResult.parseFrom(
+                probeVersion4Result(ProbeMediaInfo.newBuilder().addStreams(hdr10).addStreams(sdr))
+                    .toByteArray())
+            .getMedia();
+
+    assertThat(decoded.getStreams(0)).isEqualTo(hdr10);
+    var mastering = decoded.getStreams(0).getMasteringDisplay();
+    assertThat(mastering.getRed()).isEqualTo(chromaticity(35_400, 14_600));
+    assertThat(mastering.getWhitePoint()).isEqualTo(chromaticity(15_635, 16_450));
+    assertThat(mastering.getMaxLuminance()).isEqualTo(40_000_000);
+    assertThat(mastering.getMinLuminance()).isEqualTo(50);
+    assertThat(decoded.getStreams(0).getContentLightLevel().getMaxContentLightLevel())
+        .isEqualTo(1_000);
+    assertThat(decoded.getStreams(0).getContentLightLevel().getMaxFrameAverageLightLevel())
+        .isEqualTo(400);
+    assertThat(decoded.getStreams(1).hasMasteringDisplay()).isFalse();
+    assertThat(decoded.getStreams(1).hasContentLightLevel()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell declared light levels of zero apart from a missing declaration when decoding a video stream")
+  void shouldTellDeclaredLightLevelsOfZeroApartFromMissingDeclarationWhenDecodingVideoStream()
+      throws Exception {
+    var zeroLightLevel =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(0)
+            .setCodecType("video")
+            .setContentLightLevel(ContentLightLevel.getDefaultInstance())
+            .build();
+    var noLightLevel = ProbeStreamInfo.newBuilder().setIndex(0).setCodecType("video").build();
+
+    var decodedZero = ProbeStreamInfo.parseFrom(zeroLightLevel.toByteArray());
+    var decodedNone = ProbeStreamInfo.parseFrom(noLightLevel.toByteArray());
+
+    assertThat(decodedZero.hasContentLightLevel()).isTrue();
+    assertThat(decodedZero.getContentLightLevel().getMaxContentLightLevel()).isZero();
+    assertThat(decodedZero.getContentLightLevel().getMaxFrameAverageLightLevel()).isZero();
+    assertThat(decodedNone.hasContentLightLevel()).isFalse();
+  }
+
+  @Test
   @DisplayName("Should preserve a typed media failure when returning an unsuccessful probe")
   void shouldPreserveTypedMediaFailureWhenReturningUnsuccessfulProbe() throws Exception {
     var result =
@@ -648,6 +721,10 @@ class ProbeWorkerContractTest {
         .setProbeVersion(4)
         .setMedia(media)
         .build();
+  }
+
+  private ChromaticityCoordinates chromaticity(int x, int y) {
+    return ChromaticityCoordinates.newBuilder().setX(x).setY(y).build();
   }
 
   private Fraction fraction(int numerator, int denominator) {
