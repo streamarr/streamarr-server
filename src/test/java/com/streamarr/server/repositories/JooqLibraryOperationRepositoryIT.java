@@ -1,5 +1,6 @@
 package com.streamarr.server.repositories;
 
+import static com.streamarr.server.services.library.LibraryOperationKind.SCAN;
 import static com.streamarr.server.support.PostgresLockTestSupport.awaitWaitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -9,12 +10,17 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaType;
+import com.streamarr.server.repositories.LibraryOperationRepository.StopOutcome;
 import com.streamarr.server.repositories.LibraryOperationRepository.StoreOutcome;
 import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.library.LibraryOperation;
 import com.streamarr.server.services.library.LibraryOperationConclusion;
 import com.streamarr.server.services.library.LibraryOperationEnd;
+import com.streamarr.server.services.library.LibraryOperationKind;
+import com.streamarr.server.services.library.LibraryOperationStop;
+import com.streamarr.server.services.library.LibraryOperationStopRejection;
 import com.streamarr.server.services.library.NewLibraryOperation;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.support.BoundedTask;
 import com.streamarr.server.support.PostgresLockTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport.HeldRowLock;
@@ -23,9 +29,10 @@ import java.nio.file.Path;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Callable;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
@@ -68,7 +75,7 @@ class JooqLibraryOperationRepositoryIT extends AbstractIntegrationTest {
 
     var ended = endAsSystemActor(finishedEnd(UUID.randomUUID()));
 
-    assertThat(ended).isFalse();
+    assertThat(ended).isEmpty();
     assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
   }
 
@@ -87,14 +94,148 @@ class JooqLibraryOperationRepositoryIT extends AbstractIntegrationTest {
       awaitWaitersBehind(jdbcTemplate, heldLibrary.backendPid(), 2);
       heldLibrary.release();
 
-      assertThat(firstEnd.await(BOUND)).isTrue();
-      assertThat(secondEnd.await(BOUND)).isFalse();
+      assertThat(firstEnd.await(BOUND)).contains(LibraryOperationConclusion.FINISHED);
+      assertThat(secondEnd.await(BOUND)).isEmpty();
     }
 
     assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
     assertThat(libraryOperations.findLibraryOperation(operation.id())).isEmpty();
     assertThat(libraryRepository.findById(library.getId()).orElseThrow().getScanCompletedOn())
         .isNotNull();
+  }
+
+  @Test
+  @DisplayName(
+      "Should store the stop, show the library STOPPING and keep the status before the scan when a"
+          + " running scan is stopped")
+  void shouldStoreTheStopAndShowTheLibraryStoppingWhenARunningScanIsStopped() {
+    library = createLibrary(LibraryStatus.UNHEALTHY);
+    var scan = storeScan(library);
+
+    var outcome = stopAsSystemActor(new LibraryOperationStop(library.getId(), SCAN));
+
+    assertThat(outcome).isInstanceOf(StopOutcome.Stored.class);
+    assertThat(((StopOutcome.Stored) outcome).library().getStatus())
+        .isEqualTo(LibraryStatus.STOPPING);
+    assertThat(statusOf(library)).isEqualTo(LibraryStatus.STOPPING);
+    assertThat(libraryOperations.findLibraryOperation(scan.id()))
+        .hasValueSatisfying(
+            stored -> {
+              assertThat(stored.stopRequested()).isTrue();
+              assertThat(stored.statusBeforeOperation()).isEqualTo(LibraryStatus.UNHEALTHY);
+            });
+    assertThat(libraryOperations.hasStoredStop(scan.id())).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should return the library unchanged as AlreadyStored when a stop repeats")
+  void shouldReturnTheLibraryUnchangedAsAlreadyStoredWhenAStopRepeats() {
+    library = createLibrary();
+    storeScan(library);
+    stopAsSystemActor(new LibraryOperationStop(library.getId(), SCAN));
+    var stopped = libraryRepository.findById(library.getId()).orElseThrow();
+
+    var outcome = stopAsSystemActor(new LibraryOperationStop(library.getId(), SCAN));
+
+    assertThat(outcome).isInstanceOf(StopOutcome.AlreadyStored.class);
+    var returned = ((StopOutcome.AlreadyStored) outcome).library();
+    assertThat(returned.getStatus()).isEqualTo(LibraryStatus.STOPPING);
+    assertThat(returned.getLastModifiedOn()).isEqualTo(stopped.getLastModifiedOn());
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject the stop naming the running kind and store nothing when the stop names the"
+          + " other kind")
+  void shouldRejectTheStopNamingTheRunningKindWhenTheStopNamesTheOtherKind() {
+    library = createLibrary();
+    var refresh = storeRefresh(library);
+
+    var outcome = stopAsSystemActor(new LibraryOperationStop(library.getId(), SCAN));
+
+    assertThat(outcome)
+        .isEqualTo(
+            new StopOutcome.Rejected(
+                new LibraryOperationStopRejection.NotInProgress(
+                    LibraryStatus.REFRESHING, Optional.of(LibraryOperationKind.REFRESH))));
+    assertThat(libraryOperations.hasStoredStop(refresh.id())).isFalse();
+    assertThat(statusOf(library)).isEqualTo(LibraryStatus.REFRESHING);
+  }
+
+  @Test
+  @DisplayName("Should reject the stop when the library is idle or missing")
+  void shouldRejectTheStopWhenTheLibraryIsIdleOrMissing() {
+    library = createLibrary();
+
+    var idle = stopAsSystemActor(new LibraryOperationStop(library.getId(), SCAN));
+    var missing = stopAsSystemActor(new LibraryOperationStop(UUID.randomUUID(), SCAN));
+
+    assertThat(idle)
+        .isEqualTo(
+            new StopOutcome.Rejected(
+                new LibraryOperationStopRejection.NotInProgress(
+                    LibraryStatus.HEALTHY, Optional.empty())));
+    assertThat(missing)
+        .isEqualTo(new StopOutcome.Rejected(new LibraryOperationStopRejection.LibraryNotFound()));
+    assertThat(libraryOperations.hasStoredStop(UUID.randomUUID())).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should conclude STOPPED and return the library to its status before the scan when a"
+          + " stopped scan finishes")
+  void shouldConcludeStoppedAndReturnTheLibraryToItsStatusBeforeTheScanWhenAStoppedScanFinishes() {
+    library = createLibrary(LibraryStatus.UNHEALTHY);
+    var scan = storeScan(library);
+    stopAsSystemActor(new LibraryOperationStop(library.getId(), SCAN));
+
+    var ended = endAsSystemActor(finishedEnd(scan.id()));
+
+    assertThat(ended).contains(LibraryOperationConclusion.STOPPED);
+    assertThat(statusOf(library)).isEqualTo(LibraryStatus.UNHEALTHY);
+    assertThat(libraryOperations.findLibraryOperation(scan.id())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should conclude FAILED with the library UNHEALTHY when a stopped scan fails")
+  void shouldConcludeFailedWithTheLibraryUnhealthyWhenAStoppedScanFails() {
+    library = createLibrary();
+    var scan = storeScan(library);
+    stopAsSystemActor(new LibraryOperationStop(library.getId(), SCAN));
+
+    var ended =
+        endAsSystemActor(
+            LibraryOperationEnd.builder()
+                .libraryOperationId(scan.id())
+                .conclusion(LibraryOperationConclusion.FAILED)
+                .endedAt(Instant.now())
+                .build());
+
+    assertThat(ended).contains(LibraryOperationConclusion.FAILED);
+    assertThat(statusOf(library)).isEqualTo(LibraryStatus.UNHEALTHY);
+  }
+
+  @Test
+  @DisplayName(
+      "Should conclude STOPPED when a stop waits behind the library's row and commits before the"
+          + " end reads the operation")
+  void shouldConcludeStoppedWhenAStopCommitsBeforeTheEndReadsTheOperation() throws Exception {
+    library = createLibrary();
+    var scan = storeScan(library);
+
+    try (var heldLibrary = lockLibraryRow(library);
+        var stop =
+            BoundedTask.start(
+                () -> stopAsSystemActor(new LibraryOperationStop(library.getId(), SCAN)));
+        var end = startBehind(heldLibrary, () -> endAsSystemActor(finishedEnd(scan.id())))) {
+      awaitWaitersBehind(jdbcTemplate, heldLibrary.backendPid(), 2);
+      heldLibrary.release();
+
+      assertThat(stop.await(BOUND)).isInstanceOf(StopOutcome.Stored.class);
+      assertThat(end.await(BOUND)).contains(LibraryOperationConclusion.STOPPED);
+    }
+
+    assertThat(statusOf(library)).isEqualTo(LibraryStatus.HEALTHY);
   }
 
   @Test
@@ -146,15 +287,39 @@ class JooqLibraryOperationRepositoryIT extends AbstractIntegrationTest {
     return NewLibraryOperation.scan(scanned.getId());
   }
 
-  private boolean endAsSystemActor(LibraryOperationEnd end) {
-    var ended = new AtomicBoolean();
+  private Optional<LibraryOperationConclusion> endAsSystemActor(LibraryOperationEnd end) {
+    var ended = new AtomicReference<Optional<LibraryOperationConclusion>>();
     SystemWork.runAsSystemActor(
         () ->
             ended.set(
-                Boolean.TRUE.equals(
-                    new TransactionTemplate(transactionManager)
-                        .execute(_ -> libraryOperations.tryEndLibraryOperation(end)))));
+                new TransactionTemplate(transactionManager)
+                    .execute(_ -> libraryOperations.tryEndLibraryOperation(end))));
     return ended.get();
+  }
+
+  private StopOutcome stopAsSystemActor(LibraryOperationStop stop) {
+    var outcome = new AtomicReference<StopOutcome>();
+    SystemWork.runAsSystemActor(
+        () ->
+            outcome.set(
+                new TransactionTemplate(transactionManager)
+                    .execute(_ -> libraryOperations.stopLibraryOperation(stop))));
+    return outcome.get();
+  }
+
+  private LibraryOperation storeRefresh(Library refreshed) {
+    var outcome =
+        new TransactionTemplate(transactionManager)
+            .execute(
+                _ ->
+                    libraryOperations.storeLibraryOperation(
+                        NewLibraryOperation.refresh(refreshed.getId(), ImageRefreshMode.PRESERVE)));
+    return switch (outcome) {
+      case StoreOutcome.Stored(var stored, _) -> stored;
+      case StoreOutcome.Rejected(var rejection) ->
+          throw new AssertionError("The refresh was not stored: " + rejection);
+      case null -> throw new AssertionError("The store returned nothing");
+    };
   }
 
   private LibraryOperation storeScan(Library scanned) {
@@ -197,12 +362,16 @@ class JooqLibraryOperationRepositoryIT extends AbstractIntegrationTest {
   }
 
   private Library createLibrary() {
+    return createLibrary(LibraryStatus.HEALTHY);
+  }
+
+  private Library createLibrary(LibraryStatus status) {
     return libraryRepository.saveAndFlush(
         Library.builder()
             .name("Movies")
             .filepathUri(tempDir.toUri().toString())
             .backend(LibraryBackend.LOCAL)
-            .status(LibraryStatus.HEALTHY)
+            .status(status)
             .type(MediaType.MOVIE)
             .externalAgentStrategy(ExternalAgentStrategy.TMDB)
             .build());

@@ -1,13 +1,17 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.repositories.LibraryOperationRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.library.LibraryOperation;
+import com.streamarr.server.services.library.LibraryOperationConclusion;
 import com.streamarr.server.services.library.LibraryOperationEnd;
 import com.streamarr.server.services.library.LibraryOperationKind;
 import com.streamarr.server.services.library.LibraryOperationRejection;
+import com.streamarr.server.services.library.LibraryOperationStop;
+import com.streamarr.server.services.library.LibraryOperationStopRejection;
 import com.streamarr.server.services.library.NewLibraryOperation;
 import java.time.Clock;
 import java.util.ArrayList;
@@ -19,9 +23,9 @@ import java.util.UUID;
 
 /**
  * Keeps library operations in memory beside the libraries of a {@link LibraryRepository}. Like the
- * PostgreSQL repository, it decides on the library's status, and a start or an end changes the
- * library's status together with the operation. Each method runs under one lock, which stands in
- * for the library's row lock.
+ * PostgreSQL repository, it decides on the library's status, and a start, a stop or an end changes
+ * the library's status together with the operation. Each method runs under one lock, which stands
+ * in for the library's row lock.
  */
 public class FakeLibraryOperationRepository implements LibraryOperationRepository {
 
@@ -80,6 +84,31 @@ public class FakeLibraryOperationRepository implements LibraryOperationRepositor
   }
 
   @Override
+  public synchronized StopOutcome stopLibraryOperation(LibraryOperationStop stop) {
+    var library = libraries.findById(stop.libraryId());
+    if (library.isEmpty()) {
+      return new StopOutcome.Rejected(new LibraryOperationStopRejection.LibraryNotFound());
+    }
+
+    var operation = operationFor(stop.libraryId());
+    if (operation.isEmpty() || operation.get().kind() != stop.kind()) {
+      return new StopOutcome.Rejected(
+          new LibraryOperationStopRejection.NotInProgress(
+              library.get().getStatus(), operation.map(LibraryOperation::kind)));
+    }
+
+    if (operation.get().stopRequested()) {
+      return new StopOutcome.AlreadyStored(library.get().toBuilder().build());
+    }
+
+    operations.put(operation.get().id(), operation.get().toBuilder().stopRequested(true).build());
+    var stopping = library.get();
+    stopping.setStatus(LibraryStatus.STOPPING);
+    libraries.save(stopping);
+    return new StopOutcome.Stored(stopping.toBuilder().build());
+  }
+
+  @Override
   public synchronized Optional<LibraryOperationRejection> lockLibraryForLibraryRemoval(
       UUID libraryId) {
     var library = libraries.findById(libraryId);
@@ -96,6 +125,13 @@ public class FakeLibraryOperationRepository implements LibraryOperationRepositor
   }
 
   @Override
+  public synchronized boolean hasStoredStop(UUID libraryOperationId) {
+    return findLibraryOperation(libraryOperationId)
+        .map(LibraryOperation::stopRequested)
+        .orElse(false);
+  }
+
+  @Override
   public synchronized boolean tryLockLibraryOperation(UUID libraryOperationId) {
     return operations.containsKey(libraryOperationId);
   }
@@ -106,20 +142,26 @@ public class FakeLibraryOperationRepository implements LibraryOperationRepositor
   }
 
   @Override
-  public synchronized boolean tryEndLibraryOperation(LibraryOperationEnd end) {
+  public synchronized Optional<LibraryOperationConclusion> tryEndLibraryOperation(
+      LibraryOperationEnd end) {
     var operation = operations.remove(end.libraryOperationId());
     if (operation == null) {
-      return false;
+      return Optional.empty();
+    }
+
+    var conclusion = end.conclusion();
+    if (operation.stopRequested()) {
+      conclusion = conclusion.afterStop();
     }
 
     var library = libraries.findById(operation.libraryId()).orElseThrow();
-    library.setStatus(end.conclusion().libraryStatus());
+    library.setStatus(conclusion.libraryStatus(operation.statusBeforeOperation()));
     if (operation.kind() == LibraryOperationKind.SCAN) {
       library.setScanCompletedOn(end.endedAt());
     }
 
     libraries.save(library);
-    return true;
+    return Optional.of(conclusion);
   }
 
   public synchronized List<LibraryOperation> libraryOperations() {
@@ -136,7 +178,7 @@ public class FakeLibraryOperationRepository implements LibraryOperationRepositor
   private Optional<LibraryOperationRejection> busyRejection(Library library) {
     return switch (library.getStatus()) {
       case HEALTHY, UNHEALTHY -> Optional.empty();
-      case SCANNING, REFRESHING ->
+      case SCANNING, REFRESHING, STOPPING ->
           Optional.of(
               new LibraryOperationRejection.LibraryBusy(
                   library.getStatus(), operationFor(library.getId()).orElseThrow().kind()));

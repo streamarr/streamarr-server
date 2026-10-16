@@ -7,9 +7,12 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.jooq.generated.tables.records.LibraryOperationRecord;
 import com.streamarr.server.services.library.LibraryOperation;
+import com.streamarr.server.services.library.LibraryOperationConclusion;
 import com.streamarr.server.services.library.LibraryOperationEnd;
 import com.streamarr.server.services.library.LibraryOperationKind;
 import com.streamarr.server.services.library.LibraryOperationRejection;
+import com.streamarr.server.services.library.LibraryOperationStop;
+import com.streamarr.server.services.library.LibraryOperationStopRejection;
 import com.streamarr.server.services.library.NewLibraryOperation;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import jakarta.persistence.EntityManager;
@@ -28,8 +31,8 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class JooqLibraryOperationRepository implements LibraryOperationRepository {
 
-  // A start, an end and removeLibrary each hold the library's row for a few statements, so a
-  // longer wait means a stuck transaction, and the request fails as busy instead of hanging.
+  // A start, a stop, an end and removeLibrary each hold the library's row for a few statements, so
+  // a longer wait means a stuck transaction, and the request fails as busy instead of hanging.
   private static final Duration LIBRARY_ROW_LOCK_TIMEOUT = Duration.ofSeconds(5);
 
   private final DSLContext dsl;
@@ -93,6 +96,46 @@ public class JooqLibraryOperationRepository implements LibraryOperationRepositor
 
   @Override
   @Transactional(propagation = Propagation.MANDATORY)
+  public StopOutcome stopLibraryOperation(LibraryOperationStop stop) {
+    return transactionLocks.withLockWaitLimit(
+        LIBRARY_ROW_LOCK_TIMEOUT, () -> stopUnderLibraryLock(stop));
+  }
+
+  private StopOutcome stopUnderLibraryLock(LibraryOperationStop stop) {
+    var libraryId = stop.libraryId();
+    var status = lockLibraryStatus(libraryId);
+    if (status.isEmpty()) {
+      return new StopOutcome.Rejected(new LibraryOperationStopRejection.LibraryNotFound());
+    }
+
+    var operation =
+        dsl.selectFrom(LIBRARY_OPERATION)
+            .where(LIBRARY_OPERATION.LIBRARY_ID.eq(libraryId))
+            .fetchOptional()
+            .map(JooqLibraryOperationRepository::toLibraryOperation);
+    if (operation.isEmpty() || operation.get().kind() != stop.kind()) {
+      return new StopOutcome.Rejected(
+          new LibraryOperationStopRejection.NotInProgress(
+              status.get(), operation.map(LibraryOperation::kind)));
+    }
+
+    if (operation.get().stopRequested()) {
+      return new StopOutcome.AlreadyStored(currentLibrary(libraryId));
+    }
+
+    dsl.update(LIBRARY_OPERATION)
+        .set(LIBRARY_OPERATION.STOP_REQUESTED, true)
+        .where(LIBRARY_OPERATION.ID.eq(operation.get().id()))
+        .execute();
+    dsl.update(LIBRARY)
+        .set(LIBRARY.STATUS, toJooq(LibraryStatus.STOPPING))
+        .where(LIBRARY.ID.eq(libraryId))
+        .execute();
+    return new StopOutcome.Stored(currentLibrary(libraryId));
+  }
+
+  @Override
+  @Transactional(propagation = Propagation.MANDATORY)
   public Optional<LibraryOperationRejection> lockLibraryForLibraryRemoval(UUID libraryId) {
     return transactionLocks.withLockWaitLimit(
         LIBRARY_ROW_LOCK_TIMEOUT,
@@ -120,6 +163,14 @@ public class JooqLibraryOperationRepository implements LibraryOperationRepositor
   }
 
   @Override
+  @Transactional(readOnly = true)
+  public boolean hasStoredStop(UUID libraryOperationId) {
+    return dsl.fetchExists(
+        LIBRARY_OPERATION,
+        LIBRARY_OPERATION.ID.eq(libraryOperationId).and(LIBRARY_OPERATION.STOP_REQUESTED));
+  }
+
+  @Override
   @Transactional(propagation = Propagation.MANDATORY)
   public boolean tryLockLibraryOperation(UUID libraryOperationId) {
     return transactionLocks.withLockWaitLimit(
@@ -128,7 +179,7 @@ public class JooqLibraryOperationRepository implements LibraryOperationRepositor
             dsl.select(LIBRARY_OPERATION.ID)
                 .from(LIBRARY_OPERATION)
                 .where(LIBRARY_OPERATION.ID.eq(libraryOperationId))
-                .forShare()
+                .forKeyShare()
                 .fetchOptional()
                 .isPresent());
   }
@@ -152,34 +203,46 @@ public class JooqLibraryOperationRepository implements LibraryOperationRepositor
 
   @Override
   @Transactional(propagation = Propagation.MANDATORY)
-  public boolean tryEndLibraryOperation(LibraryOperationEnd end) {
+  public Optional<LibraryOperationConclusion> tryEndLibraryOperation(LibraryOperationEnd end) {
     return transactionLocks.withLockWaitLimit(
         LIBRARY_ROW_LOCK_TIMEOUT, () -> tryEndUnderLibraryLock(end));
   }
 
-  private boolean tryEndUnderLibraryLock(LibraryOperationEnd end) {
+  // The stop is read from the deleted row under the library's row lock, so a stop that committed
+  // before the end always decides the library's status.
+  private Optional<LibraryOperationConclusion> tryEndUnderLibraryLock(LibraryOperationEnd end) {
     var libraryId = findLibraryIdOfLibraryOperation(end.libraryOperationId());
     if (libraryId.isEmpty()) {
-      return false;
+      return Optional.empty();
     }
 
     lockLibraryStatus(libraryId.get());
-    var kind =
+    var deleted =
         dsl.deleteFrom(LIBRARY_OPERATION)
             .where(LIBRARY_OPERATION.ID.eq(end.libraryOperationId()))
-            .returning(LIBRARY_OPERATION.KIND)
-            .fetchOptional(LIBRARY_OPERATION.KIND);
-    if (kind.isEmpty()) {
-      return false;
+            .returning()
+            .fetchOptional();
+    if (deleted.isEmpty()) {
+      return Optional.empty();
     }
 
-    var update = dsl.update(LIBRARY).set(LIBRARY.STATUS, toJooq(end.conclusion().libraryStatus()));
-    if (toDomain(kind.get()) == LibraryOperationKind.SCAN) {
+    var operation = toLibraryOperation(deleted.get());
+    var conclusion = end.conclusion();
+    if (operation.stopRequested()) {
+      conclusion = conclusion.afterStop();
+    }
+
+    var update =
+        dsl.update(LIBRARY)
+            .set(
+                LIBRARY.STATUS,
+                toJooq(conclusion.libraryStatus(operation.statusBeforeOperation())));
+    if (operation.kind() == LibraryOperationKind.SCAN) {
       update = update.set(LIBRARY.SCAN_COMPLETED_ON, end.endedAt().atOffset(ZoneOffset.UTC));
     }
 
     update.where(LIBRARY.ID.eq(libraryId.get())).execute();
-    return true;
+    return Optional.of(conclusion);
   }
 
   private Optional<UUID> findLibraryIdOfLibraryOperation(UUID libraryOperationId) {
@@ -211,7 +274,7 @@ public class JooqLibraryOperationRepository implements LibraryOperationRepositor
 
   private static boolean isBusy(LibraryStatus status) {
     return switch (status) {
-      case SCANNING, REFRESHING -> true;
+      case SCANNING, REFRESHING, STOPPING -> true;
       case HEALTHY, UNHEALTHY -> false;
     };
   }
@@ -225,6 +288,7 @@ public class JooqLibraryOperationRepository implements LibraryOperationRepositor
             Optional.ofNullable(row.getImageRefreshMode())
                 .map(mode -> ImageRefreshMode.valueOf(mode.getLiteral())))
         .statusBeforeOperation(LibraryStatus.valueOf(row.getStatusBeforeOperation().getLiteral()))
+        .stopRequested(row.getStopRequested())
         .createdBy(row.getCreatedBy())
         .createdOn(row.getCreatedOn().toInstant())
         .build();

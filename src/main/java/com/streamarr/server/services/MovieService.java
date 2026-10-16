@@ -104,7 +104,8 @@ public class MovieService {
     var movie = metadataResult.entity();
     creditService
         .getOrCreateCredits(
-            MediaTitleCreditsRequest.fromMetadataResult(metadataResult, ImageRefreshMode.PRESERVE))
+            MediaTitleCreditsRequest.fromMetadataResult(
+                metadataResult, ImageRefreshMode.PRESERVE, artworkRun))
         .copyTo(movie);
 
     var savedMovie = saveMovieWithMediaFile(movie, mediaFile);
@@ -130,7 +131,7 @@ public class MovieService {
     creditService
         .getOrCreateCredits(
             MediaTitleCreditsRequest.fromMetadataResult(
-                metadataResult, artworkRun.imageRefreshMode()))
+                metadataResult, artworkRun.imageRefreshMode(), artworkRun))
         .copyTo(existing);
 
     var saved = movieRepository.saveAndFlush(existing);

@@ -13,7 +13,9 @@ import lombok.NonNull;
  * until the transaction that ends the work.
  *
  * @param imageRefreshMode the refresh's image refresh mode; a scan has none
- * @param statusBeforeOperation the idle status the library showed when the operation started
+ * @param statusBeforeOperation the idle status the library showed when the operation started, which
+ *     a stopped operation gives back to the library
+ * @param stopRequested whether a ServerAdmin's stop is stored with the operation
  * @param createdBy the account, or the System actor, that requested the operation
  * @param createdOn when the transaction that started the operation began
  */
@@ -24,5 +26,6 @@ public record LibraryOperation(
     @NonNull LibraryOperationKind kind,
     @NonNull Optional<ImageRefreshMode> imageRefreshMode,
     @NonNull LibraryStatus statusBeforeOperation,
+    boolean stopRequested,
     @NonNull UUID createdBy,
     @NonNull Instant createdOn) {}

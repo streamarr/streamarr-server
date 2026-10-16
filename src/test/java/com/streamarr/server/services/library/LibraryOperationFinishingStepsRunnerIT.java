@@ -91,9 +91,9 @@ class LibraryOperationFinishingStepsRunnerIT extends AbstractIntegrationTest {
   void shouldRemoveNoMediaFileWhenAnotherExecutionEndedTheScanFirst() {
     var missing = saveMissingMediaFile();
     var scan = storeScan();
-    Boolean ended =
+    var ended =
         transactionTemplate.execute(_ -> libraryOperations.tryEndLibraryOperation(endOf(scan)));
-    assertThat(ended).isTrue();
+    assertThat(ended).contains(LibraryOperationConclusion.FINISHED);
 
     runner.runFinishingSteps(scan, LibraryOperationConclusion.FINISHED);
 
@@ -124,17 +124,57 @@ class LibraryOperationFinishingStepsRunnerIT extends AbstractIntegrationTest {
         var end =
             executor.submit(
                 () ->
-                    Boolean.TRUE.equals(
-                        transactionTemplate.execute(
-                            _ -> libraryOperations.tryEndLibraryOperation(endOf(scan)))));
+                    transactionTemplate.execute(
+                        _ -> libraryOperations.tryEndLibraryOperation(endOf(scan))));
         awaitWaitersBehind(jdbcTemplate, stepPid.get(), 1);
         release.countDown();
         step.get(10, TimeUnit.SECONDS);
 
-        assertThat(end.get(10, TimeUnit.SECONDS)).isTrue();
+        assertThat(end.get(10, TimeUnit.SECONDS)).contains(LibraryOperationConclusion.FINISHED);
       } finally {
         release.countDown();
       }
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should store a stop without waiting while a finishing step of the operation is uncommitted")
+  void shouldStoreAStopWithoutWaitingWhileAFinishingStepOfTheOperationIsUncommitted()
+      throws Exception {
+    var scan = storeScan();
+    var held = new CountDownLatch(1);
+    var release = new CountDownLatch(1);
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
+      var step =
+          executor.submit(
+              () ->
+                  transactionTemplate.executeWithoutResult(
+                      _ -> {
+                        assertThat(libraryOperations.tryLockLibraryOperation(scan.id())).isTrue();
+                        held.countDown();
+                        awaitLatch(release);
+                      }));
+      try {
+        awaitLatch(held);
+
+        var stop =
+            executor.submit(
+                () ->
+                    transactionTemplate.execute(
+                        _ ->
+                            libraryOperations.stopLibraryOperation(
+                                new LibraryOperationStop(
+                                    library.getId(), LibraryOperationKind.SCAN))));
+
+        assertThat(stop.get(10, TimeUnit.SECONDS))
+            .isInstanceOf(LibraryOperationRepository.StopOutcome.Stored.class);
+        assertThat(libraryOperations.hasStoredStop(scan.id())).isTrue();
+      } finally {
+        release.countDown();
+      }
+
+      step.get(10, TimeUnit.SECONDS);
     }
   }
 
@@ -168,7 +208,8 @@ class LibraryOperationFinishingStepsRunnerIT extends AbstractIntegrationTest {
                       }));
       try {
         awaitLatch(held);
-        var execution = executor.submit(() -> libraryOperationExecution.execute(refresh.id()));
+        var execution =
+            executor.submit(() -> libraryOperationExecution.execute(refresh.id(), () -> false));
         awaitWaitersBehind(jdbcTemplate, stepPid.get(), 1);
         release.countDown();
         step.get(10, TimeUnit.SECONDS);

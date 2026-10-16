@@ -27,6 +27,7 @@ import java.nio.file.Files;
 import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -83,6 +84,20 @@ class ProbeRunsTest {
     var summary = probeRuns.awaitResults(run, neverReached());
 
     assertThat(summary.count(RequestedProbeResult.READY)).isOne();
+    assertThat(sleeper.sleeps()).containsExactly(CHECK_INTERVAL);
+  }
+
+  @Test
+  @DisplayName("Should stop waiting for a requested probe when the admission end is reached")
+  void shouldStopWaitingForARequestedProbeWhenTheAdmissionEndIsReached() throws Exception {
+    var run = probeRuns.open();
+    run.request(mediaFile("movie.mkv").getId());
+    var reached = new AtomicBoolean();
+    sleeper.onSleep(_ -> reached.set(true));
+
+    var summary = probeRuns.awaitResults(run, reached::get);
+
+    assertThat(summary.count(RequestedProbeResult.READY)).isZero();
     assertThat(sleeper.sleeps()).containsExactly(CHECK_INTERVAL);
   }
 

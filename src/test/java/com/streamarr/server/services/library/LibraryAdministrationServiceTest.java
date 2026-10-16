@@ -146,6 +146,51 @@ class LibraryAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should authorize and stop a Library scan through the application service")
+  void shouldAuthorizeAndStopLibraryScanThroughApplicationService() {
+    var libraryId = libraries.save(LibraryFixtureCreator.buildFakeLibrary()).getId();
+    libraryAdministrationService.startLibraryScan(identity, libraryId);
+
+    var outcome = libraryAdministrationService.stopLibraryScan(identity, libraryId);
+
+    assertThat(outcome.map(Library::getStatus)).isEqualTo(Outcome.accepted(LibraryStatus.STOPPING));
+    assertThat(authorizationService.recordedIntents())
+        .endsWith(new Intent.StopLibraryScan(libraryId));
+    assertThat(libraryOperations.operationFor(libraryId).orElseThrow().stopRequested()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should authorize and stop a Library refresh through the application service")
+  void shouldAuthorizeAndStopLibraryRefreshThroughApplicationService() {
+    var libraryId = libraries.save(LibraryFixtureCreator.buildFakeLibrary()).getId();
+    libraryAdministrationService.startLibraryRefresh(
+        identity, libraryId, ImageRefreshMode.PRESERVE);
+
+    var outcome = libraryAdministrationService.stopLibraryRefresh(identity, libraryId);
+
+    assertThat(outcome.map(Library::getStatus)).isEqualTo(Outcome.accepted(LibraryStatus.STOPPING));
+    assertThat(authorizationService.recordedIntents())
+        .endsWith(new Intent.StopLibraryRefresh(libraryId));
+  }
+
+  @Test
+  @DisplayName("Should refuse a stop before storing it when authorization denies")
+  void shouldRefuseAStopBeforeStoringItWhenAuthorizationDenies() {
+    var libraryId = libraries.save(LibraryFixtureCreator.buildFakeLibrary()).getId();
+    libraryAdministrationService.startLibraryScan(identity, libraryId);
+    authorizationService.denyAll();
+
+    assertThatThrownBy(() -> libraryAdministrationService.stopLibraryScan(identity, libraryId))
+        .isInstanceOf(AccessDeniedException.class);
+    assertThatThrownBy(() -> libraryAdministrationService.stopLibraryRefresh(identity, libraryId))
+        .isInstanceOf(AccessDeniedException.class);
+
+    assertThat(libraryOperations.operationFor(libraryId).orElseThrow().stopRequested()).isFalse();
+    assertThat(libraries.findById(libraryId).orElseThrow().getStatus())
+        .isEqualTo(LibraryStatus.SCANNING);
+  }
+
+  @Test
   @DisplayName("Should authorize through the typed intent when library administration is viewed")
   void shouldAuthorizeThroughTypedIntentWhenLibraryAdministrationIsViewed() {
     libraryAdministrationService.requireViewLibraryAdministration(identity);

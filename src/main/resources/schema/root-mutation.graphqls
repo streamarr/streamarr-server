@@ -4,6 +4,8 @@ type Mutation {
     removeLibrary(input: RemoveLibraryInput!): RemoveLibraryPayload
     startLibraryScan(input: StartLibraryScanInput!): StartLibraryScanPayload
     startLibraryRefresh(input: StartLibraryRefreshInput!): StartLibraryRefreshPayload
+    stopLibraryScan(input: StopLibraryScanInput!): StopLibraryScanPayload
+    stopLibraryRefresh(input: StopLibraryRefreshInput!): StopLibraryRefreshPayload
     createStreamSession(input: CreateStreamSessionInput!): CreateStreamSessionPayload
     destroyStreamSession(sessionId: ID!): Boolean!
     reportStreamSessionTimeline(sessionId: ID!, positionSeconds: Int!, state: PlaybackState!): Boolean!

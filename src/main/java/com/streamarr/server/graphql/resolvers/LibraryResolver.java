@@ -23,6 +23,8 @@ import com.streamarr.server.graphql.inputs.MediaSortInput;
 import com.streamarr.server.graphql.inputs.RemoveLibraryInput;
 import com.streamarr.server.graphql.inputs.StartLibraryRefreshInput;
 import com.streamarr.server.graphql.inputs.StartLibraryScanInput;
+import com.streamarr.server.graphql.inputs.StopLibraryRefreshInput;
+import com.streamarr.server.graphql.inputs.StopLibraryScanInput;
 import com.streamarr.server.graphql.mutation.MutationPayloads;
 import com.streamarr.server.graphql.mutation.library.AddLibraryErrors;
 import com.streamarr.server.graphql.mutation.library.AddLibraryPayload;
@@ -30,6 +32,8 @@ import com.streamarr.server.graphql.mutation.library.LibraryOperationErrors;
 import com.streamarr.server.graphql.mutation.library.RemoveLibraryPayload;
 import com.streamarr.server.graphql.mutation.library.StartLibraryRefreshPayload;
 import com.streamarr.server.graphql.mutation.library.StartLibraryScanPayload;
+import com.streamarr.server.graphql.mutation.library.StopLibraryRefreshPayload;
+import com.streamarr.server.graphql.mutation.library.StopLibraryScanPayload;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
@@ -127,6 +131,37 @@ public class LibraryResolver {
         () ->
             MutationPayloads.inputError(
                 LibraryOperationErrors.invalidLibraryId(), StartLibraryRefreshPayload::new));
+  }
+
+  @DgsMutation
+  public StopLibraryScanPayload stopLibraryScan(@InputArgument StopLibraryScanInput input) {
+    return MutationPayloads.withUuid(
+        input.libraryId(),
+        libraryId ->
+            MutationPayloads.payload(
+                libraryAdministrationService.stopLibraryScan(
+                    authorizationService.currentIdentity(), libraryId),
+                LibraryOperationErrors::toStopLibraryScanError,
+                StopLibraryScanPayload::new),
+        () ->
+            MutationPayloads.inputError(
+                LibraryOperationErrors.invalidLibraryId(), StopLibraryScanPayload::new));
+  }
+
+  @DgsMutation
+  public StopLibraryRefreshPayload stopLibraryRefresh(
+      @InputArgument StopLibraryRefreshInput input) {
+    return MutationPayloads.withUuid(
+        input.libraryId(),
+        libraryId ->
+            MutationPayloads.payload(
+                libraryAdministrationService.stopLibraryRefresh(
+                    authorizationService.currentIdentity(), libraryId),
+                LibraryOperationErrors::toStopLibraryRefreshError,
+                StopLibraryRefreshPayload::new),
+        () ->
+            MutationPayloads.inputError(
+                LibraryOperationErrors.invalidLibraryId(), StopLibraryRefreshPayload::new));
   }
 
   @DgsQuery

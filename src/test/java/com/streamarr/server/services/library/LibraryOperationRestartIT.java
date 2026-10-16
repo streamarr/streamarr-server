@@ -5,6 +5,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.support.HeldResponses.held;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -81,6 +82,8 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
 
   private static final Duration BOUND = Duration.ofSeconds(30);
   private static final String SERIES_TMDB_ID = "4242";
+  private static final String POSTER_PATH = "/restart-poster.jpg";
+  private static final String BACKDROP_PATH = "/restart-backdrop.jpg";
 
   @Autowired private LibraryOperationScheduler contextScheduler;
   @Autowired private LibraryOperationService libraryOperationService;
@@ -188,6 +191,77 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
 
     assertThat(libraryStatus(library)).isEqualTo(LibraryStatus.HEALTHY);
     assertThat(artworkResultsFor(libraryOperationId)).isEqualTo(2);
+    assertThat(storedLibraryOperations()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the library STOPPING after a restart until the stopped scan's artwork has"
+          + " results, and finish the stop while a failed poster waits to retry")
+  void shouldKeepTheLibraryStoppingAfterARestartUntilTheStoppedScansArtworkHasResults()
+      throws Exception {
+    var library = createMovieLibrary(LibraryStatus.UNHEALTHY);
+    createMovieFile("Inception (2010)", "Inception (2010).mkv");
+    stubTmdbMovieSearch();
+    stubTmdbMovieMetadataWithArtwork();
+    wireMock.stubFor(get(urlPathEqualTo(POSTER_PATH)).willReturn(aResponse().withStatus(503)));
+    wireMock.stubFor(
+        get(urlPathEqualTo(BACKDROP_PATH))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "image/jpeg")
+                    .withBody(createTestImage(1280, 720))));
+    artworkPrioritySchedulers.stop();
+    try {
+      stopAcrossARestartWithTheArtworkLeftWithoutResults(library);
+    } finally {
+      artworkPrioritySchedulers.start();
+    }
+  }
+
+  private void stopAcrossARestartWithTheArtworkLeftWithoutResults(Library library)
+      throws Exception {
+    var beforeRestart = startScheduler(new AbstractSchedulerListener() {});
+    var identity = authTestSupport.identityOf(admin);
+    libraryOperationService.startLibraryScan(identity, library.getId());
+    await().atMost(BOUND).until(() -> artworkRequestsOfTheLibraryOperation() == 1);
+    var stopped = libraryOperationService.stopLibraryScan(identity, library.getId());
+    beforeRestart.stop();
+    var libraryOperationId = storedLibraryOperationId();
+    var stoppedScansBefore = scans("stopped");
+
+    var waitingOnArtwork = new CompletableFuture<Void>();
+    var completed = new CompletableFuture<ExecutionComplete>();
+    startScheduler(
+        executionWaitingOnArtworkInto(waitingOnArtwork),
+        new AbstractSchedulerListener() {
+          @Override
+          public void onExecutionComplete(ExecutionComplete complete) {
+            completed.complete(complete);
+          }
+        });
+    CompletableFuture.anyOf(waitingOnArtwork, completed).get(BOUND.toSeconds(), TimeUnit.SECONDS);
+
+    assertThat(stopped.map(Library::getStatus)).isEqualTo(Outcome.accepted(LibraryStatus.STOPPING));
+    assertThat(completed).as("the stop finished before its artwork had results").isNotDone();
+    assertThat(libraryStatus(library)).isEqualTo(LibraryStatus.STOPPING);
+
+    var artworkScheduler =
+        ArtworkSchedulerStarter.fromContext(applicationContext)
+            .start(ArtworkPriority.PRIMARY, new AbstractSchedulerListener() {});
+    try {
+      completed.get(BOUND.toSeconds(), TimeUnit.SECONDS);
+    } finally {
+      artworkScheduler.stop();
+    }
+
+    assertThat(libraryStatus(library)).isEqualTo(LibraryStatus.UNHEALTHY);
+    assertThat(letterIndexTotal(library)).isOne();
+    assertThat(artworkOutcomesFor(libraryOperationId))
+        .containsExactlyInAnyOrder("FAILED", "SUCCEEDED");
+    assertThat(scheduledPrimaryArtwork()).as("the failed poster waits to retry").isOne();
+    assertThat(scans("stopped")).isEqualTo(stoppedScansBefore + 1);
     assertThat(storedLibraryOperations()).isZero();
   }
 
@@ -462,11 +536,15 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
   }
 
   private long failedScans() {
+    return scans("failed");
+  }
+
+  private long scans(String conclusion) {
     var timer =
         meterRegistry
             .find(LibraryOperationMetrics.DURATION)
             .tag("kind", "scan")
-            .tag("conclusion", "failed")
+            .tag("conclusion", conclusion)
             .timer();
     if (timer == null) {
       return 0;
@@ -526,6 +604,25 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
 
   private UUID storedLibraryOperationId() {
     return jdbcTemplate.queryForObject("SELECT id FROM library_operation", UUID.class);
+  }
+
+  private List<String> artworkOutcomesFor(UUID libraryOperationId) {
+    return jdbcTemplate.queryForList(
+        "SELECT outcome::text FROM item_result WHERE step = 'ARTWORK' AND library_operation_id = ?",
+        String.class,
+        libraryOperationId);
+  }
+
+  private int letterIndexTotal(Library library) {
+    return jdbcTemplate.queryForObject(
+        "SELECT coalesce(sum(item_count), 0) FROM library_metadata WHERE library_id = ?",
+        Integer.class,
+        library.getId());
+  }
+
+  private int scheduledPrimaryArtwork() {
+    return jdbcTemplate.queryForObject(
+        "SELECT count(*) FROM " + ArtworkSchedulerStarter.PRIMARY_TABLE, Integer.class);
   }
 
   private int artworkResultsFor(UUID libraryOperationId) {
@@ -679,11 +776,15 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
   }
 
   private Library createMovieLibrary() {
+    return createMovieLibrary(LibraryStatus.HEALTHY);
+  }
+
+  private Library createMovieLibrary(LibraryStatus status) {
     return libraryRepository.saveAndFlush(
         Library.builder()
             .name("Movies")
             .backend(LibraryBackend.LOCAL)
-            .status(LibraryStatus.HEALTHY)
+            .status(status)
             .filepathUri(FilepathCodec.encode(tempDir))
             .externalAgentStrategy(ExternalAgentStrategy.TMDB)
             .type(MediaType.MOVIE)
@@ -729,6 +830,32 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
                       "total_pages": 1
                     }
                     """));
+  }
+
+  private void stubTmdbMovieMetadataWithArtwork() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/movie/27205"))
+            .withQueryParam("append_to_response", equalTo("credits,release_dates"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "id": 27205,
+                          "title": "Inception",
+                          "original_title": "Inception",
+                          "release_date": "2010-07-16",
+                          "poster_path": "%s",
+                          "backdrop_path": "%s",
+                          "genres": [],
+                          "production_companies": [],
+                          "credits": {"id": 27205, "cast": [], "crew": []},
+                          "release_dates": {"results": []}
+                        }
+                        """
+                            .formatted(POSTER_PATH, BACKDROP_PATH))));
   }
 
   private void stubTmdbMovieMetadata() {

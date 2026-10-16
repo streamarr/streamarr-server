@@ -109,7 +109,7 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
         Movie.builder().title("Foxtrot").titleSort("Foxtrot").library(library).build());
     listener.onItemProcessed(new ItemProcessedEvent(library.getId()));
 
-    SystemWork.runAsSystemActor(() -> libraryOperationExecution.execute(refreshId));
+    SystemWork.runAsSystemActor(() -> libraryOperationExecution.execute(refreshId, () -> false));
 
     var metadata = metadataRepository.findByLibraryIdOrderByLetterAsc(library.getId());
     assertThat(metadata)
@@ -207,7 +207,7 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
                   transactionTemplate.executeWithoutResult(
                       _ -> {
                         assertThat(libraryOperations.tryEndLibraryOperation(endOf(operationId)))
-                            .isTrue();
+                            .isPresent();
                         letterIndexRecalculator.recalculateLetterIndex(library.getId());
                         endPid.set(
                             jdbcTemplate.queryForObject("SELECT pg_backend_pid()", Integer.class));

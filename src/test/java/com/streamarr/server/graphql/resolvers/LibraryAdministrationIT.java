@@ -179,6 +179,10 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
             + " { library { id } } }",
         "mutation { startLibraryRefresh(input: {libraryId:"
             + " \\\"58edcb42-4c93-4a05-876f-c48e0c48ff30\\\"}) { library { id } } }",
+        "mutation { stopLibraryScan(input: {libraryId: \\\"58edcb42-4c93-4a05-876f-c48e0c48ff30\\\"})"
+            + " { library { id } } }",
+        "mutation { stopLibraryRefresh(input: {libraryId:"
+            + " \\\"58edcb42-4c93-4a05-876f-c48e0c48ff30\\\"}) { library { id } } }",
         "mutation { addLibrary(input: {name: \\\"Denied\\\", filepath: \\\"file:///denied\\\","
             + " type: MOVIE, backend: LOCAL}) { library { id } } }"
       })
@@ -197,6 +201,8 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
       strings = {
         "mutation { startLibraryScan(input: {libraryId: \\\"%s\\\"}) { library { id } } }",
         "mutation { startLibraryRefresh(input: {libraryId: \\\"%s\\\"}) { library { id } } }",
+        "mutation { stopLibraryScan(input: {libraryId: \\\"%s\\\"}) { library { id } } }",
+        "mutation { stopLibraryRefresh(input: {libraryId: \\\"%s\\\"}) { library { id } } }",
         "mutation { removeLibrary(input: {libraryId: \\\"%s\\\"}) { removedLibraryId } }",
         "mutation { addLibrary(input: {name: \\\"Denied\\\", filepath: \\\"file:///denied\\\","
             + " type: MOVIE, backend: LOCAL}) { library { id } } }"
@@ -257,6 +263,68 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
             jsonPath("$.data.removeLibrary.removedLibraryId").value(library.getId().toString()));
 
     assertThat(libraryRepository.existsById(library.getId())).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should show STOPPING, refuse other library work and return the library HEALTHY when a"
+          + " ServerAdmin stops a stored scan")
+  void shouldShowStoppingRefuseOtherLibraryWorkAndReturnTheLibraryHealthyWhenAScanIsStopped()
+      throws Exception {
+    identity = authTestSupport.createAdminIdentity();
+    var adminToken = authTestSupport.profileBearer(identity);
+    var library =
+        libraryRepository.saveAndFlush(
+            LibraryFixtureCreator.unsavedLibraryBuilder()
+                .name("Stopped Library")
+                .filepathUri(FilepathCodec.encode(libraryDirectory))
+                .status(LibraryStatus.HEALTHY)
+                .build());
+    var scanEnded = scanEndedListener.scanEnded(library.getId());
+
+    // The stopped scheduler keeps the stopped scan stored and the library STOPPING.
+    libraryOperationScheduler.stop();
+    try {
+      postGraphQl(startLibraryScanMutation(library.getId()), adminToken)
+          .andExpect(jsonPath("$.data.startLibraryScan.library.status").value("SCANNING"));
+
+      for (var attempt = 0; attempt < 2; attempt++) {
+        postGraphQl(stopLibraryMutation("stopLibraryScan", library.getId()), adminToken)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andExpect(jsonPath("$.data.stopLibraryScan.library.status").value("STOPPING"))
+            .andExpect(jsonPath("$.data.stopLibraryScan.userErrors").isEmpty());
+      }
+
+      postGraphQl(startLibraryRefreshMutation(library.getId()), adminToken)
+          .andExpect(jsonPath("$.data.startLibraryRefresh.library").doesNotExist())
+          .andExpect(
+              jsonPath("$.data.startLibraryRefresh.userErrors[0].message")
+                  .value("A library scan is stopping."))
+          .andExpect(jsonPath("$.data.startLibraryRefresh.userErrors[0].status").value("STOPPING"));
+      postGraphQl(stopLibraryMutation("stopLibraryRefresh", library.getId()), adminToken)
+          .andExpect(jsonPath("$.data.stopLibraryRefresh.library").doesNotExist())
+          .andExpect(
+              jsonPath("$.data.stopLibraryRefresh.userErrors[0].__typename")
+                  .value("LibraryRefreshNotInProgressError"))
+          .andExpect(
+              jsonPath("$.data.stopLibraryRefresh.userErrors[0].message")
+                  .value(
+                      "No library refresh is in progress, so there is nothing to stop. A library"
+                          + " scan is stopping."))
+          .andExpect(jsonPath("$.data.stopLibraryRefresh.userErrors[0].status").value("STOPPING"));
+    } finally {
+      libraryOperationScheduler.start();
+    }
+
+    try {
+      scanEnded.get(BOUND_SECONDS, TimeUnit.SECONDS);
+      assertThat(libraryRepository.findById(library.getId()).orElseThrow().getStatus())
+          .isEqualTo(LibraryStatus.HEALTHY);
+      assertThat(libraryOperationsOf(library.getId())).isZero();
+    } finally {
+      postGraphQl(removeLibraryMutation(library.getId()), adminToken).andExpect(status().isOk());
+    }
   }
 
   @Test
@@ -599,6 +667,17 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
     return ("mutation { startLibraryScan(input: {libraryId: \\\"%s\\\"}) { library { status }"
             + " userErrors { __typename } } }")
         .formatted(libraryId);
+  }
+
+  private static String stopLibraryMutation(String mutationName, UUID libraryId) {
+    var notInProgressError = "LibraryScanNotInProgressError";
+    if (mutationName.equals("stopLibraryRefresh")) {
+      notInProgressError = "LibraryRefreshNotInProgressError";
+    }
+
+    return ("mutation { %s(input: {libraryId: \\\"%s\\\"}) { library { status } userErrors {"
+            + " __typename ... on MutationError { message } ... on %s { status } } } }")
+        .formatted(mutationName, libraryId, notInProgressError);
   }
 
   private static String startLibraryRefreshMutation(UUID libraryId) {
