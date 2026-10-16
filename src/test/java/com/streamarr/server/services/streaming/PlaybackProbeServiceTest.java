@@ -267,6 +267,18 @@ class PlaybackProbeServiceTest {
     }
 
     @Test
+    @DisplayName("Should refuse as not ready when the media file is deleted during the wait")
+    void shouldRefuseAsNotReadyWhenTheMediaFileIsDeletedDuringTheWait() throws Exception {
+      var playback = readInBackground(service());
+      probeRequested.get(10, TimeUnit.SECONDS);
+
+      outcomes.deleteMediaFile(mediaFileId);
+      attemptEnds.signalEnd(mediaFileId);
+
+      assertThat(playback.get(10, TimeUnit.SECONDS)).isEqualTo(notReady());
+    }
+
+    @Test
     @DisplayName(
         "Should refuse as not ready and keep the interrupt when the waiting thread is interrupted")
     void shouldRefuseAsNotReadyAndKeepTheInterruptWhenTheWaitingThreadIsInterrupted()
