@@ -77,7 +77,8 @@ message WorkerRegistration {
   // registration. The slots count job attempts only, and probes never take a slot. The server
   // derives the free slots from its own accounting of active job attempts.
   uint32 available_slots = 3;
-  // The number of probes that this connection runs at once, fixed at registration. Keyframe packet
+  // The number of probes that this connection runs at once when it registers. A later
+  // ProbeCapacityChanged message replaces the value for the rest of the session. Keyframe packet
   // scans are probes, so they count against this capacity too. Job attempts never take this
   // capacity. The server derives the free capacity from its own accounting of active probes, and
   // sends no probe to a worker that advertises 0. A probe that arrives while every unit of the
@@ -368,6 +369,14 @@ message JobAttemptStopped {
   Uuid job_attempt_id = 1;
 }
 
+// The worker's new probe capacity, which replaces the capacity from its registration or from its
+// previous ProbeCapacityChanged message. The server sends new probes against the latest capacity.
+// When the capacity drops below the probes that already run, those probes keep running, and the
+// server sends no new probe until enough of them end.
+message ProbeCapacityChanged {
+  uint32 probe_capacity = 1;
+}
+
 // One message that a worker sends on its session. The server accepts a message whose protobuf
 // encoding takes at most 131,072 bytes (128 KiB). A larger message ends the worker's session, and
 // the server then abandons the worker's job attempts and fails its other probes. So the worker
@@ -382,6 +391,7 @@ message EstablishWorkerSessionRequest {
     JobAttemptStopped job_attempt_stopped = 5;
     ProbeAttemptResult probe_result = 6;
     ProbeKeyframePositionsPart probe_keyframe_positions_part = 7;
+    ProbeCapacityChanged probe_capacity_changed = 8;
   }
 }
 
