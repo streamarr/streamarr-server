@@ -45,11 +45,6 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class LibraryManagementService {
 
-  /**
-   * The unique index from V035 that makes a duplicate path a database decision, not a pre-check.
-   */
-  static final String LIBRARY_FILEPATH_UNIQUE = "library_filepath_uri_idx";
-
   private final LibraryFileWalk libraryFileWalk;
   private final LibraryRepository libraryRepository;
   private final LibraryMetadataRepository libraryMetadataRepository;
@@ -68,11 +63,12 @@ public class LibraryManagementService {
   }
 
   /**
-   * Decides before it writes: name and path are validated first, then one transaction inserts the
-   * library and stores its first scan. The library is returned {@code SCANNING}, and {@link
-   * LibraryAddedEvent} reaches the AFTER_COMMIT listeners that start watching. Two concurrent adds
-   * of the same path race on the unique index; the loser's violation is translated after rollback
-   * into {@code PathAlreadyRegistered}, and it stores no scan and performs no side effect.
+   * Decides before it writes: name and path are validated first, then one transaction compares the
+   * path with every library's path, inserts the library and stores its first scan. The library is
+   * returned {@code SCANNING}, and {@link LibraryAddedEvent} reaches the AFTER_COMMIT listeners
+   * that start watching. Concurrent adds take one lock before they read the libraries, so each add
+   * sees the library that an earlier add committed. A refused add stores no scan and performs no
+   * side effect.
    *
    * @throws LibraryOperationNotStartedException when the first scan cannot be scheduled, so the
    *     transaction adds no library
@@ -89,36 +85,44 @@ public class LibraryManagementService {
       return Outcome.rejected(rejections);
     }
 
+    var folder = path.orElseThrow();
     var libraryToSave =
         library.toBuilder()
-            .filepathUri(FilepathCodec.encode(path.orElseThrow()))
+            .filepathUri(FilepathCodec.encode(folder))
             .status(LibraryStatus.HEALTHY)
             .build();
     try {
-      return insertWithFirstScan(identity, libraryToSave);
+      return insertWithFirstScan(identity, libraryToSave, folder);
     } catch (LibraryOperationNotScheduledException e) {
       throw new LibraryOperationNotStartedException(e);
     }
   }
 
   private Outcome<Library, AddLibraryRejection> insertWithFirstScan(
-      AuthenticatedIdentity identity, Library libraryToSave) {
+      AuthenticatedIdentity identity, Library libraryToSave, Path folder) {
     return mutationTransactions.write(
         () ->
             libraryMutationTransaction.execute(
                 identity,
                 new Intent.AddLibrary(),
                 () -> {
+                  refuseConflictingPath(folder);
                   // The insert is flushed first, because the first scan locks the library's row.
                   var saved = libraryRepository.saveAndFlush(libraryToSave);
                   eventPublisher.publishEvent(
                       new LibraryAddedEvent(saved.getId(), saved.getFilepathUri()));
                   return libraryOperationService.storeFirstLibraryScan(saved.getId());
                 }),
-        constraint ->
-            LIBRARY_FILEPATH_UNIQUE.equals(constraint)
-                ? Optional.of(new AddLibraryRejection.PathAlreadyRegistered())
-                : Optional.empty());
+        _ -> Optional.empty());
+  }
+
+  private void refuseConflictingPath(Path folder) {
+    var conflicts =
+        LibraryPathConflicts.conflictsOf(
+            fileSystem, folder, libraryRepository.lockLibraryPathsForAddLibrary());
+    if (!conflicts.isEmpty()) {
+      throw MutationRejection.ofReasons(conflicts);
+    }
   }
 
   private Optional<Path> validatedPath(String rawFilepath, List<AddLibraryRejection> rejections) {

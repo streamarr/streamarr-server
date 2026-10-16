@@ -58,6 +58,7 @@ import com.streamarr.server.services.pagination.SortDirection;
 import com.streamarr.server.services.pagination.SortValue;
 import com.streamarr.server.support.security.WithAccountContext;
 import com.streamarr.server.support.security.WithProfileContext;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -553,6 +554,32 @@ class LibraryResolverTest {
               });
     }
 
+    @ParameterizedTest
+    @EnumSource(MediaType.class)
+    @DisplayName(
+        "Should name the registered library by its name and path when addLibrary is refused for"
+            + " a registered path")
+    void shouldNameRegisteredLibraryByItsNameAndPathWhenAddLibraryIsRefusedForRegisteredPath(
+        MediaType conflictingType) {
+      var library = conflictingLibrary(conflictingType);
+      FAKE_LIBRARY_MANAGEMENT_SERVICE.returnOutcomeWhenAdded(
+          Outcome.rejected(
+              new AddLibraryRejection.PathAlreadyRegistered(library, CONFLICTING_PATH)));
+
+      Map<String, Object> error =
+          dgsQueryExecutor.executeAndExtractJsonPath(
+              ADD_LIBRARY_CONFLICT_MUTATION, "data.addLibrary.userErrors[0]");
+
+      assertThat(error)
+          .containsEntry(
+              "message",
+              "The library \"Audiobooks\" already uses this folder (/media/books). Choose a"
+                  + " folder that no other library covers.")
+          .containsEntry(
+              "conflictingLibrary", Map.of("id", library.getId().toString(), "name", "Audiobooks"))
+          .containsEntry("conflictingPath", "/media/books");
+    }
+
     @Test
     @DisplayName("Should report every rejection when addLibrary is rejected for several reasons")
     void shouldReportEveryRejectionWhenAddLibraryIsRejectedForSeveralReasons() {
@@ -599,6 +626,26 @@ class LibraryResolverTest {
       }
       """;
 
+  private static final String ADD_LIBRARY_CONFLICT_MUTATION =
+      """
+      mutation {
+        addLibrary(input: {
+          name: "Movies"
+          filepath: "/media/books"
+          type: MOVIE
+          backend: LOCAL
+        }) {
+          userErrors {
+            ... on MutationError { message }
+            ... on LibraryPathAlreadyRegisteredError {
+              conflictingLibrary { id name }
+              conflictingPath
+            }
+          }
+        }
+      }
+      """;
+
   static Stream<Arguments> addLibraryRejections() {
     return Stream.of(
         Arguments.of(new AddLibraryRejection.NameRequired(), "LibraryNameRequiredError", "name"),
@@ -611,9 +658,26 @@ class LibraryResolverTest {
         Arguments.of(
             new AddLibraryRejection.PathNotReadable(), "LibraryPathNotReadableError", "filepath"),
         Arguments.of(
-            new AddLibraryRejection.PathAlreadyRegistered(),
+            new AddLibraryRejection.PathAlreadyRegistered(
+                conflictingLibrary(MediaType.OTHER), CONFLICTING_PATH),
             "LibraryPathAlreadyRegisteredError",
             "filepath"));
+  }
+
+  private static final Path CONFLICTING_PATH = Path.of("/media/books");
+
+  private static Library conflictingLibrary(MediaType type) {
+    var library =
+        Library.builder()
+            .name("Audiobooks")
+            .filepathUri("file:///media/books/")
+            .status(LibraryStatus.HEALTHY)
+            .backend(LibraryBackend.LOCAL)
+            .type(type)
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .build();
+    library.setId(UUID.fromString("5b0c1f4e-2d37-4f7a-9c1e-8a6b3d2f0e91"));
+    return library;
   }
 
   static Stream<Arguments> libraryBusyRefusals() {

@@ -887,16 +887,20 @@ class LibraryManagementServiceTest {
 
     @Test
     @DisplayName(
-        "Should reject with PathAlreadyRegistered when the unique index rejects the insert")
-    void shouldRejectWithPathAlreadyRegisteredWhenUniqueIndexRejectsInsert() throws IOException {
+        "Should reject with PathAlreadyRegistered naming the library when another library uses"
+            + " the path")
+    void shouldRejectWithPathAlreadyRegisteredNamingLibraryWhenAnotherLibraryUsesPath()
+        throws IOException {
       var libraryPath = fileSystem.getPath("/duplicate-library");
       Files.createDirectories(libraryPath);
       var firstLibrary =
-          LibraryFixtureCreator.unsavedLibraryBuilder()
-              .name("First Library")
-              .filepathUri(libraryPath.toString())
-              .build();
-      libraryManagementService.addLibrary(identity, firstLibrary);
+          accepted(
+              libraryManagementService.addLibrary(
+                  identity,
+                  LibraryFixtureCreator.unsavedLibraryBuilder()
+                      .name("First Library")
+                      .filepathUri(libraryPath.toString())
+                      .build()));
       var duplicateLibrary =
           LibraryFixtureCreator.unsavedLibraryBuilder()
               .name("Duplicate Library")
@@ -908,13 +912,15 @@ class LibraryManagementServiceTest {
       var outcome = libraryManagementService.addLibrary(identity, duplicateLibrary);
 
       assertThat(outcome)
-          .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathAlreadyRegistered()));
-      // Translated only after the losing unit rolled back: one commit (the winner), one rollback.
+          .isEqualTo(
+              Outcome.rejected(
+                  new AddLibraryRejection.PathAlreadyRegistered(firstLibrary, libraryPath)));
+      // Refused inside the unit, which rolls back: one commit (the first add), one rollback.
       assertThat(transactionManager.commits()).isEqualTo(1);
       assertThat(transactionManager.rollbacks()).isEqualTo(1);
       assertThat(fakeLibraryRepository.count()).isEqualTo(librariesBefore);
       assertThat(capturingEventPublisher.getEventsOfType(LibraryAddedEvent.class))
-          .as("the loser never reaches its publish; the unique index rejects the insert first")
+          .as("the refused add never reaches its publish")
           .hasSize(eventsBefore);
     }
 
@@ -933,10 +939,12 @@ class LibraryManagementServiceTest {
               .name("Duplicate Library")
               .filepathUri(libraryPath.resolve(".").toString())
               .build();
-      accepted(libraryManagementService.addLibrary(identity, firstLibrary));
+      var registered = accepted(libraryManagementService.addLibrary(identity, firstLibrary));
 
       assertThat(libraryManagementService.addLibrary(identity, duplicateLibrary))
-          .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathAlreadyRegistered()));
+          .isEqualTo(
+              Outcome.rejected(
+                  new AddLibraryRejection.PathAlreadyRegistered(registered, libraryPath)));
     }
 
     @Test
@@ -1128,13 +1136,15 @@ class LibraryManagementServiceTest {
               .name("Registered Library")
               .filepathUri(libraryPath.toString())
               .build();
-      accepted(libraryManagementService.addLibrary(identity, library));
+      var registered = accepted(libraryManagementService.addLibrary(identity, library));
 
       var duplicate =
           libraryManagementService.addLibrary(identity, library.toBuilder().name("Twin").build());
 
       assertThat(duplicate)
-          .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathAlreadyRegistered()));
+          .isEqualTo(
+              Outcome.rejected(
+                  new AddLibraryRejection.PathAlreadyRegistered(registered, libraryPath)));
       assertThat(libraryOperationScheduling.scheduledExecutions()).hasSize(1);
     }
 

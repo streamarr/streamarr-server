@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.mutation.library;
 
+import com.streamarr.server.domain.Library;
 import com.streamarr.server.graphql.mutation.InputMutationError;
 import java.util.List;
 
@@ -21,6 +22,7 @@ public sealed interface AddLibraryError extends InputMutationError {
   record LibraryPathNotReadableError(String message, List<String> inputPath)
       implements AddLibraryError {}
 
-  record LibraryPathAlreadyRegisteredError(String message, List<String> inputPath)
+  record LibraryPathAlreadyRegisteredError(
+      String message, List<String> inputPath, Library conflictingLibrary, String conflictingPath)
       implements AddLibraryError {}
 }
