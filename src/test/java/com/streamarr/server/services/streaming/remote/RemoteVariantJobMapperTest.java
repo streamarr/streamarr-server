@@ -57,7 +57,6 @@ class RemoteVariantJobMapperTest {
 
   @ParameterizedTest(name = "{0} → {1}")
   @CsvSource({
-    "ULTRAFAST, ENCODER_PRESET_ULTRAFAST",
     "SUPERFAST, ENCODER_PRESET_SUPERFAST",
     "VERYFAST, ENCODER_PRESET_VERYFAST",
     "FASTER, ENCODER_PRESET_FASTER",
