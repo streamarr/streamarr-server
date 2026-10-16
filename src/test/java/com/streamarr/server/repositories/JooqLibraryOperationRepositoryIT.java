@@ -115,7 +115,7 @@ class JooqLibraryOperationRepositoryIT extends AbstractIntegrationTest {
                     libraryOperations.storeLibraryOperation(
                         NewLibraryOperation.scan(scanned.getId())));
     return switch (outcome) {
-      case StoreOutcome.Stored(var stored, var _) -> stored;
+      case StoreOutcome.Stored(var stored, _) -> stored;
       case StoreOutcome.Rejected(var rejection) ->
           throw new AssertionError("The scan was not stored: " + rejection);
       case null -> throw new AssertionError("The store returned nothing");
