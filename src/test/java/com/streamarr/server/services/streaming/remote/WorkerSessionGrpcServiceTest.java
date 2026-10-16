@@ -13,6 +13,7 @@ import com.google.protobuf.ByteString;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
@@ -786,7 +787,9 @@ class WorkerSessionGrpcServiceTest {
       throws Exception {
     var workerId = UUID.randomUUID();
     var sourceNamespaceId = UUID.randomUUID();
-    var registry = new LiveWorkerConnectionRegistry(configuration, meterRegistry);
+    var registry =
+        new LiveWorkerConnectionRegistry(
+            configuration, meterRegistry, new HeldSegmentRequests(new SimpleMeterRegistry()));
     var segmentStore = new FakeSegmentStore();
     var service = new WorkerSessionGrpcService(registry, segmentStore);
     var responses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();

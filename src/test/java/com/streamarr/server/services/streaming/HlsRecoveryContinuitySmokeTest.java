@@ -91,6 +91,7 @@ class HlsRecoveryContinuitySmokeTest {
         SegmentDeliveryCoordinator.builder()
             .segmentStore(segmentStore)
             .producerLifecycle(lifecycle)
+            .heldRequests(workerFixture.workerSessions().heldSegmentRequests())
             .build();
   }
 

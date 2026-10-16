@@ -23,6 +23,7 @@ import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.RecordedStream;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
+import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentDelivery;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
@@ -75,6 +76,7 @@ class RemoteRecoveryIT {
               RecoveryRigConfiguration.builder()
                   .initialAttempt(initialAttempt(streamSessionId, mediaFile, TranscodeMode.REMUX))
                   .segmentStore(segmentStore)
+                  .heldRequests(server.heldSegmentRequests())
                   .executor(executor)
                   .build());
 
@@ -133,6 +135,7 @@ class RemoteRecoveryIT {
               RecoveryRigConfiguration.builder()
                   .initialAttempt(initialAttempt(streamSessionId, mediaFile, TranscodeMode.REMUX))
                   .segmentStore(segmentStore)
+                  .heldRequests(server.heldSegmentRequests())
                   .executor(executor)
                   .build());
 
@@ -181,6 +184,7 @@ class RemoteRecoveryIT {
               RecoveryRigConfiguration.builder()
                   .initialAttempt(initialAttempt)
                   .segmentStore(segmentStore)
+                  .heldRequests(server.heldSegmentRequests())
                   .executor(new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot))
                   .build());
       startThenKillInitialAttempt(rig, List.of(worker));
@@ -239,6 +243,7 @@ class RemoteRecoveryIT {
               RecoveryRigConfiguration.builder()
                   .initialAttempt(initialAttempt)
                   .segmentStore(segmentStore)
+                  .heldRequests(server.heldSegmentRequests())
                   .executor(new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot))
                   .build());
       startThenKillInitialAttempt(rig, List.of(firstWorker, secondWorker));
@@ -328,6 +333,7 @@ class RemoteRecoveryIT {
   private record RecoveryRigConfiguration(
       TranscodeRequest initialAttempt,
       LocalSegmentStore segmentStore,
+      HeldSegmentRequests heldRequests,
       RemoteTranscodeExecutor executor) {}
 
   private RecoveryRig recoveryRig(RecoveryRigConfiguration configuration) {
@@ -354,7 +360,7 @@ class RemoteRecoveryIT {
             .transcodeExecutor(configuration.executor())
             .properties(properties)
             .runtimeRegistry(registry)
-            .pollInterval(Duration.ofMillis(50))
+            .heldRequests(configuration.heldRequests())
             .build();
     return new RecoveryRig(rig.coordinator(), session, configuration);
   }

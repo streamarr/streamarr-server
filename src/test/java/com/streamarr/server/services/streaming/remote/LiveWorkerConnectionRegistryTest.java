@@ -12,6 +12,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
+import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptStarted;
@@ -59,9 +60,10 @@ class LiveWorkerConnectionRegistryTest {
   @DisplayName("Should reject a registry when its configuration is missing")
   void shouldRejectRegistryWhenItsConfigurationIsMissing() {
     var meterRegistry = new SimpleMeterRegistry();
+    var heldRequests = new HeldSegmentRequests(new SimpleMeterRegistry());
 
     assertThatNullPointerException()
-        .isThrownBy(() -> new LiveWorkerConnectionRegistry(null, meterRegistry))
+        .isThrownBy(() -> new LiveWorkerConnectionRegistry(null, meterRegistry, heldRequests))
         .withMessageContaining("configuration");
   }
 
@@ -69,10 +71,141 @@ class LiveWorkerConnectionRegistryTest {
   @DisplayName("Should reject a registry when its meter registry is missing")
   void shouldRejectRegistryWhenItsMeterRegistryIsMissing() {
     var configuration = WorkerSessionServerConfiguration.builder().build();
+    var heldRequests = new HeldSegmentRequests(new SimpleMeterRegistry());
 
     assertThatNullPointerException()
-        .isThrownBy(() -> new LiveWorkerConnectionRegistry(configuration, null))
+        .isThrownBy(() -> new LiveWorkerConnectionRegistry(configuration, null, heldRequests))
         .withMessageContaining("meterRegistry");
+  }
+
+  @Test
+  @DisplayName("Should reject a registry when its held segment requests are missing")
+  void shouldRejectRegistryWhenItsHeldSegmentRequestsAreMissing() {
+    var configuration = WorkerSessionServerConfiguration.builder().build();
+    var meterRegistry = new SimpleMeterRegistry();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> new LiveWorkerConnectionRegistry(configuration, meterRegistry, null))
+        .withMessageContaining("heldRequests");
+  }
+
+  @Test
+  @DisplayName("Should wake the requests held on a variant when a segment of it is published")
+  void shouldWakeRequestsHeldOnVariantWhenSegmentOfItIsPublished() throws Exception {
+    var held = HeldVariant.dispatch();
+
+    held.publish(() -> SegmentPublication.PUBLISHED);
+
+    assertThat(held.wake().await(Duration.ZERO)).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should wake the requests held on a variant when its job attempt's initialization segment is refused")
+  void shouldWakeRequestsHeldOnVariantWhenItsJobAttemptsInitializationSegmentIsRefused()
+      throws Exception {
+    var held = HeldVariant.dispatch();
+
+    held.publish(() -> SegmentPublication.INITIALIZATION_SEGMENT_DIFFERS);
+
+    assertThat(held.wake().await(Duration.ZERO)).isTrue();
+    assertThat(held.isRunning()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should leave the requests held on a variant waiting when an upload from another worker session is refused")
+  void shouldLeaveRequestsHeldOnVariantWaitingWhenUploadFromAnotherWorkerSessionIsRefused()
+      throws Exception {
+    var held = HeldVariant.dispatch();
+    var otherSessionUpload = uploadMetadata(UUID.randomUUID(), held.worker(), held.job());
+
+    var outcome =
+        held.registry()
+            .publishIfAuthorized(WORKER_ID, otherSessionUpload, () -> SegmentPublication.PUBLISHED);
+
+    assertThat(outcome).isEmpty();
+    assertThat(held.wake().await(Duration.ZERO)).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should wake the requests held on a variant once its job attempt ends and no longer runs")
+  void shouldWakeRequestsHeldOnVariantOnceItsJobAttemptEndsAndNoLongerRuns() throws Exception {
+    var held = HeldVariant.dispatch();
+
+    held.registry()
+        .releaseJobAttempt(
+            WORKER_ID, held.workerSessionId(), fromProto(held.job().getJobAttemptId()));
+
+    assertThat(held.wake().await(Duration.ZERO)).isTrue();
+    assertThat(held.isRunning()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should wake the requests held on a variant when the server stops its job attempt")
+  void shouldWakeRequestsHeldOnVariantWhenServerStopsItsJobAttempt() throws Exception {
+    var held = HeldVariant.dispatch();
+
+    held.registry().stopVariant(held.sessionId(), held.job().getVariant().getVariantLabel());
+
+    assertThat(held.wake().await(Duration.ZERO)).isTrue();
+    assertThat(held.isRunning()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should wake the requests held on a variant when its worker disconnects")
+  void shouldWakeRequestsHeldOnVariantWhenItsWorkerDisconnects() throws Exception {
+    var held = HeldVariant.dispatch();
+
+    held.registry().disconnect(WORKER_ID, held.workerSessionId());
+
+    assertThat(held.wake().await(Duration.ZERO)).isTrue();
+    assertThat(held.isRunning()).isFalse();
+  }
+
+  // A variant job running on a registered worker, with the wake that its held requests took.
+  @Builder
+  private record HeldVariant(
+      LiveWorkerConnectionRegistry registry,
+      UUID workerSessionId,
+      WorkerIdentity worker,
+      VariantJob job,
+      HeldSegmentRequests.Wake wake) {
+
+    private static HeldVariant dispatch() {
+      var heldRequests = new HeldSegmentRequests(new SimpleMeterRegistry());
+      var registry = LiveWorkerConnectionRegistryFixture.registryWaking(heldRequests);
+      var workerRegistration = registration();
+      var workerSessionId =
+          registry.register(WORKER_ID, workerRegistration, new CancellableObserver());
+      var job = variantJob();
+      assertThat(registry.dispatch(job)).isPresent();
+      return HeldVariant.builder()
+          .registry(registry)
+          .workerSessionId(workerSessionId)
+          .worker(workerRegistration.getWorker())
+          .job(job)
+          .wake(
+              heldRequests.nextWake(
+                  fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel()))
+          .build();
+    }
+
+    private UUID sessionId() {
+      return fromProto(job.getStreamSessionId());
+    }
+
+    private boolean isRunning() {
+      return registry.isRunning(sessionId(), job.getVariant().getVariantLabel());
+    }
+
+    private void publish(Supplier<SegmentPublication> publication) {
+      assertThat(
+              registry.publishIfAuthorized(
+                  WORKER_ID, uploadMetadata(workerSessionId, worker, job), publication))
+          .isPresent();
+    }
   }
 
   @Test
@@ -501,7 +634,9 @@ class LiveWorkerConnectionRegistryTest {
     var meterRegistry = new SimpleMeterRegistry();
     var registry =
         new LiveWorkerConnectionRegistry(
-            WorkerSessionServerConfiguration.builder().build(), meterRegistry);
+            WorkerSessionServerConfiguration.builder().build(),
+            meterRegistry,
+            new HeldSegmentRequests(new SimpleMeterRegistry()));
     var responses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
     var workerRegistration = registration();
     var workerSessionId = registry.register(WORKER_ID, workerRegistration, collecting(responses));
@@ -986,7 +1121,11 @@ class LiveWorkerConnectionRegistryTest {
     }
 
     private static RunningEncode dispatch(WorkerSessionServerConfiguration configuration) {
-      var registry = new LiveWorkerConnectionRegistry(configuration, new SimpleMeterRegistry());
+      var registry =
+          new LiveWorkerConnectionRegistry(
+              configuration,
+              new SimpleMeterRegistry(),
+              new HeldSegmentRequests(new SimpleMeterRegistry()));
       var workerRegistration = registration(WORKER_ID, libx264Encoder());
       var workerSessionId =
           registry.register(WORKER_ID, workerRegistration, new CancellableObserver());

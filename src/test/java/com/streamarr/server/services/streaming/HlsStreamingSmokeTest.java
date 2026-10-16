@@ -148,6 +148,7 @@ class HlsStreamingSmokeTest {
                 SegmentDeliveryCoordinator.builder()
                     .segmentStore(segmentStore)
                     .producerLifecycle(producerLifecycle)
+                    .heldRequests(workerFixture.workerSessions().heldSegmentRequests())
                     .build())
             .build();
 

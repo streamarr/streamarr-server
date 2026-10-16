@@ -286,6 +286,7 @@ class AdversarialPlaybackTest {
 
     @Bean
     HlsStreamingService streaming(
+        WorkerSessionServer sessions,
         RemoteTranscodeExecutor executor,
         PersistedProbeReader reader,
         ApplicationEventPublisher events) {
@@ -296,6 +297,7 @@ class AdversarialPlaybackTest {
               .segmentStore(segments)
               .properties(properties)
               .runtimeRegistry(registry)
+              .heldRequests(sessions.heldSegmentRequests())
               .build();
       return HlsStreamingService.builder()
           .mediaFileRepository(files)

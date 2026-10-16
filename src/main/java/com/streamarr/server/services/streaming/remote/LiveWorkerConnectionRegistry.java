@@ -8,6 +8,7 @@ import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
+import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
@@ -63,10 +64,13 @@ final class LiveWorkerConnectionRegistry {
   private final long startReportTimeoutNanos;
   private final Counter initializationSegmentMismatches;
   private final Counter encoderBackendMismatches;
+  private final HeldSegmentRequests heldRequests;
 
   LiveWorkerConnectionRegistry(
       @NonNull WorkerSessionServerConfiguration configuration,
-      @NonNull MeterRegistry meterRegistry) {
+      @NonNull MeterRegistry meterRegistry,
+      @NonNull HeldSegmentRequests heldRequests) {
+    this.heldRequests = heldRequests;
     probeTimeoutNanos = configuration.probeTimeout().toNanos();
     keyframeScanTimeoutNanos = configuration.keyframeScanTimeout().toNanos();
     probeCancellationTimeoutNanos = configuration.probeCancellationTimeout().toNanos();
@@ -366,7 +370,13 @@ final class LiveWorkerConnectionRegistry {
     if (connection == null || !connection.awaitConfirmedEncoderBackend(metadata)) {
       return Optional.empty();
     }
-    return connection.publishIfStillAuthorized(metadata, publish);
+
+    var outcome = connection.publishIfStillAuthorized(metadata, publish);
+    outcome.ifPresent(
+        _ ->
+            heldRequests.wakeVariant(
+                fromProto(metadata.getStreamSessionId()), metadata.getVariantLabel()));
+    return outcome;
   }
 
   private final class WorkerConnection {
@@ -649,9 +659,12 @@ final class LiveWorkerConnectionRegistry {
 
     private synchronized boolean tryStop(UUID jobAttemptId) {
       forgetEncodeAttempt(jobAttemptId);
-      if (activeVariants.remove(jobAttemptId) == null) {
+      var stopped = activeVariants.remove(jobAttemptId);
+      if (stopped == null) {
         return false;
       }
+
+      wakeHeldRequests(stopped);
 
       var command =
           StopVariantCommand.newBuilder()
@@ -687,7 +700,16 @@ final class LiveWorkerConnectionRegistry {
 
     private synchronized Optional<VariantJob> releaseJobAttempt(UUID jobAttemptId) {
       forgetEncodeAttempt(jobAttemptId);
-      return Optional.ofNullable(activeVariants.remove(jobAttemptId));
+      var released = Optional.ofNullable(activeVariants.remove(jobAttemptId));
+      released.ifPresent(this::wakeHeldRequests);
+      return released;
+    }
+
+    // Wakes the requests held on the job's variant after the attempt leaves activeVariants, so a
+    // woken request finds no running attempt.
+    private void wakeHeldRequests(VariantJob job) {
+      heldRequests.wakeVariant(
+          fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel());
     }
 
     private synchronized int availableSlots() {
@@ -832,6 +854,7 @@ final class LiveWorkerConnectionRegistry {
     private List<VariantJob> abandonAllJobsWithoutWaiting() {
       var drained = List.copyOf(activeVariants.values());
       activeVariants.clear();
+      drained.forEach(this::wakeHeldRequests);
       List.copyOf(encodeAttempts.keySet()).forEach(this::forgetEncodeAttempt);
       activeProbes.keySet().forEach(attemptId -> failProbe(attemptId, "Worker session ended"));
       return drained;

@@ -87,7 +87,7 @@ class OnDemandVariantsIT {
             .segmentStore(segmentStore)
             .properties(properties)
             .runtimeRegistry(registry)
-            .pollInterval(Duration.ofMillis(10))
+            .heldRequests(server.heldSegmentRequests())
             .build();
     coordinator = rig.coordinator();
 
@@ -180,18 +180,24 @@ class OnDemandVariantsIT {
   private PendingRequest request(UUID sessionId, String variantLabel, String segmentName) {
     return new PendingRequest(
         sessionId,
+        variantLabel,
         segmentName,
         CompletableFuture.supplyAsync(
             () -> coordinator.deliver(sessionId, variantLabel, segmentName)));
   }
 
   // The loopback worker uploads nothing, so the test stores each segment after the server has
-  // started or stopped the job attempts that the request needs.
+  // started or stopped the job attempts that the request needs. The test then wakes the requests
+  // held on the segment's variant, as a stored upload does.
   private SegmentDelivery storeAndAwait(PendingRequest pending) throws Exception {
     segmentStore.addSegment(pending.sessionId(), pending.segmentName(), SEGMENT_BYTES);
+    server.heldSegmentRequests().wakeVariant(pending.sessionId(), pending.variantLabel());
     return pending.delivery().get(5, TimeUnit.SECONDS);
   }
 
   private record PendingRequest(
-      UUID sessionId, String segmentName, CompletableFuture<SegmentDelivery> delivery) {}
+      UUID sessionId,
+      String variantLabel,
+      String segmentName,
+      CompletableFuture<SegmentDelivery> delivery) {}
 }
