@@ -125,7 +125,7 @@ class LibraryOperationFinishingStepsRunnerIT extends AbstractIntegrationTest {
   @Test
   @DisplayName(
       "Should leave a title out of the letter index when a finishing step of another execution"
-          + " deletes the title while the operation ends")
+          + " deletes the title")
   void shouldLeaveATitleOutOfTheLetterIndexWhenAFinishingStepOfAnotherExecutionDeletesTheTitle()
       throws Exception {
     var movie =
