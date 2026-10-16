@@ -17,6 +17,7 @@ import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
@@ -481,6 +482,45 @@ class LibraryManagementServiceTest {
     assertThrows(
         LibraryNotFoundException.class,
         () -> libraryManagementService.processDiscoveredFile(nonExistentId, moviePath));
+  }
+
+  @Test
+  @DisplayName("Should leave another library's file untouched when this library discovers it")
+  void shouldLeaveAnotherLibrarysFileUntouchedWhenThisLibraryDiscoversIt() throws IOException {
+    var rootPath = createRootLibraryDirectory();
+    var moviePath = createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
+    var otherLibraryId = UUID.randomUUID();
+    fakeMediaFileRepository.save(
+        MediaFile.builder()
+            .libraryId(otherLibraryId)
+            .filepathUri(FilepathCodec.encode(moviePath))
+            .filename("About Time (2013).mkv")
+            .status(MediaFileStatus.METADATA_UNAVAILABLE)
+            .failureReason(ItemFailureReason.TEMPORARY)
+            .build());
+    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
+        .thenReturn(
+            new Found(
+                RemoteSearchResult.builder()
+                    .title("About Time")
+                    .externalId("456")
+                    .externalSourceType(ExternalSourceType.TMDB)
+                    .build()));
+    when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
+        .thenReturn(
+            new MetadataFetchOutcome.Found<>(
+                new MetadataResult<>(
+                    Movie.builder().title("About Time").build(), List.of(), Map.of(), Map.of())));
+
+    libraryManagementService.processDiscoveredFile(savedLibraryId, moviePath);
+
+    assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath)))
+        .get()
+        .extracting(MediaFile::getLibraryId, MediaFile::getStatus)
+        .containsExactly(otherLibraryId, MediaFileStatus.METADATA_UNAVAILABLE);
+    assertThat(fakeMovieRepository.findAll()).isEmpty();
+    assertThat(capturingEventPublisher.getEventsOfType(ItemProcessedEvent.class)).isEmpty();
   }
 
   @Test

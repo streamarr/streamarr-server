@@ -113,8 +113,9 @@ public class LibraryFileWalk {
   /**
    * Tries to match a file that the file watcher discovered, and waits for nothing.
    *
-   * @return false when the file has an unsupported extension or was already matched, so nothing was
-   *     processed; true otherwise, whether or not matching then succeeded
+   * @return false when the file has an unsupported extension, belongs to another library or was
+   *     already matched, so nothing was processed; true otherwise, whether or not matching then
+   *     succeeded
    */
   public boolean tryProcessDiscoveredFile(Library library, Path path) {
     if (!keepSupportedOrWarn(path)) {
@@ -122,8 +123,14 @@ public class LibraryFileWalk {
     }
 
     try (var discovery = fileDiscoveryRuns.open("file discovery in", library)) {
-      var outcome = processFile(discovery, path, discovery.probeRun()::request);
-      return !(outcome instanceof MatchingOutcome.SkippedAsMatched);
+      return switch (processFile(discovery, path, discovery.probeRun()::request)) {
+        case MatchingOutcome.SkippedAsMatched _, MatchingOutcome.SkippedAsAnotherLibrarysFile _ ->
+            false;
+        case MatchingOutcome.Matched _,
+            MatchingOutcome.NotMatched _,
+            MatchingOutcome.Interrupted _ ->
+            true;
+      };
     }
   }
 
@@ -186,6 +193,13 @@ public class LibraryFileWalk {
       FileDiscovery discovery, Path path, Consumer<UUID> requestProbe) {
     var library = discovery.library();
     var mediaFile = findOrCreateMediaFile(library, path);
+
+    // A file joins only an item of its own library. Removing a library deletes its items, and
+    // every file attached to them, so this library must not attach a file another library holds.
+    if (!library.getId().equals(mediaFile.getLibraryId())) {
+      return new MatchingOutcome.SkippedAsAnotherLibrarysFile();
+    }
+
     requestProbe.accept(mediaFile.getId());
 
     if (isAlreadyMatched(mediaFile)) {

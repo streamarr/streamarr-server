@@ -15,6 +15,9 @@ public sealed interface MatchingOutcome {
   /** The file was already matched, so nothing was matched again. */
   record SkippedAsMatched() implements MatchingOutcome {}
 
+  /** Another library holds the file, so this library leaves the file to that library. */
+  record SkippedAsAnotherLibrarysFile() implements MatchingOutcome {}
+
   /** Matching was interrupted, and the file keeps its earlier status. */
   record Interrupted() implements MatchingOutcome {}
 }

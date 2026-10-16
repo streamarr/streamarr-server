@@ -22,6 +22,8 @@ class AdmissionReportsTest {
     return Stream.of(
         Arguments.of(new MatchingOutcome.Matched(), AdmittedTaskReport.LATENCY),
         Arguments.of(new MatchingOutcome.SkippedAsMatched(), AdmittedTaskReport.IGNORED),
+        Arguments.of(
+            new MatchingOutcome.SkippedAsAnotherLibrarysFile(), AdmittedTaskReport.IGNORED),
         Arguments.of(new MatchingOutcome.Interrupted(), AdmittedTaskReport.IGNORED),
         Arguments.of(
             notMatched(MatchingFailure.of(MediaFileStatus.METADATA_PARSING_FAILED)),

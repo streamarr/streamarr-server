@@ -11,6 +11,7 @@ import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
@@ -129,6 +130,36 @@ class SeriesScanningIT extends AbstractScanningIntegrationTest {
         .isPresent();
     var keptSeries = onlySeriesIn(keptLibrary);
     assertThat(keptFileEpisodeId).isEqualTo(episodeIdOf(keptSeries, 2, 1));
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep another library's file and resume position when a library whose folder holds"
+          + " that file is removed")
+  void shouldKeepAnotherLibrarysFileAndResumePositionWhenALibraryWhoseFolderHoldsThatFileIsRemoved()
+      throws IOException {
+    var outerLibrary = createSeriesLibrary(tempDir.resolve("outer"));
+    var innerLibrary = createSeriesLibrary(tempDir.resolve("outer/inner"));
+    createSeriesFile("outer/inner/Breaking Bad", "Season 01", "breaking.bad.s01e01.mkv");
+    stubTmdbSearch("Breaking Bad", "1396", "Breaking Bad");
+    stubTmdbSeriesMetadata("1396", "Breaking Bad");
+    stubTmdbSeasonDetails("1396", 1, buildSeason1Response());
+    scanEachToEnd(innerLibrary);
+    var unmatchedFile =
+        saveFileThatFailedMatching(
+            innerLibrary,
+            createSeriesFile("outer/inner/Breaking Bad", "Season 01", "breaking.bad.s01e02.mkv"));
+    libraryOperationDriver.scanToEnd(outerLibrary.getId());
+    admin = authTestSupport.createAdminIdentity();
+    var resumePosition = saveResumePosition(unmatchedFile);
+
+    var removal = removeLibrary(outerLibrary);
+
+    assertThat(removal).isEqualTo(new Outcome.Accepted<>(outerLibrary.getId()));
+    assertThat(sessionProgressRepository.findById(resumePosition))
+        .as("resume position in the inner library's file")
+        .isPresent();
+    assertThat(fileOf(unmatchedFile).getLibraryId()).isEqualTo(innerLibrary.getId());
   }
 
   @Test
@@ -695,6 +726,19 @@ class SeriesScanningIT extends AbstractScanningIntegrationTest {
                 .positionSeconds(1800)
                 .build())
         .getId();
+  }
+
+  // The library found the file, but the metadata provider was unavailable while matching it.
+  private Path saveFileThatFailedMatching(Library library, Path file) {
+    mediaFileRepository.saveAndFlush(
+        MediaFile.builder()
+            .libraryId(library.getId())
+            .filepathUri(FilepathCodec.encode(file))
+            .filename(file.getFileName().toString())
+            .status(MediaFileStatus.METADATA_UNAVAILABLE)
+            .failureReason(ItemFailureReason.TEMPORARY)
+            .build());
+    return file;
   }
 
   private MediaFile fileOf(Path file) {

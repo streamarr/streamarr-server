@@ -18,7 +18,9 @@ final class AdmissionReports {
   static AdmittedTaskReport forMatching(MatchingOutcome outcome) {
     return switch (outcome) {
       case MatchingOutcome.Matched _ -> AdmittedTaskReport.LATENCY;
-      case MatchingOutcome.SkippedAsMatched _, MatchingOutcome.Interrupted _ ->
+      case MatchingOutcome.SkippedAsMatched _,
+          MatchingOutcome.SkippedAsAnotherLibrarysFile _,
+          MatchingOutcome.Interrupted _ ->
           AdmittedTaskReport.IGNORED;
       case MatchingOutcome.NotMatched(var failure) -> forMatchingFailure(failure);
     };
