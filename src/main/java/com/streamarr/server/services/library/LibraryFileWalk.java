@@ -123,14 +123,8 @@ public class LibraryFileWalk {
     }
 
     try (var discovery = fileDiscoveryRuns.open("file discovery in", library)) {
-      return switch (processFile(discovery, path, discovery.probeRun()::request)) {
-        case MatchingOutcome.SkippedAsMatched _, MatchingOutcome.SkippedAsAnotherLibrarysFile _ ->
-            false;
-        case MatchingOutcome.Matched _,
-            MatchingOutcome.NotMatched _,
-            MatchingOutcome.Interrupted _ ->
-            true;
-      };
+      var outcome = processFile(discovery, path, discovery.probeRun()::request);
+      return !(outcome instanceof MatchingOutcome.Skipped);
     }
   }
 
