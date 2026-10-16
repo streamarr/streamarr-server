@@ -27,6 +27,7 @@ import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.domain.media.PendingArtworkRequest;
 import com.streamarr.server.domain.metadata.Person;
+import com.streamarr.server.fakes.AdvanceableSystemClock;
 import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.PersonRepository;
@@ -43,7 +44,6 @@ import com.streamarr.server.support.ArtworkSchedulerStarter;
 import com.streamarr.server.support.BoundedTask;
 import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -69,6 +69,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
 
   private static final Duration BOUND = Duration.ofSeconds(20);
+  private static final Duration FIRST_RETRY_DELAY = Duration.ofSeconds(5);
   private static final String PRIMARY_TABLE = ArtworkSchedulerStarter.PRIMARY_TABLE;
   private static final String BACKGROUND_TABLE = ArtworkSchedulerStarter.BACKGROUND_TABLE;
   private static final String PROBE_TABLE = "scheduled_tasks";
@@ -182,7 +183,9 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
     stubImage("/backdrop.jpg");
     var failed = new CompletableFuture<ExecutionComplete>();
     var saved = new CompletableFuture<ExecutionComplete>();
+    var clock = new AdvanceableSystemClock();
     startPrimaryScheduler(
+        primaryScheduler().clock(clock).build(),
         new AbstractSchedulerListener() {
           @Override
           public void onExecutionComplete(ExecutionComplete completed) {
@@ -206,6 +209,9 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
             ItemOutcome.Failed.class,
             outcome -> assertThat(outcome.reason()).isEqualTo(ItemFailureReason.TEMPORARY));
     assertThat(consecutiveFailures()).isOne();
+    assertThat(retryDelay()).isEqualTo(FIRST_RETRY_DELAY);
+
+    clock.advance(FIRST_RETRY_DELAY);
 
     saved.get(BOUND.toSeconds(), TimeUnit.SECONDS);
 
@@ -270,14 +276,14 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
             .clock(Clock.systemUTC())
             .build();
     var completed = new CompletableFuture<ExecutionComplete>();
-    var beforeAttempt = Instant.now();
 
-    startPrimaryScheduler(failingSteps, completedInto(completed));
+    startPrimaryScheduler(
+        primaryScheduler().stepsRunner(failingSteps).build(), completedInto(completed));
 
     assertThat(completed.get(BOUND.toSeconds(), TimeUnit.SECONDS).getCause()).contains(unreadable);
     assertThat(requests.findRequest(movie())).isPresent();
     assertThat(consecutiveFailures()).isOne();
-    assertThat(nextExecutionTime()).isAfter(beforeAttempt.plusSeconds(4));
+    assertThat(retryDelay()).isEqualTo(FIRST_RETRY_DELAY);
   }
 
   @Test
@@ -361,18 +367,19 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   }
 
   private ArtworkScheduler startPrimaryScheduler(AbstractSchedulerListener listener) {
-    return startPrimaryScheduler(artworkStepsRunner, listener);
+    return startPrimaryScheduler(primaryScheduler().build(), listener);
   }
 
   private ArtworkScheduler startPrimaryScheduler(
-      ArtworkStepsRunner stepsRunner, AbstractSchedulerListener listener) {
-    var scheduler =
-        ArtworkSchedulerStarter.fromContext(applicationContext).toBuilder()
-            .stepsRunner(stepsRunner)
-            .build()
-            .start(ArtworkPriority.PRIMARY, listener);
+      ArtworkSchedulerStarter starter, AbstractSchedulerListener listener) {
+    var scheduler = starter.start(ArtworkPriority.PRIMARY, listener);
     startedSchedulers.add(scheduler);
     return scheduler;
+  }
+
+  private ArtworkSchedulerStarter.ArtworkSchedulerStarterBuilder primaryScheduler() {
+    return ArtworkSchedulerStarter.fromContext(applicationContext).toBuilder()
+        .stepsRunner(artworkStepsRunner);
   }
 
   private ArtworkRun requestMovieArtwork(ImageRefreshMode refreshMode, ImageSource... sources) {
@@ -420,10 +427,13 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
         "SELECT consecutive_failures FROM " + PRIMARY_TABLE, Integer.class);
   }
 
-  private Instant nextExecutionTime() {
-    return jdbcTemplate
-        .queryForObject("SELECT execution_time FROM " + PRIMARY_TABLE, OffsetDateTime.class)
-        .toInstant();
+  private Duration retryDelay() {
+    return jdbcTemplate.queryForObject(
+        "SELECT execution_time, last_failure FROM " + PRIMARY_TABLE,
+        (row, _) ->
+            Duration.between(
+                row.getObject("last_failure", OffsetDateTime.class),
+                row.getObject("execution_time", OffsetDateTime.class)));
   }
 
   private static AbstractSchedulerListener completedInto(
