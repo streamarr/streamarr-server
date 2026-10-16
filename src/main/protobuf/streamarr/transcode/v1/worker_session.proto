@@ -538,7 +538,7 @@ message ContainerCropping {
 // Neither is the raw color signaling. The transfer, primaries, matrix and range of the stream stay
 // out of probe version 4.
 //
-// Every value uses the unit of the HEVC mastering display colour volume SEI message (payload type
+// Every value uses the unit of the HEVC mastering display color volume SEI message (payload type
 // 137), and every value fits its SEI field. So streamarr/streamarr-server#396 can write the values
 // into that SEI message unchanged, and every job attempt writes the same bytes.
 //
