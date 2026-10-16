@@ -11,8 +11,8 @@ import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.Chapter;
 import com.streamarr.server.domain.streaming.ChapterKnowledge;
+import com.streamarr.server.domain.streaming.ChosenVideoStream;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
-import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -41,7 +41,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
-import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -339,15 +338,15 @@ class RemoteFfprobeServiceIT {
     try (var server = server();
         var calls = Executors.newVirtualThreadPerTaskExecutor()) {
       server.start();
-      try (var worker = worker(server.port(), ProbeVersion.FIRST_TO_REPORT_CHAPTERS)) {
+      try (var worker = worker(server.port(), 7)) {
         var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
-        var request = request().probeVersion(ProbeVersion.FIRST_TO_REPORT_CHAPTERS).build();
+        var request = request().probeVersion(7).build();
 
         var result = calls.submit(() -> service.probe(request));
 
         var dispatched = worker.nextResponse().getStartProbe().getRequest();
         assertThat(dispatched.getProbeAttemptId()).isEqualTo(toProto(request.attemptId()));
-        assertThat(dispatched.getProbeVersion()).isEqualTo(ProbeVersion.FIRST_TO_REPORT_CHAPTERS);
+        assertThat(dispatched.getProbeVersion()).isEqualTo(7);
         assertThat(dispatched.getScanKeyframePackets()).isFalse();
         assertThat(dispatched.getSource().getSourceNamespaceId())
             .isEqualTo(toProto(SOURCE_NAMESPACE_ID));
@@ -357,23 +356,26 @@ class RemoteFfprobeServiceIT {
                 .setProbeAttemptId(dispatched.getProbeAttemptId())
                 .setProbeVersion(dispatched.getProbeVersion())
                 .setMedia(
-                    ProbeMediaInfo.newBuilder()
-                        .addStreams(
-                            ProbeStreamInfo.newBuilder().setCodecType("video").setWidth(1920)))
+                    WorkerProbeResultFixture.version4MediaBuilder()
+                        .setStreams(
+                            0,
+                            ProbeStreamInfo.newBuilder()
+                                .setIndex(0)
+                                .setCodecType("video")
+                                .setWidth(1920)))
                 .build());
 
         assertThat(result.get(5, TimeUnit.SECONDS))
-            .isEqualTo(
-                new ProbeOutcome.Success(
-                    ProbeContainer.builder()
-                        .chapters(new ChapterKnowledge.Known(List.of()))
-                        .build(),
-                    List.of(
-                        StreamInfo.builder()
-                            .codecType("video")
-                            .width(OptionalInt.of(1920))
-                            .build()),
-                    new KeyframeKnowledge.NotReported()));
+            .isInstanceOfSatisfying(
+                ProbeOutcome.Success.class,
+                success -> {
+                  assertThat(success.streams())
+                      .singleElement()
+                      .satisfies(stream -> assertThat(stream.width()).hasValue(1920));
+                  assertThat(success.chosenVideoStream().map(ChosenVideoStream::streamIndex))
+                      .contains(0);
+                  assertThat(success.keyframes()).isEqualTo(new KeyframeKnowledge.NotReported());
+                });
       }
     }
   }
