@@ -1,6 +1,6 @@
 package com.streamarr.server.services.library;
 
-import com.streamarr.server.exceptions.LibraryFolderCheckFailedException;
+import com.streamarr.server.domain.Library;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.repositories.LibraryOperationRepository;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -39,8 +39,8 @@ public class LibraryOperationFinishingStepsRunner {
    * library as it was before the step, and the operation still ends.
    *
    * @return the conclusion that the operation ends with: {@link LibraryOperationConclusion#FAILED}
-   *     when the library folder fails its check before the removal of missing media files, and
-   *     otherwise the given conclusion
+   *     when the library folder does not pass its check before the removal of missing media files,
+   *     including when the check cannot finish, and otherwise the given conclusion
    */
   public LibraryOperationConclusion runFinishingSteps(
       LibraryOperation operation, LibraryOperationConclusion conclusion) {
@@ -51,11 +51,11 @@ public class LibraryOperationFinishingStepsRunner {
     try {
       new TransactionTemplate(transactionManager)
           .executeWithoutResult(_ -> removeMissingMediaFiles(operation));
-    } catch (LibraryFolderCheckFailedException e) {
+    } catch (LibraryFolderNotPassedException e) {
       log.error(
           "Removed no missing media files at the end of the scan of library {}.",
           operation.libraryId(),
-          e);
+          e.getCause());
       return LibraryOperationConclusion.FAILED;
     } catch (RuntimeException e) {
       log.error(
@@ -88,7 +88,24 @@ public class LibraryOperationFinishingStepsRunner {
             .orElseThrow(() -> new LibraryNotFoundException(operation.libraryId()));
     // A share can unmount while the scan waits for artwork or this step waits for the operation's
     // row, and an unmounted share looks like a library whose every media file is missing.
-    libraryFolderCheck.requirePassed(library);
+    requireLibraryFolderPassed(library);
     orphanedMediaFileCleanupService.cleanupOrphanedFiles(library);
+  }
+
+  // A check that cannot finish, for example because the database is unavailable, does not pass
+  // either, so it fails the scan like a failed check rather than counting as a failed removal.
+  private void requireLibraryFolderPassed(Library library) {
+    try {
+      libraryFolderCheck.requirePassed(library);
+    } catch (RuntimeException e) {
+      throw new LibraryFolderNotPassedException(e);
+    }
+  }
+
+  private static final class LibraryFolderNotPassedException extends RuntimeException {
+
+    private LibraryFolderNotPassedException(RuntimeException cause) {
+      super(cause);
+    }
   }
 }

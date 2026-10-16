@@ -105,6 +105,29 @@ class LibraryOperationFinishingStepsRunnerTest {
   }
 
   @Test
+  @DisplayName(
+      "Should remove no media file and conclude the scan failed when the library folder check"
+          + " cannot read the recorded files")
+  void
+      shouldRemoveNoMediaFileAndConcludeTheScanFailedWhenTheFolderCheckCannotReadTheRecordedFiles() {
+    saveMediaFile("Gone (2020).mkv");
+    var failingRunner =
+        runnerWith(
+            new FakeMediaFileRepository() {
+              @Override
+              public boolean existsByLibraryId(UUID libraryId) {
+                throw new DataAccessResourceFailureException("simulated connection loss");
+              }
+            });
+
+    var conclusion =
+        failingRunner.runFinishingSteps(storeScan(), LibraryOperationConclusion.FINISHED);
+
+    assertThat(conclusion).isEqualTo(LibraryOperationConclusion.FAILED);
+    assertThat(mediaFiles.findByLibraryId(library.getId())).hasSize(1);
+  }
+
+  @Test
   @DisplayName("Should have the same effect when a scan's finishing steps run again")
   void shouldHaveTheSameEffectWhenAScansFinishingStepsRunAgain() throws IOException {
     var kept = saveMediaFile("Kept (2020).mkv");

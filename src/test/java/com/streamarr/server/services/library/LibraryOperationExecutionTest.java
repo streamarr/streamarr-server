@@ -936,24 +936,7 @@ class LibraryOperationExecutionTest {
       saveMatchedMediaFile(path);
       var emptyingRuns =
           serviceBuilder()
-              .executionLibraryOperations(
-                  new FakeLibraryOperationRepository(fakeLibraryRepository) {
-                    @Override
-                    public Optional<LibraryOperation> findLibraryOperation(UUID id) {
-                      return libraryOperations.findLibraryOperation(id);
-                    }
-
-                    @Override
-                    public boolean tryLockLibraryOperation(UUID id) {
-                      deleteMovieFolder(path.getParent());
-                      return libraryOperations.tryLockLibraryOperation(id);
-                    }
-
-                    @Override
-                    public boolean tryEndLibraryOperation(LibraryOperationEnd end) {
-                      return libraryOperations.tryEndLibraryOperation(end);
-                    }
-                  })
+              .executionLibraryOperations(emptyingBeforeTheFinishingStep(path.getParent()))
               .build();
 
       var result = emptyingRuns.scanLibrary(savedLibraryId);
@@ -964,6 +947,60 @@ class LibraryOperationExecutionTest {
       assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path)))
           .isPresent();
       assertThat(folderCheckFailures("empty")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName(
+        "Should end the scan unhealthy and remove no media file when the library folder check"
+            + " before the removal cannot read the recorded files")
+    void shouldEndTheScanUnhealthyAndRemoveNoMediaFileWhenTheFolderCheckCannotReadTheRecordedFiles()
+        throws Exception {
+      var path =
+          createMovieFile(createRootLibraryDirectory(), "About Time", "About Time (2013).mkv");
+      saveMatchedMediaFile(path);
+      var unreadableRecordedFiles =
+          new FakeMediaFileRepository() {
+            @Override
+            public boolean existsByLibraryId(UUID libraryId) {
+              throw new DataAccessResourceFailureException("simulated connection loss");
+            }
+          };
+      var runs =
+          serviceBuilder()
+              .executionLibraryOperations(emptyingBeforeTheFinishingStep(path.getParent()))
+              .libraryFolderCheck(
+                  new LibraryFolderCheck(fileSystem, unreadableRecordedFiles, meterRegistry))
+              .build();
+
+      var result = runs.scanLibrary(savedLibraryId);
+
+      assertThat(result).isEqualTo(new LibraryOperationExecutionResult.Ended());
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+      assertThat(libraryOperations.libraryOperations()).isEmpty();
+      assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path)))
+          .isPresent();
+    }
+
+    // Empties the movie folder when the finishing step shares the operation's row, after the
+    // scan's own folder check passed.
+    private FakeLibraryOperationRepository emptyingBeforeTheFinishingStep(Path movieFolder) {
+      return new FakeLibraryOperationRepository(fakeLibraryRepository) {
+        @Override
+        public Optional<LibraryOperation> findLibraryOperation(UUID id) {
+          return libraryOperations.findLibraryOperation(id);
+        }
+
+        @Override
+        public boolean tryLockLibraryOperation(UUID id) {
+          deleteMovieFolder(movieFolder);
+          return libraryOperations.tryLockLibraryOperation(id);
+        }
+
+        @Override
+        public boolean tryEndLibraryOperation(LibraryOperationEnd end) {
+          return libraryOperations.tryEndLibraryOperation(end);
+        }
+      };
     }
 
     private static void deleteMovieFolder(Path movieFolder) {
