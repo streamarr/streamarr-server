@@ -48,6 +48,15 @@ public record MediaProbe(
     private Optional<VideoPlaybackFacts> videoPlaybackFacts = Optional.empty();
   }
 
+  /**
+   * The size that a player shows and that an encode scales from, after the container's cropping and
+   * the stream's rotation. Without playback facts, the probed width and height.
+   */
+  public PictureSize displayedSize() {
+    var coded = new PictureSize(width, height);
+    return videoPlaybackFacts.map(facts -> facts.displayedSize(coded)).orElse(coded);
+  }
+
   public List<StreamInfo> audioStreams() {
     return streams.stream().filter(s -> "audio".equals(s.codecType())).toList();
   }

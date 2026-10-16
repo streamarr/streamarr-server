@@ -20,6 +20,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.stream.LongStream;
@@ -47,24 +48,28 @@ public class ProbeFixture {
         .build();
   }
 
+  // The stored rule chooses the probe's frame rate from the declared rates, or refuses when the
+  // probe has none, so the outcome reads back the probe's frame rate.
   private static Optional<ChosenVideoStream> chosenVideoStream(MediaProbe probe) {
     if (probe.videoPlaybackFacts().isEmpty()) {
       return Optional.empty();
     }
 
-    var rate = declaredRate(probe.framerate().orElse(24));
     return Optional.of(
         new ChosenVideoStream(
-            probe.videoPlaybackFacts().get().streamIndex(),
-            FrameRateRule.builder()
-                .outputFrameRate(Optional.of(rate))
-                .basis(OutputFrameRateBasis.DECLARED_RATES)
-                .inputs(
-                    FrameRateRuleInputs.builder()
-                        .baseRate(Optional.of(rate))
-                        .averageRate(Optional.of(rate))
-                        .build())
-                .build()));
+            probe.videoPlaybackFacts().get().streamIndex(), frameRateRule(probe.framerate())));
+  }
+
+  private static FrameRateRule frameRateRule(OptionalDouble framerate) {
+    if (framerate.isEmpty()) {
+      return FrameRateRule.builder()
+          .outputFrameRate(Optional.empty())
+          .basis(OutputFrameRateBasis.REFUSED)
+          .inputs(FrameRateRuleInputs.builder().build())
+          .build();
+    }
+
+    return VideoPlaybackFactsFixture.declaredRateRule(declaredRate(framerate.getAsDouble()));
   }
 
   // The listed NTSC rates, such as 23.976, are whole rates times 1000/1001.
@@ -125,6 +130,9 @@ public class ProbeFixture {
             .bitDepth(facts.map(VideoPlaybackFacts::bitDepth).orElse(OptionalInt.empty()))
             .chromaSubsampling(facts.flatMap(VideoPlaybackFacts::chromaSubsampling))
             .codecString(facts.flatMap(VideoPlaybackFacts::codecString))
+            .rotationDegrees(
+                facts.map(VideoPlaybackFacts::rotationDegrees).orElse(OptionalInt.empty()))
+            .containerCropping(facts.flatMap(VideoPlaybackFacts::containerCropping))
             .build());
     if (probe.audioCodec() == null) {
       return streams;

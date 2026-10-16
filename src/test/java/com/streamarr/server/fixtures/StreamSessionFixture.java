@@ -152,14 +152,17 @@ public final class StreamSessionFixture {
   }
 
   public static TranscodeDecision remuxDecision() {
+    return remuxDecisionBuilder().build();
+  }
+
+  public static TranscodeDecision.TranscodeDecisionBuilder remuxDecisionBuilder() {
     return TranscodeDecision.builder()
         .transcodeMode(TranscodeMode.REMUX)
         .videoCodecFamily("h264")
         .audioDecision(AudioDecision.copy("aac", 2, 0))
         .subtitleDecision(SubtitleDecision.exclude())
         .videoSource(
-            Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().streamIndex(0).build()))
-        .build();
+            Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().streamIndex(0).build()));
   }
 
   public static TranscodeDecision fullTranscodeDecision(String videoCodecFamily) {

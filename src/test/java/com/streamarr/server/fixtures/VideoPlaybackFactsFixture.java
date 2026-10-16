@@ -4,6 +4,10 @@ import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
+import com.streamarr.server.domain.streaming.Fraction;
+import com.streamarr.server.domain.streaming.FrameRateRule;
+import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
+import com.streamarr.server.domain.streaming.OutputFrameRateBasis;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
@@ -22,14 +26,33 @@ public class VideoPlaybackFactsFixture {
   public static final VideoDynamicRange SDR_WITHOUT_DOLBY_VISION =
       new VideoDynamicRange(CompatibleBase.SDR, Presence.ABSENT, new DolbyVision.Absent());
 
-  /** 8-bit 4:2:0 SDR H.264 at High profile level 4.0, after cover art at stream 0. */
+  public static final Fraction FILM_RATE = new Fraction(24_000, 1_001);
+
+  /**
+   * 8-bit 4:2:0 SDR H.264 at High profile level 4.0 and 24000/1001 fps, after cover art at stream
+   * 0.
+   */
   public static VideoPlaybackFacts.VideoPlaybackFactsBuilder sdrH264FactsBuilder() {
     return VideoPlaybackFacts.builder()
         .streamIndex(1)
         .dynamicRange(SDR)
         .bitDepth(OptionalInt.of(8))
         .chromaSubsampling(Optional.of(ChromaSubsampling.CHROMA_420))
-        .codecString(Optional.of("avc1.640028"));
+        .codecString(Optional.of("avc1.640028"))
+        .frameRateRule(declaredRateRule(FILM_RATE));
+  }
+
+  /** The rule's result when the two declared rates agree on a listed rate. */
+  public static FrameRateRule declaredRateRule(Fraction rate) {
+    return FrameRateRule.builder()
+        .outputFrameRate(Optional.of(rate))
+        .basis(OutputFrameRateBasis.DECLARED_RATES)
+        .inputs(
+            FrameRateRuleInputs.builder()
+                .baseRate(Optional.of(rate))
+                .averageRate(Optional.of(rate))
+                .build())
+        .build();
   }
 
   /**
