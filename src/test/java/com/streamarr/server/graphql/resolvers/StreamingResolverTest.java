@@ -474,6 +474,7 @@ class StreamingResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
   @Autowired private StreamingProperties streamingProperties;
+  @Autowired private StreamingResolver streamingResolver;
 
   @BeforeEach
   void resetStubService() {
@@ -582,6 +583,16 @@ class StreamingResolverTest {
     dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.destroyStreamSession");
 
     assertThat(STUB_SERVICE.getLastDestroyProfileId()).isEqualTo(TestIdentityConstants.PROFILE_ID);
+  }
+
+  @Test
+  @DisplayName("Should refuse to name a watch state item type when the item is not a media item")
+  void shouldRefuseToNameWatchStateItemTypeWhenItemIsNotMediaItem() {
+    var notAnItem = new Object();
+
+    assertThatThrownBy(() -> streamingResolver.resolveWatchStateItem(notAnItem))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("Object");
   }
 
   @ParameterizedTest(name = "{0}")
