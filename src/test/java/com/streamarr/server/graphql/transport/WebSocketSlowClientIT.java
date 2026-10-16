@@ -43,7 +43,12 @@ class WebSocketSlowClientIT extends AbstractIntegrationTest {
 
   // Operators chart this name, so the test spells it out: renaming the metric fails it.
   private static final String FELL_BEHIND_METRIC = "streamarr.graphql.websocket.client_fell_behind";
-  private static final int MAX_FLOODED_OPERATIONS = 100_000;
+  private static final int MAX_FLOODED_OPERATIONS = 10_000;
+  // The server repeats an operation's id in both frames of its refusal, next and complete, so a
+  // long id makes it reach capacity within a few hundred operations. With short ids the socket
+  // buffers hold tens of thousands of operations the server has not run yet, and a send waits
+  // until the server runs them. Tomcat refuses a text message over 8 KiB.
+  private static final String OPERATION_ID_PADDING = "x".repeat(7 * 1024);
   private static final int LARGE_NAME_LENGTH = 64 * 1024;
   private static final int MAX_LARGE_CHANGES = 2_000;
   private static final String STATUS_FIELD = "libraryStatusChanged";
@@ -84,11 +89,11 @@ class WebSocketSlowClientIT extends AbstractIntegrationTest {
       var closuresBefore = fellBehindClosures();
       socket.pauseReading();
 
-      // Each refused query costs the server two frames: next with the error, then complete.
       for (var operation = 0;
           operation < MAX_FLOODED_OPERATIONS && fellBehindClosures() == closuresBefore;
           operation++) {
-        socket.subscribe("refused-" + operation, "query { __typename }");
+        socket.subscribe(
+            "refused-" + operation + "-" + OPERATION_ID_PADDING, "query { __typename }");
       }
 
       socket.resumeReading();
