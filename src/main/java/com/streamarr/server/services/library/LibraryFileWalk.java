@@ -76,14 +76,15 @@ public class LibraryFileWalk {
   /**
    * Walks the library and matches each of its files, then returns the closed discovery whose
    * results the scan waits for. Each file's task is admitted through the scan's adaptive limit
-   * before the walk pulls the next file. A task that throws ends admission: files that were not
-   * admitted yet are not processed in this scan.
+   * before the walk pulls the next file. A task that throws ends admission, and so does the
+   * admission end: files that were not admitted yet are not processed in this scan.
    *
    * @throws LibraryScanFailedException if the library cannot be walked or a file's task fails
    * @throws InterruptedException if the walk is interrupted; the admitted tasks are interrupted and
    *     joined first
    */
-  public FileDiscovery discoverFiles(Library library, UUID libraryOperationId)
+  public FileDiscovery discoverFiles(
+      Library library, UUID libraryOperationId, AdmissionEnd admissionEnd)
       throws InterruptedException {
     var discovery = fileDiscoveryRuns.openScan(library, libraryOperationId);
     try (discovery;
@@ -98,7 +99,7 @@ public class LibraryFileWalk {
               .iterator();
       var failures =
           admission.forkAdmittedTasks(
-              files,
+              admissionEnd.untilReached(files),
               listed -> processAdmittedFile(discovery, listed),
               SystemWork.newThreadFactoryRunningAsSystemActor("library-scan-file-"));
       throwIfAnyFileFailed(library, failures);

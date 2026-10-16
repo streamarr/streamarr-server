@@ -75,15 +75,16 @@ public class LibraryRefreshService {
   private final TransactionTemplate transactionTemplate;
 
   /**
-   * Returns once every item's metadata result is recorded and the primary artwork of the refresh's
-   * library operation has recorded results, including artwork that an earlier execution of the
-   * operation requested. Person and company artwork continues in the background.
+   * Returns once every admitted item's metadata result is recorded and the primary artwork of the
+   * refresh's library operation has recorded results, including artwork that an earlier execution
+   * of the operation requested. The refresh admits no further item once the admission end is
+   * reached. Person and company artwork continues in the background.
    *
    * @throws LibraryRefreshFailedException if a result was not recorded
    * @throws InterruptedException if the refresh is interrupted; the admitted tasks are interrupted
    *     and joined first
    */
-  public void refreshLibrary(Library library, LibraryOperation operation)
+  public void refreshLibrary(Library library, LibraryOperation operation, AdmissionEnd admissionEnd)
       throws InterruptedException {
     var artworkRun =
         artworkRequestService.openLibraryOperationRun(
@@ -100,6 +101,7 @@ public class LibraryRefreshService {
               .artworkRun(artworkRun)
               .admission(admission)
               .refreshedItemIds(refreshedItemIds)
+              .admissionEnd(admissionEnd)
               .build();
       switch (library.getType()) {
         case SERIES -> refreshSeriesLibrary(refresh);
@@ -116,7 +118,8 @@ public class LibraryRefreshService {
       Library library,
       ArtworkRun artworkRun,
       AdaptiveAdmission admission,
-      Set<UUID> refreshedItemIds) {}
+      Set<UUID> refreshedItemIds,
+      AdmissionEnd admissionEnd) {}
 
   private record MediaTitleToRefresh<T>(T entity, String tmdbId) {}
 
@@ -188,7 +191,7 @@ public class LibraryRefreshService {
         operation
             .admission()
             .forkAdmittedTasks(
-                refreshes.mediaTitles().iterator(),
+                operation.admissionEnd().untilReached(refreshes.mediaTitles().iterator()),
                 mediaTitle -> refreshAdmittedMediaTitle(operation, refreshes.refresh(), mediaTitle),
                 SystemWork.newThreadFactoryRunningAsSystemActor(refreshes.threadNamePrefix()));
     throwIfAnyRefreshTaskFailed(operation.library(), failures);

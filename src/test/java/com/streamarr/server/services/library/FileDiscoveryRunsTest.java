@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static com.streamarr.server.fakes.TestImages.createTestImage;
+import static com.streamarr.server.fixtures.AdmissionEndFixture.neverReached;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -94,7 +95,7 @@ class FileDiscoveryRunsTest {
       artworkRequestService.requestPrimaryArtwork(discovery.artworkRun(), movieArtwork());
     }
 
-    var results = runs.awaitResults(discovery);
+    var results = runs.awaitResults(discovery, neverReached());
 
     assertThat(results.files()).isEqualTo(Map.of(MediaFileStatus.MATCHED, 1L));
     assertThat(results.artwork().counts())
@@ -123,7 +124,7 @@ class FileDiscoveryRunsTest {
       retried.artworkRequestService().requestPrimaryArtwork(discovery.artworkRun(), movie);
     }
 
-    try (var scan = BoundedTask.start(() -> runs.awaitResults(discovery))) {
+    try (var scan = BoundedTask.start(() -> runs.awaitResults(discovery, neverReached()))) {
       retried.scheduling().awaitUnfinishedAttempt(RESULTS_BOUND);
       assertThat(results.findByItem(movie.targetId(), ImageEntityType.MOVIE))
           .extracting(ItemResult::imageType)
@@ -154,7 +155,7 @@ class FileDiscoveryRunsTest {
       discovery.probeRun().request(mediaFile().getId());
     }
 
-    assertThatThrownBy(() -> runs.awaitResults(discovery))
+    assertThatThrownBy(() -> runs.awaitResults(discovery, neverReached()))
         .isInstanceOf(LibraryScanFailedException.class)
         .hasCause(readFailure);
   }
@@ -188,7 +189,7 @@ class FileDiscoveryRunsTest {
           .requestPrimaryArtwork(discovery.artworkRun(), movieArtwork());
     }
 
-    try (var results = BoundedTask.start(() -> runs.awaitResults(discovery))) {
+    try (var results = BoundedTask.start(() -> runs.awaitResults(discovery, neverReached()))) {
       assertThat(probeWaitThread.get(5, TimeUnit.SECONDS).join(RESULTS_BOUND))
           .as("probe wait finished")
           .isTrue();
@@ -213,7 +214,7 @@ class FileDiscoveryRunsTest {
 
     Thread.currentThread().interrupt();
     try {
-      assertThatThrownBy(() -> runs.awaitResults(discovery))
+      assertThatThrownBy(() -> runs.awaitResults(discovery, neverReached()))
           .isInstanceOf(InterruptedException.class);
     } finally {
       Thread.interrupted();

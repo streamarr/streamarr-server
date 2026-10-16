@@ -36,6 +36,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 @RequiredArgsConstructor
 public class LibraryOperationExecution {
 
+  private static final AdmissionEnd UNTIL_EVERY_ITEM_IS_ADMITTED = () -> false;
+
   private final LibraryOperationRepository libraryOperations;
   private final LibraryRepository libraryRepository;
   private final LibraryFileWalk libraryFileWalk;
@@ -111,7 +113,9 @@ public class LibraryOperationExecution {
     try {
       libraryFolderCheck.requirePassed(library);
       var results =
-          fileDiscoveryRuns.awaitResults(libraryFileWalk.discoverFiles(library, operation.id()));
+          fileDiscoveryRuns.awaitResults(
+              libraryFileWalk.discoverFiles(library, operation.id(), UNTIL_EVERY_ITEM_IS_ADMITTED),
+              UNTIL_EVERY_ITEM_IS_ADMITTED);
       log.info("Finished {} library scan: {}.", library.getName(), results.describe());
       return LibraryOperationConclusion.FINISHED;
     } catch (RuntimeException e) {
@@ -124,7 +128,7 @@ public class LibraryOperationExecution {
       throws InterruptedException {
     log.info("Starting {} library refresh.", library.getName());
     try {
-      libraryRefreshService.refreshLibrary(library, operation);
+      libraryRefreshService.refreshLibrary(library, operation, UNTIL_EVERY_ITEM_IS_ADMITTED);
       log.info("Finished {} library refresh.", library.getName());
       return LibraryOperationConclusion.FINISHED;
     } catch (RuntimeException e) {

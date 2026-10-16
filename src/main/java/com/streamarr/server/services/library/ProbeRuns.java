@@ -39,10 +39,12 @@ public class ProbeRuns {
   }
 
   /**
-   * Waits until no probe of the run is pending. A file whose later change replaced the requested
-   * inputs, or that was removed, no longer belongs to the run.
+   * Waits until no probe of the run is pending, or until the admission end is reached. A file whose
+   * later change replaced the requested inputs, or that was removed, no longer belongs to the run.
+   * The summary counts the probes that finished before the wait ended.
    */
-  public ProbeRunSummary awaitResults(ProbeRun run) throws InterruptedException {
+  public ProbeRunSummary awaitResults(ProbeRun run, AdmissionEnd admissionEnd)
+      throws InterruptedException {
     var pending = new HashMap<>(run.requested());
     var counts = new EnumMap<RequestedProbeResult, Integer>(RequestedProbeResult.class);
     while (true) {
@@ -52,7 +54,7 @@ public class ProbeRuns {
                 pending.remove(mediaFileId);
                 counts.merge(result, 1, Integer::sum);
               });
-      if (pending.isEmpty()) {
+      if (pending.isEmpty() || admissionEnd.isReached()) {
         break;
       }
 

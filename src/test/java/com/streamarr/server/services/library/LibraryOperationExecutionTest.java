@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static com.streamarr.server.fakes.TestImages.createTestImage;
+import static com.streamarr.server.fixtures.AdmissionEndFixture.neverReached;
 import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.defaultIdentityBuilder;
 import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -303,7 +304,8 @@ class LibraryOperationExecutionTest {
     var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
     var fileWalk = fileWalkBuilder().build();
 
-    var failure = catchThrowable(() -> fileWalk.discoverFiles(library, UUID.randomUUID()));
+    var failure =
+        catchThrowable(() -> fileWalk.discoverFiles(library, UUID.randomUUID(), neverReached()));
 
     assertThat(failure)
         .isInstanceOf(LibraryScanFailedException.class)
@@ -1833,7 +1835,8 @@ class LibraryOperationExecutionTest {
     }
 
     @Override
-    public void refreshLibrary(Library library, LibraryOperation operation) {
+    public void refreshLibrary(
+        Library library, LibraryOperation operation, AdmissionEnd admissionEnd) {
       imageRefreshMode.set(operation.imageRefreshMode().orElseThrow());
       refreshAnswer.run();
     }
