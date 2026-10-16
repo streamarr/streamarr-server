@@ -78,14 +78,18 @@ class SegmentDeliveryCoordinatorTest {
   }
 
   private StreamingRig rigWith(FakeTranscodeExecutor executor, FakeSegmentStore store) {
+    return rigBuilder(executor, store).build();
+  }
+
+  private StreamingRigFixture.StreamingRigBuilder rigBuilder(
+      FakeTranscodeExecutor executor, FakeSegmentStore store) {
     return StreamingRigFixture.streamingRigBuilder()
         .transcodeExecutor(executor)
         .segmentStore(store)
         .properties(properties)
         .runtimeRegistry(runtimeRegistry)
         .clock(clock)
-        .heldRequests(executor.heldSegmentRequests())
-        .build();
+        .heldRequests(executor.heldSegmentRequests());
   }
 
   // Stores the segment, then wakes the requests held on its variant, as a worker's upload does.
