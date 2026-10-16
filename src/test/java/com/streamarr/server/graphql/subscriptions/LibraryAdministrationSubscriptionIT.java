@@ -7,9 +7,11 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.config.LibraryOperationScheduler;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.support.ActiveSubscriptions;
 import com.streamarr.server.support.AuthTestSupport;
@@ -49,6 +51,17 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
       "subscription { libraryAdded { id name status scanStartedOn scanCompletedOn } }";
   private static final String REMOVED_SUBSCRIPTION =
       "subscription { libraryRemoved { libraryId } }";
+  private static final String PROFILE_FIELDS_SUBSCRIPTION =
+      """
+      subscription {
+        libraryStatusChanged {
+          id
+          status
+          items(first: 1) { edges { node { __typename ... on Movie { id watchStatus } } } }
+          alphabetIndex { letter count }
+        }
+      }
+      """;
 
   @LocalServerPort private int port;
 
@@ -56,6 +69,7 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private LibraryOperationScheduler libraryOperationScheduler;
   @Autowired private MeterRegistry meterRegistry;
+  @Autowired private MovieRepository movieRepository;
   @Autowired private UserAccountRepository userAccountRepository;
 
   @TempDir private Path libraryDirectory;
@@ -142,6 +156,56 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     }
 
     awaitStatus(socket, library.getId(), "HEALTHY");
+  }
+
+  @Test
+  @DisplayName(
+      "Should resolve the library's items and alphabet index when a ServerAdmin's subscription delivers a status change")
+  void
+      shouldResolveLibrarysItemsAndAlphabetIndexWhenServerAdminsSubscriptionDeliversStatusChange() {
+    var bearer = adminBearer();
+    var library = saveLibrary(libraryDirectory);
+    var movie = saveMovie(library);
+    var socket = connect(bearer);
+    socket.subscribe("status", PROFILE_FIELDS_SUBSCRIPTION);
+    activeSubscriptions.awaitCount(STATUS_FIELD, 1);
+
+    http.execute(bearer, refreshMutation(library.getId()));
+
+    var change = nextStatusChangeWithoutErrors(socket, library.getId());
+    assertThat(change.path("items").path("edges").path(0).path("node").path("id").asString())
+        .isEqualTo(movie.getId().toString());
+    assertThat(change.path("alphabetIndex").isArray()).isTrue();
+    awaitStatus(socket, library.getId(), "HEALTHY");
+  }
+
+  @Test
+  @DisplayName(
+      "Should resolve each subscriber's own watch status when two ServerAdmins receive the same status change")
+  void shouldResolveEachSubscribersOwnWatchStatusWhenTwoServerAdminsReceiveSameStatusChange() {
+    var watcher = adminBearer();
+    var other = adminBearer();
+    var library = saveLibrary(libraryDirectory);
+    var movie = saveMovie(library);
+    var marked =
+        http.execute(
+            watcher,
+            "mutation { markWatched(input: {itemId: \"%s\"}) { userErrors { __typename } } }"
+                .formatted(movie.getId()));
+    assertThat(marked.path("data").path("markWatched").path("userErrors").isEmpty()).isTrue();
+    var watcherSocket = connect(watcher);
+    watcherSocket.subscribe("status", PROFILE_FIELDS_SUBSCRIPTION);
+    var otherSocket = connect(other);
+    otherSocket.subscribe("status", PROFILE_FIELDS_SUBSCRIPTION);
+    activeSubscriptions.awaitCount(STATUS_FIELD, 2);
+
+    http.execute(watcher, refreshMutation(library.getId()));
+
+    assertThat(firstItemWatchStatus(nextStatusChangeWithoutErrors(watcherSocket, library.getId())))
+        .isEqualTo("WATCHED");
+    assertThat(firstItemWatchStatus(nextStatusChangeWithoutErrors(otherSocket, library.getId())))
+        .isEqualTo("UNWATCHED");
+    awaitStatus(watcherSocket, library.getId(), "HEALTHY");
   }
 
   @Test
@@ -429,6 +493,32 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
         return change;
       }
     }
+  }
+
+  // The next status change of one library, failing on any delivery that carries errors.
+  private static JsonNode nextStatusChangeWithoutErrors(
+      GraphQlTransportWsTestClient socket, UUID libraryId) {
+    while (true) {
+      var payload = socket.nextMessageFor("status").path("payload");
+      assertThat(payload.path("errors").isMissingNode()).as("errors in %s", payload).isTrue();
+      var change = payload.path("data").path(STATUS_FIELD);
+      if (libraryId.toString().equals(change.path("id").asString())) {
+        return change;
+      }
+    }
+  }
+
+  private static String firstItemWatchStatus(JsonNode change) {
+    return change.path("items").path("edges").path(0).path("node").path("watchStatus").asString();
+  }
+
+  private Movie saveMovie(Library library) {
+    return movieRepository.saveAndFlush(
+        Movie.builder()
+            .title("Subscribed Movie")
+            .titleSort("Subscribed Movie")
+            .library(library)
+            .build());
   }
 
   private static String scanMutation(UUID libraryId) {

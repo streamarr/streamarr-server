@@ -167,6 +167,10 @@
             <groupId>com.netflix.graphql.dgs</groupId>
             <artifactId>graphql-dgs-pagination</artifactId>
         </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>context-propagation</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>com.google.protobuf</groupId>
