@@ -127,3 +127,40 @@ union AddLibraryError =
   | LibraryPathNotDirectoryError
   | LibraryPathNotReadableError
   | LibraryPathAlreadyRegisteredError
+
+input StartLibraryScanInput {
+    libraryId: ID!
+}
+
+"The library after its scan started. The library's status already reads SCANNING."
+type StartLibraryScanPayload {
+    library: Library
+    userErrors: [StartLibraryScanError!]!
+}
+
+union StartLibraryScanError = LibraryNotFoundError | LibraryBusyError | InvalidIdError
+
+input StartLibraryRefreshInput {
+    libraryId: ID!
+    imageRefreshMode: ImageRefreshMode! = PRESERVE
+}
+
+"The library after its refresh started. The library's status already reads REFRESHING."
+type StartLibraryRefreshPayload {
+    library: Library
+    userErrors: [StartLibraryRefreshError!]!
+}
+
+union StartLibraryRefreshError = LibraryNotFoundError | LibraryBusyError | InvalidIdError
+
+input RemoveLibraryInput {
+    libraryId: ID!
+}
+
+"The receipt for a removed library."
+type RemoveLibraryPayload {
+    removedLibraryId: ID
+    userErrors: [RemoveLibraryError!]!
+}
+
+union RemoveLibraryError = LibraryNotFoundError | LibraryBusyError | InvalidIdError

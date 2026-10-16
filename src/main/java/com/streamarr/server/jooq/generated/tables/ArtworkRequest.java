@@ -140,6 +140,11 @@ public class ArtworkRequest extends TableImpl<ArtworkRequestRecord> {
      */
     public final TableField<ArtworkRequestRecord, UUID> COMPANY_ID = createField(DSL.name("company_id"), SQLDataType.UUID, this, "");
 
+    /**
+     * The column <code>public.artwork_request.library_operation_id</code>.
+     */
+    public final TableField<ArtworkRequestRecord, UUID> LIBRARY_OPERATION_ID = createField(DSL.name("library_operation_id"), SQLDataType.UUID, this, "");
+
     private ArtworkRequest(Name alias, Table<ArtworkRequestRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -209,7 +214,7 @@ public class ArtworkRequest extends TableImpl<ArtworkRequestRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.ARTWORK_REQUEST_COMPANY_ID_IDX, Indexes.ARTWORK_REQUEST_EPISODE_ID_IDX, Indexes.ARTWORK_REQUEST_MOVIE_ID_IDX, Indexes.ARTWORK_REQUEST_PERSON_ID_IDX, Indexes.ARTWORK_REQUEST_SEASON_ID_IDX, Indexes.ARTWORK_REQUEST_SERIES_ID_IDX);
+        return Arrays.asList(Indexes.ARTWORK_REQUEST_COMPANY_ID_IDX, Indexes.ARTWORK_REQUEST_EPISODE_ID_IDX, Indexes.ARTWORK_REQUEST_LIBRARY_OPERATION_ID_IDX, Indexes.ARTWORK_REQUEST_MOVIE_ID_IDX, Indexes.ARTWORK_REQUEST_PERSON_ID_IDX, Indexes.ARTWORK_REQUEST_SEASON_ID_IDX, Indexes.ARTWORK_REQUEST_SERIES_ID_IDX);
     }
 
     @Override

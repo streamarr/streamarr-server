@@ -220,6 +220,20 @@ public class ArtworkRequestRecord extends UpdatableRecordImpl<ArtworkRequestReco
         return (UUID) get(13);
     }
 
+    /**
+     * Setter for <code>public.artwork_request.library_operation_id</code>.
+     */
+    public void setLibraryOperationId(UUID value) {
+        set(14, value);
+    }
+
+    /**
+     * Getter for <code>public.artwork_request.library_operation_id</code>.
+     */
+    public UUID getLibraryOperationId() {
+        return (UUID) get(14);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -243,7 +257,7 @@ public class ArtworkRequestRecord extends UpdatableRecordImpl<ArtworkRequestReco
     /**
      * Create a detached, initialised ArtworkRequestRecord
      */
-    public ArtworkRequestRecord(UUID targetId, ImageEntityType targetType, ImageRefreshMode imageRefreshMode, ImageType[] sourceImageTypes, String[] sourceKeys, Integer imageCount, Long generation, OffsetDateTime requestedAt, UUID movieId, UUID seriesId, UUID seasonId, UUID episodeId, UUID personId, UUID companyId) {
+    public ArtworkRequestRecord(UUID targetId, ImageEntityType targetType, ImageRefreshMode imageRefreshMode, ImageType[] sourceImageTypes, String[] sourceKeys, Integer imageCount, Long generation, OffsetDateTime requestedAt, UUID movieId, UUID seriesId, UUID seasonId, UUID episodeId, UUID personId, UUID companyId, UUID libraryOperationId) {
         super(ArtworkRequest.ARTWORK_REQUEST);
 
         setTargetId(targetId);
@@ -260,6 +274,7 @@ public class ArtworkRequestRecord extends UpdatableRecordImpl<ArtworkRequestReco
         setEpisodeId(episodeId);
         setPersonId(personId);
         setCompanyId(companyId);
+        setLibraryOperationId(libraryOperationId);
         resetTouchedOnNotNull();
     }
 }

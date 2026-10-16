@@ -14,6 +14,7 @@ import com.streamarr.server.jooq.generated.enums.MediaType;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable.BaseCollectablePath;
 import com.streamarr.server.jooq.generated.tables.FileProcessingTask.FileProcessingTaskPath;
 import com.streamarr.server.jooq.generated.tables.LibraryMetadata.LibraryMetadataPath;
+import com.streamarr.server.jooq.generated.tables.LibraryOperation.LibraryOperationPath;
 import com.streamarr.server.jooq.generated.tables.MediaFile.MediaFilePath;
 import com.streamarr.server.jooq.generated.tables.records.LibraryRecord;
 
@@ -260,6 +261,19 @@ public class Library extends TableImpl<LibraryRecord> {
             _libraryMetadata = new LibraryMetadataPath(this, null, Keys.LIBRARY_METADATA__LIBRARY_METADATA_LIBRARY_ID_FKEY.getInverseKey());
 
         return _libraryMetadata;
+    }
+
+    private transient LibraryOperationPath _libraryOperation;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.library_operation</code> table
+     */
+    public LibraryOperationPath libraryOperation() {
+        if (_libraryOperation == null)
+            _libraryOperation = new LibraryOperationPath(this, null, Keys.LIBRARY_OPERATION__LIBRARY_OPERATION_LIBRARY_ID_FKEY.getInverseKey());
+
+        return _libraryOperation;
     }
 
     @Override

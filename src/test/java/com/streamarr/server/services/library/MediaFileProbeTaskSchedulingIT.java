@@ -26,12 +26,12 @@ import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
-import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.support.BoundedTask;
+import com.streamarr.server.support.LibraryOperationDriver;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -46,10 +46,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.event.ApplicationEvents;
-import org.springframework.test.context.event.RecordApplicationEvents;
 
-@RecordApplicationEvents
 @Tag("IntegrationTest")
 @DisplayName("Durable media file probe task scheduling")
 class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
@@ -60,10 +57,10 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
   @TempDir Path directory;
 
   @Autowired private JdbcTemplate jdbc;
-  @Autowired private ApplicationEvents events;
   @Autowired private LibraryRepository libraries;
   @Autowired private MediaFileRepository mediaFiles;
   @Autowired private LibraryManagementService libraryManagementService;
+  @Autowired private LibraryOperationDriver libraryOperationDriver;
   @Autowired private PersistedProbeReader reader;
   @Autowired private MediaFileContainerInfoRepository outcomes;
   @Autowired private ProbeTaskRequests probeTaskRequests;
@@ -105,7 +102,6 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
       assertThat(libraries.findById(library.getId()).orElseThrow().getStatus())
           .isEqualTo(LibraryStatus.UNHEALTHY);
       assertThat(scheduledCount()).isZero();
-      assertThat(events.stream(ScanCompletedEvent.class)).isEmpty();
     }
   }
 
@@ -123,7 +119,6 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
 
     assertThat(libraries.findById(library.getId()).orElseThrow().getStatus())
         .isEqualTo(LibraryStatus.HEALTHY);
-    assertThat(events.stream(ScanCompletedEvent.class)).hasSize(1);
     assertThat(scheduledRequest())
         .hasValueSatisfying(
             request -> assertThat(request.mediaFileId()).isEqualTo(mediaFile.getId()));
@@ -232,7 +227,7 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
             BoundedTask.start(
                 () -> {
                   awaitStart(start);
-                  libraryManagementService.scanLibrary(library.getId());
+                  libraryOperationDriver.scanToEnd(library.getId());
                 });
         var discovered =
             BoundedTask.start(
@@ -297,7 +292,7 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
   }
 
   private void scan() throws Exception {
-    BoundedTask.runWithin(SCAN_BOUND, () -> libraryManagementService.scanLibrary(library.getId()));
+    BoundedTask.runWithin(SCAN_BOUND, () -> libraryOperationDriver.scanToEnd(library.getId()));
   }
 
   @Test

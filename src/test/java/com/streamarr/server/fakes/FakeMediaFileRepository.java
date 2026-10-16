@@ -43,6 +43,11 @@ public class FakeMediaFileRepository extends FakeJpaRepository<MediaFile>
   }
 
   @Override
+  public boolean existsByLibraryId(UUID libraryId) {
+    return database.values().stream().anyMatch(file -> libraryId.equals(file.getLibraryId()));
+  }
+
+  @Override
   public List<MediaFile> findByMediaIdIn(Collection<UUID> mediaIds) {
     return database.values().stream().filter(file -> mediaIds.contains(file.getMediaId())).toList();
   }

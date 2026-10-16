@@ -1,6 +1,6 @@
 package com.streamarr.server.repositories;
 
-import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE_KEYFRAME_POSITIONS;
+import static com.streamarr.server.jooq.generated.tables.MediaFileKeyframePositions.MEDIA_FILE_KEYFRAME_POSITIONS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;

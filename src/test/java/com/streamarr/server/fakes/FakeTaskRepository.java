@@ -16,7 +16,8 @@ import java.util.function.Consumer;
 
 /**
  * Keeps the executions that a completion or failure handler removed or rescheduled. Handlers only
- * remove and reschedule, so every other operation is unsupported.
+ * remove and reschedule, so every other operation is unsupported. Like the JDBC repository, it
+ * turns each reschedule into a {@link RescheduleUpdate}.
  */
 public final class FakeTaskRepository implements TaskRepository {
 
@@ -106,7 +107,13 @@ public final class FakeTaskRepository implements TaskRepository {
       Instant lastSuccess,
       Instant lastFailure,
       int consecutiveFailures) {
-    throw unsupported();
+    return reschedule(
+        execution,
+        RescheduleUpdate.toExecutionTime(nextExecutionTime)
+            .lastSuccess(lastSuccess)
+            .lastFailure(lastFailure)
+            .consecutiveFailures(consecutiveFailures)
+            .build());
   }
 
   @Override
@@ -117,7 +124,14 @@ public final class FakeTaskRepository implements TaskRepository {
       Instant lastSuccess,
       Instant lastFailure,
       int consecutiveFailures) {
-    throw unsupported();
+    return reschedule(
+        execution,
+        RescheduleUpdate.toExecutionTime(nextExecutionTime)
+            .data(newData)
+            .lastSuccess(lastSuccess)
+            .lastFailure(lastFailure)
+            .consecutiveFailures(consecutiveFailures)
+            .build());
   }
 
   @Override
@@ -166,6 +180,6 @@ public final class FakeTaskRepository implements TaskRepository {
   }
 
   private static UnsupportedOperationException unsupported() {
-    return new UnsupportedOperationException("Artwork completion handlers never call this");
+    return new UnsupportedOperationException("Completion and failure handlers never call this");
   }
 }

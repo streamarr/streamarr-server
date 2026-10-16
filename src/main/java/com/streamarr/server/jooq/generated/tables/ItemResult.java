@@ -157,6 +157,11 @@ public class ItemResult extends TableImpl<ItemResultRecord> {
      */
     public final TableField<ItemResultRecord, Long> ARTWORK_GENERATION = createField(DSL.name("artwork_generation"), SQLDataType.BIGINT, this, "");
 
+    /**
+     * The column <code>public.item_result.library_operation_id</code>.
+     */
+    public final TableField<ItemResultRecord, UUID> LIBRARY_OPERATION_ID = createField(DSL.name("library_operation_id"), SQLDataType.UUID, this, "");
+
     private ItemResult(Name alias, Table<ItemResultRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -226,7 +231,7 @@ public class ItemResult extends TableImpl<ItemResultRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.ITEM_RESULT_COMPANY_ID_IDX, Indexes.ITEM_RESULT_EPISODE_ID_IDX, Indexes.ITEM_RESULT_MOVIE_ID_IDX, Indexes.ITEM_RESULT_PERSON_ID_IDX, Indexes.ITEM_RESULT_SEASON_ID_IDX, Indexes.ITEM_RESULT_SERIES_ID_IDX);
+        return Arrays.asList(Indexes.ITEM_RESULT_COMPANY_ID_IDX, Indexes.ITEM_RESULT_EPISODE_ID_IDX, Indexes.ITEM_RESULT_LIBRARY_OPERATION_ID_IDX, Indexes.ITEM_RESULT_MOVIE_ID_IDX, Indexes.ITEM_RESULT_PERSON_ID_IDX, Indexes.ITEM_RESULT_SEASON_ID_IDX, Indexes.ITEM_RESULT_SERIES_ID_IDX);
     }
 
     @Override

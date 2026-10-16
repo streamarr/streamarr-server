@@ -136,6 +136,7 @@ class GraphQlOperationTransportIT extends AbstractIntegrationTest {
   }
 
   private static String removeMutation(Library library) {
-    return "mutation { removeLibrary(id: \"%s\") }".formatted(library.getId());
+    return "mutation { removeLibrary(input: { libraryId: \"%s\" }) { removedLibraryId } }"
+        .formatted(library.getId());
   }
 }

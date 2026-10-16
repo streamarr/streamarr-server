@@ -15,12 +15,15 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiPredicate;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 public class FakeItemResultRepository implements ItemResultRepository {
 
@@ -33,6 +36,8 @@ public class FakeItemResultRepository implements ItemResultRepository {
   private final AtomicReference<RuntimeException> artworkResultsFailure = new AtomicReference<>();
   private final AtomicInteger remainingArtworkResultsFailures = new AtomicInteger();
   private volatile BiPredicate<ArtworkTarget, Long> currentArtworkGeneration = (_, _) -> true;
+  private volatile Function<ArtworkTarget, Optional<UUID>> requestLibraryOperationId =
+      _ -> Optional.empty();
 
   public void failWritesWith(RuntimeException failure) {
     writeFailure.set(failure);
@@ -53,6 +58,51 @@ public class FakeItemResultRepository implements ItemResultRepository {
     this.currentArtworkGeneration = currentArtworkGeneration;
   }
 
+  /**
+   * Reads the library operation id that the target's artwork request carries, which an artwork
+   * result takes as it is saved.
+   */
+  public void stampArtworkResultsWith(
+      Function<ArtworkTarget, Optional<UUID>> requestLibraryOperationId) {
+    this.requestLibraryOperationId = requestLibraryOperationId;
+  }
+
+  /**
+   * Gives the operation's id to the target's results of {@code generation} or a newer one that no
+   * retry will replace, as a library operation that takes over the target's request does.
+   */
+  public void takeOverFinalArtworkResults(
+      ArtworkTarget target, long generation, UUID libraryOperationId) {
+    results.replaceAll(
+        (key, result) -> {
+          if (!isFinalArtworkResultOf(target, generation, result)) {
+            return result;
+          }
+
+          return result.toBuilder().libraryOperationId(Optional.of(libraryOperationId)).build();
+        });
+  }
+
+  private static boolean isFinalArtworkResultOf(
+      ArtworkTarget target, long generation, ItemResult result) {
+    return result.step() == ItemStep.ARTWORK
+        && result.itemId().equals(target.targetId())
+        && result.itemType() == target.targetType()
+        && result.artworkGeneration() >= generation
+        && result.isFinal();
+  }
+
+  private ItemResult stamped(ItemResult result) {
+    if (result.step() != ItemStep.ARTWORK) {
+      return result;
+    }
+
+    return result.toBuilder()
+        .libraryOperationId(
+            requestLibraryOperationId.apply(new ArtworkTarget(result.itemId(), result.itemType())))
+        .build();
+  }
+
   @Override
   public boolean trySave(ItemResult result) {
     var failure = writeFailure.get();
@@ -69,7 +119,7 @@ public class FakeItemResultRepository implements ItemResultRepository {
           }
 
           recorded.set(true);
-          return result;
+          return stamped(result);
         });
     if (recorded.get()) {
       recordedAt.put(keyOf(result), storageClock.instant());
@@ -85,7 +135,7 @@ public class FakeItemResultRepository implements ItemResultRepository {
       throw failure;
     }
 
-    results.put(keyOf(result), result);
+    results.put(keyOf(result), stamped(result));
     recordedAt.put(keyOf(result), storageClock.instant());
   }
 
@@ -127,6 +177,24 @@ public class FakeItemResultRepository implements ItemResultRepository {
     }
 
     return !(result.outcome() instanceof ItemOutcome.Succeeded);
+  }
+
+  @Override
+  public Set<UUID> findItemIdsWithMetadataResultForLibraryOperation(UUID libraryOperationId) {
+    return results.values().stream()
+        .filter(result -> result.step() == ItemStep.METADATA)
+        .filter(result -> result.libraryOperationId().equals(Optional.of(libraryOperationId)))
+        .map(ItemResult::itemId)
+        .collect(Collectors.toSet());
+  }
+
+  @Override
+  public ArtworkResultCounts countArtworkOutcomesForLibraryOperation(UUID libraryOperationId) {
+    return results.values().stream()
+        .filter(result -> result.step() == ItemStep.ARTWORK)
+        .filter(result -> result.libraryOperationId().equals(Optional.of(libraryOperationId)))
+        .map(result -> resultCountsOf(result.outcome()))
+        .reduce(new ArtworkResultCounts(0, 0, 0), FakeItemResultRepository::add);
   }
 
   @Override

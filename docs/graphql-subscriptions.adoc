@@ -122,6 +122,23 @@ A client stops and reports these codes instead of reconnecting.
 A subscription never completes normally while the server runs.
 Another unexpected failure ends the operation with the error `Subscription error`.
 
+== Field errors
+
+A field error does not end the operation.
+When a selected field of one change fails to resolve, the server sends that change in a `next` message.
+The message's `data` holds the subscription field as `null`, and its `errors` name the failing field by its path.
+Later changes keep arriving on the same operation.
+
+Every subscription field is nullable for this reason.
+graphql-java ends a subscription when a null reaches a non-null root field, so a non-null root would turn one failing field into a terminal `error` message.
+
+A client keeps the operation running through these messages:
+
+* Web clients that use Apollo Client set `errorPolicy: 'all'` on each subscription, so the client receives the `null` change together with its errors.
+* Other clients skip a change whose subscription field is `null`.
+
+After a skipped change, a client may query `libraries` again to recover the state it missed.
+
 == Client lifecycle
 
 A client subscribes first and then queries `libraries { id name status scanStartedOn scanCompletedOn }`.

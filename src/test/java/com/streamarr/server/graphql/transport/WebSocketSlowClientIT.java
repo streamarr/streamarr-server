@@ -125,7 +125,10 @@ class WebSocketSlowClientIT extends AbstractIntegrationTest {
             .hasSize(LARGE_NAME_LENGTH);
       }
 
-      http.execute(bearer, "mutation { scanLibrary(id: \"%s\") }".formatted(scanned.getId()));
+      http.execute(
+          bearer,
+          "mutation { startLibraryScan(input: { libraryId: \"%s\" }) { library { id } } }"
+              .formatted(scanned.getId()));
 
       assertThat(fellBehindClosures()).isEqualTo(closuresBefore + 1);
       assertThat(nextStatusChange(keepingUp, scanned.getId()).path("status").asString())

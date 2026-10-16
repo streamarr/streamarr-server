@@ -1,5 +1,17 @@
 package com.streamarr.server.repositories.media;
 
+import static com.streamarr.server.jooq.generated.tables.BaseCollectable.BASE_COLLECTABLE;
+import static com.streamarr.server.jooq.generated.tables.Episode.EPISODE;
+import static com.streamarr.server.jooq.generated.tables.ExternalIdentifier.EXTERNAL_IDENTIFIER;
+import static com.streamarr.server.jooq.generated.tables.MediaFile.MEDIA_FILE;
+import static com.streamarr.server.jooq.generated.tables.Season.SEASON;
+import static com.streamarr.server.jooq.generated.tables.Series.SERIES;
+import static com.streamarr.server.jooq.generated.tables.SeriesCompany.SERIES_COMPANY;
+import static com.streamarr.server.jooq.generated.tables.SeriesDirector.SERIES_DIRECTOR;
+import static com.streamarr.server.jooq.generated.tables.SeriesGenre.SERIES_GENRE;
+import static com.streamarr.server.jooq.generated.tables.SeriesPerson.SERIES_PERSON;
+import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
+import static com.streamarr.server.jooq.generated.tables.WatchHistory.WATCH_HISTORY;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.max;
@@ -8,7 +20,6 @@ import static org.jooq.impl.DSL.not;
 import static org.jooq.impl.DSL.select;
 
 import com.streamarr.server.domain.media.Series;
-import com.streamarr.server.jooq.generated.Tables;
 import com.streamarr.server.jooq.generated.enums.ExternalSourceType;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import com.streamarr.server.services.pagination.MediaFilter;
@@ -47,9 +58,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
     }
 
     var orderByColumns =
-        new SortField[] {
-          buildOrderBy(filter), Tables.BASE_COLLECTABLE.ID.sort(filter.getSortDirection())
-        };
+        new SortField[] {buildOrderBy(filter), BASE_COLLECTABLE.ID.sort(filter.getSortDirection())};
 
     var seekCondition =
         JooqQueryHelper.buildSeekCondition(
@@ -58,9 +67,9 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
     var query =
         context
             .select()
-            .from(Tables.SERIES)
-            .innerJoin(Tables.BASE_COLLECTABLE)
-            .on(Tables.SERIES.ID.eq(Tables.BASE_COLLECTABLE.ID))
+            .from(SERIES)
+            .innerJoin(BASE_COLLECTABLE)
+            .on(SERIES.ID.eq(BASE_COLLECTABLE.ID))
             .where(seekCondition)
             .and(JooqQueryHelper.libraryCondition(filter.getLibraryId()))
             .and(
@@ -83,17 +92,17 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
   public Optional<Series> findByTmdbId(String tmdbId) {
     var query =
         context
-            .select(Tables.SERIES.asterisk(), Tables.BASE_COLLECTABLE.asterisk())
-            .from(Tables.SERIES)
-            .innerJoin(Tables.BASE_COLLECTABLE)
-            .on(Tables.SERIES.ID.eq(Tables.BASE_COLLECTABLE.ID))
-            .join(Tables.EXTERNAL_IDENTIFIER)
-            .on(Tables.EXTERNAL_IDENTIFIER.ENTITY_ID.eq(Tables.SERIES.ID))
+            .select(SERIES.asterisk(), BASE_COLLECTABLE.asterisk())
+            .from(SERIES)
+            .innerJoin(BASE_COLLECTABLE)
+            .on(SERIES.ID.eq(BASE_COLLECTABLE.ID))
+            .join(EXTERNAL_IDENTIFIER)
+            .on(EXTERNAL_IDENTIFIER.ENTITY_ID.eq(SERIES.ID))
             .where(
-                Tables.EXTERNAL_IDENTIFIER
+                EXTERNAL_IDENTIFIER
                     .EXTERNAL_SOURCE_TYPE
                     .eq(inline(ExternalSourceType.TMDB))
-                    .and(Tables.EXTERNAL_IDENTIFIER.EXTERNAL_ID.eq(tmdbId)))
+                    .and(EXTERNAL_IDENTIFIER.EXTERNAL_ID.eq(tmdbId)))
             .limit(1);
 
     List<Series> results = JooqQueryHelper.nativeQuery(entityManager, query, Series.class);
@@ -110,15 +119,15 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
     var orderByColumns =
         new SortField[] {
           buildOrderBy(options.getMediaFilter()),
-          Tables.BASE_COLLECTABLE.ID.sort(options.getMediaFilter().getSortDirection())
+          BASE_COLLECTABLE.ID.sort(options.getMediaFilter().getSortDirection())
         };
 
     var query =
         context
             .select()
-            .from(Tables.SERIES)
-            .innerJoin(Tables.BASE_COLLECTABLE)
-            .on(Tables.SERIES.ID.eq(Tables.BASE_COLLECTABLE.ID))
+            .from(SERIES)
+            .innerJoin(BASE_COLLECTABLE)
+            .on(SERIES.ID.eq(BASE_COLLECTABLE.ID))
             .where(JooqQueryHelper.libraryCondition(options.getMediaFilter().getLibraryId()))
             .and(
                 JooqQueryHelper.startLetterCondition(
@@ -143,15 +152,15 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
     var reversed = JooqQueryHelper.reverseFilter(filter);
     var orderByColumns =
         new SortField[] {
-          buildOrderBy(reversed), Tables.BASE_COLLECTABLE.ID.sort(reversed.getSortDirection())
+          buildOrderBy(reversed), BASE_COLLECTABLE.ID.sort(reversed.getSortDirection())
         };
 
     var query =
         context
             .select()
-            .from(Tables.SERIES)
-            .innerJoin(Tables.BASE_COLLECTABLE)
-            .on(Tables.SERIES.ID.eq(Tables.BASE_COLLECTABLE.ID))
+            .from(SERIES)
+            .innerJoin(BASE_COLLECTABLE)
+            .on(SERIES.ID.eq(BASE_COLLECTABLE.ID))
             .where(predecessorCondition.get())
             .and(JooqQueryHelper.libraryCondition(filter.getLibraryId()))
             .and(filterConditions(filter))
@@ -168,46 +177,45 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
     condition =
         condition.and(
             JooqQueryHelper.semiJoinCondition(
-                Tables.SERIES.ID,
-                Tables.SERIES_GENRE,
-                Tables.SERIES_GENRE.SERIES_ID,
-                Tables.SERIES_GENRE.GENRE_ID,
+                SERIES.ID,
+                SERIES_GENRE,
+                SERIES_GENRE.SERIES_ID,
+                SERIES_GENRE.GENRE_ID,
                 filter.getGenreIds()));
 
     condition =
-        condition.and(
-            JooqQueryHelper.yearCondition(Tables.SERIES.FIRST_AIR_DATE, filter.getYears()));
+        condition.and(JooqQueryHelper.yearCondition(SERIES.FIRST_AIR_DATE, filter.getYears()));
 
     condition =
         condition.and(
             JooqQueryHelper.contentRatingCondition(
-                Tables.SERIES.CONTENT_RATING_VALUE, filter.getContentRatings()));
+                SERIES.CONTENT_RATING_VALUE, filter.getContentRatings()));
 
     condition =
         condition.and(
             JooqQueryHelper.semiJoinCondition(
-                Tables.SERIES.ID,
-                Tables.SERIES_COMPANY,
-                Tables.SERIES_COMPANY.SERIES_ID,
-                Tables.SERIES_COMPANY.COMPANY_ID,
+                SERIES.ID,
+                SERIES_COMPANY,
+                SERIES_COMPANY.SERIES_ID,
+                SERIES_COMPANY.COMPANY_ID,
                 filter.getStudioIds()));
 
     condition =
         condition.and(
             JooqQueryHelper.semiJoinCondition(
-                Tables.SERIES.ID,
-                Tables.SERIES_DIRECTOR,
-                Tables.SERIES_DIRECTOR.SERIES_ID,
-                Tables.SERIES_DIRECTOR.PERSON_ID,
+                SERIES.ID,
+                SERIES_DIRECTOR,
+                SERIES_DIRECTOR.SERIES_ID,
+                SERIES_DIRECTOR.PERSON_ID,
                 filter.getDirectorIds()));
 
     condition =
         condition.and(
             JooqQueryHelper.semiJoinCondition(
-                Tables.SERIES.ID,
-                Tables.SERIES_PERSON,
-                Tables.SERIES_PERSON.SERIES_ID,
-                Tables.SERIES_PERSON.PERSON_ID,
+                SERIES.ID,
+                SERIES_PERSON,
+                SERIES_PERSON.SERIES_ID,
+                SERIES_PERSON.PERSON_ID,
                 filter.getCastMemberIds()));
 
     condition = condition.and(JooqQueryHelper.unmatchedCondition(filter.getUnmatched()));
@@ -236,87 +244,80 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
 
   private static Condition seriesHasEpisodes() {
     return exists(
-        select(Tables.EPISODE.ID)
-            .from(Tables.EPISODE)
-            .innerJoin(Tables.SEASON)
-            .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
-            .where(Tables.SEASON.SERIES_ID.eq(Tables.BASE_COLLECTABLE.ID)));
+        select(EPISODE.ID)
+            .from(EPISODE)
+            .innerJoin(SEASON)
+            .on(EPISODE.SEASON_ID.eq(SEASON.ID))
+            .where(SEASON.SERIES_ID.eq(BASE_COLLECTABLE.ID)));
   }
 
   private static Condition seriesHasUnwatchedEpisode(UUID profileId) {
     return exists(
-        select(Tables.EPISODE.ID)
-            .from(Tables.EPISODE)
-            .innerJoin(Tables.SEASON)
-            .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
-            .where(
-                Tables.SEASON
-                    .SERIES_ID
-                    .eq(Tables.BASE_COLLECTABLE.ID)
-                    .and(not(episodeIsWatched(profileId)))));
+        select(EPISODE.ID)
+            .from(EPISODE)
+            .innerJoin(SEASON)
+            .on(EPISODE.SEASON_ID.eq(SEASON.ID))
+            .where(SEASON.SERIES_ID.eq(BASE_COLLECTABLE.ID).and(not(episodeIsWatched(profileId)))));
   }
 
   private static Condition episodeIsWatched(UUID profileId) {
     return exists(
-        select(Tables.WATCH_HISTORY.ID)
-            .from(Tables.WATCH_HISTORY)
+        select(WATCH_HISTORY.ID)
+            .from(WATCH_HISTORY)
             .where(
-                Tables.WATCH_HISTORY
+                WATCH_HISTORY
                     .COLLECTABLE_ID
-                    .eq(Tables.EPISODE.ID)
-                    .and(Tables.WATCH_HISTORY.PROFILE_ID.eq(profileId))
-                    .and(Tables.WATCH_HISTORY.DISMISSED_AT.isNull())));
+                    .eq(EPISODE.ID)
+                    .and(WATCH_HISTORY.PROFILE_ID.eq(profileId))
+                    .and(WATCH_HISTORY.DISMISSED_AT.isNull())));
   }
 
   private static Condition anyEpisodeWatched(UUID profileId) {
     return exists(
-        select(Tables.WATCH_HISTORY.ID)
-            .from(Tables.WATCH_HISTORY)
-            .innerJoin(Tables.EPISODE)
-            .on(Tables.WATCH_HISTORY.COLLECTABLE_ID.eq(Tables.EPISODE.ID))
-            .innerJoin(Tables.SEASON)
-            .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
+        select(WATCH_HISTORY.ID)
+            .from(WATCH_HISTORY)
+            .innerJoin(EPISODE)
+            .on(WATCH_HISTORY.COLLECTABLE_ID.eq(EPISODE.ID))
+            .innerJoin(SEASON)
+            .on(EPISODE.SEASON_ID.eq(SEASON.ID))
             .where(
-                Tables.SEASON
+                SEASON
                     .SERIES_ID
-                    .eq(Tables.BASE_COLLECTABLE.ID)
-                    .and(Tables.WATCH_HISTORY.PROFILE_ID.eq(profileId))
-                    .and(Tables.WATCH_HISTORY.DISMISSED_AT.isNull())));
+                    .eq(BASE_COLLECTABLE.ID)
+                    .and(WATCH_HISTORY.PROFILE_ID.eq(profileId))
+                    .and(WATCH_HISTORY.DISMISSED_AT.isNull())));
   }
 
   private static Condition anyEpisodeHasProgress(UUID profileId) {
     return exists(
-        select(Tables.SESSION_PROGRESS.ID)
-            .from(Tables.SESSION_PROGRESS)
-            .innerJoin(Tables.MEDIA_FILE)
-            .on(Tables.SESSION_PROGRESS.MEDIA_FILE_ID.eq(Tables.MEDIA_FILE.ID))
-            .innerJoin(Tables.EPISODE)
-            .on(Tables.MEDIA_FILE.MEDIA_ID.eq(Tables.EPISODE.ID))
-            .innerJoin(Tables.SEASON)
-            .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
+        select(SESSION_PROGRESS.ID)
+            .from(SESSION_PROGRESS)
+            .innerJoin(MEDIA_FILE)
+            .on(SESSION_PROGRESS.MEDIA_FILE_ID.eq(MEDIA_FILE.ID))
+            .innerJoin(EPISODE)
+            .on(MEDIA_FILE.MEDIA_ID.eq(EPISODE.ID))
+            .innerJoin(SEASON)
+            .on(EPISODE.SEASON_ID.eq(SEASON.ID))
             .where(
-                Tables.SEASON
+                SEASON
                     .SERIES_ID
-                    .eq(Tables.BASE_COLLECTABLE.ID)
-                    .and(Tables.SESSION_PROGRESS.PROFILE_ID.eq(profileId))
-                    .and(Tables.SESSION_PROGRESS.POSITION_SECONDS.greaterThan(0))));
+                    .eq(BASE_COLLECTABLE.ID)
+                    .and(SESSION_PROGRESS.PROFILE_ID.eq(profileId))
+                    .and(SESSION_PROGRESS.POSITION_SECONDS.greaterThan(0))));
   }
 
   private Field<?> lastWatchedField(MediaFilter filter) {
     var profileId = requireProfileId(filter.getProfileId());
-    return select(max(Tables.SESSION_PROGRESS.LAST_MODIFIED_ON))
-        .from(Tables.SESSION_PROGRESS)
-        .innerJoin(Tables.MEDIA_FILE)
-        .on(Tables.SESSION_PROGRESS.MEDIA_FILE_ID.eq(Tables.MEDIA_FILE.ID))
-        .innerJoin(Tables.EPISODE)
-        .on(Tables.MEDIA_FILE.MEDIA_ID.eq(Tables.EPISODE.ID))
-        .innerJoin(Tables.SEASON)
-        .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
+    return select(max(SESSION_PROGRESS.LAST_MODIFIED_ON))
+        .from(SESSION_PROGRESS)
+        .innerJoin(MEDIA_FILE)
+        .on(SESSION_PROGRESS.MEDIA_FILE_ID.eq(MEDIA_FILE.ID))
+        .innerJoin(EPISODE)
+        .on(MEDIA_FILE.MEDIA_ID.eq(EPISODE.ID))
+        .innerJoin(SEASON)
+        .on(EPISODE.SEASON_ID.eq(SEASON.ID))
         .where(
-            Tables.SEASON
-                .SERIES_ID
-                .eq(Tables.BASE_COLLECTABLE.ID)
-                .and(Tables.SESSION_PROGRESS.PROFILE_ID.eq(profileId)))
+            SEASON.SERIES_ID.eq(BASE_COLLECTABLE.ID).and(SESSION_PROGRESS.PROFILE_ID.eq(profileId)))
         .asField();
   }
 
@@ -327,24 +328,21 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
     }
 
     var resolvedProfileId = requireProfileId(profileId);
-    var maxField = max(Tables.SESSION_PROGRESS.LAST_MODIFIED_ON);
+    var maxField = max(SESSION_PROGRESS.LAST_MODIFIED_ON);
 
     return context
-        .select(Tables.SEASON.SERIES_ID, maxField)
-        .from(Tables.SESSION_PROGRESS)
-        .innerJoin(Tables.MEDIA_FILE)
-        .on(Tables.SESSION_PROGRESS.MEDIA_FILE_ID.eq(Tables.MEDIA_FILE.ID))
-        .innerJoin(Tables.EPISODE)
-        .on(Tables.MEDIA_FILE.MEDIA_ID.eq(Tables.EPISODE.ID))
-        .innerJoin(Tables.SEASON)
-        .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
+        .select(SEASON.SERIES_ID, maxField)
+        .from(SESSION_PROGRESS)
+        .innerJoin(MEDIA_FILE)
+        .on(SESSION_PROGRESS.MEDIA_FILE_ID.eq(MEDIA_FILE.ID))
+        .innerJoin(EPISODE)
+        .on(MEDIA_FILE.MEDIA_ID.eq(EPISODE.ID))
+        .innerJoin(SEASON)
+        .on(EPISODE.SEASON_ID.eq(SEASON.ID))
         .where(
-            Tables.SEASON
-                .SERIES_ID
-                .in(seriesIds)
-                .and(Tables.SESSION_PROGRESS.PROFILE_ID.eq(resolvedProfileId)))
-        .groupBy(Tables.SEASON.SERIES_ID)
-        .fetchMap(Tables.SEASON.SERIES_ID, r -> toInstant(r.get(maxField)));
+            SEASON.SERIES_ID.in(seriesIds).and(SESSION_PROGRESS.PROFILE_ID.eq(resolvedProfileId)))
+        .groupBy(SEASON.SERIES_ID)
+        .fetchMap(SEASON.SERIES_ID, r -> toInstant(r.get(maxField)));
   }
 
   private static UUID requireProfileId(@NonNull UUID profileId) {
@@ -358,9 +356,9 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
   private Field<?> sortField(MediaFilter filter) {
     return switch (filter.getSortBy()) {
       case TITLE -> JooqQueryHelper.titleSortField();
-      case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON;
-      case RELEASE_DATE -> Tables.SERIES.FIRST_AIR_DATE;
-      case RUNTIME -> Tables.SERIES.RUNTIME;
+      case ADDED -> BASE_COLLECTABLE.CREATED_ON;
+      case RELEASE_DATE -> SERIES.FIRST_AIR_DATE;
+      case RUNTIME -> SERIES.RUNTIME;
       case LAST_WATCHED -> lastWatchedField(filter);
     };
   }
@@ -370,9 +368,9 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
 
     return switch (filter.getSortBy()) {
       case TITLE -> JooqQueryHelper.titleSortField().sort(direction);
-      case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON.sort(direction);
-      case RELEASE_DATE -> Tables.SERIES.FIRST_AIR_DATE.sort(direction).nullsLast();
-      case RUNTIME -> Tables.SERIES.RUNTIME.sort(direction).nullsLast();
+      case ADDED -> BASE_COLLECTABLE.CREATED_ON.sort(direction);
+      case RELEASE_DATE -> SERIES.FIRST_AIR_DATE.sort(direction).nullsLast();
+      case RUNTIME -> SERIES.RUNTIME.sort(direction).nullsLast();
       case LAST_WATCHED -> lastWatchedField(filter).sort(direction).nullsLast();
     };
   }

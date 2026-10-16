@@ -84,7 +84,8 @@ class ArtworkStepsTaskCompletionTest {
     var generation = request("/poster.jpg");
 
     complete(
-        new ArtworkStepsOutcome.Unfinished(generation, Optional.of(Duration.ofSeconds(90))),
+        new ArtworkStepsOutcome.Unfinished(
+            generation, Optional.empty(), Optional.of(Duration.ofSeconds(90))),
         execution(1));
 
     assertThat(artworkTasks.rescheduled()).containsExactly(retryAt(NOW.plusSeconds(90), 2));
@@ -95,7 +96,9 @@ class ArtworkStepsTaskCompletionTest {
   void shouldRetryAfterTheCappedBackoffWhenTheImageHostNamesNoDelay() {
     var generation = request("/poster.jpg");
 
-    complete(new ArtworkStepsOutcome.Unfinished(generation, Optional.empty()), execution(10));
+    complete(
+        new ArtworkStepsOutcome.Unfinished(generation, Optional.empty(), Optional.empty()),
+        execution(10));
 
     assertThat(artworkTasks.rescheduled())
         .containsExactly(retryAt(NOW.plus(Duration.ofMinutes(5)), 11));
@@ -130,7 +133,9 @@ class ArtworkStepsTaskCompletionTest {
 
   private static Stream<Arguments> outcomesLeftToRun() {
     return Stream.of(
-        Arguments.of("unfinished", new ArtworkStepsOutcome.Unfinished(1, Optional.empty())),
+        Arguments.of(
+            "unfinished",
+            new ArtworkStepsOutcome.Unfinished(1, Optional.empty(), Optional.empty())),
         Arguments.of("interrupted", new ArtworkStepsOutcome.Interrupted(1)),
         Arguments.of("not requested", new ArtworkStepsOutcome.NotRequested()));
   }
@@ -146,6 +151,38 @@ class ArtworkStepsTaskCompletionTest {
 
     assertThat(artworkTasks.removed()).containsExactly(execution);
     assertThat(artworkTasks.rescheduled()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should run the request again at once without failures when a library operation took it"
+          + " over while the attempt left a step to retry")
+  void shouldRunTheRequestAgainAtOnceWhenALibraryOperationTookItOverDuringTheAttempt() {
+    var endedOperation = UUID.randomUUID();
+    var generation = request("/poster.jpg", Optional.of(endedOperation));
+    request("/poster.jpg", Optional.of(UUID.randomUUID()));
+
+    complete(
+        new ArtworkStepsOutcome.Unfinished(
+            generation, Optional.of(endedOperation), Optional.of(Duration.ofSeconds(90))),
+        execution(3));
+
+    assertThat(artworkTasks.rescheduled()).containsExactly(runNowWithoutFailures());
+  }
+
+  @Test
+  @DisplayName(
+      "Should retry after the backoff when the library operation that waited for the request still"
+          + " waits for it")
+  void shouldRetryAfterTheBackoffWhenTheLibraryOperationThatWaitedStillWaits() {
+    var operation = UUID.randomUUID();
+    var generation = request("/poster.jpg", Optional.of(operation));
+
+    complete(
+        new ArtworkStepsOutcome.Unfinished(generation, Optional.of(operation), Optional.empty()),
+        execution(0));
+
+    assertThat(artworkTasks.rescheduled()).containsExactly(retryAt(NOW.plusSeconds(5), 1));
   }
 
   @Test
@@ -189,13 +226,25 @@ class ArtworkStepsTaskCompletionTest {
   }
 
   private long request(String key) {
+    return request(key, Optional.empty());
+  }
+
+  private long request(String key, Optional<UUID> libraryOperationId) {
     var artwork =
         ArtworkSources.builder()
             .targetId(MOVIE.targetId())
             .targetType(MOVIE.targetType())
             .sources(List.of(new TmdbImageSource(ImageType.POSTER, key)))
             .build();
-    return requests.saveRequest(artwork, ImageRefreshMode.PRESERVE, NOW).generation();
+    return requests
+        .saveRequest(
+            NewArtworkRequest.builder()
+                .artwork(artwork)
+                .refreshMode(ImageRefreshMode.PRESERVE)
+                .requestedAt(NOW)
+                .libraryOperationId(libraryOperationId)
+                .build())
+        .generation();
   }
 
   private void complete(ArtworkStepsOutcome outcome, Execution execution) {

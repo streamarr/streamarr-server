@@ -8,10 +8,13 @@ import com.github.kagkarlsson.scheduler.task.ExecutionOperations;
 import com.github.kagkarlsson.scheduler.task.FailureHandler;
 import com.github.kagkarlsson.scheduler.task.RescheduleUpdate;
 import com.streamarr.server.domain.media.ArtworkTarget;
+import com.streamarr.server.domain.media.PendingArtworkRequest;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.UUID;
+import java.util.function.Consumer;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -21,8 +24,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * Completes the scheduled task of a target's artwork steps in one transaction with the target's
  * artwork request, which it locks first. The task is removed only together with the request of the
- * attempted generation, or when no request remains. A newer generation runs at once and starts
- * without failures.
+ * attempted generation, or when no request remains. A newer generation, and a request that a
+ * library operation took over during the attempt, run at once and start without failures.
  */
 @Builder
 @RequiredArgsConstructor
@@ -60,7 +63,7 @@ public class ArtworkStepsTaskCompletion {
     return (complete, operations) ->
         inTransaction(
             () -> {
-              if (requests.lockPendingGeneration(artworkTargetOf(complete)).isEmpty()) {
+              if (requests.lockPendingRequest(artworkTargetOf(complete)).isEmpty()) {
                 operations.remove();
                 return;
               }
@@ -78,14 +81,16 @@ public class ArtworkStepsTaskCompletion {
     switch (outcome) {
       case ArtworkStepsOutcome.Finished(var generation) ->
           completeGeneration(completing, generation);
-      case ArtworkStepsOutcome.Unfinished(var generation, var retryAfter) ->
+      case ArtworkStepsOutcome.Unfinished(var generation, var libraryOperationId, var retryAfter) ->
           actOnPendingGeneration(
-              completing, generation, () -> retryAfterFailure(completing.execution(), retryAfter));
+              completing,
+              generation,
+              pending -> retryUnlessTakenOver(completing, pending, libraryOperationId, retryAfter));
       case ArtworkStepsOutcome.Interrupted(var generation) ->
           actOnPendingGeneration(
               completing,
               generation,
-              () ->
+              _ ->
                   artworkTasks.reschedule(
                       completing.execution(),
                       RescheduleUpdate.toExecutionTime(clock.instant()).build()));
@@ -105,23 +110,40 @@ public class ArtworkStepsTaskCompletion {
   // Acts on the attempt only while its generation is still pending: a newer generation runs at
   // once, and a target without a request has its task removed.
   private void actOnPendingGeneration(
-      CompletingExecution completing, long attemptedGeneration, Runnable action) {
-    var pending = requests.lockPendingGeneration(completing.target());
+      CompletingExecution completing,
+      long attemptedGeneration,
+      Consumer<PendingArtworkRequest> action) {
+    var pending = requests.lockPendingRequest(completing.target());
     if (pending.isEmpty()) {
       completing.operations().remove();
       return;
     }
 
-    if (pending.get() == attemptedGeneration) {
-      action.run();
+    if (pending.get().generation() == attemptedGeneration) {
+      action.accept(pending.get());
       return;
     }
 
     runNewGeneration(completing.execution());
   }
 
+  // A library operation that took over the request during the attempt waits for one fresh attempt,
+  // not the backoff (ADR 0027).
+  private void retryUnlessTakenOver(
+      CompletingExecution completing,
+      PendingArtworkRequest pending,
+      Optional<UUID> attemptedLibraryOperationId,
+      Optional<Duration> retryAfter) {
+    if (!pending.libraryOperationId().equals(attemptedLibraryOperationId)) {
+      runNewGeneration(completing.execution());
+      return;
+    }
+
+    retryAfterFailure(completing.execution(), retryAfter);
+  }
+
   private void removeUnlessRequested(CompletingExecution completing) {
-    if (requests.lockPendingGeneration(completing.target()).isEmpty()) {
+    if (requests.lockPendingRequest(completing.target()).isEmpty()) {
       completing.operations().remove();
       return;
     }

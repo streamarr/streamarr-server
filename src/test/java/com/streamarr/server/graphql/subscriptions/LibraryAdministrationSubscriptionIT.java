@@ -4,11 +4,14 @@ import static com.streamarr.server.support.GraphQlResults.firstErrorCode;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.config.LibraryOperationScheduler;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.support.ActiveSubscriptions;
 import com.streamarr.server.support.AuthTestSupport;
@@ -42,16 +45,31 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
   private static final String STATUS_FIELD = "libraryStatusChanged";
   private static final String STATUS_SUBSCRIPTION =
       "subscription { libraryStatusChanged { id name status scanStartedOn scanCompletedOn } }";
+  private static final String AUDITED_STATUS_SUBSCRIPTION =
+      "subscription { libraryStatusChanged { id status createdOn lastModifiedOn } }";
   private static final String ADDED_SUBSCRIPTION =
       "subscription { libraryAdded { id name status scanStartedOn scanCompletedOn } }";
   private static final String REMOVED_SUBSCRIPTION =
       "subscription { libraryRemoved { libraryId } }";
+  private static final String PROFILE_FIELDS_SUBSCRIPTION =
+      """
+      subscription {
+        libraryStatusChanged {
+          id
+          status
+          items(first: 1) { edges { node { __typename ... on Movie { id watchStatus } } } }
+          alphabetIndex { letter count }
+        }
+      }
+      """;
 
   @LocalServerPort private int port;
 
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private LibraryRepository libraryRepository;
+  @Autowired private LibraryOperationScheduler libraryOperationScheduler;
   @Autowired private MeterRegistry meterRegistry;
+  @Autowired private MovieRepository movieRepository;
   @Autowired private UserAccountRepository userAccountRepository;
 
   @TempDir private Path libraryDirectory;
@@ -99,7 +117,9 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
 
     var accepted = http.execute(bearer, scanMutation(library.getId()));
 
-    assertThat(accepted.path("data").path("scanLibrary").asBoolean()).isTrue();
+    var payload = accepted.path("data").path("startLibraryScan");
+    assertThat(payload.path("library").path("status").asString()).isEqualTo("SCANNING");
+    assertThat(payload.path("userErrors").isEmpty()).isTrue();
     var scanning = nextStatusChange(socket, library.getId());
     assertThat(scanning.path("status").asString()).isEqualTo("SCANNING");
     assertThat(scanning.path("name").asString()).isEqualTo(library.getName());
@@ -108,6 +128,102 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     assertThat(healthy.path("status").asString()).isEqualTo("HEALTHY");
     assertThat(Instant.parse(healthy.path("scanCompletedOn").asString()))
         .isAfterOrEqualTo(Instant.parse(scanning.path("scanStartedOn").asString()));
+  }
+
+  @Test
+  @DisplayName("Should deliver the library's audit timestamps when a scan changes its status")
+  void shouldDeliverLibrarysAuditTimestampsWhenScanChangesItsStatus() {
+    var bearer = adminBearer();
+    var library = saveLibrary(libraryDirectory);
+    var socket = connect(bearer);
+    socket.subscribe("status", AUDITED_STATUS_SUBSCRIPTION);
+    activeSubscriptions.awaitCount(STATUS_FIELD, 1);
+
+    // The stopped scheduler keeps the library's row as the scan's start left it.
+    libraryOperationScheduler.stop();
+    try {
+      http.execute(bearer, scanMutation(library.getId()));
+
+      var scanning = nextStatusChange(socket, library.getId());
+      var stored = libraryRepository.findById(library.getId()).orElseThrow();
+      assertThat(scanning.path("status").asString()).isEqualTo("SCANNING");
+      assertThat(Instant.parse(scanning.path("createdOn").asString()))
+          .isEqualTo(stored.getCreatedOn());
+      assertThat(Instant.parse(scanning.path("lastModifiedOn").asString()))
+          .isEqualTo(stored.getLastModifiedOn());
+    } finally {
+      libraryOperationScheduler.start();
+    }
+
+    awaitStatus(socket, library.getId(), "HEALTHY");
+  }
+
+  @Test
+  @DisplayName(
+      "Should resolve the library's items and alphabet index when a ServerAdmin's subscription delivers a status change")
+  void
+      shouldResolveLibrarysItemsAndAlphabetIndexWhenServerAdminsSubscriptionDeliversStatusChange() {
+    var bearer = adminBearer();
+    var library = saveLibrary(libraryDirectory);
+    var movie = saveMovie(library);
+    var socket = connect(bearer);
+    socket.subscribe("status", PROFILE_FIELDS_SUBSCRIPTION);
+    activeSubscriptions.awaitCount(STATUS_FIELD, 1);
+
+    http.execute(bearer, refreshMutation(library.getId()));
+
+    var change = nextStatusChangeWithoutErrors(socket, library.getId());
+    assertThat(change.path("items").path("edges").path(0).path("node").path("id").asString())
+        .isEqualTo(movie.getId().toString());
+    assertThat(change.path("alphabetIndex").isArray()).isTrue();
+    awaitStatus(socket, library.getId(), "HEALTHY");
+  }
+
+  @Test
+  @DisplayName(
+      "Should resolve each subscriber's own watch status when two ServerAdmins receive the same status change")
+  void shouldResolveEachSubscribersOwnWatchStatusWhenTwoServerAdminsReceiveSameStatusChange() {
+    var watcher = adminBearer();
+    var other = adminBearer();
+    var library = saveLibrary(libraryDirectory);
+    var movie = saveMovie(library);
+    markWatched(watcher, movie);
+    var watcherSocket = connect(watcher);
+    watcherSocket.subscribe("status", PROFILE_FIELDS_SUBSCRIPTION);
+    var otherSocket = connect(other);
+    otherSocket.subscribe("status", PROFILE_FIELDS_SUBSCRIPTION);
+    activeSubscriptions.awaitCount(STATUS_FIELD, 2);
+
+    http.execute(watcher, refreshMutation(library.getId()));
+
+    assertThat(firstItemWatchStatus(nextStatusChangeWithoutErrors(watcherSocket, library.getId())))
+        .isEqualTo("WATCHED");
+    assertThat(firstItemWatchStatus(nextStatusChangeWithoutErrors(otherSocket, library.getId())))
+        .isEqualTo("UNWATCHED");
+    awaitStatus(watcherSocket, library.getId(), "HEALTHY");
+  }
+
+  @Test
+  @DisplayName(
+      "Should resolve the current watch status when the subscriber marks the item watched between two status changes")
+  void shouldResolveCurrentWatchStatusWhenSubscriberMarksItemWatchedBetweenTwoStatusChanges() {
+    var bearer = adminBearer();
+    var library = saveLibrary(libraryDirectory);
+    var movie = saveMovie(library);
+    var socket = connect(bearer);
+    socket.subscribe("status", PROFILE_FIELDS_SUBSCRIPTION);
+    activeSubscriptions.awaitCount(STATUS_FIELD, 1);
+    http.execute(bearer, refreshMutation(library.getId()));
+    assertThat(firstItemWatchStatus(nextStatusChangeWithoutErrors(socket, library.getId())))
+        .isEqualTo("UNWATCHED");
+    awaitStatus(socket, library.getId(), "HEALTHY");
+    markWatched(bearer, movie);
+
+    http.execute(bearer, refreshMutation(library.getId()));
+
+    assertThat(firstItemWatchStatus(nextStatusChangeWithoutErrors(socket, library.getId())))
+        .isEqualTo("WATCHED");
+    awaitStatus(socket, library.getId(), "HEALTHY");
   }
 
   @Test
@@ -133,10 +249,11 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     var library = saveLibrary(libraryDirectory);
     var socket = statusSubscribedSocket(bearer);
 
-    var accepted =
-        http.execute(bearer, "mutation { refreshLibrary(id: \"%s\") }".formatted(library.getId()));
+    var accepted = http.execute(bearer, refreshMutation(library.getId()));
 
-    assertThat(accepted.path("data").path("refreshLibrary").asBoolean()).isTrue();
+    var payload = accepted.path("data").path("startLibraryRefresh");
+    assertThat(payload.path("library").path("status").asString()).isEqualTo("REFRESHING");
+    assertThat(payload.path("userErrors").isEmpty()).isTrue();
     assertThat(nextStatusChange(socket, library.getId()).path("status").asString())
         .isEqualTo("REFRESHING");
     assertThat(nextStatusChange(socket, library.getId()).path("status").asString())
@@ -156,12 +273,12 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     var added = nextAddedLibrary(socket);
     assertThat(added.path("id").asString()).isEqualTo(libraryId.toString());
     assertThat(added.path("name").asString()).isEqualTo("Added Library");
-    assertThat(added.path("status").asString()).isEqualTo("HEALTHY");
+    assertThat(added.path("status").asString()).isEqualTo("SCANNING");
     awaitStatus(socket, libraryId, "HEALTHY");
 
     var removed = http.execute(otherSession, removeMutation(libraryId));
 
-    assertThat(removed.path("data").path("removeLibrary").asBoolean()).isTrue();
+    assertThat(removedLibraryIdOf(removed)).isEqualTo(libraryId.toString());
     assertThat(removedLibraryId(socket)).isEqualTo(libraryId.toString());
   }
 
@@ -216,15 +333,25 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     var busy = saveLibrary(directory("busy"));
     var sentinel = saveLibrary(directory("sentinel"));
     var socket = libraryAdministrationSocket(admin);
-    markStatus(busy, LibraryStatus.SCANNING);
+    // The stopped scheduler keeps the scan stored and the library SCANNING.
+    libraryOperationScheduler.stop();
+    try {
+      http.execute(admin, scanMutation(busy.getId()));
 
-    var refused = http.execute(admin, removeMutation(busy.getId()));
-    var removed = http.execute(admin, removeMutation(sentinel.getId()));
+      var refused = http.execute(admin, removeMutation(busy.getId()));
+      var removed = http.execute(admin, removeMutation(sentinel.getId()));
 
-    assertThat(refused.path("errors").isEmpty()).isFalse();
-    assertThat(libraryRepository.findById(busy.getId())).isPresent();
-    assertThat(removed.path("data").path("removeLibrary").asBoolean()).isTrue();
-    assertThat(removedLibraryId(socket)).isEqualTo(sentinel.getId().toString());
+      var refusal = refused.path("data").path("removeLibrary").path("userErrors").path(0);
+      assertThat(refusal.path("__typename").asString()).isEqualTo("LibraryBusyError");
+      assertThat(refusal.path("status").asString()).isEqualTo("SCANNING");
+      assertThat(libraryRepository.findById(busy.getId())).isPresent();
+      assertThat(removedLibraryIdOf(removed)).isEqualTo(sentinel.getId().toString());
+      assertThat(removedLibraryId(socket)).isEqualTo(sentinel.getId().toString());
+    } finally {
+      libraryOperationScheduler.start();
+    }
+
+    awaitStatus(socket, busy.getId(), "HEALTHY");
   }
 
   @Test
@@ -316,11 +443,6 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     return Files.createDirectories(libraryDirectory.resolve(name));
   }
 
-  private void markStatus(Library library, LibraryStatus status) {
-    library.setStatus(status);
-    libraryRepository.saveAndFlush(library);
-  }
-
   private static void awaitStatus(
       GraphQlTransportWsTestClient socket, UUID libraryId, String status) {
     while (!status.equals(nextStatusChange(socket, libraryId).path("status").asString())) {
@@ -341,7 +463,19 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
   }
 
   private static String removeMutation(UUID libraryId) {
-    return "mutation { removeLibrary(id: \"%s\") }".formatted(libraryId);
+    return """
+        mutation {
+          removeLibrary(input: { libraryId: "%s" }) {
+            removedLibraryId
+            userErrors { __typename ... on LibraryBusyError { status } }
+          }
+        }
+        """
+        .formatted(libraryId);
+  }
+
+  private static String removedLibraryIdOf(JsonNode response) {
+    return response.path("data").path("removeLibrary").path("removedLibraryId").asString();
   }
 
   private String adminBearer() {
@@ -379,7 +513,62 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     }
   }
 
+  // The next status change of one library, failing on any delivery that carries errors.
+  private static JsonNode nextStatusChangeWithoutErrors(
+      GraphQlTransportWsTestClient socket, UUID libraryId) {
+    while (true) {
+      var payload = socket.nextMessageFor("status").path("payload");
+      assertThat(payload.path("errors").isMissingNode()).as("errors in %s", payload).isTrue();
+      var change = payload.path("data").path(STATUS_FIELD);
+      if (libraryId.toString().equals(change.path("id").asString())) {
+        return change;
+      }
+    }
+  }
+
+  private static String firstItemWatchStatus(JsonNode change) {
+    return change.path("items").path("edges").path(0).path("node").path("watchStatus").asString();
+  }
+
+  private Movie saveMovie(Library library) {
+    return movieRepository.saveAndFlush(
+        Movie.builder()
+            .title("Subscribed Movie")
+            .titleSort("Subscribed Movie")
+            .library(library)
+            .build());
+  }
+
+  private void markWatched(String bearer, Movie movie) {
+    var marked =
+        http.execute(
+            bearer,
+            "mutation { markWatched(input: {itemId: \"%s\"}) { userErrors { __typename } } }"
+                .formatted(movie.getId()));
+    assertThat(marked.path("data").path("markWatched").path("userErrors").isEmpty()).isTrue();
+  }
+
   private static String scanMutation(UUID libraryId) {
-    return "mutation { scanLibrary(id: \"%s\") }".formatted(libraryId);
+    return """
+        mutation {
+          startLibraryScan(input: { libraryId: "%s" }) {
+            library { status }
+            userErrors { __typename }
+          }
+        }
+        """
+        .formatted(libraryId);
+  }
+
+  private static String refreshMutation(UUID libraryId) {
+    return """
+        mutation {
+          startLibraryRefresh(input: { libraryId: "%s" }) {
+            library { status }
+            userErrors { __typename }
+          }
+        }
+        """
+        .formatted(libraryId);
   }
 }

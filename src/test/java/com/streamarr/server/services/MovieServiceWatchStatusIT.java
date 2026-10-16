@@ -2,6 +2,7 @@ package com.streamarr.server.services;
 
 import static com.streamarr.server.fixtures.PaginationFixture.buildForwardContinuation;
 import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
+import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -13,7 +14,6 @@ import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.domain.streaming.WatchHistory;
 import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
-import com.streamarr.server.jooq.generated.Tables;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
@@ -249,9 +249,7 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
     private void pinSessionProgressTimestamp(Movie movie, Instant timestamp) {
       var mediaFileId = movie.getFiles().iterator().next().getId();
       auditColumns.overwriteLastModifiedOn(
-          Tables.SESSION_PROGRESS,
-          Tables.SESSION_PROGRESS.MEDIA_FILE_ID.eq(mediaFileId),
-          timestamp);
+          SESSION_PROGRESS, SESSION_PROGRESS.MEDIA_FILE_ID.eq(mediaFileId), timestamp);
     }
 
     private Movie createMovieWithSessionProgress(Library lib, String title) {

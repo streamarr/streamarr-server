@@ -19,7 +19,7 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
-import com.streamarr.server.support.BoundedTask;
+import com.streamarr.server.support.LibraryOperationDriver;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -79,7 +79,7 @@ class LargeMovieLibraryScanIT extends AbstractScanningIntegrationTest {
           "Harbor", "Meadow", "Canyon", "Lantern", "Orchard", "Glacier", "Willow", "Summit",
           "Prairie", "Thicket");
 
-  @Autowired private LibraryManagementService libraryManagementService;
+  @Autowired private LibraryOperationDriver libraryOperationDriver;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MovieRepository movieRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
@@ -121,7 +121,7 @@ class LargeMovieLibraryScanIT extends AbstractScanningIntegrationTest {
     assertThat(connectionTimeouts).as("HikariCP connection timeout meter").isNotNull();
     var timeoutsBefore = connectionTimeouts.count();
 
-    BoundedTask.runWithin(SCAN_BOUND, () -> libraryManagementService.scanLibrary(library.getId()));
+    libraryOperationDriver.scanToEnd(library.getId(), SCAN_BOUND);
 
     assertThat(connectionTimeouts.count()).isEqualTo(timeoutsBefore);
     assertThat(mediaFileRepository.findByLibraryId(library.getId()))

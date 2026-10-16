@@ -13,9 +13,17 @@ post {
 body:graphql {
   mutation AddLibrary($input: AddLibraryInput!) {
     addLibrary(input: $input) {
-      id
-      name
-      status
+      library {
+        id
+        name
+        status
+      }
+      userErrors {
+        __typename
+        ... on MutationError {
+          message
+        }
+      }
     }
   }
 }
@@ -33,15 +41,17 @@ body:graphql:vars {
 }
 
 script:post-response {
-  if (res.status === 200 && res.body.data?.addLibrary?.id) {
-    bru.setVar("LIBRARY_ID", res.body.data.addLibrary.id);
+  if (res.status === 200 && res.body.data?.addLibrary?.library?.id) {
+    bru.setVar("LIBRARY_ID", res.body.data.addLibrary.library.id);
   }
 }
 
 tests {
-  test("Should create a library", function() {
+  test("Should create a library and start its first scan", function() {
     expect(res.status).to.equal(200);
     expect(res.body).to.not.have.property("errors");
-    expect(res.body.data.addLibrary.id).to.be.a("string");
+    expect(res.body.data.addLibrary.userErrors).to.deep.equal([]);
+    expect(res.body.data.addLibrary.library.id).to.be.a("string");
+    expect(res.body.data.addLibrary.library.status).to.equal("SCANNING");
   });
 }

@@ -13,7 +13,9 @@ import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
+import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
@@ -47,8 +49,10 @@ class WatchStatusDataLoaderTest {
             sessionProgressRepository,
             new FakeWatchHistoryRepository(),
             mediaFileRepository,
+            new FakeMovieRepository(),
             episodeRepository,
             seasonRepository,
+            new FakeSeriesRepository(),
             new CapturingEventPublisher());
     dataLoader = new WatchStatusDataLoader(service);
   }
