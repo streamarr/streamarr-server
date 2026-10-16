@@ -31,6 +31,17 @@ final class LibraryPathConflicts {
       return Optional.of(new AddLibraryRejection.PathAlreadyRegistered(library, libraryPath));
     }
 
+    // Path.startsWith compares whole names, so /media/movies2 does not start with /media/movies.
+    if (path.startsWith(libraryPath)) {
+      return Optional.of(
+          new AddLibraryRejection.PathOverlap(LibraryPathOverlap.INSIDE, library, libraryPath));
+    }
+
+    if (libraryPath.startsWith(path)) {
+      return Optional.of(
+          new AddLibraryRejection.PathOverlap(LibraryPathOverlap.CONTAINS, library, libraryPath));
+    }
+
     return Optional.empty();
   }
 }

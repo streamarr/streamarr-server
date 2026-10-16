@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.mutation.library;
 
 import com.streamarr.server.graphql.mutation.InputPath;
 import com.streamarr.server.services.library.AddLibraryRejection;
+import com.streamarr.server.services.library.LibraryPathOverlap;
 
 /** The exhaustive mapping from service rejection to schema error type. */
 public final class AddLibraryErrors {
@@ -36,6 +37,21 @@ public final class AddLibraryErrors {
               InputPath.of(FILEPATH),
               library,
               path.toString());
+      case AddLibraryRejection.PathOverlap(var relation, var library, var path) ->
+          new AddLibraryError.LibraryPathOverlapError(
+              "This folder %s the folder of the library \"%s\" (%s). %s"
+                  .formatted(overlapVerb(relation), library.getName(), path, CHOOSE_ANOTHER_FOLDER),
+              InputPath.of(FILEPATH),
+              library,
+              path.toString(),
+              relation);
+    };
+  }
+
+  private static String overlapVerb(LibraryPathOverlap relation) {
+    return switch (relation) {
+      case INSIDE -> "is inside";
+      case CONTAINS -> "contains";
     };
   }
 }

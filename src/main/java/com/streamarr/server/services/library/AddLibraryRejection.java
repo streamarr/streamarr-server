@@ -20,4 +20,11 @@ public sealed interface AddLibraryRejection {
   /** Another library already uses the path; {@code conflictingPath} is that library's path. */
   record PathAlreadyRegistered(@NonNull Library conflictingLibrary, @NonNull Path conflictingPath)
       implements AddLibraryRejection {}
+
+  /** The path overlaps another library's path; {@code conflictingPath} is that library's path. */
+  record PathOverlap(
+      @NonNull LibraryPathOverlap relation,
+      @NonNull Library conflictingLibrary,
+      @NonNull Path conflictingPath)
+      implements AddLibraryRejection {}
 }

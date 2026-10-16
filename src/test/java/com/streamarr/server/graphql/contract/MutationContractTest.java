@@ -106,6 +106,18 @@ class MutationContractTest {
   }
 
   @Test
+  @DisplayName("Should accept LibraryPathOverlapError when AddLibraryError members are inspected")
+  void shouldAcceptLibraryPathOverlapErrorWhenAddLibraryErrorMembersAreInspected() {
+    var addLibraryError =
+        SCHEMA.getType("AddLibraryError", UnionTypeDefinition.class).orElseThrow();
+
+    assertThat(addLibraryError.getMemberTypes().stream().map(type -> ((TypeName) type).getName()))
+        .contains("LibraryPathAlreadyRegisteredError", "LibraryPathOverlapError");
+    assertThat(descriptionOf("LibraryPathOverlapError"))
+        .isEqualTo("The path is inside, or contains, another library's path.");
+  }
+
+  @Test
   @DisplayName(
       "Should name source Household access explicitly when Account transfer input is inspected")
   void shouldNameSourceHouseholdAccessExplicitlyWhenAccountTransferInputIsInspected() {
