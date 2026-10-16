@@ -414,8 +414,14 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
   }
 
   private void markWatched(String bearer, UUID itemId) {
-    var response = http.execute(bearer, "mutation { markWatched(id: \"%s\") }".formatted(itemId));
-    assertThat(response.path("data").path("markWatched").asBoolean()).isTrue();
+    var response =
+        http.execute(
+            bearer,
+            "mutation { markWatched(input: {itemId: \"%s\"}) { userErrors { __typename } } }"
+                .formatted(itemId));
+    var userErrors = response.path("data").path("markWatched").path("userErrors");
+    assertThat(userErrors.isArray()).isTrue();
+    assertThat(userErrors.isEmpty()).isTrue();
   }
 
   private void reportPaused(String bearer, StreamSession session, int positionSeconds) {

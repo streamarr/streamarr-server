@@ -746,7 +746,7 @@ class StreamingResolverTest {
     private UUID lastMarkedItemId;
 
     StubWatchStatusService() {
-      super(null, null, null, null, null, null, null, null);
+      super(null, null, null, null, null, null, null, null, null);
     }
 
     void reset() {
