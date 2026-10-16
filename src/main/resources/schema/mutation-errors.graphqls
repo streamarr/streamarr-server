@@ -85,9 +85,14 @@ type LibraryPathNotReadableError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
+"Another library already uses the path."
 type LibraryPathAlreadyRegisteredError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
+    "The library that already uses the path."
+    conflictingLibrary: Library!
+    "The path of the conflicting library."
+    conflictingPath: String!
 }
 
 "Not the shape of an email address."

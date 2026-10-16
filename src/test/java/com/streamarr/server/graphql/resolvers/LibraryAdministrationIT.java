@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.jayway.jsonpath.JsonPath;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.config.LibraryOperationScheduler;
+import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.domain.auth.UserAccount;
@@ -26,6 +27,7 @@ import jakarta.persistence.EntityManager;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -380,6 +382,42 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should refuse addLibrary with LibraryPathAlreadyRegisteredError naming the library when"
+          + " another library uses the path")
+  void shouldRefuseAddLibraryWithLibraryPathAlreadyRegisteredErrorWhenAnotherLibraryUsesPath()
+      throws Exception {
+    identity = authTestSupport.createAdminIdentity();
+    var registered = saveLibraryNamed("Audiobooks", libraryDirectory);
+
+    try {
+      postGraphQl(
+              addLibraryWithUserErrorsMutation(libraryDirectory),
+              authTestSupport.profileBearer(identity))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(jsonPath("$.data.addLibrary.library").doesNotExist())
+          .andExpect(
+              jsonPath("$.data.addLibrary.userErrors[0].__typename")
+                  .value("LibraryPathAlreadyRegisteredError"))
+          .andExpect(jsonPath("$.data.addLibrary.userErrors[0].inputPath[0]").value("filepath"))
+          .andExpect(
+              jsonPath("$.data.addLibrary.userErrors[0].conflictingLibrary.id")
+                  .value(registered.getId().toString()))
+          .andExpect(
+              jsonPath("$.data.addLibrary.userErrors[0].conflictingLibrary.name")
+                  .value("Audiobooks"))
+          .andExpect(
+              jsonPath("$.data.addLibrary.userErrors[0].conflictingPath")
+                  .value(libraryDirectory.toAbsolutePath().normalize().toString()));
+
+      assertThat(librariesAt(libraryDirectory)).containsExactly(registered.getId());
+    } finally {
+      libraryRepository.deleteById(registered.getId());
+    }
+  }
+
+  @Test
+  @DisplayName(
       "Should deny library administration when the token claims admin but the live row does not")
   void shouldDenyLibraryAdministrationWhenTokenClaimsAdminButLiveRowDoesNot() throws Exception {
     identity = authTestSupport.createAdminIdentity();
@@ -519,6 +557,22 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
     }
   }
 
+  private Library saveLibraryNamed(String name, Path directory) {
+    return libraryRepository.saveAndFlush(
+        LibraryFixtureCreator.unsavedLibraryBuilder()
+            .name(name)
+            .filepathUri(FilepathCodec.encode(directory))
+            .status(LibraryStatus.HEALTHY)
+            .build());
+  }
+
+  private List<UUID> librariesAt(Path directory) {
+    return jdbcTemplate.queryForList(
+        "SELECT id FROM library WHERE filepath_uri = ?",
+        UUID.class,
+        FilepathCodec.encode(directory));
+  }
+
   private int libraryOperationsOf(UUID libraryId) {
     return jdbcTemplate.queryForObject(
         "SELECT count(*) FROM library_operation WHERE library_id = ?", Integer.class, libraryId);
@@ -560,6 +614,15 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
   private static String addLibraryMutation(Path directory) {
     return ("mutation { addLibrary(input: {name: \\\"Added\\\", filepath: \\\"%s\\\","
             + " type: MOVIE, backend: LOCAL}) { library { id } } }")
+        .formatted(directory.toAbsolutePath());
+  }
+
+  private static String addLibraryWithUserErrorsMutation(Path directory) {
+    return ("mutation { addLibrary(input: {name: \\\"Added\\\", filepath: \\\"%s\\\","
+            + " type: MOVIE, backend: LOCAL}) { library { id } userErrors { __typename"
+            + " ... on InputMutationError { inputPath }"
+            + " ... on LibraryPathAlreadyRegisteredError { conflictingLibrary { id name }"
+            + " conflictingPath } } } }")
         .formatted(directory.toAbsolutePath());
   }
 
