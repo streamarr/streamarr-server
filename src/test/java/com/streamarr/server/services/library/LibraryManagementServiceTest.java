@@ -763,6 +763,24 @@ class LibraryManagementServiceTest {
     }
 
     @Test
+    @DisplayName("Should accept a path when it names the same folders under another root")
+    void shouldAcceptPathWhenItNamesSameFoldersUnderAnotherRoot() throws IOException {
+      // The shared fixture library has a Unix path, which a Windows file system cannot read.
+      fakeLibraryRepository.deleteById(savedLibraryId);
+      var twoDrives = Configuration.windows().toBuilder().setRoots("C:\\", "D:\\").build();
+      try (var twoDriveFileSystem = Jimfs.newFileSystem(twoDrives)) {
+        Files.createDirectories(twoDriveFileSystem.getPath("C:\\media\\movies"));
+        Files.createDirectories(twoDriveFileSystem.getPath("D:\\media\\movies"));
+        var service = serviceWith(twoDriveFileSystem);
+        accepted(service.addLibrary(identity, libraryNamed("Movies", "C:\\media\\movies")));
+
+        var outcome = service.addLibrary(identity, libraryNamed("Films", "D:\\media\\movies"));
+
+        assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+      }
+    }
+
+    @Test
     @DisplayName(
         "Should reject with an INSIDE overlap when the path reaches the library through dot"
             + " segments and a trailing separator")
