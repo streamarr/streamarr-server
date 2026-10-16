@@ -4,12 +4,13 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static com.streamarr.server.support.HeldResponses.held;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-import com.github.kagkarlsson.scheduler.CurrentlyExecuting;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
+import com.github.tomakehurst.wiremock.client.MappingBuilder;
 import com.streamarr.server.config.ArtworkPrioritySchedulers;
 import com.streamarr.server.config.ArtworkRunProperties;
 import com.streamarr.server.config.LibraryOperationScheduler;
@@ -64,7 +65,6 @@ import org.springframework.transaction.PlatformTransactionManager;
 class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
 
   private static final Duration BOUND = Duration.ofSeconds(30);
-  private static final Duration SEARCH_HELD_FOR = Duration.ofSeconds(60);
 
   @Autowired private LibraryOperationScheduler contextScheduler;
   @Autowired private LibraryOperationService libraryOperationService;
@@ -119,7 +119,7 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
       throws Exception {
     var library = createMovieLibrary();
     createMovieFile("Inception (2010)", "Inception (2010).mkv");
-    stubTmdbMovieSearch(Duration.ZERO);
+    stubTmdbMovieSearch();
     stubTmdbMovieMetadata();
     artworkPrioritySchedulers.stop();
     try {
@@ -222,28 +222,20 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
       throws Exception {
     var library = createMovieLibrary();
     createMovieFile("Inception (2010)", "Inception (2010).mkv");
-    stubTmdbMovieSearch(SEARCH_HELD_FOR);
+    stubHeldTmdbMovieSearch();
     stubTmdbMovieMetadata();
-    var started = new CompletableFuture<Void>();
-    var beforeRestart =
-        startScheduler(
-            new AbstractSchedulerListener() {
-              @Override
-              public void onExecutionStart(CurrentlyExecuting execution) {
-                started.complete(null);
-              }
-            });
+    var beforeRestart = startScheduler(new AbstractSchedulerListener() {});
 
     var outcome =
         libraryOperationService.startLibraryScan(
             authTestSupport.identityOf(admin), library.getId());
-    started.get(BOUND.toSeconds(), TimeUnit.SECONDS);
+    heldResponses.awaitHeldResponses(1, BOUND);
     beforeRestart.stop();
 
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
     assertThat(libraryStatus(library)).isEqualTo(LibraryStatus.SCANNING);
 
-    stubTmdbMovieSearch(Duration.ZERO);
+    heldResponses.release();
     var completed = new CompletableFuture<ExecutionComplete>();
     startScheduler(
         new AbstractSchedulerListener() {
@@ -269,7 +261,7 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
   void shouldRunTheScanAgainAndEndHealthyWhenTheInstanceThatPickedItDied() throws Exception {
     var library = createMovieLibrary();
     createMovieFile("Inception (2010)", "Inception (2010).mkv");
-    stubTmdbMovieSearch(Duration.ZERO);
+    stubTmdbMovieSearch();
     stubTmdbMovieMetadata();
     var outcome =
         libraryOperationService.startLibraryScan(
@@ -307,21 +299,13 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
     var recordedFile =
         saveMatchedMediaFile(library, movie, createMovieFile("Recorded", "Recorded.mkv"));
     createMovieFile("Inception (2010)", "Inception (2010).mkv");
-    stubTmdbMovieSearch(SEARCH_HELD_FOR);
+    stubHeldTmdbMovieSearch();
     stubTmdbMovieMetadata();
-    var started = new CompletableFuture<Void>();
-    var beforeRestart =
-        startScheduler(
-            new AbstractSchedulerListener() {
-              @Override
-              public void onExecutionStart(CurrentlyExecuting execution) {
-                started.complete(null);
-              }
-            });
+    var beforeRestart = startScheduler(new AbstractSchedulerListener() {});
     var outcome =
         libraryOperationService.startLibraryScan(
             authTestSupport.identityOf(admin), library.getId());
-    started.get(BOUND.toSeconds(), TimeUnit.SECONDS);
+    heldResponses.awaitHeldResponses(1, BOUND);
     beforeRestart.stop();
     var mediaFilesBeforeRestart = mediaFileRepository.findByLibraryId(library.getId()).size();
     var failedScansBefore = failedScans();
@@ -470,34 +454,40 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
     return Files.createFile(dir.resolve(filename));
   }
 
-  private void stubTmdbMovieSearch(Duration delay) {
-    wireMock.stubFor(
-        get(urlPathEqualTo("/search/movie"))
-            .withQueryParam("query", equalTo("Inception"))
-            .willReturn(
-                aResponse()
-                    .withStatus(200)
-                    .withFixedDelay((int) delay.toMillis())
-                    .withHeader("Content-Type", "application/json")
-                    .withBody(
-                        """
+  private void stubTmdbMovieSearch() {
+    wireMock.stubFor(tmdbMovieSearch());
+  }
+
+  private void stubHeldTmdbMovieSearch() {
+    wireMock.stubFor(held(tmdbMovieSearch()));
+  }
+
+  private static MappingBuilder tmdbMovieSearch() {
+    return get(urlPathEqualTo("/search/movie"))
+        .withQueryParam("query", equalTo("Inception"))
+        .willReturn(
+            aResponse()
+                .withStatus(200)
+                .withHeader("Content-Type", "application/json")
+                .withBody(
+                    """
+                    {
+                      "page": 1,
+                      "results": [
                         {
-                          "page": 1,
-                          "results": [
-                            {
-                              "id": 27205,
-                              "title": "Inception",
-                              "original_title": "Inception",
-                              "release_date": "2010-07-16",
-                              "popularity": 100.0,
-                              "vote_count": 1000,
-                              "vote_average": 8.5
-                            }
-                          ],
-                          "total_results": 1,
-                          "total_pages": 1
+                          "id": 27205,
+                          "title": "Inception",
+                          "original_title": "Inception",
+                          "release_date": "2010-07-16",
+                          "popularity": 100.0,
+                          "vote_count": 1000,
+                          "vote_average": 8.5
                         }
-                        """)));
+                      ],
+                      "total_results": 1,
+                      "total_pages": 1
+                    }
+                    """));
   }
 
   private void stubTmdbMovieMetadata() {

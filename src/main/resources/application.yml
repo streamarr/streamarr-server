@@ -124,6 +124,11 @@ streaming:
     keyframe-scan-timeout: ${STREAMING_WORKER_SESSION_KEYFRAME_SCAN_TIMEOUT:30m}
     probe-cancellation-timeout: ${STREAMING_WORKER_SESSION_PROBE_CANCELLATION_TIMEOUT:5s}
     start-report-timeout: ${STREAMING_WORKER_SESSION_START_REPORT_TIMEOUT:10s}
+    # After this time without hearing from a worker, the server pings it, and closes the connection
+    # when no acknowledgement arrives within the timeout. The time must be at least 10s.
+    keepalive:
+      time: ${STREAMING_WORKER_SESSION_KEEPALIVE_TIME:30s}
+      timeout: ${STREAMING_WORKER_SESSION_KEEPALIVE_TIMEOUT:10s}
   remote:
     source-namespace-id: ${STREAMING_REMOTE_SOURCE_NAMESPACE_ID:}
     source-root: ${STREAMING_REMOTE_SOURCE_ROOT:}

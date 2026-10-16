@@ -11,4 +11,9 @@ public record WorkerSessionProperties(
     @DefaultValue("1m") Duration probeTimeout,
     @DefaultValue("30m") Duration keyframeScanTimeout,
     @DefaultValue("5s") Duration probeCancellationTimeout,
-    @DefaultValue("10s") Duration startReportTimeout) {}
+    @DefaultValue("10s") Duration startReportTimeout,
+    @DefaultValue Keepalive keepalive) {
+
+  public record Keepalive(
+      @DefaultValue("30s") Duration time, @DefaultValue("10s") Duration timeout) {}
+}

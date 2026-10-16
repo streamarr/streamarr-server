@@ -9,6 +9,7 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -18,6 +19,12 @@ import org.junit.jupiter.api.io.TempDir;
 @Tag("IntegrationTest")
 @DisplayName("Remote Worker Keepalive")
 class RemoteWorkerKeepaliveIT {
+
+  // gRPC allows no shorter keepalive time. The default keepalive would take at least 40 seconds
+  // to close the connection.
+  private static final WorkerSessionKeepalive SHORTEST_KEEPALIVE =
+      new WorkerSessionKeepalive(Duration.ofSeconds(10), Duration.ofSeconds(1));
+
   @TempDir Path mediaRoot;
 
   @Test
@@ -25,7 +32,7 @@ class RemoteWorkerKeepaliveIT {
   void shouldReleaseSessionAndCapacityWhenWorkerIsFrozen() throws Exception {
     try (var server =
             new WorkerSessionServer(
-                serverConfigurationBuilder().build(),
+                serverConfigurationBuilder().keepalive(SHORTEST_KEEPALIVE).build(),
                 new FakeSegmentStore(),
                 new SimpleMeterRegistry());
         var worker =
@@ -41,7 +48,7 @@ class RemoteWorkerKeepaliveIT {
       worker.pause();
       try {
         await()
-            .atMost(60, TimeUnit.SECONDS)
+            .atMost(25, TimeUnit.SECONDS)
             .untilAsserted(
                 () -> assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isFalse());
         assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isZero();
