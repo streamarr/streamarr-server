@@ -9,6 +9,7 @@ import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -527,6 +528,58 @@ class LibraryRefreshServiceTest {
     assertThat(seasonRepository.findBySeriesIdOrderBySeasonNumber(series.getId()))
         .extracting(Season::getSeasonNumber)
         .containsExactly(2);
+  }
+
+  @Test
+  @DisplayName(
+      "Should save a metadata result carrying the refresh's library operation id for each"
+          + " refreshed season")
+  void shouldSaveAMetadataResultCarryingTheRefreshsLibraryOperationIdForEachRefreshedSeason()
+      throws Exception {
+    var library = buildSeriesLibrary();
+    var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
+    stubSeriesMetadata("1396", "Breaking Bad", library);
+    stubSeasons("1396", library, 1, 2);
+    var operation = refreshOf(library);
+
+    refreshService.refreshLibrary(library, operation);
+
+    assertThat(seasonRepository.findBySeriesIdOrderBySeasonNumber(series.getId()))
+        .allSatisfy(
+            season ->
+                assertThat(itemResults.find(season.getId(), ItemStep.METADATA, null))
+                    .hasValueSatisfying(
+                        result -> {
+                          assertThat(result.itemType()).isEqualTo(ImageEntityType.SEASON);
+                          assertThat(result.outcome()).isEqualTo(new ItemOutcome.Succeeded());
+                          assertThat(result.libraryOperationId()).contains(operation.id());
+                        }))
+        .hasSize(2);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the earlier seasons' results and save the series as failed when a later"
+          + " season fails")
+  void shouldKeepTheEarlierSeasonsResultsAndSaveTheSeriesAsFailedWhenALaterSeasonFails()
+      throws Exception {
+    var library = buildSeriesLibrary();
+    var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
+    stubSeriesMetadata("1396", "Breaking Bad", library);
+    stubSeasons("1396", library, 1, 2, 3);
+    when(seriesProviderResolver.getSeasonDetails(library, "1396", 2))
+        .thenReturn(new MetadataFetchOutcome.Failed<>(new IOException("connection reset")));
+
+    refreshService.refreshLibrary(library, refreshOf(library));
+
+    assertThat(metadataOutcome(series.getId()))
+        .isEqualTo(
+            new ItemOutcome.Failed(
+                ItemFailureReason.TEMPORARY, "Season 2: IOException: connection reset"));
+    assertThat(seasonRepository.findBySeriesIdOrderBySeasonNumber(series.getId()))
+        .extracting(Season::getSeasonNumber, season -> metadataOutcome(season.getId()))
+        .containsExactly(
+            tuple(1, new ItemOutcome.Succeeded()), tuple(3, new ItemOutcome.Succeeded()));
   }
 
   @Test
@@ -1251,6 +1304,103 @@ class LibraryRefreshServiceTest {
       assertThat(fetches).hasValue(1);
     }
 
+    @Test
+    @DisplayName(
+        "Should skip a season whose metadata result carries the refresh's library operation id")
+    void shouldSkipASeasonWhoseMetadataResultCarriesTheRefreshsLibraryOperationId()
+        throws Exception {
+      var library = buildSeriesLibrary();
+      var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
+      var refreshedSeason = saveSeason(series, 1);
+      saveSeason(series, 2);
+      stubSeriesMetadata("1396", "Breaking Bad", library);
+      var fetchedSeasonNumbers = stubSeasons("1396", library, 1, 2, 3);
+      var operation = refreshOf(library);
+      saveSucceededMetadataResult(refreshedSeason.getId(), ImageEntityType.SEASON, operation.id());
+
+      refreshService.refreshLibrary(library, operation);
+
+      assertThat(fetchedSeasonNumbers).containsExactly(2, 3);
+      assertThat(metadataOutcome(series.getId())).isEqualTo(new ItemOutcome.Succeeded());
+    }
+
+    @Test
+    @DisplayName(
+        "Should refresh a season whose metadata result carries another library operation's id")
+    void shouldRefreshASeasonWhoseMetadataResultCarriesAnotherLibraryOperationsId()
+        throws Exception {
+      var library = buildSeriesLibrary();
+      var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
+      var season = saveSeason(series, 1);
+      stubSeriesMetadata("1396", "Breaking Bad", library);
+      var fetchedSeasonNumbers = stubSeasons("1396", library, 1, 2);
+      saveSucceededMetadataResult(season.getId(), ImageEntityType.SEASON, UUID.randomUUID());
+
+      refreshService.refreshLibrary(library, refreshOf(library));
+
+      assertThat(fetchedSeasonNumbers).containsExactly(1, 2);
+    }
+
+    @Test
+    @DisplayName(
+        "Should fetch nothing and change no result when the same refresh runs again after it"
+            + " finished")
+    void shouldFetchNothingAndChangeNoResultWhenTheSameRefreshRunsAgainAfterItFinished()
+        throws Exception {
+      var library = buildSeriesLibrary();
+      var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
+      stubSeriesMetadata("1396", "Breaking Bad", library);
+      var fetchedSeasonNumbers = stubSeasons("1396", library, 1, 2);
+      var operation = refreshOf(library);
+      refreshService.refreshLibrary(library, operation);
+      var resultsAfterFirstRun = itemResults.findAll();
+      var seasonsAfterFirstRun = seasonRepository.findBySeriesIdOrderBySeasonNumber(series.getId());
+      clock.advance(Duration.ofMinutes(5));
+
+      refreshService.refreshLibrary(library, operation);
+
+      assertThat(fetchedSeasonNumbers).containsExactly(1, 2);
+      assertThat(itemResults.findAll()).containsExactlyInAnyOrderElementsOf(resultsAfterFirstRun);
+      assertThat(seasonRepository.findBySeriesIdOrderBySeasonNumber(series.getId()))
+          .containsExactlyElementsOf(seasonsAfterFirstRun);
+    }
+
+    @Test
+    @DisplayName(
+        "Should fetch no later season and save no series result when a shutdown interrupts a"
+            + " season fetch, then resume at that season")
+    void shouldFetchNoLaterSeasonWhenAShutdownInterruptsASeasonFetchThenResumeAtThatSeason()
+        throws Exception {
+      var library = buildSeriesLibrary();
+      var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
+      stubSeriesMetadata("1396", "Breaking Bad", library);
+      var fetchedSeasonNumbers = stubSeasons("1396", library, 1, 2, 3);
+      doAnswer(
+              _ -> {
+                fetchedSeasonNumbers.add(2);
+                return interruptedFetch();
+              })
+          .doAnswer(
+              _ -> {
+                fetchedSeasonNumbers.add(2);
+                return new MetadataFetchOutcome.Found<>(seasonDetails(2));
+              })
+          .when(seriesProviderResolver)
+          .getSeasonDetails(library, "1396", 2);
+      var operation = refreshOf(library);
+      refreshService.refreshLibrary(library, operation);
+      var fetchedBeforeRestart = List.copyOf(fetchedSeasonNumbers);
+      var seriesResultBeforeRestart = itemResults.find(series.getId(), ItemStep.METADATA, null);
+      fetchedSeasonNumbers.clear();
+
+      refreshService.refreshLibrary(library, operation);
+
+      assertThat(fetchedBeforeRestart).containsExactly(1, 2);
+      assertThat(seriesResultBeforeRestart).isEmpty();
+      assertThat(fetchedSeasonNumbers).containsExactly(2, 3);
+      assertThat(metadataOutcome(series.getId())).isEqualTo(new ItemOutcome.Succeeded());
+    }
+
     // A provider restores the interrupt flag and reports the interrupted fetch as a failure.
     private static <T> MetadataFetchOutcome<T> interruptedFetch() {
       Thread.currentThread().interrupt();
@@ -1369,6 +1519,33 @@ class LibraryRefreshServiceTest {
         .thenReturn(
             new MetadataFetchOutcome.Found<>(
                 new MetadataResult<>(freshMovie, List.of(), Map.of(), Map.of())));
+  }
+
+  private Season saveSeason(Series series, int seasonNumber) {
+    return seasonRepository.save(
+        Season.builder()
+            .title("Season " + seasonNumber)
+            .seasonNumber(seasonNumber)
+            .series(series)
+            .library(series.getLibrary())
+            .build());
+  }
+
+  // Lists the seasons for the series and finds each one, appending each fetched season number.
+  private List<Integer> stubSeasons(String tmdbId, Library library, Integer... seasonNumbers) {
+    when(seriesProviderResolver.getAvailableSeasonNumbers(library, tmdbId))
+        .thenReturn(new MetadataFetchOutcome.Found<>(List.of(seasonNumbers)));
+    var fetchedSeasonNumbers = new CopyOnWriteArrayList<Integer>();
+    for (var seasonNumber : seasonNumbers) {
+      when(seriesProviderResolver.getSeasonDetails(library, tmdbId, seasonNumber))
+          .thenAnswer(
+              _ -> {
+                fetchedSeasonNumbers.add(seasonNumber);
+                return new MetadataFetchOutcome.Found<>(seasonDetails(seasonNumber));
+              });
+    }
+
+    return fetchedSeasonNumbers;
   }
 
   private static SeasonDetails seasonDetails(int seasonNumber) {

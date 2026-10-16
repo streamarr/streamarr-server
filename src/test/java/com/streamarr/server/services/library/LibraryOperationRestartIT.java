@@ -3,6 +3,7 @@ package com.streamarr.server.services.library;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.streamarr.server.support.HeldResponses.held;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -16,6 +17,8 @@ import com.streamarr.server.config.ArtworkPrioritySchedulers;
 import com.streamarr.server.config.ArtworkRunProperties;
 import com.streamarr.server.config.LibraryOperationScheduler;
 import com.streamarr.server.domain.ExternalAgentStrategy;
+import com.streamarr.server.domain.ExternalIdentifier;
+import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
@@ -23,17 +26,20 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.repositories.LibraryOperationRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.services.ArtworkPriority;
 import com.streamarr.server.services.ArtworkRequestService;
 import com.streamarr.server.services.ArtworkRunWaiter;
 import com.streamarr.server.services.concurrency.Sleeper;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.ArtworkSchedulerStarter;
 import com.streamarr.server.support.AuthTestSupport;
@@ -43,14 +49,20 @@ import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -68,6 +80,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
 
   private static final Duration BOUND = Duration.ofSeconds(30);
+  private static final String SERIES_TMDB_ID = "4242";
 
   @Autowired private LibraryOperationScheduler contextScheduler;
   @Autowired private LibraryOperationService libraryOperationService;
@@ -75,6 +88,7 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private LibraryOperationRepository libraryOperations;
   @Autowired private MovieRepository movieRepository;
+  @Autowired private SeriesRepository seriesRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private ProbeExecution probeExecution;
   @Autowired private JdbcTemplate jdbcTemplate;
@@ -306,6 +320,57 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should resume a series refresh at the next unfinished season and end HEALTHY when the"
+          + " library-operation scheduler stops mid-series and a new one starts")
+  void shouldResumeASeriesRefreshAtTheNextUnfinishedSeasonWhenTheSchedulerStopsMidSeries()
+      throws Exception {
+    var library = createSeriesLibrary();
+    saveSeriesWithTmdbId(library);
+    stubTmdbSeriesWithSeasons(4);
+    for (var seasonNumber = 1; seasonNumber <= 4; seasonNumber++) {
+      wireMock.stubFor(tmdbSeasonDetails(seasonNumber));
+    }
+    wireMock.stubFor(held(tmdbSeasonDetails(3)));
+    var beforeRestart = startScheduler(new AbstractSchedulerListener() {});
+
+    var outcome =
+        libraryOperationService.startLibraryRefresh(
+            authTestSupport.identityOf(admin), library.getId(), ImageRefreshMode.PRESERVE);
+    // Seasons refresh one after another, so the request for season 3 comes after seasons 1 and 2
+    // committed.
+    heldResponses.awaitHeldResponses(1, BOUND);
+    var libraryOperationId = storedLibraryOperationId();
+    var resultsBeforeRestart = metadataResultTimesFor(libraryOperationId);
+    beforeRestart.stop();
+
+    wireMock.stubFor(tmdbSeasonDetails(3));
+    var completed = new CompletableFuture<ExecutionComplete>();
+    startScheduler(
+        new AbstractSchedulerListener() {
+          @Override
+          public void onExecutionComplete(ExecutionComplete complete) {
+            completed.complete(complete);
+          }
+        });
+    completed.get(BOUND.toSeconds(), TimeUnit.SECONDS);
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(resultsBeforeRestart).hasSize(2);
+    assertThat(IntStream.rangeClosed(1, 4).map(this::seasonDetailsRequests))
+        .containsExactly(1, 1, 2, 1);
+    assertThat(metadataResultTimesFor(libraryOperationId))
+        .hasSize(5)
+        .containsAllEntriesOf(resultsBeforeRestart);
+    assertThat(metadataOutcomesFor(libraryOperationId))
+        .containsOnlyKeys("SERIES", "SEASON")
+        .allSatisfy((itemType, outcomes) -> assertThat(outcomes).containsOnly("SUCCEEDED"));
+    assertThat(libraryStatus(library)).isEqualTo(LibraryStatus.HEALTHY);
+    assertThat(storedLibraryOperations()).isZero();
+    assertThat(scheduledLibraryOperations()).isZero();
+  }
+
+  @Test
+  @DisplayName(
       "Should run the scan again and end HEALTHY when the instance that picked it died without"
           + " stopping its scheduler")
   void shouldRunTheScanAgainAndEndHealthyWhenTheInstanceThatPickedItDied() throws Exception {
@@ -485,6 +550,131 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
   private void deleteLibraryOperations() {
     jdbcTemplate.update("DELETE FROM library_operation");
     jdbcTemplate.update("DELETE FROM " + LibraryOperationScheduler.TABLE_NAME);
+  }
+
+  private int seasonDetailsRequests(int seasonNumber) {
+    return wireMock
+        .countRequestsMatching(
+            getRequestedFor(urlPathEqualTo("/tv/" + SERIES_TMDB_ID + "/season/" + seasonNumber))
+                .build())
+        .getCount();
+  }
+
+  private Map<UUID, Instant> metadataResultTimesFor(UUID libraryOperationId) {
+    return jdbcTemplate
+        .queryForList(
+            "SELECT item_id, attempted_at FROM item_result"
+                + " WHERE step = 'METADATA' AND library_operation_id = ?",
+            libraryOperationId)
+        .stream()
+        .collect(
+            Collectors.toMap(
+                row -> (UUID) row.get("item_id"),
+                row -> ((Timestamp) row.get("attempted_at")).toInstant()));
+  }
+
+  private Map<String, List<String>> metadataOutcomesFor(UUID libraryOperationId) {
+    return jdbcTemplate
+        .queryForList(
+            "SELECT item_type::text AS item_type, outcome::text AS outcome FROM item_result"
+                + " WHERE step = 'METADATA' AND library_operation_id = ?",
+            libraryOperationId)
+        .stream()
+        .collect(
+            Collectors.groupingBy(
+                row -> (String) row.get("item_type"),
+                Collectors.mapping(row -> (String) row.get("outcome"), Collectors.toList())));
+  }
+
+  private Library createSeriesLibrary() {
+    return libraryRepository.saveAndFlush(
+        Library.builder()
+            .name("Shows")
+            .backend(LibraryBackend.LOCAL)
+            .status(LibraryStatus.HEALTHY)
+            .filepathUri(FilepathCodec.encode(tempDir))
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .type(MediaType.SERIES)
+            .build());
+  }
+
+  private Series saveSeriesWithTmdbId(Library library) {
+    return seriesRepository.saveAndFlush(
+        Series.builder()
+            .title("Stored Series")
+            .titleSort("Stored Series")
+            .library(library)
+            .externalIds(
+                Set.of(
+                    ExternalIdentifier.builder()
+                        .externalSourceType(ExternalSourceType.TMDB)
+                        .externalId(SERIES_TMDB_ID)
+                        .build()))
+            .build());
+  }
+
+  private void stubTmdbSeriesWithSeasons(int seasonCount) {
+    var seasons =
+        IntStream.rangeClosed(1, seasonCount)
+            .mapToObj(
+                seasonNumber ->
+                    """
+                    {"id": %d, "season_number": %d, "name": "Season %d", "episode_count": 1}
+                    """
+                        .formatted(seasonNumber, seasonNumber, seasonNumber))
+            .collect(Collectors.joining(",", "[", "]"));
+    wireMock.stubFor(
+        get(urlPathEqualTo("/tv/" + SERIES_TMDB_ID))
+            .withQueryParam("append_to_response", equalTo("content_ratings,credits,external_ids"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "id": %s,
+                          "name": "Refreshed Series",
+                          "original_name": "Refreshed Series",
+                          "first_air_date": "2010-01-01",
+                          "overview": "A refreshed overview.",
+                          "episode_run_time": [],
+                          "genres": [],
+                          "production_companies": [],
+                          "seasons": %s,
+                          "credits": {"id": %s, "cast": [], "crew": []},
+                          "content_ratings": {"results": []},
+                          "external_ids": {}
+                        }
+                        """
+                            .formatted(SERIES_TMDB_ID, seasons, SERIES_TMDB_ID))));
+  }
+
+  private MappingBuilder tmdbSeasonDetails(int seasonNumber) {
+    return get(urlPathEqualTo("/tv/" + SERIES_TMDB_ID + "/season/" + seasonNumber))
+        .willReturn(
+            aResponse()
+                .withStatus(200)
+                .withHeader("Content-Type", "application/json")
+                .withBody(
+                    """
+                        {
+                          "id": %d,
+                          "name": "Season %d",
+                          "season_number": %d,
+                          "overview": "Season overview.",
+                          "air_date": "2010-01-01",
+                          "episodes": [
+                            {"id": %d, "episode_number": 1, "season_number": %d, "name": "Episode 1", "overview": "Episode overview.", "air_date": "2010-01-01", "runtime": 45}
+                          ]
+                        }
+                        """
+                        .formatted(
+                            seasonNumber,
+                            seasonNumber,
+                            seasonNumber,
+                            seasonNumber * 100,
+                            seasonNumber)));
   }
 
   private Library createMovieLibrary() {
