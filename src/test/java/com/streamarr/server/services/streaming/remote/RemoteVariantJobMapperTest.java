@@ -10,16 +10,26 @@ import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
+import com.streamarr.transcode.v1.CompatibleBase;
 import com.streamarr.transcode.v1.ContainerFormat;
+import com.streamarr.transcode.v1.DolbyVisionAbsent;
+import com.streamarr.transcode.v1.Presence;
+import com.streamarr.transcode.v1.VideoCodecFamily;
+import com.streamarr.transcode.v1.VideoCodecProfile;
+import com.streamarr.transcode.v1.VideoCodecTier;
+import com.streamarr.transcode.v1.VideoDynamicRange;
+import com.streamarr.transcode.v1.VideoMode;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
@@ -42,7 +52,7 @@ class RemoteVariantJobMapperTest {
             .variantLabel(StreamSession.defaultVariant())
             .transcodeDecision(
                 TranscodeDecision.builder()
-                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                    .transcodeMode(TranscodeMode.REMUX)
                     .videoCodecFamily(videoCodecFamily)
                     .audioDecision(AudioDecision.stereoAac())
                     .subtitleDecision(SubtitleDecision.exclude())
@@ -57,7 +67,6 @@ class RemoteVariantJobMapperTest {
 
   @ParameterizedTest(name = "{0} → {1}")
   @CsvSource({
-    "ULTRAFAST, ENCODER_PRESET_ULTRAFAST",
     "SUPERFAST, ENCODER_PRESET_SUPERFAST",
     "VERYFAST, ENCODER_PRESET_VERYFAST",
     "FASTER, ENCODER_PRESET_FASTER",
@@ -76,6 +85,7 @@ class RemoteVariantJobMapperTest {
             .sessionId(UUID.randomUUID())
             .sourcePath(SOURCE_ROOT.resolve("movie.mkv"))
             .variantLabel(StreamSession.defaultVariant())
+            .framerate(OptionalDouble.of(24))
             .transcodeDecision(
                 TranscodeDecision.builder()
                     .transcodeMode(TranscodeMode.FULL_TRANSCODE)
@@ -110,6 +120,100 @@ class RemoteVariantJobMapperTest {
     var execution = mapper.map(copyAttempt().build()).getExecution();
 
     assertThat(execution.hasSeekPosition()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should send the forced H.264 values when the job encodes H.264")
+  void shouldSendTheForcedH264ValuesWhenTheJobEncodesH264() {
+    var video = mapper.map(encodeAttempt("h264").build()).getDecision().getVideo();
+
+    assertThat(video.getMode()).isEqualTo(VideoMode.VIDEO_MODE_ENCODE);
+    assertThat(video.getCodecFamily()).isEqualTo(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264);
+    assertThat(video.getCodecProfile()).isEqualTo(VideoCodecProfile.VIDEO_CODEC_PROFILE_H264_HIGH);
+    assertThat(video.getTier()).isEqualTo(VideoCodecTier.VIDEO_CODEC_TIER_UNSPECIFIED);
+    assertThat(video.hasLevel()).isTrue();
+    assertThat(video.getLevel()).isEqualTo(42);
+    assertThat(video.getCodecString()).isEqualTo("avc1.64002A");
+  }
+
+  @Test
+  @DisplayName("Should send the forced AV1 values in the Main tier when the job encodes AV1")
+  void shouldSendTheForcedAv1ValuesInTheMainTierWhenTheJobEncodesAv1() {
+    var video = mapper.map(encodeAttempt("av1").build()).getDecision().getVideo();
+
+    assertThat(video.getMode()).isEqualTo(VideoMode.VIDEO_MODE_ENCODE);
+    assertThat(video.getCodecFamily()).isEqualTo(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1);
+    assertThat(video.getCodecProfile()).isEqualTo(VideoCodecProfile.VIDEO_CODEC_PROFILE_AV1_MAIN);
+    assertThat(video.getTier()).isEqualTo(VideoCodecTier.VIDEO_CODEC_TIER_MAIN);
+    assertThat(video.getLevel()).isEqualTo(41);
+    assertThat(video.getCodecString()).isEqualTo("av01.0.09M.08");
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = TranscodeMode.class,
+      names = {"VIDEO_TRANSCODE", "FULL_TRANSCODE"})
+  @DisplayName("Should plan SDR output from an unspecified source when the job encodes video")
+  void shouldPlanSdrOutputFromAnUnspecifiedSourceWhenTheJobEncodesVideo(TranscodeMode mode) {
+    var request =
+        encodeAttempt("h264")
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(mode)
+                    .videoCodecFamily("h264")
+                    .audioDecision(AudioDecision.none())
+                    .subtitleDecision(SubtitleDecision.exclude())
+                    .build())
+            .build();
+
+    var video = mapper.map(request).getDecision().getVideo();
+
+    assertThat(video.hasSourceDynamicRange()).isTrue();
+    assertThat(video.getSourceDynamicRange()).isEqualTo(VideoDynamicRange.getDefaultInstance());
+    assertThat(video.getOutputDynamicRange())
+        .isEqualTo(
+            VideoDynamicRange.newBuilder()
+                .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
+                .setHdr10Plus(Presence.PRESENCE_ABSENT)
+                .setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance())
+                .build());
+    assertThat(video.hasStreamIndex()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should keep the codec family name beside the video decision when the job encodes")
+  void shouldKeepTheCodecFamilyNameBesideTheVideoDecisionWhenTheJobEncodes() {
+    var decision = mapper.map(encodeAttempt("av1").build()).getDecision();
+
+    assertThat(decision.getVideoCodecFamily()).isEqualTo("av1");
+    assertThat(decision.hasVideo()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should send no video decision when the job copies the video")
+  void shouldSendNoVideoDecisionWhenTheJobCopiesTheVideo() {
+    var decision = mapper.map(copyAttempt().build()).getDecision();
+
+    assertThat(decision.hasVideo()).isFalse();
+  }
+
+  private static TranscodeRequest.TranscodeRequestBuilder encodeAttempt(String videoCodecFamily) {
+    return TranscodeRequest.builder()
+        .sessionId(UUID.randomUUID())
+        .sourcePath(SOURCE_ROOT.resolve("movie.mkv"))
+        .variantLabel("1080p")
+        .framerate(OptionalDouble.of(60))
+        .width(1920)
+        .height(1080)
+        .bitrate(5_000_000L)
+        .transcodeDecision(
+            TranscodeDecision.builder()
+                .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                .videoCodecFamily(videoCodecFamily)
+                .audioDecision(AudioDecision.stereoAac())
+                .subtitleDecision(SubtitleDecision.exclude())
+                .build())
+        .encoderPreset(EncoderPreset.FASTER);
   }
 
   private static TranscodeRequest.TranscodeRequestBuilder copyAttempt() {

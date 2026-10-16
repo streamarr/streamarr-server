@@ -3,6 +3,7 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.media.MediaFileContainerInfo;
 import com.streamarr.server.domain.media.MediaFileStreamInfo;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -17,6 +18,7 @@ import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -30,6 +32,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   private final Map<UUID, ProbeInputs> desiredInputs = new ConcurrentHashMap<>();
   private final Map<UUID, ProbeAttemptFailure> failures = new ConcurrentHashMap<>();
   private final Map<UUID, KeyframeKnowledge> keyframes = new ConcurrentHashMap<>();
+  private final Map<UUID, ChapterKnowledge> chapters = new ConcurrentHashMap<>();
   private final List<ProbePublication> publications = new ArrayList<>();
   private Optional<ProbeOutcome.Success> defaultProbe = Optional.empty();
   private final Set<UUID> deletedMediaFiles = ConcurrentHashMap.newKeySet();
@@ -50,6 +53,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     desiredInputs.clear();
     failures.clear();
     keyframes.clear();
+    chapters.clear();
   }
 
   @Override
@@ -95,8 +99,10 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     rows.put(publication.mediaFileId(), toRow(publication));
     failures.remove(publication.mediaFileId());
     keyframes.remove(publication.mediaFileId());
+    chapters.remove(publication.mediaFileId());
     if (publication.outcome() instanceof ProbeOutcome.Success success) {
       keyframes.put(publication.mediaFileId(), success.keyframes());
+      chapters.put(publication.mediaFileId(), success.container().chapters());
     }
 
     return true;
@@ -131,6 +137,29 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     }
 
     return defaultProbe.map(ProbeOutcome.Success::keyframes);
+  }
+
+  @Override
+  public synchronized Map<UUID, ChapterKnowledge> findChapterKnowledge(
+      Collection<UUID> mediaFileIds) {
+    var knowledge = new HashMap<UUID, ChapterKnowledge>();
+    for (var mediaFileId : mediaFileIds) {
+      storedChapters(mediaFileId).ifPresent(stored -> knowledge.put(mediaFileId, stored));
+    }
+
+    return knowledge;
+  }
+
+  private Optional<ChapterKnowledge> storedChapters(UUID mediaFileId) {
+    if (isDeleted(mediaFileId)) {
+      return Optional.empty();
+    }
+
+    if (rows.containsKey(mediaFileId)) {
+      return Optional.of(chapters.getOrDefault(mediaFileId, new ChapterKnowledge.NotReported()));
+    }
+
+    return defaultProbe.map(probe -> probe.container().chapters());
   }
 
   @Override
@@ -229,6 +258,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
             _ -> {
               rows.remove(mediaFileId);
               keyframes.remove(mediaFileId);
+              chapters.remove(mediaFileId);
             });
   }
 
@@ -260,11 +290,13 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     Optional<ProbeAttemptFailure> failure;
     Optional<MediaFileContainerInfo> row;
     Optional<KeyframeKnowledge> knowledge;
+    Optional<ChapterKnowledge> chapterKnowledge;
     synchronized (this) {
       requested = Optional.ofNullable(desiredInputs.get(mediaFileId));
       failure = Optional.ofNullable(failures.get(mediaFileId));
       row = Optional.ofNullable(rows.get(mediaFileId));
       knowledge = Optional.ofNullable(keyframes.get(mediaFileId));
+      chapterKnowledge = Optional.ofNullable(chapters.get(mediaFileId));
     }
 
     try {
@@ -275,6 +307,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
         restore(failures, mediaFileId, failure);
         restore(rows, mediaFileId, row);
         restore(keyframes, mediaFileId, knowledge);
+        restore(chapters, mediaFileId, chapterKnowledge);
       }
 
       throw rejected;
@@ -298,6 +331,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
             deletedMediaFiles.add(mediaFileId);
             rows.remove(mediaFileId);
             keyframes.remove(mediaFileId);
+            chapters.remove(mediaFileId);
             desiredInputs.remove(mediaFileId);
             failures.remove(mediaFileId);
           }

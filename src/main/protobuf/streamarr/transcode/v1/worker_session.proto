@@ -363,6 +363,11 @@ message JobAttemptStopped {
   Uuid job_attempt_id = 1;
 }
 
+// One message that a worker sends on its session. The server accepts a message whose protobuf
+// encoding takes at most 131,072 bytes (128 KiB). A larger message ends the worker's session, and
+// the server then abandons the worker's job attempts and fails its other probes. So the worker
+// computes the encoded size of each message before it sends the message. When a probe result would
+// not fit, the worker reports PROBE_FAILURE_RESULT_TOO_LARGE instead.
 message EstablishWorkerSessionRequest {
   oneof event {
     WorkerRegistration registration = 1;
@@ -836,9 +841,9 @@ message ProbeMediaInfo {
   // neither.
   //
   // A file controls its titles and handler names, but the result must fit in one session message
-  // of at most 128 KiB. A larger probe result closes the worker's session
-  // (streamarr/streamarr-server#554). So the 512-byte limit and this limit keep the values from
-  // filling the result. Only probe version 4 and later set this field.
+  // of at most 128 KiB. A larger probe result fails as PROBE_FAILURE_RESULT_TOO_LARGE. So the
+  // 512-byte limit and this limit keep the values from filling the result. Only probe version 4
+  // and later set this field.
   bool stream_titles_omitted = 6;
 }
 
@@ -861,6 +866,13 @@ enum ProbeFailure {
   PROBE_FAILURE_EXECUTION_FAILED = 4;
   PROBE_FAILURE_UNSUPPORTED_VERSION = 5;
   PROBE_FAILURE_CANCELLED = 6;
+  // The result would not fit in one session message: the EstablishWorkerSessionRequest that
+  // carries it would take more than 131,072 bytes. The worker checks every result, whatever its
+  // stream count or text lengths, and sends this failure in place of the result. The keyframe
+  // positions travel in their own parts and do not count toward the result's size. The server
+  // stores this failure as the file's probe outcome. It does not retry the probe until the file or
+  // the probe version changes. Any probe version may report this failure.
+  PROBE_FAILURE_RESULT_TOO_LARGE = 7;
 }
 
 message StartProbeCommand {

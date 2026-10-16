@@ -368,7 +368,7 @@ class HlsStreamingServiceTest {
   }
 
   private HlsStreamingService serviceWith(
-      TranscodeExecutor executor, RuntimeStreamSessionRegistry registry) {
+      FakeTranscodeExecutor executor, RuntimeStreamSessionRegistry registry) {
     var properties = streamingProperties();
     var rig =
         StreamingRigFixture.streamingRigBuilder()
@@ -376,6 +376,7 @@ class HlsStreamingServiceTest {
             .segmentStore(segmentStore)
             .properties(properties)
             .runtimeRegistry(registry)
+            .heldRequests(executor.heldSegmentRequests())
             .build();
     coordinator = rig.coordinator();
     return HlsStreamingService.builder()
@@ -669,6 +670,32 @@ class HlsStreamingServiceTest {
 
     assertThat(session.getTranscodeDecision().audioDecision().mode()).isEqualTo(AudioMode.COPY);
     assertThat(playlist).contains("CODECS=\"avc1.640028," + codecsParameter + "\"");
+  }
+
+  @ParameterizedTest
+  @CsvSource({"h264, 60", "h264, 23.976", "av1, 60", "av1, 29.97"})
+  @DisplayName(
+      "Should advertise the codec string that the started encode forces when the session encodes a ladder")
+  void shouldAdvertiseTheCodecStringThatTheStartedEncodeForcesWhenTheSessionEncodesALadder(
+      String videoCodecFamily, double frameRate) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").framerate(OptionalDouble.of(frameRate)).build());
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of(videoCodecFamily));
+    var file = seedMediaFile();
+    var options = StreamingOptions.builder().supportedCodecs(List.of(videoCodecFamily)).build();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
+    var playlist =
+        new HlsPlaylistService(StreamingProperties.builder().build())
+            .generateMultivariantPlaylist(session, "token")
+            .lines()
+            .toList();
+    var started = transcodeExecutor.getStartedRequests().getFirst();
+    var codecString = started.videoEncodeDecision().orElseThrow().codecString();
+
+    assertThat(session.getVariants()).hasSizeGreaterThan(1);
+    assertThat(playlist.get(playlist.indexOf(started.variantLabel() + "/stream.m3u8?t=token") - 1))
+        .contains("CODECS=\"" + codecString + ",");
   }
 
   @Test
@@ -1325,12 +1352,14 @@ class HlsStreamingServiceTest {
     createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
     createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
     var startedBefore = transcodeExecutor.getStartedRequests().size();
+    var looks = transcodeExecutor.livenessChecks();
 
     var delivery =
         CompletableFuture.supplyAsync(
             () -> coordinator.deliver(first.getSessionId(), "1080p", "1080p/segment1.m4s"));
     transcodeExecutor.awaitStartedRequestCount(startedBefore + 1);
-    segmentStore.addSegment(first.getSessionId(), "1080p/segment1.m4s", new byte[] {1});
+    transcodeExecutor.awaitLivenessCheckCount(looks + 1);
+    upload(first.getSessionId(), "1080p", "1080p/segment1.m4s");
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     assertThat(first.getVariantHandles()).containsOnlyKeys("1080p");
@@ -1361,6 +1390,12 @@ class HlsStreamingServiceTest {
     assertThat(service.createSession(createStreamSessionCommand(abrFileId, profileId, abrOptions)))
         .isEqualTo(
             Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+  }
+
+  // Stores the segment, then wakes the requests held on its variant, as a worker's upload does.
+  private void upload(UUID sessionId, String variantLabel, String segmentName) {
+    segmentStore.addSegment(sessionId, segmentName, new byte[] {1});
+    transcodeExecutor.heldSegmentRequests().wakeVariant(sessionId, variantLabel);
   }
 
   private static final class FailingStartupTranscodeExecutor extends FakeTranscodeExecutor {

@@ -79,6 +79,28 @@ class EncoderPresetSettingIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should reject Ultrafast and keep Automatic when a ServerAdmin chooses Ultrafast")
+  void shouldRejectUltrafastAndKeepAutomaticWhenServerAdminChoosesUltrafast() throws Exception {
+    mockMvc
+        .perform(
+            graphqlRequest(
+                authTestSupport.accountBearer(serverAdmin),
+                """
+                mutation { changeEncoderPreset(input: {preset: "ULTRAFAST"}) {
+                  encoderPresetSetting { preset } userErrors { __typename } } }
+                """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.changeEncoderPreset.encoderPresetSetting").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.changeEncoderPreset.userErrors[0].__typename")
+                .value("UnknownEncoderPresetError"));
+
+    assertThat(dsl.selectFrom(SERVER_SETTINGS).fetchSingle().getEncoderPreset())
+        .isEqualTo("AUTOMATIC");
+  }
+
+  @Test
   @DisplayName("Should refuse the change and keep Automatic when the caller is not a ServerAdmin")
   void shouldRefuseChangeAndKeepAutomaticWhenCallerIsNotServerAdmin() throws Exception {
     mockMvc

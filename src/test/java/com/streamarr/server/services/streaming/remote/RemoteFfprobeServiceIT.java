@@ -8,6 +8,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.domain.streaming.Chapter;
+import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
@@ -21,17 +24,22 @@ import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.LoopbackProbeWorker;
 import com.streamarr.server.support.BoundedTask;
+import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeChapter;
 import com.streamarr.transcode.v1.ProbeContainerInfo;
 import com.streamarr.transcode.v1.ProbeFailure;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
+import com.streamarr.transcode.v1.VariantJob;
+import com.streamarr.transcode.v1.VariantSpec;
 import io.grpc.Status;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.concurrent.Executors;
@@ -97,6 +105,79 @@ class RemoteFfprobeServiceIT {
         }
       }
     }
+  }
+
+  @Test
+  @DisplayName(
+      "Should fail only the probe whose result is too large and keep the worker's session, job"
+          + " attempt and other probe")
+  void shouldFailOnlyProbeWhoseResultIsTooLargeAndKeepWorkersSessionJobAttemptAndOtherProbe()
+      throws Exception {
+    try (var server = server()) {
+      server.start();
+      try (var worker =
+          LoopbackProbeWorker.builder()
+              .port(server.port())
+              .probeVersion(1)
+              .availableSlots(3)
+              .build()) {
+        var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
+        assertThat(server.dispatch(variantJob())).isPresent();
+        assertThat(worker.nextResponse().hasStartVariant()).isTrue();
+
+        try (var oversized = BoundedTask.start(() -> service.probe(request().build()))) {
+          var oversizedRequest = worker.nextResponse().getStartProbe().getRequest();
+          try (var other = BoundedTask.start(() -> service.probe(request().build()))) {
+            var otherRequest = worker.nextResponse().getStartProbe().getRequest();
+
+            worker.reply(
+                answer(oversizedRequest)
+                    .setFailure(ProbeFailure.PROBE_FAILURE_RESULT_TOO_LARGE)
+                    .build());
+
+            assertThat(oversized.await(Duration.ofSeconds(5)))
+                .isEqualTo(new ProbeOutcome.Failure(ProbeError.RESULT_TOO_LARGE));
+
+            worker.reply(
+                answer(otherRequest)
+                    .setMedia(
+                        ProbeMediaInfo.newBuilder()
+                            .addStreams(
+                                ProbeStreamInfo.newBuilder().setIndex(0).setCodecType("video")))
+                    .build());
+
+            assertThat(other.await(Duration.ofSeconds(5)))
+                .as("The other probe must still deliver its result")
+                .isInstanceOf(ProbeOutcome.Success.class);
+          }
+        }
+
+        assertThat(worker.terminated()).as("The worker must keep its session").isNotDone();
+        assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isTrue();
+        assertThat(server.availableSlots(SOURCE_NAMESPACE_ID))
+            .as("The job attempt must keep its slot")
+            .isEqualTo(2);
+      }
+    }
+  }
+
+  private static ProbeAttemptResult.Builder answer(ProbeRequest request) {
+    return ProbeAttemptResult.newBuilder()
+        .setProbeAttemptId(request.getProbeAttemptId())
+        .setProbeVersion(request.getProbeVersion());
+  }
+
+  private static VariantJob variantJob() {
+    return VariantJob.newBuilder()
+        .setStreamSessionId(toProto(UUID.randomUUID()))
+        .setJobId(toProto(UUID.randomUUID()))
+        .setJobAttemptId(toProto(UUID.randomUUID()))
+        .setSource(
+            MediaSourceRef.newBuilder()
+                .setSourceNamespaceId(toProto(SOURCE_NAMESPACE_ID))
+                .setRelativeKey("movie.mkv"))
+        .setVariant(VariantSpec.newBuilder().setVariantLabel("720p"))
+        .build();
   }
 
   @Test
@@ -283,13 +364,71 @@ class RemoteFfprobeServiceIT {
         assertThat(result.get(5, TimeUnit.SECONDS))
             .isEqualTo(
                 new ProbeOutcome.Success(
-                    ProbeContainer.builder().build(),
+                    ProbeContainer.builder()
+                        .chapters(new ChapterKnowledge.Known(List.of()))
+                        .build(),
                     List.of(
                         StreamInfo.builder()
                             .codecType("video")
                             .width(OptionalInt.of(1920))
                             .build()),
                     new KeyframeKnowledge.NotReported()));
+      }
+    }
+  }
+
+  @Test
+  @DisplayName("Should return the chapters when a probe version 4 worker reports them")
+  void shouldReturnTheChaptersWhenAProbeVersion4WorkerReportsThem() throws Exception {
+    try (var server = server()) {
+      server.start();
+      try (var worker = worker(server.port(), ProbeVersion.FIRST_TO_REPORT_CHAPTERS)) {
+        var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
+        var request = request().probeVersion(ProbeVersion.FIRST_TO_REPORT_CHAPTERS).build();
+        try (var result = BoundedTask.start(() -> service.probe(request))) {
+          var dispatched = worker.nextResponse().getStartProbe().getRequest();
+          var titled =
+              ProbeChapter.newBuilder()
+                  .setStartTime(newBuilder().setNanos(-46_000_000))
+                  .setEndTime(newBuilder().setSeconds(300))
+                  .setTitle("Opening Credits");
+          var untitled =
+              ProbeChapter.newBuilder()
+                  .setStartTime(newBuilder().setSeconds(300))
+                  .setEndTime(newBuilder().setSeconds(1_500));
+          worker.reply(
+              ProbeAttemptResult.newBuilder()
+                  .setProbeAttemptId(dispatched.getProbeAttemptId())
+                  .setProbeVersion(dispatched.getProbeVersion())
+                  .setMedia(
+                      ProbeMediaInfo.newBuilder()
+                          .setContainer(
+                              ProbeContainerInfo.newBuilder()
+                                  .addChapters(titled)
+                                  .addChapters(untitled))
+                          .addStreams(ProbeStreamInfo.newBuilder().setCodecType("video")))
+                  .build());
+
+          var outcome = result.await(Duration.ofSeconds(5));
+
+          assertThat(outcome)
+              .isInstanceOfSatisfying(
+                  ProbeOutcome.Success.class,
+                  success ->
+                      assertThat(success.container().chapters())
+                          .isEqualTo(
+                              new ChapterKnowledge.Known(
+                                  List.of(
+                                      Chapter.builder()
+                                          .startTime(Optional.of(Duration.ofMillis(-46)))
+                                          .endTime(Optional.of(Duration.ofSeconds(300)))
+                                          .title(Optional.of("Opening Credits"))
+                                          .build(),
+                                      Chapter.builder()
+                                          .startTime(Optional.of(Duration.ofSeconds(300)))
+                                          .endTime(Optional.of(Duration.ofSeconds(1_500)))
+                                          .build()))));
+        }
       }
     }
   }
@@ -402,7 +541,8 @@ class RemoteFfprobeServiceIT {
   @ParameterizedTest
   @CsvSource({
     "PROBE_FAILURE_INVALID_MEDIA,INVALID_MEDIA",
-    "PROBE_FAILURE_NO_VIDEO_STREAM,NO_VIDEO_STREAM"
+    "PROBE_FAILURE_NO_VIDEO_STREAM,NO_VIDEO_STREAM",
+    "PROBE_FAILURE_RESULT_TOO_LARGE,RESULT_TOO_LARGE"
   })
   @DisplayName("Should return a terminal media outcome when the worker rejects the media")
   void shouldReturnATerminalMediaOutcomeWhenTheWorkerRejectsTheMedia(

@@ -212,6 +212,20 @@ public class MediaFileContainerInfoRecord extends UpdatableRecordImpl<MediaFileC
         return (String) get(12);
     }
 
+    /**
+     * Setter for <code>public.media_file_container_info.chapter_status</code>.
+     */
+    public void setChapterStatus(String value) {
+        set(13, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_container_info.chapter_status</code>.
+     */
+    public String getChapterStatus() {
+        return (String) get(13);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -235,7 +249,7 @@ public class MediaFileContainerInfoRecord extends UpdatableRecordImpl<MediaFileC
     /**
      * Create a detached, initialised MediaFileContainerInfoRecord
      */
-    public MediaFileContainerInfoRecord(UUID mediaFileId, Long sourceSize, Long sourceModifiedEpochSecond, Integer sourceModifiedNanos, Integer probeVersion, String format, Long durationSeconds, Integer durationNanos, Long totalBitrate, String probeError, String keyframeStatus, String keyframePacketScanReason, String keyframesUnavailableReason) {
+    public MediaFileContainerInfoRecord(UUID mediaFileId, Long sourceSize, Long sourceModifiedEpochSecond, Integer sourceModifiedNanos, Integer probeVersion, String format, Long durationSeconds, Integer durationNanos, Long totalBitrate, String probeError, String keyframeStatus, String keyframePacketScanReason, String keyframesUnavailableReason, String chapterStatus) {
         super(MediaFileContainerInfo.MEDIA_FILE_CONTAINER_INFO);
 
         setMediaFileId(mediaFileId);
@@ -251,6 +265,7 @@ public class MediaFileContainerInfoRecord extends UpdatableRecordImpl<MediaFileC
         setKeyframeStatus(keyframeStatus);
         setKeyframePacketScanReason(keyframePacketScanReason);
         setKeyframesUnavailableReason(keyframesUnavailableReason);
+        setChapterStatus(chapterStatus);
         resetTouchedOnNotNull();
     }
 }

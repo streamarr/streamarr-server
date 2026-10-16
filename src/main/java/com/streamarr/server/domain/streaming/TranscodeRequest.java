@@ -44,6 +44,26 @@ public record TranscodeRequest(
     }
   }
 
+  /**
+   * The codec profile, tier, level and codec string that the attempt forces when it encodes the
+   * video; empty for a stream copy.
+   */
+  public Optional<VideoEncodeDecision> videoEncodeDecision() {
+    if (transcodeDecision.transcodeMode().copiesVideo()) {
+      return Optional.empty();
+    }
+
+    return Optional.of(
+        VideoEncodeDecision.of(
+            EncodedVideoOutput.builder()
+                .codecFamily(transcodeDecision.videoCodecFamily())
+                .width(width)
+                .height(height)
+                .probedFrameRate(framerate)
+                .bitrate(bitrate)
+                .build()));
+  }
+
   // Lombok skips its own builder() because this one exists.
   public static TranscodeRequestBuilder builder() {
     return new TranscodeRequestBuilder()

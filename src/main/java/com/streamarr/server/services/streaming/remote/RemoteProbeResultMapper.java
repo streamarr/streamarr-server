@@ -1,6 +1,10 @@
 package com.streamarr.server.services.streaming.remote;
 
+import com.google.protobuf.DurationOrBuilder;
 import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.domain.streaming.Chapter;
+import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -8,9 +12,9 @@ import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeChapter;
 import com.streamarr.transcode.v1.ProbeContainerInfo;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
-import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
 import java.time.Duration;
 import java.util.List;
@@ -29,12 +33,13 @@ final class RemoteProbeResultMapper {
   ProbeOutcome map(ProbeAttemptReport report) {
     var result = report.result();
     if (result.hasMedia()) {
-      return success(result.getMedia(), report.keyframePositionsParts());
+      return success(result, report.keyframePositionsParts());
     }
 
     return switch (result.getFailure()) {
       case PROBE_FAILURE_INVALID_MEDIA -> new ProbeOutcome.Failure(ProbeError.INVALID_MEDIA);
       case PROBE_FAILURE_NO_VIDEO_STREAM -> new ProbeOutcome.Failure(ProbeError.NO_VIDEO_STREAM);
+      case PROBE_FAILURE_RESULT_TOO_LARGE -> new ProbeOutcome.Failure(ProbeError.RESULT_TOO_LARGE);
       case PROBE_FAILURE_CANCELLED ->
           throw new ProbeCancelledException("Worker cancelled the probe: " + result.getFailure());
       case PROBE_FAILURE_SOURCE_UNAVAILABLE ->
@@ -56,7 +61,8 @@ final class RemoteProbeResultMapper {
   }
 
   private ProbeOutcome.Success success(
-      ProbeMediaInfo media, List<ProbeKeyframePositionsPart> keyframePositionsParts) {
+      ProbeAttemptResult result, List<ProbeKeyframePositionsPart> keyframePositionsParts) {
+    var media = result.getMedia();
     if (media.getStreamsList().stream()
         .noneMatch(stream -> "video".equals(stream.getCodecType()))) {
       throw contractViolation("Worker probe success contains no video stream");
@@ -64,12 +70,12 @@ final class RemoteProbeResultMapper {
 
     var streams = media.getStreamsList().stream().map(this::stream).toList();
     return new ProbeOutcome.Success(
-        container(media.getContainer()),
+        container(media.getContainer(), result.getProbeVersion()),
         streams,
         keyframeMapper.map(media, keyframePositionsParts));
   }
 
-  private ProbeContainer container(ProbeContainerInfo container) {
+  private ProbeContainer container(ProbeContainerInfo container, int probeVersion) {
     return ProbeContainer.builder()
         .format(container.hasFormat() ? Optional.of(container.getFormat()) : Optional.empty())
         .duration(duration(container))
@@ -77,6 +83,40 @@ final class RemoteProbeResultMapper {
             container.hasBitrateBitsPerSecond()
                 ? OptionalLong.of(container.getBitrateBitsPerSecond())
                 : OptionalLong.empty())
+        .chapters(chapters(container, probeVersion))
+        .build();
+  }
+
+  private static ChapterKnowledge chapters(ProbeContainerInfo container, int probeVersion) {
+    if (Integer.compareUnsigned(probeVersion, ProbeVersion.FIRST_TO_REPORT_CHAPTERS) < 0) {
+      return new ChapterKnowledge.NotReported();
+    }
+
+    if (!container.getChaptersOmitted()) {
+      return new ChapterKnowledge.Known(
+          container.getChaptersList().stream().map(RemoteProbeResultMapper::chapter).toList());
+    }
+
+    if (container.getChaptersCount() > 0) {
+      throw contractViolation("Worker probe omitted its chapters and still listed some");
+    }
+
+    return new ChapterKnowledge.Omitted();
+  }
+
+  private static Chapter chapter(ProbeChapter chapter) {
+    if (chapter.hasTitle() && chapter.getTitleBytes().size() > Chapter.MAXIMUM_TITLE_BYTES) {
+      throw contractViolation("Worker probe chapter title exceeds the title limit");
+    }
+
+    return Chapter.builder()
+        .startTime(
+            chapter.hasStartTime()
+                ? Optional.of(toDuration(chapter.getStartTime()))
+                : Optional.empty())
+        .endTime(
+            chapter.hasEndTime() ? Optional.of(toDuration(chapter.getEndTime())) : Optional.empty())
+        .title(chapter.hasTitle() ? Optional.of(chapter.getTitle()) : Optional.empty())
         .build();
   }
 
@@ -85,8 +125,17 @@ final class RemoteProbeResultMapper {
       return Optional.empty();
     }
 
-    var seconds = container.getDuration().getSeconds();
-    var nanos = container.getDuration().getNanos();
+    var duration = toDuration(container.getDuration());
+    if (duration.isNegative()) {
+      return Optional.empty();
+    }
+
+    return Optional.of(duration);
+  }
+
+  private static Duration toDuration(DurationOrBuilder duration) {
+    var seconds = duration.getSeconds();
+    var nanos = duration.getNanos();
     var validSeconds =
         seconds >= -MAXIMUM_PROTOBUF_DURATION_SECONDS
             && seconds <= MAXIMUM_PROTOBUF_DURATION_SECONDS;
@@ -98,9 +147,7 @@ final class RemoteProbeResultMapper {
       throw contractViolation("Worker probe duration violates the protobuf contract");
     }
 
-    return seconds < 0 || nanos < 0
-        ? Optional.empty()
-        : Optional.of(Duration.ofSeconds(seconds, nanos));
+    return Duration.ofSeconds(seconds, nanos);
   }
 
   private StreamInfo stream(ProbeStreamInfo stream) {
