@@ -6,6 +6,9 @@ import static org.assertj.core.api.Assertions.within;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.ContainerCropping;
+import com.streamarr.server.domain.streaming.Fraction;
+import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
@@ -31,6 +34,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
+import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.stream.Stream;
 import lombok.Builder;
@@ -1057,6 +1061,117 @@ class HlsPlaylistServiceTest {
       for (var line : streamInfLines) {
         assertThat(line).contains("AUDIO=\"audio\"");
       }
+    }
+  }
+
+  @Nested
+  @DisplayName("Displayed size and frame rate")
+  class DisplayedSizeAndFrameRateTests {
+
+    @Test
+    @DisplayName(
+        "Should advertise the rotated size when a session without a ladder copies an upright phone recording")
+    void shouldAdvertiseTheRotatedSizeWhenASessionWithoutALadderCopiesAnUprightPhoneRecording() {
+      var session =
+          StreamSessionFixture.defaultSessionBuilder()
+              .mediaProbe(
+                  probeWithFacts(
+                      VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                          .streamIndex(0)
+                          .rotationDegrees(OptionalInt.of(-90))))
+              .build();
+
+      assertThat(streamInf(session)).singleElement().asString().contains(",RESOLUTION=1080x1920,");
+    }
+
+    @Test
+    @DisplayName(
+        "Should advertise the cropped size when a session without a ladder copies a cropped source")
+    void shouldAdvertiseTheCroppedSizeWhenASessionWithoutALadderCopiesACroppedSource() {
+      var session =
+          StreamSessionFixture.defaultSessionBuilder()
+              .mediaProbe(
+                  probeWithFacts(
+                      VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                          .streamIndex(0)
+                          .containerCropping(
+                              Optional.of(
+                                  ContainerCropping.builder().top(140).bottom(140).build()))))
+              .build();
+
+      assertThat(streamInf(session)).singleElement().asString().contains(",RESOLUTION=1920x800,");
+    }
+
+    @ParameterizedTest(name = "{0} fps")
+    @CsvSource({"24000, 1001, 23.976", "30000, 1001, 29.970", "60, 1, 60.000", "25, 1, 25.000"})
+    @DisplayName(
+        "Should advertise the output frame rate to three decimals when every variant encodes")
+    void shouldAdvertiseTheOutputFrameRateToThreeDecimalsWhenEveryVariantEncodes(
+        int numerator, int denominator, String frameRate) {
+      var session =
+          StreamSessionFixture.defaultLadderSessionBuilder()
+              .mediaProbe(
+                  StreamSessionFixture.defaultProbeBuilder()
+                      .framerate(OptionalDouble.of((double) numerator / denominator))
+                      .build())
+              .build();
+
+      assertThat(streamInf(session))
+          .hasSize(4)
+          .allSatisfy(line -> assertThat(line).contains(",FRAME-RATE=" + frameRate));
+    }
+
+    @Test
+    @DisplayName(
+        "Should advertise no frame rate when the session copies a stream whose declared rates agree")
+    void shouldAdvertiseNoFrameRateWhenTheSessionCopiesAStreamWhoseDeclaredRatesAgree() {
+      var session =
+          copySessionWithRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(25, 1)));
+
+      assertThat(streamInf(session)).singleElement().asString().doesNotContain("FRAME-RATE");
+    }
+
+    @Test
+    @DisplayName(
+        "Should advertise no frame rate when the session copies a source that its probe gave no playback facts")
+    void shouldAdvertiseNoFrameRateWhenTheSessionCopiesASourceThatItsProbeGaveNoPlaybackFacts() {
+      var session =
+          StreamSessionFixture.defaultSessionBuilder()
+              .mediaProbe(
+                  StreamSessionFixture.defaultProbeBuilder()
+                      .videoPlaybackFacts(Optional.empty())
+                      .build())
+              .transcodeDecision(
+                  StreamSessionFixture.remuxDecisionBuilder().videoSource(Optional.empty()).build())
+              .build();
+
+      assertThat(streamInf(session)).singleElement().asString().doesNotContain("FRAME-RATE");
+    }
+
+    private StreamSession copySessionWithRule(FrameRateRule rule) {
+      var facts =
+          VideoPlaybackFactsFixture.sdrH264FactsBuilder().streamIndex(0).frameRateRule(rule);
+      return StreamSessionFixture.defaultSessionBuilder()
+          .mediaProbe(probeWithFacts(facts))
+          .transcodeDecision(
+              StreamSessionFixture.remuxDecisionBuilder()
+                  .videoSource(Optional.of(facts.build()))
+                  .build())
+          .build();
+    }
+
+    private static MediaProbe probeWithFacts(VideoPlaybackFacts.VideoPlaybackFactsBuilder facts) {
+      return StreamSessionFixture.defaultProbeBuilder()
+          .videoPlaybackFacts(Optional.of(facts.build()))
+          .build();
+    }
+
+    private List<String> streamInf(StreamSession session) {
+      return service
+          .generateMultivariantPlaylist(session, "test-token")
+          .lines()
+          .filter(line -> line.startsWith("#EXT-X-STREAM-INF:"))
+          .toList();
     }
   }
 }

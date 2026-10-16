@@ -58,9 +58,11 @@ public class HlsPlaylistService {
     }
 
     if (session.getVariants().isEmpty()) {
-      var probe = session.getMediaProbe();
-      var codecs = codecs(session, sourceSizedVariant(session));
-      appendStreamInf(sb, probe.bitrate(), probe.width(), probe.height(), codecs, hasAudio);
+      var variant = sourceSizedVariant(session);
+      var codecs = codecs(session, variant);
+      appendStreamInf(
+          sb, variant.videoBitrate(), variant.width(), variant.height(), codecs, hasAudio);
+      appendFrameRate(sb, session);
       appendVideoRange(sb, session);
       sb.append("\n");
       sb.append("stream.m3u8?t=").append(token).append("\n");
@@ -71,6 +73,7 @@ public class HlsPlaylistService {
       var averageBandwidth = variant.averageBandwidth(audio.bitrate());
       var codecs = codecs(session, variant);
       appendStreamInf(sb, averageBandwidth, variant.width(), variant.height(), codecs, hasAudio);
+      appendFrameRate(sb, session);
       appendVideoRange(sb, session);
       sb.append("\n");
       sb.append(variant.label()).append("/stream.m3u8?t=").append(token).append("\n");
@@ -79,12 +82,14 @@ public class HlsPlaylistService {
     return sb.toString();
   }
 
-  // A stream session without a ladder encodes at the source's size and bitrate.
+  // A stream session without a ladder plays at the size that a player shows and at the source's
+  // bitrate.
   private static QualityVariant sourceSizedVariant(StreamSession session) {
     var probe = session.getMediaProbe();
+    var size = probe.displayedSize();
     return QualityVariant.builder()
-        .width(probe.width())
-        .height(probe.height())
+        .width(size.width())
+        .height(size.height())
         .videoBitrate(probe.bitrate())
         .label(StreamSession.defaultVariant())
         .build();
@@ -176,6 +181,23 @@ public class HlsPlaylistService {
     if (hasAudio) {
       sb.append(",AUDIO=\"").append(AUDIO_GROUP_ID).append("\"");
     }
+  }
+
+  // RFC 8216 section 4.3.4.2 gives FRAME-RATE as the maximum rate, to three decimals. An encode
+  // runs
+  // at the session's frame rate. A copy keeps the source's timing, whose maximum rate the probe
+  // does not measure, so its entry leaves FRAME-RATE out.
+  private static void appendFrameRate(StringBuilder sb, StreamSession session) {
+    var frameRate = session.getMediaProbe().framerate();
+    if (session.getTranscodeDecision().transcodeMode().copiesVideo() || frameRate.isEmpty()) {
+      return;
+    }
+
+    sb.append(",FRAME-RATE=")
+        .append(
+            BigDecimal.valueOf(frameRate.getAsDouble())
+                .setScale(3, RoundingMode.HALF_UP)
+                .toPlainString());
   }
 
   // A copy of a Dolby Vision source with an SDR compatible base declares its SDR base layer

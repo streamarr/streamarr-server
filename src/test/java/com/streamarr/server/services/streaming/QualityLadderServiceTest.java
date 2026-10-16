@@ -1,13 +1,19 @@
 package com.streamarr.server.services.streaming;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
+import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.OptionalDouble;
+import java.util.OptionalInt;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -127,14 +133,58 @@ class QualityLadderServiceTest {
     }
   }
 
+  // FFmpeg's scale=-2:<height> divides the height times the aspect ratio by 2, rounds half away
+  // from zero, and doubles the result. FFmpeg 8.0.1 wrote these widths from synthetic frames.
   static Stream<Arguments> aspectRatioVariants() {
     return Stream.of(
         Arguments.of("16:9 source", 1920, 1080, List.of(1920, 1280, 854, 640)),
         Arguments.of("4:3 source", 1440, 1080, List.of(1440, 960, 640, 480)),
-        Arguments.of("21:9 ultrawide source", 2560, 1080, List.of(2560, 1708, 1138, 854)),
+        Arguments.of("21:9 ultrawide source", 2560, 1080, List.of(2560, 1706, 1138, 854)),
         Arguments.of("1:1 square source", 1080, 1080, List.of(1080, 720, 480, 360)),
-        Arguments.of("9:16 portrait source", 1080, 1920, List.of(608, 406, 270, 204)),
+        Arguments.of("9:16 portrait source", 1080, 1920, List.of(608, 406, 270, 202)),
         Arguments.of("4:3 at 720p", 960, 720, List.of(960, 640, 480)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should size the variants from the rotated picture when a phone recording is upright")
+  void shouldSizeTheVariantsFromTheRotatedPictureWhenAPhoneRecordingIsUpright() {
+    var probe =
+        buildProbeBuilder(1920, 1080)
+            .videoPlaybackFacts(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .rotationDegrees(OptionalInt.of(-90))
+                        .build()))
+            .build();
+    var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
+
+    var variants = service.generateVariants(probe, options);
+
+    assertThat(variants)
+        .extracting(QualityVariant::width, QualityVariant::height)
+        .containsExactly(tuple(608, 1080), tuple(406, 720), tuple(270, 480), tuple(202, 360));
+  }
+
+  @Test
+  @DisplayName("Should size the variants from the cropped picture when the container crops it")
+  void shouldSizeTheVariantsFromTheCroppedPictureWhenTheContainerCropsIt() {
+    var probe =
+        buildProbeBuilder(1920, 1080)
+            .videoPlaybackFacts(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .containerCropping(
+                            Optional.of(ContainerCropping.builder().top(140).bottom(140).build()))
+                        .build()))
+            .build();
+    var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
+
+    var variants = service.generateVariants(probe, options);
+
+    assertThat(variants)
+        .extracting(QualityVariant::width, QualityVariant::height)
+        .containsExactly(tuple(1728, 720), tuple(1152, 480), tuple(864, 360));
   }
 
   @Test
@@ -152,6 +202,10 @@ class QualityLadderServiceTest {
   }
 
   private MediaProbe buildProbe(int width, int height, long bitrate) {
+    return buildProbeBuilder(width, height).bitrate(bitrate).build();
+  }
+
+  private static MediaProbe.MediaProbeBuilder buildProbeBuilder(int width, int height) {
     return MediaProbe.builder()
         .keyframes(new KeyframeKnowledge.NotReported())
         .duration(Duration.ofMinutes(120))
@@ -160,7 +214,6 @@ class QualityLadderServiceTest {
         .height(height)
         .videoCodec("h264")
         .audioCodec("aac")
-        .bitrate(bitrate)
-        .build();
+        .bitrate(8_000_000L);
   }
 }

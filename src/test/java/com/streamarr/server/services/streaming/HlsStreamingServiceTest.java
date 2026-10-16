@@ -40,6 +40,7 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -1041,6 +1042,38 @@ class HlsStreamingServiceTest {
     assertThat(session.getTranscodeDecision().transcodeMode())
         .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
     assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo("h264");
+  }
+
+  @Test
+  @DisplayName(
+      "Should advertise the rotated size and its level when a session encodes an upright phone recording")
+  void shouldAdvertiseTheRotatedSizeAndItsLevelWhenASessionEncodesAnUprightPhoneRecording() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .videoCodec("hevc")
+            .framerate(OptionalDouble.of(60))
+            .videoPlaybackFacts(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .streamIndex(0)
+                        .codecString(Optional.of("hvc1.1.6.L120.90"))
+                        .rotationDegrees(OptionalInt.of(-90))
+                        .build()))
+            .build());
+    var file = seedMediaFile();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var playlist =
+        new HlsPlaylistService(streamingProperties())
+            .generateMultivariantPlaylist(session, "t")
+            .lines()
+            .toList();
+
+    // 608x1080 at 60 fps needs 155,040 macroblocks per second: H.264 level 3.2, not 1080p60's 4.2.
+    assertThat(playlist.get(playlist.indexOf("1080p/stream.m3u8?t=t") - 1))
+        .contains("RESOLUTION=608x1080,")
+        .contains("CODECS=\"avc1.640020,")
+        .contains("FRAME-RATE=60.000");
   }
 
   @Test
