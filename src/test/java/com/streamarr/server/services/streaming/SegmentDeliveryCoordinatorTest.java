@@ -147,8 +147,13 @@ class SegmentDeliveryCoordinatorTest {
   // Delivers on another thread and returns once the request has looked at its variant and found
   // no segment, so that it is held until a wake or its stall deadline.
   private CompletableFuture<SegmentDelivery> heldDelivery(UUID sessionId, String segmentName) {
+    return heldDelivery(sessionId, StreamSession.defaultVariant(), segmentName);
+  }
+
+  private CompletableFuture<SegmentDelivery> heldDelivery(
+      UUID sessionId, String variantLabel, String segmentName) {
     var looks = transcodeExecutor.livenessChecks();
-    var delivery = deliverAsync(sessionId, segmentName);
+    var delivery = deliverAsync(sessionId, variantLabel, segmentName);
     transcodeExecutor.awaitLivenessCheckCount(looks + 1);
     return delivery;
   }
@@ -191,7 +196,7 @@ class SegmentDeliveryCoordinatorTest {
             .build();
     var session = defaultSessionBuilder().build();
     runtimeRegistry.save(session);
-    rig.lifecycle().startAll(session, 0);
+    rig.lifecycle().startFirstListedVariant(session);
     runtimeRegistry.removeById(session.getSessionId());
     rig.coordinator().forgetSession(session.getSessionId());
 
@@ -451,7 +456,7 @@ class SegmentDeliveryCoordinatorTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
-    rig.lifecycle().startAll(session, 0);
+    rig.lifecycle().startFirstListedVariant(session);
     var startsBefore = transcodeExecutor.getStartedRequests().size();
     // A stored segment 0 takes the producer out of startup, so its 200 ms stall deadline runs on
     // the system clock from the request's first look.
@@ -1065,8 +1070,7 @@ class SegmentDeliveryCoordinatorTest {
 
   private void storeInitializationSegments(StreamSession session) {
     for (var variant : session.getVariants()) {
-      segmentStore.addSegment(
-          session.getSessionId(), variant.label() + "/init.mp4", new byte[] {0x66});
+      upload(session.getSessionId(), variant.label() + "/init.mp4", new byte[] {0x66});
     }
   }
 
@@ -1081,7 +1085,7 @@ class SegmentDeliveryCoordinatorTest {
 
     var delivery = deliverAsync(session.getSessionId(), "720p", "720p/segment7.m4s");
     transcodeExecutor.awaitStartedRequestCount(startedBefore + 1);
-    segmentStore.addSegment(session.getSessionId(), "720p/segment7.m4s", new byte[] {7});
+    upload(session.getSessionId(), "720p/segment7.m4s", new byte[] {7});
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     assertThat(startedSince(startedBefore))
@@ -1105,7 +1109,7 @@ class SegmentDeliveryCoordinatorTest {
     var sessionId = session.getSessionId();
     var seek = deliverAsync(sessionId, "480p", "480p/segment20.m4s");
     transcodeExecutor.awaitStartedRequestCount(2);
-    segmentStore.addSegment(sessionId, "480p/segment20.m4s", new byte[] {20});
+    upload(sessionId, "480p/segment20.m4s", new byte[] {20});
     assertThat(seek.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     storeInitializationSegments(session);
 
@@ -1138,7 +1142,7 @@ class SegmentDeliveryCoordinatorTest {
 
     var delivery = deliverAsync(sessionId, "360p", "360p/segment0.m4s");
     transcodeExecutor.awaitStartedRequestCount(startedBefore + 1);
-    segmentStore.addSegment(sessionId, "360p/segment0.m4s", new byte[] {1});
+    upload(sessionId, "360p/segment0.m4s", new byte[] {1});
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     assertThat(runningVariants(session)).containsExactly("360p");
@@ -1150,7 +1154,7 @@ class SegmentDeliveryCoordinatorTest {
       "Should stop the other video variants and start nothing when the requested media segment is stored")
   void shouldStopTheOtherVideoVariantsAndStartNothingWhenTheRequestedMediaSegmentIsStored() {
     var session = startedLadderSession();
-    segmentStore.addSegment(session.getSessionId(), "720p/segment3.m4s", new byte[] {3});
+    upload(session.getSessionId(), "720p/segment3.m4s", new byte[] {3});
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
     var delivery = coordinator.deliver(session.getSessionId(), "720p", "720p/segment3.m4s");
@@ -1172,7 +1176,7 @@ class SegmentDeliveryCoordinatorTest {
 
     var delivery = deliverAsync(session.getSessionId(), "1080p", "1080p/segment4.m4s");
     transcodeExecutor.awaitStartedRequestCount(startedBefore + 1);
-    segmentStore.addSegment(session.getSessionId(), "1080p/segment4.m4s", new byte[] {4});
+    upload(session.getSessionId(), "1080p/segment4.m4s", new byte[] {4});
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     assertThat(startedSince(startedBefore))
@@ -1194,7 +1198,7 @@ class SegmentDeliveryCoordinatorTest {
 
     var delivery = deliverAsync(session.getSessionId(), "480p", "480p/segment100.m4s");
     transcodeExecutor.awaitStartedRequestCount(startedBefore + 1);
-    segmentStore.addSegment(session.getSessionId(), "480p/segment100.m4s", new byte[] {1});
+    upload(session.getSessionId(), "480p/segment100.m4s", new byte[] {1});
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     assertThat(startedSince(startedBefore))
@@ -1215,14 +1219,13 @@ class SegmentDeliveryCoordinatorTest {
           throws Exception {
     var session = startedLadderSession();
     var sessionId = session.getSessionId();
-    var held = deliverAsync(sessionId, "480p", "480p/segment1.m4s");
-    awaitLivenessChecks(1);
+    var held = heldDelivery(sessionId, "480p", "480p/segment1.m4s");
 
     var switched = deliverAsync(sessionId, "720p", "720p/segment1.m4s");
     transcodeExecutor.awaitStartedRequestCount(2);
 
     assertThat(held.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
-    segmentStore.addSegment(sessionId, "720p/segment1.m4s", new byte[] {1});
+    upload(sessionId, "720p/segment1.m4s", new byte[] {1});
     assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     assertThat(transcodeExecutor.getStartedRequests())
         .extracting(TranscodeRequest::variantLabel)
@@ -1269,7 +1272,7 @@ class SegmentDeliveryCoordinatorTest {
             .properties(properties)
             .runtimeRegistry(runtimeRegistry)
             .clock(clock)
-            .pollInterval(Duration.ofMillis(20))
+            .heldRequests(heldRequests())
             .sessionMutex(gate.mutexFactory())
             .build();
     runtimeRegistry.save(session);
@@ -1287,11 +1290,11 @@ class SegmentDeliveryCoordinatorTest {
           executor.submit(
               () -> rig.coordinator().deliver(sessionId, "1080p", "1080p/segment5.m4s"));
       transcodeExecutor.awaitStartedRequestCount(startedBefore + 1);
-      segmentStore.addSegment(sessionId, "1080p/segment5.m4s", new byte[] {5});
+      upload(sessionId, "1080p/segment5.m4s", new byte[] {5});
       assertThat(switchTo1080p.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
 
       gate.releaseAndAwaitHeldStep();
-      segmentStore.addSegment(sessionId, "720p/segment5.m4s", new byte[] {5});
+      upload(sessionId, "720p/segment5.m4s", new byte[] {5});
       switchTo720p.get(2, TimeUnit.SECONDS);
     }
 

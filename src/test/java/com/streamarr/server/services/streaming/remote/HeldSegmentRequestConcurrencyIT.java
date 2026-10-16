@@ -285,7 +285,7 @@ class HeldSegmentRequestConcurrencyIT {
     var session = defaultSessionBuilder().sourcePath(SOURCE_ROOT.resolve("movie.mkv")).build();
     registry.save(session);
     startedSessionIds.add(session.getSessionId());
-    rig.lifecycle().startAll(session, 0);
+    rig.lifecycle().startFirstListedVariant(session);
     return session;
   }
 
