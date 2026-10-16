@@ -23,6 +23,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.webmvc.autoconfigure.WebMvcProperties;
 import org.springframework.context.annotation.Configuration;
 import org.yaml.snakeyaml.Yaml;
 import tools.jackson.databind.JsonNode;
@@ -75,6 +76,33 @@ class PackagedConfigurationTest {
         .withUserConfiguration(OpenApiConfiguration.class)
         .run(context -> assertThat(context).hasNotFailed().doesNotHaveBean(OpenAPI.class));
   }
+
+  /**
+   * GraphQL over HTTP runs as an asynchronous request, which the servlet container ends at the
+   * request timeout. createStreamSession may wait the whole probe wait limit and then still has to
+   * start the stream session, so the limit takes at most half of the request timeout.
+   */
+  @Test
+  @DisplayName(
+      "Should leave half of the GraphQL request timeout for session start when packaged"
+          + " configuration loads")
+  void shouldLeaveHalfOfTheGraphQlRequestTimeoutForSessionStartWhenPackagedConfigurationLoads() {
+    CONTEXT_RUNNER
+        .withUserConfiguration(RequestTimeoutConfiguration.class)
+        .run(
+            context -> {
+              var requestTimeout =
+                  context.getBean(WebMvcProperties.class).getAsync().getRequestTimeout();
+              var probeWaitLimit = context.getBean(StreamingProperties.class).probeWaitLimit();
+
+              assertThat(requestTimeout).isNotNull();
+              assertThat(probeWaitLimit.multipliedBy(2)).isLessThanOrEqualTo(requestTimeout);
+            });
+  }
+
+  @Configuration(proxyBeanMethods = false)
+  @EnableConfigurationProperties({WebMvcProperties.class, StreamingProperties.class})
+  static class RequestTimeoutConfiguration {}
 
   @Test
   @DisplayName("Should ship Argon2 defaults that meet the OWASP floor")

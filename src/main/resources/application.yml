@@ -23,6 +23,13 @@ spring:
     virtual:
       enabled: true
 
+  # GraphQL over HTTP runs as an asynchronous request. Without this setting, Tomcat ends such a
+  # request after its own default of 30 s. createStreamSession waits up to
+  # streaming.probe-wait-limit within this time.
+  mvc:
+    async:
+      request-timeout: ${GRAPHQL_HTTP_REQUEST_TIMEOUT:30s}
+
   # Subscriptions use graphql-transport-ws on the same path as HTTP queries and mutations.
   graphql:
     websocket:
@@ -126,8 +133,9 @@ streaming:
   segment-base-path: ${STREAMING_SEGMENT_BASE_PATH:}
   # How long createStreamSession waits for the probe of a file that has no probe outcome yet. The
   # request moves the file's probe to the front of the queue. When the wait reaches the limit,
-  # createStreamSession returns MediaFileProbeNotReadyError and the probe keeps running.
-  probe-wait-limit: ${STREAMING_PROBE_WAIT_LIMIT:20s}
+  # createStreamSession returns MediaFileProbeNotReadyError and the probe keeps running. Keep the
+  # limit at most half of spring.mvc.async.request-timeout, so the session can still start.
+  probe-wait-limit: ${STREAMING_PROBE_WAIT_LIMIT:15s}
   worker-session:
     address: ${STREAMING_WORKER_SESSION_ADDRESS:127.0.0.1}
     port: ${STREAMING_WORKER_SESSION_PORT:9090}
