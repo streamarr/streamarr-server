@@ -87,6 +87,7 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
       """;
   private static final int PAUSED_POSITION_SECONDS = 900;
   private static final int LATER_POSITION_SECONDS = 1_200;
+  private static final int FINISHED_POSITION_SECONDS = 7_000;
 
   @LocalServerPort private int port;
 
@@ -296,6 +297,25 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should send one change when a stopped report that finishes the episode repeats")
+  void shouldSendOneChangeWhenStoppedReportThatFinishesEpisodeRepeats() {
+    var identity = createIdentity();
+    var episode = createEpisode();
+    var sentinel = createMovie();
+    var session = openStreamSession(identity, episode);
+    var subscriber = subscribedSocket(authTestSupport.profileBearer(identity));
+    var reporter = authTestSupport.profileBearer(identity);
+    reportStopped(reporter, session, FINISHED_POSITION_SECONDS);
+    var finished = itemsById(nextChange(subscriber)).get(episode.getId().toString());
+    assertThat(finished.path("watchStatus").asString()).isEqualTo("WATCHED");
+
+    reportStopped(reporter, session, FINISHED_POSITION_SECONDS);
+    markWatched(reporter, sentinel.getId());
+
+    assertThat(itemsById(nextChange(subscriber))).containsOnlyKeys(sentinel.getId().toString());
+  }
+
+  @Test
   @DisplayName(
       "Should deliver nothing to another Profile's client when the Profile marks a movie watched")
   void shouldDeliverNothingToAnotherProfilesClientWhenProfileMarksMovieWatched() {
@@ -425,11 +445,23 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
   }
 
   private void reportPaused(String bearer, StreamSession session, int positionSeconds) {
+    reportTimeline(
+        bearer,
+        "sessionId: \"%s\", positionSeconds: %d, state: PAUSED"
+            .formatted(session.getSessionId(), positionSeconds));
+  }
+
+  private void reportStopped(String bearer, StreamSession session, int positionSeconds) {
+    reportTimeline(
+        bearer,
+        "sessionId: \"%s\", positionSeconds: %d, state: STOPPED"
+            .formatted(session.getSessionId(), positionSeconds));
+  }
+
+  private void reportTimeline(String bearer, String timelineArguments) {
     var response =
         http.execute(
-            bearer,
-            "mutation { reportStreamSessionTimeline(sessionId: \"%s\", positionSeconds: %d, state: PAUSED) }"
-                .formatted(session.getSessionId(), positionSeconds));
+            bearer, "mutation { reportStreamSessionTimeline(%s) }".formatted(timelineArguments));
     assertThat(response.path("data").path("reportStreamSessionTimeline").asBoolean()).isTrue();
   }
 
