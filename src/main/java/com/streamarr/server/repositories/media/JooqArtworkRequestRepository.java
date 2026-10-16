@@ -215,17 +215,22 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
       return List.of();
     }
 
-    // Generations are read before results: a step stores its results before its completion
+    // Requests are read before results: a step stores its results before its completion
     // deletes the request, so a target read without a request has every result it will get.
     var targetIds = targets.stream().map(ArtworkTarget::targetId).distinct().toList();
-    var generations = new HashMap<ArtworkTarget, Long>();
-    dsl.select(ARTWORK_REQUEST.TARGET_ID, ARTWORK_REQUEST.TARGET_TYPE, ARTWORK_REQUEST.GENERATION)
+    var pendingRequests = new HashMap<ArtworkTarget, PendingArtworkRequest>();
+    dsl.select(
+            ARTWORK_REQUEST.TARGET_ID,
+            ARTWORK_REQUEST.TARGET_TYPE,
+            ARTWORK_REQUEST.GENERATION,
+            ARTWORK_REQUEST.LIBRARY_OPERATION_ID)
         .from(ARTWORK_REQUEST)
         .where(ARTWORK_REQUEST.TARGET_ID.in(targetIds))
         .forEach(
             row ->
-                generations.put(
-                    new ArtworkTarget(row.value1(), toDomain(row.value2())), row.value3()));
+                pendingRequests.put(
+                    new ArtworkTarget(row.value1(), toDomain(row.value2())),
+                    new PendingArtworkRequest(row.value3(), Optional.ofNullable(row.value4()))));
     var results = new HashMap<ArtworkTarget, List<ItemResult>>();
     dsl.selectFrom(ITEM_RESULT)
         .where(ITEM_RESULT.ITEM_ID.in(targetIds))
@@ -245,7 +250,7 @@ public class JooqArtworkRequestRepository implements ArtworkRequestRepository {
             target ->
                 new ArtworkCompletionEvidence(
                     target,
-                    Optional.ofNullable(generations.get(target)),
+                    Optional.ofNullable(pendingRequests.get(target)),
                     results.getOrDefault(target, List.of())))
         .toList();
   }

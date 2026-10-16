@@ -205,8 +205,8 @@ public interface ArtworkRequestRepositoryContract {
   }
 
   @Test
-  @DisplayName("Should read the pending generation and artwork results when targets are checked")
-  default void shouldReadThePendingGenerationAndArtworkResultsWhenTargetsAreChecked() {
+  @DisplayName("Should read the pending request and artwork results when targets are checked")
+  default void shouldReadThePendingRequestAndArtworkResultsWhenTargetsAreChecked() {
     var pending = createMovie();
     var saved = save(pending, ImageRefreshMode.PRESERVE, POSTER);
     var finished = createMovie();
@@ -217,8 +217,29 @@ public interface ArtworkRequestRepositoryContract {
 
     assertThat(evidence)
         .containsExactlyInAnyOrder(
-            new ArtworkCompletionEvidence(pending, Optional.of(saved.generation()), List.of()),
+            new ArtworkCompletionEvidence(
+                pending,
+                Optional.of(new PendingArtworkRequest(saved.generation(), Optional.empty())),
+                List.of()),
             new ArtworkCompletionEvidence(finished, Optional.empty(), List.of(result)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should read the library operation of a pending request when another operation took it over")
+  default void shouldReadTheLibraryOperationOfAPendingRequestWhenAnotherOperationTookItOver() {
+    var movie = createMovie();
+    var saved = saveFor(movie, UUID.randomUUID(), ImageRefreshMode.PRESERVE, POSTER);
+    var operation = UUID.randomUUID();
+    saveFor(movie, operation, ImageRefreshMode.PRESERVE, POSTER);
+
+    var evidence = repository().findCompletionEvidence(List.of(movie));
+
+    assertThat(evidence)
+        .singleElement()
+        .extracting(ArtworkCompletionEvidence::pendingRequest)
+        .isEqualTo(
+            Optional.of(new PendingArtworkRequest(saved.generation(), Optional.of(operation))));
   }
 
   @Test

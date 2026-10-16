@@ -4,6 +4,7 @@ import com.streamarr.server.config.ArtworkRunProperties;
 import com.streamarr.server.domain.media.ArtworkCompletionEvidence;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ItemResult;
+import com.streamarr.server.domain.media.PendingArtworkRequest;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.services.concurrency.Sleeper;
@@ -125,25 +126,33 @@ public class ArtworkRunWaiter {
 
   // Awaited artwork is finished when each awaited type has a result, or when no request remains.
   private static boolean isFinished(ArtworkCompletionEvidence evidence, AwaitedArtwork awaited) {
-    if (evidence.pendingGeneration().isEmpty()) {
+    if (evidence.pendingRequest().isEmpty()) {
       return true;
     }
 
+    var pendingRequest = evidence.pendingRequest().get();
     var recordedTypes =
         evidence.artworkResults().stream()
             .filter(result -> result.artworkGeneration() >= awaited.generation())
-            .filter(result -> isForTheAwaitingLibraryOperation(result, awaited))
+            .filter(result -> countsForTheAwaitingRun(result, awaited, pendingRequest))
             .map(ItemResult::imageType)
             .collect(Collectors.toSet());
     return recordedTypes.containsAll(awaited.awaitedImageTypes());
   }
 
   // A run of a library operation counts only results saved for the operation, so a result that an
-  // earlier operation left does not release a task's admission.
-  private static boolean isForTheAwaitingLibraryOperation(
-      ItemResult result, AwaitedArtwork awaited) {
-    return awaited.libraryOperationId().isEmpty()
-        || awaited.libraryOperationId().equals(result.libraryOperationId());
+  // earlier operation left does not release a task's admission. When another operation takes the
+  // request over, the results that follow carry that operation's id, and they count too.
+  private static boolean countsForTheAwaitingRun(
+      ItemResult result, AwaitedArtwork awaited, PendingArtworkRequest pendingRequest) {
+    if (awaited.libraryOperationId().isEmpty()) {
+      return true;
+    }
+
+    var resultOperation = result.libraryOperationId();
+    return resultOperation.isPresent()
+        && (resultOperation.equals(awaited.libraryOperationId())
+            || resultOperation.equals(pendingRequest.libraryOperationId()));
   }
 
   private static AwaitedArtwork merge(AwaitedArtwork earlier, AwaitedArtwork later) {

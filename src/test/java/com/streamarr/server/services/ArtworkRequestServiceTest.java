@@ -1027,6 +1027,52 @@ class ArtworkRequestServiceTest {
 
     @Test
     @DisplayName(
+        "Should finish an operation's task wait when another operation takes over its request and"
+            + " the download waits to retry")
+    void shouldFinishAnOperationsTaskWaitWhenAnotherOperationTakesOverItsRequest()
+        throws Exception {
+      var sleeper = new CountingSleeper();
+      var waiting =
+          ArtworkFixture.builder()
+              .imageRepository(imageRepository)
+              .imageDownloader(imageDownloader)
+              .itemResults(itemResults)
+              .clock(clock)
+              .sleeper(sleeper)
+              .build();
+      waiting.scheduling().holdScheduledSteps();
+      sleeper.onSleep(_ -> waiting.scheduling().runPendingSteps());
+      imageDownloader.failDownloadWith(
+          "/poster.jpg", new ImageDownloadException(503, "/poster.jpg", Optional.empty()));
+      var movie = movieArtwork(UUID.randomUUID(), POSTER);
+      var task =
+          waiting
+              .artworkRequestService()
+              .openLibraryOperationRun("scan", ImageRefreshMode.PRESERVE, UUID.randomUUID())
+              .openTaskRun();
+      waiting.artworkRequestService().requestPrimaryArtwork(task, movie);
+      task.close();
+      var otherOperation = UUID.randomUUID();
+      waiting
+          .artworkRequestService()
+          .requestPrimaryArtwork(
+              waiting
+                  .artworkRequestService()
+                  .openLibraryOperationRun("refresh", ImageRefreshMode.PRESERVE, otherOperation),
+              movie);
+
+      try (var wait =
+          BoundedTask.start(() -> waiting.artworkRunWaiter().tryAwaitTaskResults(task))) {
+        assertThat(wait.await(BOUND)).isTrue();
+      }
+
+      assertThat(itemResults.findByItem(movie.targetId(), movie.targetType()))
+          .extracting(ItemResult::imageType, ItemResult::libraryOperationId)
+          .contains(tuple(ImageType.POSTER, Optional.of(otherOperation)));
+    }
+
+    @Test
+    @DisplayName(
         "Should wait for artwork that an earlier execution of the operation requested when a new"
             + " run of the operation requests nothing")
     void shouldWaitForArtworkThatAnEarlierExecutionOfTheOperationRequested() throws Exception {

@@ -175,7 +175,11 @@ public class FakeArtworkRequestRepository implements ArtworkRequestRepository {
             target ->
                 new ArtworkCompletionEvidence(
                     target,
-                    findRequest(target).map(StoredArtworkRequest::generation),
+                    findRequest(target)
+                        .map(
+                            request ->
+                                new PendingArtworkRequest(
+                                    request.generation(), request.libraryOperationId())),
                     itemResults.findByItem(target.targetId(), target.targetType()).stream()
                         .filter(result -> result.step() == ItemStep.ARTWORK)
                         .toList()))

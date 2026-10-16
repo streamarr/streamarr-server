@@ -5,7 +5,7 @@ import java.util.UUID;
 import lombok.NonNull;
 
 /**
- * What the completion of a target's artwork steps compares with its attempt: the pending request's
- * generation, and the library operation that waits for the request, if any.
+ * A target's pending artwork request: its generation, and the library operation that waits for it,
+ * if any.
  */
 public record PendingArtworkRequest(long generation, @NonNull Optional<UUID> libraryOperationId) {}
