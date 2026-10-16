@@ -33,6 +33,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.TransactionSystemException;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 @Tag("UnitTest")
 @DisplayName("Library Operation Finishing Steps Runner Tests")
@@ -128,6 +134,46 @@ class LibraryOperationFinishingStepsRunnerTest {
   }
 
   @Test
+  @DisplayName(
+      "Should conclude the scan failed when the operation's row cannot be shared before the library"
+          + " folder check")
+  void shouldConcludeTheScanFailedWhenTheOperationsRowCannotBeSharedBeforeTheFolderCheck() {
+    var scan = storeScan();
+    var lockTimingOutRunner =
+        runnerBuilder(mediaFiles)
+            .libraryOperations(
+                new FakeLibraryOperationRepository(libraries) {
+                  @Override
+                  public boolean tryLockLibraryOperation(UUID libraryOperationId) {
+                    throw new PessimisticLockingFailureException("simulated lock timeout");
+                  }
+                })
+            .build();
+
+    var conclusion =
+        lockTimingOutRunner.runFinishingSteps(scan, LibraryOperationConclusion.FINISHED);
+
+    assertThat(conclusion).isEqualTo(LibraryOperationConclusion.FAILED);
+  }
+
+  @Test
+  @DisplayName(
+      "Should conclude the scan failed when the rollback after a failed library folder check fails")
+  void shouldConcludeTheScanFailedWhenTheRollbackAfterAFailedFolderCheckFails() {
+    saveMediaFile("Gone (2020).mkv");
+    var rollbackFailingRunner =
+        runnerBuilder(mediaFiles)
+            .transactionManager(new RollbackFailingTransactionManager())
+            .build();
+
+    var conclusion =
+        rollbackFailingRunner.runFinishingSteps(storeScan(), LibraryOperationConclusion.FINISHED);
+
+    assertThat(conclusion).isEqualTo(LibraryOperationConclusion.FAILED);
+    assertThat(mediaFiles.findByLibraryId(library.getId())).hasSize(1);
+  }
+
+  @Test
   @DisplayName("Should have the same effect when a scan's finishing steps run again")
   void shouldHaveTheSameEffectWhenAScansFinishingStepsRunAgain() throws IOException {
     var kept = saveMediaFile("Kept (2020).mkv");
@@ -207,14 +253,37 @@ class LibraryOperationFinishingStepsRunnerTest {
   }
 
   private LibraryOperationFinishingStepsRunner runnerWith(MediaFileRepository mediaFileRepository) {
+    return runnerBuilder(mediaFileRepository).build();
+  }
+
+  private LibraryOperationFinishingStepsRunner.LibraryOperationFinishingStepsRunnerBuilder
+      runnerBuilder(MediaFileRepository mediaFileRepository) {
     return LibraryOperationFinishingStepsRunner.builder()
         .libraryOperations(libraryOperations)
         .libraryRepository(libraries)
         .libraryFolderCheck(new LibraryFolderCheck(fileSystem, mediaFileRepository, meterRegistry))
         .orphanedMediaFileCleanupService(
             new OrphanedMediaFileCleanupService(mediaFileRepository, movieService, fileSystem))
-        .transactionManager(new FakeTransactionManager())
-        .build();
+        .transactionManager(new FakeTransactionManager());
+  }
+
+  private static final class RollbackFailingTransactionManager
+      implements PlatformTransactionManager {
+
+    @Override
+    public TransactionStatus getTransaction(TransactionDefinition definition) {
+      return new SimpleTransactionStatus();
+    }
+
+    @Override
+    public void commit(TransactionStatus status) {
+      // This transaction manager has no resource to commit.
+    }
+
+    @Override
+    public void rollback(TransactionStatus status) {
+      throw new TransactionSystemException("simulated rollback failure");
+    }
   }
 
   private LibraryOperation storeScan() {

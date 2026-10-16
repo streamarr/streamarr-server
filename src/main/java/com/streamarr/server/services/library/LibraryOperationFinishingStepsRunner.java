@@ -1,9 +1,9 @@
 package com.streamarr.server.services.library;
 
-import com.streamarr.server.domain.Library;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.repositories.LibraryOperationRepository;
 import com.streamarr.server.repositories.LibraryRepository;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,8 +39,8 @@ public class LibraryOperationFinishingStepsRunner {
    * library as it was before the step, and the operation still ends.
    *
    * @return the conclusion that the operation ends with: {@link LibraryOperationConclusion#FAILED}
-   *     when the library folder does not pass its check before the removal of missing media files,
-   *     including when the check cannot finish, and otherwise the given conclusion
+   *     when the step of a finished scan fails before the library folder passed its check, and
+   *     otherwise the given conclusion
    */
   public LibraryOperationConclusion runFinishingSteps(
       LibraryOperation operation, LibraryOperationConclusion conclusion) {
@@ -48,21 +48,28 @@ public class LibraryOperationFinishingStepsRunner {
       return conclusion;
     }
 
+    var libraryFolderPassed = new AtomicBoolean();
     try {
       new TransactionTemplate(transactionManager)
-          .executeWithoutResult(_ -> removeMissingMediaFiles(operation));
-    } catch (LibraryFolderNotPassedException e) {
-      log.error(
-          "Removed no missing media files at the end of the scan of library {}.",
-          operation.libraryId(),
-          e.getCause());
-      return LibraryOperationConclusion.FAILED;
+          .executeWithoutResult(_ -> removeMissingMediaFiles(operation, libraryFolderPassed));
     } catch (RuntimeException e) {
+      // Only a removal that fails after the library folder passed its check keeps the scan's
+      // conclusion. Any earlier failure, including a check that cannot finish or a rollback that
+      // replaces the check's exception, leaves the folder unchecked and fails the scan.
+      if (libraryFolderPassed.get()) {
+        log.error(
+            "Failed to remove missing media files at the end of the scan of library {}.",
+            operation.libraryId(),
+            e);
+        return conclusion;
+      }
+
       log.error(
-          "Failed to remove missing media files at the end of the {} of library {}.",
-          operation.kind().tagValue(),
+          "Removed no missing media files at the end of the scan of library {}, because its"
+              + " library folder did not pass its check.",
           operation.libraryId(),
           e);
+      return LibraryOperationConclusion.FAILED;
     }
 
     return conclusion;
@@ -76,7 +83,8 @@ public class LibraryOperationFinishingStepsRunner {
     };
   }
 
-  private void removeMissingMediaFiles(LibraryOperation operation) {
+  private void removeMissingMediaFiles(
+      LibraryOperation operation, AtomicBoolean libraryFolderPassed) {
     if (!libraryOperations.tryLockLibraryOperation(operation.id())) {
       return;
     }
@@ -88,24 +96,8 @@ public class LibraryOperationFinishingStepsRunner {
             .orElseThrow(() -> new LibraryNotFoundException(operation.libraryId()));
     // A share can unmount while the scan waits for artwork or this step waits for the operation's
     // row, and an unmounted share looks like a library whose every media file is missing.
-    requireLibraryFolderPassed(library);
+    libraryFolderCheck.requirePassed(library);
+    libraryFolderPassed.set(true);
     orphanedMediaFileCleanupService.cleanupOrphanedFiles(library);
-  }
-
-  // A check that cannot finish, for example because the database is unavailable, does not pass
-  // either, so it fails the scan like a failed check rather than counting as a failed removal.
-  private void requireLibraryFolderPassed(Library library) {
-    try {
-      libraryFolderCheck.requirePassed(library);
-    } catch (RuntimeException e) {
-      throw new LibraryFolderNotPassedException(e);
-    }
-  }
-
-  private static final class LibraryFolderNotPassedException extends RuntimeException {
-
-    private LibraryFolderNotPassedException(RuntimeException cause) {
-      super(cause);
-    }
   }
 }
