@@ -134,6 +134,7 @@ class LibraryAdministrationServiceTest {
           null,
           null,
           null,
+          null,
           null);
     }
 

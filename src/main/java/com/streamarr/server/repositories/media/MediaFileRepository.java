@@ -19,4 +19,6 @@ public interface MediaFileRepository
   List<MediaFile> findByMediaIdIn(Collection<UUID> mediaIds);
 
   List<MediaFile> findByLibraryId(UUID libraryId);
+
+  boolean existsByLibraryId(UUID libraryId);
 }

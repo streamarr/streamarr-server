@@ -111,6 +111,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.http.HttpTimeoutException;
+import java.nio.file.DirectoryIteratorException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -482,6 +483,31 @@ class LibraryManagementServiceTest {
     assertThat(fakeLibraryRepository.findById(savedLibraryId)).isPresent();
     assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus())
         .isEqualTo(LibraryStatus.UNHEALTHY);
+  }
+
+  @Test
+  @DisplayName(
+      "Should become unhealthy as unreadable when reading the library folder's entries fails")
+  void shouldBecomeUnhealthyAsUnreadableWhenReadingTheLibraryFolderEntriesFails()
+      throws IOException {
+    var rootPath = createRootLibraryDirectory();
+    createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
+    var throwingFileSystem =
+        ThrowingFileSystemWrapper.failingBeforeTheFirstEntry(
+            fileSystem,
+            () -> new DirectoryIteratorException(new IOException("Simulated stale file handle")));
+
+    serviceWith(throwingFileSystem).scanLibrary(savedLibraryId);
+
+    assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
+    assertThat(
+            meterRegistry
+                .get("streamarr.library.folder_check.failures")
+                .tag("reason", "unreadable")
+                .counter()
+                .count())
+        .isEqualTo(1);
   }
 
   @Test
@@ -936,6 +962,39 @@ class LibraryManagementServiceTest {
 
       assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
       assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should become unhealthy when the library folder empties after the file walk")
+    void shouldBecomeUnhealthyWhenTheLibraryFolderEmptiesAfterTheFileWalk() throws Exception {
+      var rootPath = createRootLibraryDirectory();
+      var path = createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
+      saveMatchedMediaFile(path);
+      beforeCountingFileStatuses = () -> deleteMovieFolder(path.getParent());
+
+      libraryManagementService.scanLibrary(savedLibraryId);
+
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+      assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
+      assertThat(
+              meterRegistry
+                  .get("streamarr.library.folder_check.failures")
+                  .tag("reason", "empty")
+                  .counter()
+                  .count())
+          .isEqualTo(1);
+    }
+
+    private static void deleteMovieFolder(Path movieFolder) {
+      try (var entries = Files.list(movieFolder)) {
+        for (var entry : entries.toList()) {
+          Files.delete(entry);
+        }
+
+        Files.delete(movieFolder);
+      } catch (IOException e) {
+        throw new UncheckedIOException(e);
+      }
     }
 
     private void scan(LibraryManagementService service) throws Exception {
@@ -2561,7 +2620,12 @@ class LibraryManagementServiceTest {
         .fileSystem(fileSystem)
         .libraryMutationTransaction(libraryMutationTransaction)
         .mutationTransactions(mutationTransactions)
-        .fileDiscoveryRuns(fileDiscoveryRuns);
+        .fileDiscoveryRuns(fileDiscoveryRuns)
+        .libraryFolderCheck(libraryFolderCheckWith(fileSystem));
+  }
+
+  private LibraryFolderCheck libraryFolderCheckWith(FileSystem libraryFileSystem) {
+    return new LibraryFolderCheck(libraryFileSystem, fakeMediaFileRepository, meterRegistry);
   }
 
   private LibraryFileWalk.LibraryFileWalkBuilder fileWalkBuilder() {
@@ -2620,6 +2684,7 @@ class LibraryManagementServiceTest {
     return serviceBuilder()
         .fileSystem(alternateFileSystem)
         .libraryFileWalk(fileWalkBuilder().fileSystem(alternateFileSystem).build())
+        .libraryFolderCheck(libraryFolderCheckWith(alternateFileSystem))
         .build();
   }
 

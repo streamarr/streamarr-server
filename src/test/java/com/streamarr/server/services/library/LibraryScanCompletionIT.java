@@ -151,6 +151,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
     assertThat(probing.await(10, TimeUnit.SECONDS)).isTrue();
     var source = FilepathCodec.decode(mediaFile.getFilepathUri());
     Files.writeString(source, "changed media");
+    keepAnotherEntryInTheLibraryFolder();
 
     try (var scan =
         BoundedTask.start(() -> libraryManagementService.scanLibrary(library.getId()))) {
@@ -197,6 +198,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
   @Test
   @DisplayName("Should finish the scan when a requested source is removed before it is probed")
   void shouldFinishTheScanWhenARequestedSourceIsRemovedBeforeItIsProbed() throws Exception {
+    keepAnotherEntryInTheLibraryFolder();
     try (var scan =
         BoundedTask.start(() -> libraryManagementService.scanLibrary(library.getId()))) {
       await().atMost(Duration.ofSeconds(10)).until(() -> isScheduled(mediaFile));
@@ -230,6 +232,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
     assertThat(probing.await(10, TimeUnit.SECONDS)).isTrue();
     var source = FilepathCodec.decode(mediaFile.getFilepathUri());
     Files.writeString(source, "changed media");
+    keepAnotherEntryInTheLibraryFolder();
 
     try (var scan =
         BoundedTask.start(() -> libraryManagementService.scanLibrary(library.getId()))) {
@@ -292,6 +295,12 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
                 .build());
     scannedLibraries.add(saved);
     return saved;
+  }
+
+  // A removed source must not leave the library folder empty: the library folder check fails a
+  // scan whose folder is empty while the library still records files.
+  private void keepAnotherEntryInTheLibraryFolder() throws IOException {
+    Files.createFile(FilepathCodec.decode(library.getFilepathUri()).resolve("notes.txt"));
   }
 
   private MediaFile matchedFile(Library owner, String filename) throws IOException {
