@@ -4,10 +4,12 @@ import com.github.kagkarlsson.scheduler.ScheduledExecution;
 import com.github.kagkarlsson.scheduler.SchedulerClient;
 import com.github.kagkarlsson.scheduler.exceptions.TaskInstanceCurrentlyExecutingException;
 import com.github.kagkarlsson.scheduler.exceptions.TaskInstanceNotFoundException;
+import com.github.kagkarlsson.scheduler.task.Priority;
 import com.github.kagkarlsson.scheduler.task.Task;
 import com.github.kagkarlsson.scheduler.task.TaskInstance;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
+import com.streamarr.server.repositories.media.ProbeTaskPriorityRepository;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import java.time.Clock;
 import java.time.Instant;
@@ -31,6 +33,7 @@ public class SchedulerProbeTaskRequests implements ProbeTaskRequests {
 
   private final Task<ProbeTaskRequest> task;
   private final MediaFileContainerInfoRepository outcomes;
+  private final ProbeTaskPriorityRepository priorities;
   private final Clock clock;
 
   @Override
@@ -56,6 +59,19 @@ public class SchedulerProbeTaskRequests implements ProbeTaskRequests {
         .filter(pending -> !pending.isPicked())
         .filter(pending -> now.isBefore(pending.getExecutionTime()))
         .ifPresent(_ -> replacePendingInputs(instance, request, now));
+  }
+
+  @Override
+  @Transactional
+  public void requestAheadOfQueuedProbes(ProbeTaskRequest request) {
+    var instance =
+        task.instanceBuilder(request.mediaFileId().toString())
+            .data(request)
+            .priority(Priority.HIGH)
+            .build();
+    if (enqueue(request, instance)) {
+      priorities.tryRaisePendingPriority(instance, Priority.HIGH);
+    }
   }
 
   private boolean hasSavedFailure(UUID mediaFileId) {

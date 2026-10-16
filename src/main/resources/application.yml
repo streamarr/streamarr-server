@@ -193,8 +193,10 @@ otel:
     disabled: true
 
 # Media file probes run as db-scheduler task instances (ADR 0032). threads caps concurrent probes
-# even though executions run on virtual threads.
+# even though executions run on virtual threads. Due probes run by priority, then by execution time;
+# playback raises the priority of the probe it waits for.
 db-scheduler:
+  priority-enabled: true
   threads: ${PROBE_MAX_CONCURRENT:2}
   polling-interval: ${PROBE_POLLING_INTERVAL:1s}
   polling-strategy: lock-and-fetch
