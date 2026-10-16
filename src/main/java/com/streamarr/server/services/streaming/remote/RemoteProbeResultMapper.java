@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
+import com.google.protobuf.DurationOrBuilder;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
@@ -85,8 +86,17 @@ final class RemoteProbeResultMapper {
       return Optional.empty();
     }
 
-    var seconds = container.getDuration().getSeconds();
-    var nanos = container.getDuration().getNanos();
+    var duration = toDuration(container.getDuration());
+    if (duration.isNegative()) {
+      return Optional.empty();
+    }
+
+    return Optional.of(duration);
+  }
+
+  private static Duration toDuration(DurationOrBuilder duration) {
+    var seconds = duration.getSeconds();
+    var nanos = duration.getNanos();
     var validSeconds =
         seconds >= -MAXIMUM_PROTOBUF_DURATION_SECONDS
             && seconds <= MAXIMUM_PROTOBUF_DURATION_SECONDS;
@@ -98,9 +108,7 @@ final class RemoteProbeResultMapper {
       throw contractViolation("Worker probe duration violates the protobuf contract");
     }
 
-    return seconds < 0 || nanos < 0
-        ? Optional.empty()
-        : Optional.of(Duration.ofSeconds(seconds, nanos));
+    return Duration.ofSeconds(seconds, nanos);
   }
 
   private StreamInfo stream(ProbeStreamInfo stream) {
