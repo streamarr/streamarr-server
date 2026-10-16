@@ -19,14 +19,17 @@ import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamSessionFixture;
+import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -119,6 +122,8 @@ class HlsPlaylistServiceTest {
                     .videoCodecFamily(videoCodecFamily)
                     .audioDecision(audio)
                     .subtitleDecision(SubtitleDecision.exclude())
+                    .videoSource(
+                        Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()))
                     .build())
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
             .createdAt(Instant.now())
@@ -616,16 +621,94 @@ class HlsPlaylistServiceTest {
       assertThat(playlist).contains("CODECS=\"avc1.64002A,mp4a.40.2\"");
     }
 
-    @ParameterizedTest(name = "{0} → {1}")
-    @CsvSource({"h264, avc1.640028", "hevc, hvc1.1.6.L120.90", "av1, av01.0.08M.08"})
-    @DisplayName("Should keep the codec family's fixed codec string when the session copies video")
-    void shouldKeepTheCodecFamilysFixedCodecStringWhenTheSessionCopiesVideo(
-        String videoCodecFamily, String codecString) {
-      var session = createSessionWithAudio(AudioDecision.none(), videoCodecFamily);
+    @ParameterizedTest
+    @ValueSource(strings = {"avc1.4D401F", "hvc1.2.4.L153.B0", "av01.0.13M.10"})
+    @DisplayName("Should advertise the probe's codec string when the session copies video")
+    void shouldAdvertiseTheProbesCodecStringWhenTheSessionCopiesVideo(String codecString) {
+      var session =
+          copySession(
+              VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                  .codecString(Optional.of(codecString)));
 
       var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
-      assertThat(playlist).contains("CODECS=\"" + codecString + "\"");
+      assertThat(playlist).contains("CODECS=\"" + codecString + ",mp4a.40.2\"");
+    }
+
+    @ParameterizedTest(name = "{0} → {1}")
+    @CsvSource({"h264, avc1.640028", "hevc, hvc1.1.6.L120.90", "av1, av01.0.08M.08"})
+    @DisplayName(
+        "Should advertise the codec family's fixed codec string when the session copies a source without playback facts")
+    void
+        shouldAdvertiseTheCodecFamilysFixedCodecStringWhenTheSessionCopiesASourceWithoutPlaybackFacts(
+            String videoCodecFamily, String codecString) {
+      var session =
+          StreamSessionFixture.defaultSessionBuilder()
+              .transcodeDecision(
+                  TranscodeDecision.builder()
+                      .transcodeMode(TranscodeMode.REMUX)
+                      .videoCodecFamily(videoCodecFamily)
+                      .audioDecision(AudioDecision.copy("aac", 2, 128_000L))
+                      .subtitleDecision(SubtitleDecision.exclude())
+                      .build())
+              .build();
+
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
+
+      assertThat(playlist)
+          .contains("CODECS=\"" + codecString + ",mp4a.40.2\"")
+          .doesNotContain("VIDEO-RANGE");
+    }
+
+    @Test
+    @DisplayName(
+        "Should declare an SDR video range when the session copies a Dolby Vision source with an SDR base")
+    void shouldDeclareAnSdrVideoRangeWhenTheSessionCopiesADolbyVisionSourceWithAnSdrBase() {
+      var session =
+          copySession(
+              VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                  .dynamicRange(VideoPlaybackFactsFixture.dolbyVisionProfile82())
+                  .codecString(Optional.of("hvc1.2.4.L120.90")));
+
+      var streamInf =
+          service
+              .generateMultivariantPlaylist(session, "test-token")
+              .lines()
+              .filter(line -> line.startsWith("#EXT-X-STREAM-INF:"))
+              .toList();
+
+      assertThat(streamInf)
+          .singleElement()
+          .satisfies(
+              line ->
+                  assertThat(line)
+                      .contains("CODECS=\"hvc1.2.4.L120.90,mp4a.40.2\"")
+                      .contains(",VIDEO-RANGE=SDR")
+                      .doesNotContain("SUPPLEMENTAL-CODECS"));
+    }
+
+    @Test
+    @DisplayName(
+        "Should leave the video range out when the session copies a source without Dolby Vision")
+    void shouldLeaveTheVideoRangeOutWhenTheSessionCopiesASourceWithoutDolbyVision() {
+      var session = copySession(VideoPlaybackFactsFixture.sdrH264FactsBuilder());
+
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
+
+      assertThat(playlist).doesNotContain("VIDEO-RANGE");
+    }
+
+    private StreamSession copySession(VideoPlaybackFacts.VideoPlaybackFactsBuilder source) {
+      return StreamSessionFixture.defaultSessionBuilder()
+          .transcodeDecision(
+              TranscodeDecision.builder()
+                  .transcodeMode(TranscodeMode.REMUX)
+                  .videoCodecFamily("hevc")
+                  .audioDecision(AudioDecision.copy("aac", 2, 128_000L))
+                  .subtitleDecision(SubtitleDecision.exclude())
+                  .videoSource(Optional.of(source.build()))
+                  .build())
+          .build();
     }
   }
 

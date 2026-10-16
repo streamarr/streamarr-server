@@ -14,6 +14,7 @@ import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoEncodeDecision;
+import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.transcode.v1.CompatibleBase;
 import com.streamarr.transcode.v1.ContainerFormat;
 import com.streamarr.transcode.v1.DolbyVisionAbsent;
@@ -26,14 +27,11 @@ import com.streamarr.transcode.v1.VideoDynamicRange;
 import com.streamarr.transcode.v1.VideoMode;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Optional;
 import java.util.UUID;
 
 // Domain and protobuf contracts intentionally share simple names.
 final class RemoteVariantJobMapper {
-
-  // The probe stores no dynamic range before probe version 4, so every source's is unspecified.
-  private static final VideoDynamicRange UNSPECIFIED_SOURCE_DYNAMIC_RANGE =
-      VideoDynamicRange.getDefaultInstance();
 
   // Every encode's planned output is SDR without HDR10+ or Dolby Vision (ADR 0013).
   private static final VideoDynamicRange SDR_OUTPUT_DYNAMIC_RANGE =
@@ -66,16 +64,24 @@ final class RemoteVariantJobMapper {
     return UUID.nameUUIDFromBytes(name.getBytes(UTF_8));
   }
 
-  // A stream copy carries no video decision until the probe stores the copy's codec string.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.transcode.v1.TranscodeDecision decision(TranscodeRequest request) {
     var decision = decision(request.transcodeDecision()).toBuilder();
-    request.videoEncodeDecision().ifPresent(encode -> decision.setVideo(video(encode)));
+    var source = request.transcodeDecision().videoSource();
+    var encode = request.videoEncodeDecision();
+    if (encode.isPresent()) {
+      return decision.setVideo(encode(encode.get(), source)).build();
+    }
+
+    // A copy of a source that its probe gave no playback facts carries no video decision, as
+    // before probe version 4.
+    source.ifPresent(facts -> decision.setVideo(copy(request.transcodeDecision(), facts)));
     return decision.build();
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static com.streamarr.transcode.v1.VideoDecision video(VideoEncodeDecision encode) {
+  private static com.streamarr.transcode.v1.VideoDecision encode(
+      VideoEncodeDecision encode, Optional<VideoPlaybackFacts> source) {
     var video =
         com.streamarr.transcode.v1.VideoDecision.newBuilder()
             .setMode(VideoMode.VIDEO_MODE_ENCODE)
@@ -83,10 +89,30 @@ final class RemoteVariantJobMapper {
             .setCodecProfile(codecProfile(encode.codecProfile()))
             .setLevel(encode.level())
             .setCodecString(encode.codecString())
-            .setSourceDynamicRange(UNSPECIFIED_SOURCE_DYNAMIC_RANGE)
+            .setSourceDynamicRange(
+                RemoteDynamicRangeMapper.toProto(
+                    source
+                        .map(VideoPlaybackFacts::dynamicRange)
+                        .orElse(
+                            com.streamarr.server.domain.streaming.VideoDynamicRange.UNSPECIFIED)))
             .setOutputDynamicRange(SDR_OUTPUT_DYNAMIC_RANGE);
+    source.ifPresent(facts -> video.setStreamIndex(facts.streamIndex()));
     encode.tier().map(RemoteVariantJobMapper::tier).ifPresent(video::setTier);
     return video.build();
+  }
+
+  // A copy forces no codec profile, tier or level, and carries no planned output range until
+  // streamarr/streamarr-server#396 settles one (ADR 0013).
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static com.streamarr.transcode.v1.VideoDecision copy(
+      TranscodeDecision decision, VideoPlaybackFacts source) {
+    return com.streamarr.transcode.v1.VideoDecision.newBuilder()
+        .setMode(VideoMode.VIDEO_MODE_COPY)
+        .setCodecFamily(codecFamily(decision.videoCodecFamily()))
+        .setCodecString(source.codecString().orElseThrow())
+        .setSourceDynamicRange(RemoteDynamicRangeMapper.toProto(source.dynamicRange()))
+        .setStreamIndex(source.streamIndex())
+        .build();
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
@@ -182,6 +208,17 @@ final class RemoteVariantJobMapper {
       case SLOW -> com.streamarr.transcode.v1.EncoderPreset.ENCODER_PRESET_SLOW;
       case SLOWER -> com.streamarr.transcode.v1.EncoderPreset.ENCODER_PRESET_SLOWER;
       case VERYSLOW -> com.streamarr.transcode.v1.EncoderPreset.ENCODER_PRESET_VERYSLOW;
+    };
+  }
+
+  private static VideoCodecFamily codecFamily(String codecFamily) {
+    return switch (codecFamily) {
+      case "h264" -> VideoCodecFamily.VIDEO_CODEC_FAMILY_H264;
+      case "hevc" -> VideoCodecFamily.VIDEO_CODEC_FAMILY_HEVC;
+      case "av1" -> VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1;
+      default ->
+          throw new IllegalArgumentException(
+              "The job contract has no video codec family " + codecFamily);
     };
   }
 

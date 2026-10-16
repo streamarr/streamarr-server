@@ -2,17 +2,22 @@ package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
+import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.transcode.v1.CompatibleBase;
 import com.streamarr.transcode.v1.ContainerFormat;
 import com.streamarr.transcode.v1.DolbyVisionAbsent;
+import com.streamarr.transcode.v1.DolbyVisionConfiguration;
+import com.streamarr.transcode.v1.DolbyVisionPresent;
 import com.streamarr.transcode.v1.Presence;
 import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.VideoCodecProfile;
@@ -56,6 +61,8 @@ class RemoteVariantJobMapperTest {
                     .videoCodecFamily(videoCodecFamily)
                     .audioDecision(AudioDecision.stereoAac())
                     .subtitleDecision(SubtitleDecision.exclude())
+                    .videoSource(
+                        Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()))
                     .build())
             .encoderPreset(EncoderPreset.FASTER)
             .build();
@@ -190,11 +197,214 @@ class RemoteVariantJobMapperTest {
   }
 
   @Test
-  @DisplayName("Should send no video decision when the job copies the video")
-  void shouldSendNoVideoDecisionWhenTheJobCopiesTheVideo() {
-    var decision = mapper.map(copyAttempt().build()).getDecision();
+  @DisplayName("Should send the probe's codec string when the job copies the video")
+  void shouldSendTheProbesCodecStringWhenTheJobCopiesTheVideo() {
+    var video = mapper.map(copyAttempt().build()).getDecision().getVideo();
 
-    assertThat(decision.hasVideo()).isFalse();
+    assertThat(video.getMode()).isEqualTo(VideoMode.VIDEO_MODE_COPY);
+    assertThat(video.getCodecFamily()).isEqualTo(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264);
+    assertThat(video.getCodecString()).isEqualTo("avc1.640028");
+    assertThat(video.getStreamIndex()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should send no video decision when the job copies a source that its probe gave no playback facts")
+  void shouldSendNoVideoDecisionWhenTheJobCopiesASourceThatItsProbeGaveNoPlaybackFacts() {
+    var request =
+        copyAttempt()
+            .transcodeDecision(copyDecisionBuilder().videoSource(Optional.empty()).build())
+            .build();
+
+    assertThat(mapper.map(request).getDecision().hasVideo()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should force no codec profile, tier or level when the job copies the video")
+  void shouldForceNoCodecProfileTierOrLevelWhenTheJobCopiesTheVideo() {
+    var decision = mapper.map(copyAttempt().build()).getDecision();
+    var video = decision.getVideo();
+
+    assertThat(decision.hasVideo()).isTrue();
+    assertThat(video.getCodecProfile())
+        .isEqualTo(VideoCodecProfile.VIDEO_CODEC_PROFILE_UNSPECIFIED);
+    assertThat(video.getTier()).isEqualTo(VideoCodecTier.VIDEO_CODEC_TIER_UNSPECIFIED);
+    assertThat(video.hasLevel()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should refuse the job when it copies a codec family that the contract cannot name")
+  void shouldRefuseTheJobWhenItCopiesACodecFamilyThatTheContractCannotName() {
+    var request =
+        copyAttempt()
+            .transcodeDecision(copyDecisionBuilder().videoCodecFamily("vp9").build())
+            .build();
+
+    assertThatThrownBy(() -> mapper.map(request))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("vp9");
+  }
+
+  @Test
+  @DisplayName(
+      "Should send the source's dynamic range and no output range when the job copies the video")
+  void shouldSendTheSourcesDynamicRangeAndNoOutputRangeWhenTheJobCopiesTheVideo() {
+    var request =
+        copyAttempt()
+            .transcodeDecision(
+                copyDecisionBuilder()
+                    .videoSource(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                                .dynamicRange(VideoPlaybackFactsFixture.dolbyVisionProfile82())
+                                .codecString(Optional.of("hvc1.2.4.L120.90"))
+                                .build()))
+                    .videoCodecFamily("hevc")
+                    .build())
+            .build();
+
+    var video = mapper.map(request).getDecision().getVideo();
+
+    assertThat(video.getSourceDynamicRange())
+        .isEqualTo(
+            VideoDynamicRange.newBuilder()
+                .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
+                .setHdr10Plus(Presence.PRESENCE_UNSPECIFIED)
+                .setDolbyVisionPresent(
+                    DolbyVisionPresent.newBuilder()
+                        .setDeclared(
+                            DolbyVisionConfiguration.newBuilder()
+                                .setProfile(8)
+                                .setLevel(6)
+                                .setBaseLayerCompatibilityId(2)
+                                .setBaseLayer(true)
+                                .setRpu(true))
+                        .setObservedRpu(Presence.PRESENCE_UNSPECIFIED))
+                .build());
+    assertThat(video.hasOutputDynamicRange()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should send the source's dynamic range and stream when the job encodes the video")
+  void shouldSendTheSourcesDynamicRangeAndStreamWhenTheJobEncodesTheVideo() {
+    var request =
+        encodeAttempt("h264")
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                    .videoCodecFamily("h264")
+                    .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
+                    .videoSource(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                                .streamIndex(2)
+                                .dynamicRange(VideoPlaybackFactsFixture.dolbyVisionProfile5())
+                                .build()))
+                    .build())
+            .build();
+
+    var video = mapper.map(request).getDecision().getVideo();
+
+    assertThat(video.getStreamIndex()).isEqualTo(2);
+    assertThat(video.getSourceDynamicRange())
+        .isEqualTo(
+            VideoDynamicRange.newBuilder()
+                .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_NONE)
+                .setHdr10Plus(Presence.PRESENCE_UNSPECIFIED)
+                .setDolbyVisionPresent(
+                    DolbyVisionPresent.newBuilder()
+                        .setDeclared(
+                            DolbyVisionConfiguration.newBuilder()
+                                .setProfile(5)
+                                .setLevel(6)
+                                .setBaseLayerCompatibilityId(0)
+                                .setBaseLayer(true)
+                                .setRpu(true))
+                        .setObservedRpu(Presence.PRESENCE_UNSPECIFIED))
+                .build());
+  }
+
+  // ADR 0036 names each compatible base and presence value the same way in the domain and the job.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @ParameterizedTest
+  @EnumSource(com.streamarr.server.domain.streaming.CompatibleBase.class)
+  @DisplayName("Should send the source's compatible base when a job carries it")
+  void shouldSendTheSourcesCompatibleBaseWhenAJobCarriesIt(
+      com.streamarr.server.domain.streaming.CompatibleBase base) {
+    var range =
+        sourceRangeOf(
+            new com.streamarr.server.domain.streaming.VideoDynamicRange(
+                base,
+                com.streamarr.server.domain.streaming.Presence.UNSPECIFIED,
+                new DolbyVision.Unspecified()));
+
+    assertThat(range.getCompatibleBase().name()).isEqualTo("COMPATIBLE_BASE_" + base.name());
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @ParameterizedTest
+  @EnumSource(com.streamarr.server.domain.streaming.Presence.class)
+  @DisplayName("Should send the source's HDR10+ and observed RPU presence when a job carries them")
+  void shouldSendTheSourcesHdr10PlusAndObservedRpuPresenceWhenAJobCarriesThem(
+      com.streamarr.server.domain.streaming.Presence presence) {
+    var range =
+        sourceRangeOf(
+            new com.streamarr.server.domain.streaming.VideoDynamicRange(
+                com.streamarr.server.domain.streaming.CompatibleBase.PQ,
+                presence,
+                new DolbyVision.Present(Optional.empty(), presence)));
+
+    assertThat(range.getHdr10Plus().name()).isEqualTo("PRESENCE_" + presence.name());
+    assertThat(range.getDolbyVisionPresent().getObservedRpu().name())
+        .isEqualTo("PRESENCE_" + presence.name());
+    assertThat(range.getDolbyVisionPresent().hasDeclared()).isFalse();
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private VideoDynamicRange sourceRangeOf(
+      com.streamarr.server.domain.streaming.VideoDynamicRange range) {
+    var request =
+        copyAttempt()
+            .transcodeDecision(
+                copyDecisionBuilder()
+                    .videoSource(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                                .dynamicRange(range)
+                                .build()))
+                    .build())
+            .build();
+    return mapper.map(request).getDecision().getVideo().getSourceDynamicRange();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep an absent and an unspecified Dolby Vision apart when a job carries them")
+  void shouldKeepAnAbsentAndAnUnspecifiedDolbyVisionApartWhenAJobCarriesThem() {
+    var absent =
+        mapper
+            .map(
+                copyAttempt()
+                    .transcodeDecision(
+                        copyDecisionBuilder()
+                            .videoSource(
+                                Optional.of(
+                                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                                        .dynamicRange(
+                                            VideoPlaybackFactsFixture.SDR_WITHOUT_DOLBY_VISION)
+                                        .build()))
+                            .build())
+                    .build())
+            .getDecision()
+            .getVideo()
+            .getSourceDynamicRange();
+    var unspecified =
+        mapper.map(copyAttempt().build()).getDecision().getVideo().getSourceDynamicRange();
+
+    assertThat(absent.hasDolbyVisionAbsent()).isTrue();
+    assertThat(unspecified.getDolbyVisionCase())
+        .isEqualTo(VideoDynamicRange.DolbyVisionCase.DOLBYVISION_NOT_SET);
   }
 
   private static TranscodeRequest.TranscodeRequestBuilder encodeAttempt(String videoCodecFamily) {
@@ -224,13 +434,16 @@ class RemoteVariantJobMapperTest {
         .seekPosition(600)
         .startSequenceNumber(100)
         .mediaSegmentCount(1_200)
-        .transcodeDecision(
-            TranscodeDecision.builder()
-                .transcodeMode(TranscodeMode.REMUX)
-                .videoCodecFamily("h264")
-                .audioDecision(AudioDecision.copy("aac", 2, 0))
-                .subtitleDecision(SubtitleDecision.exclude())
-                .build())
+        .transcodeDecision(copyDecisionBuilder().build())
         .encoderPreset(EncoderPreset.FASTER);
+  }
+
+  private static TranscodeDecision.TranscodeDecisionBuilder copyDecisionBuilder() {
+    return TranscodeDecision.builder()
+        .transcodeMode(TranscodeMode.REMUX)
+        .videoCodecFamily("h264")
+        .audioDecision(AudioDecision.copy("aac", 2, 0))
+        .subtitleDecision(SubtitleDecision.exclude())
+        .videoSource(Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()));
   }
 }

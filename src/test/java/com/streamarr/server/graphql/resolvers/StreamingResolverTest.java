@@ -29,6 +29,7 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fakes.FakeProfileRepository;
+import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
@@ -512,6 +513,7 @@ class StreamingResolverTest {
                 .videoCodecFamily("h264")
                 .audioDecision(AudioDecision.copy("aac", 2, 0))
                 .subtitleDecision(SubtitleDecision.exclude())
+                .videoSource(Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()))
                 .build())
         .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
         .createdAt(Instant.now())
