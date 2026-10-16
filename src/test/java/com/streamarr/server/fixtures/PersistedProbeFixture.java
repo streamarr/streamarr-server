@@ -5,6 +5,7 @@ import com.streamarr.server.domain.media.MediaFileContainerInfo.MediaFileContain
 import com.streamarr.server.domain.media.MediaFileStreamInfo;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import jakarta.persistence.EntityManager;
@@ -37,7 +38,7 @@ public class PersistedProbeFixture {
             .container(row.getContainer())
             .probeError(row.getProbeError().orElse(null))
             .build());
-    if (row.getOutcome(KeyframeKnowledge.NotReported::new)
+    if (row.getOutcome(KeyframeKnowledge.NotReported::new, ChapterKnowledge.NotReported::new)
         instanceof ProbeOutcome.Success success) {
       success
           .streams()

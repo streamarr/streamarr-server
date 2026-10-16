@@ -9,6 +9,7 @@ import com.streamarr.server.domain.media.MediaFileContainerInfo;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePosition;
@@ -211,7 +212,9 @@ class ProbeExecutionTest {
               assertThat(stored.getSnapshot()).isEqualTo(request.snapshot());
               assertThat(stored.getProbeVersion()).isEqualTo(ProbeVersion.CURRENT);
               assertThat(stored.getProbeError()).isEmpty();
-              assertThat(stored.getOutcome(KeyframeKnowledge.NotReported::new))
+              assertThat(
+                      stored.getOutcome(
+                          KeyframeKnowledge.NotReported::new, ChapterKnowledge.NotReported::new))
                   .isInstanceOfSatisfying(
                       ProbeOutcome.Success.class,
                       success -> assertThat(success.mediaProbe().videoCodec()).isEqualTo("h264"));

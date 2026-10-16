@@ -7,7 +7,6 @@ import lombok.NonNull;
  * variant job always carries one of these presets, never Automatic.
  */
 public enum EncoderPreset {
-  ULTRAFAST,
   SUPERFAST,
   VERYFAST,
   FASTER,

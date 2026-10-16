@@ -3,4 +3,27 @@ type MediaFile {
     filename: String!
     filepathUri: String!
     size: String!
+    "The chapters that the file's container defines, in the order that the probe reported them. Empty unless chapterStatus is KNOWN."
+    chapters: [Chapter!]!
+    "Whether the server knows the chapters of the file's container."
+    chapterStatus: ChapterStatus!
+}
+
+"One chapter of a media file's container."
+type Chapter {
+    "Seconds on the media timeline that the segment grid uses, so a client can seek to this time directly. Negative when the chapter starts before the container's start time. Null when the probe reported no start time."
+    startSeconds: Float
+    "Seconds on the same timeline as startSeconds. Null when the probe reported no end time."
+    endSeconds: Float
+    "The title that the container gives the chapter. Null when the chapter has no title, or when the title is longer than 512 bytes."
+    title: String
+}
+
+enum ChapterStatus {
+    "The probe listed the container's chapters. The list is empty when the container defines no chapters."
+    KNOWN
+    "The container defines chapters, but the probe left them out because together they exceed the probe's chapter limit."
+    OMITTED
+    "No stored probe outcome lists the chapters: the file has no outcome yet, its probe failed, or its probe version reports no chapters."
+    UNKNOWN
 }

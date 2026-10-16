@@ -8,6 +8,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.domain.streaming.Chapter;
+import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
@@ -22,6 +25,7 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.LoopbackProbeWorker;
 import com.streamarr.server.support.BoundedTask;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeChapter;
 import com.streamarr.transcode.v1.ProbeContainerInfo;
 import com.streamarr.transcode.v1.ProbeFailure;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
@@ -32,6 +36,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.concurrent.Executors;
@@ -283,13 +288,71 @@ class RemoteFfprobeServiceIT {
         assertThat(result.get(5, TimeUnit.SECONDS))
             .isEqualTo(
                 new ProbeOutcome.Success(
-                    ProbeContainer.builder().build(),
+                    ProbeContainer.builder()
+                        .chapters(new ChapterKnowledge.Known(List.of()))
+                        .build(),
                     List.of(
                         StreamInfo.builder()
                             .codecType("video")
                             .width(OptionalInt.of(1920))
                             .build()),
                     new KeyframeKnowledge.NotReported()));
+      }
+    }
+  }
+
+  @Test
+  @DisplayName("Should return the chapters when a probe version 4 worker reports them")
+  void shouldReturnTheChaptersWhenAProbeVersion4WorkerReportsThem() throws Exception {
+    try (var server = server()) {
+      server.start();
+      try (var worker = worker(server.port(), ProbeVersion.FIRST_TO_REPORT_CHAPTERS)) {
+        var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
+        var request = request().probeVersion(ProbeVersion.FIRST_TO_REPORT_CHAPTERS).build();
+        try (var result = BoundedTask.start(() -> service.probe(request))) {
+          var dispatched = worker.nextResponse().getStartProbe().getRequest();
+          var titled =
+              ProbeChapter.newBuilder()
+                  .setStartTime(newBuilder().setNanos(-46_000_000))
+                  .setEndTime(newBuilder().setSeconds(300))
+                  .setTitle("Opening Credits");
+          var untitled =
+              ProbeChapter.newBuilder()
+                  .setStartTime(newBuilder().setSeconds(300))
+                  .setEndTime(newBuilder().setSeconds(1_500));
+          worker.reply(
+              ProbeAttemptResult.newBuilder()
+                  .setProbeAttemptId(dispatched.getProbeAttemptId())
+                  .setProbeVersion(dispatched.getProbeVersion())
+                  .setMedia(
+                      ProbeMediaInfo.newBuilder()
+                          .setContainer(
+                              ProbeContainerInfo.newBuilder()
+                                  .addChapters(titled)
+                                  .addChapters(untitled))
+                          .addStreams(ProbeStreamInfo.newBuilder().setCodecType("video")))
+                  .build());
+
+          var outcome = result.await(Duration.ofSeconds(5));
+
+          assertThat(outcome)
+              .isInstanceOfSatisfying(
+                  ProbeOutcome.Success.class,
+                  success ->
+                      assertThat(success.container().chapters())
+                          .isEqualTo(
+                              new ChapterKnowledge.Known(
+                                  List.of(
+                                      Chapter.builder()
+                                          .startTime(Optional.of(Duration.ofMillis(-46)))
+                                          .endTime(Optional.of(Duration.ofSeconds(300)))
+                                          .title(Optional.of("Opening Credits"))
+                                          .build(),
+                                      Chapter.builder()
+                                          .startTime(Optional.of(Duration.ofSeconds(300)))
+                                          .endTime(Optional.of(Duration.ofSeconds(1_500)))
+                                          .build()))));
+        }
       }
     }
   }

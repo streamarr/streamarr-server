@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.media;
 
 import static com.streamarr.server.jooq.generated.tables.MediaFile.MEDIA_FILE;
+import static com.streamarr.server.jooq.generated.tables.MediaFileChapter.MEDIA_FILE_CHAPTER;
 import static com.streamarr.server.jooq.generated.tables.MediaFileContainerInfo.MEDIA_FILE_CONTAINER_INFO;
 import static com.streamarr.server.jooq.generated.tables.MediaFileKeyframePositions.MEDIA_FILE_KEYFRAME_POSITIONS;
 import static com.streamarr.server.jooq.generated.tables.MediaFileProbeTaskRequest.MEDIA_FILE_PROBE_TASK_REQUEST;
@@ -8,6 +9,8 @@ import static com.streamarr.server.jooq.generated.tables.MediaFileStreamInfo.MED
 
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.Chapter;
+import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
@@ -23,13 +26,17 @@ import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeState;
 import com.streamarr.server.exceptions.MalformedKeyframePositionsException;
 import com.streamarr.server.jooq.generated.enums.ItemResultFailureReason;
+import com.streamarr.server.jooq.generated.tables.records.MediaFileChapterRecord;
 import com.streamarr.server.jooq.generated.tables.records.MediaFileContainerInfoRecord;
 import com.streamarr.server.jooq.generated.tables.records.MediaFileStreamInfoRecord;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -271,6 +278,78 @@ public class MediaFileContainerInfoRepositoryCustomImpl
   }
 
   @Override
+  @Transactional(readOnly = true)
+  public Map<UUID, ChapterKnowledge> findChapterKnowledge(Collection<UUID> mediaFileIds) {
+    // One statement reads each outcome's status with its chapters, so a publication between two
+    // reads cannot pair one outcome's status with another outcome's chapters.
+    var rows =
+        dsl.select(
+                MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID,
+                MEDIA_FILE_CONTAINER_INFO.CHAPTER_STATUS,
+                MEDIA_FILE_CHAPTER.CHAPTER_INDEX,
+                MEDIA_FILE_CHAPTER.START_SECONDS,
+                MEDIA_FILE_CHAPTER.START_NANOS,
+                MEDIA_FILE_CHAPTER.END_SECONDS,
+                MEDIA_FILE_CHAPTER.END_NANOS,
+                MEDIA_FILE_CHAPTER.TITLE)
+            .from(MEDIA_FILE_CONTAINER_INFO)
+            .leftJoin(MEDIA_FILE_CHAPTER)
+            .on(MEDIA_FILE_CHAPTER.MEDIA_FILE_ID.eq(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID))
+            .where(
+                MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(
+                    DSL.any(mediaFileIds.toArray(UUID[]::new))))
+            .orderBy(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID, MEDIA_FILE_CHAPTER.CHAPTER_INDEX)
+            .fetch();
+    var statuses = new LinkedHashMap<UUID, String>();
+    var chapters = new LinkedHashMap<UUID, List<Chapter>>();
+    for (var row : rows) {
+      var mediaFileId = row.get(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID);
+      statuses.put(mediaFileId, row.get(MEDIA_FILE_CONTAINER_INFO.CHAPTER_STATUS));
+      var fileChapters = chapters.computeIfAbsent(mediaFileId, _ -> new ArrayList<>());
+      if (row.get(MEDIA_FILE_CHAPTER.CHAPTER_INDEX) != null) {
+        fileChapters.add(toChapter(row));
+      }
+    }
+
+    var knowledge = new LinkedHashMap<UUID, ChapterKnowledge>();
+    statuses.forEach(
+        (mediaFileId, status) ->
+            knowledge.put(mediaFileId, toChapterKnowledge(status, chapters.get(mediaFileId))));
+    return knowledge;
+  }
+
+  private static ChapterKnowledge toChapterKnowledge(String status, List<Chapter> chapters) {
+    if (status == null) {
+      return new ChapterKnowledge.NotReported();
+    }
+
+    return switch (ChapterStatus.valueOf(status)) {
+      case KNOWN -> new ChapterKnowledge.Known(chapters);
+      case OMITTED -> new ChapterKnowledge.Omitted();
+    };
+  }
+
+  private static Chapter toChapter(Record row) {
+    return Chapter.builder()
+        .startTime(
+            toDuration(
+                row.get(MEDIA_FILE_CHAPTER.START_SECONDS), row.get(MEDIA_FILE_CHAPTER.START_NANOS)))
+        .endTime(
+            toDuration(
+                row.get(MEDIA_FILE_CHAPTER.END_SECONDS), row.get(MEDIA_FILE_CHAPTER.END_NANOS)))
+        .title(Optional.ofNullable(row.get(MEDIA_FILE_CHAPTER.TITLE)))
+        .build();
+  }
+
+  private static Optional<Duration> toDuration(Long seconds, Integer nanos) {
+    if (seconds == null) {
+      return Optional.empty();
+    }
+
+    return Optional.of(Duration.ofSeconds(seconds, nanos));
+  }
+
+  @Override
   @Transactional(propagation = Propagation.MANDATORY)
   public Optional<ProbeInputs> lockProbeInputs(UUID mediaFileId) {
     if (!lockMediaFile(mediaFileId)) {
@@ -427,6 +506,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
       case ProbeOutcome.Failure(var error) -> row.setProbeError(error.name());
       case ProbeOutcome.Success(var container, _, var keyframes) -> {
         setKeyframeStatus(row, keyframes);
+        setChapterStatus(row, container.chapters());
         row.setFormat(container.format().orElse(null));
         row.setTotalBitrate(
             container.bitrate().isPresent() ? container.bitrate().getAsLong() : null);
@@ -436,16 +516,50 @@ public class MediaFileContainerInfoRepositoryCustomImpl
     }
 
     dsl.executeInsert(row);
-    if (!(publication.outcome() instanceof ProbeOutcome.Success success)) {
+    if (!(publication.outcome()
+        instanceof ProbeOutcome.Success(var container, var streams, var keyframes))) {
       return;
     }
 
-    dsl.batchInsert(
-            success.streams().stream().map(stream -> toStreamRow(mediaFileId, stream)).toList())
+    dsl.batchInsert(streams.stream().map(stream -> toStreamRow(mediaFileId, stream)).toList())
         .execute();
-    if (success.keyframes() instanceof KeyframeKnowledge.Known(var positions)) {
+    if (keyframes instanceof KeyframeKnowledge.Known(var positions)) {
       insertKeyframePositions(mediaFileId, positions);
     }
+
+    if (container.chapters() instanceof ChapterKnowledge.Known(var chapters)
+        && !chapters.isEmpty()) {
+      dsl.batchInsert(toChapterRows(mediaFileId, chapters)).execute();
+    }
+  }
+
+  private static void setChapterStatus(
+      MediaFileContainerInfoRecord row, ChapterKnowledge chapters) {
+    var status =
+        switch (chapters) {
+          case ChapterKnowledge.Known _ -> ChapterStatus.KNOWN.name();
+          case ChapterKnowledge.Omitted _ -> ChapterStatus.OMITTED.name();
+          case ChapterKnowledge.NotReported _ -> null;
+        };
+    row.setChapterStatus(status);
+  }
+
+  private List<MediaFileChapterRecord> toChapterRows(UUID mediaFileId, List<Chapter> chapters) {
+    var rows = new ArrayList<MediaFileChapterRecord>();
+    for (var index = 0; index < chapters.size(); index++) {
+      var chapter = chapters.get(index);
+      var row = dsl.newRecord(MEDIA_FILE_CHAPTER);
+      row.setMediaFileId(mediaFileId);
+      row.setChapterIndex(index);
+      row.setStartSeconds(chapter.startTime().map(Duration::getSeconds).orElse(null));
+      row.setStartNanos(chapter.startTime().map(Duration::getNano).orElse(null));
+      row.setEndSeconds(chapter.endTime().map(Duration::getSeconds).orElse(null));
+      row.setEndNanos(chapter.endTime().map(Duration::getNano).orElse(null));
+      row.setTitle(chapter.title().orElse(null));
+      rows.add(row);
+    }
+
+    return rows;
   }
 
   private static void setKeyframeStatus(
@@ -482,6 +596,11 @@ public class MediaFileContainerInfoRepositoryCustomImpl
     KNOWN,
     PACKET_SCAN_REQUIRED,
     UNAVAILABLE
+  }
+
+  private enum ChapterStatus {
+    KNOWN,
+    OMITTED
   }
 
   private MediaFileStreamInfoRecord toStreamRow(UUID mediaFileId, StreamInfo stream) {
