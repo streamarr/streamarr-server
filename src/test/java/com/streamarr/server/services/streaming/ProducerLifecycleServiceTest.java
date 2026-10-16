@@ -954,12 +954,10 @@ class ProducerLifecycleServiceTest {
     var session = sessionPinnedToLibx264(defaultSessionBuilder());
     transcodeExecutor.setExecutionTargets(List.of(NVENC_WORKER));
     var sessionId = session.getSessionId();
+    var variantLabel = StreamSession.defaultVariant();
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
-    assertThatThrownBy(
-            () ->
-                lifecycle.ensurePositioned(
-                    sessionId, StreamSession.defaultVariant(), "segment100.m4s"))
+    assertThatThrownBy(() -> lifecycle.ensurePositioned(sessionId, variantLabel, "segment100.m4s"))
         .isInstanceOf(TranscodeException.class);
 
     assertThat(startedSince(startedBefore)).isEmpty();
