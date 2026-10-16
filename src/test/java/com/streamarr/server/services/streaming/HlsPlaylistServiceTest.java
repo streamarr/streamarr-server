@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.OptionalDouble;
 import java.util.UUID;
 import java.util.stream.Stream;
+import lombok.Builder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -538,28 +539,62 @@ class HlsPlaylistServiceTest {
       return lines.get(lines.indexOf(uri) - 1);
     }
 
-    @ParameterizedTest(name = "{0} at {1} fps → {2} and {3}")
-    @CsvSource({
-      "h264, 60, avc1.64002A, avc1.640020",
-      "h264, 23.976, avc1.640028, avc1.64001F",
-      "av1, 60, av01.0.09M.08, av01.0.08M.08",
-      "av1, 23.976, av01.0.08M.08, av01.0.05M.08"
-    })
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("encodedLadderCodecCases")
     @DisplayName(
         "Should advertise each encoded variant's own codec string when the ladder encodes the video")
     void shouldAdvertiseEachEncodedVariantsOwnCodecStringWhenTheLadderEncodesTheVideo(
-        String videoCodecFamily,
-        double frameRate,
-        String codecString1080p,
-        String codecString720p) {
-      var session = encodedLadderAt(videoCodecFamily, frameRate);
+        EncodedLadderCodecCase codecCase) {
+      var session = encodedLadderAt(codecCase.videoCodecFamily(), codecCase.frameRate());
 
       var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
       assertThat(streamInfFor(playlist, "1080p"))
-          .contains("CODECS=\"" + codecString1080p + ",mp4a.40.2\"");
+          .contains("CODECS=\"" + codecCase.codecString1080p() + ",mp4a.40.2\"");
       assertThat(streamInfFor(playlist, "720p"))
-          .contains("CODECS=\"" + codecString720p + ",mp4a.40.2\"");
+          .contains("CODECS=\"" + codecCase.codecString720p() + ",mp4a.40.2\"");
+    }
+
+    static Stream<EncodedLadderCodecCase> encodedLadderCodecCases() {
+      return Stream.of(
+          EncodedLadderCodecCase.builder()
+              .videoCodecFamily("h264")
+              .frameRate(60)
+              .codecString1080p("avc1.64002A")
+              .codecString720p("avc1.640020")
+              .build(),
+          EncodedLadderCodecCase.builder()
+              .videoCodecFamily("h264")
+              .frameRate(23.976)
+              .codecString1080p("avc1.640028")
+              .codecString720p("avc1.64001F")
+              .build(),
+          EncodedLadderCodecCase.builder()
+              .videoCodecFamily("av1")
+              .frameRate(60)
+              .codecString1080p("av01.0.09M.08")
+              .codecString720p("av01.0.08M.08")
+              .build(),
+          EncodedLadderCodecCase.builder()
+              .videoCodecFamily("av1")
+              .frameRate(23.976)
+              .codecString1080p("av01.0.08M.08")
+              .codecString720p("av01.0.05M.08")
+              .build());
+    }
+
+    @Builder
+    record EncodedLadderCodecCase(
+        String videoCodecFamily,
+        double frameRate,
+        String codecString1080p,
+        String codecString720p) {
+
+      @Override
+      public String toString() {
+        return "%s at %s fps → %s and %s"
+            .formatted(videoCodecFamily, frameRate, codecString1080p, codecString720p);
+      }
     }
 
     @Test
