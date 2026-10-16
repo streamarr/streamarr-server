@@ -1,0 +1,189 @@
+package com.streamarr.server.services.library;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
+import static org.mockito.Mockito.mock;
+
+import com.google.common.jimfs.Configuration;
+import com.google.common.jimfs.Jimfs;
+import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.fakes.FakeLibraryOperationRepository;
+import com.streamarr.server.fakes.FakeLibraryRepository;
+import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeMovieRepository;
+import com.streamarr.server.fakes.FakeTransactionManager;
+import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.repositories.LibraryOperationRepository.StoreOutcome;
+import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.services.ImageService;
+import com.streamarr.server.services.MovieService;
+import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
+import java.io.IOException;
+import java.nio.file.FileSystem;
+import java.nio.file.Files;
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataAccessResourceFailureException;
+
+@Tag("UnitTest")
+@DisplayName("Library Operation Finishing Steps Runner Tests")
+class LibraryOperationFinishingStepsRunnerTest {
+
+  private final FakeLibraryRepository libraries = new FakeLibraryRepository();
+  private final FakeLibraryOperationRepository libraryOperations =
+      new FakeLibraryOperationRepository(libraries);
+  private final FakeMediaFileRepository mediaFiles = new FakeMediaFileRepository();
+  private final MovieService movieService =
+      new MovieService(
+          new FakeMovieRepository(),
+          null,
+          null,
+          null,
+          mock(ImageService.class),
+          null,
+          null,
+          null,
+          null,
+          null,
+          null);
+  private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
+  private final LibraryOperationFinishingStepsRunner runner = runnerWith(mediaFiles);
+
+  private Library library;
+
+  @BeforeEach
+  void setup() throws IOException {
+    library = libraries.save(LibraryFixtureCreator.buildFakeLibrary());
+    Files.createDirectories(FilepathCodec.decode(fileSystem, library.getFilepathUri()));
+  }
+
+  @AfterEach
+  void tearDown() throws IOException {
+    fileSystem.close();
+  }
+
+  @Test
+  @DisplayName("Should remove the media files missing from disk when a scan finishes")
+  void shouldRemoveTheMediaFilesMissingFromDiskWhenAScanFinishes() throws IOException {
+    var kept = saveMediaFile("Kept (2020).mkv");
+    Files.createFile(FilepathCodec.decode(fileSystem, kept.getFilepathUri()));
+    saveMediaFile("Gone (2020).mkv");
+
+    runner.runFinishingSteps(storeScan(), LibraryOperationConclusion.FINISHED);
+
+    assertThat(mediaFiles.findByLibraryId(library.getId())).containsExactly(kept);
+  }
+
+  @Test
+  @DisplayName("Should have the same effect when a scan's finishing steps run again")
+  void shouldHaveTheSameEffectWhenAScansFinishingStepsRunAgain() {
+    saveMediaFile("Gone (2020).mkv");
+    var scan = storeScan();
+    runner.runFinishingSteps(scan, LibraryOperationConclusion.FINISHED);
+
+    runner.runFinishingSteps(scan, LibraryOperationConclusion.FINISHED);
+
+    assertThat(mediaFiles.findByLibraryId(library.getId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should remove no media file when a scan fails")
+  void shouldRemoveNoMediaFileWhenAScanFails() {
+    saveMediaFile("Gone (2020).mkv");
+
+    runner.runFinishingSteps(storeScan(), LibraryOperationConclusion.FAILED);
+
+    assertThat(mediaFiles.findByLibraryId(library.getId())).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("Should remove no media file when a refresh finishes")
+  void shouldRemoveNoMediaFileWhenARefreshFinishes() {
+    saveMediaFile("Gone (2020).mkv");
+    var refresh =
+        storedOperation(
+            libraryOperations.storeLibraryOperation(
+                NewLibraryOperation.refresh(library.getId(), ImageRefreshMode.PRESERVE)));
+
+    runner.runFinishingSteps(refresh, LibraryOperationConclusion.FINISHED);
+
+    assertThat(mediaFiles.findByLibraryId(library.getId())).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("Should remove no media file when the scan has already ended")
+  void shouldRemoveNoMediaFileWhenTheScanHasAlreadyEnded() {
+    saveMediaFile("Gone (2020).mkv");
+    var scan = storeScan();
+    libraryOperations.tryEndLibraryOperation(
+        LibraryOperationEnd.builder()
+            .libraryOperationId(scan.id())
+            .conclusion(LibraryOperationConclusion.FINISHED)
+            .endedAt(Instant.now())
+            .build());
+
+    runner.runFinishingSteps(scan, LibraryOperationConclusion.FINISHED);
+
+    assertThat(mediaFiles.findByLibraryId(library.getId())).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("Should return normally when the removal of missing media files fails")
+  void shouldReturnNormallyWhenTheRemovalOfMissingMediaFilesFails() {
+    saveMediaFile("Gone (2020).mkv");
+    var failingRunner =
+        runnerWith(
+            new FakeMediaFileRepository() {
+              @Override
+              public List<MediaFile> findByLibraryId(UUID libraryId) {
+                throw new DataAccessResourceFailureException("simulated connection loss");
+              }
+            });
+    var scan = storeScan();
+
+    assertThatNoException()
+        .isThrownBy(
+            () -> failingRunner.runFinishingSteps(scan, LibraryOperationConclusion.FINISHED));
+    assertThat(mediaFiles.findByLibraryId(library.getId())).hasSize(1);
+  }
+
+  private LibraryOperationFinishingStepsRunner runnerWith(MediaFileRepository mediaFileRepository) {
+    return LibraryOperationFinishingStepsRunner.builder()
+        .libraryOperations(libraryOperations)
+        .libraryRepository(libraries)
+        .orphanedMediaFileCleanupService(
+            new OrphanedMediaFileCleanupService(mediaFileRepository, movieService, fileSystem))
+        .transactionManager(new FakeTransactionManager())
+        .build();
+  }
+
+  private LibraryOperation storeScan() {
+    return storedOperation(
+        libraryOperations.storeLibraryOperation(NewLibraryOperation.scan(library.getId())));
+  }
+
+  private static LibraryOperation storedOperation(StoreOutcome outcome) {
+    assertThat(outcome).isInstanceOf(StoreOutcome.Stored.class);
+    return ((StoreOutcome.Stored) outcome).libraryOperation();
+  }
+
+  private MediaFile saveMediaFile(String filename) {
+    var path = FilepathCodec.decode(fileSystem, library.getFilepathUri()).resolve(filename);
+    return mediaFiles.save(
+        MediaFile.builder()
+            .libraryId(library.getId())
+            .filepathUri(FilepathCodec.encode(path))
+            .filename(filename)
+            .status(MediaFileStatus.MATCHED)
+            .build());
+  }
+}

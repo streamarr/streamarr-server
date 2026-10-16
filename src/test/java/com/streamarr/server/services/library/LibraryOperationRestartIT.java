@@ -204,6 +204,8 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
         .fileDiscoveryRuns(fileDiscoveryRuns)
         .libraryFolderCheck(applicationContext.getBean(LibraryFolderCheck.class))
         .libraryRefreshService(applicationContext.getBean(LibraryRefreshService.class))
+        .finishingStepsRunner(
+            applicationContext.getBean(LibraryOperationFinishingStepsRunner.class))
         .letterIndexRecalculator(applicationContext.getBean(LetterIndexRecalculator.class))
         .eventPublisher(applicationContext)
         .transactionManager(applicationContext.getBean(PlatformTransactionManager.class))

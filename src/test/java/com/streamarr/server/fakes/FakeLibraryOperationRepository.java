@@ -96,6 +96,11 @@ public class FakeLibraryOperationRepository implements LibraryOperationRepositor
   }
 
   @Override
+  public synchronized boolean tryLockLibraryOperation(UUID libraryOperationId) {
+    return operations.containsKey(libraryOperationId);
+  }
+
+  @Override
   public synchronized boolean tryLockLibraryOfLibraryOperation(UUID libraryOperationId) {
     return operations.containsKey(libraryOperationId);
   }

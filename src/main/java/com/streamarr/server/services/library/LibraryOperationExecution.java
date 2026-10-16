@@ -6,7 +6,6 @@ import com.streamarr.server.repositories.LibraryOperationRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.events.library.LibraryStatusChangedEvent;
 import com.streamarr.server.services.events.library.RefreshEndedEvent;
-import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
 import com.streamarr.server.services.library.LibraryOperationMetrics.ExecutionResult;
 import java.time.Clock;
@@ -24,11 +23,12 @@ import org.springframework.transaction.support.TransactionTemplate;
  * One execution of a stored library operation, independent of the scheduler that runs the
  * execution. Every execution walks the library from the start. A shutdown that interrupts the
  * execution leaves the operation stored, so the operation runs again when a scheduler starts.
- * Otherwise one transaction ends the operation, as failed when the scan or refresh threw (ADR 0027)
- * and as finished when it returned. The transaction locks the library's row, recalculates the
- * letter index, gives the library its final status, and deletes the operation. It also publishes
- * the status change and the end of the scan or refresh for listeners that run after the commit. An
- * end that cannot be saved escapes, so the scheduler runs the operation again with backoff.
+ * Otherwise the finishing steps run, and then one transaction ends the operation, as failed when
+ * the scan or refresh threw (ADR 0027) and as finished when it returned. The transaction locks the
+ * library's row, recalculates the letter index, gives the library its final status, and deletes the
+ * operation. It also publishes the status change and the end of the scan or refresh for listeners
+ * that run after the commit. An end that cannot be saved escapes, so the scheduler runs the
+ * operation again with backoff.
  */
 @Slf4j
 @Service
@@ -42,6 +42,7 @@ public class LibraryOperationExecution {
   private final FileDiscoveryRuns fileDiscoveryRuns;
   private final LibraryFolderCheck libraryFolderCheck;
   private final LibraryRefreshService libraryRefreshService;
+  private final LibraryOperationFinishingStepsRunner finishingStepsRunner;
   private final LetterIndexRecalculator letterIndexRecalculator;
   private final ApplicationEventPublisher eventPublisher;
   private final PlatformTransactionManager transactionManager;
@@ -85,6 +86,12 @@ public class LibraryOperationExecution {
       return interrupted(operation);
     }
 
+    finishingStepsRunner.runFinishingSteps(operation, conclusion);
+    // A finishing step that a shutdown interrupted runs again with the operation.
+    if (Thread.currentThread().isInterrupted()) {
+      return interrupted(operation);
+    }
+
     end(operation, conclusion);
     return new LibraryOperationExecutionResult.Ended();
   }
@@ -105,10 +112,9 @@ public class LibraryOperationExecution {
       libraryFolderCheck.requirePassed(library);
       var results =
           fileDiscoveryRuns.awaitResults(libraryFileWalk.discoverFiles(library, operation.id()));
-      // A share can unmount while the scan waits for artwork, and completing the scan removes
-      // every item whose file Streamarr cannot find.
+      // A share can unmount while the scan waits for artwork, and the finishing step of a finished
+      // scan removes every media file that Streamarr cannot find.
       libraryFolderCheck.requirePassed(library);
-      eventPublisher.publishEvent(new ScanCompletedEvent(library.getId()));
       log.info("Finished {} library scan: {}.", library.getName(), results.describe());
       return LibraryOperationConclusion.FINISHED;
     } catch (RuntimeException e) {

@@ -3,7 +3,6 @@ package com.streamarr.server.support;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.services.events.library.RefreshEndedEvent;
-import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
 import com.streamarr.server.services.library.LibraryOperationService;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
@@ -16,10 +15,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.event.EventListener;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
@@ -36,7 +33,6 @@ public class LibraryOperationDriver {
   private final LibraryOperationService libraryOperationService;
   private final AuthTestSupport authTestSupport;
   private final Map<UUID, CompletableFuture<Void>> ends = new ConcurrentHashMap<>();
-  private final Map<UUID, AtomicInteger> completedScans = new ConcurrentHashMap<>();
 
   /** Scans the library as the System actor and waits for the end. */
   public void scanToEnd(UUID libraryId) {
@@ -93,24 +89,10 @@ public class LibraryOperationDriver {
     }
   }
 
-  /** Counts the scans of the library that completed, from any thread, since the context started. */
-  public int completedScans(UUID libraryId) {
-    return completedScanCounter(libraryId).get();
-  }
-
-  private AtomicInteger completedScanCounter(UUID libraryId) {
-    return completedScans.computeIfAbsent(libraryId, _ -> new AtomicInteger());
-  }
-
   private void runToEnd(UUID libraryId, Supplier<Outcome<?, ?>> start) {
     var end = nextEnd(libraryId);
     assertThat(start.get()).isInstanceOf(Outcome.Accepted.class);
     awaitEnd(end);
-  }
-
-  @EventListener
-  void onScanCompleted(ScanCompletedEvent event) {
-    completedScanCounter(event.libraryId()).incrementAndGet();
   }
 
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
