@@ -155,7 +155,9 @@ class FileDiscoveryRunsTest {
       discovery.probeRun().request(mediaFile().getId());
     }
 
-    assertThatThrownBy(() -> runs.awaitResults(discovery, neverReached()))
+    var end = neverReached();
+
+    assertThatThrownBy(() -> runs.awaitResults(discovery, end))
         .isInstanceOf(LibraryScanFailedException.class)
         .hasCause(readFailure);
   }

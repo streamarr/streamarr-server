@@ -158,8 +158,9 @@ class LibraryRefreshTransactionIT extends AbstractIntegrationTest {
     var refreshService =
         refreshServiceWith(
             result -> result.step() == ItemStep.METADATA && metadataWrites.getAndIncrement() > 0);
+    var end = neverReached();
 
-    assertThatThrownBy(() -> refreshService.refreshLibrary(library, operation, neverReached()))
+    assertThatThrownBy(() -> refreshService.refreshLibrary(library, operation, end))
         .isInstanceOf(LibraryRefreshFailedException.class);
     assertThat(seasonMetadataOutcomes(series, operation))
         .containsExactly(Map.entry(1, "SUCCEEDED"));

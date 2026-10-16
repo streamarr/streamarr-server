@@ -314,10 +314,10 @@ class CreditServiceTest {
   @Test
   @DisplayName("Should reject a missing metadata result when building a credits request from it")
   void shouldRejectAMissingMetadataResultWhenBuildingACreditsRequestFromIt() {
+    var run = discoveryRun();
+
     assertThatThrownBy(
-            () ->
-                MediaTitleCreditsRequest.fromMetadataResult(
-                    null, ImageRefreshMode.PRESERVE, discoveryRun()))
+            () -> MediaTitleCreditsRequest.fromMetadataResult(null, ImageRefreshMode.PRESERVE, run))
         .isInstanceOf(NullPointerException.class);
   }
 
@@ -325,9 +325,9 @@ class CreditServiceTest {
   @DisplayName("Should reject a missing image refresh mode when building a credits request")
   void shouldRejectAMissingImageRefreshModeWhenBuildingACreditsRequest() {
     var metadataResult = new MetadataResult<>(Movie.builder().build(), List.of(), null, null);
+    var run = discoveryRun();
 
-    assertThatThrownBy(
-            () -> MediaTitleCreditsRequest.fromMetadataResult(metadataResult, null, discoveryRun()))
+    assertThatThrownBy(() -> MediaTitleCreditsRequest.fromMetadataResult(metadataResult, null, run))
         .isInstanceOf(NullPointerException.class);
   }
 

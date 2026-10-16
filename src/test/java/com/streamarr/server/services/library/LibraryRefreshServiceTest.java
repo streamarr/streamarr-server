@@ -365,8 +365,9 @@ class LibraryRefreshServiceTest {
       itemResults.failWritesWith(failure);
       var service = refreshServiceWith(artwork, admissionsWith(new FixedLimitAdmissions(1)));
       var refresh = refreshOf(library);
+      var end = neverReached();
 
-      assertThatThrownBy(() -> service.refreshLibrary(library, refresh, neverReached()))
+      assertThatThrownBy(() -> service.refreshLibrary(library, refresh, end))
           .isInstanceOf(LibraryRefreshFailedException.class)
           .hasRootCause(failure);
       assertThat(fetches).hasValue(1);
@@ -1095,8 +1096,9 @@ class LibraryRefreshServiceTest {
             .externalAgentStrategy(ExternalAgentStrategy.TMDB)
             .build();
     var refresh = refreshOf(library);
+    var end = neverReached();
 
-    assertThatThrownBy(() -> refreshService.refreshLibrary(library, refresh, neverReached()))
+    assertThatThrownBy(() -> refreshService.refreshLibrary(library, refresh, end))
         .isInstanceOf(UnsupportedMediaTypeException.class);
   }
 
