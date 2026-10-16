@@ -478,7 +478,7 @@ message ProbeStreamInfo {
   ChromaSubsampling chroma_subsampling = 14;
   // Video streams only: the angle, in whole degrees from -180 to 180, by which the stream's display
   // matrix rotates the picture counterclockwise, as ffprobe reports it. A phone recording held
-  // upright usually reports -90. The value is 0 when the stream has no display matrix.
+  // upright usually reports -90. Absent when the stream has no display matrix.
   optional sint32 rotation_degrees = 15;
   // Video and audio streams only: the exact RFC 6381 codec string that a stream copy of the stream
   // carries, for example avc1.640028 or mp4a.40.2. The worker computes it from the stream's decoder
