@@ -114,6 +114,14 @@ class SegmentDeliveryCoordinatorTest {
     heldRequests().wakeVariant(sessionId, StreamSession.defaultVariant());
   }
 
+  // Wakes the requests held on the default variant, then waits until one has looked again. A
+  // request looks again only after its previous pass has returned.
+  private void awaitNextLook(UUID sessionId) {
+    var looks = transcodeExecutor.livenessChecks();
+    heldRequests().wakeVariant(sessionId, StreamSession.defaultVariant());
+    transcodeExecutor.awaitLivenessCheckCount(looks + 1);
+  }
+
   // Uploads an earlier segment, then waits until the held request has looked at it as progress.
   private void uploadProgress(UUID sessionId, String segmentName) {
     var looks = transcodeExecutor.livenessChecks();
@@ -799,6 +807,9 @@ class SegmentDeliveryCoordinatorTest {
     var delivery = deliverAsync(sessionId, "segment0.m4s");
     try {
       transcodeExecutor.awaitStartedRequestCount(startsBefore + 1);
+      // Recovery starts the replacement's stall clock after its start returns. Moving the clock
+      // before the request looks again would start that clock late.
+      awaitNextLook(sessionId);
       var looks = transcodeExecutor.livenessChecks();
       advanceClockThenWake(sessionId, startupBudget.minusMillis(1));
       transcodeExecutor.awaitLivenessCheckCount(looks + 1);
