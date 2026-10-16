@@ -174,46 +174,53 @@ public class AuthTestSupport {
 
   private TestIdentity createIdentity(boolean serverAdmin) {
     return transactionTemplate.execute(
-        _ -> {
-          var household =
-              householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
-          var profile =
-              profileRepository.saveAndFlush(
-                  ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
-          var account =
-              userAccountRepository.saveAndFlush(
-                  AccountFixture.defaultAccountBuilder()
-                      .serverAdmin(serverAdmin)
-                      .householdId(household.getId())
-                      .householdRole(HouseholdRole.ADMIN)
-                      .personalProfileId(profile.getId())
-                      .passwordHash(passwordEncoder.encode(password))
-                      .build());
-          shareRepository.saveAndFlush(
-              ProfileHouseholdShare.builder()
-                  .profileId(profile.getId())
-                  .householdId(household.getId())
-                  .status(ProfileShareStatus.ACTIVE)
-                  .structural(true)
-                  .build());
+        _ ->
+            saveIdentityIn(
+                householdRepository.saveAndFlush(
+                    HouseholdFixture.defaultHouseholdBuilder().build()),
+                account -> account.serverAdmin(serverAdmin).householdRole(HouseholdRole.ADMIN)));
+  }
 
-          var issued =
-              refreshTokenService.createSession(
-                  CreateAuthSessionCommand.builder()
-                      .accountId(account.getId())
-                      .deviceName("auth-test-support")
-                      .contextHouseholdId(household.getId())
-                      .selectedProfileId(profile.getId())
-                      .build());
+  // Saves a Personal Profile, its structural share, an Account and a session in the household, in
+  // the caller's transaction.
+  private TestIdentity saveIdentityIn(
+      Household household, UnaryOperator<UserAccount.UserAccountBuilder<?, ?>> customize) {
+    var profile =
+        profileRepository.saveAndFlush(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    var account =
+        userAccountRepository.saveAndFlush(
+            customize
+                .apply(
+                    AccountFixture.defaultAccountBuilder()
+                        .householdId(household.getId())
+                        .personalProfileId(profile.getId())
+                        .passwordHash(passwordEncoder.encode(password)))
+                .build());
+    shareRepository.saveAndFlush(
+        ProfileHouseholdShare.builder()
+            .profileId(profile.getId())
+            .householdId(household.getId())
+            .status(ProfileShareStatus.ACTIVE)
+            .structural(true)
+            .build());
 
-          return TestIdentity.builder()
-              .account(account)
-              .household(household)
-              .profile(profile)
-              .session(issued.session())
-              .rawRefreshToken(issued.rawToken())
-              .build();
-        });
+    var issued =
+        refreshTokenService.createSession(
+            CreateAuthSessionCommand.builder()
+                .accountId(account.getId())
+                .deviceName("auth-test-support")
+                .contextHouseholdId(household.getId())
+                .selectedProfileId(profile.getId())
+                .build());
+
+    return TestIdentity.builder()
+        .account(account)
+        .household(household)
+        .profile(profile)
+        .session(issued.session())
+        .rawRefreshToken(issued.rawToken())
+        .build();
   }
 
   /** An Account-scoped token: at the Profile picker of the membership Household. */

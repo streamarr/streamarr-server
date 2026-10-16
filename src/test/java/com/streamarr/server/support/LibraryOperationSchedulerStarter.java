@@ -24,7 +24,8 @@ public record LibraryOperationSchedulerStarter(
     DataSource dataSource,
     LibraryOperationExecution execution,
     Environment environment,
-    Clock clock) {
+    Clock clock,
+    int threads) {
 
   public static LibraryOperationSchedulerStarter fromContext(ApplicationContext context) {
     return LibraryOperationSchedulerStarter.builder()
@@ -33,6 +34,7 @@ public record LibraryOperationSchedulerStarter(
         .execution(context.getBean(LibraryOperationExecution.class))
         .environment(context.getEnvironment())
         .clock(Clock.systemUTC())
+        .threads(2)
         .build();
   }
 
@@ -47,7 +49,7 @@ public record LibraryOperationSchedulerStarter(
             .customizer(customizer)
             .dataSource(dataSource)
             .execution(execution)
-            .threads(2)
+            .threads(threads)
             .clock(clock)
             .listeners(List.of(listener))
             .build();
