@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.dataloaders;
 
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.defaultIdentityBuilder;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildMatchedMediaFile;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildMovie;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeries;
@@ -11,6 +12,7 @@ import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
@@ -53,7 +55,8 @@ class WatchStatusDataLoaderTest {
             episodeRepository,
             seasonRepository,
             new FakeSeriesRepository(),
-            new CapturingEventPublisher());
+            new CapturingEventPublisher(),
+            new FakeAuthorizationService(defaultIdentityBuilder().build()));
     dataLoader = new WatchStatusDataLoader(service);
   }
 

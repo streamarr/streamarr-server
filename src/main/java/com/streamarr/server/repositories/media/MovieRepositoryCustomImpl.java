@@ -9,6 +9,7 @@ import static com.streamarr.server.jooq.generated.tables.MovieGenre.MOVIE_GENRE;
 import static com.streamarr.server.jooq.generated.tables.MoviePerson.MOVIE_PERSON;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.noCondition;
+import static org.jooq.impl.DSL.selectOne;
 
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.streaming.CollectableScope;
@@ -21,9 +22,11 @@ import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import jakarta.persistence.EntityManager;
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -130,6 +133,17 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
             .limit(options.getPaginationOptions().getLimit() + 1);
 
     return JooqQueryHelper.nativeQuery(entityManager, query, Movie.class);
+  }
+
+  @Override
+  public Set<UUID> findUnmatchedMovieIds(Collection<UUID> movieIds) {
+    return context
+        .select(MOVIE.ID)
+        .from(MOVIE)
+        .where(MOVIE.ID.in(movieIds))
+        .andNotExists(
+            selectOne().from(EXTERNAL_IDENTIFIER).where(EXTERNAL_IDENTIFIER.ENTITY_ID.eq(MOVIE.ID)))
+        .fetchSet(MOVIE.ID);
   }
 
   public Optional<Movie> findLetterJumpPredecessor(MediaFilter filter) {

@@ -1,6 +1,8 @@
 = GraphQL Subscriptions
 
-Streamarr delivers live library-administration changes over GraphQL subscriptions.
+Streamarr delivers live changes over GraphQL subscriptions.
+Library administration clients receive library changes.
+Every client of a Profile receives that Profile's watch-state changes.
 https://github.com/streamarr/streamarr-adr/blob/main/adr/0042-graphql-subscriptions-run-over-websocket-until-token-expiry.adoc[ADR 0042] records the decision.
 The schema descriptions in `src/main/resources/schema/root-subscription.graphqls` define each field.
 
@@ -44,7 +46,10 @@ Browsers report every refused handshake as close code 1006 and hide the HTTP sta
 A browser client that sees 1006 before `connection_ack` refreshes its token before it reconnects.
 
 Each operation is authorized when the client subscribes.
-A caller who is not a ServerAdmin gets a `next` message with the error code `FORBIDDEN`, then `complete`.
+A refused caller gets a `next` message with an error code, then `complete`.
+The library administration fields refuse a caller who is not a ServerAdmin with `FORBIDDEN`.
+`watchStateChanged` refuses a token without a selected Profile with `PROFILE_REQUIRED`.
+It refuses a caller without the ViewProfileActivity permission for that Profile with `FORBIDDEN`.
 `AUTHORIZATION_UNAVAILABLE` means the server could not decide; retry later.
 
 == Access token expiry
@@ -60,7 +65,7 @@ The server holds at most `GRAPHQL_SUBSCRIPTION_CONNECTION_SEND_BUFFER` unsent by
 A client that stops reading lets those bytes grow.
 When one more frame would exceed the limit, the server discards the unsent frames, ignores further messages, and closes the socket with code 4101 and the reason `Client fell behind`.
 One frame larger than the limit closes the socket the same way.
-The client reconnects, subscribes, and queries `libraries` again.
+The client reconnects, subscribes, and runs its queries again.
 Other sockets keep receiving changes, and scans and refreshes continue.
 
 == Close codes
@@ -106,14 +111,17 @@ A client stops and reports these codes instead of reconnecting.
 |===
 |Code |Meaning
 
+|`PROFILE_REQUIRED`
+|The field needs a selected Profile, and the access token has none. The operation ends.
+
 |`FORBIDDEN`
-|The caller is not a ServerAdmin. The operation ends.
+|The caller may not subscribe to the field. The operation ends.
 
 |`AUTHORIZATION_UNAVAILABLE`
 |The server could not decide authorization. Subscribe again later.
 
 |`SUBSCRIPTION_OVERFLOW`
-|Changes for the operation arrived faster than the server could resolve them, and more than `GRAPHQL_SUBSCRIPTION_OPERATION_BUFFER` waited. The server ends that operation with an `error` message. Subscribe again, then query `libraries` again. A client that stops reading gets close code 4101 instead.
+|Changes for the operation arrived faster than the server could resolve them, and more than `GRAPHQL_SUBSCRIPTION_OPERATION_BUFFER` waited. The server ends that operation with an `error` message. Subscribe again, then run the field's queries again. A client that stops reading gets close code 4101 instead.
 
 |`TOO_MANY_OPERATIONS`
 |The connection already runs `GRAPHQL_SUBSCRIPTION_MAX_OPERATIONS_PER_CONNECTION` operations. Complete one first.
@@ -125,23 +133,31 @@ Another unexpected failure ends the operation with the error `Subscription error
 == Field errors
 
 A field error does not end the operation.
-When a selected field of one change fails to resolve, the server sends that change in a `next` message.
-The message's `data` holds the subscription field as `null`, and its `errors` name the failing field by its path.
+When a selected field of one change fails to resolve, the server still sends the change in a `next` message.
+The failed field arrives as `null`, and the message's `errors` name the path of each failed field.
 Later changes keep arriving on the same operation.
 
-Every subscription field is nullable for this reason.
-graphql-java ends a subscription when a null reaches a non-null root field, so a non-null root would turn one failing field into a terminal `error` message.
+A failed non-null field passes its `null` up to the nearest nullable parent.
+A failed non-null field of a delivered library or removal makes the whole change `null`.
+A failed non-null field of a watch-state item makes only that item `null`, as <<Failed changes>> describes.
+Every subscription root field is nullable, and `items` holds nullable elements, so a `null` stops at the item or at the subscription field.
+graphql-java ends a subscription when a `null` reaches a non-null root field, so a non-null root would turn one failing field into a terminal `error` message.
 
 A client keeps the operation running through these messages:
 
-* Web clients that use Apollo Client set `errorPolicy: 'all'` on each subscription, so the client receives the `null` change together with its errors.
-* Other clients skip a change whose subscription field is `null`.
+* A web client that uses Apollo Client sets `errorPolicy: 'all'` on each subscription, so the client receives the data together with its errors.
+* The client applies the rest of the change.
+It skips a `null` subscription field and each `null` item, and keeps its previous value for each field that an error names.
 
-After a skipped change, a client may query `libraries` again to recover the state it missed.
+A later change may not repeat a value that failed, so the client's state can stay stale until that value changes again.
+After a message that carries `errors`, the client runs its queries again through the same recovery path it uses after a reconnect.
+A library administration client queries `libraries` again.
+A watch-state client runs the queries from <<Building current state>> again.
+The subscription stays open while those queries run.
 
 == Client lifecycle
 
-A client subscribes first and then queries `libraries { id name status scanStartedOn scanCompletedOn }`.
+A library administration client subscribes first and then queries `libraries { id name status scanStartedOn scanCompletedOn }`.
 It applies each change by library id.
 The server sends no snapshot and replays nothing missed.
 After every reconnect, the client subscribes and queries again.
@@ -168,6 +184,76 @@ The app reconnects with its own backoff and passes the fresh token through `upda
 A client closes its socket on logout and when the user switches Profile or Household, because the socket keeps the authority it opened with.
 It discards changes that arrive from the old socket after the switch, so they never reach the new identity's cache.
 
+== Watch state
+
+`watchStateChanged` delivers the selected Profile's committed watch-state changes.
+The Profile comes from the access token that opened the socket.
+No argument names the Profile.
+
+=== Building current state
+
+A client subscribes first and then runs its ordinary queries: `continueWatching`, the library views it shows, and any detail views.
+It selects the same fields in the subscription as in those queries.
+The server sends no snapshot and replays nothing missed.
+After every reconnect, the client subscribes and queries again.
+
+=== What a change holds
+
+Each committed write sends one change.
+A change lists each movie or episode whose `watchStatus`, `watchProgress` or `lastWatchedAt` changed.
+It also lists the season and the series of each such episode, because their aggregate values may have changed.
+Each item appears once in a change.
+The server reads the values when it delivers the change, so they are current values, not differences.
+A client applies a change by item id, and applying a change twice changes nothing.
+An item removed after the write is left out of the change.
+
+Marking a series watched lists every episode of the series.
+A client keeps its subscription fragments lean, because a large selection can exceed `GRAPHQL_SUBSCRIPTION_CONNECTION_SEND_BUFFER` and close the socket with 4101.
+
+=== Who receives a change
+
+Every open socket of the Profile receives the change, including the socket of the client that made the write.
+No socket of another Profile receives the change, even in the same Household.
+A socket keeps the Profile of the token that opened it.
+After a Profile or Household switch, the client closes the old socket and discards its changes, as described in <<Client lifecycle>>.
+
+=== Order
+
+The server delivers one operation's changes in order, one at a time.
+The last change an operation receives carries the latest values.
+An intermediate change may already carry values from a later write.
+There is no order across operations or across fields.
+
+=== Keeping lists current
+
+A client keeps its lists current with the same rules the server's queries use.
+It needs no follow-up query.
+
+* *Continue Watching* holds each movie and episode whose `watchStatus` is `IN_PROGRESS`.
+It orders them by `lastWatchedAt`, newest first, then by `id`.
+A client inserts an item when the item becomes `IN_PROGRESS`, moves the item when `lastWatchedAt` changes, and removes the item when the item leaves `IN_PROGRESS`.
+* *Library views* hold an item when `library { id }` names the view's library and the item matches every active filter.
+The `watchStatus` filter compares the item's `watchStatus`.
+The `unmatched` filter compares the item's `unmatched` field.
+A client selects the fields its active filters compare.
+* *The `LAST_WATCHED` sort* orders by `lastWatchedAt`, with items that have none last in both directions, then by `id`.
+
+A client keeps the `pageInfo` cursors from its last page query and never builds a cursor.
+A cursor stays a valid position after its item leaves the view or moves.
+When the client loads the next page, it drops items it already holds by id, because a moved item can arrive twice.
+
+=== Failed changes
+
+The server resolves each change for each subscriber.
+A field that waits on a batched load, such as `watchStatus`, fails when it cannot resolve within `GRAPHQL_SUBSCRIPTION_DELIVERY_FETCH_TIMEOUT`, so later changes do not wait behind it.
+The timeout does not bound `items`, which reads the database directly.
+A stalled read of `items` holds back the operation's later changes until the read completes.
+A failed nullable field, such as `watchProgress` or `lastWatchedAt`, arrives as null in a `next` message.
+A failed non-null field of an item, such as `watchStatus`, `library` or `unmatched`, makes that item null in `items`.
+The other items of the change arrive intact.
+When the change's items cannot be resolved, `watchStateChanged` arrives as null.
+The operation continues in every case, and the client recovers as <<Field errors>> describes.
+
 == Configuration
 
 [cols="2,1,3"]
@@ -193,9 +279,13 @@ It discards changes that arrive from the old socket after the switch, so they ne
 |`GRAPHQL_SUBSCRIPTION_CONNECTION_SEND_BUFFER`
 |`1MB`
 |How many unsent bytes one socket may hold before it closes with 4101.
+
+|`GRAPHQL_SUBSCRIPTION_DELIVERY_FETCH_TIMEOUT`
+|`10s`
+|How long one asynchronous field of a delivered change may take to resolve. A slower field fails.
 |===
 
-The server refuses to start when a subscription limit is missing, zero, or negative.
+The server refuses to start when a subscription limit or the delivery fetch timeout is missing, zero, or negative.
 Tomcat ends a socket write that stalls for 20 seconds.
 
 == Metrics

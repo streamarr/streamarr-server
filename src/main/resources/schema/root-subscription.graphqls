@@ -1,33 +1,37 @@
 """
-Live changes for library administration. Subscriptions run only over the graphql-transport-ws
-WebSocket on /graphql; queries and mutations run only over HTTP POST on /graphql.
+Live changes. Subscriptions run only over the graphql-transport-ws WebSocket on /graphql; queries
+and mutations run only over HTTP POST on /graphql.
 
 A subscription delivers changes from the moment it registers. It sends no snapshot and replays
-nothing missed. To build current state, subscribe first, then query
-`libraries { id name status scanStartedOn scanCompletedOn }`, and apply each later change by
-library id.
-
-Each field delivers one library's changes in the order they were committed. There is no order
-across libraries or across fields: `libraryAdded` and `libraryStatusChanged` for one library may
-arrive in either order. `libraryStatusChanged` delivers the library as the server reads it after
-the change, so a client may miss an intermediate status, but the last change it receives carries
-the latest status. A subscription never completes normally while the server runs.
+nothing missed. To build current state, subscribe first, then run the queries the field names,
+and apply each later change by id. For library administration, query
+`libraries { id name status scanStartedOn scanCompletedOn }`. A subscription never completes
+normally while the server runs.
 
 A field error does not end the operation. When a selected field of one change fails to resolve,
-the server delivers that change as null with errors, and later changes still arrive. A client
-skips the null change and may query `libraries` again to recover the state it missed.
+the server still delivers the change with the failed value as null and with errors, and later
+changes still arrive. A later change may not repeat a value that failed. After a change that
+carries errors, the client applies the rest of the change and runs the field's queries again
+while the subscription stays open.
 
-These errors end the operation:
-FORBIDDEN when the caller is not a ServerAdmin,
+Each field states who may subscribe. These errors end the operation:
+PROFILE_REQUIRED when the field needs a selected Profile and the access token has none,
+FORBIDDEN when the caller may not subscribe to the field,
 AUTHORIZATION_UNAVAILABLE when authorization cannot be decided,
 SUBSCRIPTION_OVERFLOW when changes arrived faster than the server could resolve them,
 TOO_MANY_OPERATIONS when the connection already runs its maximum number of operations.
-After SUBSCRIPTION_OVERFLOW, subscribe again and query `libraries` again.
+After SUBSCRIPTION_OVERFLOW, subscribe again and run the field's queries again.
 """
 type Subscription {
     """
     A library's status or scan times changed. Delivers the library after each change, or null with
     errors when a selected field fails to resolve. ServerAdmin only.
+
+    Each library administration field delivers one library's changes in the order they were
+    committed. There is no order across libraries or across fields: `libraryAdded` and
+    `libraryStatusChanged` for one library may arrive in either order. This field delivers the
+    library as the server reads it after the change, so a client may miss an intermediate status,
+    but the last change it receives carries the latest status.
     """
     libraryStatusChanged: Library
 
@@ -42,4 +46,38 @@ type Subscription {
     field fails to resolve. ServerAdmin only.
     """
     libraryRemoved: LibraryRemoval
+
+    """
+    The selected Profile's watch state changed. The Profile comes from the access token that opened
+    the socket; no argument names the Profile. The caller needs a selected Profile and the
+    ViewProfileActivity permission for that Profile. The selected Profile has the permission while
+    its Account is enabled.
+
+    Delivers one change for each committed write. The change holds each movie or episode whose watchStatus, watchProgress or
+    lastWatchedAt changed. It also holds the season and the series of each such episode, because
+    their aggregate values may have changed. Every open socket of the Profile receives the change,
+    including the socket of the client that made the write. Values are current values, not
+    differences, so a client may apply a change twice. The server reads the values when it delivers
+    the change, and it delivers one operation's changes in order, so the last change an operation
+    receives carries the latest values.
+
+    To build current state, subscribe first, then query `continueWatching` and the library views
+    the client shows. Select the same fields in the change as in those queries.
+
+    A field that fails to resolve does not end the operation. The `errors` of the message name the
+    path of each failed field. A failed nullable field arrives as null. A failed non-null field of
+    an item makes that item null, and the other items arrive intact. A change whose items cannot be
+    resolved arrives as null.
+    """
+    watchStateChanged: WatchStateChange
+}
+
+"One committed watch-state change for the selected Profile."
+type WatchStateChange {
+    """
+    The movies and episodes whose watch state changed, and the seasons and series that hold those
+    episodes. Each item appears once. An item is null when one of its non-null fields failed to
+    resolve.
+    """
+    items: [WatchStateItem]!
 }

@@ -8,6 +8,7 @@ import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.domain.streaming.WatchHistory;
 import com.streamarr.server.domain.streaming.WatchStatus;
+import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
@@ -15,6 +16,9 @@ import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.watchprogress.events.WatchStateChangedEvent;
 import java.time.Instant;
@@ -46,6 +50,21 @@ public class WatchStatusService {
   private final SeasonRepository seasonRepository;
   private final SeriesRepository seriesRepository;
   private final ApplicationEventPublisher eventPublisher;
+  private final AuthorizationService authorizationService;
+
+  /**
+   * Requires a selected Profile that may view its own watch activity. Throws {@link
+   * ProfileRequiredException} without a selected Profile, and otherwise fails as {@link
+   * AuthorizationService#requireAllowed} does.
+   */
+  public void requireViewProfileActivity(AuthenticatedIdentity identity) {
+    var profileId = identity.profileId();
+    if (profileId == null) {
+      throw new ProfileRequiredException();
+    }
+
+    authorizationService.requireAllowed(identity, new Intent.ViewProfileActivity(profileId));
+  }
 
   @Transactional
   public Outcome<BaseCollectable<?>, MarkWatchedRejection> markWatched(

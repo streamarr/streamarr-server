@@ -161,6 +161,31 @@ class SeriesServiceTest {
 
       assertThat(result).extracting(Episode::getEpisodeNumber).containsExactly(1, 2);
     }
+
+    @Test
+    @DisplayName("Should return each season and series once when episodes of one season are given")
+    void shouldReturnEachSeasonAndSeriesOnceWhenEpisodesOfOneSeasonAreGiven() {
+      var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+      var season = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
+      var pilot = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+      var second =
+          episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+      var episodeIds = List.of(pilot.getId(), second.getId(), UUID.randomUUID());
+
+      assertThat(seriesService.findEpisodesByIds(episodeIds))
+          .containsExactlyInAnyOrder(pilot, second);
+      assertThat(seriesService.findSeasonsByEpisodeIds(episodeIds)).containsExactly(season);
+      assertThat(seriesService.findSeriesByEpisodeIds(episodeIds)).containsExactly(series);
+    }
+
+    @Test
+    @DisplayName("Should return no season and no series when the ids name no episode")
+    void shouldReturnNoSeasonAndNoSeriesWhenIdsNameNoEpisode() {
+      var movieId = List.of(UUID.randomUUID());
+
+      assertThat(seriesService.findSeasonsByEpisodeIds(movieId)).isEmpty();
+      assertThat(seriesService.findSeriesByEpisodeIds(movieId)).isEmpty();
+    }
   }
 
   @Nested

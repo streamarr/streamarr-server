@@ -3,6 +3,7 @@ package com.streamarr.server.graphql.subscriptions;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -30,16 +31,24 @@ class SubscriptionPropertiesTest {
                 "max-operations-per-connection",
                 "4",
                 "connection-send-buffer",
-                "256KB"));
+                "256KB",
+                "delivery-fetch-timeout",
+                "3s"));
 
     assertThat(properties.operationBuffer()).isEqualTo(16);
     assertThat(properties.maxOperationsPerConnection()).isEqualTo(4);
     assertThat(properties.connectionSendBuffer()).isEqualTo(DataSize.ofKilobytes(256));
+    assertThat(properties.deliveryFetchTimeout()).isEqualTo(Duration.ofSeconds(3));
   }
 
   @ParameterizedTest(name = "{0}")
   @ValueSource(
-      strings = {"operation-buffer", "max-operations-per-connection", "connection-send-buffer"})
+      strings = {
+        "operation-buffer",
+        "max-operations-per-connection",
+        "connection-send-buffer",
+        "delivery-fetch-timeout"
+      })
   @DisplayName("Should refuse to start when a limit is zero")
   void shouldRefuseToStartWhenLimitIsZero(String limit) {
     var limits = new HashMap<>(validLimits());
@@ -54,7 +63,12 @@ class SubscriptionPropertiesTest {
 
   @ParameterizedTest(name = "{0}")
   @ValueSource(
-      strings = {"operation-buffer", "max-operations-per-connection", "connection-send-buffer"})
+      strings = {
+        "operation-buffer",
+        "max-operations-per-connection",
+        "connection-send-buffer",
+        "delivery-fetch-timeout"
+      })
   @DisplayName("Should refuse to start when a limit is missing")
   void shouldRefuseToStartWhenLimitIsMissing(String limit) {
     var limits = new HashMap<>(validLimits());
@@ -70,7 +84,9 @@ class SubscriptionPropertiesTest {
         "max-operations-per-connection",
         "32",
         "connection-send-buffer",
-        "1MB");
+        "1MB",
+        "delivery-fetch-timeout",
+        "10s");
   }
 
   private static SubscriptionProperties bind(Map<String, String> limits) {

@@ -30,6 +30,13 @@ type Movie implements BaseCollectable {
     first, then by id. Null when the Profile has not watched this movie.
     """
     lastWatchedAt: String
+    "The library that holds this movie."
+    library: Library!
+    """
+    True when this movie has no provider id, so no metadata provider matched it. Agrees with the
+    unmatched filter on Library.items.
+    """
+    unmatched: Boolean!
 }
 
 type ContentRating {

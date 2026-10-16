@@ -1,17 +1,24 @@
 package com.streamarr.server.services.watchprogress;
 
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountScopedBuilder;
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.defaultIdentityBuilder;
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.profileScopedBuilder;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildMatchedMediaFile;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildMovie;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeries;
 import static com.streamarr.server.fixtures.SessionProgressFixture.progressBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.streaming.WatchHistory;
 import com.streamarr.server.domain.streaming.WatchStatus;
+import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
@@ -19,6 +26,8 @@ import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
+import com.streamarr.server.services.authorization.Decision;
+import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.watchprogress.events.WatchStateChangedEvent;
 import java.time.Instant;
@@ -30,6 +39,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.access.AccessDeniedException;
 
 @Tag("UnitTest")
 @DisplayName("Watch Status Service Tests")
@@ -43,6 +53,7 @@ class WatchStatusServiceTest {
   private FakeSeasonRepository seasonRepository;
   private FakeSeriesRepository seriesRepository;
   private CapturingEventPublisher eventPublisher;
+  private FakeAuthorizationService authorizationService;
   private WatchStatusService service;
 
   private static final UUID PROFILE_ID = UUID.randomUUID();
@@ -59,6 +70,7 @@ class WatchStatusServiceTest {
     seasonRepository = new FakeSeasonRepository();
     seriesRepository = new FakeSeriesRepository();
     eventPublisher = new CapturingEventPublisher();
+    authorizationService = new FakeAuthorizationService(defaultIdentityBuilder().build());
     service =
         new WatchStatusService(
             sessionProgressRepository,
@@ -68,7 +80,54 @@ class WatchStatusServiceTest {
             episodeRepository,
             seasonRepository,
             seriesRepository,
-            eventPublisher);
+            eventPublisher,
+            authorizationService);
+  }
+
+  @Nested
+  @DisplayName("Viewing Profile Activity")
+  class ViewProfileActivityTests {
+
+    @Test
+    @DisplayName("Should authorize the selected Profile's activity when a Profile is selected")
+    void shouldAuthorizeSelectedProfilesActivityWhenProfileIsSelected() {
+      var identity = profileScopedBuilder().build();
+
+      service.requireViewProfileActivity(identity);
+
+      assertThat(authorizationService.recordedIntents())
+          .containsExactly(new Intent.ViewProfileActivity(identity.profileId()));
+    }
+
+    @Test
+    @DisplayName("Should refuse with ProfileRequiredException when no Profile is selected")
+    void shouldRefuseWithProfileRequiredExceptionWhenNoProfileIsSelected() {
+      var identity = accountScopedBuilder().build();
+
+      assertThatThrownBy(() -> service.requireViewProfileActivity(identity))
+          .isInstanceOf(ProfileRequiredException.class);
+      assertThat(authorizationService.recordedIntents()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should refuse when authorization denies viewing the Profile's activity")
+    void shouldRefuseWhenAuthorizationDeniesViewingProfilesActivity() {
+      var identity = profileScopedBuilder().build();
+      authorizationService.denyAll();
+
+      assertThatThrownBy(() -> service.requireViewProfileActivity(identity))
+          .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    @DisplayName("Should fail as unavailable when authorization cannot decide")
+    void shouldFailAsUnavailableWhenAuthorizationCannotDecide() {
+      var identity = profileScopedBuilder().build();
+      authorizationService.failWith(Decision.FailureCause.EVALUATION_ERROR);
+
+      assertThatThrownBy(() -> service.requireViewProfileActivity(identity))
+          .isInstanceOf(AuthorizationUnavailableException.class);
+    }
   }
 
   @Nested

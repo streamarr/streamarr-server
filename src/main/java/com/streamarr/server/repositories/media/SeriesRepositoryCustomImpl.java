@@ -16,6 +16,7 @@ import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.not;
 import static org.jooq.impl.DSL.select;
+import static org.jooq.impl.DSL.selectOne;
 
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.CollectableScope;
@@ -29,9 +30,11 @@ import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import jakarta.persistence.EntityManager;
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -86,6 +89,19 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
     }
 
     return results;
+  }
+
+  @Override
+  public Set<UUID> findUnmatchedSeriesIds(Collection<UUID> seriesIds) {
+    return context
+        .select(SERIES.ID)
+        .from(SERIES)
+        .where(SERIES.ID.in(seriesIds))
+        .andNotExists(
+            selectOne()
+                .from(EXTERNAL_IDENTIFIER)
+                .where(EXTERNAL_IDENTIFIER.ENTITY_ID.eq(SERIES.ID)))
+        .fetchSet(SERIES.ID);
   }
 
   public Optional<Series> findByTmdbId(String tmdbId) {

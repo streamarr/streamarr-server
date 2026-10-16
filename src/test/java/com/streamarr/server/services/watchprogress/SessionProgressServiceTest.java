@@ -1,5 +1,6 @@
 package com.streamarr.server.services.watchprogress;
 
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.defaultIdentityBuilder;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildMatchedMediaFile;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildMovie;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeries;
@@ -15,6 +16,7 @@ import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
@@ -76,7 +78,8 @@ class SessionProgressServiceTest {
             episodeRepository,
             seasonRepository,
             seriesRepository,
-            eventPublisher);
+            eventPublisher,
+            new FakeAuthorizationService(defaultIdentityBuilder().build()));
     var properties = new WatchProgressProperties(5.0, 90.0, 300);
     service =
         new SessionProgressService(

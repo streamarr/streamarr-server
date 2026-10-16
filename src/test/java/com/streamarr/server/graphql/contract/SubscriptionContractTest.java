@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.contract;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import graphql.language.AstPrinter;
 import graphql.language.Description;
 import graphql.language.FieldDefinition;
 import graphql.language.NonNullType;
@@ -19,9 +20,10 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * The subscription schema contract from ADR 0042: every field is ServerAdmin only and documented,
- * is nullable so a field error never ends the operation, and identifies a removed library by id
- * alone.
+ * The subscription schema contract from ADR 0042: every field documents who may subscribe and is
+ * nullable so a field error never ends the operation, a removed library is identified by id alone,
+ * and a watch-state change lists its items, each nullable so a failed item leaves the others
+ * intact.
  */
 @Tag("UnitTest")
 @DisplayName("Subscription Contract Tests")
@@ -35,16 +37,42 @@ class SubscriptionContractTest {
     assertThat(descriptionOf(objectType("Subscription")))
         .contains("graphql-transport-ws")
         .contains("libraries")
+        .contains("PROFILE_REQUIRED")
         .contains("SUBSCRIPTION_OVERFLOW");
   }
 
   @Test
-  @DisplayName(
-      "Should state the ServerAdmin requirement when each subscription field is documented")
-  void shouldStateServerAdminRequirementWhenEachSubscriptionFieldIsDocumented() {
+  @DisplayName("Should state who may subscribe when each subscription field is documented")
+  void shouldStateWhoMaySubscribeWhenEachSubscriptionFieldIsDocumented() {
     assertThat(subscriptionFields())
         .isNotEmpty()
-        .allSatisfy(field -> assertThat(descriptionOf(field)).contains("ServerAdmin"));
+        .allSatisfy(
+            field ->
+                assertThat(descriptionOf(field))
+                    .containsAnyOf("ServerAdmin", "ViewProfileActivity"));
+  }
+
+  @Test
+  @DisplayName(
+      "Should name the selected Profile and its permission when the watch-state field is documented")
+  void shouldNameSelectedProfileAndItsPermissionWhenWatchStateFieldIsDocumented() {
+    assertThat(descriptionOf(subscriptionField("watchStateChanged")))
+        .contains("selected Profile")
+        .contains("ViewProfileActivity")
+        .contains("continueWatching");
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver a non-null list of nullable items when a watch-state change is delivered")
+  void shouldDeliverNonNullListOfNullableItemsWhenWatchStateChangeIsDelivered() {
+    assertThat(objectType("WatchStateChange").getFieldDefinitions())
+        .singleElement()
+        .satisfies(
+            field -> {
+              assertThat(field.getName()).isEqualTo("items");
+              assertThat(AstPrinter.printAst(field.getType())).isEqualTo("[WatchStateItem]!");
+            });
   }
 
   @Test
@@ -75,6 +103,13 @@ class SubscriptionContractTest {
 
   private static List<FieldDefinition> subscriptionFields() {
     return objectType("Subscription").getFieldDefinitions();
+  }
+
+  private static FieldDefinition subscriptionField(String name) {
+    return subscriptionFields().stream()
+        .filter(field -> field.getName().equals(name))
+        .findFirst()
+        .orElseThrow(() -> new AssertionError(name + " is not a subscription field"));
   }
 
   private static ObjectTypeDefinition objectType(String name) {

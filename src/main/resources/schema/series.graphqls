@@ -27,4 +27,11 @@ type Series implements BaseCollectable {
     by this value. Null when the Profile has not watched any episode of this series.
     """
     lastWatchedAt: String
+    "The library that holds this series."
+    library: Library!
+    """
+    True when this series has no provider id, so no metadata provider matched it. Agrees with the
+    unmatched filter on Library.items.
+    """
+    unmatched: Boolean!
 }

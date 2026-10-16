@@ -5,22 +5,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.support.ActiveSubscriptions;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.time.Duration;
-import java.util.List;
-import java.util.Queue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.reactivestreams.Subscription;
-import reactor.core.publisher.BaseSubscriber;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
@@ -28,7 +16,6 @@ import reactor.core.scheduler.Schedulers;
 @DisplayName("Subscription Broadcaster Tests")
 class SubscriptionBroadcasterTest {
 
-  private static final Duration BOUND = Duration.ofSeconds(5);
   private static final int OPERATION_BUFFER = 2;
 
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
@@ -169,62 +156,5 @@ class SubscriptionBroadcasterTest {
 
   private static double activeRegistrations(SimpleMeterRegistry registry) {
     return new ActiveSubscriptions(registry).count("libraryStatusChanged");
-  }
-
-  // Requests a fixed demand up front and keeps every signal for the test to take.
-  private static final class RecordingSubscriber extends BaseSubscriber<String> {
-
-    private final long initialDemand;
-    private final BlockingQueue<String> values = new LinkedBlockingQueue<>();
-    private final Queue<String> deliveryThreads = new ConcurrentLinkedQueue<>();
-    private final CompletableFuture<Throwable> error = new CompletableFuture<>();
-
-    private RecordingSubscriber(long initialDemand) {
-      this.initialDemand = initialDemand;
-    }
-
-    @Override
-    protected void hookOnSubscribe(Subscription subscription) {
-      if (initialDemand > 0) {
-        request(initialDemand);
-      }
-    }
-
-    @Override
-    protected void hookOnNext(String value) {
-      deliveryThreads.add(Thread.currentThread().getName());
-      values.add(value);
-    }
-
-    @Override
-    protected void hookOnError(Throwable throwable) {
-      error.complete(throwable);
-    }
-
-    private Throwable awaitError() {
-      try {
-        return error.get(BOUND.toMillis(), TimeUnit.MILLISECONDS);
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        throw new AssertionError("Interrupted while waiting for an error", e);
-      } catch (ExecutionException | TimeoutException e) {
-        throw new AssertionError("No error within " + BOUND, e);
-      }
-    }
-
-    private List<String> deliveryThreads() {
-      return List.copyOf(deliveryThreads);
-    }
-
-    private String take() {
-      try {
-        var value = values.poll(BOUND.toMillis(), TimeUnit.MILLISECONDS);
-        assertThat(value).as("a delivered value within %s", BOUND).isNotNull();
-        return value;
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        throw new AssertionError("Interrupted while waiting for a delivery", e);
-      }
-    }
   }
 }
