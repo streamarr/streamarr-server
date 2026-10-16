@@ -24,9 +24,10 @@ public record VideoPlaybackFacts(
     @NonNull FrameRateRule frameRateRule) {
 
   /**
-   * The size that a player shows and that an encode scales from. FFmpeg crops the coded picture
-   * first and then turns it a quarter turn for a rotation of 90 or -90 degrees. It applies no other
-   * rotation before scaling. A crop that leaves no picture leaves the coded size.
+   * The size that FFmpeg scales an encode from, and that a player shows. FFmpeg crops the coded
+   * picture first and then turns it a quarter turn for a rotation of 90 or -90 degrees. It applies
+   * no other rotation before scaling. Its crop filter rounds the size down to whole chroma samples.
+   * A crop that leaves no picture leaves the coded size.
    */
   public PictureSize displayedSize(@NonNull PictureSize coded) {
     var cropped = containerCropping.flatMap(crop -> cropped(coded, crop)).orElse(coded);
@@ -37,14 +38,39 @@ public record VideoPlaybackFacts(
     return new PictureSize(cropped.height(), cropped.width());
   }
 
-  private static Optional<PictureSize> cropped(PictureSize coded, ContainerCropping crop) {
+  private Optional<PictureSize> cropped(PictureSize coded, ContainerCropping crop) {
     var width = (long) coded.width() - crop.left() - crop.right();
     var height = (long) coded.height() - crop.top() - crop.bottom();
+    if (sharesChromaAcrossColumns()) {
+      width -= width % 2;
+    }
+
+    if (sharesChromaAcrossRows()) {
+      height -= height % 2;
+    }
+
     if (width <= 0 || height <= 0) {
       return Optional.empty();
     }
 
     return Optional.of(new PictureSize((int) width, (int) height));
+  }
+
+  // A stream without a known chroma subsampling crops as 4:2:0, the subsampling of nearly every
+  // source.
+  private boolean sharesChromaAcrossColumns() {
+    return chromaSubsampling
+        .map(
+            subsampling ->
+                subsampling == ChromaSubsampling.CHROMA_420
+                    || subsampling == ChromaSubsampling.CHROMA_422)
+        .orElse(true);
+  }
+
+  private boolean sharesChromaAcrossRows() {
+    return chromaSubsampling
+        .map(subsampling -> subsampling == ChromaSubsampling.CHROMA_420)
+        .orElse(true);
   }
 
   @SuppressWarnings("java:S1068") // Lombok builder defaults — fields are used by generated code
