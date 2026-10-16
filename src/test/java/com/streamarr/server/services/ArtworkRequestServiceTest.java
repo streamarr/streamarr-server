@@ -1031,17 +1031,7 @@ class ArtworkRequestServiceTest {
             + " the download waits to retry")
     void shouldFinishAnOperationsTaskWaitWhenAnotherOperationTakesOverItsRequest()
         throws Exception {
-      var sleeper = new CountingSleeper();
-      var waiting =
-          ArtworkFixture.builder()
-              .imageRepository(imageRepository)
-              .imageDownloader(imageDownloader)
-              .itemResults(itemResults)
-              .clock(clock)
-              .sleeper(sleeper)
-              .build();
-      waiting.scheduling().holdScheduledSteps();
-      sleeper.onSleep(_ -> waiting.scheduling().runPendingSteps());
+      var waiting = artworkRunningHeldStepsOnEachSleep(new CountingSleeper());
       imageDownloader.failDownloadWith(
           "/poster.jpg", new ImageDownloadException(503, "/poster.jpg", Optional.empty()));
       var movie = movieArtwork(UUID.randomUUID(), POSTER);
@@ -1075,7 +1065,7 @@ class ArtworkRequestServiceTest {
     @DisplayName(
         "Should wait for artwork that an earlier execution of the operation requested when a new"
             + " run of the operation requests nothing")
-    void shouldWaitForArtworkThatAnEarlierExecutionOfTheOperationRequested() throws Exception {
+    void shouldWaitForArtworkThatAnEarlierExecutionOfTheOperationRequested() {
       var sleeper = new CountingSleeper();
       var waiting =
           ArtworkFixture.builder()
@@ -1247,6 +1237,21 @@ class ArtworkRequestServiceTest {
   private static CannotGetJdbcConnectionException poolTimeout() {
     return new CannotGetJdbcConnectionException(
         "simulated pool timeout", new SQLTransientConnectionException("connection not available"));
+  }
+
+  // Each wait's sleep runs the held artwork steps, so the steps run only while a run waits.
+  private ArtworkFixture artworkRunningHeldStepsOnEachSleep(CountingSleeper sleeper) {
+    var waiting =
+        ArtworkFixture.builder()
+            .imageRepository(imageRepository)
+            .imageDownloader(imageDownloader)
+            .itemResults(itemResults)
+            .clock(clock)
+            .sleeper(sleeper)
+            .build();
+    waiting.scheduling().holdScheduledSteps();
+    sleeper.onSleep(_ -> waiting.scheduling().runPendingSteps());
+    return waiting;
   }
 
   private ArtworkFixture artworkWith(TmdbImageDownloader downloader) {
