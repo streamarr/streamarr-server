@@ -947,6 +947,121 @@ class LibraryManagementServiceTest {
     }
 
     @Test
+    @DisplayName(
+        "Should reject with an INSIDE overlap when the path is inside another library's path")
+    void shouldRejectWithInsideOverlapWhenPathIsInsideAnotherLibrarysPath() throws IOException {
+      var movies = registeredLibrary("Movies", "/media/movies");
+      var action = Files.createDirectories(fileSystem.getPath("/media/movies/action"));
+
+      var outcome = libraryManagementService.addLibrary(identity, unsavedLibraryAt(action));
+
+      assertThat(outcome)
+          .isEqualTo(
+              Outcome.rejected(
+                  new AddLibraryRejection.PathOverlap(
+                      LibraryPathOverlap.INSIDE, movies, fileSystem.getPath("/media/movies"))));
+    }
+
+    @Test
+    @DisplayName(
+        "Should reject with a CONTAINS overlap when the path contains another library's path")
+    void shouldRejectWithContainsOverlapWhenPathContainsAnotherLibrarysPath() throws IOException {
+      var movies = registeredLibrary("Movies", "/media/movies");
+
+      var outcome =
+          libraryManagementService.addLibrary(
+              identity, unsavedLibraryAt(fileSystem.getPath("/media")));
+
+      assertThat(outcome)
+          .isEqualTo(
+              Outcome.rejected(
+                  new AddLibraryRejection.PathOverlap(
+                      LibraryPathOverlap.CONTAINS, movies, fileSystem.getPath("/media/movies"))));
+    }
+
+    @Test
+    @DisplayName(
+        "Should name every contained library in name order when the path contains several"
+            + " libraries' paths")
+    void shouldNameEveryContainedLibraryInNameOrderWhenPathContainsSeveralLibrariesPaths()
+        throws IOException {
+      var television = registeredLibrary("Television", "/media/tv");
+      var movies = registeredLibrary("Movies", "/media/movies");
+
+      var outcome =
+          libraryManagementService.addLibrary(
+              identity, unsavedLibraryAt(fileSystem.getPath("/media")));
+
+      assertThat(outcome)
+          .isEqualTo(
+              Outcome.rejected(
+                  List.of(
+                      new AddLibraryRejection.PathOverlap(
+                          LibraryPathOverlap.CONTAINS, movies, fileSystem.getPath("/media/movies")),
+                      new AddLibraryRejection.PathOverlap(
+                          LibraryPathOverlap.CONTAINS,
+                          television,
+                          fileSystem.getPath("/media/tv")))));
+    }
+
+    @Test
+    @DisplayName(
+        "Should accept a path when it shares only a name prefix with another library's path")
+    void shouldAcceptPathWhenItSharesOnlyNamePrefixWithAnotherLibrarysPath() throws IOException {
+      registeredLibrary("Movies", "/media/movies");
+      var movies2 = Files.createDirectories(fileSystem.getPath("/media/movies2"));
+
+      var outcome = libraryManagementService.addLibrary(identity, unsavedLibraryAt(movies2));
+
+      assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    }
+
+    @Test
+    @DisplayName(
+        "Should reject with an INSIDE overlap when the path reaches the library through dot"
+            + " segments and a trailing separator")
+    void shouldRejectWithInsideOverlapWhenPathReachesLibraryThroughDotSegmentsAndTrailingSeparator()
+        throws IOException {
+      var movies = registeredLibrary("Movies", "/media/movies");
+      Files.createDirectories(fileSystem.getPath("/media/tv"));
+      Files.createDirectories(fileSystem.getPath("/media/movies/action"));
+      var library =
+          LibraryFixtureCreator.unsavedLibraryBuilder()
+              .name("Action")
+              .filepathUri("/media/tv/.././movies/action/")
+              .build();
+
+      var outcome = libraryManagementService.addLibrary(identity, library);
+
+      assertThat(outcome)
+          .isEqualTo(
+              Outcome.rejected(
+                  new AddLibraryRejection.PathOverlap(
+                      LibraryPathOverlap.INSIDE, movies, fileSystem.getPath("/media/movies"))));
+    }
+
+    @Test
+    @DisplayName(
+        "Should store no library, publish no event and schedule no scan when the path overlaps"
+            + " another library's path")
+    void shouldStoreNoLibraryPublishNoEventAndScheduleNoScanWhenPathOverlapsAnotherLibrarysPath()
+        throws IOException {
+      registeredLibrary("Movies", "/media/movies");
+      var action = Files.createDirectories(fileSystem.getPath("/media/movies/action"));
+      var librariesBefore = fakeLibraryRepository.count();
+      var eventsBefore = capturingEventPublisher.getEventsOfType(LibraryAddedEvent.class).size();
+      var scansBefore = libraryOperationScheduling.scheduledExecutions().size();
+
+      libraryManagementService.addLibrary(identity, unsavedLibraryAt(action));
+
+      assertThat(fakeLibraryRepository.count()).isEqualTo(librariesBefore);
+      assertThat(capturingEventPublisher.getEventsOfType(LibraryAddedEvent.class))
+          .hasSize(eventsBefore);
+      assertThat(libraryOperationScheduling.scheduledExecutions()).hasSize(scansBefore);
+      assertThat(transactionManager.rollbacks()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("Should reject with PathNotFound when path does not exist on disk")
     void shouldRejectWithPathNotFoundWhenPathDoesNotExist() {
       var library =
@@ -1187,6 +1302,24 @@ class LibraryManagementServiceTest {
     private Library accepted(Outcome<Library, AddLibraryRejection> outcome) {
       assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
       return ((Outcome.Accepted<Library, AddLibraryRejection>) outcome).result();
+    }
+
+    private Library registeredLibrary(String name, String folder) throws IOException {
+      var path = Files.createDirectories(fileSystem.getPath(folder));
+      return accepted(
+          libraryManagementService.addLibrary(
+              identity,
+              LibraryFixtureCreator.unsavedLibraryBuilder()
+                  .name(name)
+                  .filepathUri(path.toString())
+                  .build()));
+    }
+
+    private static Library unsavedLibraryAt(Path folder) {
+      return LibraryFixtureCreator.unsavedLibraryBuilder()
+          .name("Added")
+          .filepathUri(folder.toString())
+          .build();
     }
   }
 

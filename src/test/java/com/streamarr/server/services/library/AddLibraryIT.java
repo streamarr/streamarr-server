@@ -145,8 +145,22 @@ class AddLibraryIT extends AbstractIntegrationTest {
     return Stream.of(
         Arguments.of(
             "the same path",
+            new ConcurrentAdds("movies", "movies", AddLibraryRejection.PathAlreadyRegistered::new)),
+        Arguments.of(
+            "a path inside the first library's path",
             new ConcurrentAdds(
-                "movies", "movies", AddLibraryRejection.PathAlreadyRegistered::new)));
+                "",
+                "movies",
+                (first, path) ->
+                    new AddLibraryRejection.PathOverlap(LibraryPathOverlap.INSIDE, first, path))),
+        Arguments.of(
+            "a path that contains the first library's path",
+            new ConcurrentAdds(
+                "movies",
+                "",
+                (first, path) ->
+                    new AddLibraryRejection.PathOverlap(
+                        LibraryPathOverlap.CONTAINS, first, path))));
   }
 
   /** Two folders below the test's directory, and the refusal the second add expects. */
