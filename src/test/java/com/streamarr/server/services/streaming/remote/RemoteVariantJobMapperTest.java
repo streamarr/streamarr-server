@@ -209,18 +209,6 @@ class RemoteVariantJobMapperTest {
   }
 
   @Test
-  @DisplayName(
-      "Should send no video decision when the job copies a source that its probe gave no playback facts")
-  void shouldSendNoVideoDecisionWhenTheJobCopiesASourceThatItsProbeGaveNoPlaybackFacts() {
-    var request =
-        copyAttempt()
-            .transcodeDecision(copyDecisionBuilder().videoSource(Optional.empty()).build())
-            .build();
-
-    assertThat(mapper.map(request).getDecision().hasVideo()).isFalse();
-  }
-
-  @Test
   @DisplayName("Should force no codec profile, tier or level when the job copies the video")
   void shouldForceNoCodecProfileTierOrLevelWhenTheJobCopiesTheVideo() {
     var decision = mapper.map(copyAttempt().build()).getDecision();

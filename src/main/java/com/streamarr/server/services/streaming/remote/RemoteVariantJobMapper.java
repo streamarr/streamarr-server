@@ -73,10 +73,7 @@ final class RemoteVariantJobMapper {
       return decision.setVideo(encode(encode.get(), source)).build();
     }
 
-    // A copy of a source that its probe gave no playback facts carries no video decision, as
-    // before probe version 4.
-    source.ifPresent(facts -> decision.setVideo(copy(request.transcodeDecision(), facts)));
-    return decision.build();
+    return decision.setVideo(copy(request.transcodeDecision(), source.orElseThrow())).build();
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")

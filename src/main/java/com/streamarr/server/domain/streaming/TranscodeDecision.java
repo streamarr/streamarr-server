@@ -5,9 +5,9 @@ import lombok.Builder;
 import lombok.NonNull;
 
 /**
- * {@code videoSource} holds the playback facts of the chosen video stream that the decision read,
- * and is empty when the probe version reports none. A decision that copies a stream with playback
- * facts needs the codec string that the probe stored, because the copy carries it.
+ * {@code videoSource} holds the playback facts of the chosen video stream that the decision read. A
+ * decision that copies the video needs the codec string that the probe stored, because the copy job
+ * carries it.
  */
 @Builder
 public record TranscodeDecision(
@@ -20,7 +20,7 @@ public record TranscodeDecision(
   public TranscodeDecision {
     if (transcodeMode != null
         && transcodeMode.copiesVideo()
-        && videoSource.filter(facts -> facts.codecString().isEmpty()).isPresent()) {
+        && videoSource.flatMap(VideoPlaybackFacts::codecString).isEmpty()) {
       throw new IllegalArgumentException(
           "A decision that copies the video needs the source's codec string");
     }
