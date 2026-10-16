@@ -20,16 +20,22 @@ import com.streamarr.server.graphql.dto.AlphabetIndexDto;
 import com.streamarr.server.graphql.inputs.AddLibraryInput;
 import com.streamarr.server.graphql.inputs.MediaFilterInput;
 import com.streamarr.server.graphql.inputs.MediaSortInput;
+import com.streamarr.server.graphql.inputs.RemoveLibraryInput;
+import com.streamarr.server.graphql.inputs.StartLibraryRefreshInput;
+import com.streamarr.server.graphql.inputs.StartLibraryScanInput;
 import com.streamarr.server.graphql.mutation.MutationPayloads;
 import com.streamarr.server.graphql.mutation.library.AddLibraryErrors;
 import com.streamarr.server.graphql.mutation.library.AddLibraryPayload;
+import com.streamarr.server.graphql.mutation.library.LibraryOperationErrors;
+import com.streamarr.server.graphql.mutation.library.RemoveLibraryPayload;
+import com.streamarr.server.graphql.mutation.library.StartLibraryRefreshPayload;
+import com.streamarr.server.graphql.mutation.library.StartLibraryScanPayload;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.library.LibraryAdministrationService;
 import com.streamarr.server.services.library.LibraryManagementService;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptionsResolver;
 import com.streamarr.server.services.pagination.PaginationService;
@@ -77,26 +83,50 @@ public class LibraryResolver {
   }
 
   @DgsMutation
-  public boolean removeLibrary(String id) {
-    var libraryId = parseUuid(id);
-    var identity = authorizationService.currentIdentity();
-    libraryAdministrationService.removeLibrary(identity, libraryId);
-    return true;
+  public RemoveLibraryPayload removeLibrary(@InputArgument RemoveLibraryInput input) {
+    return MutationPayloads.withUuid(
+        input.libraryId(),
+        libraryId ->
+            MutationPayloads.payload(
+                libraryAdministrationService
+                    .removeLibrary(authorizationService.currentIdentity(), libraryId)
+                    .map(UUID::toString),
+                LibraryOperationErrors::toRemoveLibraryError,
+                RemoveLibraryPayload::new),
+        () ->
+            MutationPayloads.inputError(
+                LibraryOperationErrors.invalidLibraryId(), RemoveLibraryPayload::new));
   }
 
   @DgsMutation
-  public boolean scanLibrary(String id) {
-    var libraryId = parseUuid(id);
-    libraryAdministrationService.scanLibrary(authorizationService.currentIdentity(), libraryId);
-    return true;
+  public StartLibraryScanPayload startLibraryScan(@InputArgument StartLibraryScanInput input) {
+    return MutationPayloads.withUuid(
+        input.libraryId(),
+        libraryId ->
+            MutationPayloads.payload(
+                libraryAdministrationService.startLibraryScan(
+                    authorizationService.currentIdentity(), libraryId),
+                LibraryOperationErrors::toStartLibraryScanError,
+                StartLibraryScanPayload::new),
+        () ->
+            MutationPayloads.inputError(
+                LibraryOperationErrors.invalidLibraryId(), StartLibraryScanPayload::new));
   }
 
   @DgsMutation
-  public boolean refreshLibrary(String id, @InputArgument ImageRefreshMode imageRefreshMode) {
-    var libraryId = parseUuid(id);
-    libraryAdministrationService.refreshLibrary(
-        authorizationService.currentIdentity(), libraryId, imageRefreshMode);
-    return true;
+  public StartLibraryRefreshPayload startLibraryRefresh(
+      @InputArgument StartLibraryRefreshInput input) {
+    return MutationPayloads.withUuid(
+        input.libraryId(),
+        libraryId ->
+            MutationPayloads.payload(
+                libraryAdministrationService.startLibraryRefresh(
+                    authorizationService.currentIdentity(), libraryId, input.imageRefreshMode()),
+                LibraryOperationErrors::toStartLibraryRefreshError,
+                StartLibraryRefreshPayload::new),
+        () ->
+            MutationPayloads.inputError(
+                LibraryOperationErrors.invalidLibraryId(), StartLibraryRefreshPayload::new));
   }
 
   @DgsQuery

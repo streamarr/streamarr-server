@@ -221,9 +221,10 @@ addLibrary()
     → LibraryAddedEvent
         → DirectoryWatchingService (register watcher)
 
-scanLibrary()
-    → ScanCompletedEvent
-        → OrphanedMediaFileCleanupService (remove orphaned files)
+startLibraryScan()
+    → stored library operation, run by its scheduled task
+        → ScanCompletedEvent
+            → OrphanedMediaFileCleanupService (remove orphaned files)
 
 removeLibrary()
     → LibraryRemovedEvent

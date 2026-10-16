@@ -5,10 +5,10 @@ import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
-import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
-import com.streamarr.server.exceptions.LibraryScanFailedException;
-import com.streamarr.server.exceptions.LibraryScanInProgressException;
+import com.streamarr.server.exceptions.LibraryOperationNotScheduledException;
+import com.streamarr.server.exceptions.LibraryOperationNotStartedException;
 import com.streamarr.server.repositories.LibraryMetadataRepository;
+import com.streamarr.server.repositories.LibraryOperationRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.MovieService;
@@ -16,41 +16,34 @@ import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.Intent;
-import com.streamarr.server.services.concurrency.MutexFactory;
-import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.events.library.ItemProcessedEvent;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
-import com.streamarr.server.services.events.library.LibraryStatusChangedEvent;
-import com.streamarr.server.services.events.library.RefreshEndedEvent;
-import com.streamarr.server.services.events.library.ScanCompletedEvent;
-import com.streamarr.server.services.events.library.ScanEndedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import lombok.Builder;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 @Slf4j
 @Service
-public class LibraryManagementService implements ActiveScanChecker, LibraryScanTrigger {
+@Builder
+@RequiredArgsConstructor
+public class LibraryManagementService {
 
   /**
    * The unique index from V035 that makes a duplicate path a database decision, not a pre-check.
@@ -64,64 +57,25 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
   private final MovieService movieService;
   private final SeriesService seriesService;
   private final ApplicationEventPublisher eventPublisher;
-  private final LibraryRefreshService libraryRefreshService;
   private final FileSystem fileSystem;
   private final LibraryMutationTransaction libraryMutationTransaction;
-  private final MutexFactory<String> mutexFactory;
   private final MutationTransactions mutationTransactions;
-  private final FileDiscoveryRuns fileDiscoveryRuns;
-  private final LibraryFolderCheck libraryFolderCheck;
-  private final Set<UUID> activeScans = ConcurrentHashMap.newKeySet();
-  private final Set<UUID> activeRefreshes = ConcurrentHashMap.newKeySet();
-
-  @Builder
-  public LibraryManagementService(
-      LibraryFileWalk libraryFileWalk,
-      LibraryRepository libraryRepository,
-      LibraryMetadataRepository libraryMetadataRepository,
-      MediaFileRepository mediaFileRepository,
-      MovieService movieService,
-      SeriesService seriesService,
-      ApplicationEventPublisher eventPublisher,
-      MutexFactoryProvider mutexFactoryProvider,
-      LibraryRefreshService libraryRefreshService,
-      FileSystem fileSystem,
-      LibraryMutationTransaction libraryMutationTransaction,
-      MutationTransactions mutationTransactions,
-      FileDiscoveryRuns fileDiscoveryRuns,
-      LibraryFolderCheck libraryFolderCheck) {
-    this.libraryFileWalk = libraryFileWalk;
-    this.libraryRepository = libraryRepository;
-    this.libraryMetadataRepository = libraryMetadataRepository;
-    this.mediaFileRepository = mediaFileRepository;
-    this.movieService = movieService;
-    this.seriesService = seriesService;
-    this.eventPublisher = eventPublisher;
-    this.libraryRefreshService = libraryRefreshService;
-    this.fileSystem = fileSystem;
-    this.libraryMutationTransaction = libraryMutationTransaction;
-    this.mutationTransactions = mutationTransactions;
-    this.fileDiscoveryRuns = fileDiscoveryRuns;
-    this.libraryFolderCheck = libraryFolderCheck;
-
-    this.mutexFactory = mutexFactoryProvider.getMutexFactory();
-  }
-
-  @Override
-  public boolean isActivelyScanning(UUID libraryId) {
-    return activeScans.contains(libraryId);
-  }
+  private final LibraryOperationRepository libraryOperations;
+  private final LibraryOperationService libraryOperationService;
 
   public List<LibraryMetadata> getAlphabetIndex(UUID libraryId) {
     return libraryMetadataRepository.findByLibraryIdOrderByLetterAsc(libraryId);
   }
 
   /**
-   * Decides before it writes: name and path are validated first, then the insert runs in one
-   * transaction that publishes {@link LibraryAddedEvent} for the AFTER_COMMIT listeners that start
-   * watching and scanning. Two concurrent adds of the same path race on the unique index; the
-   * loser's violation is translated after rollback into {@code PathAlreadyRegistered} and it
-   * performs no side effect.
+   * Decides before it writes: name and path are validated first, then one transaction inserts the
+   * library and stores its first scan. The library is returned {@code SCANNING}, and {@link
+   * LibraryAddedEvent} reaches the AFTER_COMMIT listeners that start watching. Two concurrent adds
+   * of the same path race on the unique index; the loser's violation is translated after rollback
+   * into {@code PathAlreadyRegistered}, and it stores no scan and performs no side effect.
+   *
+   * @throws LibraryOperationNotStartedException when the first scan cannot be scheduled, so the
+   *     transaction adds no library
    */
   public Outcome<Library, AddLibraryRejection> addLibrary(
       AuthenticatedIdentity identity, Library library) {
@@ -140,16 +94,26 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
             .filepathUri(FilepathCodec.encode(path.orElseThrow()))
             .status(LibraryStatus.HEALTHY)
             .build();
+    try {
+      return insertWithFirstScan(identity, libraryToSave);
+    } catch (LibraryOperationNotScheduledException e) {
+      throw new LibraryOperationNotStartedException(e);
+    }
+  }
+
+  private Outcome<Library, AddLibraryRejection> insertWithFirstScan(
+      AuthenticatedIdentity identity, Library libraryToSave) {
     return mutationTransactions.write(
         () ->
             libraryMutationTransaction.execute(
                 identity,
                 new Intent.AddLibrary(),
                 () -> {
-                  var saved = libraryRepository.save(libraryToSave);
+                  // The insert is flushed first, because the first scan locks the library's row.
+                  var saved = libraryRepository.saveAndFlush(libraryToSave);
                   eventPublisher.publishEvent(
                       new LibraryAddedEvent(saved.getId(), saved.getFilepathUri()));
-                  return saved.toBuilder().build();
+                  return libraryOperationService.storeFirstLibraryScan(saved.getId());
                 }),
         constraint ->
             LIBRARY_FILEPATH_UNIQUE.equals(constraint)
@@ -192,56 +156,34 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     return Optional.empty();
   }
 
-  @Override
-  public void triggerAsyncScan(UUID libraryId) {
-    SystemWork.startThreadRunningAsSystemActor(
-        "library-scan-" + libraryId,
-        () -> {
-          try {
-            scanLibrary(libraryId);
-          } catch (Exception e) {
-            log.error("Async library scan failed for library: {}", libraryId, e);
-          }
-        });
+  /**
+   * Removes the library and its content in one transaction that holds the library's row, so no scan
+   * or refresh can start before the removal commits.
+   *
+   * @return the removed library's id, or why the library cannot be removed now
+   */
+  public Outcome<UUID, LibraryOperationRejection> removeLibrary(
+      AuthenticatedIdentity identity, UUID libraryId) {
+    return mutationTransactions.write(
+        () ->
+            libraryMutationTransaction.execute(
+                identity,
+                new Intent.RemoveLibrary(libraryId),
+                () -> {
+                  libraryOperations
+                      .lockLibraryForLibraryRemoval(libraryId)
+                      .ifPresent(
+                          rejection -> {
+                            throw new MutationRejection(rejection);
+                          });
+                  removeLockedLibrary(libraryId);
+                  return libraryId;
+                }),
+        _ -> Optional.empty());
   }
 
-  public void triggerAsyncRefresh(UUID libraryId) {
-    startAsyncRefresh(libraryId, () -> refreshLibrary(libraryId));
-  }
-
-  public void triggerAsyncRefresh(UUID libraryId, ImageRefreshMode imageRefreshMode) {
-    startAsyncRefresh(libraryId, () -> refreshLibrary(libraryId, imageRefreshMode));
-  }
-
-  private void startAsyncRefresh(UUID libraryId, Runnable refresh) {
-    SystemWork.startThreadRunningAsSystemActor(
-        "library-refresh-" + libraryId,
-        () -> {
-          try {
-            refresh.run();
-          } catch (Exception e) {
-            log.error("Async library refresh failed for library: {}", libraryId, e);
-          }
-        });
-  }
-
-  public void removeLibrary(AuthenticatedIdentity identity, UUID libraryId) {
-    var libraryMutex = mutexFactory.getMutex(libraryId.toString());
-    libraryMutex.lock();
-
-    try {
-      libraryMutationTransaction.execute(
-          identity, new Intent.RemoveLibrary(libraryId), () -> removeLibrary(libraryId));
-    } finally {
-      libraryMutex.unlock();
-    }
-  }
-
-  private void removeLibrary(UUID libraryId) {
-    var library = findLibraryOrThrow(libraryId);
-    rejectIfScanning(library);
-    rejectIfRefreshing(library);
-
+  private void removeLockedLibrary(UUID libraryId) {
+    var library = libraryRepository.findById(libraryId).orElseThrow();
     var mediaFiles = mediaFileRepository.findByLibraryId(libraryId);
     var mediaFileIds = extractMediaFileIds(mediaFiles);
 
@@ -252,24 +194,6 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
         new LibraryRemovedEvent(libraryId, library.getFilepathUri(), mediaFileIds));
   }
 
-  private Library findLibraryOrThrow(UUID libraryId) {
-    return libraryRepository
-        .findById(libraryId)
-        .orElseThrow(() -> new LibraryNotFoundException(libraryId));
-  }
-
-  private void rejectIfScanning(Library library) {
-    if (library.getStatus() == LibraryStatus.SCANNING) {
-      throw new LibraryScanInProgressException(library.getId());
-    }
-  }
-
-  private void rejectIfRefreshing(Library library) {
-    if (library.getStatus() == LibraryStatus.REFRESHING) {
-      throw new LibraryRefreshInProgressException(library.getId());
-    }
-  }
-
   private Set<UUID> extractMediaFileIds(List<MediaFile> mediaFiles) {
     return mediaFiles.stream().map(MediaFile::getId).collect(Collectors.toSet());
   }
@@ -278,87 +202,6 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     movieService.deleteByLibraryId(libraryId);
     seriesService.deleteByLibraryId(libraryId);
     mediaFileRepository.deleteAll(mediaFiles);
-  }
-
-  /** Refreshes the library as the System actor, whoever calls this method. */
-  public void refreshLibrary(UUID libraryId) {
-    refreshLibrary(libraryId, libraryRefreshService::refreshLibrary);
-  }
-
-  /** Refreshes the library as {@link #refreshLibrary(UUID)} does, with {@code imageRefreshMode}. */
-  public void refreshLibrary(UUID libraryId, ImageRefreshMode imageRefreshMode) {
-    refreshLibrary(
-        libraryId, library -> libraryRefreshService.refreshLibrary(library, imageRefreshMode));
-  }
-
-  private void refreshLibrary(UUID libraryId, Consumer<Library> refresh) {
-    SystemWork.runAsSystemActor(() -> refreshItemsInLibrary(libraryId, refresh));
-  }
-
-  private void refreshItemsInLibrary(UUID libraryId, Consumer<Library> refresh) {
-    if (!activeRefreshes.add(libraryId)) {
-      throw new LibraryRefreshInProgressException(libraryId);
-    }
-
-    try {
-      var library = transitionToRefreshing(libraryId);
-      var startTime = Instant.now();
-
-      try {
-        refresh.accept(library);
-        completeRefreshSuccessfully(library, startTime);
-      } catch (Exception ex) {
-        log.error("Refresh failed for library '{}'", library.getName(), ex);
-        completeRefreshWithFailure(library);
-      }
-    } finally {
-      eventPublisher.publishEvent(new RefreshEndedEvent(libraryId));
-      activeRefreshes.remove(libraryId);
-    }
-  }
-
-  private Library transitionToRefreshing(UUID libraryId) {
-    var libraryMutex = mutexFactory.getMutex(libraryId.toString());
-    libraryMutex.lock();
-
-    try {
-      var library = findLibraryOrThrow(libraryId);
-
-      if (library.getStatus() == LibraryStatus.SCANNING) {
-        throw new LibraryScanInProgressException(libraryId);
-      }
-      if (library.getStatus() == LibraryStatus.REFRESHING) {
-        throw new LibraryRefreshInProgressException(libraryId);
-      }
-
-      log.info("Starting {} library refresh.", library.getName());
-
-      library.setStatus(LibraryStatus.REFRESHING);
-      saveStatusAndPublishChange(library);
-
-      return library;
-    } finally {
-      libraryMutex.unlock();
-    }
-  }
-
-  private void completeRefreshSuccessfully(Library library, Instant startTime) {
-    var elapsedSeconds = Duration.between(startTime, Instant.now()).getSeconds();
-
-    library.setStatus(LibraryStatus.HEALTHY);
-    saveStatusAndPublishChange(library);
-
-    log.info("Finished {} library refresh in {} seconds.", library.getName(), elapsedSeconds);
-  }
-
-  private void completeRefreshWithFailure(Library library) {
-    library.setStatus(LibraryStatus.UNHEALTHY);
-    saveStatusAndPublishChange(library);
-  }
-
-  private void saveStatusAndPublishChange(Library library) {
-    libraryRepository.save(library);
-    eventPublisher.publishEvent(new LibraryStatusChangedEvent(library.getId()));
   }
 
   /** Processes a file that the file watcher discovered, as the System actor. */
@@ -374,90 +217,6 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
 
     if (libraryFileWalk.tryProcessDiscoveredFile(library, path)) {
       eventPublisher.publishEvent(new ItemProcessedEvent(libraryId));
-    }
-  }
-
-  /** Scans the library as the System actor, whoever calls this method. */
-  public void scanLibrary(UUID libraryId) {
-    SystemWork.runAsSystemActor(() -> scanFilesInLibrary(libraryId));
-  }
-
-  private void scanFilesInLibrary(UUID libraryId) {
-    if (!activeScans.add(libraryId)) {
-      throw new LibraryScanInProgressException(libraryId);
-    }
-
-    try {
-      var library = transitionToScanning(libraryId);
-      var startTime = library.getScanStartedOn();
-
-      try {
-        libraryFolderCheck.requirePassed(library);
-        var results = fileDiscoveryRuns.awaitResults(libraryFileWalk.discoverFiles(library));
-        // A share can unmount while the scan waits for artwork, and completing the scan removes
-        // every item whose file Streamarr cannot find.
-        libraryFolderCheck.requirePassed(library);
-        completeScanSuccessfully(library, startTime, results);
-      } catch (LibraryScanFailedException e) {
-        completeScanWithFailure(library, e);
-      }
-    } finally {
-      eventPublisher.publishEvent(new ScanEndedEvent(libraryId));
-      activeScans.remove(libraryId);
-    }
-  }
-
-  private void completeScanSuccessfully(Library library, Instant startTime, ScanResults results) {
-    eventPublisher.publishEvent(new ScanCompletedEvent(library.getId()));
-
-    var endTime = Instant.now();
-    var elapsedSeconds = Duration.between(startTime, endTime).getSeconds();
-
-    library.setStatus(LibraryStatus.HEALTHY);
-    library.setScanCompletedOn(endTime);
-    saveStatusAndPublishChange(library);
-
-    log.info(
-        "Finished {} library scan in {} seconds: {}.",
-        library.getName(),
-        elapsedSeconds,
-        results.describe());
-  }
-
-  private void completeScanWithFailure(Library library, Throwable cause) {
-    library.setStatus(LibraryStatus.UNHEALTHY);
-    library.setScanCompletedOn(Instant.now());
-    saveStatusAndPublishChange(library);
-
-    log.error("Failed {} library scan.", library.getName(), cause);
-  }
-
-  private Library transitionToScanning(UUID libraryId) {
-    var libraryMutex = mutexFactory.getMutex(libraryId.toString());
-    libraryMutex.lock();
-
-    try {
-      var library =
-          libraryRepository
-              .findById(libraryId)
-              .orElseThrow(() -> new LibraryNotFoundException(libraryId));
-
-      if (library.getStatus() == LibraryStatus.SCANNING) {
-        throw new LibraryScanInProgressException(libraryId);
-      }
-      if (library.getStatus() == LibraryStatus.REFRESHING) {
-        throw new LibraryRefreshInProgressException(libraryId);
-      }
-
-      log.info("Starting {} library scan.", library.getName());
-
-      library.setStatus(LibraryStatus.SCANNING);
-      library.setScanStartedOn(Instant.now());
-      saveStatusAndPublishChange(library);
-
-      return library;
-    } finally {
-      libraryMutex.unlock();
     }
   }
 }

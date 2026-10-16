@@ -172,12 +172,9 @@ class FileEventProcessorTest {
             .movieService(movieService)
             .seriesService(seriesService)
             .eventPublisher(event -> eventPublisherRef.get().publishEvent(event))
-            .mutexFactoryProvider(new MutexFactoryProvider())
-            .libraryRefreshService(mock(LibraryRefreshService.class))
             .fileSystem(fileSystem)
             .libraryMutationTransaction(new FakeLibraryMutationTransaction())
             .mutationTransactions(mutationTransactions)
-            .fileDiscoveryRuns(fileDiscoveryRuns)
             .build();
 
     eventProcessor =

@@ -63,7 +63,7 @@ public class LibraryRefreshService {
   private final Clock clock;
   private final LibraryOperationAdmissions libraryOperationAdmissions;
 
-  public void refreshLibrary(Library library) {
+  public void refreshLibrary(Library library) throws InterruptedException {
     refreshLibrary(library, ImageRefreshMode.PRESERVE);
   }
 
@@ -71,9 +71,12 @@ public class LibraryRefreshService {
    * Returns once every item's metadata result is recorded and the primary artwork of the refresh
    * has recorded results. Person and company artwork continues in the background.
    *
-   * @throws LibraryRefreshFailedException if a result was not recorded or the wait is interrupted
+   * @throws LibraryRefreshFailedException if a result was not recorded
+   * @throws InterruptedException if the refresh is interrupted; the admitted tasks are interrupted
+   *     and joined first
    */
-  public void refreshLibrary(Library library, ImageRefreshMode imageRefreshMode) {
+  public void refreshLibrary(Library library, ImageRefreshMode imageRefreshMode)
+      throws InterruptedException {
     var artworkRun =
         artworkRequestService.openRun(
             "refresh of library '" + library.getName() + "'", imageRefreshMode);
@@ -87,16 +90,7 @@ public class LibraryRefreshService {
       }
     }
 
-    awaitPrimaryArtwork(library, artworkRun);
-  }
-
-  private void awaitPrimaryArtwork(Library library, ArtworkRun artworkRun) {
-    try {
-      artworkRunWaiter.awaitResults(artworkRun);
-    } catch (InterruptedException exception) {
-      Thread.currentThread().interrupt();
-      throw new LibraryRefreshFailedException(library.getName(), exception);
-    }
+    artworkRunWaiter.awaitResults(artworkRun);
   }
 
   private record RefreshOperation(
@@ -115,7 +109,7 @@ public class LibraryRefreshService {
       MediaTitleRefresh<T> refresh,
       String threadNamePrefix) {}
 
-  private void refreshSeriesLibrary(RefreshOperation operation) {
+  private void refreshSeriesLibrary(RefreshOperation operation) throws InterruptedException {
     var library = operation.library();
     forkAdmittedRefreshes(
         operation,
@@ -128,7 +122,7 @@ public class LibraryRefreshService {
             .build());
   }
 
-  private void refreshMovieLibrary(RefreshOperation operation) {
+  private void refreshMovieLibrary(RefreshOperation operation) throws InterruptedException {
     var library = operation.library();
     forkAdmittedRefreshes(
         operation,
@@ -159,23 +153,16 @@ public class LibraryRefreshService {
   }
 
   // Each task keeps its admission until the primary artwork it requested has recorded results.
-  private <T> void forkAdmittedRefreshes(
-      RefreshOperation operation, AdmittedRefreshes<T> refreshes) {
-    var library = operation.library();
-    try {
-      var failures =
-          operation
-              .admission()
-              .forkAdmittedTasks(
-                  refreshes.mediaTitles().iterator(),
-                  mediaTitle ->
-                      refreshAdmittedMediaTitle(operation, refreshes.refresh(), mediaTitle),
-                  SystemWork.newThreadFactoryRunningAsSystemActor(refreshes.threadNamePrefix()));
-      throwIfAnyRefreshTaskFailed(library, failures);
-    } catch (InterruptedException exception) {
-      Thread.currentThread().interrupt();
-      throw new LibraryRefreshFailedException(library.getName(), exception);
-    }
+  private <T> void forkAdmittedRefreshes(RefreshOperation operation, AdmittedRefreshes<T> refreshes)
+      throws InterruptedException {
+    var failures =
+        operation
+            .admission()
+            .forkAdmittedTasks(
+                refreshes.mediaTitles().iterator(),
+                mediaTitle -> refreshAdmittedMediaTitle(operation, refreshes.refresh(), mediaTitle),
+                SystemWork.newThreadFactoryRunningAsSystemActor(refreshes.threadNamePrefix()));
+    throwIfAnyRefreshTaskFailed(operation.library(), failures);
   }
 
   private <T> AdmittedTaskReport refreshAdmittedMediaTitle(

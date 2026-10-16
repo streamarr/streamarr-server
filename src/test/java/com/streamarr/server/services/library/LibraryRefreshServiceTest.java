@@ -233,7 +233,7 @@ class LibraryRefreshServiceTest {
 
     @Test
     @DisplayName("Should admit each movie through the limit when refreshing")
-    void shouldAdmitEachMovieThroughTheLimitWhenRefreshing() {
+    void shouldAdmitEachMovieThroughTheLimitWhenRefreshing() throws Exception {
       var library = buildMovieLibrary();
       saveMovieWithTmdbId("Inception", "27205", library);
       saveMovieWithTmdbId("Interstellar", "157336", library);
@@ -258,7 +258,7 @@ class LibraryRefreshServiceTest {
 
     @Test
     @DisplayName("Should admit each series through the limit when refreshing")
-    void shouldAdmitEachSeriesThroughTheLimitWhenRefreshing() {
+    void shouldAdmitEachSeriesThroughTheLimitWhenRefreshing() throws Exception {
       var library = buildSeriesLibrary();
       saveSeriesWithTmdbId("Breaking Bad", "1396", library);
       saveSeriesWithTmdbId("Better Call Saul", "60059", library);
@@ -359,9 +359,8 @@ class LibraryRefreshServiceTest {
     }
 
     @Test
-    @DisplayName(
-        "Should fail the refresh and keep the interrupt when the refreshing thread is interrupted")
-    void shouldFailTheRefreshAndKeepTheInterruptWhenTheRefreshingThreadIsInterrupted() {
+    @DisplayName("Should throw InterruptedException when the refreshing thread is interrupted")
+    void shouldThrowInterruptedExceptionWhenTheRefreshingThreadIsInterrupted() {
       var library = buildMovieLibrary();
       saveMovieWithTmdbId("Inception", "27205", library);
       stubMovieMetadata("27205", library);
@@ -370,9 +369,7 @@ class LibraryRefreshServiceTest {
         Thread.currentThread().interrupt();
 
         assertThatThrownBy(() -> refreshService.refreshLibrary(library))
-            .isInstanceOf(LibraryRefreshFailedException.class)
-            .hasCauseInstanceOf(InterruptedException.class);
-        assertThat(Thread.currentThread().isInterrupted()).isTrue();
+            .isInstanceOf(InterruptedException.class);
       } finally {
         Thread.interrupted();
       }
@@ -380,7 +377,7 @@ class LibraryRefreshServiceTest {
 
     @Test
     @DisplayName("Should take no admission for a title without a TMDB id")
-    void shouldTakeNoAdmissionForATitleWithoutATmdbId() {
+    void shouldTakeNoAdmissionForATitleWithoutATmdbId() throws Exception {
       var library = buildMovieLibrary();
       movieRepository.save(Movie.builder().title("No TMDB ID").library(library).build());
 
@@ -400,7 +397,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should record succeeded metadata when a movie refreshes")
-  void shouldRecordSucceededMetadataWhenAMovieRefreshes() {
+  void shouldRecordSucceededMetadataWhenAMovieRefreshes() throws Exception {
     var library = buildMovieLibrary();
     var movie = saveMovieWithTmdbId("Inception", "27205", library);
     stubMovieMetadata("27205", library);
@@ -420,7 +417,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should record a temporary failure with its detail when the movie fetch fails")
-  void shouldRecordATemporaryFailureWithItsDetailWhenTheMovieFetchFails() {
+  void shouldRecordATemporaryFailureWithItsDetailWhenTheMovieFetchFails() throws Exception {
     var library = buildMovieLibrary();
     var movie = saveMovieWithTmdbId("Inception", "27205", library);
     when(movieProviderResolver.getMetadata(argThatHasExternalId("27205"), eq(library)))
@@ -435,7 +432,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should record a misconfiguration when the provider rejects the credentials")
-  void shouldRecordAMisconfigurationWhenTheProviderRejectsTheCredentials() {
+  void shouldRecordAMisconfigurationWhenTheProviderRejectsTheCredentials() throws Exception {
     var library = buildMovieLibrary();
     var movie = saveMovieWithTmdbId("Inception", "27205", library);
     when(movieProviderResolver.getMetadata(argThatHasExternalId("27205"), eq(library)))
@@ -452,7 +449,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should record unavailable metadata when the provider no longer has the movie")
-  void shouldRecordUnavailableMetadataWhenTheProviderNoLongerHasTheMovie() {
+  void shouldRecordUnavailableMetadataWhenTheProviderNoLongerHasTheMovie() throws Exception {
     var library = buildMovieLibrary();
     var movie = saveMovieWithTmdbId("Inception", "27205", library);
     when(movieProviderResolver.getMetadata(argThatHasExternalId("27205"), eq(library)))
@@ -465,7 +462,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should record a temporary failure when refreshing a movie throws")
-  void shouldRecordATemporaryFailureWhenRefreshingAMovieThrows() {
+  void shouldRecordATemporaryFailureWhenRefreshingAMovieThrows() throws Exception {
     var library = buildMovieLibrary();
     var movie = saveMovieWithTmdbId("Inception", "27205", library);
     when(movieProviderResolver.getMetadata(argThatHasExternalId("27205"), eq(library)))
@@ -481,7 +478,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should resolve the metadata failure when a later refresh succeeds")
-  void shouldResolveTheMetadataFailureWhenALaterRefreshSucceeds() {
+  void shouldResolveTheMetadataFailureWhenALaterRefreshSucceeds() throws Exception {
     var library = buildMovieLibrary();
     var movie = saveMovieWithTmdbId("Inception", "27205", library);
     when(movieProviderResolver.getMetadata(argThatHasExternalId("27205"), eq(library)))
@@ -497,7 +494,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should record the series as failed when a season fetch fails")
-  void shouldRecordTheSeriesAsFailedWhenASeasonFetchFails() {
+  void shouldRecordTheSeriesAsFailedWhenASeasonFetchFails() throws Exception {
     var library = buildSeriesLibrary();
     var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
     stubSeriesMetadata("1396", "Breaking Bad", library);
@@ -521,7 +518,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should record the series as failed when a listed season is no longer found")
-  void shouldRecordTheSeriesAsFailedWhenAListedSeasonIsNoLongerFound() {
+  void shouldRecordTheSeriesAsFailedWhenAListedSeasonIsNoLongerFound() throws Exception {
     var library = buildSeriesLibrary();
     var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
     stubSeriesMetadata("1396", "Breaking Bad", library);
@@ -544,7 +541,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should record the series as failed when its season list cannot be fetched")
-  void shouldRecordTheSeriesAsFailedWhenItsSeasonListCannotBeFetched() {
+  void shouldRecordTheSeriesAsFailedWhenItsSeasonListCannotBeFetched() throws Exception {
     var library = buildSeriesLibrary();
     var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
     stubSeriesMetadata("1396", "Breaking Bad", library);
@@ -561,7 +558,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should record succeeded series metadata when every season refreshes")
-  void shouldRecordSucceededSeriesMetadataWhenEverySeasonRefreshes() {
+  void shouldRecordSucceededSeriesMetadataWhenEverySeasonRefreshes() throws Exception {
     var library = buildSeriesLibrary();
     var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
     stubSeriesMetadata("1396", "Breaking Bad", library);
@@ -589,7 +586,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should refresh all series with fresh TMDB metadata when refreshing library")
-  void shouldRefreshAllSeriesWithFreshTmdbMetadataWhenRefreshingLibrary() {
+  void shouldRefreshAllSeriesWithFreshTmdbMetadataWhenRefreshingLibrary() throws Exception {
     var library = buildSeriesLibrary();
     var series1 = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
     var series2 = saveSeriesWithTmdbId("Better Call Saul", "60059", library);
@@ -609,7 +606,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should skip series without TMDB ID when refreshing library")
-  void shouldSkipSeriesWithoutTmdbIdWhenRefreshingLibrary() {
+  void shouldSkipSeriesWithoutTmdbIdWhenRefreshingLibrary() throws Exception {
     var library = buildSeriesLibrary();
     var series =
         seriesRepository.save(Series.builder().title("No TMDB ID").library(library).build());
@@ -622,7 +619,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should continue refreshing when one series metadata fetch returns empty")
-  void shouldContinueRefreshingWhenOneSeriesMetadataFetchReturnsEmpty() {
+  void shouldContinueRefreshingWhenOneSeriesMetadataFetchReturnsEmpty() throws Exception {
     var library = buildSeriesLibrary();
     var failingSeries = saveSeriesWithTmdbId("Failing Series", "99999", library);
     var series2 = saveSeriesWithTmdbId("Working Series", "1396", library);
@@ -643,7 +640,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should continue refreshing when one series throws exception")
-  void shouldContinueRefreshingWhenOneSeriesThrowsException() {
+  void shouldContinueRefreshingWhenOneSeriesThrowsException() throws Exception {
     var library = buildSeriesLibrary();
     var explodingSeries = saveSeriesWithTmdbId("Exploding Series", "99999", library);
     var series2 = saveSeriesWithTmdbId("Working Series", "1396", library);
@@ -664,7 +661,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should skip series when series has only non-TMDB external IDs")
-  void shouldSkipSeriesWhenSeriesHasOnlyNonTmdbExternalIds() {
+  void shouldSkipSeriesWhenSeriesHasOnlyNonTmdbExternalIds() throws Exception {
     var library = buildSeriesLibrary();
     var series =
         seriesRepository.save(
@@ -687,7 +684,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should refresh seasons and episodes when refreshing series")
-  void shouldRefreshSeasonsAndEpisodesWhenRefreshingSeries() {
+  void shouldRefreshSeasonsAndEpisodesWhenRefreshingSeries() throws Exception {
     var library = buildSeriesLibrary();
     var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
 
@@ -728,7 +725,8 @@ class LibraryRefreshServiceTest {
   @Test
   @DisplayName(
       "Should propagate image refresh mode when refreshing series season and episode artwork")
-  void shouldPropagateImageRefreshModeWhenRefreshingSeriesSeasonAndEpisodeArtwork() {
+  void shouldPropagateImageRefreshModeWhenRefreshingSeriesSeasonAndEpisodeArtwork()
+      throws Exception {
     var library = buildSeriesLibrary();
     var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
     imageRepository.save(
@@ -841,7 +839,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should refresh all movies with fresh TMDB metadata when refreshing library")
-  void shouldRefreshAllMoviesWithFreshTmdbMetadataWhenRefreshingLibrary() {
+  void shouldRefreshAllMoviesWithFreshTmdbMetadataWhenRefreshingLibrary() throws Exception {
     var library = buildMovieLibrary();
     var movie = saveMovieWithTmdbId("Inception", "27205", library);
 
@@ -862,7 +860,8 @@ class LibraryRefreshServiceTest {
   @DisplayName(
       "Should replace movie artwork and fetch person and company artwork when a refresh forces"
           + " image refresh")
-  void shouldReplaceMovieArtworkAndFetchPersonAndCompanyArtworkWhenARefreshForcesImageRefresh() {
+  void shouldReplaceMovieArtworkAndFetchPersonAndCompanyArtworkWhenARefreshForcesImageRefresh()
+      throws Exception {
     var library = buildMovieLibrary();
     var movie = saveMovieWithTmdbId("Inception", "27205", library);
     var stored =
@@ -914,7 +913,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should skip movie without TMDB ID when refreshing library")
-  void shouldSkipMovieWithoutTmdbIdWhenRefreshingLibrary() {
+  void shouldSkipMovieWithoutTmdbIdWhenRefreshingLibrary() throws Exception {
     var library = buildMovieLibrary();
     var movie = movieRepository.save(Movie.builder().title("No TMDB ID").library(library).build());
 
@@ -943,7 +942,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should skip season when season details fetch returns empty")
-  void shouldSkipSeasonWhenSeasonDetailsFetchReturnsEmpty() {
+  void shouldSkipSeasonWhenSeasonDetailsFetchReturnsEmpty() throws Exception {
     var library = buildSeriesLibrary();
     var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
 
@@ -973,7 +972,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should skip movie when metadata fetch returns empty")
-  void shouldSkipMovieWhenMetadataFetchReturnsEmpty() {
+  void shouldSkipMovieWhenMetadataFetchReturnsEmpty() throws Exception {
     var library = buildMovieLibrary();
     var movie = saveMovieWithTmdbId("Inception", "27205", library);
 
@@ -988,7 +987,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should continue refreshing movies when one movie fails with exception")
-  void shouldContinueRefreshingMoviesWhenOneMovieFails() {
+  void shouldContinueRefreshingMoviesWhenOneMovieFails() throws Exception {
     var library = buildMovieLibrary();
     var failingMovie = saveMovieWithTmdbId("Failing Movie", "99999", library);
     var movie2 = saveMovieWithTmdbId("Working Movie", "27205", library);
@@ -1012,7 +1011,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should complete successfully when series library has no items")
-  void shouldCompleteSuccessfullyWhenSeriesLibraryHasNoItems() {
+  void shouldCompleteSuccessfullyWhenSeriesLibraryHasNoItems() throws Exception {
     var library = buildSeriesLibrary();
 
     refreshService.refreshLibrary(library);
@@ -1023,7 +1022,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should complete successfully when movie library has no items")
-  void shouldCompleteSuccessfullyWhenMovieLibraryHasNoItems() {
+  void shouldCompleteSuccessfullyWhenMovieLibraryHasNoItems() throws Exception {
     var library = buildMovieLibrary();
 
     refreshService.refreshLibrary(library);
@@ -1033,7 +1032,7 @@ class LibraryRefreshServiceTest {
 
   @Test
   @DisplayName("Should abort remaining season refresh when season details fetch throws exception")
-  void shouldAbortRemainingSeasonRefreshWhenSeasonDetailsFetchThrowsException() {
+  void shouldAbortRemainingSeasonRefreshWhenSeasonDetailsFetchThrowsException() throws Exception {
     var library = buildSeriesLibrary();
     var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
 

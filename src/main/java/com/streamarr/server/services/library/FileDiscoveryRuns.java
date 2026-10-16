@@ -38,16 +38,14 @@ public class FileDiscoveryRuns {
    * Background artwork and the retries of failed artwork steps and probes continue in the
    * background.
    *
-   * @throws LibraryScanFailedException if the stored results cannot be read, the wait fails
-   *     unexpectedly, or the wait is interrupted
+   * @throws LibraryScanFailedException if the stored results cannot be read or the wait fails
+   *     unexpectedly
+   * @throws InterruptedException if the wait is interrupted
    */
-  public ScanResults awaitResults(FileDiscovery discovery) {
+  public ScanResults awaitResults(FileDiscovery discovery) throws InterruptedException {
     var libraryName = discovery.library().getName();
     try {
       return awaitRequiredResults(discovery);
-    } catch (InterruptedException exception) {
-      Thread.currentThread().interrupt();
-      throw new LibraryScanFailedException(libraryName, exception);
     } catch (ExecutionException exception) {
       throw new LibraryScanFailedException(libraryName, exception.getCause());
     } catch (RuntimeException exception) {

@@ -29,6 +29,7 @@ import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.support.ArtworkSchedulerStarter;
 import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.BoundedTask;
+import com.streamarr.server.support.LibraryOperationDriver;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -61,6 +62,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   private static final int UNSHARED_GENRE_ID = 9_000_001;
 
   @Autowired private LibraryManagementService libraryManagementService;
+  @Autowired private LibraryOperationDriver libraryOperationDriver;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MovieRepository movieRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
@@ -98,7 +100,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     stubTmdbMovieMetadata("27205", "Inception", UNSHARED_GENRE_ID);
     startProbeScheduler();
 
-    BoundedTask.runWithin(SCAN_BOUND, () -> libraryManagementService.scanLibrary(library.getId()));
+    BoundedTask.runWithin(SCAN_BOUND, () -> libraryOperationDriver.scanToEnd(library.getId()));
 
     var scanned = libraryRepository.findById(library.getId()).orElseThrow();
     assertThat(scanned.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
@@ -144,7 +146,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     clearActors();
     stubTmdbMovieMetadata("27205", "Inception Remastered");
 
-    libraryManagementService.refreshLibrary(library.id());
+    libraryOperationDriver.refreshToEnd(library.id());
 
     assertThat(movieRepository.findAll())
         .singleElement()
@@ -167,7 +169,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     clearActors();
     stubTmdbMovieMetadata(inception().overview("A thief returns for one last job.").build());
 
-    libraryManagementService.refreshLibrary(library.id());
+    libraryOperationDriver.refreshToEnd(library.id());
 
     assertThat(movieRepository.findAll())
         .singleElement()
@@ -241,8 +243,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
             .start(ArtworkPriority.PRIMARY, completedInto(rejectedAttempt));
     rejectItemErrors();
 
-    try (var scan =
-        BoundedTask.start(() -> libraryManagementService.scanLibrary(library.getId()))) {
+    try (var scan = BoundedTask.start(() -> libraryOperationDriver.scanToEnd(library.getId()))) {
       rejectedAttempt.get(SCAN_BOUND.toSeconds(), TimeUnit.SECONDS);
       assertThat(failedArtworkAttempts()).isOne();
       assertThat(libraryRepository.findById(library.getId()).orElseThrow().getStatus())

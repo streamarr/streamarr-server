@@ -1,21 +1,29 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.AlphabetLetter;
+import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryMetadataRepository;
+import com.streamarr.server.repositories.LibraryOperationRepository;
+import com.streamarr.server.repositories.LibraryOperationRepository.StoreOutcome;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.events.library.ItemProcessedEvent;
 import com.streamarr.server.services.events.library.ScanCompletedEvent;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Library Metadata Listener Integration Tests")
@@ -28,6 +36,12 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
   @Autowired private MovieRepository movieRepository;
 
   @Autowired private LibraryMetadataRepository metadataRepository;
+
+  @Autowired private LibraryOperationRepository libraryOperations;
+
+  @Autowired private LibraryOperationExecution libraryOperationExecution;
+
+  @Autowired private PlatformTransactionManager transactionManager;
 
   @Test
   @DisplayName("Should calculate correct letter counts when scan completed")
@@ -73,6 +87,24 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
         .extracting(LibraryMetadata::getLetter)
         .containsExactly(AlphabetLetter.D, AlphabetLetter.E);
     assertThat(metadata).extracting(LibraryMetadata::getItemCount).containsExactly(1, 1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should count an item processed during a refresh in the letter index when the refresh ends")
+  void shouldCountAnItemProcessedDuringARefreshInTheLetterIndexWhenTheRefreshEnds() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var refresh = storeRefresh(library);
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Foxtrot").titleSort("Foxtrot").library(library).build());
+    listener.onItemProcessed(new ItemProcessedEvent(library.getId()));
+
+    SystemWork.runAsSystemActor(() -> libraryOperationExecution.execute(refresh.id()));
+
+    var metadata = metadataRepository.findByLibraryIdOrderByLetterAsc(library.getId());
+    assertThat(metadata)
+        .extracting(LibraryMetadata::getLetter, LibraryMetadata::getItemCount)
+        .containsExactly(tuple(AlphabetLetter.F, 1));
   }
 
   @Test
@@ -142,5 +174,20 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
 
     var metadata = metadataRepository.findByLibraryIdOrderByLetterAsc(savedEmpty.getId());
     assertThat(metadata).isEmpty();
+  }
+
+  private LibraryOperation storeRefresh(Library refreshed) {
+    var outcome =
+        new TransactionTemplate(transactionManager)
+            .execute(
+                _ ->
+                    libraryOperations.storeLibraryOperation(
+                        NewLibraryOperation.refresh(refreshed.getId(), ImageRefreshMode.PRESERVE)));
+    return switch (outcome) {
+      case StoreOutcome.Stored(var stored, _) -> stored;
+      case StoreOutcome.Rejected(var rejection) ->
+          throw new AssertionError("The refresh was not stored: " + rejection);
+      case null -> throw new AssertionError("The store returned nothing");
+    };
   }
 }

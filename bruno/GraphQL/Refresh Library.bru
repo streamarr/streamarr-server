@@ -11,21 +11,44 @@ post {
 }
 
 body:graphql {
-  mutation RefreshLibrary($id: ID!) {
-    refreshLibrary(id: $id)
+  mutation StartLibraryRefresh($input: StartLibraryRefreshInput!) {
+    startLibraryRefresh(input: $input) {
+      library {
+        id
+        status
+      }
+      userErrors {
+        __typename
+        ... on MutationError {
+          message
+        }
+        ... on LibraryBusyError {
+          status
+        }
+      }
+    }
   }
 }
 
 body:graphql:vars {
   {
-    "id": "{{LIBRARY_ID}}"
+    "input": {
+      "libraryId": "{{LIBRARY_ID}}"
+    }
   }
 }
 
 tests {
-  test("Should start a library refresh", function() {
+  // The scan from Scan Library can still run, and then the library refuses this refresh.
+  test("Should start a library refresh or report the running operation", function() {
     expect(res.status).to.equal(200);
     expect(res.body).to.not.have.property("errors");
-    expect(res.body.data.refreshLibrary).to.equal(true);
+    const payload = res.body.data.startLibraryRefresh;
+    if (payload.userErrors.length === 0) {
+      expect(payload.library.status).to.equal("REFRESHING");
+      return;
+    }
+    expect(payload.library).to.equal(null);
+    expect(payload.userErrors[0].__typename).to.equal("LibraryBusyError");
   });
 }

@@ -1,9 +1,9 @@
 type Mutation {
     addRating(input: RatingInput!): Rating!
     addLibrary(input: AddLibraryInput!): AddLibraryPayload
-    removeLibrary(id: ID!): Boolean!
-    scanLibrary(id: ID!): Boolean!
-    refreshLibrary(id: ID!, imageRefreshMode: ImageRefreshMode! = PRESERVE): Boolean!
+    removeLibrary(input: RemoveLibraryInput!): RemoveLibraryPayload
+    startLibraryScan(input: StartLibraryScanInput!): StartLibraryScanPayload
+    startLibraryRefresh(input: StartLibraryRefreshInput!): StartLibraryRefreshPayload
     createStreamSession(input: CreateStreamSessionInput!): CreateStreamSessionPayload
     destroyStreamSession(sessionId: ID!): Boolean!
     reportStreamSessionTimeline(sessionId: ID!, positionSeconds: Int!, state: PlaybackState!): Boolean!

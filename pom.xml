@@ -798,7 +798,7 @@
                                     <name>org.jooq.meta.postgres.PostgresDatabase</name>
                                     <includes>.*</includes>
                                     <!-- db-scheduler owns these tables; nothing in the server queries them. -->
-                                    <excludes>scheduled_tasks|primary_artwork_scheduled_tasks|background_artwork_scheduled_tasks|keyframe_scan_scheduled_tasks</excludes>
+                                    <excludes>scheduled_tasks|primary_artwork_scheduled_tasks|background_artwork_scheduled_tasks|keyframe_scan_scheduled_tasks|library_operation_scheduled_tasks</excludes>
                                     <inputSchema>public</inputSchema>
                                 </database>
                                 <generate>
