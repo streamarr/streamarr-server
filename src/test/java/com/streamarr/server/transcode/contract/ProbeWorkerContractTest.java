@@ -158,6 +158,7 @@ class ProbeWorkerContractTest {
     assertThat(unknown.hasEndTime()).isFalse();
     assertThat(unknown.hasSampleRateHz()).isFalse();
     assertThat(unknown.hasAudioProfile()).isFalse();
+    assertThat(unknown.hasTitle()).isFalse();
     assertThat(unknown.hasContainerCropping()).isFalse();
     assertThat(decoded.getMedia().getContainer().getChaptersList()).isEmpty();
   }
@@ -483,6 +484,70 @@ class ProbeWorkerContractTest {
     assertThat(decodedReported.getAudioProfile()).isEmpty();
     assertThat(decodedUnreported.hasSampleRateHz()).isFalse();
     assertThat(decodedUnreported.hasAudioProfile()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry the title of each audio and subtitle stream when returning a probe version 4 result")
+  void shouldCarryTitleOfEachAudioAndSubtitleStreamWhenReturningProbeVersion4Result()
+      throws Exception {
+    var video = ProbeStreamInfo.newBuilder().setIndex(0).setCodecType("video").build();
+    var commentary =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(1)
+            .setCodecType("audio")
+            .setCodec("aac")
+            .setLanguage("eng")
+            .setTitle("Director's Commentary")
+            .build();
+    var sdh =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(2)
+            .setCodecType("subtitle")
+            .setCodec("mov_text")
+            .setLanguage("fra")
+            .setTitle("Français (Québec) SDH")
+            .build();
+    var untitled =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(3)
+            .setCodecType("subtitle")
+            .setCodec("subrip")
+            .setLanguage("eng")
+            .build();
+
+    var decoded =
+        ProbeAttemptResult.parseFrom(
+                probeVersion4Result(
+                        ProbeMediaInfo.newBuilder()
+                            .addStreams(video)
+                            .addStreams(commentary)
+                            .addStreams(sdh)
+                            .addStreams(untitled))
+                    .toByteArray())
+            .getMedia();
+
+    assertThat(decoded.getStreamsList()).containsExactly(video, commentary, sdh, untitled);
+    assertThat(decoded.getStreams(0).hasTitle()).isFalse();
+    assertThat(decoded.getStreams(1).getTitle()).isEqualTo("Director's Commentary");
+    assertThat(decoded.getStreams(2).getTitle()).isEqualTo("Français (Québec) SDH");
+    assertThat(decoded.getStreams(3).hasTitle()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell an empty title apart from a missing title when decoding a subtitle stream")
+  void shouldTellEmptyTitleApartFromMissingTitleWhenDecodingSubtitleStream() throws Exception {
+    var emptyTitle =
+        ProbeStreamInfo.newBuilder().setIndex(2).setCodecType("subtitle").setTitle("").build();
+    var noTitle = ProbeStreamInfo.newBuilder().setIndex(2).setCodecType("subtitle").build();
+
+    var decodedEmpty = ProbeStreamInfo.parseFrom(emptyTitle.toByteArray());
+    var decodedMissing = ProbeStreamInfo.parseFrom(noTitle.toByteArray());
+
+    assertThat(decodedEmpty.hasTitle()).isTrue();
+    assertThat(decodedEmpty.getTitle()).isEmpty();
+    assertThat(decodedMissing.hasTitle()).isFalse();
   }
 
   @Test

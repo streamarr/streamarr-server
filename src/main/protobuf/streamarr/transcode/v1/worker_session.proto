@@ -453,7 +453,7 @@ enum ChromaSubsampling {
   CHROMA_SUBSAMPLING_MONOCHROME = 4;
 }
 
-// Only probe version 4 and later report the fields from dynamic_range to content_light_level.
+// Only probe version 4 and later report the fields from dynamic_range to title.
 message ProbeStreamInfo {
   uint32 index = 1;
   string codec_type = 2;
@@ -517,6 +517,33 @@ message ProbeStreamInfo {
   // Video streams only: the content light level that the container declares, from ffprobe's
   // Content light level metadata stream side data. Absent when the stream has no such side data.
   ContentLightLevel content_light_level = 22;
+  // Audio and subtitle streams only: the stream's title, which a menu shows to name the track. The
+  // worker reads three stream tags in this order. It takes the first tag whose value is not empty
+  // and not only white space. It compares tag keys without regard to case, as FFmpeg's metadata
+  // dictionary does.
+  //
+  // 1. title. ffprobe reports a Matroska TrackName and an MP4 track's ©nam atom as title.
+  // 2. name. ffprobe reports an MP4 or MOV track's udta name atom as name. FFmpeg's MP4 and MOV
+  //    muxers write a stream's title metadata into that atom, so ffprobe 8 reports such a title as
+  //    name, never as title.
+  // 3. handler_name, unless the handler name is generic. ffprobe reports the name in an MP4 or MOV
+  //    track's hdlr box as handler_name. A Matroska file that FFmpeg remuxed from MP4 keeps that
+  //    name as a HANDLER_NAME tag. Every MP4 track has a handler name, and most muxers write a
+  //    fixed name for the track's type there. FFmpeg 8 writes SoundHandler and SubtitleHandler,
+  //    and it writes them even when the stream's handler_name metadata is empty. So the worker
+  //    treats a handler name as generic when, with surrounding white space removed and without
+  //    regard to case, it ends with "handler" or starts with "core media ". Examples are
+  //    SoundHandler, USP Sound Handler, #Mainconcept MP4 Sound Media Handler and Apple's Core
+  //    Media Audio.
+  //
+  // The worker reports the value of the chosen tag unchanged. Absent when no tag gives a title.
+  // Also absent when the chosen value is longer than 512 bytes of UTF-8. The worker never shortens
+  // a title and never falls back to the next tag. A file controls its titles. The server accepts at
+  // most 128 KiB in one session message, and a larger probe result closes the worker's session
+  // (streamarr/streamarr-server#554). So the limit keeps one title from filling the result. The
+  // rule above belongs to probe version 4. A change to it needs a new probe version. Video streams
+  // report no title, because no consumer reads one.
+  optional string title = 23;
 }
 
 // The number of pixels that a container crop removes from each edge of the picture. width and
