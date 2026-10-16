@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.exceptions.UnsupportedVideoEncodeException;
 import java.nio.file.Path;
-import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -96,7 +95,7 @@ class TranscodeRequestTest {
   void shouldPlanNoEncodeWhenTheAttemptCopiesTheVideo(TranscodeMode mode) {
     var request = attemptOf(mode).build();
 
-    assertThat(request.videoEncodeDecision()).isEqualTo(Optional.empty());
+    assertThat(request.videoEncodeDecision()).isEmpty();
   }
 
   @Test
