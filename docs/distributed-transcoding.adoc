@@ -61,6 +61,9 @@ The server publishes no segment of an encode until the worker's start report nam
 `STREAMING_WORKER_SESSION_START_REPORT_TIMEOUT` bounds how long an upload waits for that report. It defaults to `10s`.
 When the report names another backend, or does not arrive in time, the server refuses the upload.
 An unresponsive filesystem can delay worker shutdown.
+The server pings a worker after `STREAMING_WORKER_SESSION_KEEPALIVE_TIME` without hearing from it, and closes the connection when no acknowledgement arrives within `STREAMING_WORKER_SESSION_KEEPALIVE_TIMEOUT`.
+Closing a dead worker's connection releases its execution slots and upload reservations.
+The time defaults to `30s` and must be at least `10s`, the shortest that gRPC allows. The timeout defaults to `10s`.
 
 The server exposes Spring Boot probe groups at `/actuator/health/liveness` and `/actuator/health/readiness` on port `8080`.
 The standalone Spring Boot worker exposes the same paths on port `9091`.

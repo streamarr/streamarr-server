@@ -124,6 +124,11 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
     return started.client();
   }
 
+  // The scheduler polls at its polling interval; a test that advanced its clock polls at once.
+  void checkForDueExecutions() {
+    scheduler.triggerCheckForDueExecutions();
+  }
+
   void stopScheduler() {
     if (scheduler == null) {
       return;

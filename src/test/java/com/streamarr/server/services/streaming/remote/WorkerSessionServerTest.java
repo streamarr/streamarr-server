@@ -35,6 +35,7 @@ class WorkerSessionServerTest {
     var keyframeScanTimeout = defaults.keyframeScanTimeout();
     var cancellationTimeout = defaults.probeCancellationTimeout();
     var startReportTimeout = defaults.startReportTimeout();
+    var keepalive = defaults.keepalive();
 
     assertThatThrownBy(
             () ->
@@ -44,7 +45,8 @@ class WorkerSessionServerTest {
                     probeTimeout,
                     keyframeScanTimeout,
                     cancellationTimeout,
-                    startReportTimeout))
+                    startReportTimeout,
+                    keepalive))
         .hasMessageContaining("address");
   }
 

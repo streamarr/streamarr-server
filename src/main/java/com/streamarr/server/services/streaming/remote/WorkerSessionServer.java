@@ -24,10 +24,6 @@ public final class WorkerSessionServer implements AutoCloseable {
 
   private static final int MAXIMUM_CONCURRENT_CALLS_PER_CONNECTION = 33;
   private static final int MAXIMUM_INBOUND_MESSAGE_BYTES = 128 * 1024;
-  // A dead worker connection must be detected and closed so its upload admission slots are
-  // released; without keepalive probes it would pin them until the OS gives up on the TCP peer.
-  private static final int KEEPALIVE_TIME_SECONDS = 30;
-  private static final int KEEPALIVE_TIMEOUT_SECONDS = 10;
   private static final int PERMITTED_CLIENT_KEEPALIVE_SECONDS = 10;
   private final WorkerSessionServerConfiguration configuration;
   private final SegmentStore segmentStore;
@@ -69,6 +65,9 @@ public final class WorkerSessionServer implements AutoCloseable {
   }
 
   private void startListener(NettyServerBuilder builder) throws IOException {
+    // A dead worker connection must be detected and closed so its upload admission slots are
+    // released; without keepalive probes it would pin them until the OS gives up on the TCP peer.
+    var keepalive = configuration.keepalive();
     runtime.start(
         Executors.newVirtualThreadPerTaskExecutor(),
         startingExecutor ->
@@ -76,8 +75,8 @@ public final class WorkerSessionServer implements AutoCloseable {
                 .executor(startingExecutor)
                 .maxConcurrentCallsPerConnection(MAXIMUM_CONCURRENT_CALLS_PER_CONNECTION)
                 .maxInboundMessageSize(MAXIMUM_INBOUND_MESSAGE_BYTES)
-                .keepAliveTime(KEEPALIVE_TIME_SECONDS, TimeUnit.SECONDS)
-                .keepAliveTimeout(KEEPALIVE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .keepAliveTime(keepalive.time().toMillis(), TimeUnit.MILLISECONDS)
+                .keepAliveTimeout(keepalive.timeout().toMillis(), TimeUnit.MILLISECONDS)
                 .permitKeepAliveTime(PERMITTED_CLIENT_KEEPALIVE_SECONDS, TimeUnit.SECONDS)
                 .permitKeepAliveWithoutCalls(true)
                 .build()
