@@ -66,7 +66,7 @@ public record StreamingProperties(
     }
 
     if (probeWaitLimit == null) {
-      probeWaitLimit = Duration.ofSeconds(20);
+      probeWaitLimit = Duration.ofSeconds(15);
     }
 
     if (probeWaitLimit.isZero() || probeWaitLimit.isNegative()) {

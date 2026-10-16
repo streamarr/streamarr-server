@@ -48,7 +48,9 @@ Deploy the server with the larger cap before deploying workers that produce larg
 Set `TRANSCODE_WORKER_FFPROBE_PATH` to the worker's ffprobe binary. It defaults to `ffprobe` on `PATH`.
 `STREAMING_WORKER_SESSION_PROBE_TIMEOUT` bounds each probe on the server. It defaults to `1m`.
 When playback asks for a file that has no probe outcome, the server moves the file's probe to the front of the queue and waits for the outcome.
-`STREAMING_PROBE_WAIT_LIMIT` bounds that wait. It defaults to `20s`.
+`STREAMING_PROBE_WAIT_LIMIT` bounds that wait. It defaults to `15s`.
+`GRAPHQL_HTTP_REQUEST_TIMEOUT` sets how long a GraphQL request over HTTP may run. It defaults to `30s`.
+Keep the probe wait limit at most half of the request timeout, so the stream session can still start after the wait.
 When the wait reaches the limit, `createStreamSession` returns `MediaFileProbeNotReadyError` and the probe keeps running.
 `STREAMING_WORKER_SESSION_KEYFRAME_SCAN_TIMEOUT` bounds each keyframe packet scan on the server. It defaults to `30m`.
 A packet scan reads every packet of the source's video stream, which takes longer than a probe on network storage.
