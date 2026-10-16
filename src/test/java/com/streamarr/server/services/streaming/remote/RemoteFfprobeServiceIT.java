@@ -339,15 +339,15 @@ class RemoteFfprobeServiceIT {
     try (var server = server();
         var calls = Executors.newVirtualThreadPerTaskExecutor()) {
       server.start();
-      try (var worker = worker(server.port(), 7)) {
+      try (var worker = worker(server.port(), ProbeVersion.FIRST_TO_REPORT_CHAPTERS)) {
         var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
-        var request = request().probeVersion(7).build();
+        var request = request().probeVersion(ProbeVersion.FIRST_TO_REPORT_CHAPTERS).build();
 
         var result = calls.submit(() -> service.probe(request));
 
         var dispatched = worker.nextResponse().getStartProbe().getRequest();
         assertThat(dispatched.getProbeAttemptId()).isEqualTo(toProto(request.attemptId()));
-        assertThat(dispatched.getProbeVersion()).isEqualTo(7);
+        assertThat(dispatched.getProbeVersion()).isEqualTo(ProbeVersion.FIRST_TO_REPORT_CHAPTERS);
         assertThat(dispatched.getScanKeyframePackets()).isFalse();
         assertThat(dispatched.getSource().getSourceNamespaceId())
             .isEqualTo(toProto(SOURCE_NAMESPACE_ID));
