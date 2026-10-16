@@ -133,19 +133,27 @@ Another unexpected failure ends the operation with the error `Subscription error
 == Field errors
 
 A field error does not end the operation.
-When a selected field of one change fails to resolve, the server sends that change in a `next` message.
-The message's `data` holds the subscription field as `null`, and its `errors` name the failing field by its path.
+When a selected field of one change fails to resolve, the server still sends the change in a `next` message.
+The failed field arrives as `null`, and the message's `errors` name the path of each failed field.
 Later changes keep arriving on the same operation.
 
-Every subscription field is nullable for this reason.
-graphql-java ends a subscription when a null reaches a non-null root field, so a non-null root would turn one failing field into a terminal `error` message.
+A failed non-null field passes its `null` up to the nearest nullable parent.
+A failed non-null field of a delivered library or removal makes the whole change `null`.
+A failed non-null field of a watch-state item makes only that item `null`, as <<Failed changes>> describes.
+Every subscription field is nullable, so the `null` never passes beyond the subscription field.
+graphql-java ends a subscription when a `null` reaches a non-null root field, so a non-null root would turn one failing field into a terminal `error` message.
 
 A client keeps the operation running through these messages:
 
-* Web clients that use Apollo Client set `errorPolicy: 'all'` on each subscription, so the client receives the `null` change together with its errors.
-* Other clients skip a change whose subscription field is `null`.
+* A web client that uses Apollo Client sets `errorPolicy: 'all'` on each subscription, so the client receives the data together with its errors.
+* The client applies the rest of the change.
+It skips a `null` subscription field and each `null` item, and keeps its previous value for each field that an error names.
 
-After a skipped change, a client may query `libraries` again to recover the state it missed.
+A later change may not repeat a value that failed, so the client's state can stay stale until that value changes again.
+After a message that carries `errors`, the client runs its queries again through the same recovery path it uses after a reconnect.
+A library administration client queries `libraries` again.
+A watch-state client runs the queries from <<Building current state>> again.
+The subscription stays open while those queries run.
 
 == Client lifecycle
 
@@ -242,8 +250,7 @@ A failed nullable field, such as `watchProgress` or `lastWatchedAt`, arrives as 
 A failed non-null field of an item, such as `watchStatus`, `library` or `unmatched`, makes that item null in `items`.
 The other items of the change arrive intact.
 When the change's items cannot be resolved, `watchStateChanged` arrives as null.
-The message's `errors` name the path of each failed field, and the operation continues in every case.
-The client keeps its previous value for each field that an error names, skips each null item, and applies the rest of the change.
+The operation continues in every case, and the client recovers as <<Field errors>> describes.
 
 == Configuration
 
