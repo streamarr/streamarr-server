@@ -20,6 +20,31 @@ class VideoPlaybackFactsTest {
   private static final PictureSize CODED_1080P = new PictureSize(1920, 1080);
 
   @ParameterizedTest(name = "{0}")
+  @MethodSource("oddCrops")
+  @DisplayName("Should round a crop down to the chroma grid when the source subsamples its chroma")
+  void shouldRoundACropDownToTheChromaGridWhenTheSourceSubsamplesItsChroma(
+      Optional<ChromaSubsampling> chromaSubsampling, PictureSize displayed) {
+    var facts =
+        VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+            .chromaSubsampling(chromaSubsampling)
+            .containerCropping(Optional.of(ContainerCropping.builder().top(5).left(3).build()))
+            .build();
+
+    assertThat(facts.displayedSize(CODED_1080P)).isEqualTo(displayed);
+  }
+
+  // FFmpeg's crop filter, without exact cropping, rounds the width and height down to whole chroma
+  // samples. FFmpeg 8.0.1 cropped 3 columns and 5 rows from a 64x36 frame to 60x30 in 4:2:0, 60x31
+  // in 4:2:2 and 61x31 in 4:4:4.
+  static Stream<Arguments> oddCrops() {
+    return Stream.of(
+        arguments(Optional.of(ChromaSubsampling.CHROMA_422), new PictureSize(1916, 1075)),
+        arguments(Optional.of(ChromaSubsampling.CHROMA_444), new PictureSize(1917, 1075)),
+        arguments(Optional.of(ChromaSubsampling.MONOCHROME), new PictureSize(1917, 1075)),
+        arguments(Optional.empty(), new PictureSize(1916, 1074)));
+  }
+
+  @ParameterizedTest(name = "{0}")
   @MethodSource("displayedSizes")
   @DisplayName("Should crop and then rotate the coded size when a player shows the picture")
   void shouldCropAndThenRotateTheCodedSizeWhenAPlayerShowsThePicture(
@@ -65,6 +90,11 @@ class VideoPlaybackFactsTest {
             OptionalInt.of(-90),
             Optional.of(pillarbox),
             new PictureSize(1080, 1440)),
+        arguments(
+            "odd crop of 4:2:0, rounded down to even rows and columns",
+            OptionalInt.empty(),
+            Optional.of(ContainerCropping.builder().top(5).left(3).build()),
+            new PictureSize(1916, 1074)),
         arguments(
             "crop that leaves no picture",
             OptionalInt.empty(),

@@ -9,13 +9,11 @@ import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
-import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
-import com.streamarr.server.domain.streaming.OutputFrameRateBasis;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -1125,25 +1123,10 @@ class HlsPlaylistServiceTest {
 
     @Test
     @DisplayName(
-        "Should advertise the declared frame rate when the session copies a stream whose declared rates agree")
-    void shouldAdvertiseTheDeclaredFrameRateWhenTheSessionCopiesAStreamWhoseDeclaredRatesAgree() {
+        "Should advertise no frame rate when the session copies a stream whose declared rates agree")
+    void shouldAdvertiseNoFrameRateWhenTheSessionCopiesAStreamWhoseDeclaredRatesAgree() {
       var session =
           copySessionWithRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(25, 1)));
-
-      assertThat(streamInf(session)).singleElement().asString().contains(",FRAME-RATE=25.000");
-    }
-
-    @Test
-    @DisplayName(
-        "Should advertise no frame rate when the session copies a stream whose rate came from a packet scan")
-    void shouldAdvertiseNoFrameRateWhenTheSessionCopiesAStreamWhoseRateCameFromAPacketScan() {
-      var scanned =
-          FrameRateRule.builder()
-              .outputFrameRate(Optional.of(new Fraction(30, 1)))
-              .basis(OutputFrameRateBasis.PACKET_SCAN)
-              .inputs(FrameRateRuleInputs.builder().build())
-              .build();
-      var session = copySessionWithRule(scanned);
 
       assertThat(streamInf(session)).singleElement().asString().doesNotContain("FRAME-RATE");
     }
