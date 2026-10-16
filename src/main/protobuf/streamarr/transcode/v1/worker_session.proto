@@ -538,11 +538,14 @@ message ProbeStreamInfo {
   //
   // The worker reports the value of the chosen tag unchanged. Absent when no tag gives a title.
   // Also absent when the chosen value is longer than 512 bytes of UTF-8. The worker never shortens
-  // a title and never falls back to the next tag. A file controls its titles. The server accepts at
-  // most 128 KiB in one session message, and a larger probe result closes the worker's session
-  // (streamarr/streamarr-server#554). So the limit keeps one title from filling the result. The
-  // rule above belongs to probe version 4. A change to it needs a new probe version. Video streams
-  // report no title, because no consumer reads one.
+  // a title and never falls back to the next tag. Also absent on every stream when the worker sets
+  // ProbeMediaInfo.stream_titles_omitted.
+  //
+  // A file controls its titles, but the result must fit in one session message of at most 128 KiB.
+  // A larger probe result closes the worker's session (streamarr/streamarr-server#554). So the
+  // 512-byte limit and the limit of ProbeMediaInfo.stream_titles_omitted keep the titles from
+  // filling the result. The rule above belongs to probe version 4. A change to it needs a new probe
+  // version. Video streams report no title, because no consumer reads one.
   optional string title = 23;
 }
 
@@ -798,6 +801,14 @@ message ProbeMediaInfo {
   optional uint32 chosen_video_stream_index = 4;
   // Present only for probe version 4 and later.
   FrameRateRuleResult frame_rate_rule = 5;
+  // True when the streams have titles, but the worker omitted every title because the titles exceed
+  // the title limit. The titles of one result take at most 16,384 bytes: the sum of the bytes that
+  // each ProbeStreamInfo.title adds to its stream's protobuf encoding. A title longer than 512 bytes
+  // counts for nothing, because the worker leaves it out first. When the titles would take more,
+  // the worker reports no title on any stream and sets stream_titles_omitted. When no stream has a
+  // title and stream_titles_omitted is false, the streams have no titles. Only probe version 4 and
+  // later set this field.
+  bool stream_titles_omitted = 6;
 }
 
 message ProbeAttemptResult {

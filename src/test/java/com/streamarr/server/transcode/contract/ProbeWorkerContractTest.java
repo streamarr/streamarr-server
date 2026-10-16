@@ -552,6 +552,27 @@ class ProbeWorkerContractTest {
 
   @Test
   @DisplayName(
+      "Should tell stream titles omitted for their size apart from streams without titles when decoding a probe version 4 result")
+  void
+      shouldTellStreamTitlesOmittedForSizeApartFromStreamsWithoutTitlesWhenDecodingProbeVersion4Result()
+          throws Exception {
+    var subtitle = ProbeStreamInfo.newBuilder().setIndex(1).setCodecType("subtitle").build();
+    var omitted =
+        probeVersion4Result(
+            ProbeMediaInfo.newBuilder().addStreams(subtitle).setStreamTitlesOmitted(true));
+    var withoutTitles = probeVersion4Result(ProbeMediaInfo.newBuilder().addStreams(subtitle));
+
+    var decodedOmitted = ProbeAttemptResult.parseFrom(omitted.toByteArray()).getMedia();
+    var decodedWithoutTitles = ProbeAttemptResult.parseFrom(withoutTitles.toByteArray()).getMedia();
+
+    assertThat(decodedOmitted.getStreams(0).hasTitle()).isFalse();
+    assertThat(decodedOmitted.getStreamTitlesOmitted()).isTrue();
+    assertThat(decodedWithoutTitles.getStreams(0).hasTitle()).isFalse();
+    assertThat(decodedWithoutTitles.getStreamTitlesOmitted()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
       "Should carry the container cropping of a video stream beside its size before cropping when returning a probe version 4 result")
   void
       shouldCarryContainerCroppingOfVideoStreamBesideSizeBeforeCroppingWhenReturningProbeVersion4Result()
