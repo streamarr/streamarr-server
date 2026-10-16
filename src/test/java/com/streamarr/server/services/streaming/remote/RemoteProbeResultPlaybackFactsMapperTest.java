@@ -13,6 +13,7 @@ import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.FrameRatePacketScan;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MatroskaStatistics;
 import com.streamarr.server.domain.streaming.OutputFrameRateBasis;
 import com.streamarr.server.domain.streaming.Presence;
@@ -25,7 +26,11 @@ import com.streamarr.transcode.v1.DolbyVisionAbsent;
 import com.streamarr.transcode.v1.DolbyVisionPresent;
 import com.streamarr.transcode.v1.Fraction;
 import com.streamarr.transcode.v1.FrameRateRuleResult;
+import com.streamarr.transcode.v1.KeyframePositionSource;
+import com.streamarr.transcode.v1.KeyframePositions;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
+import com.streamarr.transcode.v1.ProbeKeyframes;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
 import java.time.Duration;
@@ -329,6 +334,53 @@ class RemoteProbeResultPlaybackFactsMapperTest {
                                       .build()))
                           .build())
                   .build());
+    }
+
+    @Test
+    @DisplayName("Should reject the result when its keyframes belong to another video stream")
+    void shouldRejectTheResultWhenItsKeyframesBelongToAnotherVideoStream() {
+      var report = keyframesReport(0);
+
+      assertThatThrownBy(() -> mapper.map(report)).isInstanceOf(ProbeExecutionException.class);
+    }
+
+    @Test
+    @DisplayName("Should keep the keyframes when they belong to the chosen video stream")
+    void shouldKeepTheKeyframesWhenTheyBelongToTheChosenVideoStream() {
+      var outcome = (ProbeOutcome.Success) mapper.map(keyframesReport(1));
+
+      assertThat(outcome.keyframes())
+          .isInstanceOfSatisfying(
+              KeyframeKnowledge.Known.class,
+              known -> assertThat(known.positions().streamIndex()).isEqualTo(1));
+    }
+
+    // Cover art at stream 0 and the chosen video stream at stream 1.
+    private static ProbeAttemptReport keyframesReport(int keyframeStreamIndex) {
+      var result =
+          result(
+              media ->
+                  media
+                      .addStreams(ProbeStreamInfo.newBuilder().setIndex(1).setCodecType("video"))
+                      .setChosenVideoStreamIndex(1)
+                      .setKeyframes(
+                          ProbeKeyframes.newBuilder()
+                              .setPositions(
+                                  KeyframePositions.newBuilder()
+                                      .setStreamIndex(keyframeStreamIndex)
+                                      .setTimeBaseNumerator(1)
+                                      .setTimeBaseDenominator(90_000)
+                                      .setSource(
+                                          KeyframePositionSource
+                                              .KEYFRAME_POSITION_SOURCE_CONTAINER_INDEX)
+                                      .setKeyframeCount(1))));
+      return new ProbeAttemptReport(
+          result,
+          List.of(
+              ProbeKeyframePositionsPart.newBuilder()
+                  .addPresentationTimeDeltas(0)
+                  .addDecodeTimeDeltas(0)
+                  .build()));
     }
 
     @SuppressWarnings("checkstyle:fullyQualifiedName")

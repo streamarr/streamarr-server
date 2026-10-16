@@ -5,6 +5,8 @@ import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.Chapter;
 import com.streamarr.server.domain.streaming.ChapterKnowledge;
+import com.streamarr.server.domain.streaming.ChosenVideoStream;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -75,14 +77,23 @@ final class RemoteProbeResultMapper {
         media.getStreamsList().stream()
             .map(stream -> stream(stream, reportsPlaybackFacts))
             .toList();
+    var keyframes = keyframeMapper.map(media, keyframePositionsParts);
+    var chosenVideoStream =
+        reportsPlaybackFacts
+            ? Optional.of(playbackFactsMapper.chosenVideoStream(media, streams))
+            : Optional.<ChosenVideoStream>empty();
+    if (chosenVideoStream.isPresent()
+        && keyframes instanceof KeyframeKnowledge.Known(var positions)
+        && positions.streamIndex() != chosenVideoStream.get().streamIndex()) {
+      throw contractViolation(
+          "Worker probe keyframes belong to another stream than the chosen one");
+    }
+
     return ProbeOutcome.Success.builder()
         .container(container(media.getContainer(), result.getProbeVersion()))
         .streams(streams)
-        .keyframes(keyframeMapper.map(media, keyframePositionsParts))
-        .chosenVideoStream(
-            reportsPlaybackFacts
-                ? Optional.of(playbackFactsMapper.chosenVideoStream(media, streams))
-                : Optional.empty())
+        .keyframes(keyframes)
+        .chosenVideoStream(chosenVideoStream)
         .build();
   }
 
