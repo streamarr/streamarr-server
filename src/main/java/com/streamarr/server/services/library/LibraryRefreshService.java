@@ -10,6 +10,7 @@ import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.exceptions.LibraryRefreshFailedException;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
@@ -29,13 +30,16 @@ import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
+import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,9 +49,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * Refreshes each movie or series from its provider and records the metadata result for that item.
  * The result carries the refresh's library operation id, so an execution after a restart skips the
- * items that an earlier execution of the operation refreshed. Each media title's task is admitted
- * through the refresh's adaptive limit (ADR 0041). An item failure does not stop the refresh; a
- * result that cannot be recorded fails it and ends admission.
+ * items that an earlier execution of the operation refreshed. A series also saves a result for each
+ * season it refreshes, so an execution after a restart resumes the series at its first season
+ * without one. Each media title's task is admitted through the refresh's adaptive limit (ADR 0041).
+ * An item failure does not stop the refresh; a result that cannot be recorded fails it and ends
+ * admission.
  */
 @Slf4j
 @Service
@@ -135,7 +141,7 @@ public class LibraryRefreshService {
                     operation,
                     seriesRepository.findWithExternalIdsByLibrary_Id(library.getId()),
                     "series"))
-            .refresh((mediaTitle, taskRun) -> refreshSeries(mediaTitle, library, taskRun))
+            .refresh((mediaTitle, taskRun) -> refreshSeries(mediaTitle, operation, taskRun))
             .threadNamePrefix("library-refresh-series-")
             .build());
   }
@@ -204,74 +210,177 @@ public class LibraryRefreshService {
     return AdmissionReports.forRefresh(outcome);
   }
 
+  // A series' metadata result commits with its last season, so an execution after a restart skips
+  // the series only when every season is refreshed, and resumes at the first season without a
+  // result for the operation.
   private ItemOutcome refreshSeries(
-      MediaTitleToRefresh<Series> mediaTitle, Library library, ArtworkRun artworkRun) {
+      MediaTitleToRefresh<Series> mediaTitle, RefreshOperation operation, ArtworkRun artworkRun) {
     var series = mediaTitle.entity();
-    var tmdbId = mediaTitle.tmdbId();
-    var result =
-        metadataResult(series.getId(), ImageEntityType.SERIES, artworkRun)
-            .attemptedAt(clock.instant());
-    var outcome = refreshSeriesMetadata(series, tmdbId, library, artworkRun);
+    var refresh =
+        SeriesToRefresh.builder()
+            .series(series)
+            .tmdbId(mediaTitle.tmdbId())
+            .library(operation.library())
+            .artworkRun(artworkRun)
+            .refreshedItemIds(operation.refreshedItemIds())
+            .result(
+                metadataResult(series.getId(), ImageEntityType.SERIES, artworkRun)
+                    .attemptedAt(clock.instant()))
+            .build();
 
-    return saveMetadataResult(result, outcome);
+    return switch (refreshSeriesMetadata(refresh)) {
+      case SeriesOutcome.SavedWithLastSeason(var outcome) -> outcome;
+      case SeriesOutcome.Unsaved(var outcome) -> saveMetadataResult(refresh.result(), outcome);
+    };
   }
 
-  private ItemOutcome refreshSeriesMetadata(
-      Series series, String tmdbId, Library library, ArtworkRun artworkRun) {
+  @Builder(toBuilder = true)
+  private record SeriesToRefresh(
+      Series series,
+      String tmdbId,
+      Library library,
+      ArtworkRun artworkRun,
+      Set<UUID> refreshedItemIds,
+      ItemResult.ItemResultBuilder result) {}
+
+  private sealed interface SeriesOutcome {
+
+    record SavedWithLastSeason(ItemOutcome outcome) implements SeriesOutcome {}
+
+    record Unsaved(ItemOutcome outcome) implements SeriesOutcome {}
+  }
+
+  private SeriesOutcome refreshSeriesMetadata(SeriesToRefresh refresh) {
+    var series = refresh.series();
+    var tmdbId = refresh.tmdbId();
     try {
       return switch (seriesMetadataProviderResolver.getMetadata(
-          searchResult(tmdbId, series.getTitle()), library)) {
+          searchResult(tmdbId, series.getTitle()), refresh.library())) {
         case MetadataFetchOutcome.Found(var metadataResult) -> {
           var refreshedSeries =
-              seriesService.refreshSeriesMetadata(series, metadataResult, artworkRun);
-          yield refreshSeasons(refreshedSeries, tmdbId, library, artworkRun);
+              seriesService.refreshSeriesMetadata(series, metadataResult, refresh.artworkRun());
+          yield refreshSeasons(refresh.toBuilder().series(refreshedSeries).build());
         }
         case MetadataFetchOutcome.NotFound<?> _ -> {
           log.error("TMDB no longer has series '{}' TMDB id '{}'", series.getTitle(), tmdbId);
-          yield new ItemOutcome.Unavailable();
+          yield new SeriesOutcome.Unsaved(new ItemOutcome.Unavailable());
         }
         case MetadataFetchOutcome.Failed<?> failed -> {
           log.error(
               "Failed to fetch metadata for series '{}' TMDB id '{}'", series.getTitle(), tmdbId);
-          yield failed.toItemOutcome();
+          yield new SeriesOutcome.Unsaved(failed.toItemOutcome());
         }
       };
     } catch (RuntimeException ex) {
       log.error("Failed to refresh series '{}' TMDB id '{}'", series.getTitle(), tmdbId, ex);
-      return ItemOutcome.Failed.of(ItemFailureReason.TEMPORARY, ex);
+      return new SeriesOutcome.Unsaved(ItemOutcome.Failed.of(ItemFailureReason.TEMPORARY, ex));
     }
   }
 
-  private ItemOutcome refreshSeasons(
-      Series series, String tmdbId, Library library, ArtworkRun artworkRun) {
-    var seasonList = seriesMetadataProviderResolver.getAvailableSeasonNumbers(library, tmdbId);
+  private SeriesOutcome refreshSeasons(SeriesToRefresh refresh) {
+    var tmdbId = refresh.tmdbId();
+    var seasonList =
+        seriesMetadataProviderResolver.getAvailableSeasonNumbers(refresh.library(), tmdbId);
     if (!(seasonList instanceof MetadataFetchOutcome.Found(var seasonNumbers))) {
-      return seasonListFailure(tmdbId, seasonList);
+      return new SeriesOutcome.Unsaved(seasonListFailure(tmdbId, seasonList));
+    }
+
+    var seasonsToRefresh = seasonsWithoutResult(refresh, seasonNumbers);
+    if (seasonsToRefresh.isEmpty()) {
+      return new SeriesOutcome.Unsaved(new ItemOutcome.Succeeded());
     }
 
     var seasonFailures = new ArrayList<ItemOutcome.Failed>();
-    for (var seasonNumber : seasonNumbers) {
-      switch (seriesMetadataProviderResolver.getSeasonDetails(library, tmdbId, seasonNumber)) {
-        case MetadataFetchOutcome.Found(var seasonDetails) ->
-            seriesService.refreshSeasonWithEpisodes(
-                SeasonWithEpisodesRequest.builder()
-                    .series(series)
-                    .details(seasonDetails)
-                    .library(library)
-                    .artworkRun(artworkRun)
-                    .build());
-        case MetadataFetchOutcome.NotFound<?> _ ->
-            seasonFailures.add(seasonNotFound(tmdbId, seasonNumber));
-        case MetadataFetchOutcome.Failed<?> failed ->
-            seasonFailures.add(seasonFailure(tmdbId, seasonNumber, failed));
-      }
+    for (var seasonNumber : seasonsToRefresh.subList(0, seasonsToRefresh.size() - 1)) {
+      refreshSeason(refresh, seasonNumber, List.of()).ifPresent(seasonFailures::add);
     }
 
-    if (seasonFailures.isEmpty()) {
+    var seriesOutcome = firstFailureOrSuccess(seasonFailures);
+    var lastSeasonFailure =
+        refreshSeason(
+            refresh,
+            seasonsToRefresh.getLast(),
+            List.of(refresh.result().outcome(seriesOutcome).build()));
+    if (lastSeasonFailure.isEmpty()) {
+      return new SeriesOutcome.SavedWithLastSeason(seriesOutcome);
+    }
+
+    seasonFailures.add(lastSeasonFailure.get());
+    return new SeriesOutcome.Unsaved(seasonFailures.getFirst());
+  }
+
+  private List<Integer> seasonsWithoutResult(SeriesToRefresh refresh, List<Integer> seasonNumbers) {
+    var refreshedSeasonNumbers =
+        seriesService.findSeasons(refresh.series().getId()).stream()
+            .filter(season -> refresh.refreshedItemIds().contains(season.getId()))
+            .map(Season::getSeasonNumber)
+            .collect(Collectors.toSet());
+    return seasonNumbers.stream()
+        .filter(seasonNumber -> !refreshedSeasonNumbers.contains(seasonNumber))
+        .toList();
+  }
+
+  private static ItemOutcome firstFailureOrSuccess(List<ItemOutcome.Failed> failures) {
+    if (failures.isEmpty()) {
       return new ItemOutcome.Succeeded();
     }
 
-    return seasonFailures.getFirst();
+    return failures.getFirst();
+  }
+
+  // A shutdown stops the series at the season it reaches, so no later season is fetched.
+  private Optional<ItemOutcome.Failed> refreshSeason(
+      SeriesToRefresh refresh, int seasonNumber, List<ItemResult> resultsSavedWithSeason) {
+    if (Thread.currentThread().isInterrupted()) {
+      return Optional.of(
+          new ItemOutcome.Failed(
+              ItemFailureReason.TEMPORARY, "Season %d: interrupted".formatted(seasonNumber)));
+    }
+
+    var tmdbId = refresh.tmdbId();
+    var attemptedAt = clock.instant();
+    return switch (seriesMetadataProviderResolver.getSeasonDetails(
+        refresh.library(), tmdbId, seasonNumber)) {
+      case MetadataFetchOutcome.Found(var seasonDetails) -> {
+        saveSeason(
+            refresh,
+            SeasonToSave.builder()
+                .details(seasonDetails)
+                .attemptedAt(attemptedAt)
+                .resultsSavedWithSeason(resultsSavedWithSeason)
+                .build());
+        yield Optional.empty();
+      }
+      case MetadataFetchOutcome.NotFound<?> _ -> Optional.of(seasonNotFound(tmdbId, seasonNumber));
+      case MetadataFetchOutcome.Failed<?> failed ->
+          Optional.of(seasonFailure(tmdbId, seasonNumber, failed));
+    };
+  }
+
+  @Builder
+  private record SeasonToSave(
+      SeasonDetails details, Instant attemptedAt, List<ItemResult> resultsSavedWithSeason) {}
+
+  // The season, its episodes, their artwork requests and the season's metadata result commit
+  // together in a short transaction of their own.
+  private void saveSeason(SeriesToRefresh refresh, SeasonToSave season) {
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          var savedSeason =
+              seriesService.refreshSeasonWithEpisodes(
+                  SeasonWithEpisodesRequest.builder()
+                      .series(refresh.series())
+                      .details(season.details())
+                      .library(refresh.library())
+                      .artworkRun(refresh.artworkRun())
+                      .build());
+          itemResults.overwrite(
+              metadataResult(savedSeason.getId(), ImageEntityType.SEASON, refresh.artworkRun())
+                  .attemptedAt(season.attemptedAt())
+                  .outcome(new ItemOutcome.Succeeded())
+                  .build());
+          season.resultsSavedWithSeason().forEach(itemResults::overwrite);
+        });
   }
 
   private static ItemOutcome seasonListFailure(
