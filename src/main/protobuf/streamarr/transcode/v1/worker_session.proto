@@ -453,7 +453,7 @@ enum ChromaSubsampling {
   CHROMA_SUBSAMPLING_MONOCHROME = 4;
 }
 
-// Only probe version 4 and later report the fields from dynamic_range to title.
+// Only probe version 4 and later report the fields from dynamic_range to handler_name.
 message ProbeStreamInfo {
   uint32 index = 1;
   string codec_type = 2;
@@ -518,35 +518,38 @@ message ProbeStreamInfo {
   // Content light level metadata stream side data. Absent when the stream has no such side data.
   ContentLightLevel content_light_level = 22;
   // Audio and subtitle streams only: the stream's title, which a menu shows to name the track. The
-  // worker reads three stream tags in this order. It takes the first tag whose value is not empty
-  // and not only white space. It compares tag keys without regard to case, as FFmpeg's metadata
+  // worker reads two stream tags in this order. It takes the first tag whose value is not empty and
+  // not only white space. It compares tag keys without regard to case, as FFmpeg's metadata
   // dictionary does.
   //
   // 1. title. ffprobe reports a Matroska TrackName and an MP4 track's ©nam atom as title.
   // 2. name. ffprobe reports an MP4 or MOV track's udta name atom as name. FFmpeg's MP4 and MOV
   //    muxers write a stream's title metadata into that atom, so ffprobe 8 reports such a title as
   //    name, never as title.
-  // 3. handler_name, unless the handler name is generic. ffprobe reports the name in an MP4 or MOV
-  //    track's hdlr box as handler_name. A Matroska file that FFmpeg remuxed from MP4 keeps that
-  //    name as a HANDLER_NAME tag. Every MP4 track has a handler name, and most muxers write a
-  //    fixed name for the track's type there. FFmpeg 8 writes SoundHandler and SubtitleHandler,
-  //    and it writes them even when the stream's handler_name metadata is empty. So the worker
-  //    treats a handler name as generic when, with surrounding white space removed and without
-  //    regard to case, it ends with "handler" or starts with "core media ". Examples are
-  //    SoundHandler, USP Sound Handler, #Mainconcept MP4 Sound Media Handler and Apple's Core
-  //    Media Audio.
   //
-  // The worker reports the value of the chosen tag unchanged. Absent when no tag gives a title.
-  // Also absent when the chosen value is longer than 512 bytes of UTF-8. The worker never shortens
-  // a title and never falls back to the next tag. Also absent on every stream when the worker sets
-  // ProbeMediaInfo.stream_titles_omitted.
-  //
-  // A file controls its titles, but the result must fit in one session message of at most 128 KiB.
-  // A larger probe result closes the worker's session (streamarr/streamarr-server#554). So the
-  // 512-byte limit and the limit of ProbeMediaInfo.stream_titles_omitted keep the titles from
-  // filling the result. The rule above belongs to probe version 4. A change to it needs a new probe
-  // version. Video streams report no title, because no consumer reads one.
+  // The worker reports the value of the chosen tag unchanged. Absent when neither tag gives a
+  // title. Also absent when the chosen value is longer than 512 bytes of UTF-8. The worker never
+  // shortens a title and never falls back to the next tag. Also absent on every stream when the
+  // worker sets ProbeMediaInfo.stream_titles_omitted. The worker never takes a title from the
+  // handler name. handler_name carries the handler name separately. This rule belongs to probe
+  // version 4, and a change to it needs a new probe version. Video streams report no title, because
+  // no consumer reads one.
   optional string title = 23;
+  // Audio and subtitle streams only: the value of the stream's handler_name tag, unchanged. The
+  // worker compares tag keys without regard to case. ffprobe reports the name in an MP4 or MOV
+  // track's hdlr box as handler_name, and a Matroska file that FFmpeg remuxed from MP4 keeps that
+  // name as a HANDLER_NAME tag. Absent when the stream has no handler_name tag. Also absent when
+  // the value is longer than 512 bytes of UTF-8, and on every stream when the worker sets
+  // ProbeMediaInfo.stream_titles_omitted. The worker never shortens a handler name.
+  //
+  // Many muxers write a fixed name for the track's type into every hdlr box. FFmpeg 8 writes
+  // SoundHandler and SubtitleHandler. Other muxers write names such as USP Sound Handler, Core
+  // Media Audio or ISO Media file produced by Google Inc. Some handler names do name the track,
+  // such as English SDH or Surround. The worker reports every handler name as it is, an empty one
+  // included. The server decides which handler names are generic when it names a rendition. The
+  // list of generic names is open-ended. A rule in the worker would need a new probe version for
+  // each fix, and every file would need a new probe.
+  optional string handler_name = 24;
 }
 
 // The number of pixels that a container crop removes from each edge of the picture. width and
@@ -801,13 +804,20 @@ message ProbeMediaInfo {
   optional uint32 chosen_video_stream_index = 4;
   // Present only for probe version 4 and later.
   FrameRateRuleResult frame_rate_rule = 5;
-  // True when the streams have titles, but the worker omitted every title because the titles exceed
-  // the title limit. The titles of one result take at most 16,384 bytes: the sum of the bytes that
-  // each ProbeStreamInfo.title adds to its stream's protobuf encoding. A title longer than 512 bytes
-  // counts for nothing, because the worker leaves it out first. When the titles would take more,
-  // the worker reports no title on any stream and sets stream_titles_omitted. When no stream has a
-  // title and stream_titles_omitted is false, the streams have no titles. Only probe version 4 and
-  // later set this field.
+  // True when the worker omitted every stream title and every handler name, because the titles and
+  // handler names together exceed the limit. The flag covers ProbeStreamInfo.title and
+  // ProbeStreamInfo.handler_name, although its name mentions only titles. The titles and handler
+  // names of one result take at most 16,384 bytes: the sum of the bytes that each title and each
+  // handler name add to its stream's protobuf encoding. A value longer than 512 bytes counts for
+  // nothing, because the worker leaves it out first. When the values would take more, the worker
+  // reports no title and no handler name on any stream and sets stream_titles_omitted. When no
+  // stream has a title or a handler name and stream_titles_omitted is false, the streams have
+  // neither.
+  //
+  // A file controls its titles and handler names, but the result must fit in one session message
+  // of at most 128 KiB. A larger probe result closes the worker's session
+  // (streamarr/streamarr-server#554). So the 512-byte limit and this limit keep the values from
+  // filling the result. Only probe version 4 and later set this field.
   bool stream_titles_omitted = 6;
 }
 

@@ -159,6 +159,7 @@ class ProbeWorkerContractTest {
     assertThat(unknown.hasSampleRateHz()).isFalse();
     assertThat(unknown.hasAudioProfile()).isFalse();
     assertThat(unknown.hasTitle()).isFalse();
+    assertThat(unknown.hasHandlerName()).isFalse();
     assertThat(unknown.hasContainerCropping()).isFalse();
     assertThat(decoded.getMedia().getContainer().getChaptersList()).isEmpty();
   }
@@ -552,6 +553,70 @@ class ProbeWorkerContractTest {
 
   @Test
   @DisplayName(
+      "Should carry the raw handler name of each audio and subtitle stream beside its title when returning a probe version 4 result")
+  void
+      shouldCarryRawHandlerNameOfEachAudioAndSubtitleStreamBesideTitleWhenReturningProbeVersion4Result()
+          throws Exception {
+    var commentary =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(1)
+            .setCodecType("audio")
+            .setTitle("Director's Commentary")
+            .setHandlerName("SoundHandler")
+            .build();
+    var namedOnlyByHandler =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(2)
+            .setCodecType("subtitle")
+            .setHandlerName("English SDH")
+            .build();
+    var producerName =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(3)
+            .setCodecType("audio")
+            .setHandlerName("ISO Media file produced by Google Inc.")
+            .build();
+
+    var decoded =
+        ProbeAttemptResult.parseFrom(
+                probeVersion4Result(
+                        ProbeMediaInfo.newBuilder()
+                            .addStreams(commentary)
+                            .addStreams(namedOnlyByHandler)
+                            .addStreams(producerName))
+                    .toByteArray())
+            .getMedia();
+
+    assertThat(decoded.getStreamsList())
+        .containsExactly(commentary, namedOnlyByHandler, producerName);
+    assertThat(decoded.getStreams(0).getTitle()).isEqualTo("Director's Commentary");
+    assertThat(decoded.getStreams(0).getHandlerName()).isEqualTo("SoundHandler");
+    assertThat(decoded.getStreams(1).hasTitle()).isFalse();
+    assertThat(decoded.getStreams(1).getHandlerName()).isEqualTo("English SDH");
+    assertThat(decoded.getStreams(2).hasTitle()).isFalse();
+    assertThat(decoded.getStreams(2).getHandlerName())
+        .isEqualTo("ISO Media file produced by Google Inc.");
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell an empty handler name apart from a missing handler name when decoding an audio stream")
+  void shouldTellEmptyHandlerNameApartFromMissingHandlerNameWhenDecodingAudioStream()
+      throws Exception {
+    var emptyHandlerName =
+        ProbeStreamInfo.newBuilder().setIndex(1).setCodecType("audio").setHandlerName("").build();
+    var noHandlerName = ProbeStreamInfo.newBuilder().setIndex(1).setCodecType("audio").build();
+
+    var decodedEmpty = ProbeStreamInfo.parseFrom(emptyHandlerName.toByteArray());
+    var decodedMissing = ProbeStreamInfo.parseFrom(noHandlerName.toByteArray());
+
+    assertThat(decodedEmpty.hasHandlerName()).isTrue();
+    assertThat(decodedEmpty.getHandlerName()).isEmpty();
+    assertThat(decodedMissing.hasHandlerName()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
       "Should tell stream titles omitted for their size apart from streams without titles when decoding a probe version 4 result")
   void
       shouldTellStreamTitlesOmittedForSizeApartFromStreamsWithoutTitlesWhenDecodingProbeVersion4Result()
@@ -566,8 +631,10 @@ class ProbeWorkerContractTest {
     var decodedWithoutTitles = ProbeAttemptResult.parseFrom(withoutTitles.toByteArray()).getMedia();
 
     assertThat(decodedOmitted.getStreams(0).hasTitle()).isFalse();
+    assertThat(decodedOmitted.getStreams(0).hasHandlerName()).isFalse();
     assertThat(decodedOmitted.getStreamTitlesOmitted()).isTrue();
     assertThat(decodedWithoutTitles.getStreams(0).hasTitle()).isFalse();
+    assertThat(decodedWithoutTitles.getStreams(0).hasHandlerName()).isFalse();
     assertThat(decodedWithoutTitles.getStreamTitlesOmitted()).isFalse();
   }
 
