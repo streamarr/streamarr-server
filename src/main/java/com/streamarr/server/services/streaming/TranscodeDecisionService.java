@@ -74,13 +74,12 @@ public class TranscodeDecisionService {
     return refusal.isEmpty();
   }
 
-  // A probe before version 4 reports no playback facts. Its results keep the copy decision that
-  // predates the interim rule, and probe version 4 deletes them (streamarr/streamarr-server#501).
+  // A source without playback facts has no codec string for a copy job to carry.
   private static boolean permitsCopyUntilHdrCopies(MediaProbe source) {
     return source
         .videoPlaybackFacts()
         .map(facts -> InterimVideoCopyRule.permitsCopy(source.videoCodec(), facts))
-        .orElse(true);
+        .orElse(false);
   }
 
   // A stream copy's segments can start only at source keyframes (ADR 0037), so the video is copied

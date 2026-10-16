@@ -16,7 +16,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -24,14 +23,6 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class HlsPlaylistService {
-
-  // A copy of a source that its probe gave no playback facts keeps its codec family's fixed codec
-  // string. Probe version 4 deletes those results (streamarr/streamarr-server#501).
-  private static final Map<String, String> STREAM_COPY_CODEC_STRINGS_BEFORE_PLAYBACK_FACTS =
-      Map.of(
-          "h264", "avc1.640028",
-          "av1", "av01.0.08M.08",
-          "hevc", "hvc1.1.6.L120.90");
 
   private static final String AUDIO_GROUP_ID = "audio";
   private static final int EXTINF_DIGITS = 6;
@@ -110,13 +101,7 @@ public class HlsPlaylistService {
   private static String videoCodecString(StreamSession session, QualityVariant variant) {
     var decision = session.getTranscodeDecision();
     if (decision.transcodeMode().copiesVideo()) {
-      return decision
-          .videoSource()
-          .flatMap(VideoPlaybackFacts::codecString)
-          .orElseGet(
-              () ->
-                  STREAM_COPY_CODEC_STRINGS_BEFORE_PLAYBACK_FACTS.getOrDefault(
-                      decision.videoCodecFamily(), "avc1.640028"));
+      return decision.videoSource().flatMap(VideoPlaybackFacts::codecString).orElseThrow();
     }
 
     return VideoEncodeDecision.of(
