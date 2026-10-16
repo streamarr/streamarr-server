@@ -6,6 +6,7 @@ import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.ProbeAttemptEnds;
 import com.streamarr.server.services.streaming.PlaybackProbeService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
 
 public final class PlaybackProbeServiceFixture {
@@ -23,7 +24,7 @@ public final class PlaybackProbeServiceFixture {
         .outcomes(outcomes)
         .eventPublisher(new CapturingEventPublisher())
         .probeWorkers(_ -> false)
-        .attemptEnds(new ProbeAttemptEnds())
+        .attemptEnds(new ProbeAttemptEnds(new SimpleMeterRegistry()))
         .clock(Clock.systemUTC())
         .properties(StreamingProperties.builder().build());
   }
