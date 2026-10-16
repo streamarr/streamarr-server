@@ -106,6 +106,11 @@ class WatchProgressFieldResolverTest {
     }
 
     @Bean
+    FakeSeriesRepository fakeSeriesRepository() {
+      return new FakeSeriesRepository();
+    }
+
+    @Bean
     FakeWatchHistoryRepository fakeWatchHistoryRepository() {
       return new FakeWatchHistoryRepository();
     }
@@ -122,6 +127,7 @@ class WatchProgressFieldResolverTest {
         FakeMediaFileRepository mediaFileRepository,
         FakeEpisodeRepository episodeRepository,
         FakeSeasonRepository seasonRepository,
+        FakeSeriesRepository seriesRepository,
         CapturingEventPublisher eventPublisher) {
       return new WatchStatusService(
           sessionProgressRepository,
@@ -130,7 +136,7 @@ class WatchProgressFieldResolverTest {
           new FakeMovieRepository(),
           episodeRepository,
           seasonRepository,
-          new FakeSeriesRepository(),
+          seriesRepository,
           eventPublisher);
     }
   }

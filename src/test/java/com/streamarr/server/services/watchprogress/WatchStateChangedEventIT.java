@@ -10,13 +10,18 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.media.Season;
+import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.WatchHistory;
+import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.repositories.media.SeasonRepository;
+import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.services.watchprogress.events.WatchStateChangedEvent;
@@ -37,6 +42,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Import;
@@ -64,6 +71,8 @@ class WatchStateChangedEventIT extends AbstractIntegrationTest {
   @Autowired private WatchStatusService watchStatusService;
   @Autowired private RuntimeStreamSessionRegistry runtimeRegistry;
   @Autowired private MovieRepository movieRepository;
+  @Autowired private SeriesRepository seriesRepository;
+  @Autowired private SeasonRepository seasonRepository;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private WatchHistoryRepository watchHistoryRepository;
   @Autowired private TransactionTemplate transactionTemplate;
@@ -74,12 +83,14 @@ class WatchStateChangedEventIT extends AbstractIntegrationTest {
   private AuthTestSupport.TestIdentity identity;
   private UUID profileId;
   private Library library;
+  private Library seriesLibrary;
 
   @BeforeAll
   void setup() {
     identity = authTestSupport.createIdentity();
     profileId = identity.profile().getId();
     library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    seriesLibrary = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
   }
 
   @AfterEach
@@ -178,6 +189,70 @@ class WatchStateChangedEventIT extends AbstractIntegrationTest {
 
     assertThat(committed.events).isEmpty();
     assertThat(completionsOf(movie.getId())).isEmpty();
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(EmptyContainer.class)
+  @DisplayName(
+      "Should save no completion and publish nothing when marking an empty container watched")
+  void shouldSaveNoCompletionAndPublishNothingWhenMarkingAnEmptyContainerWatched(
+      EmptyContainer container) {
+    var containerId = create(container);
+
+    watchStatusService.markWatched(profileId, containerId);
+
+    assertThat(completionsOf(containerId)).isEmpty();
+    assertThat(committed.events).isEmpty();
+    assertThat(watchStatusOf(container, containerId)).isEqualTo(WatchStatus.UNWATCHED);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(EmptyContainer.class)
+  @DisplayName(
+      "Should save no completion and publish nothing when marking an empty container unwatched")
+  void shouldSaveNoCompletionAndPublishNothingWhenMarkingAnEmptyContainerUnwatched(
+      EmptyContainer container) {
+    var containerId = create(container);
+
+    watchStatusService.markUnwatched(profileId, containerId);
+
+    assertThat(completionsOf(containerId)).isEmpty();
+    assertThat(committed.events).isEmpty();
+    assertThat(watchStatusOf(container, containerId)).isEqualTo(WatchStatus.UNWATCHED);
+  }
+
+  private enum EmptyContainer {
+    SEASON_WITHOUT_EPISODES,
+    SERIES_WITHOUT_SEASONS
+  }
+
+  private UUID create(EmptyContainer container) {
+    var series =
+        seriesRepository.saveAndFlush(
+            Series.builder()
+                .title("Empty Series")
+                .titleSort("Empty Series")
+                .library(seriesLibrary)
+                .build());
+    return switch (container) {
+      case SEASON_WITHOUT_EPISODES ->
+          seasonRepository
+              .saveAndFlush(
+                  Season.builder().seasonNumber(1).series(series).library(seriesLibrary).build())
+              .getId();
+      case SERIES_WITHOUT_SEASONS -> series.getId();
+    };
+  }
+
+  private WatchStatus watchStatusOf(EmptyContainer container, UUID containerId) {
+    var statuses =
+        switch (container) {
+          case SEASON_WITHOUT_EPISODES ->
+              watchStatusService.getWatchStatusForSeasons(profileId, List.of(containerId));
+          case SERIES_WITHOUT_SEASONS ->
+              watchStatusService.getWatchStatusForSeries(profileId, List.of(containerId));
+        };
+    return statuses.getOrDefault(containerId, WatchStatus.UNWATCHED);
   }
 
   private List<WatchHistory> completionsOf(UUID itemId) {

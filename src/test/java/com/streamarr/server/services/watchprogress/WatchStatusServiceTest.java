@@ -484,6 +484,19 @@ class WatchStatusServiceTest {
 
       assertThat(outcome).isEqualTo(Outcome.accepted(season));
       assertThat(watchHistoryRepository.count()).isZero();
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should write no history when marking a series without seasons watched by ID")
+    void shouldWriteNoHistoryWhenMarkingASeriesWithoutSeasonsWatchedById() {
+      var series = seriesRepository.save(buildSeries());
+
+      var outcome = service.markWatched(PROFILE_ID, series.getId());
+
+      assertThat(outcome).isEqualTo(Outcome.accepted(series));
+      assertThat(watchHistoryRepository.count()).isZero();
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class)).isEmpty();
     }
 
     @Test

@@ -140,20 +140,6 @@ class WatchStatusServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should store no completion when marking a series without episodes watched")
-  void shouldStoreNoCompletionWhenMarkingASeriesWithoutEpisodesWatched() {
-    var series = createSeries("Empty Series");
-
-    watchStatusService.markWatched(profileId, series.getId());
-
-    assertThat(
-            watchStatusService.getLastWatchedAtForItems(
-                profileId, CollectableScope.SERIES, List.of(series.getId())))
-        .isEmpty();
-    assertThat(watchHistoryRepository.batchInsert(profileId, List.of(), 0)).isZero();
-  }
-
-  @Test
   @DisplayName("Should return no last-watched times when no items are requested")
   void shouldReturnNoLastWatchedTimesWhenNoItemsAreRequested() {
     assertThat(
