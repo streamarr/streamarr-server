@@ -1,5 +1,6 @@
 package com.streamarr.server.domain.media;
 
+import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
@@ -92,16 +93,19 @@ public class MediaFileContainerInfo {
   }
 
   /**
-   * This entity does not map the keyframe columns, so the caller reads what a successful outcome
-   * says about the source's keyframes. The supplier runs only for a successful outcome.
+   * This entity maps neither the keyframe columns nor the chapters, so the caller reads what a
+   * successful outcome says about the source's keyframes and chapters. The suppliers run only for a
+   * successful outcome.
    */
-  public ProbeOutcome getOutcome(@NonNull Supplier<KeyframeKnowledge> keyframes) {
+  public ProbeOutcome getOutcome(
+      @NonNull Supplier<KeyframeKnowledge> keyframes,
+      @NonNull Supplier<ChapterKnowledge> chapters) {
     if (probeError != null) {
       return new ProbeOutcome.Failure(probeError);
     }
 
     return new ProbeOutcome.Success(
-        getContainer(),
+        getContainer().toBuilder().chapters(chapters.get()).build(),
         streams.stream().map(MediaFileStreamInfo::toStreamInfo).toList(),
         keyframes.get());
   }
@@ -110,6 +114,7 @@ public class MediaFileContainerInfo {
     return Optional.ofNullable(probeError);
   }
 
+  /** The container properties that this entity maps. Its chapters read as not reported. */
   public ProbeContainer getContainer() {
     return ProbeContainer.builder()
         .format(Optional.ofNullable(format))

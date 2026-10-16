@@ -13,6 +13,7 @@ import com.streamarr.server.domain.media.MediaFileStreamInfo;
 import com.streamarr.server.domain.media.PersistedProbeOutcome;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
@@ -201,7 +202,7 @@ class MediaFileContainerInfoRepositoryIT extends AbstractIntegrationTest {
         repository
             .findByMediaFileId(file.getId())
             .orElseThrow()
-            .getOutcome(KeyframeKnowledge.NotReported::new);
+            .getOutcome(KeyframeKnowledge.NotReported::new, ChapterKnowledge.NotReported::new);
     assertThat(outcome)
         .isEqualTo(
             new ProbeOutcome.Success(container, streams, new KeyframeKnowledge.NotReported()));

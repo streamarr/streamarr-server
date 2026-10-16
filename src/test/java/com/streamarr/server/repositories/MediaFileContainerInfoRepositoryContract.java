@@ -4,7 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFileContainerInfo;
+import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.Chapter;
+import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
@@ -18,6 +21,7 @@ import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
@@ -67,7 +71,9 @@ public interface MediaFileContainerInfoRepositoryContract {
         .hasValueSatisfying(
             stored -> {
               assertThat(stored.getProbeVersion()).isEqualTo(2);
-              assertThat(stored.getOutcome(KeyframeKnowledge.NotReported::new))
+              assertThat(
+                      stored.getOutcome(
+                          KeyframeKnowledge.NotReported::new, ChapterKnowledge.NotReported::new))
                   .isEqualTo(replacement);
             });
   }
@@ -86,7 +92,10 @@ public interface MediaFileContainerInfoRepositoryContract {
         .hasValueSatisfying(
             stored -> {
               assertThat(stored.getProbeVersion()).isEqualTo(2);
-              assertThat(stored.getOutcome(KeyframeKnowledge.NotReported::new)).isEqualTo(newer);
+              assertThat(
+                      stored.getOutcome(
+                          KeyframeKnowledge.NotReported::new, ChapterKnowledge.NotReported::new))
+                  .isEqualTo(newer);
             });
   }
 
@@ -113,7 +122,9 @@ public interface MediaFileContainerInfoRepositoryContract {
             stored -> {
               assertThat(stored.getSnapshot()).isEqualTo(SNAPSHOT_B);
               assertThat(stored.getProbeVersion()).isEqualTo(1);
-              assertThat(stored.getOutcome(KeyframeKnowledge.NotReported::new))
+              assertThat(
+                      stored.getOutcome(
+                          KeyframeKnowledge.NotReported::new, ChapterKnowledge.NotReported::new))
                   .isEqualTo(replacement);
             });
   }
@@ -163,7 +174,10 @@ public interface MediaFileContainerInfoRepositoryContract {
             stored -> {
               assertThat(stored.getSnapshot()).isEqualTo(SNAPSHOT_A);
               assertThat(stored.getProbeVersion()).isEqualTo(1);
-              assertThat(stored.getOutcome(KeyframeKnowledge.NotReported::new)).isEqualTo(outcome);
+              assertThat(
+                      stored.getOutcome(
+                          KeyframeKnowledge.NotReported::new, ChapterKnowledge.NotReported::new))
+                  .isEqualTo(outcome);
             });
   }
 
@@ -189,7 +203,9 @@ public interface MediaFileContainerInfoRepositoryContract {
     assertThat(stored(mediaFileId))
         .hasValueSatisfying(
             stored ->
-                assertThat(stored.getOutcome(KeyframeKnowledge.NotReported::new))
+                assertThat(
+                        stored.getOutcome(
+                            KeyframeKnowledge.NotReported::new, ChapterKnowledge.NotReported::new))
                     .isEqualTo(success("h264", "aac")));
   }
 
@@ -330,6 +346,123 @@ public interface MediaFileContainerInfoRepositoryContract {
   enum InputChange {
     SNAPSHOT,
     VERSION
+  }
+
+  @Test
+  @DisplayName("Should read every chapter in reported order when the outcome lists chapters")
+  default void shouldReadEveryChapterInReportedOrderWhenTheOutcomeListsChapters() {
+    var mediaFileId = createMediaFile();
+    var chapters =
+        new ChapterKnowledge.Known(
+            List.of(
+                Chapter.builder()
+                    .startTime(Optional.of(Duration.ofMillis(-46)))
+                    .endTime(Optional.of(Duration.ofSeconds(300, 500_000_001)))
+                    .title(Optional.of("Opening Credits"))
+                    .build(),
+                Chapter.builder()
+                    .startTime(Optional.of(Duration.ofSeconds(1_500)))
+                    .endTime(Optional.of(Duration.ofSeconds(2_400)))
+                    .build(),
+                Chapter.builder()
+                    .startTime(Optional.of(Duration.ofSeconds(300, 500_000_001)))
+                    .endTime(Optional.of(Duration.ofSeconds(1_500)))
+                    .title(Optional.of("Middle"))
+                    .build(),
+                Chapter.builder().build()));
+
+    repository().publish(chapterPublicationBuilder(mediaFileId, chapters).build());
+
+    assertThat(repository().findChapterKnowledge(List.of(mediaFileId)))
+        .containsExactly(Map.entry(mediaFileId, chapters));
+  }
+
+  @ParameterizedTest
+  @MethodSource("chaptersWithoutAList")
+  @DisplayName("Should read the chapters apart when the outcome lists none or omits them")
+  default void shouldReadTheChaptersApartWhenTheOutcomeListsNoneOrOmitsThem(
+      ChapterKnowledge chapters) {
+    var mediaFileId = createMediaFile();
+
+    repository().publish(chapterPublicationBuilder(mediaFileId, chapters).build());
+
+    assertThat(repository().findChapterKnowledge(List.of(mediaFileId)))
+        .containsExactly(Map.entry(mediaFileId, chapters));
+  }
+
+  static Stream<ChapterKnowledge> chaptersWithoutAList() {
+    return Stream.of(
+        new ChapterKnowledge.Known(List.of()),
+        new ChapterKnowledge.Omitted(),
+        new ChapterKnowledge.NotReported());
+  }
+
+  @Test
+  @DisplayName("Should read no chapters when the probe failed or no outcome is stored")
+  default void shouldReadNoChaptersWhenTheProbeFailedOrNoOutcomeIsStored() {
+    var failed = createMediaFile();
+    var unprobed = createMediaFile();
+    repository()
+        .publish(
+            publicationBuilder(failed)
+                .outcome(new ProbeOutcome.Failure(ProbeError.INVALID_MEDIA))
+                .build());
+
+    assertThat(repository().findChapterKnowledge(List.of(failed, unprobed)))
+        .containsExactly(Map.entry(failed, new ChapterKnowledge.NotReported()));
+  }
+
+  @Test
+  @DisplayName("Should drop the earlier chapters when a later outcome replaces the outcome")
+  default void shouldDropTheEarlierChaptersWhenALaterOutcomeReplacesTheOutcome() {
+    var mediaFileId = createMediaFile();
+    repository()
+        .publish(
+            chapterPublicationBuilder(
+                    mediaFileId,
+                    new ChapterKnowledge.Known(
+                        List.of(Chapter.builder().title(Optional.of("Earlier")).build())))
+                .build());
+
+    repository()
+        .publish(
+            chapterPublicationBuilder(mediaFileId, new ChapterKnowledge.Omitted())
+                .snapshot(SNAPSHOT_B)
+                .build());
+
+    assertThat(repository().findChapterKnowledge(List.of(mediaFileId)))
+        .containsExactly(Map.entry(mediaFileId, new ChapterKnowledge.Omitted()));
+  }
+
+  @Test
+  @DisplayName("Should read no chapters when a request for another snapshot deletes the outcome")
+  default void shouldReadNoChaptersWhenARequestForAnotherSnapshotDeletesTheOutcome() {
+    var mediaFileId = createMediaFile();
+    repository()
+        .publish(
+            chapterPublicationBuilder(
+                    mediaFileId,
+                    new ChapterKnowledge.Known(
+                        List.of(Chapter.builder().title(Optional.of("Deleted")).build())))
+                .build());
+
+    repository()
+        .trySaveProbeRequest(
+            mediaFileId, new ProbeInputs(SNAPSHOT_B, ProbeVersion.FIRST_TO_REPORT_CHAPTERS));
+
+    assertThat(repository().findChapterKnowledge(List.of(mediaFileId))).isEmpty();
+  }
+
+  private static ProbePublication.ProbePublicationBuilder chapterPublicationBuilder(
+      UUID mediaFileId, ChapterKnowledge chapters) {
+    var outcome = success("h264", "aac");
+    return publicationBuilder(mediaFileId)
+        .probeVersion(ProbeVersion.FIRST_TO_REPORT_CHAPTERS)
+        .outcome(
+            new ProbeOutcome.Success(
+                outcome.container().toBuilder().chapters(chapters).build(),
+                outcome.streams(),
+                outcome.keyframes()));
   }
 
   static Stream<ProbeOutcome> compatibleOutcomes() {

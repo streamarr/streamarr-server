@@ -10,4 +10,6 @@ public final class ProbeVersion {
   // facts of streamarr/streamarr-server#501 and the other facts that ADR 0032 lists for version 4.
   // Each version includes the facts of every earlier version. Version 2 is unused.
   public static final int CURRENT = 3;
+
+  public static final int FIRST_TO_REPORT_CHAPTERS = 4;
 }

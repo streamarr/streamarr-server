@@ -4,7 +4,9 @@ import com.streamarr.server.config.CanonicalBaseUrl;
 import com.streamarr.server.graphql.subscriptions.SubscriptionProperties;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.concurrent.Executor;
+import org.springframework.boot.context.properties.source.InvalidConfigurationPropertyValueException;
 import org.springframework.boot.graphql.autoconfigure.GraphQlProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -46,7 +48,7 @@ class GraphQlTransportConfiguration {
         .graphQlHandler(webGraphQlHandler)
         .jsonConverter(new JacksonJsonHttpMessageConverter(jsonMapper))
         .connectionInitTimeout(websocket.getConnectionInitTimeout())
-        .keepAlive(websocket.getKeepAlive())
+        .keepAlive(requireKeepAlive(websocket))
         .allowedOrigins(allowedOrigins)
         .clock(clock)
         .taskScheduler(taskScheduler)
@@ -57,5 +59,18 @@ class GraphQlTransportConfiguration {
                 .meterRegistry(meterRegistry)
                 .build())
         .build();
+  }
+
+  // Spring reads a missing keep-alive as "send no pings", so idle sockets meet proxy timeouts.
+  private static Duration requireKeepAlive(GraphQlProperties.Websocket websocket) {
+    var keepAlive = websocket.getKeepAlive();
+    if (keepAlive == null) {
+      throw new InvalidConfigurationPropertyValueException(
+          "spring.graphql.websocket.keep-alive",
+          null,
+          "A keep-alive is required. Set GRAPHQL_WEBSOCKET_KEEP_ALIVE to a duration such as 20s.");
+    }
+
+    return keepAlive;
   }
 }
