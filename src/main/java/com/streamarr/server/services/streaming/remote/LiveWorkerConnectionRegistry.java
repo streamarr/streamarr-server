@@ -301,6 +301,15 @@ final class LiveWorkerConnectionRegistry {
         .anyMatch(connection -> connection.canAccessSourceNamespace(sourceNamespace));
   }
 
+  boolean hasProbeWorker(UUID sourceNamespaceId, int probeVersion) {
+    var sourceNamespace = toProto(sourceNamespaceId);
+    return connections.values().stream()
+        .anyMatch(
+            connection ->
+                connection.canAccessSourceNamespace(sourceNamespace)
+                    && connection.probeVersions.contains(probeVersion));
+  }
+
   Set<String> encodableVideoCodecFamilies(UUID sourceNamespaceId) {
     var sourceNamespace = toProto(sourceNamespaceId);
     return connections.values().stream()
