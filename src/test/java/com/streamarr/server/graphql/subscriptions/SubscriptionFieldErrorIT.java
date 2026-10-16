@@ -119,7 +119,7 @@ class SubscriptionFieldErrorIT extends AbstractIntegrationTest {
     eventPublisher.publishEvent(new LibraryStatusChangedEvent(library.getId()));
   }
 
-  // The next status change of one library, skipping changes other tests make to their libraries.
+  // The next status change of one library, skipping changes to other libraries.
   private JsonNode nextStatusChange(UUID libraryId) {
     while (true) {
       var change = socket.nextMessageFor("status").path("payload").path("data").path(STATUS_FIELD);
@@ -129,8 +129,7 @@ class SubscriptionFieldErrorIT extends AbstractIntegrationTest {
     }
   }
 
-  // The next message that delivers no library, skipping changes other tests make to their
-  // libraries.
+  // The next message that delivers no library, skipping changes to other libraries.
   private JsonNode nextMessageWithoutLibrary() {
     while (true) {
       var message = socket.nextMessageFor("status");
