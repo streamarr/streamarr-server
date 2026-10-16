@@ -135,17 +135,6 @@ public class JooqLibraryOperationRepository implements LibraryOperationRepositor
 
   @Override
   @Transactional(propagation = Propagation.MANDATORY)
-  public boolean tryLockLibraryOfLibraryOperation(UUID libraryOperationId) {
-    return transactionLocks.withLockWaitLimit(
-        LIBRARY_ROW_LOCK_TIMEOUT,
-        () ->
-            findLibraryIdOfLibraryOperation(libraryOperationId)
-                .flatMap(this::lockLibraryStatus)
-                .isPresent());
-  }
-
-  @Override
-  @Transactional(propagation = Propagation.MANDATORY)
   public boolean tryLockLibraryWithoutLibraryOperation(UUID libraryId) {
     return transactionLocks.withLockWaitLimit(
         LIBRARY_ROW_LOCK_TIMEOUT,

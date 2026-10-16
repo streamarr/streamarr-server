@@ -1594,11 +1594,6 @@ class LibraryOperationExecutionTest {
                     }
 
                     @Override
-                    public boolean tryLockLibraryOfLibraryOperation(UUID id) {
-                      return libraryOperations.tryLockLibraryOfLibraryOperation(id);
-                    }
-
-                    @Override
                     public boolean tryEndLibraryOperation(LibraryOperationEnd end) {
                       throw failure;
                     }
