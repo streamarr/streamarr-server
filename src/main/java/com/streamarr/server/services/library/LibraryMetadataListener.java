@@ -51,22 +51,14 @@ public class LibraryMetadataListener {
 
   @EventListener
   public void onScanCompleted(ScanCompletedEvent event) {
-    try {
-      recalculateLetterCounts(event.libraryId());
-    } catch (Exception e) {
-      log.error("Letter index recalculation failed for library: {}", event.libraryId(), e);
-    }
+    recalculateLetterCountsOrLogFailure(event.libraryId());
   }
 
   // A refresh skips the recalculation of every item processed while it runs, so its end
   // recalculates the letter index once, whatever its conclusion.
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
   public void onRefreshEnded(RefreshEndedEvent event) {
-    try {
-      recalculateLetterCounts(event.libraryId());
-    } catch (Exception e) {
-      log.error("Letter index recalculation failed for library: {}", event.libraryId(), e);
-    }
+    recalculateLetterCountsOrLogFailure(event.libraryId());
   }
 
   // A running scan recalculates the letter index when it completes, and a refresh when it ends.
@@ -76,10 +68,14 @@ public class LibraryMetadataListener {
       return;
     }
 
+    recalculateLetterCountsOrLogFailure(event.libraryId());
+  }
+
+  private void recalculateLetterCountsOrLogFailure(UUID libraryId) {
     try {
-      recalculateLetterCounts(event.libraryId());
+      recalculateLetterCounts(libraryId);
     } catch (Exception e) {
-      log.error("Letter index recalculation failed for library: {}", event.libraryId(), e);
+      log.error("Letter index recalculation failed for library: {}", libraryId, e);
     }
   }
 
