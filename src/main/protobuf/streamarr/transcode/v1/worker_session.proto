@@ -55,10 +55,11 @@ message WorkerCapabilities {
   repeated Uuid source_namespace_ids = 1;
   // Supported nonzero versions of Streamarr's retained probe fields and their interpretation.
   // These are independent of the installed FFmpeg and ffprobe versions. The probe versions are 1, 3
-  // and 4. Version 3 adds keyframe positions, and version 4 adds the dynamic range, bit depth,
-  // chroma subsampling, rotation and codec string of each stream, the chosen video stream and the
-  // output frame rate. Each version reports every fact of the versions before it. Version 2 is
-  // unused: no server requests it and no worker advertises it.
+  // and 4. Version 3 adds keyframe positions. Version 4 adds the dynamic range, bit depth, chroma
+  // subsampling, rotation, container cropping and codec string of each stream, the end time of
+  // each audio and video stream, the sample rate and profile of each audio stream, the chosen video
+  // stream, the output frame rate and the container's chapters. Each version reports every fact of
+  // the versions before it. Version 2 is unused: no server requests it and no worker advertises it.
   repeated uint32 probe_versions = 2;
   // One entry for each codec family the worker can encode: the encoder backend that the worker
   // runs for every job of that codec family. Every entry, hardware or software, passed the worker's
@@ -400,6 +401,28 @@ message ProbeContainerInfo {
   optional string format = 1;
   google.protobuf.Duration duration = 2;
   optional int64 bitrate_bits_per_second = 3;
+  // The container's chapters, as ffprobe -show_chapters lists them, in ffprobe's order. Only probe
+  // version 4 and later report chapters. Under those versions, an empty list means that the
+  // container has no chapters. The worker keeps each chapter as ffprobe reports it. The worker
+  // never sorts, merges, clamps or generates chapters.
+  repeated ProbeChapter chapters = 4;
+}
+
+// One chapter of the container. Both times are on the timeline of ProbeKeyframePositionsPart, like
+// ProbeStreamInfo.end_time: the demuxer time minus the container's start time. The worker computes
+// each time from ffprobe's start or end ticks and the chapter's time base, and then subtracts the
+// container's start time. A chapter that starts before the container's start time therefore has a
+// negative start time.
+message ProbeChapter {
+  // Absent when ffprobe reports no start time.
+  google.protobuf.Duration start_time = 1;
+  // Absent when ffprobe reports no end time. When the container states no end for a chapter,
+  // FFmpeg ends the chapter at the next chapter's start or at the end of the file, and the worker
+  // reports that end.
+  google.protobuf.Duration end_time = 2;
+  // The chapter's title tag, such as a Matroska ChapString. Absent when the chapter has no title
+  // tag.
+  optional string title = 3;
 }
 
 // An exact fraction whose terms are both positive. For example, 24000/1001 frames per second, or a
@@ -420,7 +443,7 @@ enum ChromaSubsampling {
   CHROMA_SUBSAMPLING_MONOCHROME = 4;
 }
 
-// Only probe version 4 and later report the fields from dynamic_range to end_time.
+// Only probe version 4 and later report the fields from dynamic_range to container_cropping.
 message ProbeStreamInfo {
   uint32 index = 1;
   string codec_type = 2;
@@ -460,6 +483,37 @@ message ProbeStreamInfo {
   // worker never reports an estimate, such as a duration derived from the bitrate.
   // streamarr/streamarr-server#511 uses the end time to find a stream that ends early.
   google.protobuf.Duration end_time = 17;
+  // Audio streams only: the sample rate in hertz, from ffprobe's sample_rate. Absent when ffprobe
+  // reports no sample rate or reports 0. The server's MP3 copy rule needs the sample rate, because
+  // the fMP4 muxer refuses MP3 below 16 kHz and writes a different esds objectTypeIndication at or
+  // below 24 kHz.
+  optional uint32 sample_rate_hz = 18;
+  // Audio streams only: ffprobe's profile for the stream, kept as ffprobe prints it, for every
+  // audio codec. FFmpeg 8's names include LC, HE-AAC and xHE-AAC for AAC; DTS, DTS-HD MA and
+  // DTS-HD MA + DTS:X for DTS; Dolby Digital Plus + Dolby Atmos for E-AC-3; and Dolby TrueHD +
+  // Dolby Atmos for TrueHD. When FFmpeg has no name for the profile, ffprobe prints the profile's
+  // number, and the worker reports that number as text. Absent when ffprobe reports no profile.
+  // The server derives Atmos and the DTS variants from this text. The codec string never comes
+  // from it.
+  optional string audio_profile = 19;
+  // Video streams only: the crop that the container asks for, from ffprobe's Frame Cropping stream
+  // side data. A Matroska PixelCrop element or an MP4 clap box carries the crop. Absent when the
+  // stream has no Frame Cropping side data.
+  ContainerCropping container_cropping = 20;
+}
+
+// The number of pixels that a container crop removes from each edge of the picture. width and
+// height stay the size before cropping. A crop in the codec's own headers, such as the H.264
+// frame cropping, is separate: width and height already exclude that crop. A transcode applies the
+// container crop by default, because FFmpeg's -apply_cropping option defaults to all. The quality
+// ladder and the playlist's RESOLUTION use the size after cropping, as they use the size after
+// rotation. The worker reports the values as ffprobe prints them and never checks them against
+// width and height.
+message ContainerCropping {
+  uint32 top = 1;
+  uint32 bottom = 2;
+  uint32 left = 3;
+  uint32 right = 4;
 }
 
 // The order of the fields of an interlaced frame, as ffprobe reports field_order.

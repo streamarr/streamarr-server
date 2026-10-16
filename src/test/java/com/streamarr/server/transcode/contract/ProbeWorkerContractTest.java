@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.google.protobuf.Duration;
 import com.streamarr.transcode.v1.ChromaSubsampling;
 import com.streamarr.transcode.v1.CompatibleBase;
+import com.streamarr.transcode.v1.ContainerCropping;
 import com.streamarr.transcode.v1.DolbyVisionAbsent;
 import com.streamarr.transcode.v1.DolbyVisionConfiguration;
 import com.streamarr.transcode.v1.DolbyVisionPresent;
@@ -21,6 +22,7 @@ import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.OutputFrameRateBasis;
 import com.streamarr.transcode.v1.Presence;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeChapter;
 import com.streamarr.transcode.v1.ProbeContainerInfo;
 import com.streamarr.transcode.v1.ProbeFailure;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
@@ -151,6 +153,10 @@ class ProbeWorkerContractTest {
     assertThat(unknown.hasRotationDegrees()).isFalse();
     assertThat(unknown.hasCodecString()).isFalse();
     assertThat(unknown.hasEndTime()).isFalse();
+    assertThat(unknown.hasSampleRateHz()).isFalse();
+    assertThat(unknown.hasAudioProfile()).isFalse();
+    assertThat(unknown.hasContainerCropping()).isFalse();
+    assertThat(decoded.getMedia().getContainer().getChaptersList()).isEmpty();
   }
 
   @Test
@@ -412,6 +418,186 @@ class ProbeWorkerContractTest {
     assertThat(decodedStatedZero.hasEndTime()).isTrue();
     assertThat(decodedStatedZero.getEndTime()).isEqualTo(Duration.getDefaultInstance());
     assertThat(decodedUnstated.hasEndTime()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry the sample rate and profile name of each audio stream when returning a probe version 4 result")
+  void shouldCarrySampleRateAndProfileNameOfEachAudioStreamWhenReturningProbeVersion4Result()
+      throws Exception {
+    var atmos =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(1)
+            .setCodecType("audio")
+            .setCodec("eac3")
+            .setChannels(6)
+            .setSampleRateHz(48_000)
+            .setAudioProfile("Dolby Digital Plus + Dolby Atmos")
+            .build();
+    var lowSampleRateMp3 =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(2)
+            .setCodecType("audio")
+            .setCodec("mp3")
+            .setSampleRateHz(11_025)
+            .build();
+
+    var decoded =
+        ProbeAttemptResult.parseFrom(
+                probeVersion4Result(
+                        ProbeMediaInfo.newBuilder().addStreams(atmos).addStreams(lowSampleRateMp3))
+                    .toByteArray())
+            .getMedia();
+
+    assertThat(decoded.getStreams(0)).isEqualTo(atmos);
+    assertThat(decoded.getStreams(0).getSampleRateHz()).isEqualTo(48_000);
+    assertThat(decoded.getStreams(0).getAudioProfile())
+        .isEqualTo("Dolby Digital Plus + Dolby Atmos");
+    assertThat(decoded.getStreams(1).getSampleRateHz()).isEqualTo(11_025);
+    assertThat(decoded.getStreams(1).hasAudioProfile()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell an unreported sample rate and profile name apart from reported ones when decoding an audio stream")
+  void shouldTellUnreportedSampleRateAndProfileNameApartFromReportedOnesWhenDecodingAudioStream()
+      throws Exception {
+    var reportedZeroAndEmpty =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(1)
+            .setCodecType("audio")
+            .setSampleRateHz(0)
+            .setAudioProfile("")
+            .build();
+    var unreported = ProbeStreamInfo.newBuilder().setIndex(1).setCodecType("audio").build();
+
+    var decodedReported = ProbeStreamInfo.parseFrom(reportedZeroAndEmpty.toByteArray());
+    var decodedUnreported = ProbeStreamInfo.parseFrom(unreported.toByteArray());
+
+    assertThat(decodedReported.hasSampleRateHz()).isTrue();
+    assertThat(decodedReported.getSampleRateHz()).isZero();
+    assertThat(decodedReported.hasAudioProfile()).isTrue();
+    assertThat(decodedReported.getAudioProfile()).isEmpty();
+    assertThat(decodedUnreported.hasSampleRateHz()).isFalse();
+    assertThat(decodedUnreported.hasAudioProfile()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry the container cropping of a video stream beside its size before cropping when returning a probe version 4 result")
+  void
+      shouldCarryContainerCroppingOfVideoStreamBesideSizeBeforeCroppingWhenReturningProbeVersion4Result()
+          throws Exception {
+    var letterboxCrop = ContainerCropping.newBuilder().setTop(140).setBottom(140).build();
+    var cropped =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(0)
+            .setCodecType("video")
+            .setCodec("hevc")
+            .setWidth(3840)
+            .setHeight(2160)
+            .setContainerCropping(letterboxCrop)
+            .build();
+    var uncropped =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(1)
+            .setCodecType("video")
+            .setCodec("h264")
+            .setWidth(1920)
+            .setHeight(1080)
+            .build();
+
+    var decoded =
+        ProbeAttemptResult.parseFrom(
+                probeVersion4Result(
+                        ProbeMediaInfo.newBuilder().addStreams(cropped).addStreams(uncropped))
+                    .toByteArray())
+            .getMedia();
+
+    assertThat(decoded.getStreams(0)).isEqualTo(cropped);
+    assertThat(decoded.getStreams(0).getHeight()).isEqualTo(2160);
+    var decodedCrop = decoded.getStreams(0).getContainerCropping();
+    assertThat(decodedCrop.getTop()).isEqualTo(140);
+    assertThat(decodedCrop.getBottom()).isEqualTo(140);
+    assertThat(decodedCrop.getLeft()).isZero();
+    assertThat(decodedCrop.getRight()).isZero();
+    assertThat(decoded.getStreams(1).hasContainerCropping()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell a container crop of zero on every edge apart from a missing crop when decoding a video stream")
+  void shouldTellContainerCropOfZeroOnEveryEdgeApartFromMissingCropWhenDecodingVideoStream()
+      throws Exception {
+    var zeroCrop =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(0)
+            .setCodecType("video")
+            .setContainerCropping(ContainerCropping.getDefaultInstance())
+            .build();
+    var noCrop = ProbeStreamInfo.newBuilder().setIndex(0).setCodecType("video").build();
+
+    var decodedZeroCrop = ProbeStreamInfo.parseFrom(zeroCrop.toByteArray());
+    var decodedNoCrop = ProbeStreamInfo.parseFrom(noCrop.toByteArray());
+
+    assertThat(decodedZeroCrop.hasContainerCropping()).isTrue();
+    assertThat(decodedZeroCrop.getContainerCropping())
+        .isEqualTo(ContainerCropping.getDefaultInstance());
+    assertThat(decodedNoCrop.hasContainerCropping()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry the container's chapters in their order with their times and titles when returning a probe version 4 result")
+  void shouldCarryContainerChaptersInOrderWithTimesAndTitlesWhenReturningProbeVersion4Result()
+      throws Exception {
+    var beforeContainerStart =
+        ProbeChapter.newBuilder()
+            .setStartTime(Duration.newBuilder().setNanos(-46_000_000))
+            .setEndTime(Duration.newBuilder().setSeconds(95).setNanos(954_000_000))
+            .setTitle("Opening")
+            .build();
+    var untitled =
+        ProbeChapter.newBuilder()
+            .setStartTime(Duration.newBuilder().setSeconds(95).setNanos(954_000_000))
+            .setEndTime(Duration.newBuilder().setSeconds(1_200))
+            .build();
+    var container =
+        ProbeContainerInfo.newBuilder()
+            .setFormat("matroska,webm")
+            .addChapters(beforeContainerStart)
+            .addChapters(untitled);
+
+    var decoded =
+        ProbeAttemptResult.parseFrom(
+                probeVersion4Result(ProbeMediaInfo.newBuilder().setContainer(container))
+                    .toByteArray())
+            .getMedia()
+            .getContainer();
+
+    assertThat(decoded.getChaptersList()).containsExactly(beforeContainerStart, untitled);
+    assertThat(decoded.getChapters(0).getStartTime().getNanos()).isEqualTo(-46_000_000);
+    assertThat(decoded.getChapters(0).getTitle()).isEqualTo("Opening");
+    assertThat(decoded.getChapters(1).hasTitle()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell a chapter that starts at zero apart from a chapter without a start time when decoding a chapter")
+  void shouldTellChapterThatStartsAtZeroApartFromChapterWithoutStartTimeWhenDecodingChapter()
+      throws Exception {
+    var startsAtZero =
+        ProbeChapter.newBuilder().setStartTime(Duration.getDefaultInstance()).build();
+    var withoutTimes = ProbeChapter.getDefaultInstance();
+
+    var decodedStartsAtZero = ProbeChapter.parseFrom(startsAtZero.toByteArray());
+    var decodedWithoutTimes = ProbeChapter.parseFrom(withoutTimes.toByteArray());
+
+    assertThat(decodedStartsAtZero.hasStartTime()).isTrue();
+    assertThat(decodedStartsAtZero.getStartTime()).isEqualTo(Duration.getDefaultInstance());
+    assertThat(decodedWithoutTimes.hasStartTime()).isFalse();
+    assertThat(decodedWithoutTimes.hasEndTime()).isFalse();
+    assertThat(decodedWithoutTimes.hasTitle()).isFalse();
   }
 
   @Test
