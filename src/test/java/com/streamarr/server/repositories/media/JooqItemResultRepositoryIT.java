@@ -257,6 +257,36 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest implements Artw
         .isEqualTo(new ArtworkResultCounts(1, 0, 1));
   }
 
+  @Test
+  @DisplayName(
+      "Should find the items whose metadata result carries a library operation's id when an"
+          + " execution after a restart reads them")
+  void shouldFindTheItemsWhoseMetadataResultCarriesALibraryOperationsId() {
+    var operation = UUID.randomUUID();
+    var refreshed = savedMovieId();
+    var refreshedByAnotherOperation = savedMovieId();
+    var withArtworkOnly = new ArtworkTarget(savedMovieId(), ImageEntityType.MOVIE);
+    itemResults.trySave(metadataResult(refreshed, Optional.of(operation)));
+    itemResults.trySave(
+        metadataResult(refreshedByAnotherOperation, Optional.of(UUID.randomUUID())));
+    var generation = requestArtworkFor(withArtworkOnly, operation);
+    itemResults.overwrite(artworkResult(withArtworkOnly, generation, ImageType.POSTER).build());
+
+    assertThat(itemResults.findItemIdsWithMetadataResultForLibraryOperation(operation))
+        .containsExactly(refreshed);
+  }
+
+  private static ItemResult metadataResult(UUID movieId, Optional<UUID> libraryOperationId) {
+    return ItemResult.builder()
+        .itemId(movieId)
+        .itemType(ImageEntityType.MOVIE)
+        .step(ItemStep.METADATA)
+        .outcome(new ItemOutcome.Succeeded())
+        .attemptedAt(EARLIER)
+        .libraryOperationId(libraryOperationId)
+        .build();
+  }
+
   private static ItemResult.ItemResultBuilder artworkResult(
       ArtworkTarget target, long generation, ImageType imageType) {
     return ItemResult.builder()

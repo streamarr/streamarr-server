@@ -33,6 +33,7 @@ import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
@@ -41,8 +42,10 @@ import org.springframework.stereotype.Service;
 
 /**
  * Refreshes each movie or series from its provider and records the metadata result for that item.
- * Each media title's task is admitted through the refresh's adaptive limit (ADR 0041). An item
- * failure does not stop the refresh; a result that cannot be recorded fails it and ends admission.
+ * The result carries the refresh's library operation id, so an execution after a restart skips the
+ * items that an earlier execution of the operation refreshed. Each media title's task is admitted
+ * through the refresh's adaptive limit (ADR 0041). An item failure does not stop the refresh; a
+ * result that cannot be recorded fails it and ends admission.
  */
 @Slf4j
 @Service
@@ -78,9 +81,17 @@ public class LibraryRefreshService {
             "refresh of library '" + library.getName() + "'",
             operation.imageRefreshMode().orElseThrow(),
             operation.id());
+    var refreshedItemIds =
+        itemResults.findItemIdsWithMetadataResultForLibraryOperation(operation.id());
     try (artworkRun;
         var admission = libraryOperationAdmissions.openRefreshAdmission(library)) {
-      var refresh = new RefreshOperation(library, artworkRun, admission);
+      var refresh =
+          RefreshOperation.builder()
+              .library(library)
+              .artworkRun(artworkRun)
+              .admission(admission)
+              .refreshedItemIds(refreshedItemIds)
+              .build();
       switch (library.getType()) {
         case SERIES -> refreshSeriesLibrary(refresh);
         case MOVIE -> refreshMovieLibrary(refresh);
@@ -91,8 +102,12 @@ public class LibraryRefreshService {
     artworkRunWaiter.awaitLibraryOperationResults(artworkRun);
   }
 
+  @Builder
   private record RefreshOperation(
-      Library library, ArtworkRun artworkRun, AdaptiveAdmission admission) {}
+      Library library,
+      ArtworkRun artworkRun,
+      AdaptiveAdmission admission,
+      Set<UUID> refreshedItemIds) {}
 
   private record MediaTitleToRefresh<T>(T entity, String tmdbId) {}
 
@@ -113,8 +128,10 @@ public class LibraryRefreshService {
         operation,
         AdmittedRefreshes.<Series>builder()
             .mediaTitles(
-                mediaTitlesWithTmdbIds(
-                    seriesRepository.findWithExternalIdsByLibrary_Id(library.getId()), "series"))
+                mediaTitlesToRefresh(
+                    operation,
+                    seriesRepository.findWithExternalIdsByLibrary_Id(library.getId()),
+                    "series"))
             .refresh((mediaTitle, taskRun) -> refreshSeries(mediaTitle, library, taskRun))
             .threadNamePrefix("library-refresh-series-")
             .build());
@@ -126,18 +143,24 @@ public class LibraryRefreshService {
         operation,
         AdmittedRefreshes.<Movie>builder()
             .mediaTitles(
-                mediaTitlesWithTmdbIds(
-                    movieRepository.findWithExternalIdsByLibrary_Id(library.getId()), "movie"))
+                mediaTitlesToRefresh(
+                    operation,
+                    movieRepository.findWithExternalIdsByLibrary_Id(library.getId()),
+                    "movie"))
             .refresh((mediaTitle, taskRun) -> refreshMovie(mediaTitle, library, taskRun))
             .threadNamePrefix("library-refresh-movie-")
             .build());
   }
 
-  // A media title without a TMDB id cannot be refreshed, so it takes no admission.
-  private <T extends BaseCollectable<?>> List<MediaTitleToRefresh<T>> mediaTitlesWithTmdbIds(
-      List<T> mediaTitles, String kind) {
+  // A media title that an earlier execution refreshed, or that has no TMDB id, takes no admission.
+  private <T extends BaseCollectable<?>> List<MediaTitleToRefresh<T>> mediaTitlesToRefresh(
+      RefreshOperation operation, List<T> mediaTitles, String kind) {
     var withTmdbIds = new ArrayList<MediaTitleToRefresh<T>>();
     for (var mediaTitle : mediaTitles) {
+      if (operation.refreshedItemIds().contains(mediaTitle.getId())) {
+        continue;
+      }
+
       var tmdbId = findTmdbId(mediaTitle);
       if (tmdbId.isEmpty()) {
         log.warn("No TMDB ID for {} '{}', skipping refresh", kind, mediaTitle.getTitle());
@@ -187,7 +210,7 @@ public class LibraryRefreshService {
     var outcome = refreshSeriesMetadata(series, tmdbId, library, artworkRun);
 
     itemResults.trySave(
-        metadataResult(series.getId(), ImageEntityType.SERIES)
+        metadataResult(series.getId(), ImageEntityType.SERIES, artworkRun)
             .outcome(outcome)
             .attemptedAt(attemptedAt)
             .build());
@@ -286,7 +309,7 @@ public class LibraryRefreshService {
     var outcome = refreshMovieMetadata(movie, tmdbId, library, artworkRun);
 
     itemResults.trySave(
-        metadataResult(movie.getId(), ImageEntityType.MOVIE)
+        metadataResult(movie.getId(), ImageEntityType.MOVIE, artworkRun)
             .outcome(outcome)
             .attemptedAt(attemptedAt)
             .build());
@@ -327,8 +350,12 @@ public class LibraryRefreshService {
   }
 
   private static ItemResult.ItemResultBuilder metadataResult(
-      UUID itemId, ImageEntityType itemType) {
-    return ItemResult.builder().itemId(itemId).itemType(itemType).step(ItemStep.METADATA);
+      UUID itemId, ImageEntityType itemType, ArtworkRun artworkRun) {
+    return ItemResult.builder()
+        .itemId(itemId)
+        .itemType(itemType)
+        .step(ItemStep.METADATA)
+        .libraryOperationId(artworkRun.libraryOperationId());
   }
 
   private static void throwIfAnyRefreshTaskFailed(Library library, List<Throwable> failures) {

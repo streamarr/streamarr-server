@@ -7,6 +7,7 @@ import com.streamarr.server.domain.media.ItemResult;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -39,6 +40,12 @@ public interface ItemResultRepository {
   boolean trySaveArtworkResults(ArtworkStepsAttempt attempt, List<ItemResult> results);
 
   List<ItemResult> findByItem(UUID itemId, ImageEntityType itemType);
+
+  /**
+   * Returns the ids of the items whose metadata result carries the library operation's id, so an
+   * execution after a restart skips the items that an earlier execution refreshed.
+   */
+  Set<UUID> findItemIdsWithMetadataResultForLibraryOperation(UUID libraryOperationId);
 
   /** Counts the artwork results that carry the library operation's id by outcome. */
   ArtworkResultCounts countArtworkOutcomesForLibraryOperation(UUID libraryOperationId);

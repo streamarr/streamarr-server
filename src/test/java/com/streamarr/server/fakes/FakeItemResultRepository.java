@@ -15,6 +15,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -22,6 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 public class FakeItemResultRepository implements ItemResultRepository {
 
@@ -175,6 +177,15 @@ public class FakeItemResultRepository implements ItemResultRepository {
     }
 
     return !(result.outcome() instanceof ItemOutcome.Succeeded);
+  }
+
+  @Override
+  public Set<UUID> findItemIdsWithMetadataResultForLibraryOperation(UUID libraryOperationId) {
+    return results.values().stream()
+        .filter(result -> result.step() == ItemStep.METADATA)
+        .filter(result -> result.libraryOperationId().equals(Optional.of(libraryOperationId)))
+        .map(ItemResult::itemId)
+        .collect(Collectors.toSet());
   }
 
   @Override

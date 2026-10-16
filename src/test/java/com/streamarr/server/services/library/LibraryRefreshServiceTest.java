@@ -405,8 +405,9 @@ class LibraryRefreshServiceTest {
     var library = buildMovieLibrary();
     var movie = saveMovieWithTmdbId("Inception", "27205", library);
     stubMovieMetadata("27205", library);
+    var operation = refreshOf(library);
 
-    refreshService.refreshLibrary(library, refreshOf(library));
+    refreshService.refreshLibrary(library, operation);
 
     assertThat(itemResults.find(movie.getId(), ItemStep.METADATA, null))
         .contains(
@@ -416,6 +417,7 @@ class LibraryRefreshServiceTest {
                 .step(ItemStep.METADATA)
                 .outcome(new ItemOutcome.Succeeded())
                 .attemptedAt(clock.instant())
+                .libraryOperationId(Optional.of(operation.id()))
                 .build());
   }
 
@@ -1059,6 +1061,106 @@ class LibraryRefreshServiceTest {
     refreshService.refreshLibrary(library, refreshOf(library));
 
     assertThat(seasonRepository.findBySeriesIdOrderBySeasonNumber(series.getId())).isEmpty();
+  }
+
+  @Nested
+  @DisplayName("Refresh after a restart")
+  class RefreshAfterARestartTests {
+
+    @Test
+    @DisplayName(
+        "Should skip a movie whose metadata result carries the refresh's library operation id")
+    void shouldSkipAMovieWhoseMetadataResultCarriesTheRefreshsLibraryOperationId()
+        throws Exception {
+      var library = buildMovieLibrary();
+      var refreshed = saveMovieWithTmdbId("Inception", "27205", library);
+      saveMovieWithTmdbId("Interstellar", "157336", library);
+      var fetchedTmdbIds = stubEveryMovieFetch(library);
+      var operation = refreshOf(library);
+      saveSucceededMetadataResult(refreshed.getId(), ImageEntityType.MOVIE, operation.id());
+
+      refreshService.refreshLibrary(library, operation);
+
+      assertThat(fetchedTmdbIds).containsExactly("157336");
+    }
+
+    @Test
+    @DisplayName(
+        "Should refresh a movie whose metadata result carries another library operation's id")
+    void shouldRefreshAMovieWhoseMetadataResultCarriesAnotherLibraryOperationsId()
+        throws Exception {
+      var library = buildMovieLibrary();
+      var movie = saveMovieWithTmdbId("Inception", "27205", library);
+      var fetchedTmdbIds = stubEveryMovieFetch(library);
+      saveSucceededMetadataResult(movie.getId(), ImageEntityType.MOVIE, UUID.randomUUID());
+
+      refreshService.refreshLibrary(library, refreshOf(library));
+
+      assertThat(fetchedTmdbIds).containsExactly("27205");
+    }
+
+    @Test
+    @DisplayName(
+        "Should skip a series whose metadata result carries the refresh's library operation id")
+    void shouldSkipASeriesWhoseMetadataResultCarriesTheRefreshsLibraryOperationId()
+        throws Exception {
+      var library = buildSeriesLibrary();
+      var series = saveSeriesWithTmdbId("Old Title", "1399", library);
+      var fetches = new AtomicInteger();
+      when(seriesProviderResolver.getMetadata(any(), eq(library)))
+          .thenAnswer(
+              _ -> {
+                fetches.incrementAndGet();
+                return new MetadataFetchOutcome.NotFound<>();
+              });
+      var operation = refreshOf(library);
+      saveSucceededMetadataResult(series.getId(), ImageEntityType.SERIES, operation.id());
+
+      refreshService.refreshLibrary(library, operation);
+
+      assertThat(fetches).hasValue(0);
+    }
+
+    @Test
+    @DisplayName("Should stamp a series' metadata result with the refresh's library operation id")
+    void shouldStampASeriesMetadataResultWithTheRefreshsLibraryOperationId() throws Exception {
+      var library = buildSeriesLibrary();
+      var series = saveSeriesWithTmdbId("Old Title", "1399", library);
+      when(seriesProviderResolver.getMetadata(any(), eq(library)))
+          .thenReturn(new MetadataFetchOutcome.NotFound<>());
+      var operation = refreshOf(library);
+
+      refreshService.refreshLibrary(library, operation);
+
+      assertThat(itemResults.find(series.getId(), ItemStep.METADATA, null))
+          .hasValueSatisfying(
+              result -> assertThat(result.libraryOperationId()).contains(operation.id()));
+    }
+
+    private List<String> stubEveryMovieFetch(Library library) {
+      var fetchedTmdbIds = new CopyOnWriteArrayList<String>();
+      when(movieProviderResolver.getMetadata(any(), eq(library)))
+          .thenAnswer(
+              invocation -> {
+                fetchedTmdbIds.add(
+                    invocation.getArgument(0, RemoteSearchResult.class).externalId());
+                return new MetadataFetchOutcome.NotFound<>();
+              });
+      return fetchedTmdbIds;
+    }
+
+    private void saveSucceededMetadataResult(
+        UUID itemId, ImageEntityType itemType, UUID libraryOperationId) {
+      itemResults.trySave(
+          ItemResult.builder()
+              .itemId(itemId)
+              .itemType(itemType)
+              .step(ItemStep.METADATA)
+              .outcome(new ItemOutcome.Succeeded())
+              .attemptedAt(clock.instant())
+              .libraryOperationId(Optional.of(libraryOperationId))
+              .build());
+    }
   }
 
   private List<Image> imagesOf(UUID entityId, ImageEntityType entityType) {

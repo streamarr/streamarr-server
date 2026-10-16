@@ -23,6 +23,7 @@ import java.time.ZoneOffset;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
@@ -96,6 +97,16 @@ public class JooqItemResultRepository implements ItemResultRepository {
     counts.forEach(
         (itemType, byOutcome) -> resultCounts.put(itemType, artworkResultCounts(byOutcome)));
     return resultCounts;
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Set<UUID> findItemIdsWithMetadataResultForLibraryOperation(UUID libraryOperationId) {
+    return dsl.select(ITEM_RESULT.ITEM_ID)
+        .from(ITEM_RESULT)
+        .where(ITEM_RESULT.LIBRARY_OPERATION_ID.eq(libraryOperationId))
+        .and(ITEM_RESULT.STEP.eq(ItemResultStep.METADATA))
+        .fetchSet(ITEM_RESULT.ITEM_ID);
   }
 
   @Override
