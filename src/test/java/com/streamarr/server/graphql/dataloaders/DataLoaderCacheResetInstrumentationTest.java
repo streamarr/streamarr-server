@@ -19,6 +19,8 @@ import org.dataloader.DataLoaderRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.reactivestreams.Publisher;
+import reactor.core.publisher.Flux;
 
 @Tag("UnitTest")
 @DisplayName("DataLoader Cache Reset Instrumentation Tests")
@@ -28,6 +30,7 @@ class DataLoaderCacheResetInstrumentationTest {
       """
       type Query { state: Int! }
       type Mutation { setState(value: Int!): Snapshot! }
+      type Subscription { changes: Snapshot! }
       type Snapshot { state: Int! }
       """;
   private static final String STATE_LOADER = "state";
@@ -62,6 +65,23 @@ class DataLoaderCacheResetInstrumentationTest {
     assertThat(loadedKeys).containsExactly(STATE_KEY);
   }
 
+  @Test
+  @DisplayName(
+      "Should read the current value in each subscription event when it changes between events")
+  void shouldReadCurrentValueInEachSubscriptionEventWhenItChangesBetweenEvents() {
+    var result = execute("subscription { changes { state } }");
+
+    var events =
+        Flux.from(result.<Publisher<ExecutionResult>>getData())
+            .map(ExecutionResult::toSpecification)
+            .collectList()
+            .block();
+    assertThat(events)
+        .containsExactly(
+            Map.of("data", Map.of("changes", Map.of("state", 1))),
+            Map.of("data", Map.of("changes", Map.of("state", 2))));
+  }
+
   private ExecutionResult execute(String operation) {
     var wiring =
         RuntimeWiring.newRuntimeWiring()
@@ -75,6 +95,12 @@ class DataLoaderCacheResetInstrumentationTest {
                           storedState.set(env.<Integer>getArgument("value"));
                           return Map.of();
                         }))
+            .type(
+                "Subscription",
+                type ->
+                    type.dataFetcher(
+                        "changes",
+                        _ -> Flux.just(1, 2).doOnNext(storedState::set).map(_ -> Map.of())))
             .type("Snapshot", type -> type.dataFetcher("state", this::loadState))
             .build();
     var schema =

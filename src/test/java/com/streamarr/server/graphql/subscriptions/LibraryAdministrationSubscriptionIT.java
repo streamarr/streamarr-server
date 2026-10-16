@@ -204,6 +204,29 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should resolve the current watch status when the subscriber marks the item watched between two status changes")
+  void shouldResolveCurrentWatchStatusWhenSubscriberMarksItemWatchedBetweenTwoStatusChanges() {
+    var bearer = adminBearer();
+    var library = saveLibrary(libraryDirectory);
+    var movie = saveMovie(library);
+    var socket = connect(bearer);
+    socket.subscribe("status", PROFILE_FIELDS_SUBSCRIPTION);
+    activeSubscriptions.awaitCount(STATUS_FIELD, 1);
+    http.execute(bearer, refreshMutation(library.getId()));
+    assertThat(firstItemWatchStatus(nextStatusChangeWithoutErrors(socket, library.getId())))
+        .isEqualTo("UNWATCHED");
+    awaitStatus(socket, library.getId(), "HEALTHY");
+    markWatched(bearer, movie);
+
+    http.execute(bearer, refreshMutation(library.getId()));
+
+    assertThat(firstItemWatchStatus(nextStatusChangeWithoutErrors(socket, library.getId())))
+        .isEqualTo("WATCHED");
+    awaitStatus(socket, library.getId(), "HEALTHY");
+  }
+
+  @Test
   @DisplayName("Should deliver UNHEALTHY when a scan fails")
   void shouldDeliverUnhealthyWhenScanFails() {
     var bearer = adminBearer();
