@@ -245,7 +245,9 @@ When the client loads the next page, it drops items it already holds by id, beca
 === Failed changes
 
 The server resolves each change for each subscriber.
-A field that cannot resolve within `GRAPHQL_SUBSCRIPTION_DELIVERY_FETCH_TIMEOUT` fails, so later changes do not wait behind it.
+A field that waits on a batched load, such as `watchStatus`, fails when it cannot resolve within `GRAPHQL_SUBSCRIPTION_DELIVERY_FETCH_TIMEOUT`, so later changes do not wait behind it.
+The timeout does not bound `items`, which reads the database directly.
+A stalled read of `items` holds back the operation's later changes until the read completes.
 A failed nullable field, such as `watchProgress` or `lastWatchedAt`, arrives as null in a `next` message.
 A failed non-null field of an item, such as `watchStatus`, `library` or `unmatched`, makes that item null in `items`.
 The other items of the change arrive intact.
