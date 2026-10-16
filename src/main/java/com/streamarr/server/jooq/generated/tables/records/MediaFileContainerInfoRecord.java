@@ -226,6 +226,292 @@ public class MediaFileContainerInfoRecord extends UpdatableRecordImpl<MediaFileC
         return (String) get(13);
     }
 
+    /**
+     * Setter for
+     * <code>public.media_file_container_info.chosen_video_stream_index</code>.
+     */
+    public void setChosenVideoStreamIndex(Integer value) {
+        set(14, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_container_info.chosen_video_stream_index</code>.
+     */
+    public Integer getChosenVideoStreamIndex() {
+        return (Integer) get(14);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_container_info.output_frame_rate_basis</code>.
+     */
+    public void setOutputFrameRateBasis(String value) {
+        set(15, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_container_info.output_frame_rate_basis</code>.
+     */
+    public String getOutputFrameRateBasis() {
+        return (String) get(15);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_container_info.output_frame_rate_numerator</code>.
+     */
+    public void setOutputFrameRateNumerator(Integer value) {
+        set(16, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_container_info.output_frame_rate_numerator</code>.
+     */
+    public Integer getOutputFrameRateNumerator() {
+        return (Integer) get(16);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_container_info.output_frame_rate_denominator</code>.
+     */
+    public void setOutputFrameRateDenominator(Integer value) {
+        set(17, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_container_info.output_frame_rate_denominator</code>.
+     */
+    public Integer getOutputFrameRateDenominator() {
+        return (Integer) get(17);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_container_info.base_rate_numerator</code>.
+     */
+    public void setBaseRateNumerator(Integer value) {
+        set(18, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_container_info.base_rate_numerator</code>.
+     */
+    public Integer getBaseRateNumerator() {
+        return (Integer) get(18);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_container_info.base_rate_denominator</code>.
+     */
+    public void setBaseRateDenominator(Integer value) {
+        set(19, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_container_info.base_rate_denominator</code>.
+     */
+    public Integer getBaseRateDenominator() {
+        return (Integer) get(19);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_container_info.average_rate_numerator</code>.
+     */
+    public void setAverageRateNumerator(Integer value) {
+        set(20, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_container_info.average_rate_numerator</code>.
+     */
+    public Integer getAverageRateNumerator() {
+        return (Integer) get(20);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_container_info.average_rate_denominator</code>.
+     */
+    public void setAverageRateDenominator(Integer value) {
+        set(21, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_container_info.average_rate_denominator</code>.
+     */
+    public Integer getAverageRateDenominator() {
+        return (Integer) get(21);
+    }
+
+    /**
+     * Setter for <code>public.media_file_container_info.field_order</code>.
+     */
+    public void setFieldOrder(String value) {
+        set(22, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_container_info.field_order</code>.
+     */
+    public String getFieldOrder() {
+        return (String) get(22);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_container_info.time_base_numerator</code>.
+     */
+    public void setTimeBaseNumerator(Integer value) {
+        set(23, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_container_info.time_base_numerator</code>.
+     */
+    public Integer getTimeBaseNumerator() {
+        return (Integer) get(23);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_container_info.time_base_denominator</code>.
+     */
+    public void setTimeBaseDenominator(Integer value) {
+        set(24, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_container_info.time_base_denominator</code>.
+     */
+    public Integer getTimeBaseDenominator() {
+        return (Integer) get(24);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_container_info.matroska_number_of_frames</code>.
+     */
+    public void setMatroskaNumberOfFrames(Long value) {
+        set(25, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_container_info.matroska_number_of_frames</code>.
+     */
+    public Long getMatroskaNumberOfFrames() {
+        return (Long) get(25);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_container_info.matroska_duration_seconds</code>.
+     */
+    public void setMatroskaDurationSeconds(Long value) {
+        set(26, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_container_info.matroska_duration_seconds</code>.
+     */
+    public Long getMatroskaDurationSeconds() {
+        return (Long) get(26);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_container_info.matroska_duration_nanos</code>.
+     */
+    public void setMatroskaDurationNanos(Integer value) {
+        set(27, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_container_info.matroska_duration_nanos</code>.
+     */
+    public Integer getMatroskaDurationNanos() {
+        return (Integer) get(27);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_container_info.packet_scan_frame_count</code>.
+     */
+    public void setPacketScanFrameCount(Integer value) {
+        set(28, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_container_info.packet_scan_frame_count</code>.
+     */
+    public Integer getPacketScanFrameCount() {
+        return (Integer) get(28);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_container_info.packet_scan_motion_rate</code>.
+     */
+    public void setPacketScanMotionRate(Double value) {
+        set(29, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_container_info.packet_scan_motion_rate</code>.
+     */
+    public Double getPacketScanMotionRate() {
+        return (Double) get(29);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_container_info.packet_scan_duration_seconds</code>.
+     */
+    public void setPacketScanDurationSeconds(Long value) {
+        set(30, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_container_info.packet_scan_duration_seconds</code>.
+     */
+    public Long getPacketScanDurationSeconds() {
+        return (Long) get(30);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_container_info.packet_scan_duration_nanos</code>.
+     */
+    public void setPacketScanDurationNanos(Integer value) {
+        set(31, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_container_info.packet_scan_duration_nanos</code>.
+     */
+    public Integer getPacketScanDurationNanos() {
+        return (Integer) get(31);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -249,7 +535,7 @@ public class MediaFileContainerInfoRecord extends UpdatableRecordImpl<MediaFileC
     /**
      * Create a detached, initialised MediaFileContainerInfoRecord
      */
-    public MediaFileContainerInfoRecord(UUID mediaFileId, Long sourceSize, Long sourceModifiedEpochSecond, Integer sourceModifiedNanos, Integer probeVersion, String format, Long durationSeconds, Integer durationNanos, Long totalBitrate, String probeError, String keyframeStatus, String keyframePacketScanReason, String keyframesUnavailableReason, String chapterStatus) {
+    public MediaFileContainerInfoRecord(UUID mediaFileId, Long sourceSize, Long sourceModifiedEpochSecond, Integer sourceModifiedNanos, Integer probeVersion, String format, Long durationSeconds, Integer durationNanos, Long totalBitrate, String probeError, String keyframeStatus, String keyframePacketScanReason, String keyframesUnavailableReason, String chapterStatus, Integer chosenVideoStreamIndex, String outputFrameRateBasis, Integer outputFrameRateNumerator, Integer outputFrameRateDenominator, Integer baseRateNumerator, Integer baseRateDenominator, Integer averageRateNumerator, Integer averageRateDenominator, String fieldOrder, Integer timeBaseNumerator, Integer timeBaseDenominator, Long matroskaNumberOfFrames, Long matroskaDurationSeconds, Integer matroskaDurationNanos, Integer packetScanFrameCount, Double packetScanMotionRate, Long packetScanDurationSeconds, Integer packetScanDurationNanos) {
         super(MediaFileContainerInfo.MEDIA_FILE_CONTAINER_INFO);
 
         setMediaFileId(mediaFileId);
@@ -266,6 +552,24 @@ public class MediaFileContainerInfoRecord extends UpdatableRecordImpl<MediaFileC
         setKeyframePacketScanReason(keyframePacketScanReason);
         setKeyframesUnavailableReason(keyframesUnavailableReason);
         setChapterStatus(chapterStatus);
+        setChosenVideoStreamIndex(chosenVideoStreamIndex);
+        setOutputFrameRateBasis(outputFrameRateBasis);
+        setOutputFrameRateNumerator(outputFrameRateNumerator);
+        setOutputFrameRateDenominator(outputFrameRateDenominator);
+        setBaseRateNumerator(baseRateNumerator);
+        setBaseRateDenominator(baseRateDenominator);
+        setAverageRateNumerator(averageRateNumerator);
+        setAverageRateDenominator(averageRateDenominator);
+        setFieldOrder(fieldOrder);
+        setTimeBaseNumerator(timeBaseNumerator);
+        setTimeBaseDenominator(timeBaseDenominator);
+        setMatroskaNumberOfFrames(matroskaNumberOfFrames);
+        setMatroskaDurationSeconds(matroskaDurationSeconds);
+        setMatroskaDurationNanos(matroskaDurationNanos);
+        setPacketScanFrameCount(packetScanFrameCount);
+        setPacketScanMotionRate(packetScanMotionRate);
+        setPacketScanDurationSeconds(packetScanDurationSeconds);
+        setPacketScanDurationNanos(packetScanDurationNanos);
         resetTouchedOnNotNull();
     }
 }

@@ -188,6 +188,298 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
         return (Boolean) get(11);
     }
 
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.dynamic_range_compatible_base</code>.
+     */
+    public void setDynamicRangeCompatibleBase(String value) {
+        set(12, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.dynamic_range_compatible_base</code>.
+     */
+    public String getDynamicRangeCompatibleBase() {
+        return (String) get(12);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.hdr10_plus</code>.
+     */
+    public void setHdr10Plus(String value) {
+        set(13, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.hdr10_plus</code>.
+     */
+    public String getHdr10Plus() {
+        return (String) get(13);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.dolby_vision</code>.
+     */
+    public void setDolbyVision(String value) {
+        set(14, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.dolby_vision</code>.
+     */
+    public String getDolbyVision() {
+        return (String) get(14);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.dolby_vision_observed_rpu</code>.
+     */
+    public void setDolbyVisionObservedRpu(String value) {
+        set(15, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.dolby_vision_observed_rpu</code>.
+     */
+    public String getDolbyVisionObservedRpu() {
+        return (String) get(15);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.dolby_vision_profile</code>.
+     */
+    public void setDolbyVisionProfile(Integer value) {
+        set(16, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.dolby_vision_profile</code>.
+     */
+    public Integer getDolbyVisionProfile() {
+        return (Integer) get(16);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.dolby_vision_level</code>.
+     */
+    public void setDolbyVisionLevel(Integer value) {
+        set(17, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.dolby_vision_level</code>.
+     */
+    public Integer getDolbyVisionLevel() {
+        return (Integer) get(17);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.dolby_vision_base_layer_compatibility_id</code>.
+     */
+    public void setDolbyVisionBaseLayerCompatibilityId(Integer value) {
+        set(18, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.dolby_vision_base_layer_compatibility_id</code>.
+     */
+    public Integer getDolbyVisionBaseLayerCompatibilityId() {
+        return (Integer) get(18);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.dolby_vision_base_layer</code>.
+     */
+    public void setDolbyVisionBaseLayer(Boolean value) {
+        set(19, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.dolby_vision_base_layer</code>.
+     */
+    public Boolean getDolbyVisionBaseLayer() {
+        return (Boolean) get(19);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.dolby_vision_enhancement_layer</code>.
+     */
+    public void setDolbyVisionEnhancementLayer(Boolean value) {
+        set(20, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.dolby_vision_enhancement_layer</code>.
+     */
+    public Boolean getDolbyVisionEnhancementLayer() {
+        return (Boolean) get(20);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.dolby_vision_rpu</code>.
+     */
+    public void setDolbyVisionRpu(Boolean value) {
+        set(21, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.dolby_vision_rpu</code>.
+     */
+    public Boolean getDolbyVisionRpu() {
+        return (Boolean) get(21);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.bit_depth</code>.
+     */
+    public void setBitDepth(Integer value) {
+        set(22, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.bit_depth</code>.
+     */
+    public Integer getBitDepth() {
+        return (Integer) get(22);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.chroma_subsampling</code>.
+     */
+    public void setChromaSubsampling(String value) {
+        set(23, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.chroma_subsampling</code>.
+     */
+    public String getChromaSubsampling() {
+        return (String) get(23);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.rotation_degrees</code>.
+     */
+    public void setRotationDegrees(Integer value) {
+        set(24, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.rotation_degrees</code>.
+     */
+    public Integer getRotationDegrees() {
+        return (Integer) get(24);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.crop_top</code>.
+     */
+    public void setCropTop(Integer value) {
+        set(25, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.crop_top</code>.
+     */
+    public Integer getCropTop() {
+        return (Integer) get(25);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.crop_bottom</code>.
+     */
+    public void setCropBottom(Integer value) {
+        set(26, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.crop_bottom</code>.
+     */
+    public Integer getCropBottom() {
+        return (Integer) get(26);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.crop_left</code>.
+     */
+    public void setCropLeft(Integer value) {
+        set(27, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.crop_left</code>.
+     */
+    public Integer getCropLeft() {
+        return (Integer) get(27);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.crop_right</code>.
+     */
+    public void setCropRight(Integer value) {
+        set(28, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.crop_right</code>.
+     */
+    public Integer getCropRight() {
+        return (Integer) get(28);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.codec_string</code>.
+     */
+    public void setCodecString(String value) {
+        set(29, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.codec_string</code>.
+     */
+    public String getCodecString() {
+        return (String) get(29);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.sample_rate_hz</code>.
+     */
+    public void setSampleRateHz(Integer value) {
+        set(30, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.sample_rate_hz</code>.
+     */
+    public Integer getSampleRateHz() {
+        return (Integer) get(30);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.audio_profile</code>.
+     */
+    public void setAudioProfile(String value) {
+        set(31, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.audio_profile</code>.
+     */
+    public String getAudioProfile() {
+        return (String) get(31);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -211,7 +503,7 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
     /**
      * Create a detached, initialised MediaFileStreamInfoRecord
      */
-    public MediaFileStreamInfoRecord(UUID mediaFileId, Integer streamIndex, String codecType, String codec, Integer width, Integer height, Double framerate, Integer channels, Long bitrate, String language, Boolean isDefault, Boolean isForced) {
+    public MediaFileStreamInfoRecord(UUID mediaFileId, Integer streamIndex, String codecType, String codec, Integer width, Integer height, Double framerate, Integer channels, Long bitrate, String language, Boolean isDefault, Boolean isForced, String dynamicRangeCompatibleBase, String hdr10Plus, String dolbyVision, String dolbyVisionObservedRpu, Integer dolbyVisionProfile, Integer dolbyVisionLevel, Integer dolbyVisionBaseLayerCompatibilityId, Boolean dolbyVisionBaseLayer, Boolean dolbyVisionEnhancementLayer, Boolean dolbyVisionRpu, Integer bitDepth, String chromaSubsampling, Integer rotationDegrees, Integer cropTop, Integer cropBottom, Integer cropLeft, Integer cropRight, String codecString, Integer sampleRateHz, String audioProfile) {
         super(MediaFileStreamInfo.MEDIA_FILE_STREAM_INFO);
 
         setMediaFileId(mediaFileId);
@@ -226,6 +518,26 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
         setLanguage(language);
         setIsDefault(isDefault);
         setIsForced(isForced);
+        setDynamicRangeCompatibleBase(dynamicRangeCompatibleBase);
+        setHdr10Plus(hdr10Plus);
+        setDolbyVision(dolbyVision);
+        setDolbyVisionObservedRpu(dolbyVisionObservedRpu);
+        setDolbyVisionProfile(dolbyVisionProfile);
+        setDolbyVisionLevel(dolbyVisionLevel);
+        setDolbyVisionBaseLayerCompatibilityId(dolbyVisionBaseLayerCompatibilityId);
+        setDolbyVisionBaseLayer(dolbyVisionBaseLayer);
+        setDolbyVisionEnhancementLayer(dolbyVisionEnhancementLayer);
+        setDolbyVisionRpu(dolbyVisionRpu);
+        setBitDepth(bitDepth);
+        setChromaSubsampling(chromaSubsampling);
+        setRotationDegrees(rotationDegrees);
+        setCropTop(cropTop);
+        setCropBottom(cropBottom);
+        setCropLeft(cropLeft);
+        setCropRight(cropRight);
+        setCodecString(codecString);
+        setSampleRateHz(sampleRateHz);
+        setAudioProfile(audioProfile);
         resetTouchedOnNotNull();
     }
 }

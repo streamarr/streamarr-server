@@ -23,6 +23,7 @@ import com.streamarr.server.exceptions.ProbeTimedOutException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.LoopbackProbeWorker;
+import com.streamarr.server.fixtures.WorkerProbeResultFixture;
 import com.streamarr.server.support.BoundedTask;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
@@ -401,12 +402,11 @@ class RemoteFfprobeServiceIT {
                   .setProbeAttemptId(dispatched.getProbeAttemptId())
                   .setProbeVersion(dispatched.getProbeVersion())
                   .setMedia(
-                      ProbeMediaInfo.newBuilder()
+                      WorkerProbeResultFixture.version4MediaBuilder()
                           .setContainer(
                               ProbeContainerInfo.newBuilder()
                                   .addChapters(titled)
-                                  .addChapters(untitled))
-                          .addStreams(ProbeStreamInfo.newBuilder().setCodecType("video")))
+                                  .addChapters(untitled)))
                   .build());
 
           var outcome = result.await(Duration.ofSeconds(5));

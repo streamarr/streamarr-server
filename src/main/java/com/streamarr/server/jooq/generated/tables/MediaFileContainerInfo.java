@@ -137,6 +137,113 @@ public class MediaFileContainerInfo extends TableImpl<MediaFileContainerInfoReco
      */
     public final TableField<MediaFileContainerInfoRecord, String> CHAPTER_STATUS = createField(DSL.name("chapter_status"), SQLDataType.CLOB, this, "");
 
+    /**
+     * The column
+     * <code>public.media_file_container_info.chosen_video_stream_index</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, Integer> CHOSEN_VIDEO_STREAM_INDEX = createField(DSL.name("chosen_video_stream_index"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_container_info.output_frame_rate_basis</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, String> OUTPUT_FRAME_RATE_BASIS = createField(DSL.name("output_frame_rate_basis"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_container_info.output_frame_rate_numerator</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, Integer> OUTPUT_FRAME_RATE_NUMERATOR = createField(DSL.name("output_frame_rate_numerator"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_container_info.output_frame_rate_denominator</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, Integer> OUTPUT_FRAME_RATE_DENOMINATOR = createField(DSL.name("output_frame_rate_denominator"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_container_info.base_rate_numerator</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, Integer> BASE_RATE_NUMERATOR = createField(DSL.name("base_rate_numerator"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_container_info.base_rate_denominator</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, Integer> BASE_RATE_DENOMINATOR = createField(DSL.name("base_rate_denominator"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_container_info.average_rate_numerator</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, Integer> AVERAGE_RATE_NUMERATOR = createField(DSL.name("average_rate_numerator"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_container_info.average_rate_denominator</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, Integer> AVERAGE_RATE_DENOMINATOR = createField(DSL.name("average_rate_denominator"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>public.media_file_container_info.field_order</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, String> FIELD_ORDER = createField(DSL.name("field_order"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_container_info.time_base_numerator</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, Integer> TIME_BASE_NUMERATOR = createField(DSL.name("time_base_numerator"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_container_info.time_base_denominator</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, Integer> TIME_BASE_DENOMINATOR = createField(DSL.name("time_base_denominator"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_container_info.matroska_number_of_frames</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, Long> MATROSKA_NUMBER_OF_FRAMES = createField(DSL.name("matroska_number_of_frames"), SQLDataType.BIGINT, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_container_info.matroska_duration_seconds</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, Long> MATROSKA_DURATION_SECONDS = createField(DSL.name("matroska_duration_seconds"), SQLDataType.BIGINT, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_container_info.matroska_duration_nanos</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, Integer> MATROSKA_DURATION_NANOS = createField(DSL.name("matroska_duration_nanos"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_container_info.packet_scan_frame_count</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, Integer> PACKET_SCAN_FRAME_COUNT = createField(DSL.name("packet_scan_frame_count"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_container_info.packet_scan_motion_rate</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, Double> PACKET_SCAN_MOTION_RATE = createField(DSL.name("packet_scan_motion_rate"), SQLDataType.DOUBLE, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_container_info.packet_scan_duration_seconds</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, Long> PACKET_SCAN_DURATION_SECONDS = createField(DSL.name("packet_scan_duration_seconds"), SQLDataType.BIGINT, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_container_info.packet_scan_duration_nanos</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, Integer> PACKET_SCAN_DURATION_NANOS = createField(DSL.name("packet_scan_duration_nanos"), SQLDataType.INTEGER, this, "");
+
     private MediaFileContainerInfo(Name alias, Table<MediaFileContainerInfoRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -275,19 +382,47 @@ public class MediaFileContainerInfo extends TableImpl<MediaFileContainerInfoReco
     @Override
     public List<Check<MediaFileContainerInfoRecord>> getChecks() {
         return Arrays.asList(
+            Internal.createCheck(this, DSL.name("chosen_video_stream_has_frame_rate_rule"), "(((chosen_video_stream_index IS NULL) = (output_frame_rate_basis IS NULL)))", true),
+            Internal.createCheck(this, DSL.name("complete_average_rate"), "(((average_rate_numerator IS NULL) = (average_rate_denominator IS NULL)))", true),
+            Internal.createCheck(this, DSL.name("complete_base_rate"), "(((base_rate_numerator IS NULL) = (base_rate_denominator IS NULL)))", true),
+            Internal.createCheck(this, DSL.name("complete_matroska_duration"), "(((matroska_duration_seconds IS NULL) = (matroska_duration_nanos IS NULL)))", true),
+            Internal.createCheck(this, DSL.name("complete_output_frame_rate"), "(((output_frame_rate_numerator IS NULL) = (output_frame_rate_denominator IS NULL)))", true),
+            Internal.createCheck(this, DSL.name("complete_packet_scan_duration"), "(((packet_scan_duration_seconds IS NULL) = (packet_scan_duration_nanos IS NULL)))", true),
             Internal.createCheck(this, DSL.name("complete_probe_duration"), "(((duration_seconds IS NULL) = (duration_nanos IS NULL)))", true),
+            Internal.createCheck(this, DSL.name("complete_time_base"), "(((time_base_numerator IS NULL) = (time_base_denominator IS NULL)))", true),
             Internal.createCheck(this, DSL.name("failed_probe_has_no_chapter_status"), "(((probe_error IS NULL) OR (chapter_status IS NULL)))", true),
+            Internal.createCheck(this, DSL.name("failed_probe_has_no_chosen_video_stream"), "(((probe_error IS NULL) OR (chosen_video_stream_index IS NULL)))", true),
             Internal.createCheck(this, DSL.name("failed_probe_has_no_container_properties"), "(((probe_error IS NULL) OR ((format IS NULL) AND (duration_seconds IS NULL) AND (duration_nanos IS NULL) AND (total_bitrate IS NULL))))", true),
             Internal.createCheck(this, DSL.name("failed_probe_has_no_keyframe_status"), "(((probe_error IS NULL) OR (keyframe_status IS NULL)))", true),
+            Internal.createCheck(this, DSL.name("media_file_container_info_average_rate_denominator_check"), "((average_rate_denominator > 0))", true),
+            Internal.createCheck(this, DSL.name("media_file_container_info_average_rate_numerator_check"), "((average_rate_numerator > 0))", true),
+            Internal.createCheck(this, DSL.name("media_file_container_info_base_rate_denominator_check"), "((base_rate_denominator > 0))", true),
+            Internal.createCheck(this, DSL.name("media_file_container_info_base_rate_numerator_check"), "((base_rate_numerator > 0))", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_chapter_status_check"), "((chapter_status = ANY (ARRAY['KNOWN'::text, 'OMITTED'::text])))", true),
+            Internal.createCheck(this, DSL.name("media_file_container_info_chosen_video_stream_index_check"), "((chosen_video_stream_index >= 0))", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_duration_nanos_check"), "(((duration_nanos >= 0) AND (duration_nanos <= 999999999)))", true),
+            Internal.createCheck(this, DSL.name("media_file_container_info_field_order_check"), "((field_order = ANY (ARRAY['PROGRESSIVE'::text, 'TT'::text, 'BB'::text, 'TB'::text, 'BT'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_keyframe_packet_scan_reason_check"), "((keyframe_packet_scan_reason = ANY (ARRAY['NO_CONTAINER_INDEX'::text, 'INCOMPLETE_CONTAINER_INDEX'::text, 'UNREADABLE_LAST_INDEXED_KEYFRAME'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_keyframe_status_check"), "((keyframe_status = ANY (ARRAY['KNOWN'::text, 'PACKET_SCAN_REQUIRED'::text, 'UNAVAILABLE'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_keyframes_unavailable_reason_check"), "((keyframes_unavailable_reason = ANY (ARRAY['KEYFRAME_WITHOUT_TIMESTAMP'::text, 'NO_KEYFRAMES'::text, 'PACKET_SCAN_MEDIA_ERROR'::text, 'PACKET_SCAN_FAILED'::text])))", true),
+            Internal.createCheck(this, DSL.name("media_file_container_info_matroska_duration_nanos_check"), "(((matroska_duration_nanos >= 0) AND (matroska_duration_nanos <= 999999999)))", true),
+            Internal.createCheck(this, DSL.name("media_file_container_info_matroska_duration_seconds_check"), "((matroska_duration_seconds >= 0))", true),
+            Internal.createCheck(this, DSL.name("media_file_container_info_matroska_number_of_frames_check"), "((matroska_number_of_frames >= 0))", true),
+            Internal.createCheck(this, DSL.name("media_file_container_info_output_frame_rate_basis_check"), "((output_frame_rate_basis = ANY (ARRAY['DECLARED_RATES'::text, 'MATROSKA_STATISTICS'::text, 'PACKET_SCAN'::text, 'DECLARED_RATE_FALLBACK'::text, 'REFUSED'::text])))", true),
+            Internal.createCheck(this, DSL.name("media_file_container_info_output_frame_rate_denominator_check"), "((output_frame_rate_denominator > 0))", true),
+            Internal.createCheck(this, DSL.name("media_file_container_info_output_frame_rate_numerator_check"), "((output_frame_rate_numerator > 0))", true),
+            Internal.createCheck(this, DSL.name("media_file_container_info_packet_scan_duration_nanos_check"), "(((packet_scan_duration_nanos >= 0) AND (packet_scan_duration_nanos <= 999999999)))", true),
+            Internal.createCheck(this, DSL.name("media_file_container_info_packet_scan_duration_seconds_check"), "((packet_scan_duration_seconds >= 0))", true),
+            Internal.createCheck(this, DSL.name("media_file_container_info_packet_scan_frame_count_check"), "((packet_scan_frame_count >= 0))", true),
+            Internal.createCheck(this, DSL.name("media_file_container_info_packet_scan_motion_rate_check"), "((packet_scan_motion_rate > (0)::double precision))", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_probe_error_check"), "((probe_error = ANY (ARRAY['INVALID_MEDIA'::text, 'NO_VIDEO_STREAM'::text, 'RESULT_TOO_LARGE'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_probe_version_check"), "((probe_version > 0))", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_source_modified_nanos_check"), "(((source_modified_nanos >= 0) AND (source_modified_nanos <= 999999999)))", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_source_size_check"), "((source_size >= 0))", true),
+            Internal.createCheck(this, DSL.name("media_file_container_info_time_base_denominator_check"), "((time_base_denominator > 0))", true),
+            Internal.createCheck(this, DSL.name("media_file_container_info_time_base_numerator_check"), "((time_base_numerator > 0))", true),
+            Internal.createCheck(this, DSL.name("output_frame_rate_absent_only_when_refused"), "(((output_frame_rate_basis IS NULL) OR ((output_frame_rate_numerator IS NULL) = (output_frame_rate_basis = 'REFUSED'::text))))", true),
+            Internal.createCheck(this, DSL.name("packet_scan_has_frame_count"), "(((packet_scan_frame_count IS NOT NULL) OR ((packet_scan_motion_rate IS NULL) AND (packet_scan_duration_seconds IS NULL))))", true),
             Internal.createCheck(this, DSL.name("packet_scan_reason_only_when_packet_scan_required"), "(((NOT (keyframe_status IS DISTINCT FROM 'PACKET_SCAN_REQUIRED'::text)) = (keyframe_packet_scan_reason IS NOT NULL)))", true),
             Internal.createCheck(this, DSL.name("unavailable_reason_only_when_keyframes_unavailable"), "(((NOT (keyframe_status IS DISTINCT FROM 'UNAVAILABLE'::text)) = (keyframes_unavailable_reason IS NOT NULL)))", true)
         );

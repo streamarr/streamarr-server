@@ -352,9 +352,10 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
             .probeVersion(publication.probeVersion());
     return switch (publication.outcome()) {
       case ProbeOutcome.Failure(var error) -> builder.probeError(error).build();
-      case ProbeOutcome.Success(var container, var streams, _) ->
+      case ProbeOutcome.Success(var container, var streams, _, var chosenVideoStream) ->
           builder
               .container(container)
+              .chosenVideoStream(chosenVideoStream)
               .streams(
                   streams.stream()
                       .map(
