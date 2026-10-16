@@ -141,6 +141,37 @@ public interface ProbePlaybackFactsRepositoryContract {
         .contains(new ChosenVideoStream(0, refused));
   }
 
+  @ParameterizedTest
+  @MethodSource("partialMatroskaStatistics")
+  @DisplayName("Should read Matroska statistics back when the stream carries only one of its tags")
+  default void shouldReadMatroskaStatisticsBackWhenTheStreamCarriesOnlyOneOfItsTags(
+      MatroskaStatistics statistics) {
+    var mediaFileId = createMediaFile();
+    var rule =
+        FrameRateRule.builder()
+            .outputFrameRate(Optional.of(new Fraction(25, 1)))
+            .basis(OutputFrameRateBasis.MATROSKA_STATISTICS)
+            .inputs(
+                FrameRateRuleInputs.builder().matroskaStatistics(Optional.of(statistics)).build())
+            .build();
+    var published =
+        outcomeBuilder()
+            .streams(List.of(video().build()))
+            .chosenVideoStream(Optional.of(new ChosenVideoStream(0, rule)))
+            .build();
+
+    repository().publish(publication(mediaFileId, published));
+
+    assertThat(storedOutcome(mediaFileId).chosenVideoStream())
+        .contains(new ChosenVideoStream(0, rule));
+  }
+
+  static Stream<MatroskaStatistics> partialMatroskaStatistics() {
+    return Stream.of(
+        new MatroskaStatistics(OptionalLong.of(3_000), Optional.empty()),
+        new MatroskaStatistics(OptionalLong.empty(), Optional.of(Duration.ofSeconds(120))));
+  }
+
   @Test
   @DisplayName(
       "Should read no playback facts back when an earlier probe version stored the outcome")

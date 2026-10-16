@@ -47,6 +47,8 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -485,6 +487,26 @@ class RemoteProbeResultPlaybackFactsMapperTest {
                 return media.setFrameRateRule(rule);
               }),
           violation(
+              "a Matroska frame count past the supported range",
+              media -> {
+                var rule = WorkerProbeResultFixture.declaredRateRuleBuilder();
+                rule.getInputsBuilder().getMatroskaStatisticsBuilder().setNumberOfFrames(-1);
+                return media.setFrameRateRule(rule);
+              }),
+          violation(
+              "a motion rate that is not a number",
+              media -> {
+                var rule = WorkerProbeResultFixture.declaredRateRuleBuilder();
+                rule.getInputsBuilder().getPacketScanBuilder().setMotionRate(Double.NaN);
+                return media.setFrameRateRule(rule);
+              }),
+          violation(
+              "a zero fraction denominator",
+              media ->
+                  media.setFrameRateRule(
+                      WorkerProbeResultFixture.declaredRateRuleBuilder()
+                          .setOutputFrameRate(fraction(24, 0)))),
+          violation(
               "a negative Matroska duration",
               media -> {
                 var rule = WorkerProbeResultFixture.declaredRateRuleBuilder();
@@ -510,6 +532,121 @@ class RemoteProbeResultPlaybackFactsMapperTest {
 
     private static ProbeStreamInfo.Builder video() {
       return ProbeStreamInfo.newBuilder().setIndex(0).setCodecType("video");
+    }
+  }
+
+  // ADR 0036 and ADR 0037 name each value the same way in the worker contract and the domain.
+  @Nested
+  @DisplayName("Shared Vocabulary")
+  class SharedVocabulary {
+
+    @SuppressWarnings("checkstyle:fullyQualifiedName")
+    @ParameterizedTest
+    @EnumSource(
+        value = com.streamarr.transcode.v1.CompatibleBase.class,
+        mode = EnumSource.Mode.EXCLUDE,
+        names = "UNRECOGNIZED")
+    @DisplayName("Should read each compatible base when a stream reports it")
+    void shouldReadEachCompatibleBaseWhenAStreamReportsIt(
+        com.streamarr.transcode.v1.CompatibleBase base) {
+      var video = ProbeStreamInfo.newBuilder().setIndex(0).setCodecType("video");
+      video.getDynamicRangeBuilder().setCompatibleBase(base);
+
+      var range = streamsOf(result(media -> media.setStreams(0, video))).getFirst().dynamicRange();
+
+      assertThat(range.orElseThrow().compatibleBase().name())
+          .isEqualTo(base.name().replace("COMPATIBLE_BASE_", ""));
+    }
+
+    @SuppressWarnings("checkstyle:fullyQualifiedName")
+    @ParameterizedTest
+    @EnumSource(
+        value = com.streamarr.transcode.v1.Presence.class,
+        mode = EnumSource.Mode.EXCLUDE,
+        names = "UNRECOGNIZED")
+    @DisplayName("Should read each HDR10+ presence when a stream reports it")
+    void shouldReadEachHdr10PlusPresenceWhenAStreamReportsIt(
+        com.streamarr.transcode.v1.Presence presence) {
+      var video = ProbeStreamInfo.newBuilder().setIndex(0).setCodecType("video");
+      video.getDynamicRangeBuilder().setHdr10Plus(presence);
+
+      var range = streamsOf(result(media -> media.setStreams(0, video))).getFirst().dynamicRange();
+
+      assertThat(range.orElseThrow().hdr10Plus().name())
+          .isEqualTo(presence.name().replace("PRESENCE_", ""));
+    }
+
+    @SuppressWarnings("checkstyle:fullyQualifiedName")
+    @ParameterizedTest
+    @CsvSource({
+      "CHROMA_SUBSAMPLING_420, CHROMA_420",
+      "CHROMA_SUBSAMPLING_422, CHROMA_422",
+      "CHROMA_SUBSAMPLING_444, CHROMA_444",
+      "CHROMA_SUBSAMPLING_MONOCHROME, MONOCHROME"
+    })
+    @DisplayName("Should read each chroma subsampling when a stream reports it")
+    void shouldReadEachChromaSubsamplingWhenAStreamReportsIt(
+        com.streamarr.transcode.v1.ChromaSubsampling reported, ChromaSubsampling read) {
+      var video =
+          ProbeStreamInfo.newBuilder()
+              .setIndex(0)
+              .setCodecType("video")
+              .setChromaSubsampling(reported);
+
+      var stream = streamsOf(result(media -> media.setStreams(0, video))).getFirst();
+
+      assertThat(stream.chromaSubsampling()).contains(read);
+    }
+
+    @SuppressWarnings("checkstyle:fullyQualifiedName")
+    @ParameterizedTest
+    @EnumSource(
+        value = com.streamarr.transcode.v1.FieldOrder.class,
+        mode = EnumSource.Mode.EXCLUDE,
+        names = {"FIELD_ORDER_UNSPECIFIED", "UNRECOGNIZED"})
+    @DisplayName("Should read each field order when the frame-rate rule reports it")
+    void shouldReadEachFieldOrderWhenTheFrameRateRuleReportsIt(
+        com.streamarr.transcode.v1.FieldOrder order) {
+      var rule = WorkerProbeResultFixture.declaredRateRuleBuilder();
+      rule.getInputsBuilder().setFieldOrder(order);
+
+      var chosen = chosenVideoStreamOf(result(media -> media.setFrameRateRule(rule)));
+
+      assertThat(chosen.frameRateRule().inputs().fieldOrder().map(Enum::name))
+          .contains(order.name().replace("FIELD_ORDER_", ""));
+    }
+
+    @SuppressWarnings("checkstyle:fullyQualifiedName")
+    @ParameterizedTest
+    @EnumSource(
+        value = com.streamarr.transcode.v1.OutputFrameRateBasis.class,
+        names = {
+          "OUTPUT_FRAME_RATE_BASIS_DECLARED_RATES",
+          "OUTPUT_FRAME_RATE_BASIS_MATROSKA_STATISTICS",
+          "OUTPUT_FRAME_RATE_BASIS_PACKET_SCAN",
+          "OUTPUT_FRAME_RATE_BASIS_DECLARED_RATE_FALLBACK"
+        })
+    @DisplayName("Should read each basis that chooses a rate when the frame-rate rule reports it")
+    void shouldReadEachBasisThatChoosesARateWhenTheFrameRateRuleReportsIt(
+        com.streamarr.transcode.v1.OutputFrameRateBasis basis) {
+      var rule = WorkerProbeResultFixture.declaredRateRuleBuilder().setBasis(basis);
+
+      var chosen = chosenVideoStreamOf(result(media -> media.setFrameRateRule(rule)));
+
+      assertThat(chosen.frameRateRule().basis().name())
+          .isEqualTo(basis.name().replace("OUTPUT_FRAME_RATE_BASIS_", ""));
+    }
+
+    @Test
+    @DisplayName("Should keep Matroska statistics that carry only a frame count")
+    void shouldKeepMatroskaStatisticsThatCarryOnlyAFrameCount() {
+      var rule = WorkerProbeResultFixture.declaredRateRuleBuilder();
+      rule.getInputsBuilder().getMatroskaStatisticsBuilder().setNumberOfFrames(2_880);
+
+      var chosen = chosenVideoStreamOf(result(media -> media.setFrameRateRule(rule)));
+
+      assertThat(chosen.frameRateRule().inputs().matroskaStatistics())
+          .contains(new MatroskaStatistics(OptionalLong.of(2_880), Optional.empty()));
     }
   }
 

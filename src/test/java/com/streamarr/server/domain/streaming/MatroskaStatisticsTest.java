@@ -25,6 +25,18 @@ class MatroskaStatisticsTest {
   }
 
   @Test
+  @DisplayName("Should refuse statistics when a tag value is missing")
+  void shouldRefuseStatisticsWhenATagValueIsMissing() {
+    var frames = OptionalLong.of(2_880);
+    var duration = Optional.of(Duration.ofSeconds(120));
+
+    assertThatThrownBy(() -> new MatroskaStatistics(null, duration))
+        .isInstanceOf(NullPointerException.class);
+    assertThatThrownBy(() -> new MatroskaStatistics(frames, null))
+        .isInstanceOf(NullPointerException.class);
+  }
+
+  @Test
   @DisplayName("Should keep the statistics when the stream carries only its duration tag")
   void shouldKeepTheStatisticsWhenTheStreamCarriesOnlyItsDurationTag() {
     var statistics =
