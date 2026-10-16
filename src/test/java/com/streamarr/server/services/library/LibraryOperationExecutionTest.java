@@ -94,6 +94,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.http.HttpTimeoutException;
+import java.nio.file.DirectoryIteratorException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -495,6 +496,29 @@ class LibraryOperationExecutionTest {
   }
 
   @Test
+  @DisplayName(
+      "Should end the scan unhealthy as unreadable when reading the library folder's entries"
+          + " fails")
+  void shouldEndTheScanUnhealthyAsUnreadableWhenReadingTheLibraryFolderEntriesFails()
+      throws IOException {
+    var rootPath = createRootLibraryDirectory();
+    createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
+    var throwingFileSystem =
+        ThrowingFileSystemWrapper.failingBeforeTheFirstEntry(
+            fileSystem,
+            () -> new DirectoryIteratorException(new IOException("Simulated stale file handle")));
+
+    var result = serviceWith(throwingFileSystem).scanLibrary(savedLibraryId);
+
+    assertThat(result).isInstanceOf(LibraryOperationExecutionResult.Ended.class);
+    assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+    assertThat(libraryOperations.libraryOperations()).isEmpty();
+    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
+    assertThat(capturingEventPublisher.getEventsOfType(ScanEndedEvent.class)).hasSize(1);
+    assertThat(folderCheckFailures("unreadable")).isEqualTo(1);
+  }
+
+  @Test
   @DisplayName("Should set library status to healthy when the library filepath can be accessed")
   void shouldSetLibraryStatusToHealthyWhenLibraryFilepathAccessible() throws IOException {
     createRootLibraryDirectory();
@@ -893,6 +917,36 @@ class LibraryOperationExecutionTest {
 
       assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
       assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+        "Should end the scan unhealthy when the library folder empties after the file walk")
+    void shouldEndTheScanUnhealthyWhenTheLibraryFolderEmptiesAfterTheFileWalk() throws Exception {
+      var path =
+          createMovieFile(createRootLibraryDirectory(), "About Time", "About Time (2013).mkv");
+      saveMatchedMediaFile(path);
+      beforeCountingFileStatuses = () -> deleteMovieFolder(path.getParent());
+
+      operations.scanLibrary(savedLibraryId);
+
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+      assertThat(libraryOperations.libraryOperations()).isEmpty();
+      assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
+      assertThat(capturingEventPublisher.getEventsOfType(ScanEndedEvent.class)).hasSize(1);
+      assertThat(folderCheckFailures("empty")).isEqualTo(1);
+    }
+
+    private static void deleteMovieFolder(Path movieFolder) {
+      try (var entries = Files.list(movieFolder)) {
+        for (var entry : entries.toList()) {
+          Files.delete(entry);
+        }
+
+        Files.delete(movieFolder);
+      } catch (IOException e) {
+        throw new UncheckedIOException(e);
+      }
     }
 
     private void scan(OperationRunner service) throws Exception {
@@ -1973,6 +2027,14 @@ class LibraryOperationExecutionTest {
 
   private LibraryFolderCheck libraryFolderCheckWith(FileSystem libraryFileSystem) {
     return new LibraryFolderCheck(libraryFileSystem, fakeMediaFileRepository, meterRegistry);
+  }
+
+  private double folderCheckFailures(String reason) {
+    return meterRegistry
+        .get(LibraryFolderCheck.FAILURES_METRIC)
+        .tag("reason", reason)
+        .counter()
+        .count();
   }
 
   private OperationRunner libraryManagementServiceWithRefreshService(

@@ -17,6 +17,7 @@ import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
+import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
@@ -24,6 +25,7 @@ import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.LibraryOperationSchedulerStarter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,6 +35,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -59,6 +62,7 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
   @Autowired private ProbeExecution probeExecution;
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private ApplicationContext applicationContext;
+  @Autowired private MeterRegistry meterRegistry;
 
   @TempDir Path tempDir;
 
@@ -173,6 +177,96 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
     assertThat(scheduledLibraryOperations()).isZero();
   }
 
+  @Test
+  @DisplayName(
+      "Should remove nothing and end the scan FAILED with the library UNHEALTHY when the scan runs"
+          + " again after a restart and the library folder was emptied in between")
+  void shouldRemoveNothingAndEndTheScanFailedWhenTheLibraryFolderEmptiesBeforeTheScanRunsAgain()
+      throws Exception {
+    var library = createMovieLibrary();
+    var movie =
+        movieRepository.saveAndFlush(Movie.builder().title("Recorded").library(library).build());
+    var recordedFile =
+        saveMatchedMediaFile(library, movie, createMovieFile("Recorded", "Recorded.mkv"));
+    createMovieFile("Inception (2010)", "Inception (2010).mkv");
+    stubTmdbMovieSearch(SEARCH_HELD_FOR);
+    stubTmdbMovieMetadata();
+    var started = new CompletableFuture<Void>();
+    var beforeRestart =
+        startScheduler(
+            new AbstractSchedulerListener() {
+              @Override
+              public void onExecutionStart(CurrentlyExecuting execution) {
+                started.complete(null);
+              }
+            });
+    var outcome =
+        libraryOperationService.startLibraryScan(
+            authTestSupport.identityOf(admin), library.getId());
+    started.get(BOUND.toSeconds(), TimeUnit.SECONDS);
+    beforeRestart.stop();
+    var mediaFilesBeforeRestart = mediaFileRepository.findByLibraryId(library.getId()).size();
+    var failedScansBefore = failedScans();
+    var emptyFolderFailuresBefore = emptyFolderFailures();
+    FileUtils.cleanDirectory(tempDir.toFile());
+
+    var completed = new CompletableFuture<ExecutionComplete>();
+    startScheduler(
+        new AbstractSchedulerListener() {
+          @Override
+          public void onExecutionComplete(ExecutionComplete complete) {
+            completed.complete(complete);
+          }
+        });
+    completed.get(BOUND.toSeconds(), TimeUnit.SECONDS);
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(libraryStatus(library)).isEqualTo(LibraryStatus.UNHEALTHY);
+    assertThat(mediaFileRepository.findById(recordedFile.getId())).isPresent();
+    assertThat(movieRepository.findById(movie.getId())).isPresent();
+    assertThat(mediaFileRepository.findByLibraryId(library.getId()))
+        .hasSize(mediaFilesBeforeRestart);
+    assertThat(failedScans()).isEqualTo(failedScansBefore + 1);
+    assertThat(emptyFolderFailures()).isEqualTo(emptyFolderFailuresBefore + 1);
+    assertThat(storedLibraryOperations()).isZero();
+    assertThat(scheduledLibraryOperations()).isZero();
+  }
+
+  private MediaFile saveMatchedMediaFile(Library library, Movie movie, Path path) {
+    return mediaFileRepository.saveAndFlush(
+        MediaFile.builder()
+            .filepathUri(FilepathCodec.encode(path))
+            .filename(path.getFileName().toString())
+            .status(MediaFileStatus.MATCHED)
+            .libraryId(library.getId())
+            .mediaId(movie.getId())
+            .build());
+  }
+
+  private long failedScans() {
+    var timer =
+        meterRegistry
+            .find(LibraryOperationMetrics.DURATION)
+            .tag("kind", "scan")
+            .tag("conclusion", "failed")
+            .timer();
+    if (timer == null) {
+      return 0;
+    }
+
+    return timer.count();
+  }
+
+  private double emptyFolderFailures() {
+    var counter =
+        meterRegistry.find(LibraryFolderCheck.FAILURES_METRIC).tag("reason", "empty").counter();
+    if (counter == null) {
+      return 0;
+    }
+
+    return counter.count();
+  }
+
   private void leaveExecutionPickedByADeadInstance() {
     var picked =
         jdbcTemplate.update(
@@ -220,9 +314,9 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
             .build());
   }
 
-  private void createMovieFile(String directory, String filename) throws IOException {
+  private Path createMovieFile(String directory, String filename) throws IOException {
     var dir = Files.createDirectories(tempDir.resolve(directory));
-    Files.createFile(dir.resolve(filename));
+    return Files.createFile(dir.resolve(filename));
   }
 
   private void stubTmdbMovieSearch(Duration delay) {
