@@ -291,6 +291,27 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should keep a failed probe's time and failure count when playback requests it ahead of"
+          + " queued probes")
+  void shouldKeepAFailedProbesTimeAndFailureCountWhenPlaybackRequestsItAheadOfQueuedProbes()
+      throws IOException {
+    var request = requestFor(createMediaFile());
+    scheduling.request(request);
+    saveFailure(request);
+    var retryAt = delay(request, 2);
+
+    scheduling.requestAheadOfQueuedProbes(request);
+
+    assertThat(client.getScheduledExecution(instanceOf(request)))
+        .hasValueSatisfying(
+            pending -> {
+              assertThat(pending.getExecutionTime()).isEqualTo(retryAt);
+              assertThat(pending.getConsecutiveFailures()).isEqualTo(2);
+            });
+  }
+
+  @Test
   @DisplayName("Should keep a quiet period when discovery requests the same inputs again")
   void shouldKeepAQuietPeriodWhenDiscoveryRequestsTheSameInputsAgain() throws IOException {
     var request = requestFor(createMediaFile());
