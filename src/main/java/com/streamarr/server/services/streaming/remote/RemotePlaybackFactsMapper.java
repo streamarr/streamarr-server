@@ -229,10 +229,7 @@ final class RemotePlaybackFactsMapper {
         .fieldOrder(fieldOrder(inputs.getFieldOrder()))
         .timeBase(
             inputs.hasTimeBase() ? Optional.of(fraction(inputs.getTimeBase())) : Optional.empty())
-        .matroskaStatistics(
-            inputs.hasMatroskaStatistics()
-                ? Optional.of(matroskaStatistics(inputs.getMatroskaStatistics()))
-                : Optional.empty())
+        .matroskaStatistics(matroskaStatistics(inputs.getMatroskaStatistics()))
         .packetScan(
             inputs.hasPacketScan()
                 ? Optional.of(packetScan(inputs.getPacketScan()))
@@ -252,20 +249,26 @@ final class RemotePlaybackFactsMapper {
     };
   }
 
+  // A message that carries neither tag reports the same fact as no message.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private MatroskaStatistics matroskaStatistics(
+  private Optional<MatroskaStatistics> matroskaStatistics(
       com.streamarr.transcode.v1.MatroskaStatistics statistics) {
+    if (!statistics.hasNumberOfFrames() && !statistics.hasDuration()) {
+      return Optional.empty();
+    }
+
     if (statistics.hasNumberOfFrames() && statistics.getNumberOfFrames() < 0) {
       throw contractViolation("Worker probe frame count exceeds the supported range");
     }
 
-    return new MatroskaStatistics(
-        statistics.hasNumberOfFrames()
-            ? OptionalLong.of(statistics.getNumberOfFrames())
-            : OptionalLong.empty(),
-        statistics.hasDuration()
-            ? Optional.of(nonNegative(statistics.getDuration()))
-            : Optional.empty());
+    return Optional.of(
+        new MatroskaStatistics(
+            statistics.hasNumberOfFrames()
+                ? OptionalLong.of(statistics.getNumberOfFrames())
+                : OptionalLong.empty(),
+            statistics.hasDuration()
+                ? Optional.of(nonNegative(statistics.getDuration()))
+                : Optional.empty()));
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")

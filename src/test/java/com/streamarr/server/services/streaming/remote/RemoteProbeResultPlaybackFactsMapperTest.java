@@ -337,6 +337,17 @@ class RemoteProbeResultPlaybackFactsMapperTest {
     }
 
     @Test
+    @DisplayName("Should read no Matroska statistics when the worker sends neither tag")
+    void shouldReadNoMatroskaStatisticsWhenTheWorkerSendsNeitherTag() {
+      var rule = WorkerProbeResultFixture.declaredRateRuleBuilder();
+      rule.getInputsBuilder().getMatroskaStatisticsBuilder();
+
+      var chosen = chosenVideoStreamOf(result(media -> media.setFrameRateRule(rule)));
+
+      assertThat(chosen.frameRateRule().inputs().matroskaStatistics()).isEmpty();
+    }
+
+    @Test
     @DisplayName("Should reject the result when its keyframes belong to another video stream")
     void shouldRejectTheResultWhenItsKeyframesBelongToAnotherVideoStream() {
       var report = keyframesReport(0);
