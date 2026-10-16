@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -44,6 +43,6 @@ class StoredArtworkRequestTest {
             .generation(1)
             .build();
 
-    assertThat(request.libraryOperationId()).isEqualTo(Optional.empty());
+    assertThat(request.libraryOperationId()).isEmpty();
   }
 }

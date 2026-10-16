@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import java.time.Instant;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -37,6 +36,6 @@ class ArtworkStepsAttemptTest {
             .attemptedAt(Instant.EPOCH)
             .build();
 
-    assertThat(attempt.libraryOperationId()).isEqualTo(Optional.empty());
+    assertThat(attempt.libraryOperationId()).isEmpty();
   }
 }

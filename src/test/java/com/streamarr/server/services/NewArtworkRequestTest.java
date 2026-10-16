@@ -7,7 +7,6 @@ import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -52,6 +51,6 @@ class NewArtworkRequestTest {
             .requestedAt(Instant.EPOCH)
             .build();
 
-    assertThat(request.libraryOperationId()).isEqualTo(Optional.empty());
+    assertThat(request.libraryOperationId()).isEmpty();
   }
 }
