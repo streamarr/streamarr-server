@@ -916,6 +916,7 @@ class LibraryResolverTest {
           null,
           null,
           null,
+          null,
           null);
     }
 

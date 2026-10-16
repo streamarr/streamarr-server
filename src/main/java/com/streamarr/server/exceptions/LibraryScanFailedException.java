@@ -2,6 +2,10 @@ package com.streamarr.server.exceptions;
 
 public class LibraryScanFailedException extends RuntimeException {
 
+  protected LibraryScanFailedException(String message) {
+    super(message);
+  }
+
   public LibraryScanFailedException(String libraryName, Throwable cause) {
     super("Failed to scan library: " + libraryName, cause);
   }

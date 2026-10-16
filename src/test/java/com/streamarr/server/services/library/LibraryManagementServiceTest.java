@@ -938,6 +938,39 @@ class LibraryManagementServiceTest {
       assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
     }
 
+    @Test
+    @DisplayName("Should become unhealthy when the library folder empties after the file walk")
+    void shouldBecomeUnhealthyWhenTheLibraryFolderEmptiesAfterTheFileWalk() throws Exception {
+      var rootPath = createRootLibraryDirectory();
+      var path = createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
+      saveMatchedMediaFile(path);
+      beforeCountingFileStatuses = () -> deleteMovieFolder(path.getParent());
+
+      libraryManagementService.scanLibrary(savedLibraryId);
+
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+      assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
+      assertThat(
+              meterRegistry
+                  .get("streamarr.library.folder_check.failures")
+                  .tag("reason", "empty")
+                  .counter()
+                  .count())
+          .isEqualTo(1);
+    }
+
+    private static void deleteMovieFolder(Path movieFolder) {
+      try (var entries = Files.list(movieFolder)) {
+        for (var entry : entries.toList()) {
+          Files.delete(entry);
+        }
+
+        Files.delete(movieFolder);
+      } catch (IOException e) {
+        throw new UncheckedIOException(e);
+      }
+    }
+
     private void scan(LibraryManagementService service) throws Exception {
       BoundedTask.runWithin(SCAN_BOUND, () -> service.scanLibrary(savedLibraryId));
     }
@@ -2561,7 +2594,12 @@ class LibraryManagementServiceTest {
         .fileSystem(fileSystem)
         .libraryMutationTransaction(libraryMutationTransaction)
         .mutationTransactions(mutationTransactions)
-        .fileDiscoveryRuns(fileDiscoveryRuns);
+        .fileDiscoveryRuns(fileDiscoveryRuns)
+        .libraryFolderCheck(libraryFolderCheckWith(fileSystem));
+  }
+
+  private LibraryFolderCheck libraryFolderCheckWith(FileSystem libraryFileSystem) {
+    return new LibraryFolderCheck(libraryFileSystem, fakeMediaFileRepository, meterRegistry);
   }
 
   private LibraryFileWalk.LibraryFileWalkBuilder fileWalkBuilder() {
@@ -2620,6 +2658,7 @@ class LibraryManagementServiceTest {
     return serviceBuilder()
         .fileSystem(alternateFileSystem)
         .libraryFileWalk(fileWalkBuilder().fileSystem(alternateFileSystem).build())
+        .libraryFolderCheck(libraryFolderCheckWith(alternateFileSystem))
         .build();
   }
 

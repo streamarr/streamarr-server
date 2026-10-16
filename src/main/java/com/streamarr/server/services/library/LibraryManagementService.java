@@ -70,6 +70,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
   private final MutexFactory<String> mutexFactory;
   private final MutationTransactions mutationTransactions;
   private final FileDiscoveryRuns fileDiscoveryRuns;
+  private final LibraryFolderCheck libraryFolderCheck;
   private final Set<UUID> activeScans = ConcurrentHashMap.newKeySet();
   private final Set<UUID> activeRefreshes = ConcurrentHashMap.newKeySet();
 
@@ -87,7 +88,8 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
       FileSystem fileSystem,
       LibraryMutationTransaction libraryMutationTransaction,
       MutationTransactions mutationTransactions,
-      FileDiscoveryRuns fileDiscoveryRuns) {
+      FileDiscoveryRuns fileDiscoveryRuns,
+      LibraryFolderCheck libraryFolderCheck) {
     this.libraryFileWalk = libraryFileWalk;
     this.libraryRepository = libraryRepository;
     this.libraryMetadataRepository = libraryMetadataRepository;
@@ -100,6 +102,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     this.libraryMutationTransaction = libraryMutationTransaction;
     this.mutationTransactions = mutationTransactions;
     this.fileDiscoveryRuns = fileDiscoveryRuns;
+    this.libraryFolderCheck = libraryFolderCheck;
 
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
@@ -389,7 +392,11 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
       var startTime = library.getScanStartedOn();
 
       try {
+        libraryFolderCheck.requirePassed(library);
         var results = fileDiscoveryRuns.awaitResults(libraryFileWalk.discoverFiles(library));
+        // A share can unmount while the scan waits for artwork, and completing the scan removes
+        // every item whose file Streamarr cannot find.
+        libraryFolderCheck.requirePassed(library);
         completeScanSuccessfully(library, startTime, results);
       } catch (LibraryScanFailedException e) {
         completeScanWithFailure(library, e);
