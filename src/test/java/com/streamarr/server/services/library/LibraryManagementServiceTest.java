@@ -1062,6 +1062,90 @@ class LibraryManagementServiceTest {
     }
 
     @Test
+    @DisplayName(
+        "Should reject with PathAlreadyRegistered when the path differs only in letter case on a"
+            + " file system that ignores letter case")
+    void
+        shouldRejectWithPathAlreadyRegisteredWhenPathDiffersOnlyInLetterCaseOnCaseIgnoringFileSystem()
+            throws IOException {
+      try (var caseIgnoringFileSystem = Jimfs.newFileSystem(Configuration.osX())) {
+        Files.createDirectories(caseIgnoringFileSystem.getPath("/media/Movies"));
+        var service = serviceWith(caseIgnoringFileSystem);
+        // The registered spelling differs from the folder's spelling on disk.
+        var registered =
+            accepted(service.addLibrary(identity, libraryNamed("Movies", "/media/movies")));
+
+        var outcome = service.addLibrary(identity, libraryNamed("Films", "/MEDIA/MOVIES"));
+
+        assertThat(outcome)
+            .isEqualTo(
+                Outcome.rejected(
+                    new AddLibraryRejection.PathAlreadyRegistered(
+                        registered, caseIgnoringFileSystem.getPath("/media/movies"))));
+      }
+    }
+
+    @Test
+    @DisplayName(
+        "Should reject with an INSIDE overlap when the path differs in letter case on a file"
+            + " system that ignores letter case")
+    void shouldRejectWithInsideOverlapWhenPathDiffersInLetterCaseOnCaseIgnoringFileSystem()
+        throws IOException {
+      try (var caseIgnoringFileSystem = Jimfs.newFileSystem(Configuration.osX())) {
+        Files.createDirectories(caseIgnoringFileSystem.getPath("/media/Movies/2024"));
+        var service = serviceWith(caseIgnoringFileSystem);
+        var registered =
+            accepted(service.addLibrary(identity, libraryNamed("Movies", "/media/Movies")));
+
+        // The deepest name has no letter, so the letter-case check reads the folder above it.
+        var outcome = service.addLibrary(identity, libraryNamed("2024", "/MEDIA/movies/2024"));
+
+        assertThat(outcome)
+            .isEqualTo(
+                Outcome.rejected(
+                    new AddLibraryRejection.PathOverlap(
+                        LibraryPathOverlap.INSIDE,
+                        registered,
+                        caseIgnoringFileSystem.getPath("/media/Movies"))));
+      }
+    }
+
+    @Test
+    @DisplayName(
+        "Should store the path as given when the file system ignores letter case, so scans keep"
+            + " the spelling the source root uses")
+    void shouldStorePathAsGivenWhenFileSystemIgnoresLetterCase() throws IOException {
+      try (var caseIgnoringFileSystem = Jimfs.newFileSystem(Configuration.osX())) {
+        Files.createDirectories(caseIgnoringFileSystem.getPath("/Media/Movies"));
+
+        var saved =
+            accepted(
+                serviceWith(caseIgnoringFileSystem)
+                    .addLibrary(identity, libraryNamed("Movies", "/media/movies")));
+
+        assertThat(saved.getFilepathUri())
+            .isEqualTo(FilepathCodec.encode(caseIgnoringFileSystem.getPath("/media/movies")));
+      }
+    }
+
+    @Test
+    @DisplayName(
+        "Should accept a path that differs only in letter case when the file system respects"
+            + " letter case")
+    void shouldAcceptPathThatDiffersOnlyInLetterCaseWhenFileSystemRespectsLetterCase()
+        throws IOException {
+      Files.createDirectories(fileSystem.getPath("/media/Movies"));
+      Files.createDirectories(fileSystem.getPath("/media/movies"));
+      accepted(
+          libraryManagementService.addLibrary(identity, libraryNamed("Movies", "/media/Movies")));
+
+      var outcome =
+          libraryManagementService.addLibrary(identity, libraryNamed("Films", "/media/movies"));
+
+      assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    }
+
+    @Test
     @DisplayName("Should reject with PathNotFound when path does not exist on disk")
     void shouldRejectWithPathNotFoundWhenPathDoesNotExist() {
       var library =
@@ -1313,6 +1397,10 @@ class LibraryManagementServiceTest {
                   .name(name)
                   .filepathUri(path.toString())
                   .build()));
+    }
+
+    private static Library libraryNamed(String name, String filepath) {
+      return LibraryFixtureCreator.unsavedLibraryBuilder().name(name).filepathUri(filepath).build();
     }
 
     private static Library unsavedLibraryAt(Path folder) {
