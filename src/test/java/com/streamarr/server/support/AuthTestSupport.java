@@ -109,6 +109,17 @@ public class AuthTestSupport {
     return createIdentity(true);
   }
 
+  /**
+   * A HouseholdMember of the given identity's Household, with its own Personal Profile and session.
+   * Deleting either identity deletes the whole Household.
+   */
+  public TestIdentity createHouseholdMemberIdentity(TestIdentity householdOf) {
+    return transactionTemplate.execute(
+        _ ->
+            saveIdentityIn(
+                householdOf.household(), account -> account.householdRole(HouseholdRole.MEMBER)));
+  }
+
   public String password() {
     return password;
   }
