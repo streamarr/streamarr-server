@@ -6,7 +6,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.Chapter;
+import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
@@ -21,6 +24,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
@@ -103,6 +107,52 @@ class ProbeOutcomePublicationIT extends AbstractIntegrationTest {
     assertThat(streamRowCount(file.getId())).isEqualTo(1);
     assertThat(reader.find(file.getId()))
         .hasValueSatisfying(stored -> assertThat(stored.outcome()).isEqualTo(videoOnly));
+  }
+
+  @Test
+  @DisplayName("Should read the stored chapters with the outcome when the reader finds the outcome")
+  void shouldReadTheStoredChaptersWithTheOutcomeWhenTheReaderFindsTheOutcome() {
+    var file = createMediaFile();
+    var chapters =
+        new ChapterKnowledge.Known(
+            List.of(
+                Chapter.builder()
+                    .startTime(Optional.of(Duration.ofMillis(-46)))
+                    .endTime(Optional.of(Duration.ofSeconds(300)))
+                    .build(),
+                Chapter.builder()
+                    .startTime(Optional.of(Duration.ofSeconds(300)))
+                    .title(Optional.of("Finale"))
+                    .build()));
+    var outcome =
+        new ProbeOutcome.Success(
+            container().toBuilder().chapters(chapters).build(),
+            List.of(video("h264")),
+            new KeyframeKnowledge.NotReported());
+
+    repository.publish(publication(file.getId(), SNAPSHOT_A, ProbeVersion.CURRENT, outcome));
+
+    assertThat(reader.find(file.getId()))
+        .hasValueSatisfying(stored -> assertThat(stored.outcome()).isEqualTo(outcome));
+  }
+
+  @Test
+  @DisplayName("Should read each listed file's chapters when some files have no stored outcome")
+  void shouldReadEachListedFilesChaptersWhenSomeFilesHaveNoStoredOutcome() {
+    var omitted = createMediaFile();
+    var unprobed = createMediaFile();
+    var outcome =
+        new ProbeOutcome.Success(
+            container().toBuilder().chapters(new ChapterKnowledge.Omitted()).build(),
+            List.of(video("h264")),
+            new KeyframeKnowledge.NotReported());
+    repository.publish(
+        publication(omitted.getId(), SNAPSHOT_A, ProbeVersion.FIRST_TO_REPORT_CHAPTERS, outcome));
+
+    assertThat(reader.findChapters(List.of(omitted.getId(), unprobed.getId())))
+        .containsOnly(
+            Map.entry(omitted.getId(), new ChapterKnowledge.Omitted()),
+            Map.entry(unprobed.getId(), new ChapterKnowledge.NotReported()));
   }
 
   private MediaFile createMediaFile() {

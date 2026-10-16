@@ -1,5 +1,6 @@
 package com.streamarr.server.repositories.media;
 
+import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.ProbeAttemptFailure;
@@ -8,6 +9,7 @@ import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeState;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -63,6 +65,13 @@ public interface MediaFileContainerInfoRepositoryCustom {
    * cannot be decoded, without marking the caller's transaction rollback-only.
    */
   Optional<KeyframeKnowledge> findKeyframeKnowledge(UUID mediaFileId);
+
+  /**
+   * Reads what each listed file's stored outcome says about its container's chapters, in one
+   * statement. A file without a stored outcome has no entry. A failed outcome, or an outcome from a
+   * probe version that reports no chapters, maps to {@link ChapterKnowledge.NotReported}.
+   */
+  Map<UUID, ChapterKnowledge> findChapterKnowledge(Collection<UUID> mediaFileIds);
 
   /** Reads desired inputs under the media file lock. Requires the caller's transaction. */
   Optional<ProbeInputs> lockProbeInputs(UUID mediaFileId);
