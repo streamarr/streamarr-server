@@ -25,10 +25,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  * execution leaves the operation stored, so the operation runs again when a scheduler starts.
  * Otherwise the finishing steps run, and then one transaction ends the operation, as failed when
  * the scan or refresh threw (ADR 0027) and as finished when it returned. The transaction locks the
- * library's row, recalculates the letter index, gives the library its final status, and deletes the
- * operation. It also publishes the status change and the end of the scan or refresh for listeners
- * that run after the commit. An end that cannot be saved escapes, so the scheduler runs the
- * operation again with backoff.
+ * library's row, gives the library its final status, deletes the operation, and then recalculates
+ * the letter index. It also publishes the status change and the end of the scan or refresh for
+ * listeners that run after the commit. An end that cannot be saved escapes, so the scheduler runs
+ * the operation again with backoff.
  */
 @Slf4j
 @Service
@@ -161,18 +161,16 @@ public class LibraryOperationExecution {
   }
 
   // The letter index is recalculated last, under the library's row lock, because tasks that
-  // finished can change titles even when the operation failed.
+  // finished can change titles even when the operation failed. The recalculation follows the
+  // deletion of the operation, which waits for every finishing step that shares the operation's
+  // row, so it counts the titles that those steps removed.
   private boolean tryEnd(LibraryOperation operation, LibraryOperationEnd end) {
-    var libraryId = operation.libraryId();
-    if (!libraryOperations.tryLockLibraryOfLibraryOperation(operation.id())) {
-      return false;
-    }
-
-    letterIndexRecalculator.recalculateLetterIndex(libraryId);
     if (!libraryOperations.tryEndLibraryOperation(end)) {
       return false;
     }
 
+    var libraryId = operation.libraryId();
+    letterIndexRecalculator.recalculateLetterIndex(libraryId);
     eventPublisher.publishEvent(new LibraryStatusChangedEvent(libraryId));
     eventPublisher.publishEvent(
         switch (operation.kind()) {

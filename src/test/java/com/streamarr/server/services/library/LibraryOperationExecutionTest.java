@@ -1891,15 +1891,18 @@ class LibraryOperationExecutionTest {
 
     @Test
     @DisplayName(
-        "Should leave the library busy when the letter index cannot be recalculated at the end")
-    void shouldLeaveTheLibraryBusyWhenTheLetterIndexCannotBeRecalculatedAtTheEnd() {
+        "Should roll back the end and publish no end when the letter index cannot be recalculated")
+    void shouldRollBackTheEndAndPublishNoEndWhenTheLetterIndexCannotBeRecalculated() {
       var failure = new DataAccessResourceFailureException("simulated connection loss");
       libraryMetadata.failLetterCountReplacementsWith(failure);
+      var rollbacksBefore = transactionManager.rollbacks();
 
       assertThatThrownBy(() -> operations.refreshLibrary(savedLibraryId)).isSameAs(failure);
 
-      assertThat(libraryStatus()).isEqualTo(LibraryStatus.REFRESHING);
-      assertThat(libraryOperations.libraryOperations()).hasSize(1);
+      assertThat(transactionManager.rollbacks()).isEqualTo(rollbacksBefore + 1);
+      // The one status change is the start's.
+      assertThat(capturingEventPublisher.getEventsOfType(LibraryStatusChangedEvent.class))
+          .hasSize(1);
       assertThat(capturingEventPublisher.getEventsOfType(RefreshEndedEvent.class)).isEmpty();
     }
 

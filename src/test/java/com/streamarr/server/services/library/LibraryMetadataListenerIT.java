@@ -206,15 +206,13 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
               () ->
                   transactionTemplate.executeWithoutResult(
                       _ -> {
-                        assertThat(libraryOperations.tryLockLibraryOfLibraryOperation(operationId))
+                        assertThat(libraryOperations.tryEndLibraryOperation(endOf(operationId)))
                             .isTrue();
                         letterIndexRecalculator.recalculateLetterIndex(library.getId());
                         endPid.set(
                             jdbcTemplate.queryForObject("SELECT pg_backend_pid()", Integer.class));
                         held.countDown();
                         awaitLatch(release);
-                        assertThat(libraryOperations.tryEndLibraryOperation(endOf(operationId)))
-                            .isTrue();
                       }));
       try {
         awaitLatch(held);

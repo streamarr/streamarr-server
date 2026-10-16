@@ -8,12 +8,16 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.repositories.LibraryMetadataRepository;
 import com.streamarr.server.repositories.LibraryOperationRepository;
 import com.streamarr.server.repositories.LibraryOperationRepository.StoreOutcome;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.support.TestFixtureWork;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -39,6 +43,9 @@ class LibraryOperationFinishingStepsRunnerIT extends AbstractIntegrationTest {
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private JdbcTemplate jdbcTemplate;
+  @Autowired private MovieRepository movieRepository;
+  @Autowired private LibraryMetadataRepository libraryMetadataRepository;
+  @Autowired private LibraryOperationExecution libraryOperationExecution;
 
   @TempDir Path libraryPath;
 
@@ -113,6 +120,62 @@ class LibraryOperationFinishingStepsRunnerIT extends AbstractIntegrationTest {
         release.countDown();
       }
     }
+  }
+
+  @Test
+  @DisplayName(
+      "Should leave a title out of the letter index when a finishing step of another execution"
+          + " deletes the title while the operation ends")
+  void shouldLeaveATitleOutOfTheLetterIndexWhenAFinishingStepOfAnotherExecutionDeletesTheTitle()
+      throws Exception {
+    var movie =
+        movieRepository.saveAndFlush(
+            Movie.builder().title("Alpha").titleSort("Alpha").library(library).build());
+    var refresh = storeRefresh();
+    var held = new CountDownLatch(1);
+    var release = new CountDownLatch(1);
+    var stepPid = new AtomicInteger();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
+      var step =
+          executor.submit(
+              () ->
+                  transactionTemplate.executeWithoutResult(
+                      _ -> {
+                        assertThat(libraryOperations.tryLockLibraryOperation(refresh.id()))
+                            .isTrue();
+                        movieRepository.deleteById(movie.getId());
+                        movieRepository.flush();
+                        stepPid.set(
+                            jdbcTemplate.queryForObject("SELECT pg_backend_pid()", Integer.class));
+                        held.countDown();
+                        awaitLatch(release);
+                      }));
+      try {
+        awaitLatch(held);
+        var execution = executor.submit(() -> libraryOperationExecution.execute(refresh.id()));
+        awaitWaitersBehind(jdbcTemplate, stepPid.get(), 1);
+        release.countDown();
+        step.get(10, TimeUnit.SECONDS);
+
+        assertThat(execution.get(10, TimeUnit.SECONDS))
+            .isInstanceOf(LibraryOperationExecutionResult.Ended.class);
+      } finally {
+        release.countDown();
+      }
+    }
+
+    assertThat(libraryMetadataRepository.findByLibraryIdOrderByLetterAsc(library.getId()))
+        .isEmpty();
+  }
+
+  private LibraryOperation storeRefresh() {
+    var outcome =
+        transactionTemplate.execute(
+            _ ->
+                libraryOperations.storeLibraryOperation(
+                    NewLibraryOperation.refresh(library.getId(), ImageRefreshMode.PRESERVE)));
+    assertThat(outcome).isInstanceOf(StoreOutcome.Stored.class);
+    return ((StoreOutcome.Stored) outcome).libraryOperation();
   }
 
   private LibraryOperation storeScan() {
