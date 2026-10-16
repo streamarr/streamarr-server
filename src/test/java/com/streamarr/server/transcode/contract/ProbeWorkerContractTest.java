@@ -601,6 +601,31 @@ class ProbeWorkerContractTest {
   }
 
   @Test
+  @DisplayName(
+      "Should tell chapters omitted for their size apart from a container without chapters when decoding a probe version 4 result")
+  void
+      shouldTellChaptersOmittedForSizeApartFromContainerWithoutChaptersWhenDecodingProbeVersion4Result()
+          throws Exception {
+    var omitted =
+        probeVersion4Result(
+            ProbeMediaInfo.newBuilder()
+                .setContainer(ProbeContainerInfo.newBuilder().setChaptersOmitted(true)));
+    var withoutChapters =
+        probeVersion4Result(
+            ProbeMediaInfo.newBuilder().setContainer(ProbeContainerInfo.newBuilder()));
+
+    var decodedOmitted =
+        ProbeAttemptResult.parseFrom(omitted.toByteArray()).getMedia().getContainer();
+    var decodedWithoutChapters =
+        ProbeAttemptResult.parseFrom(withoutChapters.toByteArray()).getMedia().getContainer();
+
+    assertThat(decodedOmitted.getChaptersList()).isEmpty();
+    assertThat(decodedOmitted.getChaptersOmitted()).isTrue();
+    assertThat(decodedWithoutChapters.getChaptersList()).isEmpty();
+    assertThat(decodedWithoutChapters.getChaptersOmitted()).isFalse();
+  }
+
+  @Test
   @DisplayName("Should preserve a typed media failure when returning an unsuccessful probe")
   void shouldPreserveTypedMediaFailureWhenReturningUnsuccessfulProbe() throws Exception {
     var result =

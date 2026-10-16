@@ -402,10 +402,18 @@ message ProbeContainerInfo {
   google.protobuf.Duration duration = 2;
   optional int64 bitrate_bits_per_second = 3;
   // The container's chapters, as ffprobe -show_chapters lists them, in ffprobe's order. Only probe
-  // version 4 and later report chapters. Under those versions, an empty list means that the
-  // container has no chapters. The worker keeps each chapter as ffprobe reports it. The worker
-  // never sorts, merges, clamps or generates chapters.
+  // version 4 and later report chapters. The worker keeps each chapter as ffprobe reports it. The
+  // worker never sorts, merges, clamps or generates chapters.
+  //
+  // A file controls its chapters and their titles, but the result must fit in one session message
+  // of at most 128 KiB. So the chapters of one result take at most 32,768 bytes in their protobuf
+  // encoding. When the chapters would take more, the worker reports no chapters and sets
+  // chapters_omitted.
   repeated ProbeChapter chapters = 4;
+  // True when the container has chapters, but the worker omitted them because they exceed the
+  // chapter limit. When chapters is empty and chapters_omitted is false, the container has no
+  // chapters.
+  bool chapters_omitted = 5;
 }
 
 // One chapter of the container. Both times are on the timeline of ProbeKeyframePositionsPart, like
@@ -420,8 +428,9 @@ message ProbeChapter {
   // FFmpeg ends the chapter at the next chapter's start or at the end of the file, and the worker
   // reports that end.
   google.protobuf.Duration end_time = 2;
-  // The chapter's title tag, such as a Matroska ChapString. Absent when the chapter has no title
-  // tag.
+  // The chapter's title tag, such as a Matroska ChapString. A title holds at most 512 bytes of
+  // UTF-8. Absent when the chapter has no title tag, or when the tag is longer than 512 bytes. The
+  // worker never shortens a title.
   optional string title = 3;
 }
 
