@@ -75,7 +75,9 @@ class MovieServiceTest {
             .imageDownloader(imageDownloader)
             .build();
     artworkRequestService = artwork.artworkRequestService();
-    artworkRun = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
+    artworkRun =
+        artworkRequestService.openLibraryOperationRun(
+            "scan", ImageRefreshMode.PRESERVE, UUID.randomUUID());
     var paginationService = new PaginationService();
     var fileSystem = Jimfs.newFileSystem(Configuration.unix());
     var imageService =
@@ -986,7 +988,9 @@ class MovieServiceTest {
           new MetadataResult<>(
               Movie.builder().title("Inception").build(), imageSources, Map.of(), Map.of());
 
-      var forcedRun = artworkRequestService.openRun("refresh", ImageRefreshMode.FORCE_REFRESH);
+      var forcedRun =
+          artworkRequestService.openLibraryOperationRun(
+              "refresh", ImageRefreshMode.FORCE_REFRESH, UUID.randomUUID());
 
       movieService.refreshMovieMetadata(existing, metadataResult, forcedRun);
 

@@ -6,10 +6,8 @@ import com.streamarr.server.repositories.LibraryOperationRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.events.library.LibraryStatusChangedEvent;
 import com.streamarr.server.services.events.library.RefreshEndedEvent;
-import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
 import com.streamarr.server.services.library.LibraryOperationMetrics.ExecutionResult;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.UUID;
@@ -25,11 +23,12 @@ import org.springframework.transaction.support.TransactionTemplate;
  * One execution of a stored library operation, independent of the scheduler that runs the
  * execution. Every execution walks the library from the start. A shutdown that interrupts the
  * execution leaves the operation stored, so the operation runs again when a scheduler starts.
- * Otherwise one transaction ends the operation, as failed when the scan or refresh threw (ADR 0027)
- * and as finished when it returned: it gives the library its final status, deletes the operation,
- * and publishes the status change and the end of the scan or refresh for listeners that run after
- * the commit. An end that cannot be saved escapes, so the scheduler runs the operation again with
- * backoff.
+ * Otherwise the finishing steps run, and then one transaction ends the operation, as failed when
+ * the scan or refresh threw (ADR 0027) or the library folder failed its check before a finishing
+ * step, and as finished otherwise. The transaction locks the library's row, gives the library its
+ * final status, deletes the operation, and then recalculates the letter index. It also publishes
+ * the status change and the end of the scan or refresh for listeners that run after the commit. An
+ * end that cannot be saved escapes, so the scheduler runs the operation again with backoff.
  */
 @Slf4j
 @Service
@@ -43,6 +42,8 @@ public class LibraryOperationExecution {
   private final FileDiscoveryRuns fileDiscoveryRuns;
   private final LibraryFolderCheck libraryFolderCheck;
   private final LibraryRefreshService libraryRefreshService;
+  private final LibraryOperationFinishingStepsRunner finishingStepsRunner;
+  private final LetterIndexRecalculator letterIndexRecalculator;
   private final ApplicationEventPublisher eventPublisher;
   private final PlatformTransactionManager transactionManager;
   private final Clock clock;
@@ -71,8 +72,8 @@ public class LibraryOperationExecution {
     try {
       conclusion =
           switch (operation.kind()) {
-            case SCAN -> scan(library);
-            case REFRESH -> refresh(library, operation.imageRefreshMode().orElseThrow());
+            case SCAN -> scan(library, operation);
+            case REFRESH -> refresh(library, operation);
           };
     } catch (InterruptedException _) {
       Thread.currentThread().interrupt();
@@ -82,6 +83,12 @@ public class LibraryOperationExecution {
     // A task that fails on an interrupted thread, for example because the connection pool refuses
     // it a connection, failed because of the shutdown.
     if (conclusion == LibraryOperationConclusion.FAILED && Thread.currentThread().isInterrupted()) {
+      return interrupted(operation);
+    }
+
+    conclusion = finishingStepsRunner.runFinishingSteps(operation, conclusion);
+    // A finishing step that a shutdown interrupted runs again with the operation.
+    if (Thread.currentThread().isInterrupted()) {
       return interrupted(operation);
     }
 
@@ -98,15 +105,13 @@ public class LibraryOperationExecution {
     return new LibraryOperationExecutionResult.Interrupted();
   }
 
-  private LibraryOperationConclusion scan(Library library) throws InterruptedException {
+  private LibraryOperationConclusion scan(Library library, LibraryOperation operation)
+      throws InterruptedException {
     log.info("Starting {} library scan.", library.getName());
     try {
       libraryFolderCheck.requirePassed(library);
-      var results = fileDiscoveryRuns.awaitResults(libraryFileWalk.discoverFiles(library));
-      // A share can unmount while the scan waits for artwork, and completing the scan removes
-      // every item whose file Streamarr cannot find.
-      libraryFolderCheck.requirePassed(library);
-      eventPublisher.publishEvent(new ScanCompletedEvent(library.getId()));
+      var results =
+          fileDiscoveryRuns.awaitResults(libraryFileWalk.discoverFiles(library, operation.id()));
       log.info("Finished {} library scan: {}.", library.getName(), results.describe());
       return LibraryOperationConclusion.FINISHED;
     } catch (RuntimeException e) {
@@ -115,11 +120,11 @@ public class LibraryOperationExecution {
     }
   }
 
-  private LibraryOperationConclusion refresh(Library library, ImageRefreshMode imageRefreshMode)
+  private LibraryOperationConclusion refresh(Library library, LibraryOperation operation)
       throws InterruptedException {
     log.info("Starting {} library refresh.", library.getName());
     try {
-      libraryRefreshService.refreshLibrary(library, imageRefreshMode);
+      libraryRefreshService.refreshLibrary(library, operation);
       log.info("Finished {} library refresh.", library.getName());
       return LibraryOperationConclusion.FINISHED;
     } catch (RuntimeException e) {
@@ -152,12 +157,17 @@ public class LibraryOperationExecution {
     }
   }
 
+  // The letter index is recalculated last, under the library's row lock, because tasks that
+  // finished can change titles even when the operation failed. The recalculation follows the
+  // deletion of the operation, which waits for every finishing step that shares the operation's
+  // row, so it counts the titles that those steps removed.
   private boolean tryEnd(LibraryOperation operation, LibraryOperationEnd end) {
     if (!libraryOperations.tryEndLibraryOperation(end)) {
       return false;
     }
 
     var libraryId = operation.libraryId();
+    letterIndexRecalculator.recalculateLetterIndex(libraryId);
     eventPublisher.publishEvent(new LibraryStatusChangedEvent(libraryId));
     eventPublisher.publishEvent(
         switch (operation.kind()) {

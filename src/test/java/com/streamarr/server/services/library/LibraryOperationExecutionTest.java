@@ -29,6 +29,7 @@ import com.streamarr.server.fakes.CountingSleeper;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
+import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.fakes.FakeLibraryMutationTransaction;
 import com.streamarr.server.fakes.FakeLibraryOperationRepository;
 import com.streamarr.server.fakes.FakeLibraryOperationScheduling;
@@ -62,7 +63,6 @@ import com.streamarr.server.services.concurrency.AdaptiveAdmissions;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.events.library.LibraryStatusChangedEvent;
 import com.streamarr.server.services.events.library.RefreshEndedEvent;
-import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
@@ -125,6 +125,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.CannotGetJdbcConnectionException;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("UnitTest")
 @DisplayName("Library Operation Execution Tests")
@@ -237,6 +238,7 @@ class LibraryOperationExecutionTest {
 
   private final FakeLibraryOperationRepository libraryOperations =
       new FakeLibraryOperationRepository(fakeLibraryRepository);
+  private final FakeLibraryMetadataRepository libraryMetadata = new FakeLibraryMetadataRepository();
   private final OperationRunner operations = serviceBuilder().build();
 
   private UUID savedLibraryId;
@@ -267,7 +269,6 @@ class LibraryOperationExecutionTest {
 
     var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
     assertThat(library.getStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
-    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
     assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath)))
         .as("Media file should have been created before scanLibrary returned")
         .isPresent();
@@ -286,7 +287,6 @@ class LibraryOperationExecutionTest {
     operations.scanLibrary(savedLibraryId);
 
     assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
-    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
     assertThat(scanAdmissions()).isEqualTo(2);
     assertThat(scanReports("ignored")).isEqualTo(2);
   }
@@ -301,7 +301,7 @@ class LibraryOperationExecutionTest {
     var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
     var fileWalk = fileWalkBuilder().build();
 
-    var failure = catchThrowable(() -> fileWalk.discoverFiles(library));
+    var failure = catchThrowable(() -> fileWalk.discoverFiles(library, UUID.randomUUID()));
 
     assertThat(failure)
         .isInstanceOf(LibraryScanFailedException.class)
@@ -420,7 +420,6 @@ class LibraryOperationExecutionTest {
     assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
         .isEqualTo(LibraryStatus.SCANNING);
     assertThat(libraryOperations.libraryOperations()).hasSize(1);
-    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
     assertThat(capturingEventPublisher.getEventsOfType(ScanEndedEvent.class)).isEmpty();
   }
 
@@ -491,7 +490,6 @@ class LibraryOperationExecutionTest {
     assertThat(result).isInstanceOf(LibraryOperationExecutionResult.Ended.class);
     assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
     assertThat(libraryOperations.libraryOperations()).isEmpty();
-    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
     assertThat(capturingEventPublisher.getEventsOfType(ScanEndedEvent.class)).hasSize(1);
   }
 
@@ -513,7 +511,6 @@ class LibraryOperationExecutionTest {
     assertThat(result).isInstanceOf(LibraryOperationExecutionResult.Ended.class);
     assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
     assertThat(libraryOperations.libraryOperations()).isEmpty();
-    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
     assertThat(capturingEventPublisher.getEventsOfType(ScanEndedEvent.class)).hasSize(1);
     assertThat(folderCheckFailures("unreadable")).isEqualTo(1);
   }
@@ -531,44 +528,37 @@ class LibraryOperationExecutionTest {
   }
 
   @Test
-  @DisplayName(
-      "Should publish ScanCompletedEvent with correct library ID when scan completes successfully")
-  void shouldPublishScanCompletedEventWhenScanSucceeds() throws IOException {
-    createRootLibraryDirectory();
-
-    operations.scanLibrary(savedLibraryId);
-
-    var events = capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class);
-    assertThat(events).hasSize(1);
-    assertThat(events.getFirst().libraryId()).isEqualTo(savedLibraryId);
-  }
-
-  @Test
-  @DisplayName("Should not publish ScanCompletedEvent when library path is inaccessible")
-  void shouldNotPublishScanCompletedEventWhenLibraryPathInaccessible() {
-    operations.scanLibrary(savedLibraryId);
-
-    var events = capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class);
-    assertThat(events).isEmpty();
-  }
-
-  @Test
-  @DisplayName("Should not publish ScanCompletedEvent when file walk throws SecurityException")
-  void shouldNotPublishScanCompletedEventWhenFileWalkThrowsSecurityException() throws IOException {
+  @DisplayName("Should remove a media file missing from disk when a scan finishes")
+  void shouldRemoveAMediaFileMissingFromDiskWhenAScanFinishes() throws IOException {
     var rootPath = createRootLibraryDirectory();
     createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
+    saveMatchedMediaFile(rootPath.resolve("Gone").resolve("Gone (2020).mkv"));
 
+    operations.scanLibrary(savedLibraryId);
+
+    assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+    assertThat(fakeMediaFileRepository.findByLibraryId(savedLibraryId))
+        .extracting(MediaFile::getFilename)
+        .containsExactly("About Time (2013).mkv");
+  }
+
+  @Test
+  @DisplayName("Should keep a media file missing from disk when the file walk is denied")
+  void shouldKeepAMediaFileMissingFromDiskWhenTheFileWalkIsDenied() throws IOException {
+    var rootPath = createRootLibraryDirectory();
+    createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
+    var gone = rootPath.resolve("Gone").resolve("Gone (2020).mkv");
+    saveMatchedMediaFile(gone);
     var throwingFileSystem =
         new ThrowingFileSystemWrapper(
             fileSystem,
             () -> new SecurityException("Simulated security manager denial during traversal"));
 
-    var serviceWithThrowingFs = serviceWith(throwingFileSystem);
+    serviceWith(throwingFileSystem).scanLibrary(savedLibraryId);
 
-    serviceWithThrowingFs.scanLibrary(savedLibraryId);
-
-    var events = capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class);
-    assertThat(events).isEmpty();
+    assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+    assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(gone)))
+        .isPresent();
   }
 
   @Test
@@ -706,7 +696,6 @@ class LibraryOperationExecutionTest {
       try {
         assertThat(enqueueStarted.await(5, TimeUnit.SECONDS)).isTrue();
         assertThat(libraryStatus()).isEqualTo(LibraryStatus.SCANNING);
-        assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
       } finally {
         enqueueReleased.countDown();
       }
@@ -714,7 +703,7 @@ class LibraryOperationExecutionTest {
       scan.await(SCAN_BOUND);
     }
 
-    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).hasSize(1);
+    assertThat(capturingEventPublisher.getEventsOfType(ScanEndedEvent.class)).hasSize(1);
     assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
         .isEqualTo(LibraryStatus.HEALTHY);
   }
@@ -732,7 +721,6 @@ class LibraryOperationExecutionTest {
 
     operations.scanLibrary(savedLibraryId);
 
-    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
     assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
         .isEqualTo(LibraryStatus.UNHEALTHY);
   }
@@ -761,7 +749,7 @@ class LibraryOperationExecutionTest {
     assertThat(Files.exists(path)).isFalse();
     assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
         .isEqualTo(LibraryStatus.HEALTHY);
-    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).hasSize(1);
+    assertThat(capturingEventPublisher.getEventsOfType(ScanEndedEvent.class)).hasSize(1);
   }
 
   @Test
@@ -791,7 +779,7 @@ class LibraryOperationExecutionTest {
     assertThat(Files.isSymbolicLink(path)).isTrue();
     assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
         .isEqualTo(LibraryStatus.HEALTHY);
-    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).hasSize(1);
+    assertThat(capturingEventPublisher.getEventsOfType(ScanEndedEvent.class)).hasSize(1);
   }
 
   @Nested
@@ -814,7 +802,7 @@ class LibraryOperationExecutionTest {
 
       assertThat(whileWaiting).hasValue(new ScanState(LibraryStatus.SCANNING, 0));
       assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
-      assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).hasSize(1);
+      assertThat(capturingEventPublisher.getEventsOfType(ScanEndedEvent.class)).hasSize(1);
     }
 
     @Test
@@ -899,7 +887,7 @@ class LibraryOperationExecutionTest {
       }
 
       assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
-      assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).hasSize(1);
+      assertThat(capturingEventPublisher.getEventsOfType(ScanEndedEvent.class)).hasSize(1);
     }
 
     @Test
@@ -916,7 +904,6 @@ class LibraryOperationExecutionTest {
       operations.scanLibrary(savedLibraryId);
 
       assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
-      assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
     }
 
     @Test
@@ -932,9 +919,88 @@ class LibraryOperationExecutionTest {
 
       assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
       assertThat(libraryOperations.libraryOperations()).isEmpty();
-      assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
+      assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path)))
+          .isPresent();
       assertThat(capturingEventPublisher.getEventsOfType(ScanEndedEvent.class)).hasSize(1);
       assertThat(folderCheckFailures("empty")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName(
+        "Should end the scan unhealthy and remove no media file when the library folder empties"
+            + " before the finishing step removes missing media files")
+    void shouldEndTheScanUnhealthyAndRemoveNoMediaFileWhenTheLibraryFolderEmptiesBeforeRemoval()
+        throws Exception {
+      var path =
+          createMovieFile(createRootLibraryDirectory(), "About Time", "About Time (2013).mkv");
+      saveMatchedMediaFile(path);
+      var emptyingRuns =
+          serviceBuilder()
+              .executionLibraryOperations(emptyingBeforeTheFinishingStep(path.getParent()))
+              .build();
+
+      var result = emptyingRuns.scanLibrary(savedLibraryId);
+
+      assertThat(result).isEqualTo(new LibraryOperationExecutionResult.Ended());
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+      assertThat(libraryOperations.libraryOperations()).isEmpty();
+      assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path)))
+          .isPresent();
+      assertThat(folderCheckFailures("empty")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName(
+        "Should end the scan unhealthy and remove no media file when the library folder check"
+            + " before the removal cannot read the recorded files")
+    void shouldEndTheScanUnhealthyAndRemoveNoMediaFileWhenTheFolderCheckCannotReadTheRecordedFiles()
+        throws Exception {
+      var path =
+          createMovieFile(createRootLibraryDirectory(), "About Time", "About Time (2013).mkv");
+      saveMatchedMediaFile(path);
+      var unreadableRecordedFiles =
+          new FakeMediaFileRepository() {
+            @Override
+            public boolean existsByLibraryId(UUID libraryId) {
+              throw new DataAccessResourceFailureException("simulated connection loss");
+            }
+          };
+      var runs =
+          serviceBuilder()
+              .executionLibraryOperations(emptyingBeforeTheFinishingStep(path.getParent()))
+              .libraryFolderCheck(
+                  new LibraryFolderCheck(fileSystem, unreadableRecordedFiles, meterRegistry))
+              .build();
+
+      var result = runs.scanLibrary(savedLibraryId);
+
+      assertThat(result).isEqualTo(new LibraryOperationExecutionResult.Ended());
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+      assertThat(libraryOperations.libraryOperations()).isEmpty();
+      assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path)))
+          .isPresent();
+    }
+
+    // Empties the movie folder when the finishing step shares the operation's row, after the
+    // scan's own folder check passed.
+    private FakeLibraryOperationRepository emptyingBeforeTheFinishingStep(Path movieFolder) {
+      return new FakeLibraryOperationRepository(fakeLibraryRepository) {
+        @Override
+        public Optional<LibraryOperation> findLibraryOperation(UUID id) {
+          return libraryOperations.findLibraryOperation(id);
+        }
+
+        @Override
+        public boolean tryLockLibraryOperation(UUID id) {
+          deleteMovieFolder(movieFolder);
+          return libraryOperations.tryLockLibraryOperation(id);
+        }
+
+        @Override
+        public boolean tryEndLibraryOperation(LibraryOperationEnd end) {
+          return libraryOperations.tryEndLibraryOperation(end);
+        }
+      };
     }
 
     private static void deleteMovieFolder(Path movieFolder) {
@@ -955,8 +1021,7 @@ class LibraryOperationExecutionTest {
 
     private ScanState scanState() {
       return new ScanState(
-          libraryStatus(),
-          capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class).size());
+          libraryStatus(), capturingEventPublisher.getEventsOfType(ScanEndedEvent.class).size());
     }
   }
 
@@ -1193,7 +1258,7 @@ class LibraryOperationExecutionTest {
                 .build()));
   }
 
-  private record ScanState(LibraryStatus status, int completedEvents) {}
+  private record ScanState(LibraryStatus status, int endedScans) {}
 
   private LibraryStatus libraryStatus() {
     return fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus();
@@ -1418,6 +1483,7 @@ class LibraryOperationExecutionTest {
               .itemResults(new FakeItemResultRepository())
               .clock(Clock.systemUTC())
               .libraryOperationAdmissions(admissionsWith(new AdaptiveAdmissions()))
+              .transactionTemplate(new TransactionTemplate(transactionManager))
               .build();
       var service = libraryManagementServiceWithRefreshService(refreshService);
 
@@ -1749,7 +1815,7 @@ class LibraryOperationExecutionTest {
     private volatile Runnable refreshAnswer = () -> {};
 
     private ScriptedLibraryRefreshService() {
-      super(null, null, null, null, null, null, null, null, null, null, null);
+      super(null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     private void failWith(RuntimeException failure) {
@@ -1764,8 +1830,8 @@ class LibraryOperationExecutionTest {
     }
 
     @Override
-    public void refreshLibrary(Library library, ImageRefreshMode requestedImageRefreshMode) {
-      imageRefreshMode.set(requestedImageRefreshMode);
+    public void refreshLibrary(Library library, LibraryOperation operation) {
+      imageRefreshMode.set(operation.imageRefreshMode().orElseThrow());
       refreshAnswer.run();
     }
 
@@ -1863,6 +1929,85 @@ class LibraryOperationExecutionTest {
         .build();
   }
 
+  @Nested
+  @DisplayName("Letter index")
+  class LetterIndexTests {
+
+    @Test
+    @DisplayName("Should recalculate the letter index when a scan finishes")
+    void shouldRecalculateTheLetterIndexWhenAScanFinishes() throws IOException {
+      createRootLibraryDirectory();
+
+      operations.scanLibrary(savedLibraryId);
+
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+      assertThat(libraryMetadata.letterCountReplacements()).containsExactly(savedLibraryId);
+    }
+
+    @Test
+    @DisplayName("Should recalculate the letter index when a scan fails")
+    void shouldRecalculateTheLetterIndexWhenAScanFails() {
+      operations.scanLibrary(savedLibraryId);
+
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+      assertThat(libraryMetadata.letterCountReplacements()).containsExactly(savedLibraryId);
+    }
+
+    @Test
+    @DisplayName("Should recalculate the letter index when a refresh finishes")
+    void shouldRecalculateTheLetterIndexWhenARefreshFinishes() {
+      operations.refreshLibrary(savedLibraryId);
+
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+      assertThat(libraryMetadata.letterCountReplacements()).containsExactly(savedLibraryId);
+    }
+
+    @Test
+    @DisplayName(
+        "Should roll back the end and publish no end when the letter index cannot be recalculated")
+    void shouldRollBackTheEndAndPublishNoEndWhenTheLetterIndexCannotBeRecalculated() {
+      var failure = new DataAccessResourceFailureException("simulated connection loss");
+      libraryMetadata.failLetterCountReplacementsWith(failure);
+      var rollbacksBefore = transactionManager.rollbacks();
+
+      assertThatThrownBy(() -> operations.refreshLibrary(savedLibraryId)).isSameAs(failure);
+
+      assertThat(transactionManager.rollbacks()).isEqualTo(rollbacksBefore + 1);
+      // The one status change is the start's.
+      assertThat(capturingEventPublisher.getEventsOfType(LibraryStatusChangedEvent.class))
+          .hasSize(1);
+      assertThat(capturingEventPublisher.getEventsOfType(RefreshEndedEvent.class)).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+        "Should not recalculate the letter index when another execution ended the operation first")
+    void shouldNotRecalculateTheLetterIndexWhenAnotherExecutionEndedTheOperationFirst() {
+      var staleRuns =
+          serviceBuilder()
+              .executionLibraryOperations(
+                  new FakeLibraryOperationRepository(fakeLibraryRepository) {
+                    @Override
+                    public Optional<LibraryOperation> findLibraryOperation(UUID id) {
+                      var operation = libraryOperations.findLibraryOperation(id);
+                      libraryOperations.tryEndLibraryOperation(
+                          LibraryOperationEnd.builder()
+                              .libraryOperationId(id)
+                              .conclusion(LibraryOperationConclusion.FINISHED)
+                              .endedAt(Instant.now())
+                              .build());
+                      return operation;
+                    }
+                  })
+              .build();
+
+      staleRuns.refreshLibrary(savedLibraryId);
+
+      assertThat(libraryMetadata.letterCountReplacements()).isEmpty();
+      assertThat(capturingEventPublisher.getEventsOfType(RefreshEndedEvent.class)).isEmpty();
+    }
+  }
+
   private RunnerBuilder serviceBuilder() {
     return new RunnerBuilder();
   }
@@ -1930,6 +2075,18 @@ class LibraryOperationExecutionTest {
               .fileDiscoveryRuns(runs)
               .libraryFolderCheck(folderCheck)
               .libraryRefreshService(refreshService)
+              .finishingStepsRunner(
+                  LibraryOperationFinishingStepsRunner.builder()
+                      .libraryOperations(executionLibraryOperations)
+                      .libraryRepository(fakeLibraryRepository)
+                      .libraryFolderCheck(folderCheck)
+                      .orphanedMediaFileCleanupService(
+                          new OrphanedMediaFileCleanupService(
+                              fakeMediaFileRepository, movieService, fileSystem))
+                      .transactionManager(transactionManager)
+                      .build())
+              .letterIndexRecalculator(
+                  new LetterIndexRecalculator(libraryMetadata, new MutexFactoryProvider()))
               .eventPublisher(publisher)
               .transactionManager(transactionManager)
               .clock(Clock.systemUTC())

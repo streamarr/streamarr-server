@@ -2,11 +2,8 @@ package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.MediaFile;
-import com.streamarr.server.exceptions.LibraryNotFoundException;
-import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.MovieService;
-import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
@@ -17,36 +14,22 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.support.TransactionTemplate;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class OrphanedMediaFileCleanupService {
 
-  private final LibraryRepository libraryRepository;
   private final MediaFileRepository mediaFileRepository;
   private final MovieService movieService;
   private final FileSystem fileSystem;
-  private final TransactionTemplate transactionTemplate;
 
-  @EventListener
-  public void onScanCompleted(ScanCompletedEvent event) {
-    try {
-      var library =
-          libraryRepository
-              .findById(event.libraryId())
-              .orElseThrow(() -> new LibraryNotFoundException(event.libraryId()));
-      transactionTemplate.executeWithoutResult(status -> cleanupOrphanedFiles(library));
-    } catch (LibraryNotFoundException _) {
-      log.warn("Library {} was deleted before orphaned file cleanup could run.", event.libraryId());
-    } catch (Exception e) {
-      log.error("Orphaned file cleanup failed for library: {}", event.libraryId(), e);
-    }
-  }
-
+  /**
+   * Removes the library's media files that no longer exist on disk, in the caller's transaction,
+   * and deletes each movie that has no media file left. A media file whose path cannot be decoded
+   * counts as missing.
+   */
   public void cleanupOrphanedFiles(Library library) {
     var mediaFiles = mediaFileRepository.findByLibraryId(library.getId());
 

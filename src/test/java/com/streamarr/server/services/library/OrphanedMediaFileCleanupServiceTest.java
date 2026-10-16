@@ -1,7 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatNoException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 import com.google.common.jimfs.Configuration;
@@ -20,23 +20,17 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.MovieService;
-import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.springframework.transaction.TransactionDefinition;
-import org.springframework.transaction.support.AbstractPlatformTransactionManager;
-import org.springframework.transaction.support.DefaultTransactionStatus;
-import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("UnitTest")
 @DisplayName("Orphaned Media File Cleanup Service Tests")
@@ -61,12 +55,7 @@ class OrphanedMediaFileCleanupServiceTest {
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
 
   private final OrphanedMediaFileCleanupService orphanedMediaFileCleanupService =
-      new OrphanedMediaFileCleanupService(
-          fakeLibraryRepository,
-          fakeMediaFileRepository,
-          movieService,
-          fileSystem,
-          noOpTransactionTemplate());
+      new OrphanedMediaFileCleanupService(fakeMediaFileRepository, movieService, fileSystem);
 
   private Library library;
 
@@ -187,33 +176,6 @@ class OrphanedMediaFileCleanupServiceTest {
   }
 
   @Test
-  @DisplayName("Should clean up orphaned files when ScanCompletedEvent is received")
-  void shouldCleanupOrphanedFilesWhenScanCompletedEventReceived() {
-    fakeMediaFileRepository.save(
-        MediaFile.builder()
-            .libraryId(library.getId())
-            .filepathUri("file:///library/nonexistent/movie.mkv")
-            .filename("movie.mkv")
-            .status(MediaFileStatus.MATCHED)
-            .build());
-
-    var event = new ScanCompletedEvent(library.getId());
-    orphanedMediaFileCleanupService.onScanCompleted(event);
-
-    var remainingFiles = fakeMediaFileRepository.findByLibraryId(library.getId());
-    assertThat(remainingFiles).isEmpty();
-  }
-
-  @Test
-  @DisplayName("Should handle gracefully when library was deleted before cleanup runs")
-  void shouldHandleGracefullyWhenLibraryDeletedBeforeCleanup() {
-    var event = new ScanCompletedEvent(UUID.randomUUID());
-
-    assertThatNoException()
-        .isThrownBy(() -> orphanedMediaFileCleanupService.onScanCompleted(event));
-  }
-
-  @Test
   @DisplayName(
       "Should treat media file as orphaned when filepathUri contains unmappable characters")
   void shouldTreatMediaFileAsOrphanedWhenFilepathContainsUnmappableCharacters() {
@@ -269,39 +231,12 @@ class OrphanedMediaFileCleanupServiceTest {
                 .build());
     var serviceWithDeniedAccess =
         new OrphanedMediaFileCleanupService(
-            fakeLibraryRepository,
-            fakeMediaFileRepository,
-            movieService,
-            new SecurityExceptionFileSystem(fileSystem),
-            noOpTransactionTemplate());
+            fakeMediaFileRepository, movieService, new SecurityExceptionFileSystem(fileSystem));
 
-    serviceWithDeniedAccess.onScanCompleted(new ScanCompletedEvent(library.getId()));
+    assertThatThrownBy(() -> serviceWithDeniedAccess.cleanupOrphanedFiles(library))
+        .isInstanceOf(SecurityException.class);
 
     assertThat(fakeMediaFileRepository.findById(mediaFile.getId())).isPresent();
-  }
-
-  @Test
-  @DisplayName("Should not propagate unexpected exception when cleanup fails")
-  void shouldNotPropagateUnexpectedExceptionWhenCleanupFails() {
-    var throwingMediaFileRepository =
-        new FakeMediaFileRepository() {
-          @Override
-          public List<MediaFile> findByLibraryId(UUID libraryId) {
-            throw new RuntimeException("Simulated unexpected failure");
-          }
-        };
-
-    var serviceWithThrowingRepo =
-        new OrphanedMediaFileCleanupService(
-            fakeLibraryRepository,
-            throwingMediaFileRepository,
-            movieService,
-            fileSystem,
-            noOpTransactionTemplate());
-
-    var event = new ScanCompletedEvent(library.getId());
-
-    assertThatNoException().isThrownBy(() -> serviceWithThrowingRepo.onScanCompleted(event));
   }
 
   private Path createMovieFile(String folder, String filename) throws IOException {
@@ -311,30 +246,5 @@ class OrphanedMediaFileCleanupServiceTest {
     var movieFile = movieFolder.resolve(filename);
     Files.createFile(movieFile);
     return movieFile;
-  }
-
-  private static TransactionTemplate noOpTransactionTemplate() {
-    return new TransactionTemplate(
-        new AbstractPlatformTransactionManager() {
-          @Override
-          protected Object doGetTransaction() {
-            return new Object();
-          }
-
-          @Override
-          protected void doBegin(Object transaction, TransactionDefinition definition) {
-            // no-op for test
-          }
-
-          @Override
-          protected void doCommit(DefaultTransactionStatus status) {
-            // no-op for test
-          }
-
-          @Override
-          protected void doRollback(DefaultTransactionStatus status) {
-            // no-op for test
-          }
-        });
   }
 }

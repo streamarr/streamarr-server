@@ -7,6 +7,7 @@ import com.streamarr.server.services.ArtworkRequestService;
 import com.streamarr.server.services.ArtworkRunWaiter;
 import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
@@ -14,7 +15,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * Opens the runs that collect the primary artwork and probes of one scan or file discovery, and
- * waits until each has a saved result.
+ * waits until a scan's artwork and probes have saved results.
  */
 @Service
 @Builder
@@ -26,6 +27,7 @@ public class FileDiscoveryRuns {
   private final ProbeRuns probeRuns;
   private final MediaFileRepository mediaFiles;
 
+  /** Opens the runs of a file discovery, which waits for nothing. */
   public FileDiscovery open(String operation, Library library) {
     var artworkRun =
         artworkRequestService.openRun(
@@ -33,8 +35,19 @@ public class FileDiscoveryRuns {
     return new FileDiscovery(library, artworkRun, probeRuns.open());
   }
 
+  /** Opens the runs of a scan, whose artwork requests carry the scan's library operation id. */
+  public FileDiscovery openScan(Library library, UUID libraryOperationId) {
+    var artworkRun =
+        artworkRequestService.openLibraryOperationRun(
+            "scan of library '" + library.getName() + "'",
+            ImageRefreshMode.PRESERVE,
+            libraryOperationId);
+    return new FileDiscovery(library, artworkRun, probeRuns.open());
+  }
+
   /**
-   * Waits for the recorded primary artwork results and probe results of a closed discovery.
+   * Waits for the probe results of a closed scan's discovery and for the primary artwork results of
+   * its library operation, including artwork that an earlier execution of the operation requested.
    * Background artwork and the retries of failed artwork steps and probes continue in the
    * background.
    *
@@ -59,7 +72,7 @@ public class FileDiscoveryRuns {
     try (var executor = SystemWork.newExecutorRunningAsSystemActor("library-scan-probes-")) {
       var probes = executor.submit(() -> probeRuns.awaitResults(discovery.probeRun()));
       try {
-        var artwork = artworkRunWaiter.awaitResults(discovery.artworkRun());
+        var artwork = artworkRunWaiter.awaitLibraryOperationResults(discovery.artworkRun());
         return ScanResults.builder()
             .files(mediaFiles.countStatuses(discovery.probeRun().mediaFileIds()))
             .artwork(artwork)

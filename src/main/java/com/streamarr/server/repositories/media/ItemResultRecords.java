@@ -5,6 +5,7 @@ import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.jooq.generated.tables.records.ItemResultRecord;
+import java.util.Optional;
 
 /** Reads stored item result rows as domain results. */
 final class ItemResultRecords {
@@ -20,7 +21,8 @@ final class ItemResultRecords {
             .outcome(toOutcome(row))
             .sourceKey(row.getSourceKey())
             .attemptedAt(row.getAttemptedAt().toInstant())
-            .artworkGeneration(row.getArtworkGeneration());
+            .artworkGeneration(row.getArtworkGeneration())
+            .libraryOperationId(Optional.ofNullable(row.getLibraryOperationId()));
     if (row.getImageType() != null) {
       result.imageType(MediaEnumMapping.toDomain(row.getImageType()));
     }

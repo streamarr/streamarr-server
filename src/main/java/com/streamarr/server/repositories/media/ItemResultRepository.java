@@ -7,8 +7,14 @@ import com.streamarr.server.domain.media.ItemResult;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
+/**
+ * Stores the latest result of each step for each item. An artwork result takes the library
+ * operation id that the target's artwork request carries as the result is saved; any other result
+ * keeps the library operation id it names.
+ */
 public interface ItemResultRepository {
 
   /**
@@ -34,6 +40,15 @@ public interface ItemResultRepository {
   boolean trySaveArtworkResults(ArtworkStepsAttempt attempt, List<ItemResult> results);
 
   List<ItemResult> findByItem(UUID itemId, ImageEntityType itemType);
+
+  /**
+   * Returns the ids of the items whose metadata result carries the library operation's id, so an
+   * execution after a restart skips the items that an earlier execution refreshed.
+   */
+  Set<UUID> findItemIdsWithMetadataResultForLibraryOperation(UUID libraryOperationId);
+
+  /** Counts the artwork results that carry the library operation's id by outcome. */
+  ArtworkResultCounts countArtworkOutcomesForLibraryOperation(UUID libraryOperationId);
 
   /** Counts the artwork results recorded since {@code since} by item type and outcome. */
   Map<ImageEntityType, ArtworkResultCounts> countArtworkOutcomesRecordedSince(Instant since);

@@ -28,6 +28,7 @@ import com.streamarr.server.services.ArtworkSources;
 import com.streamarr.server.services.ArtworkStepsRunner;
 import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.MovieService;
+import com.streamarr.server.services.NewArtworkRequest;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.support.TestFixtureWork;
 import java.io.IOException;
@@ -370,7 +371,15 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
             .sources(List.of(new TmdbImageSource(ImageType.POSTER, posterKey)))
             .build();
     return transactionTemplate.execute(
-        _ -> requests.saveRequest(artwork, ImageRefreshMode.PRESERVE, ATTEMPTED_AT).generation());
+        _ ->
+            requests
+                .saveRequest(
+                    NewArtworkRequest.builder()
+                        .artwork(artwork)
+                        .refreshMode(ImageRefreshMode.PRESERVE)
+                        .requestedAt(ATTEMPTED_AT)
+                        .build())
+                .generation());
   }
 
   private ArtworkStepsAttempt attemptFor(UUID entityId) {

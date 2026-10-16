@@ -120,9 +120,34 @@ public class JooqLibraryOperationRepository implements LibraryOperationRepositor
   }
 
   @Override
-  @Transactional(readOnly = true)
-  public boolean existsLibraryOperationForLibrary(UUID libraryId) {
-    return dsl.fetchExists(LIBRARY_OPERATION, LIBRARY_OPERATION.LIBRARY_ID.eq(libraryId));
+  @Transactional(propagation = Propagation.MANDATORY)
+  public boolean tryLockLibraryOperation(UUID libraryOperationId) {
+    return transactionLocks.withLockWaitLimit(
+        LIBRARY_ROW_LOCK_TIMEOUT,
+        () ->
+            dsl.select(LIBRARY_OPERATION.ID)
+                .from(LIBRARY_OPERATION)
+                .where(LIBRARY_OPERATION.ID.eq(libraryOperationId))
+                .forShare()
+                .fetchOptional()
+                .isPresent());
+  }
+
+  @Override
+  @Transactional(propagation = Propagation.MANDATORY)
+  public boolean tryLockLibraryWithoutLibraryOperation(UUID libraryId) {
+    return transactionLocks.withLockWaitLimit(
+        LIBRARY_ROW_LOCK_TIMEOUT,
+        () -> {
+          var library =
+              dsl.select(LIBRARY.ID)
+                  .from(LIBRARY)
+                  .where(LIBRARY.ID.eq(libraryId))
+                  .forShare()
+                  .fetchOptional();
+          return library.isPresent()
+              && !dsl.fetchExists(LIBRARY_OPERATION, LIBRARY_OPERATION.LIBRARY_ID.eq(libraryId));
+        });
   }
 
   @Override
@@ -133,11 +158,7 @@ public class JooqLibraryOperationRepository implements LibraryOperationRepositor
   }
 
   private boolean tryEndUnderLibraryLock(LibraryOperationEnd end) {
-    var libraryId =
-        dsl.select(LIBRARY_OPERATION.LIBRARY_ID)
-            .from(LIBRARY_OPERATION)
-            .where(LIBRARY_OPERATION.ID.eq(end.libraryOperationId()))
-            .fetchOptional(LIBRARY_OPERATION.LIBRARY_ID);
+    var libraryId = findLibraryIdOfLibraryOperation(end.libraryOperationId());
     if (libraryId.isEmpty()) {
       return false;
     }
@@ -159,6 +180,13 @@ public class JooqLibraryOperationRepository implements LibraryOperationRepositor
 
     update.where(LIBRARY.ID.eq(libraryId.get())).execute();
     return true;
+  }
+
+  private Optional<UUID> findLibraryIdOfLibraryOperation(UUID libraryOperationId) {
+    return dsl.select(LIBRARY_OPERATION.LIBRARY_ID)
+        .from(LIBRARY_OPERATION)
+        .where(LIBRARY_OPERATION.ID.eq(libraryOperationId))
+        .fetchOptional(LIBRARY_OPERATION.LIBRARY_ID);
   }
 
   private Optional<LibraryStatus> lockLibraryStatus(UUID libraryId) {

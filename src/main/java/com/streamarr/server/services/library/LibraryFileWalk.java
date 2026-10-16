@@ -83,8 +83,9 @@ public class LibraryFileWalk {
    * @throws InterruptedException if the walk is interrupted; the admitted tasks are interrupted and
    *     joined first
    */
-  public FileDiscovery discoverFiles(Library library) throws InterruptedException {
-    var discovery = fileDiscoveryRuns.open("scan of", library);
+  public FileDiscovery discoverFiles(Library library, UUID libraryOperationId)
+      throws InterruptedException {
+    var discovery = fileDiscoveryRuns.openScan(library, libraryOperationId);
     try (discovery;
         var admission = libraryOperationAdmissions.openScanAdmission(library);
         var stream = Files.walk(FilepathCodec.decode(fileSystem, library.getFilepathUri()))) {

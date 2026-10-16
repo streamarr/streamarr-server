@@ -6,6 +6,7 @@ import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.services.ArtworkSources;
+import com.streamarr.server.services.NewArtworkRequest;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.time.Instant;
 import java.util.List;
@@ -60,7 +61,12 @@ public final class ArtworkStepsAttemptFixture {
         transactionTemplate.execute(
             _ ->
                 requests
-                    .saveRequest(artwork, ImageRefreshMode.FORCE_REFRESH, ATTEMPTED_AT)
+                    .saveRequest(
+                        NewArtworkRequest.builder()
+                            .artwork(artwork)
+                            .refreshMode(ImageRefreshMode.FORCE_REFRESH)
+                            .requestedAt(ATTEMPTED_AT)
+                            .build())
                     .generation());
     return ArtworkStepsAttempt.builder()
         .target(target)

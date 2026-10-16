@@ -102,7 +102,6 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
       assertThat(libraries.findById(library.getId()).orElseThrow().getStatus())
           .isEqualTo(LibraryStatus.UNHEALTHY);
       assertThat(scheduledCount()).isZero();
-      assertThat(libraryOperationDriver.completedScans(library.getId())).isZero();
     }
   }
 
@@ -120,7 +119,6 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
 
     assertThat(libraries.findById(library.getId()).orElseThrow().getStatus())
         .isEqualTo(LibraryStatus.HEALTHY);
-    assertThat(libraryOperationDriver.completedScans(library.getId())).isOne();
     assertThat(scheduledRequest())
         .hasValueSatisfying(
             request -> assertThat(request.mediaFileId()).isEqualTo(mediaFile.getId()));

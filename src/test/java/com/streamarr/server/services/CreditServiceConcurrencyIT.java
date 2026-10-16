@@ -238,8 +238,7 @@ class CreditServiceConcurrencyIT extends AbstractIntegrationTest {
                     new ArtworkTarget(people.get(1), ImageEntityType.PERSON),
                     new ArtworkTarget(studio, ImageEntityType.COMPANY))))
         .hasSize(3)
-        .allMatch(
-            state -> state.pendingGeneration().isPresent() || !state.artworkResults().isEmpty());
+        .allMatch(state -> state.pendingRequest().isPresent() || !state.artworkResults().isEmpty());
   }
 
   private static ImageSource profile(String key) {

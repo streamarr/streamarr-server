@@ -34,7 +34,26 @@ public interface LibraryOperationRepository {
 
   Optional<LibraryOperation> findLibraryOperation(UUID libraryOperationId);
 
-  boolean existsLibraryOperationForLibrary(UUID libraryId);
+  /**
+   * Shares the operation's row in the caller's transaction, as a finishing step does before it
+   * changes the library. No end can delete the operation until the transaction ends.
+   *
+   * @return false when the operation no longer exists, because an execution ended it
+   * @throws org.springframework.dao.PessimisticLockingFailureException when the operation's row
+   *     stays locked past the bounded lock wait
+   */
+  boolean tryLockLibraryOperation(UUID libraryOperationId);
+
+  /**
+   * Shares the library's row in the caller's transaction and reads whether an operation runs. The
+   * share waits behind an end that holds the row, so it reads the operation only after the end
+   * commits or rolls back.
+   *
+   * @return true when the library exists and no operation runs
+   * @throws org.springframework.dao.PessimisticLockingFailureException when the library's row stays
+   *     locked past the bounded lock wait
+   */
+  boolean tryLockLibraryWithoutLibraryOperation(UUID libraryId);
 
   /**
    * Deletes the operation and gives the library the conclusion's status in the caller's
