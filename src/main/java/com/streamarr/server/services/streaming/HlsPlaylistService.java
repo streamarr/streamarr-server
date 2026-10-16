@@ -3,8 +3,11 @@ package com.streamarr.server.services.streaming;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.DecimalSeconds;
+import com.streamarr.server.domain.streaming.EncodedVideoOutput;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
+import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.domain.streaming.VideoEncodeDecision;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -27,7 +30,9 @@ public class HlsPlaylistService {
   // RFC 8216 section 7: EXT-X-MAP in a playlist that is not I-frame-only needs version 6.
   private static final int PLAYLIST_VERSION = 6;
 
-  private static final Map<String, String> CODEC_STRINGS =
+  // A stream copy keeps its codec family's fixed codec string until the probe stores the source's
+  // own codec string.
+  private static final Map<String, String> STREAM_COPY_CODEC_STRINGS =
       Map.of(
           "h264", "avc1.640028",
           "av1", "av01.0.08M.08",
@@ -36,12 +41,7 @@ public class HlsPlaylistService {
   private final StreamingProperties properties;
 
   public String generateMultivariantPlaylist(StreamSession session, String token) {
-    var decision = session.getTranscodeDecision();
-    var audio = decision.audioDecision();
-    var videoCodecString = CODEC_STRINGS.getOrDefault(decision.videoCodecFamily(), "avc1.640028");
-    var audioCodecString = audio.hlsCodecString();
-    var codecs =
-        audioCodecString.isEmpty() ? videoCodecString : videoCodecString + "," + audioCodecString;
+    var audio = session.getTranscodeDecision().audioDecision();
     var hasAudio = audio.mode() != AudioMode.NONE;
 
     var sb = new StringBuilder();
@@ -56,6 +56,7 @@ public class HlsPlaylistService {
 
     if (session.getVariants().isEmpty()) {
       var probe = session.getMediaProbe();
+      var codecs = codecs(session, sourceSizedVariant(session));
       appendStreamInf(sb, probe.bitrate(), probe.width(), probe.height(), codecs, hasAudio);
       sb.append("stream.m3u8?t=").append(token).append("\n");
       return sb.toString();
@@ -63,11 +64,51 @@ public class HlsPlaylistService {
 
     for (var variant : session.getVariants()) {
       var averageBandwidth = variant.averageBandwidth(audio.bitrate());
+      var codecs = codecs(session, variant);
       appendStreamInf(sb, averageBandwidth, variant.width(), variant.height(), codecs, hasAudio);
       sb.append(variant.label()).append("/stream.m3u8?t=").append(token).append("\n");
     }
 
     return sb.toString();
+  }
+
+  // A stream session without a ladder encodes at the source's size and bitrate.
+  private static QualityVariant sourceSizedVariant(StreamSession session) {
+    var probe = session.getMediaProbe();
+    return QualityVariant.builder()
+        .width(probe.width())
+        .height(probe.height())
+        .videoBitrate(probe.bitrate())
+        .label(StreamSession.defaultVariant())
+        .build();
+  }
+
+  private static String codecs(StreamSession session, QualityVariant variant) {
+    var videoCodecString = videoCodecString(session, variant);
+    var audioCodecString = session.getTranscodeDecision().audioDecision().hlsCodecString();
+    if (audioCodecString.isEmpty()) {
+      return videoCodecString;
+    }
+
+    return videoCodecString + "," + audioCodecString;
+  }
+
+  // An encoded variant advertises the codec string that its job attempts force.
+  private static String videoCodecString(StreamSession session, QualityVariant variant) {
+    var decision = session.getTranscodeDecision();
+    if (decision.transcodeMode().copiesVideo()) {
+      return STREAM_COPY_CODEC_STRINGS.getOrDefault(decision.videoCodecFamily(), "avc1.640028");
+    }
+
+    return VideoEncodeDecision.of(
+            EncodedVideoOutput.builder()
+                .codecFamily(decision.videoCodecFamily())
+                .width(variant.width())
+                .height(variant.height())
+                .probedFrameRate(session.getMediaProbe().framerate())
+                .bitrate(variant.videoBitrate())
+                .build())
+        .codecString();
   }
 
   // ADR 0037: the tag is true only for a variant pinned to a keyframe-verified encoder backend. A

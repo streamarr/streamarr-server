@@ -108,7 +108,7 @@ class ServerSettingsServiceTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"", "medium", "PLACEBO", "10"})
+  @ValueSource(strings = {"", "medium", "PLACEBO", "10", "ULTRAFAST"})
   @DisplayName("Should reject the change and keep the setting when the preset is not on the scale")
   void shouldRejectChangeAndKeepSettingWhenPresetIsNotOnScale(String preset) {
     var outcome = serverSettingsService.changeEncoderPreset(identity, preset);

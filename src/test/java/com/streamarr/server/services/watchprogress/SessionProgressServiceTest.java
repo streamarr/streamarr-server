@@ -11,8 +11,11 @@ import static org.assertj.core.api.Assertions.within;
 
 import com.streamarr.server.config.WatchProgressProperties;
 import com.streamarr.server.domain.media.Episode;
+import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.streaming.PlaybackState;
+import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
@@ -531,6 +534,65 @@ class SessionProgressServiceTest {
 
     private UUID itemIdOf(StreamSession session) {
       return mediaFileRepository.findById(session.getMediaFileId()).orElseThrow().getMediaId();
+    }
+  }
+
+  @Nested
+  @DisplayName("Media Files Without An Item")
+  class MediaFilesWithoutAnItem {
+
+    private StreamSession addSessionForFileWithoutItem() {
+      var session = StreamSessionFixture.buildActiveSessionOwnedBy(PROFILE_ID);
+      runtimeRegistry.save(session);
+      var mediaFile =
+          MediaFile.builder()
+              .filename("file-" + UUID.randomUUID() + ".mkv")
+              .filepathUri("/media/" + UUID.randomUUID() + ".mkv")
+              .status(MediaFileStatus.METADATA_NOT_FOUND)
+              .build();
+      mediaFile.setId(session.getMediaFileId());
+      mediaFileRepository.save(mediaFile);
+      return session;
+    }
+
+    static Stream<Arguments> reportsThatKeepThePosition() {
+      return Stream.of(
+          Arguments.of(3600, PlaybackState.PLAYING),
+          Arguments.of(3600, PlaybackState.PAUSED),
+          Arguments.of(3600, PlaybackState.STOPPED),
+          Arguments.of((int) (7200 * 0.95), PlaybackState.STOPPED));
+    }
+
+    @ParameterizedTest(name = "{1} at {0} seconds")
+    @MethodSource("reportsThatKeepThePosition")
+    @DisplayName("Should save the position and publish nothing when the file has no item")
+    void shouldSaveThePositionAndPublishNothingWhenTheFileHasNoItem(
+        int positionSeconds, PlaybackState state) {
+      var session = addSessionForFileWithoutItem();
+
+      service.reportStreamSessionTimeline(
+          PROFILE_ID, session.getSessionId(), positionSeconds, state);
+
+      assertThat(sessionProgressRepository.findBySessionId(session.getSessionId()))
+          .get()
+          .extracting(SessionProgress::getPositionSeconds)
+          .isEqualTo(positionSeconds);
+      assertThat(watchHistoryRepository.findAll()).isEmpty();
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should delete the progress and publish nothing when a discard reaches no item")
+    void shouldDeleteTheProgressAndPublishNothingWhenADiscardReachesNoItem() {
+      var session = addSessionForFileWithoutItem();
+      service.reportStreamSessionTimeline(
+          PROFILE_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
+
+      service.reportStreamSessionTimeline(
+          PROFILE_ID, session.getSessionId(), 72, PlaybackState.STOPPED);
+
+      assertThat(sessionProgressRepository.findBySessionId(session.getSessionId())).isEmpty();
+      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class)).isEmpty();
     }
   }
 

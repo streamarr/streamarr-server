@@ -10,7 +10,6 @@ import lombok.NonNull;
  */
 public enum EncoderPresetChoice {
   AUTOMATIC,
-  ULTRAFAST,
   SUPERFAST,
   VERYFAST,
   FASTER,
