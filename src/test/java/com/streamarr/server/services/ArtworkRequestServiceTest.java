@@ -1127,6 +1127,70 @@ class ArtworkRequestServiceTest {
 
     @Test
     @DisplayName(
+        "Should finish a taking-over operation on the backdrop's fresh result without fetching the"
+            + " saved poster again when the backdrop waits to retry")
+    void shouldFinishATakingOverOperationOnTheBackdropsFreshResultWithoutFetchingThePosterAgain() {
+      var downloadedPaths = new CopyOnWriteArrayList<String>();
+      var sleeper = new CountingSleeper();
+      var waiting =
+          ArtworkFixture.builder()
+              .imageRepository(imageRepository)
+              .imageDownloader(
+                  path -> {
+                    downloadedPaths.add(path);
+                    return createTestImage(600, 900);
+                  })
+              .itemResults(itemResults)
+              .clock(clock)
+              .sleeper(sleeper)
+              .build();
+      waiting.scheduling().holdScheduledSteps();
+      sleeper.onSleep(_ -> waiting.scheduling().runPendingSteps());
+      var movie = movieArtwork(UUID.randomUUID(), POSTER, BACKDROP);
+      var endedOperation = Optional.of(UUID.randomUUID());
+      waiting
+          .artworkRequestService()
+          .requestPrimaryArtwork(
+              waiting
+                  .artworkRequestService()
+                  .openLibraryOperationRun(
+                      "scan", ImageRefreshMode.PRESERVE, endedOperation.orElseThrow()),
+              movie);
+      var generation = waiting.requests().findRequest(movie.target()).orElseThrow().generation();
+      itemResults.overwrite(
+          succeeded(movie.targetId(), ImageType.POSTER, generation).toBuilder()
+              .libraryOperationId(endedOperation)
+              .build());
+      itemResults.overwrite(
+          temporaryPosterFailure(movie.target(), generation).toBuilder()
+              .imageType(ImageType.BACKDROP)
+              .libraryOperationId(endedOperation)
+              .build());
+      var operation = Optional.of(UUID.randomUUID());
+      var run =
+          waiting
+              .artworkRequestService()
+              .openLibraryOperationRun(
+                  "refresh", ImageRefreshMode.PRESERVE, operation.orElseThrow());
+
+      waiting.artworkRequestService().requestPrimaryArtwork(run, movie);
+      var summary = waiting.closeAndAwait(run);
+
+      assertThat(downloadedPaths).containsExactly("/backdrop.jpg");
+      assertThat(summary.counts()).isEqualTo(FinishedImageCounts.builder().saved(2).build());
+      assertThat(itemResults.findByItem(movie.targetId(), movie.targetType()))
+          .extracting(
+              ItemResult::imageType,
+              ItemResult::outcome,
+              ItemResult::artworkGeneration,
+              ItemResult::libraryOperationId)
+          .containsExactlyInAnyOrder(
+              tuple(ImageType.POSTER, new ItemOutcome.Succeeded(), generation, operation),
+              tuple(ImageType.BACKDROP, new ItemOutcome.Succeeded(), generation, operation));
+    }
+
+    @Test
+    @DisplayName(
         "Should finish an operation's task wait when another operation takes over its request and"
             + " the download waits to retry")
     void shouldFinishAnOperationsTaskWaitWhenAnotherOperationTakesOverItsRequest()
