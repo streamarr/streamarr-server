@@ -7,6 +7,7 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
+import java.nio.file.DirectoryIteratorException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
@@ -58,7 +59,7 @@ public class LibraryFolderCheck {
       }
     } catch (NoSuchFileException | NotDirectoryException _) {
       return Optional.of(LibraryFolderProblem.MISSING);
-    } catch (IOException | SecurityException _) {
+    } catch (IOException | DirectoryIteratorException | SecurityException _) {
       return Optional.of(LibraryFolderProblem.UNREADABLE);
     }
 

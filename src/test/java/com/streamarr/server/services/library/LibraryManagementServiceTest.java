@@ -111,6 +111,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.http.HttpTimeoutException;
+import java.nio.file.DirectoryIteratorException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -482,6 +483,31 @@ class LibraryManagementServiceTest {
     assertThat(fakeLibraryRepository.findById(savedLibraryId)).isPresent();
     assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus())
         .isEqualTo(LibraryStatus.UNHEALTHY);
+  }
+
+  @Test
+  @DisplayName(
+      "Should become unhealthy as unreadable when reading the library folder's entries fails")
+  void shouldBecomeUnhealthyAsUnreadableWhenReadingTheLibraryFolderEntriesFails()
+      throws IOException {
+    var rootPath = createRootLibraryDirectory();
+    createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
+    var throwingFileSystem =
+        ThrowingFileSystemWrapper.failingBeforeTheFirstEntry(
+            fileSystem,
+            () -> new DirectoryIteratorException(new IOException("Simulated stale file handle")));
+
+    serviceWith(throwingFileSystem).scanLibrary(savedLibraryId);
+
+    assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
+    assertThat(
+            meterRegistry
+                .get("streamarr.library.folder_check.failures")
+                .tag("reason", "unreadable")
+                .counter()
+                .count())
+        .isEqualTo(1);
   }
 
   @Test

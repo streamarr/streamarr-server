@@ -12,10 +12,12 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.exceptions.LibraryFolderCheckFailedException;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.ThrowingFileSystemWrapper;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
+import java.nio.file.DirectoryIteratorException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -95,6 +97,30 @@ class LibraryFolderCheckTest {
     var library = libraryAt(Files.createFile(fileSystem.getPath("/library")));
 
     assertFailure(library, LibraryFolderProblem.MISSING, "missing");
+  }
+
+  @Test
+  @DisplayName("Should fail as unreadable when reading the library folder's entries fails")
+  void shouldFailAsUnreadableWhenReadingTheLibraryFolderEntriesFails() throws IOException {
+    var folder = Files.createDirectories(fileSystem.getPath("/library"));
+    Files.createFile(folder.resolve("movie.mkv"));
+    var library =
+        LibraryFixtureCreator.buildFakeLibrary().toBuilder()
+            .id(UUID.randomUUID())
+            .filepathUri("file:///library")
+            .build();
+    var failingCheck =
+        new LibraryFolderCheck(
+            ThrowingFileSystemWrapper.failingBeforeTheFirstEntry(
+                fileSystem,
+                () -> new DirectoryIteratorException(new IOException("Simulated I/O error"))),
+            mediaFiles,
+            meterRegistry);
+
+    assertThatThrownBy(() -> failingCheck.requirePassed(library))
+        .isInstanceOfSatisfying(
+            LibraryFolderCheckFailedException.class,
+            failure -> assertThat(failure.getProblem()).isEqualTo(LibraryFolderProblem.UNREADABLE));
   }
 
   @Test

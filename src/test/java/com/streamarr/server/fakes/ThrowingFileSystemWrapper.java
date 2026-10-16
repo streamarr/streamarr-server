@@ -55,6 +55,12 @@ public class ThrowingFileSystemWrapper extends FileSystem {
     this(delegate, exceptionSupplier, 1);
   }
 
+  /** Returns a wrapper whose directory streams fail before they return any entry. */
+  public static ThrowingFileSystemWrapper failingBeforeTheFirstEntry(
+      FileSystem delegate, Supplier<RuntimeException> exceptionSupplier) {
+    return new ThrowingFileSystemWrapper(delegate, exceptionSupplier, 0);
+  }
+
   private ThrowingFileSystemWrapper(
       FileSystem delegate, Supplier<RuntimeException> exceptionSupplier, int entriesBeforeFailure) {
     this.delegate = delegate;
