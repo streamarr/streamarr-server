@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -94,6 +95,55 @@ class JooqLibraryOperationRepositoryIT extends AbstractIntegrationTest {
     assertThat(libraryOperations.findLibraryOperation(operation.id())).isEmpty();
     assertThat(libraryRepository.findById(library.getId()).orElseThrow().getScanCompletedOn())
         .isNotNull();
+  }
+
+  @Test
+  @DisplayName("Should return the library with its row's audit columns when a scan is stored")
+  void shouldReturnTheLibraryWithItsRowsAuditColumnsWhenAScanIsStored() {
+    library = createLibrary();
+
+    var stored = storedLibrary(() -> libraryOperations.storeLibraryOperation(scanOf(library)));
+
+    var row = libraryRepository.findById(library.getId()).orElseThrow();
+    assertThat(stored.getCreatedBy()).isNotNull().isEqualTo(row.getCreatedBy());
+    assertThat(stored.getCreatedOn()).isNotNull().isEqualTo(row.getCreatedOn());
+    assertThat(stored.getLastModifiedBy()).isNotNull().isEqualTo(row.getLastModifiedBy());
+    assertThat(stored.getLastModifiedOn())
+        .isEqualTo(row.getLastModifiedOn())
+        .isAfter(row.getCreatedOn());
+  }
+
+  @Test
+  @DisplayName(
+      "Should return the library as the scan's start left it when the transaction saved the"
+          + " library first")
+  void shouldReturnTheLibraryAsTheScansStartLeftItWhenTheTransactionSavedTheLibraryFirst() {
+    var stored =
+        storedLibrary(
+            () -> {
+              library = createLibrary();
+              return libraryOperations.storeLibraryOperation(scanOf(library));
+            });
+
+    var row = libraryRepository.findById(library.getId()).orElseThrow();
+    assertThat(stored.getStatus()).isEqualTo(LibraryStatus.SCANNING);
+    assertThat(stored.getScanStartedOn()).isNotNull().isEqualTo(row.getScanStartedOn());
+    assertThat(stored.getCreatedOn()).isNotNull().isEqualTo(row.getCreatedOn());
+    assertThat(stored.getLastModifiedOn()).isNotNull().isEqualTo(row.getLastModifiedOn());
+  }
+
+  private Library storedLibrary(Supplier<StoreOutcome> store) {
+    var outcome = new TransactionTemplate(transactionManager).execute(_ -> store.get());
+    return switch (outcome) {
+      case StoreOutcome.Stored(_, var stored) -> stored;
+      case StoreOutcome.Rejected(var rejection) ->
+          throw new AssertionError("The scan was not stored: " + rejection);
+      case null -> throw new AssertionError("The store returned nothing");
+    };
+  }
+
+  private static NewLibraryOperation scanOf(Library scanned) {
+    return NewLibraryOperation.scan(scanned.getId());
   }
 
   private boolean endAsSystemActor(LibraryOperationEnd end) {

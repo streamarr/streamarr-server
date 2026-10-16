@@ -62,7 +62,25 @@ class LibraryAdministrationEventListenerTest {
             payload -> {
               assertThat(payload.getId()).isEqualTo(library.getId());
               assertThat(payload.getStatus()).isEqualTo(LibraryStatus.SCANNING);
-              assertThat(payload).isNotSameAs(library);
+            });
+  }
+
+  @Test
+  @DisplayName("Should broadcast the library's audit timestamps when its status changes")
+  void shouldBroadcastLibrarysAuditTimestampsWhenStatusChanges() {
+    var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
+    var delivered = collect(broadcasters.getStatusChanges());
+
+    listener.onLibraryStatusChanged(new LibraryStatusChangedEvent(library.getId()));
+
+    assertThat(delivered)
+        .singleElement()
+        .satisfies(
+            payload -> {
+              assertThat(payload.getCreatedOn()).isNotNull().isEqualTo(library.getCreatedOn());
+              assertThat(payload.getLastModifiedOn())
+                  .isNotNull()
+                  .isEqualTo(library.getLastModifiedOn());
             });
   }
 

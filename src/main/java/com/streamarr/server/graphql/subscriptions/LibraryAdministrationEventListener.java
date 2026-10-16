@@ -86,10 +86,10 @@ public class LibraryAdministrationEventListener {
     }
   }
 
-  // A detached copy: the payload is resolved on delivery threads, outside any persistence context.
+  // The read's own transaction closes its persistence context, so delivery threads resolve a
+  // detached library. A builder copy would drop the audit columns, which entity builders discard.
   private Optional<Library> currentLibrary(UUID libraryId) {
-    return committedReads.execute(
-        _ -> libraryRepository.findById(libraryId).map(library -> library.toBuilder().build()));
+    return committedReads.execute(_ -> libraryRepository.findById(libraryId));
   }
 
   private void publish(SubscriptionBroadcaster<?> broadcaster, Runnable publication) {

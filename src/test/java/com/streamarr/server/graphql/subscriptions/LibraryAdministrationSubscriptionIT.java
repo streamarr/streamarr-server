@@ -43,6 +43,8 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
   private static final String STATUS_FIELD = "libraryStatusChanged";
   private static final String STATUS_SUBSCRIPTION =
       "subscription { libraryStatusChanged { id name status scanStartedOn scanCompletedOn } }";
+  private static final String AUDITED_STATUS_SUBSCRIPTION =
+      "subscription { libraryStatusChanged { id status createdOn lastModifiedOn } }";
   private static final String ADDED_SUBSCRIPTION =
       "subscription { libraryAdded { id name status scanStartedOn scanCompletedOn } }";
   private static final String REMOVED_SUBSCRIPTION =
@@ -112,6 +114,34 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     assertThat(healthy.path("status").asString()).isEqualTo("HEALTHY");
     assertThat(Instant.parse(healthy.path("scanCompletedOn").asString()))
         .isAfterOrEqualTo(Instant.parse(scanning.path("scanStartedOn").asString()));
+  }
+
+  @Test
+  @DisplayName("Should deliver the library's audit timestamps when a scan changes its status")
+  void shouldDeliverLibrarysAuditTimestampsWhenScanChangesItsStatus() {
+    var bearer = adminBearer();
+    var library = saveLibrary(libraryDirectory);
+    var socket = connect(bearer);
+    socket.subscribe("status", AUDITED_STATUS_SUBSCRIPTION);
+    activeSubscriptions.awaitCount(STATUS_FIELD, 1);
+
+    // The stopped scheduler keeps the library's row as the scan's start left it.
+    libraryOperationScheduler.stop();
+    try {
+      http.execute(bearer, scanMutation(library.getId()));
+
+      var scanning = nextStatusChange(socket, library.getId());
+      var stored = libraryRepository.findById(library.getId()).orElseThrow();
+      assertThat(scanning.path("status").asString()).isEqualTo("SCANNING");
+      assertThat(Instant.parse(scanning.path("createdOn").asString()))
+          .isEqualTo(stored.getCreatedOn());
+      assertThat(Instant.parse(scanning.path("lastModifiedOn").asString()))
+          .isEqualTo(stored.getLastModifiedOn());
+    } finally {
+      libraryOperationScheduler.start();
+    }
+
+    awaitStatus(socket, library.getId(), "HEALTHY");
   }
 
   @Test

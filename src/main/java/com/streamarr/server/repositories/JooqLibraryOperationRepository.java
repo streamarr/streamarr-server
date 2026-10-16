@@ -3,22 +3,17 @@ package com.streamarr.server.repositories;
 import static com.streamarr.server.jooq.generated.tables.Library.LIBRARY;
 import static com.streamarr.server.jooq.generated.tables.LibraryOperation.LIBRARY_OPERATION;
 
-import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
-import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
-import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.jooq.generated.tables.records.LibraryOperationRecord;
-import com.streamarr.server.jooq.generated.tables.records.LibraryRecord;
 import com.streamarr.server.services.library.LibraryOperation;
 import com.streamarr.server.services.library.LibraryOperationEnd;
 import com.streamarr.server.services.library.LibraryOperationKind;
 import com.streamarr.server.services.library.LibraryOperationRejection;
 import com.streamarr.server.services.library.NewLibraryOperation;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
+import jakarta.persistence.EntityManager;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
@@ -38,6 +33,7 @@ public class JooqLibraryOperationRepository implements LibraryOperationRepositor
   private static final Duration LIBRARY_ROW_LOCK_TIMEOUT = Duration.ofSeconds(5);
 
   private final DSLContext dsl;
+  private final EntityManager entityManager;
   private final PostgresTransactionLocks transactionLocks;
 
   @Override
@@ -83,8 +79,16 @@ public class JooqLibraryOperationRepository implements LibraryOperationRepositor
       update = update.set(LIBRARY.SCAN_STARTED_ON, DSL.currentOffsetDateTime());
     }
 
-    return toLibrary(
-        update.where(LIBRARY.ID.eq(newLibraryOperation.libraryId())).returning().fetchSingle());
+    update.where(LIBRARY.ID.eq(newLibraryOperation.libraryId())).execute();
+    return currentLibrary(newLibraryOperation.libraryId());
+  }
+
+  // The entity carries the audit columns that the trigger filled. The update bypassed the
+  // persistence context, so a copy the transaction already holds is refreshed from the row.
+  private Library currentLibrary(UUID libraryId) {
+    var library = entityManager.find(Library.class, libraryId);
+    entityManager.refresh(library);
+    return library;
   }
 
   @Override
@@ -196,31 +200,6 @@ public class JooqLibraryOperationRepository implements LibraryOperationRepositor
         .createdBy(row.getCreatedBy())
         .createdOn(row.getCreatedOn().toInstant())
         .build();
-  }
-
-  // The mapping leaves out the audit columns. The library builder refuses audit values, and the
-  // audit trigger fills the audit columns.
-  private static Library toLibrary(LibraryRecord row) {
-    return Library.builder()
-        .id(row.getId())
-        .filepathUri(row.getFilepathUri())
-        .name(row.getName())
-        .scanStartedOn(toInstant(row.getScanStartedOn()))
-        .scanCompletedOn(toInstant(row.getScanCompletedOn()))
-        .status(LibraryStatus.valueOf(row.getStatus().getLiteral()))
-        .backend(LibraryBackend.valueOf(row.getBackend().getLiteral()))
-        .type(MediaType.valueOf(row.getType().getLiteral()))
-        .externalAgentStrategy(
-            ExternalAgentStrategy.valueOf(row.getExternalAgentStrategy().getLiteral()))
-        .build();
-  }
-
-  private static Instant toInstant(OffsetDateTime time) {
-    if (time == null) {
-      return null;
-    }
-
-    return time.toInstant();
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")

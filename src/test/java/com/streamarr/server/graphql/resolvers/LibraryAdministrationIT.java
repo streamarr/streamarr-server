@@ -25,6 +25,7 @@ import com.streamarr.server.support.TestFixtureWork;
 import jakarta.persistence.EntityManager;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -272,6 +273,77 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should return the library's audit timestamps when a ServerAdmin starts a scan")
+  void shouldReturnLibrarysAuditTimestampsWhenServerAdminStartsScan() throws Exception {
+    identity = authTestSupport.createAdminIdentity();
+    var adminToken = authTestSupport.profileBearer(identity);
+    var library =
+        libraryRepository.saveAndFlush(
+            LibraryFixtureCreator.unsavedLibraryBuilder()
+                .name("Audited Library")
+                .filepathUri(FilepathCodec.encode(libraryDirectory))
+                .status(LibraryStatus.HEALTHY)
+                .build());
+    var scanEnded = scanEndedListener.scanEnded(library.getId());
+
+    // The stopped scheduler keeps the library's row as the scan's start left it.
+    libraryOperationScheduler.stop();
+    try {
+      var response =
+          postGraphQl(startLibraryScanWithAuditTimestampsMutation(library.getId()), adminToken);
+
+      var returned = auditTimestampsOf(response, "$.data.startLibraryScan.library");
+      var stored = libraryRepository.findById(library.getId()).orElseThrow();
+      assertThat(returned.createdOn()).isEqualTo(stored.getCreatedOn());
+      assertThat(returned.lastModifiedOn()).isEqualTo(stored.getLastModifiedOn());
+    } finally {
+      libraryOperationScheduler.start();
+    }
+
+    try {
+      scanEnded.get(BOUND_SECONDS, TimeUnit.SECONDS);
+    } finally {
+      postGraphQl(removeLibraryMutation(library.getId()), adminToken).andExpect(status().isOk());
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should return the added library's audit timestamps when a ServerAdmin adds a library")
+  void shouldReturnAddedLibrarysAuditTimestampsWhenServerAdminAddsLibrary() throws Exception {
+    identity = authTestSupport.createAdminIdentity();
+    var adminToken = authTestSupport.profileBearer(identity);
+
+    // The stopped scheduler keeps the library's row as the first scan's start left it.
+    libraryOperationScheduler.stop();
+    UUID libraryId;
+    try {
+      var content =
+          postGraphQl(addLibraryWithAuditTimestampsMutation(libraryDirectory), adminToken)
+              .andExpect(status().isOk())
+              .andExpect(jsonPath("$.errors").doesNotExist())
+              .andExpect(jsonPath("$.data.addLibrary.library.status").value("SCANNING"))
+              .andReturn()
+              .getResponse()
+              .getContentAsString();
+      libraryId = UUID.fromString(JsonPath.read(content, "$.data.addLibrary.library.id"));
+
+      var returned = auditTimestampsOf(content, "$.data.addLibrary.library");
+      var stored = libraryRepository.findById(libraryId).orElseThrow();
+      assertThat(returned.createdOn()).isEqualTo(stored.getCreatedOn());
+      assertThat(returned.lastModifiedOn()).isEqualTo(stored.getLastModifiedOn());
+    } finally {
+      libraryOperationScheduler.start();
+    }
+
+    try {
+      scanEndedListener.scanEnded(libraryId).get(BOUND_SECONDS, TimeUnit.SECONDS);
+    } finally {
+      postGraphQl(removeLibraryMutation(libraryId), adminToken).andExpect(status().isOk());
+    }
+  }
+
+  @Test
   @DisplayName(
       "Should deny library administration when the token claims admin but the live row does not")
   void shouldDenyLibraryAdministrationWhenTokenClaimsAdminButLiveRowDoesNot() throws Exception {
@@ -450,6 +522,38 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
             + " type: MOVIE, backend: LOCAL}) { library { id } } }")
         .formatted(directory.toAbsolutePath());
   }
+
+  private static String addLibraryWithAuditTimestampsMutation(Path directory) {
+    return ("mutation { addLibrary(input: {name: \\\"Audited\\\", filepath: \\\"%s\\\","
+            + " type: MOVIE, backend: LOCAL}) { library { id status createdOn lastModifiedOn } } }")
+        .formatted(directory.toAbsolutePath());
+  }
+
+  private static String startLibraryScanWithAuditTimestampsMutation(UUID libraryId) {
+    return ("mutation { startLibraryScan(input: {libraryId: \\\"%s\\\"}) { library { createdOn"
+            + " lastModifiedOn } } }")
+        .formatted(libraryId);
+  }
+
+  private static AuditTimestamps auditTimestampsOf(ResultActions response, String libraryPath)
+      throws Exception {
+    var content =
+        response
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return auditTimestampsOf(content, libraryPath);
+  }
+
+  private static AuditTimestamps auditTimestampsOf(String content, String libraryPath) {
+    return new AuditTimestamps(
+        Instant.parse(JsonPath.read(content, libraryPath + ".createdOn")),
+        Instant.parse(JsonPath.read(content, libraryPath + ".lastModifiedOn")));
+  }
+
+  private record AuditTimestamps(Instant createdOn, Instant lastModifiedOn) {}
 
   private static String startLibraryScanMutation(UUID libraryId) {
     return ("mutation { startLibraryScan(input: {libraryId: \\\"%s\\\"}) { library { status }"
