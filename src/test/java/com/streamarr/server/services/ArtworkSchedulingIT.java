@@ -6,11 +6,12 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;
+import static com.streamarr.server.support.HeldResponses.held;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.github.kagkarlsson.scheduler.CurrentlyExecuting;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
+import com.github.tomakehurst.wiremock.client.MappingBuilder;
 import com.streamarr.server.AbstractWireMockIntegrationTest;
 import com.streamarr.server.config.ArtworkPrioritySchedulers;
 import com.streamarr.server.config.ArtworkScheduler;
@@ -125,26 +126,17 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
           + " downloads finish")
   void shouldSaveThePosterAndBackdropWithTheirResultsWhenTheServerRestartsBeforeDownloadsFinish()
       throws Exception {
-    stubImage("/poster.jpg", Duration.ofSeconds(10));
-    stubImage("/backdrop.jpg", Duration.ofSeconds(10));
-    var started = new CompletableFuture<Void>();
-    var beforeRestart =
-        startPrimaryScheduler(
-            new AbstractSchedulerListener() {
-              @Override
-              public void onExecutionStart(CurrentlyExecuting execution) {
-                started.complete(null);
-              }
-            });
+    stubHeldImage("/poster.jpg");
+    stubHeldImage("/backdrop.jpg");
+    var beforeRestart = startPrimaryScheduler(new AbstractSchedulerListener() {});
     var run = requestMovieArtwork(ImageRefreshMode.PRESERVE, POSTER, BACKDROP);
-    started.get(BOUND.toSeconds(), TimeUnit.SECONDS);
+    heldResponses.awaitHeldResponses(1, BOUND);
 
     beforeRestart.stop();
 
     assertThat(imageRepository.findByEntityIdAndEntityType(movieId, ImageEntityType.MOVIE))
         .isEmpty();
-    stubImage("/poster.jpg", Duration.ZERO);
-    stubImage("/backdrop.jpg", Duration.ZERO);
+    heldResponses.release();
     startPrimaryScheduler(new AbstractSchedulerListener() {});
 
     var summary = awaitRun(run);
@@ -161,8 +153,8 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   @Test
   @DisplayName("Should run the steps again when a crashed server left their execution picked")
   void shouldRunTheStepsAgainWhenACrashedServerLeftTheirExecutionPicked() throws Exception {
-    stubImage("/poster.jpg", Duration.ZERO);
-    stubImage("/backdrop.jpg", Duration.ZERO);
+    stubImage("/poster.jpg");
+    stubImage("/backdrop.jpg");
     var run = requestMovieArtwork(ImageRefreshMode.PRESERVE, POSTER, BACKDROP);
     jdbcTemplate.update(
         "UPDATE "
@@ -187,7 +179,7 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   void shouldStoreATemporaryFailureAndSaveTheImageLaterWhenTheHostAnswersTooManyRequests()
       throws Exception {
     stubTooManyRequestsThenImage("/poster.jpg", 6);
-    stubImage("/backdrop.jpg", Duration.ZERO);
+    stubImage("/backdrop.jpg");
     var failed = new CompletableFuture<ExecutionComplete>();
     var saved = new CompletableFuture<ExecutionComplete>();
     startPrimaryScheduler(
@@ -230,21 +222,15 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   void shouldSaveNothingFromAPreservingAttemptWhenItFinishesAfterAForcedRefresh() throws Exception {
     imageRepository.save(
         imageBuilder(movieId).key("/poster.jpg").path("movie/poster-small.jpg").build());
-    stubImage("/poster.jpg", Duration.ZERO);
-    stubImage("/backdrop.jpg", Duration.ofSeconds(3));
-    var started = new CompletableFuture<Void>();
-    startPrimaryScheduler(
-        new AbstractSchedulerListener() {
-          @Override
-          public void onExecutionStart(CurrentlyExecuting execution) {
-            started.complete(null);
-          }
-        });
+    stubImage("/poster.jpg");
+    stubHeldImage("/backdrop.jpg");
+    startPrimaryScheduler(new AbstractSchedulerListener() {});
     requestMovieArtwork(ImageRefreshMode.PRESERVE, POSTER, BACKDROP);
     var preserveGeneration = requests.findRequest(movie()).orElseThrow().generation();
-    started.get(BOUND.toSeconds(), TimeUnit.SECONDS);
+    heldResponses.awaitHeldResponses(1, BOUND);
 
     var forced = requestMovieArtwork(ImageRefreshMode.FORCE_REFRESH, POSTER, BACKDROP);
+    heldResponses.release();
 
     assertThat(awaitRun(forced).counts()).isEqualTo(FinishedImageCounts.builder().saved(2).build());
     assertThat(itemResults.findByItem(movieId, ImageEntityType.MOVIE))
@@ -300,7 +286,7 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
           + " starting scheduler picks them")
   void shouldSaveTheArtworkWhenItsStepsAreScheduledAgainWhileAStartingSchedulerPicksThem()
       throws Exception {
-    stubImage("/poster.jpg", Duration.ZERO);
+    stubImage("/poster.jpg");
     var run = requestMovieArtwork(ImageRefreshMode.PRESERVE, POSTER);
     var completed = new CompletableFuture<ExecutionComplete>();
     var scheduler = startPrimaryScheduler(completedInto(completed));
@@ -495,15 +481,21 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
     return jdbcTemplate.queryForObject("SELECT count(*) FROM " + table, Integer.class);
   }
 
-  private void stubImage(String path, Duration delay) {
-    wireMock.stubFor(
-        get(urlPathEqualTo(path))
-            .willReturn(
-                aResponse()
-                    .withStatus(200)
-                    .withHeader("Content-Type", "image/jpeg")
-                    .withFixedDelay((int) delay.toMillis())
-                    .withBody(createTestImage(600, 900))));
+  private void stubImage(String path) {
+    wireMock.stubFor(imageAt(path));
+  }
+
+  private void stubHeldImage(String path) {
+    wireMock.stubFor(held(imageAt(path)));
+  }
+
+  private static MappingBuilder imageAt(String path) {
+    return get(urlPathEqualTo(path))
+        .willReturn(
+            aResponse()
+                .withStatus(200)
+                .withHeader("Content-Type", "image/jpeg")
+                .withBody(createTestImage(600, 900)));
   }
 
   // The HTTP client retries a 429 five times, so the first attempt ends with the sixth answer.
