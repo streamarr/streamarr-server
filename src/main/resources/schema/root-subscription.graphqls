@@ -51,8 +51,7 @@ type Subscription {
     ViewProfileActivity permission for that Profile. The selected Profile has the permission while
     its Account is enabled.
 
-    Delivers one change for each committed write, or null with errors when a selected field fails
-    to resolve. The change holds each movie or episode whose watchStatus, watchProgress or
+    Delivers one change for each committed write. The change holds each movie or episode whose watchStatus, watchProgress or
     lastWatchedAt changed. It also holds the season and the series of each such episode, because
     their aggregate values may have changed. Every open socket of the Profile receives the change,
     including the socket of the client that made the write. Values are current values, not
@@ -62,6 +61,11 @@ type Subscription {
 
     To build current state, subscribe first, then query `continueWatching` and the library views
     the client shows. Select the same fields in the change as in those queries.
+
+    A field that fails to resolve does not end the operation. The `errors` of the message name the
+    path of each failed field. A failed nullable field arrives as null. A failed non-null field of
+    an item makes that item null, and the other items arrive intact. A change whose items cannot be
+    resolved arrives as null.
     """
     watchStateChanged: WatchStateChange
 }
@@ -70,7 +74,8 @@ type Subscription {
 type WatchStateChange {
     """
     The movies and episodes whose watch state changed, and the seasons and series that hold those
-    episodes. Each item appears once.
+    episodes. Each item appears once. An item is null when one of its non-null fields failed to
+    resolve.
     """
-    items: [WatchStateItem!]!
+    items: [WatchStateItem]!
 }

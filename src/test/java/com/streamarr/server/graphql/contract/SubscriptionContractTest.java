@@ -22,7 +22,8 @@ import org.junit.jupiter.api.Test;
 /**
  * The subscription schema contract from ADR 0042: every field documents who may subscribe and is
  * nullable so a field error never ends the operation, a removed library is identified by id alone,
- * and a watch-state change lists its items.
+ * and a watch-state change lists its items, each nullable so a failed item leaves the others
+ * intact.
  */
 @Tag("UnitTest")
 @DisplayName("Subscription Contract Tests")
@@ -62,14 +63,15 @@ class SubscriptionContractTest {
   }
 
   @Test
-  @DisplayName("Should deliver a non-null list of items when a watch-state change is delivered")
-  void shouldDeliverNonNullListOfItemsWhenWatchStateChangeIsDelivered() {
+  @DisplayName(
+      "Should deliver a non-null list of nullable items when a watch-state change is delivered")
+  void shouldDeliverNonNullListOfNullableItemsWhenWatchStateChangeIsDelivered() {
     assertThat(objectType("WatchStateChange").getFieldDefinitions())
         .singleElement()
         .satisfies(
             field -> {
               assertThat(field.getName()).isEqualTo("items");
-              assertThat(AstPrinter.printAst(field.getType())).isEqualTo("[WatchStateItem!]!");
+              assertThat(AstPrinter.printAst(field.getType())).isEqualTo("[WatchStateItem]!");
             });
   }
 

@@ -239,10 +239,11 @@ When the client loads the next page, it drops items it already holds by id, beca
 The server resolves each change for each subscriber.
 A field that cannot resolve within `GRAPHQL_SUBSCRIPTION_DELIVERY_FETCH_TIMEOUT` fails, so later changes do not wait behind it.
 A failed nullable field, such as `watchProgress` or `lastWatchedAt`, arrives as null in a `next` message.
-The message's `errors` name the path of each failed field, and the operation continues.
-The client keeps its previous value for each field that an error names, and applies the rest of the change.
-A failed non-null field, such as `watchStatus`, `library` or `unmatched`, ends the operation with an `error` message.
-After that message, the client subscribes again and runs its queries again.
+A failed non-null field of an item, such as `watchStatus`, `library` or `unmatched`, makes that item null in `items`.
+The other items of the change arrive intact.
+When the change's items cannot be resolved, `watchStateChanged` arrives as null.
+The message's `errors` name the path of each failed field, and the operation continues in every case.
+The client keeps its previous value for each field that an error names, skips each null item, and applies the rest of the change.
 
 == Configuration
 
