@@ -10,6 +10,19 @@ import lombok.NonNull;
  */
 public record WorkerSessionKeepalive(@NonNull Duration time, @NonNull Duration timeout) {
 
+  // gRPC raises a shorter keepalive time to this without telling the caller.
+  private static final Duration SHORTEST_TIME = Duration.ofSeconds(10);
+
   static final WorkerSessionKeepalive DEFAULT =
       new WorkerSessionKeepalive(Duration.ofSeconds(30), Duration.ofSeconds(10));
+
+  public WorkerSessionKeepalive {
+    if (time.compareTo(SHORTEST_TIME) < 0) {
+      throw new IllegalArgumentException("Worker keepalive time must be at least 10 seconds");
+    }
+
+    if (!timeout.isPositive()) {
+      throw new IllegalArgumentException("Worker keepalive timeout must be positive");
+    }
+  }
 }
