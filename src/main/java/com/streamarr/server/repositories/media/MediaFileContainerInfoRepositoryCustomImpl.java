@@ -1,10 +1,10 @@
 package com.streamarr.server.repositories.media;
 
-import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE;
-import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE_CONTAINER_INFO;
-import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE_KEYFRAME_POSITIONS;
-import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE_PROBE_TASK_REQUEST;
-import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE_STREAM_INFO;
+import static com.streamarr.server.jooq.generated.tables.MediaFile.MEDIA_FILE;
+import static com.streamarr.server.jooq.generated.tables.MediaFileContainerInfo.MEDIA_FILE_CONTAINER_INFO;
+import static com.streamarr.server.jooq.generated.tables.MediaFileKeyframePositions.MEDIA_FILE_KEYFRAME_POSITIONS;
+import static com.streamarr.server.jooq.generated.tables.MediaFileProbeTaskRequest.MEDIA_FILE_PROBE_TASK_REQUEST;
+import static com.streamarr.server.jooq.generated.tables.MediaFileStreamInfo.MEDIA_FILE_STREAM_INFO;
 
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.SourceFileSnapshot;

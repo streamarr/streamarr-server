@@ -1,6 +1,6 @@
 package com.streamarr.server.controllers.auth.device;
 
-import static com.streamarr.server.jooq.generated.Tables.SERVER_BOOTSTRAP;
+import static com.streamarr.server.jooq.generated.tables.ServerBootstrap.SERVER_BOOTSTRAP;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;

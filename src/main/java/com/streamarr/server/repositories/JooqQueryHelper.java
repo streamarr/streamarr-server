@@ -1,5 +1,7 @@
 package com.streamarr.server.repositories;
 
+import static com.streamarr.server.jooq.generated.tables.BaseCollectable.BASE_COLLECTABLE;
+import static com.streamarr.server.jooq.generated.tables.ExternalIdentifier.EXTERNAL_IDENTIFIER;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.left;
@@ -11,7 +13,6 @@ import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.val;
 
 import com.streamarr.server.domain.AlphabetLetter;
-import com.streamarr.server.jooq.generated.Tables;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import jakarta.persistence.EntityManager;
@@ -101,7 +102,7 @@ public class JooqQueryHelper {
     if (startLetter == AlphabetLetter.Z) {
       return titleSort
           .greaterOrEqual(letterValue(startLetter))
-          .and(lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1)).eq(letterValue(startLetter)));
+          .and(lower(left(BASE_COLLECTABLE.TITLE_SORT, 1)).eq(letterValue(startLetter)));
     }
 
     return titleSort
@@ -130,7 +131,7 @@ public class JooqQueryHelper {
   }
 
   private Condition hashLetterCondition() {
-    var firstCharLower = lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1));
+    var firstCharLower = lower(left(BASE_COLLECTABLE.TITLE_SORT, 1));
     return firstCharLower.lessThan(inline("a")).or(firstCharLower.greaterThan(inline("z")));
   }
 
@@ -143,11 +144,11 @@ public class JooqQueryHelper {
   }
 
   public Condition libraryCondition(UUID libraryId) {
-    return libraryId != null ? Tables.BASE_COLLECTABLE.LIBRARY_ID.eq(libraryId) : noCondition();
+    return libraryId != null ? BASE_COLLECTABLE.LIBRARY_ID.eq(libraryId) : noCondition();
   }
 
   public Field<String> titleSortField() {
-    return lower(Tables.BASE_COLLECTABLE.TITLE_SORT);
+    return lower(BASE_COLLECTABLE.TITLE_SORT);
   }
 
   public Condition yearCondition(Field<LocalDate> dateField, List<Integer> years) {
@@ -173,9 +174,9 @@ public class JooqQueryHelper {
     }
     return not(
         exists(
-            select(Tables.EXTERNAL_IDENTIFIER.ENTITY_ID)
-                .from(Tables.EXTERNAL_IDENTIFIER)
-                .where(Tables.EXTERNAL_IDENTIFIER.ENTITY_ID.eq(Tables.BASE_COLLECTABLE.ID))));
+            select(EXTERNAL_IDENTIFIER.ENTITY_ID)
+                .from(EXTERNAL_IDENTIFIER)
+                .where(EXTERNAL_IDENTIFIER.ENTITY_ID.eq(BASE_COLLECTABLE.ID))));
   }
 
   @SuppressWarnings({"unchecked", "rawtypes"})
@@ -222,7 +223,7 @@ public class JooqQueryHelper {
   @SuppressWarnings("unchecked")
   public Condition buildSeekCondition(
       MediaFilter filter, Field<?> sortCol, SortField<?>[] orderByColumns, UUID cursorId) {
-    var idField = Tables.BASE_COLLECTABLE.ID;
+    var idField = BASE_COLLECTABLE.ID;
     var coercedValue = coerceSortValue(filter);
     var isAsc = filter.getSortDirection() == SortOrder.ASC;
 

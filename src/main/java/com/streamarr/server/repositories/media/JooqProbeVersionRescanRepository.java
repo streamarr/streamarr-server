@@ -1,8 +1,8 @@
 package com.streamarr.server.repositories.media;
 
-import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE;
-import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE_CONTAINER_INFO;
-import static com.streamarr.server.jooq.generated.Tables.MEDIA_FILE_PROBE_TASK_REQUEST;
+import static com.streamarr.server.jooq.generated.tables.MediaFile.MEDIA_FILE;
+import static com.streamarr.server.jooq.generated.tables.MediaFileContainerInfo.MEDIA_FILE_CONTAINER_INFO;
+import static com.streamarr.server.jooq.generated.tables.MediaFileProbeTaskRequest.MEDIA_FILE_PROBE_TASK_REQUEST;
 
 import java.util.List;
 import java.util.UUID;
