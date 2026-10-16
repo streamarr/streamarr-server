@@ -494,7 +494,7 @@ class LibraryManagementServiceTest {
         MediaFile.builder()
             .libraryId(otherLibraryId)
             .filepathUri(FilepathCodec.encode(moviePath))
-            .filename("About Time (2013).mkv")
+            .filename("About Time (2013) old name.mkv")
             .status(MediaFileStatus.METADATA_UNAVAILABLE)
             .failureReason(ItemFailureReason.TEMPORARY)
             .build());
@@ -517,8 +517,9 @@ class LibraryManagementServiceTest {
 
     assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath)))
         .get()
-        .extracting(MediaFile::getLibraryId, MediaFile::getStatus)
-        .containsExactly(otherLibraryId, MediaFileStatus.METADATA_UNAVAILABLE);
+        .extracting(MediaFile::getLibraryId, MediaFile::getFilename, MediaFile::getStatus)
+        .containsExactly(
+            otherLibraryId, "About Time (2013) old name.mkv", MediaFileStatus.METADATA_UNAVAILABLE);
     assertThat(fakeMovieRepository.findAll()).isEmpty();
     assertThat(capturingEventPublisher.getEventsOfType(ItemProcessedEvent.class)).isEmpty();
   }

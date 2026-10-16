@@ -192,14 +192,13 @@ public class LibraryFileWalk {
   private MatchingOutcome processFile(
       FileDiscovery discovery, Path path, Consumer<UUID> requestProbe) {
     var library = discovery.library();
-    var mediaFile = findOrCreateMediaFile(library, path);
+    var libraryMediaFile = findOrCreateLibraryMediaFile(library, path);
 
-    // A file joins only an item of its own library. Removing a library deletes its items, and
-    // every file attached to them, so this library must not attach a file another library holds.
-    if (!library.getId().equals(mediaFile.getLibraryId())) {
+    if (libraryMediaFile.isEmpty()) {
       return new MatchingOutcome.SkippedAsAnotherLibrarysFile();
     }
 
+    var mediaFile = libraryMediaFile.get();
     requestProbe.accept(mediaFile.getId());
 
     if (isAlreadyMatched(mediaFile)) {
@@ -234,7 +233,10 @@ public class LibraryFileWalk {
     return FilenameUtils.getExtension(path.getFileName().toString());
   }
 
-  private MediaFile findOrCreateMediaFile(Library library, Path path) {
+  // A file joins only an item of its own library. Removing a library deletes its items, and every
+  // file attached to them, so this library must neither match nor change a file another library
+  // holds. The result is empty for such a file.
+  private Optional<MediaFile> findOrCreateLibraryMediaFile(Library library, Path path) {
     var absoluteFilepath = FilepathCodec.encode(path);
     var filepathMutex = mutexFactory.getMutex(absoluteFilepath);
 
@@ -243,10 +245,14 @@ public class LibraryFileWalk {
       var optionalMediaFile = mediaFileRepository.findFirstByFilepathUri(absoluteFilepath);
 
       if (optionalMediaFile.isEmpty()) {
-        return createNewMediaFile(library, path, absoluteFilepath);
+        return Optional.of(createNewMediaFile(library, path, absoluteFilepath));
       }
 
       var mediaFile = optionalMediaFile.orElseThrow();
+      if (!library.getId().equals(mediaFile.getLibraryId())) {
+        return Optional.empty();
+      }
+
       var filename = FilepathCodec.filenameOf(absoluteFilepath);
       if (!filename.equals(mediaFile.getFilename())) {
         mediaFile.setFilename(filename);
@@ -254,7 +260,7 @@ public class LibraryFileWalk {
       }
 
       log.info("MediaFile id: '{}' already exists, not adding again.", mediaFile.getId());
-      return mediaFile;
+      return Optional.of(mediaFile);
     } finally {
       filepathMutex.unlock();
     }
