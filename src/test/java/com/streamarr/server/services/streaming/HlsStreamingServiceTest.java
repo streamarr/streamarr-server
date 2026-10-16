@@ -368,7 +368,7 @@ class HlsStreamingServiceTest {
   }
 
   private HlsStreamingService serviceWith(
-      TranscodeExecutor executor, RuntimeStreamSessionRegistry registry) {
+      FakeTranscodeExecutor executor, RuntimeStreamSessionRegistry registry) {
     var properties = streamingProperties();
     var rig =
         StreamingRigFixture.streamingRigBuilder()
@@ -376,6 +376,7 @@ class HlsStreamingServiceTest {
             .segmentStore(segmentStore)
             .properties(properties)
             .runtimeRegistry(registry)
+            .heldRequests(executor.heldSegmentRequests())
             .build();
     coordinator = rig.coordinator();
     return HlsStreamingService.builder()
@@ -1325,12 +1326,14 @@ class HlsStreamingServiceTest {
     createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
     createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
     var startedBefore = transcodeExecutor.getStartedRequests().size();
+    var looks = transcodeExecutor.livenessChecks();
 
     var delivery =
         CompletableFuture.supplyAsync(
             () -> coordinator.deliver(first.getSessionId(), "1080p", "1080p/segment1.m4s"));
     transcodeExecutor.awaitStartedRequestCount(startedBefore + 1);
-    segmentStore.addSegment(first.getSessionId(), "1080p/segment1.m4s", new byte[] {1});
+    transcodeExecutor.awaitLivenessCheckCount(looks + 1);
+    upload(first.getSessionId(), "1080p", "1080p/segment1.m4s");
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     assertThat(first.getVariantHandles()).containsOnlyKeys("1080p");
@@ -1361,6 +1364,12 @@ class HlsStreamingServiceTest {
     assertThat(service.createSession(createStreamSessionCommand(abrFileId, profileId, abrOptions)))
         .isEqualTo(
             Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+  }
+
+  // Stores the segment, then wakes the requests held on its variant, as a worker's upload does.
+  private void upload(UUID sessionId, String variantLabel, String segmentName) {
+    segmentStore.addSegment(sessionId, segmentName, new byte[] {1});
+    transcodeExecutor.heldSegmentRequests().wakeVariant(sessionId, variantLabel);
   }
 
   private static final class FailingStartupTranscodeExecutor extends FakeTranscodeExecutor {

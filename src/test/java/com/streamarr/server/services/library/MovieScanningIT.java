@@ -21,6 +21,7 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.fakes.AdvanceableSystemClock;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
@@ -35,6 +36,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -57,6 +59,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class MovieScanningIT extends AbstractScanningIntegrationTest {
 
   private static final Duration SCAN_BOUND = Duration.ofSeconds(20);
+  private static final Duration FIRST_RETRY_DELAY = Duration.ofSeconds(5);
 
   // Genres are shared across test classes, and no other test uses this TMDB genre id.
   private static final int UNSHARED_GENRE_ID = 9_000_001;
@@ -237,18 +240,23 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     stubTmdbMovieMetadata("27205", "Inception");
     startProbeScheduler();
     var rejectedAttempt = new CompletableFuture<ExecutionComplete>();
+    var clock = new AdvanceableSystemClock();
     artworkPrioritySchedulers.stop();
     var artworkScheduler =
-        ArtworkSchedulerStarter.fromContext(applicationContext)
+        ArtworkSchedulerStarter.fromContext(applicationContext).toBuilder()
+            .clock(clock)
+            .build()
             .start(ArtworkPriority.PRIMARY, completedInto(rejectedAttempt));
     rejectItemErrors();
 
     try (var scan = BoundedTask.start(() -> libraryOperationDriver.scanToEnd(library.getId()))) {
       rejectedAttempt.get(SCAN_BOUND.toSeconds(), TimeUnit.SECONDS);
       assertThat(failedArtworkAttempts()).isOne();
+      assertThat(artworkRetryDelay()).isEqualTo(FIRST_RETRY_DELAY);
       assertThat(libraryRepository.findById(library.getId()).orElseThrow().getStatus())
           .isEqualTo(LibraryStatus.SCANNING);
       acceptItemErrors();
+      clock.advance(FIRST_RETRY_DELAY);
 
       scan.await(SCAN_BOUND);
     } finally {
@@ -333,6 +341,15 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     return jdbcTemplate.queryForObject(
         "SELECT coalesce(max(consecutive_failures), 0) FROM primary_artwork_scheduled_tasks",
         Integer.class);
+  }
+
+  private Duration artworkRetryDelay() {
+    return jdbcTemplate.queryForObject(
+        "SELECT execution_time, last_failure FROM primary_artwork_scheduled_tasks",
+        (row, _) ->
+            Duration.between(
+                row.getObject("last_failure", OffsetDateTime.class),
+                row.getObject("execution_time", OffsetDateTime.class)));
   }
 
   private record LibraryWithMovieFile(Library library, Path movieFile) {

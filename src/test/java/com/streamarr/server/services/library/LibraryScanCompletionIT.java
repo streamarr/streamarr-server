@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
+import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.ItemFailureReason;
@@ -18,6 +19,7 @@ import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
+import com.streamarr.server.fakes.AdvanceableSystemClock;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -56,6 +58,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
   @Autowired private MediaFileRepository mediaFiles;
   @Autowired private MediaFileContainerInfoRepository outcomes;
   @Autowired private ProbeTaskRequests probeTaskRequests;
+  @Autowired private ProbeSchedulingProperties probeScheduling;
 
   private final List<MediaFile> matchedFiles = new ArrayList<>();
   private final List<Library> scannedLibraries = new ArrayList<>();
@@ -89,8 +92,14 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
           return producer.probe(request);
         };
 
-    startScheduler(
-        probeExecution.toBuilder().producer(busyUntilReleased).build(), countingOk(deferred));
+    var clock = new AdvanceableSystemClock();
+    var retryDelay = probeScheduling.busyWorkerRetryDelay();
+    var beforeDeferral = clock.instant();
+    var client =
+        startScheduler(
+            probeExecution.toBuilder().producer(busyUntilReleased).build(),
+            countingOk(deferred),
+            clock);
 
     try (var scan =
         BoundedTask.start(
@@ -99,7 +108,15 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
               return reader.find(mediaFile.getId()).isPresent();
             })) {
       assertThat(deferred.await(10, TimeUnit.SECONDS)).isTrue();
+      assertThat(client.getScheduledExecution(instanceOf(mediaFile)))
+          .hasValueSatisfying(
+              retry ->
+                  assertThat(retry.getExecutionTime())
+                      .isBetween(
+                          beforeDeferral.plus(retryDelay), clock.instant().plus(retryDelay)));
       busy.set(false);
+      clock.advance(retryDelay);
+      checkForDueExecutions();
 
       assertThat(scan.await(SCAN_BOUND)).as("probe outcome stored when the scan returned").isTrue();
     }
