@@ -11,16 +11,37 @@ import com.streamarr.server.domain.streaming.SubtitleMode;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
+import com.streamarr.server.domain.streaming.VideoCodecProfile;
+import com.streamarr.server.domain.streaming.VideoCodecTier;
+import com.streamarr.server.domain.streaming.VideoEncodeDecision;
+import com.streamarr.transcode.v1.CompatibleBase;
 import com.streamarr.transcode.v1.ContainerFormat;
+import com.streamarr.transcode.v1.DolbyVisionAbsent;
+import com.streamarr.transcode.v1.Presence;
 import com.streamarr.transcode.v1.TranscodeExecution;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
+import com.streamarr.transcode.v1.VideoCodecFamily;
+import com.streamarr.transcode.v1.VideoDynamicRange;
+import com.streamarr.transcode.v1.VideoMode;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.UUID;
 
 // Domain and protobuf contracts intentionally share simple names.
 final class RemoteVariantJobMapper {
+
+  // The probe stores no dynamic range before probe version 4, so every source's is unspecified.
+  private static final VideoDynamicRange UNSPECIFIED_SOURCE_DYNAMIC_RANGE =
+      VideoDynamicRange.getDefaultInstance();
+
+  // Every encode's planned output is SDR without HDR10+ or Dolby Vision (ADR 0013).
+  private static final VideoDynamicRange SDR_OUTPUT_DYNAMIC_RANGE =
+      VideoDynamicRange.newBuilder()
+          .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
+          .setHdr10Plus(Presence.PRESENCE_ABSENT)
+          .setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance())
+          .build();
 
   private final RemoteMediaSourceMapper sourceMapper;
 
@@ -34,7 +55,7 @@ final class RemoteVariantJobMapper {
         .setJobId(toProto(logicalJobId(request)))
         .setJobAttemptId(toProto(request.attemptId()))
         .setSource(sourceMapper.map(request.sourcePath()))
-        .setDecision(decision(request.transcodeDecision()))
+        .setDecision(decision(request))
         .setVariant(variant(request))
         .setExecution(execution(request))
         .build();
@@ -43,6 +64,29 @@ final class RemoteVariantJobMapper {
   private static UUID logicalJobId(TranscodeRequest request) {
     var name = request.sessionId() + "\0" + request.variantLabel();
     return UUID.nameUUIDFromBytes(name.getBytes(UTF_8));
+  }
+
+  // A stream copy carries no video decision until the probe stores the copy's codec string.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static com.streamarr.transcode.v1.TranscodeDecision decision(TranscodeRequest request) {
+    var decision = decision(request.transcodeDecision()).toBuilder();
+    request.videoEncodeDecision().ifPresent(encode -> decision.setVideo(video(encode)));
+    return decision.build();
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static com.streamarr.transcode.v1.VideoDecision video(VideoEncodeDecision encode) {
+    var video =
+        com.streamarr.transcode.v1.VideoDecision.newBuilder()
+            .setMode(VideoMode.VIDEO_MODE_ENCODE)
+            .setCodecFamily(codecFamily(encode.codecProfile()))
+            .setCodecProfile(codecProfile(encode.codecProfile()))
+            .setLevel(encode.level())
+            .setCodecString(encode.codecString())
+            .setSourceDynamicRange(UNSPECIFIED_SOURCE_DYNAMIC_RANGE)
+            .setOutputDynamicRange(SDR_OUTPUT_DYNAMIC_RANGE);
+    encode.tier().map(RemoteVariantJobMapper::tier).ifPresent(video::setTier);
+    return video.build();
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
@@ -139,6 +183,29 @@ final class RemoteVariantJobMapper {
       case SLOW -> com.streamarr.transcode.v1.EncoderPreset.ENCODER_PRESET_SLOW;
       case SLOWER -> com.streamarr.transcode.v1.EncoderPreset.ENCODER_PRESET_SLOWER;
       case VERYSLOW -> com.streamarr.transcode.v1.EncoderPreset.ENCODER_PRESET_VERYSLOW;
+    };
+  }
+
+  private static VideoCodecFamily codecFamily(VideoCodecProfile profile) {
+    return switch (profile) {
+      case H264_HIGH -> VideoCodecFamily.VIDEO_CODEC_FAMILY_H264;
+      case AV1_MAIN -> VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1;
+    };
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static com.streamarr.transcode.v1.VideoCodecProfile codecProfile(
+      VideoCodecProfile profile) {
+    return switch (profile) {
+      case H264_HIGH -> com.streamarr.transcode.v1.VideoCodecProfile.VIDEO_CODEC_PROFILE_H264_HIGH;
+      case AV1_MAIN -> com.streamarr.transcode.v1.VideoCodecProfile.VIDEO_CODEC_PROFILE_AV1_MAIN;
+    };
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static com.streamarr.transcode.v1.VideoCodecTier tier(VideoCodecTier tier) {
+    return switch (tier) {
+      case MAIN -> com.streamarr.transcode.v1.VideoCodecTier.VIDEO_CODEC_TIER_MAIN;
     };
   }
 
