@@ -117,7 +117,7 @@ class WatchStateChangedEventIT extends AbstractIntegrationTest {
     report(session, FINISHED_POSITION_SECONDS, PlaybackState.STOPPED);
     report(session, FINISHED_POSITION_SECONDS, PlaybackState.STOPPED);
 
-    assertThat(completionsOf(movie)).hasSize(1);
+    assertThat(completionsOf(movie.getId())).hasSize(1);
     assertThat(committed.events)
         .containsExactly(new WatchStateChangedEvent(profileId, Set.of(movie.getId())));
   }
@@ -146,7 +146,7 @@ class WatchStateChangedEventIT extends AbstractIntegrationTest {
       retry.get(BOUND.toSeconds(), TimeUnit.SECONDS);
     }
 
-    assertThat(completionsOf(movie)).hasSize(1);
+    assertThat(completionsOf(movie.getId())).hasSize(1);
     assertThat(committed.events)
         .containsExactly(new WatchStateChangedEvent(profileId, Set.of(movie.getId())));
   }
@@ -177,15 +177,11 @@ class WatchStateChangedEventIT extends AbstractIntegrationTest {
         });
 
     assertThat(committed.events).isEmpty();
-    assertThat(
-            watchHistoryRepository.findByProfileIdAndCollectableIdIn(
-                profileId, List.of(movie.getId())))
-        .isEmpty();
+    assertThat(completionsOf(movie.getId())).isEmpty();
   }
 
-  private List<WatchHistory> completionsOf(Movie movie) {
-    return watchHistoryRepository.findByProfileIdAndCollectableIdIn(
-        profileId, List.of(movie.getId()));
+  private List<WatchHistory> completionsOf(UUID itemId) {
+    return watchHistoryRepository.findByProfileIdAndCollectableIdIn(profileId, List.of(itemId));
   }
 
   private boolean isCompletionWaitingOnLock() {
