@@ -1,7 +1,7 @@
 package com.streamarr.server.services.library;
 
 import com.github.kagkarlsson.scheduler.ScheduledExecution;
-import com.github.kagkarlsson.scheduler.SchedulerClient;
+import com.github.kagkarlsson.scheduler.Scheduler;
 import com.github.kagkarlsson.scheduler.exceptions.TaskInstanceCurrentlyExecutingException;
 import com.github.kagkarlsson.scheduler.exceptions.TaskInstanceNotFoundException;
 import com.github.kagkarlsson.scheduler.task.Priority;
@@ -18,6 +18,8 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * The single entry point for requesting a probe. Requests are idempotent per media file: a pending
@@ -29,7 +31,8 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class SchedulerProbeTaskRequests implements ProbeTaskRequests {
 
-  private final SchedulerClient client;
+  // The db-scheduler starter's scheduler both stores probe requests and runs them.
+  private final Scheduler client;
 
   private final Task<ProbeTaskRequest> task;
   private final MediaFileContainerInfoRepository outcomes;
@@ -69,9 +72,20 @@ public class SchedulerProbeTaskRequests implements ProbeTaskRequests {
             .data(request)
             .priority(Priority.HIGH)
             .build();
-    if (enqueue(request, instance)) {
-      priorities.tryRaisePendingPriority(instance, Priority.HIGH);
+    if (!enqueue(request, instance)) {
+      return;
     }
+
+    priorities.tryRaisePendingPriority(instance, Priority.HIGH);
+    // The scheduler's own check when a request is stored runs before this transaction commits, so
+    // it misses the request, which would then wait for the next poll.
+    TransactionSynchronizationManager.registerSynchronization(
+        new TransactionSynchronization() {
+          @Override
+          public void afterCommit() {
+            client.triggerCheckForDueExecutions();
+          }
+        });
   }
 
   private boolean hasSavedFailure(UUID mediaFileId) {
