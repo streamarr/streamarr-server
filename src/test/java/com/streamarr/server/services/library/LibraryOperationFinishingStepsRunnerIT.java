@@ -19,6 +19,8 @@ import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.support.TestFixtureWork;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.concurrent.CountDownLatch;
@@ -62,12 +64,26 @@ class LibraryOperationFinishingStepsRunnerIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should remove the media files missing from disk when a stored scan finishes")
-  void shouldRemoveTheMediaFilesMissingFromDiskWhenAStoredScanFinishes() {
+  void shouldRemoveTheMediaFilesMissingFromDiskWhenAStoredScanFinishes() throws IOException {
+    Files.createFile(libraryPath.resolve("Kept (2020).mkv"));
     var missing = saveMissingMediaFile();
 
-    runner.runFinishingSteps(storeScan(), LibraryOperationConclusion.FINISHED);
+    var conclusion = runner.runFinishingSteps(storeScan(), LibraryOperationConclusion.FINISHED);
 
+    assertThat(conclusion).isEqualTo(LibraryOperationConclusion.FINISHED);
     assertThat(mediaFileRepository.findById(missing.getId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should remove no media file and conclude the scan failed when the library folder is empty")
+  void shouldRemoveNoMediaFileAndConcludeTheScanFailedWhenTheLibraryFolderIsEmpty() {
+    var missing = saveMissingMediaFile();
+
+    var conclusion = runner.runFinishingSteps(storeScan(), LibraryOperationConclusion.FINISHED);
+
+    assertThat(conclusion).isEqualTo(LibraryOperationConclusion.FAILED);
+    assertThat(mediaFileRepository.findById(missing.getId())).isPresent();
   }
 
   @Test

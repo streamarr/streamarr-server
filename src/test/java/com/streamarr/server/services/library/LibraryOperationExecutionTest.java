@@ -925,6 +925,47 @@ class LibraryOperationExecutionTest {
       assertThat(folderCheckFailures("empty")).isEqualTo(1);
     }
 
+    @Test
+    @DisplayName(
+        "Should end the scan unhealthy and remove no media file when the library folder empties"
+            + " before the finishing step removes missing media files")
+    void shouldEndTheScanUnhealthyAndRemoveNoMediaFileWhenTheLibraryFolderEmptiesBeforeRemoval()
+        throws Exception {
+      var path =
+          createMovieFile(createRootLibraryDirectory(), "About Time", "About Time (2013).mkv");
+      saveMatchedMediaFile(path);
+      var emptyingRuns =
+          serviceBuilder()
+              .executionLibraryOperations(
+                  new FakeLibraryOperationRepository(fakeLibraryRepository) {
+                    @Override
+                    public Optional<LibraryOperation> findLibraryOperation(UUID id) {
+                      return libraryOperations.findLibraryOperation(id);
+                    }
+
+                    @Override
+                    public boolean tryLockLibraryOperation(UUID id) {
+                      deleteMovieFolder(path.getParent());
+                      return libraryOperations.tryLockLibraryOperation(id);
+                    }
+
+                    @Override
+                    public boolean tryEndLibraryOperation(LibraryOperationEnd end) {
+                      return libraryOperations.tryEndLibraryOperation(end);
+                    }
+                  })
+              .build();
+
+      var result = emptyingRuns.scanLibrary(savedLibraryId);
+
+      assertThat(result).isEqualTo(new LibraryOperationExecutionResult.Ended());
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+      assertThat(libraryOperations.libraryOperations()).isEmpty();
+      assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path)))
+          .isPresent();
+      assertThat(folderCheckFailures("empty")).isEqualTo(1);
+    }
+
     private static void deleteMovieFolder(Path movieFolder) {
       try (var entries = Files.list(movieFolder)) {
         for (var entry : entries.toList()) {
@@ -2001,6 +2042,7 @@ class LibraryOperationExecutionTest {
                   LibraryOperationFinishingStepsRunner.builder()
                       .libraryOperations(executionLibraryOperations)
                       .libraryRepository(fakeLibraryRepository)
+                      .libraryFolderCheck(folderCheck)
                       .orphanedMediaFileCleanupService(
                           new OrphanedMediaFileCleanupService(
                               fakeMediaFileRepository, movieService, fileSystem))

@@ -223,7 +223,7 @@ addLibrary()
 
 startLibraryScan()
     → stored library operation, run by its scheduled task
-        → finishing steps (remove orphaned files), then the end transaction
+        → finishing steps (check the library folder, remove orphaned files), then the end transaction
             → ScanEndedEvent, LibraryStatusChangedEvent (after the commit)
 
 removeLibrary()

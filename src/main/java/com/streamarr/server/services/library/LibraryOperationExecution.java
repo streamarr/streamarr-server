@@ -24,11 +24,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  * execution. Every execution walks the library from the start. A shutdown that interrupts the
  * execution leaves the operation stored, so the operation runs again when a scheduler starts.
  * Otherwise the finishing steps run, and then one transaction ends the operation, as failed when
- * the scan or refresh threw (ADR 0027) and as finished when it returned. The transaction locks the
- * library's row, gives the library its final status, deletes the operation, and then recalculates
- * the letter index. It also publishes the status change and the end of the scan or refresh for
- * listeners that run after the commit. An end that cannot be saved escapes, so the scheduler runs
- * the operation again with backoff.
+ * the scan or refresh threw (ADR 0027) or the library folder failed its check before a finishing
+ * step, and as finished otherwise. The transaction locks the library's row, gives the library its
+ * final status, deletes the operation, and then recalculates the letter index. It also publishes
+ * the status change and the end of the scan or refresh for listeners that run after the commit. An
+ * end that cannot be saved escapes, so the scheduler runs the operation again with backoff.
  */
 @Slf4j
 @Service
@@ -86,7 +86,7 @@ public class LibraryOperationExecution {
       return interrupted(operation);
     }
 
-    finishingStepsRunner.runFinishingSteps(operation, conclusion);
+    conclusion = finishingStepsRunner.runFinishingSteps(operation, conclusion);
     // A finishing step that a shutdown interrupted runs again with the operation.
     if (Thread.currentThread().isInterrupted()) {
       return interrupted(operation);
@@ -112,9 +112,6 @@ public class LibraryOperationExecution {
       libraryFolderCheck.requirePassed(library);
       var results =
           fileDiscoveryRuns.awaitResults(libraryFileWalk.discoverFiles(library, operation.id()));
-      // A share can unmount while the scan waits for artwork, and the finishing step of a finished
-      // scan removes every media file that Streamarr cannot find.
-      libraryFolderCheck.requirePassed(library);
       log.info("Finished {} library scan: {}.", library.getName(), results.describe());
       return LibraryOperationConclusion.FINISHED;
     } catch (RuntimeException e) {

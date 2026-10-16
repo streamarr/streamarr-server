@@ -1,5 +1,7 @@
 package com.streamarr.server.services.library;
 
+import com.streamarr.server.exceptions.LibraryFolderCheckFailedException;
+import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.repositories.LibraryOperationRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import lombok.Builder;
@@ -11,10 +13,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Runs the finishing steps of a library operation, in order, before the transaction that ends the
- * operation. The operation's kind and conclusion select the steps. A finished scan removes the
- * media files that no longer exist on disk. A failed scan and every refresh run no step here. The
- * transaction that ends the operation recalculates the letter index, the last step of every
- * operation.
+ * operation. The operation's kind and conclusion select the steps. A finished scan checks the
+ * library folder and then removes the media files that no longer exist on disk. A failed scan and
+ * every refresh run no step here. The transaction that ends the operation recalculates the letter
+ * index, the last step of every operation.
  *
  * <p>Each step runs in its own transaction, which first shares the operation's row. A step for an
  * operation that has ended does nothing. A step that a restart interrupted has the same effect when
@@ -28,21 +30,33 @@ public class LibraryOperationFinishingStepsRunner {
 
   private final LibraryOperationRepository libraryOperations;
   private final LibraryRepository libraryRepository;
+  private final LibraryFolderCheck libraryFolderCheck;
   private final OrphanedMediaFileCleanupService orphanedMediaFileCleanupService;
   private final PlatformTransactionManager transactionManager;
 
   /**
    * Runs the steps that the operation's kind and conclusion select. A failed step leaves the
    * library as it was before the step, and the operation still ends.
+   *
+   * @return the conclusion that the operation ends with: {@link LibraryOperationConclusion#FAILED}
+   *     when the library folder fails its check before the removal of missing media files, and
+   *     otherwise the given conclusion
    */
-  public void runFinishingSteps(LibraryOperation operation, LibraryOperationConclusion conclusion) {
+  public LibraryOperationConclusion runFinishingSteps(
+      LibraryOperation operation, LibraryOperationConclusion conclusion) {
     if (!removesMissingMediaFiles(operation, conclusion)) {
-      return;
+      return conclusion;
     }
 
     try {
       new TransactionTemplate(transactionManager)
           .executeWithoutResult(_ -> removeMissingMediaFiles(operation));
+    } catch (LibraryFolderCheckFailedException e) {
+      log.error(
+          "Removed no missing media files at the end of the scan of library {}.",
+          operation.libraryId(),
+          e);
+      return LibraryOperationConclusion.FAILED;
     } catch (RuntimeException e) {
       log.error(
           "Failed to remove missing media files at the end of the {} of library {}.",
@@ -50,6 +64,8 @@ public class LibraryOperationFinishingStepsRunner {
           operation.libraryId(),
           e);
     }
+
+    return conclusion;
   }
 
   private static boolean removesMissingMediaFiles(
@@ -65,8 +81,14 @@ public class LibraryOperationFinishingStepsRunner {
       return;
     }
 
-    libraryRepository
-        .findById(operation.libraryId())
-        .ifPresent(orphanedMediaFileCleanupService::cleanupOrphanedFiles);
+    // The shared row of the operation keeps its library from being deleted.
+    var library =
+        libraryRepository
+            .findById(operation.libraryId())
+            .orElseThrow(() -> new LibraryNotFoundException(operation.libraryId()));
+    // A share can unmount while the scan waits for artwork or this step waits for the operation's
+    // row, and an unmounted share looks like a library whose every media file is missing.
+    libraryFolderCheck.requirePassed(library);
+    orphanedMediaFileCleanupService.cleanupOrphanedFiles(library);
   }
 }

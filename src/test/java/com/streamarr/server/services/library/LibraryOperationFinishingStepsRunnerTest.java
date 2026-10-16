@@ -1,7 +1,6 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.mockito.Mockito.mock;
 
 import com.google.common.jimfs.Configuration;
@@ -21,6 +20,7 @@ import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
@@ -56,6 +56,7 @@ class LibraryOperationFinishingStepsRunnerTest {
           null,
           null);
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
+  private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
   private final LibraryOperationFinishingStepsRunner runner = runnerWith(mediaFiles);
 
   private Library library;
@@ -78,21 +79,43 @@ class LibraryOperationFinishingStepsRunnerTest {
     Files.createFile(FilepathCodec.decode(fileSystem, kept.getFilepathUri()));
     saveMediaFile("Gone (2020).mkv");
 
-    runner.runFinishingSteps(storeScan(), LibraryOperationConclusion.FINISHED);
+    var conclusion = runner.runFinishingSteps(storeScan(), LibraryOperationConclusion.FINISHED);
 
+    assertThat(conclusion).isEqualTo(LibraryOperationConclusion.FINISHED);
     assertThat(mediaFiles.findByLibraryId(library.getId())).containsExactly(kept);
   }
 
   @Test
+  @DisplayName(
+      "Should remove no media file and conclude the scan failed when the library folder is empty")
+  void shouldRemoveNoMediaFileAndConcludeTheScanFailedWhenTheLibraryFolderIsEmpty() {
+    saveMediaFile("Gone (2020).mkv");
+
+    var conclusion = runner.runFinishingSteps(storeScan(), LibraryOperationConclusion.FINISHED);
+
+    assertThat(conclusion).isEqualTo(LibraryOperationConclusion.FAILED);
+    assertThat(mediaFiles.findByLibraryId(library.getId())).hasSize(1);
+    assertThat(
+            meterRegistry
+                .get(LibraryFolderCheck.FAILURES_METRIC)
+                .tag("reason", "empty")
+                .counter()
+                .count())
+        .isEqualTo(1);
+  }
+
+  @Test
   @DisplayName("Should have the same effect when a scan's finishing steps run again")
-  void shouldHaveTheSameEffectWhenAScansFinishingStepsRunAgain() {
+  void shouldHaveTheSameEffectWhenAScansFinishingStepsRunAgain() throws IOException {
+    var kept = saveMediaFile("Kept (2020).mkv");
+    Files.createFile(FilepathCodec.decode(fileSystem, kept.getFilepathUri()));
     saveMediaFile("Gone (2020).mkv");
     var scan = storeScan();
     runner.runFinishingSteps(scan, LibraryOperationConclusion.FINISHED);
 
     runner.runFinishingSteps(scan, LibraryOperationConclusion.FINISHED);
 
-    assertThat(mediaFiles.findByLibraryId(library.getId())).isEmpty();
+    assertThat(mediaFiles.findByLibraryId(library.getId())).containsExactly(kept);
   }
 
   @Test
@@ -100,8 +123,9 @@ class LibraryOperationFinishingStepsRunnerTest {
   void shouldRemoveNoMediaFileWhenAScanFails() {
     saveMediaFile("Gone (2020).mkv");
 
-    runner.runFinishingSteps(storeScan(), LibraryOperationConclusion.FAILED);
+    var conclusion = runner.runFinishingSteps(storeScan(), LibraryOperationConclusion.FAILED);
 
+    assertThat(conclusion).isEqualTo(LibraryOperationConclusion.FAILED);
     assertThat(mediaFiles.findByLibraryId(library.getId())).hasSize(1);
   }
 
@@ -114,8 +138,9 @@ class LibraryOperationFinishingStepsRunnerTest {
             libraryOperations.storeLibraryOperation(
                 NewLibraryOperation.refresh(library.getId(), ImageRefreshMode.PRESERVE)));
 
-    runner.runFinishingSteps(refresh, LibraryOperationConclusion.FINISHED);
+    var conclusion = runner.runFinishingSteps(refresh, LibraryOperationConclusion.FINISHED);
 
+    assertThat(conclusion).isEqualTo(LibraryOperationConclusion.FINISHED);
     assertThat(mediaFiles.findByLibraryId(library.getId())).hasSize(1);
   }
 
@@ -137,8 +162,10 @@ class LibraryOperationFinishingStepsRunnerTest {
   }
 
   @Test
-  @DisplayName("Should return normally when the removal of missing media files fails")
-  void shouldReturnNormallyWhenTheRemovalOfMissingMediaFilesFails() {
+  @DisplayName("Should keep the scan finished when the removal of missing media files fails")
+  void shouldKeepTheScanFinishedWhenTheRemovalOfMissingMediaFilesFails() throws IOException {
+    var kept = saveMediaFile("Kept (2020).mkv");
+    Files.createFile(FilepathCodec.decode(fileSystem, kept.getFilepathUri()));
     saveMediaFile("Gone (2020).mkv");
     var failingRunner =
         runnerWith(
@@ -150,16 +177,17 @@ class LibraryOperationFinishingStepsRunnerTest {
             });
     var scan = storeScan();
 
-    assertThatNoException()
-        .isThrownBy(
-            () -> failingRunner.runFinishingSteps(scan, LibraryOperationConclusion.FINISHED));
-    assertThat(mediaFiles.findByLibraryId(library.getId())).hasSize(1);
+    var conclusion = failingRunner.runFinishingSteps(scan, LibraryOperationConclusion.FINISHED);
+
+    assertThat(conclusion).isEqualTo(LibraryOperationConclusion.FINISHED);
+    assertThat(mediaFiles.findByLibraryId(library.getId())).hasSize(2);
   }
 
   private LibraryOperationFinishingStepsRunner runnerWith(MediaFileRepository mediaFileRepository) {
     return LibraryOperationFinishingStepsRunner.builder()
         .libraryOperations(libraryOperations)
         .libraryRepository(libraries)
+        .libraryFolderCheck(new LibraryFolderCheck(fileSystem, mediaFileRepository, meterRegistry))
         .orphanedMediaFileCleanupService(
             new OrphanedMediaFileCleanupService(mediaFileRepository, movieService, fileSystem))
         .transactionManager(new FakeTransactionManager())
