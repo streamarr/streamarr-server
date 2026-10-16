@@ -275,7 +275,12 @@ A probe no longer belongs to the scan once a later change replaced its inputs, a
 A scan retries a failed probe at once and counts only a failure recorded after its own request, so a rescan after a share comes back waits for fresh attempts; playback requests keep the backoff.
 Person and company artwork and the later retries of failed probes continue after the scan.
 Playback reads stored outcomes.
-It returns a typed not-ready error when no usable outcome exists and a typed failure for a retained terminal media error.
+When a file has no usable outcome, playback moves the file's probe to the front of the queue.
+Due probes run by priority, then by execution time, and the playback request raises its probe's priority without changing the probe's execution time or backoff.
+Playback then waits for the outcome, up to `streaming.probe-wait-limit`, and wakes when an attempt at the probe ends.
+It returns a typed not-ready error when no compatible worker is connected, when an attempt after the request fails, or when the wait reaches the limit.
+The probe keeps running in each case.
+Playback returns a typed failure for a retained terminal media error.
 When the video must be encoded and the probe recorded no usable frame rate, it returns a typed frame-rate error instead of starting a stream session, because workers encode at the probed frame rate.
 A stream copy of the same file still plays.
 

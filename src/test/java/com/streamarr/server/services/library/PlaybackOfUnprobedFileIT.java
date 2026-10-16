@@ -1,0 +1,433 @@
+package com.streamarr.server.services.library;
+
+import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
+import static com.streamarr.server.support.OutcomeTestSupport.accepted;
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.github.kagkarlsson.scheduler.SchedulerClient;
+import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
+import com.streamarr.server.config.ProbeSchedulingProperties;
+import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
+import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.task.ProbeTaskRequest;
+import com.streamarr.server.exceptions.ProbeCancelledException;
+import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.exceptions.ProbeWorkersBusyException;
+import com.streamarr.server.fakes.FakeFfprobeService;
+import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fakes.FakeTranscodeExecutor;
+import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.services.concurrency.CappedExponentialBackoff;
+import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.probe.ProbeTaskRequests;
+import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
+import com.streamarr.server.services.streaming.FfprobeService;
+import com.streamarr.server.services.streaming.PlaybackAuthorityGate;
+import com.streamarr.server.services.streaming.ProbeWorkers;
+import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.server.services.streaming.StreamingService;
+import com.streamarr.server.services.streaming.TranscodeExecutor;
+import com.streamarr.server.support.ControlledClockConfiguration;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.convention.TestBean;
+
+@Tag("IntegrationTest")
+@DisplayName("Playback of a file without a probe outcome")
+@Import(ControlledClockConfiguration.class)
+class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
+
+  private static final int QUEUED_BY_SCAN = 20;
+  private static final long BOUND_SECONDS = 30;
+  private static final ConnectedProbeWorkers PROBE_WORKERS = new ConnectedProbeWorkers();
+
+  @Autowired private StreamingService streamingService;
+  @Autowired private ProbeTaskRequests scheduling;
+  @Autowired private MutableClock clock;
+  @Autowired private ProbeSchedulingProperties probeScheduling;
+  @Autowired private StreamingProperties streamingProperties;
+
+  @TestBean TranscodeExecutor transcodeExecutor;
+  @TestBean SegmentStore segmentStore;
+  @TestBean PlaybackAuthorityGate authorityGate;
+  @TestBean ProbeWorkers probeWorkers;
+
+  static TranscodeExecutor transcodeExecutor() {
+    return new FakeTranscodeExecutor();
+  }
+
+  static SegmentStore segmentStore() {
+    return new FakeSegmentStore();
+  }
+
+  static PlaybackAuthorityGate authorityGate() {
+    return (_, _) -> true;
+  }
+
+  static ProbeWorkers probeWorkers() {
+    return PROBE_WORKERS;
+  }
+
+  private final HeldWorker worker = new HeldWorker();
+  private final ExecutorService viewers = Executors.newVirtualThreadPerTaskExecutor();
+
+  @BeforeEach
+  void connectProbeWorker() {
+    PROBE_WORKERS.reset(true);
+  }
+
+  @AfterEach
+  void releaseWorkerAndViewers() {
+    worker.releaseAll();
+    viewers.shutdownNow();
+  }
+
+  @Test
+  @DisplayName("Should start the stream session when the worker returns the probe of the file")
+  void shouldStartTheStreamSessionWhenTheWorkerReturnsTheProbeOfTheFile() throws Exception {
+    var file = createUnchangedFiles(1).getFirst();
+    worker.answerAtOnce(file);
+    startScheduler(1);
+
+    var playback = createSession(file);
+    pickUpPlaybackRequests(1);
+    var session = accepted(playback.get(BOUND_SECONDS, TimeUnit.SECONDS));
+
+    assertThat(session.getMediaFileId()).isEqualTo(file.mediaFileId());
+    assertThat(reader.find(file.mediaFileId())).isPresent();
+  }
+
+  @Test
+  @DisplayName(
+      "Should probe the requested file next and start its session when the worker frees capacity")
+  void shouldProbeTheRequestedFileNextAndStartItsSessionWhenTheWorkerFreesCapacity()
+      throws Exception {
+    var files = createUnchangedFiles(QUEUED_BY_SCAN + 1);
+    var holdingCapacity = files.getFirst();
+    var queuedByScan = files.subList(1, files.size());
+    var requested = queuedByScan.getLast();
+    scheduling.request(holdingCapacity);
+    startScheduler(1);
+    worker.awaitStarted(holdingCapacity);
+    queuedByScan.forEach(scheduling::request);
+    worker.answerAtOnce(requested);
+
+    var playback = createSession(requested);
+    PROBE_WORKERS.awaitAsked(1);
+    worker.release(holdingCapacity);
+    var firstTwoDispatched = worker.awaitStarts(2);
+    var session = accepted(playback.get(BOUND_SECONDS, TimeUnit.SECONDS));
+
+    assertThat(firstTwoDispatched).containsExactly(sourceOf(holdingCapacity), sourceOf(requested));
+    assertThat(session.getMediaFileId()).isEqualTo(requested.mediaFileId());
+    assertThat(worker.finished()).containsExactly(sourceOf(holdingCapacity), sourceOf(requested));
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse as not ready when the wait reaches the limit and finish the probe afterwards")
+  void shouldRefuseAsNotReadyWhenTheWaitReachesTheLimitAndFinishTheProbeAfterwards()
+      throws Exception {
+    var file = createUnchangedFiles(1).getFirst();
+    // The first attempt finds every worker busy after the wait limit has passed.
+    worker.answerWith(
+        file,
+        attempt -> {
+          if (attempt == 1) {
+            clock.advance(streamingProperties.probeWaitLimit());
+            throw new ProbeWorkersBusyException();
+          }
+
+          return null;
+        });
+    startScheduler(1);
+
+    var playback = createSession(file);
+    pickUpPlaybackRequests(1);
+    var refused = playback.get(BOUND_SECONDS, TimeUnit.SECONDS);
+    clock.advance(probeScheduling.busyWorkerRetryDelay());
+    checkForDueExecutions();
+    worker.awaitFinished(file);
+
+    assertThat(refused).isEqualTo(notReady());
+    assertThat(accepted(createSession(file).get(BOUND_SECONDS, TimeUnit.SECONDS)).getMediaFileId())
+        .isEqualTo(file.mediaFileId());
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse as not ready at once without a compatible worker and probe the file first"
+          + " when one connects")
+  void shouldRefuseAsNotReadyAtOnceWithoutACompatibleWorkerAndProbeTheFileFirstWhenOneConnects()
+      throws Exception {
+    var queuedByScan = createUnchangedFiles(QUEUED_BY_SCAN);
+    var requested = queuedByScan.getLast();
+    queuedByScan.forEach(scheduling::request);
+    PROBE_WORKERS.reset(false);
+
+    var refused = createSession(requested).get(BOUND_SECONDS, TimeUnit.SECONDS);
+    PROBE_WORKERS.reset(true);
+    startScheduler(1);
+
+    assertThat(refused).isEqualTo(notReady());
+    assertThat(worker.awaitStarts(1)).containsExactly(sourceOf(requested));
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse as not ready when the probe attempt fails and keep the probe's backoff")
+  void shouldRefuseAsNotReadyWhenTheProbeAttemptFailsAndKeepTheProbesBackoff() throws Exception {
+    var file = createUnchangedFiles(1).getFirst();
+    worker.answerWith(
+        file,
+        _ -> {
+          throw new ProbeExecutionException(
+              ItemFailureReason.SOURCE_INACCESSIBLE, "The worker could not read the source");
+        });
+    var client = startScheduler(1);
+
+    var playback = createSession(file);
+    pickUpPlaybackRequests(1);
+    var refused = playback.get(BOUND_SECONDS, TimeUnit.SECONDS);
+
+    assertThat(refused).isEqualTo(notReady());
+    assertThat(client.getScheduledExecution(instanceOf(file)))
+        .hasValueSatisfying(
+            retry -> {
+              assertThat(retry.getConsecutiveFailures()).isOne();
+              assertThat(retry.getExecutionTime())
+                  .isEqualTo(clock.instant().plus(CappedExponentialBackoff.delayAfter(0)));
+            });
+  }
+
+  @Test
+  @DisplayName("Should run one probe and start both sessions when two viewers play the same file")
+  void shouldRunOneProbeAndStartBothSessionsWhenTwoViewersPlayTheSameFile() throws Exception {
+    var file = createUnchangedFiles(1).getFirst();
+    var client = startScheduler(1);
+
+    var firstViewer = createSession(file);
+    var secondViewer = createSession(file);
+    pickUpPlaybackRequests(2);
+    worker.awaitStarted(file);
+    worker.release(file);
+    var first = accepted(firstViewer.get(BOUND_SECONDS, TimeUnit.SECONDS));
+    var second = accepted(secondViewer.get(BOUND_SECONDS, TimeUnit.SECONDS));
+
+    assertThat(List.of(first.getMediaFileId(), second.getMediaFileId()))
+        .containsOnly(file.mediaFileId());
+    assertThat(first.getSessionId()).isNotEqualTo(second.getSessionId());
+    assertThat(worker.attempts(file)).isOne();
+    assertThat(client.getScheduledExecution(instanceOf(file))).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should not start a second probe when playback requests a file whose probe is running")
+  void shouldNotStartASecondProbeWhenPlaybackRequestsAFileWhoseProbeIsRunning() throws Exception {
+    var file = createUnchangedFiles(1).getFirst();
+    startScheduler(1);
+    var firstViewer = createSession(file);
+    pickUpPlaybackRequests(1);
+    worker.awaitStarted(file);
+
+    var secondViewer = createSession(file);
+    pickUpPlaybackRequests(1);
+    worker.release(file);
+    accepted(firstViewer.get(BOUND_SECONDS, TimeUnit.SECONDS));
+    accepted(secondViewer.get(BOUND_SECONDS, TimeUnit.SECONDS));
+
+    assertThat(worker.attempts(file)).isOne();
+  }
+
+  // The test scheduler is not the client that stores the requests, and its frozen clock never
+  // ends a polling interval, so it polls when told to.
+  private void pickUpPlaybackRequests(int requests) throws InterruptedException {
+    PROBE_WORKERS.awaitAsked(requests);
+    checkForDueExecutions();
+  }
+
+  private SchedulerClient startScheduler(int threads) {
+    return startScheduler(
+        probeExecution.toBuilder().producer(worker).build(),
+        new AbstractSchedulerListener() {},
+        clock,
+        threads);
+  }
+
+  private CompletableFuture<Outcome<StreamSession, CreateStreamSessionRejection>> createSession(
+      ProbeTaskRequest file) {
+    var command =
+        createStreamSessionCommand(
+            file.mediaFileId(),
+            UUID.randomUUID(),
+            StreamingOptions.builder()
+                .quality(VideoQuality.AUTO)
+                .supportedCodecs(List.of("h264"))
+                .build());
+    return CompletableFuture.supplyAsync(() -> streamingService.createSession(command), viewers);
+  }
+
+  private static Path sourceOf(ProbeTaskRequest file) {
+    return FilepathCodec.decode(file.filepathUri());
+  }
+
+  private static Outcome<StreamSession, CreateStreamSessionRejection> notReady() {
+    return Outcome.rejected(new CreateStreamSessionRejection.ProbeNotReady());
+  }
+
+  /** Counts the probe requests that asked whether a compatible worker is connected. */
+  private static final class ConnectedProbeWorkers implements ProbeWorkers {
+
+    private volatile boolean connected;
+    private volatile Semaphore asked = new Semaphore(0);
+
+    @Override
+    public boolean hasCompatibleWorker(int probeVersion) {
+      asked.release();
+      return connected && probeVersion == ProbeVersion.CURRENT;
+    }
+
+    void reset(boolean connected) {
+      this.connected = connected;
+      this.asked = new Semaphore(0);
+    }
+
+    // Playback asks after the library saved its probe request, so the request is stored by then.
+    void awaitAsked(int requests) throws InterruptedException {
+      assertThat(asked.tryAcquire(requests, BOUND_SECONDS, TimeUnit.SECONDS)).isTrue();
+    }
+  }
+
+  /**
+   * A worker with one probe slot per scheduler thread. It holds each probe until the test releases
+   * it, unless the test answers that file's probe at once or with its own answer.
+   */
+  private static final class HeldWorker implements FfprobeService {
+
+    private final FakeFfprobeService results = new FakeFfprobeService();
+    private final List<Path> started = new CopyOnWriteArrayList<>();
+    private final Semaphore starts = new Semaphore(0);
+    private final List<Path> finished = new CopyOnWriteArrayList<>();
+    private final Map<Path, CompletableFuture<Void>> startedProbes = new ConcurrentHashMap<>();
+    private final Map<Path, CompletableFuture<Void>> finishedProbes = new ConcurrentHashMap<>();
+    private final Map<Path, CompletableFuture<Void>> releases = new ConcurrentHashMap<>();
+    private final Map<Path, Function<Integer, ProbeOutcome>> answers = new ConcurrentHashMap<>();
+    private final Map<Path, AtomicInteger> attempts = new ConcurrentHashMap<>();
+    private volatile boolean releasedAll;
+
+    @Override
+    public ProbeOutcome probe(ProbeExecutionRequest request) {
+      var source = request.sourcePath();
+      var attempt = attempts.computeIfAbsent(source, _ -> new AtomicInteger()).incrementAndGet();
+      started.add(source);
+      starts.release();
+      futureOf(startedProbes, source).complete(null);
+      var answer = answers.get(source);
+      if (answer == null) {
+        awaitRelease(source);
+        return finish(request);
+      }
+
+      var outcome = answer.apply(attempt);
+      if (outcome == null) {
+        return finish(request);
+      }
+
+      return outcome;
+    }
+
+    private ProbeOutcome finish(ProbeExecutionRequest request) {
+      var outcome = results.probe(request);
+      finished.add(request.sourcePath());
+      futureOf(finishedProbes, request.sourcePath()).complete(null);
+      return outcome;
+    }
+
+    private void awaitRelease(Path source) {
+      if (releasedAll) {
+        return;
+      }
+
+      try {
+        futureOf(releases, source).get();
+      } catch (InterruptedException exception) {
+        Thread.currentThread().interrupt();
+        throw new ProbeCancelledException("The held probe was cancelled", exception);
+      } catch (ExecutionException exception) {
+        throw new IllegalStateException(exception);
+      }
+    }
+
+    void answerAtOnce(ProbeTaskRequest file) {
+      answerWith(file, _ -> null);
+    }
+
+    // An answer that returns null finishes with the default probe result.
+    void answerWith(ProbeTaskRequest file, Function<Integer, ProbeOutcome> answer) {
+      answers.put(sourceOf(file), answer);
+    }
+
+    void release(ProbeTaskRequest file) {
+      futureOf(releases, sourceOf(file)).complete(null);
+    }
+
+    void releaseAll() {
+      releasedAll = true;
+      releases.values().forEach(release -> release.complete(null));
+    }
+
+    void awaitStarted(ProbeTaskRequest file) throws Exception {
+      futureOf(startedProbes, sourceOf(file)).get(BOUND_SECONDS, TimeUnit.SECONDS);
+    }
+
+    void awaitFinished(ProbeTaskRequest file) throws Exception {
+      futureOf(finishedProbes, sourceOf(file)).get(BOUND_SECONDS, TimeUnit.SECONDS);
+    }
+
+    /** Waits until the worker has started this many probes, and returns them in start order. */
+    List<Path> awaitStarts(int count) throws InterruptedException {
+      assertThat(starts.tryAcquire(count, BOUND_SECONDS, TimeUnit.SECONDS)).isTrue();
+      return List.copyOf(started).subList(0, count);
+    }
+
+    List<Path> finished() {
+      return List.copyOf(finished);
+    }
+
+    int attempts(ProbeTaskRequest file) {
+      return attempts.getOrDefault(sourceOf(file), new AtomicInteger()).get();
+    }
+
+    private static CompletableFuture<Void> futureOf(
+        Map<Path, CompletableFuture<Void>> futures, Path source) {
+      return futures.computeIfAbsent(source, _ -> new CompletableFuture<>());
+    }
+  }
+}

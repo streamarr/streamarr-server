@@ -116,6 +116,10 @@ streaming:
   session-retention: ${STREAMING_SESSION_RETENTION:24h}
   producer-stall-threshold: ${STREAMING_PRODUCER_STALL_THRESHOLD:10s}
   segment-base-path: ${STREAMING_SEGMENT_BASE_PATH:}
+  # How long createStreamSession waits for the probe of a file that has no probe outcome yet. The
+  # request moves the file's probe to the front of the queue. When the wait reaches the limit,
+  # createStreamSession returns MediaFileProbeNotReadyError and the probe keeps running.
+  probe-wait-limit: ${STREAMING_PROBE_WAIT_LIMIT:20s}
   worker-session:
     address: ${STREAMING_WORKER_SESSION_ADDRESS:127.0.0.1}
     port: ${STREAMING_WORKER_SESSION_PORT:9090}

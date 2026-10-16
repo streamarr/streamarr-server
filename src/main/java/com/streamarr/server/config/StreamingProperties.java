@@ -21,7 +21,9 @@ public record StreamingProperties(
     // A producer that publishes nothing for this long is classified stalled and replaced; the
     // recovery budget is attempt-bounded (targets × threshold), never a wall clock.
     Duration producerStallThreshold,
-    String segmentBasePath) {
+    String segmentBasePath,
+    // How long createStreamSession waits for the probe of a file that has no probe outcome yet.
+    Duration probeWaitLimit) {
 
   public StreamingProperties {
     if (maxConcurrentTranscodes == null) {
@@ -61,6 +63,15 @@ public record StreamingProperties(
     if (producerStallThreshold.isZero() || producerStallThreshold.isNegative()) {
       throw new IllegalArgumentException(
           "streaming.producer-stall-threshold must be positive, got " + producerStallThreshold);
+    }
+
+    if (probeWaitLimit == null) {
+      probeWaitLimit = Duration.ofSeconds(20);
+    }
+
+    if (probeWaitLimit.isZero() || probeWaitLimit.isNegative()) {
+      throw new IllegalArgumentException(
+          "streaming.probe-wait-limit must be positive, got " + probeWaitLimit);
     }
 
     if (segmentBasePath == null || segmentBasePath.isBlank()) {
