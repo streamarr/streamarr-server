@@ -55,20 +55,13 @@ public class WatchStatusService {
       return Outcome.rejected(new MarkWatchedRejection.ItemNotFound(itemId));
     }
 
-    markWatchedInternal(profileId, itemId, scopeOf(item.get()), 0);
+    markWatchedInternal(profileId, itemId, scopeOf(item.get()));
     return Outcome.accepted(item.get());
   }
 
-  @Transactional
-  public void markWatched(
-      UUID profileId, UUID collectableId, CollectableScope scope, int durationSeconds) {
-    markWatchedInternal(profileId, collectableId, scope, durationSeconds);
-  }
-
-  private void markWatchedInternal(
-      UUID profileId, UUID collectableId, CollectableScope scope, int durationSeconds) {
+  private void markWatchedInternal(UUID profileId, UUID collectableId, CollectableScope scope) {
     var leafIds = resolveLeafCollectableIds(collectableId, scope);
-    var stored = watchHistoryRepository.batchInsert(profileId, leafIds, durationSeconds);
+    var stored = watchHistoryRepository.batchInsert(profileId, leafIds, 0);
 
     publishWhenChanged(profileId, leafIds, stored);
   }
@@ -83,11 +76,6 @@ public class WatchStatusService {
 
     markUnwatchedInternal(profileId, itemId, scopeOf(item.get()));
     return Outcome.accepted(item.get());
-  }
-
-  @Transactional
-  public void markUnwatched(UUID profileId, UUID collectableId, CollectableScope scope) {
-    markUnwatchedInternal(profileId, collectableId, scope);
   }
 
   private void markUnwatchedInternal(UUID profileId, UUID collectableId, CollectableScope scope) {

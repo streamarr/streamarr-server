@@ -12,7 +12,6 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
-import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.WatchHistory;
@@ -182,8 +181,7 @@ class WatchStateChangedEventIT extends AbstractIntegrationTest {
 
     transactionTemplate.executeWithoutResult(
         status -> {
-          watchStatusService.markWatched(
-              profileId, movie.getId(), CollectableScope.MOVIE_OR_EPISODE, 0);
+          watchStatusService.markWatched(profileId, movie.getId());
           status.setRollbackOnly();
         });
 

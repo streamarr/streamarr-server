@@ -97,8 +97,8 @@ class WatchStatusServiceIT extends AbstractIntegrationTest {
 
     transactionTemplate.executeWithoutResult(
         _ -> {
-          watchStatusService.markWatched(profileId, series.getId(), CollectableScope.SERIES, 0);
-          watchStatusService.markWatched(profileId, series.getId(), CollectableScope.SERIES, 0);
+          watchStatusService.markWatched(profileId, series.getId());
+          watchStatusService.markWatched(profileId, series.getId());
         });
 
     assertThat(watchHistoryRepository.findByProfileIdAndCollectableIdIn(profileId, episodeIds))
@@ -168,8 +168,7 @@ class WatchStatusServiceIT extends AbstractIntegrationTest {
                   .percentComplete(25.0)
                   .durationSeconds(2400)
                   .build());
-          watchStatusService.markWatched(
-              profileId, episode.getId(), CollectableScope.MOVIE_OR_EPISODE, 2400);
+          watchStatusService.markWatched(profileId, episode.getId());
         });
 
     var progress = sessionProgressRepository.findBySessionId(sessionId).orElseThrow();

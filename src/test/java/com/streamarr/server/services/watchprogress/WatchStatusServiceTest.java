@@ -9,7 +9,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Season;
-import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.domain.streaming.WatchHistory;
 import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.fakes.CapturingEventPublisher;
@@ -77,17 +76,17 @@ class WatchStatusServiceTest {
   class WatchHistoryTests {
 
     @Test
-    @DisplayName("Should create watch history entry when marking watched explicitly")
-    void shouldCreateWatchHistoryEntryWhenMarkingWatchedExplicitly() {
-      var movieId = UUID.randomUUID();
+    @DisplayName("Should save a completion without a duration when marking a movie watched")
+    void shouldSaveACompletionWithoutADurationWhenMarkingAMovieWatched() {
+      var movieId = movieRepository.save(buildMovie()).getId();
 
-      service.markWatched(PROFILE_ID, movieId, CollectableScope.MOVIE_OR_EPISODE, 7200);
+      service.markWatched(PROFILE_ID, movieId);
 
       var history =
           watchHistoryRepository.findFirstByProfileIdAndCollectableIdOrderByWatchedAtDesc(
               PROFILE_ID, movieId);
       assertThat(history).isPresent();
-      assertThat(history.get().getDurationSeconds()).isEqualTo(7200);
+      assertThat(history.get().getDurationSeconds()).isZero();
       assertThat(history.get().getDismissedAt()).isNull();
     }
 
@@ -98,7 +97,7 @@ class WatchStatusServiceTest {
       episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
       episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
 
-      service.markWatched(PROFILE_ID, season.getId(), CollectableScope.SEASON, 3600);
+      service.markWatched(PROFILE_ID, season.getId());
 
       assertThat(watchHistoryRepository.count()).isEqualTo(2);
     }
@@ -106,10 +105,10 @@ class WatchStatusServiceTest {
     @Test
     @DisplayName("Should derive watched status from watch history")
     void shouldDeriveWatchedStatusFromWatchHistory() {
-      var movie = buildMovie();
+      var movie = movieRepository.save(buildMovie());
       mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
-      service.markWatched(PROFILE_ID, movie.getId(), CollectableScope.MOVIE_OR_EPISODE, 7200);
+      service.markWatched(PROFILE_ID, movie.getId());
 
       var result = service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId()));
       assertThat(result).containsEntry(movie.getId(), WatchStatus.WATCHED);
@@ -121,7 +120,7 @@ class WatchStatusServiceTest {
       var movie = movieRepository.save(buildMovie());
       mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
-      service.markWatched(PROFILE_ID, movie.getId(), CollectableScope.MOVIE_OR_EPISODE, 7200);
+      service.markWatched(PROFILE_ID, movie.getId());
       service.markUnwatched(PROFILE_ID, movie.getId());
 
       var result = service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(movie.getId()));
@@ -238,16 +237,6 @@ class WatchStatusServiceTest {
       mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
       service.markUnwatched(PROFILE_ID, movie.getId());
-
-      assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class)).isEmpty();
-    }
-
-    @Test
-    @DisplayName("Should publish nothing when marking a season with no episodes watched")
-    void shouldPublishNothingWhenMarkingASeasonWithNoEpisodesWatched() {
-      var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
-
-      service.markWatched(PROFILE_ID, season.getId(), CollectableScope.SEASON, 0);
 
       assertThat(eventPublisher.getEventsOfType(WatchStateChangedEvent.class)).isEmpty();
     }
@@ -512,15 +501,15 @@ class WatchStatusServiceTest {
     }
 
     @Test
-    @DisplayName("Should dismiss all episode history when marking season unwatched explicitly")
-    void shouldDismissAllEpisodeHistoryWhenMarkingSeasonUnwatchedExplicitly() {
+    @DisplayName("Should dismiss all episode history when marking season unwatched by id")
+    void shouldDismissAllEpisodeHistoryWhenMarkingSeasonUnwatchedById() {
       var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
       var first = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
       var second =
           episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
-      service.markWatched(PROFILE_ID, season.getId(), CollectableScope.SEASON, 3600);
+      service.markWatched(PROFILE_ID, season.getId());
 
-      service.markUnwatched(PROFILE_ID, season.getId(), CollectableScope.SEASON);
+      service.markUnwatched(PROFILE_ID, season.getId());
 
       var history =
           watchHistoryRepository.findByProfileIdAndCollectableIdIn(
@@ -540,13 +529,13 @@ class WatchStatusServiceTest {
     @Test
     @DisplayName("Should return watched when every episode across seasons has history")
     void shouldReturnWatchedWhenEveryEpisodeAcrossSeasonsHasHistory() {
-      var series = buildSeries();
+      var series = seriesRepository.save(buildSeries());
       var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
       var s2 = seasonRepository.save(Season.builder().seasonNumber(2).series(series).build());
       episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
       episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
 
-      service.markWatched(PROFILE_ID, series.getId(), CollectableScope.SERIES, 3600);
+      service.markWatched(PROFILE_ID, series.getId());
 
       var result = service.getWatchStatusForSeries(PROFILE_ID, List.of(series.getId()));
       assertThat(result).containsEntry(series.getId(), WatchStatus.WATCHED);
@@ -561,7 +550,7 @@ class WatchStatusServiceTest {
           episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
       episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
 
-      service.markWatched(PROFILE_ID, watched.getId(), CollectableScope.MOVIE_OR_EPISODE, 3600);
+      service.markWatched(PROFILE_ID, watched.getId());
 
       var result = service.getWatchStatusForSeries(PROFILE_ID, List.of(series.getId()));
       assertThat(result).containsEntry(series.getId(), WatchStatus.IN_PROGRESS);
