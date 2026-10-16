@@ -11,7 +11,8 @@ public record WorkerSessionServerConfiguration(
     Duration probeTimeout,
     Duration keyframeScanTimeout,
     Duration probeCancellationTimeout,
-    Duration startReportTimeout) {
+    Duration startReportTimeout,
+    WorkerSessionKeepalive keepalive) {
 
   public WorkerSessionServerConfiguration {
     probeTimeout = probeTimeout == null ? Duration.ofMinutes(1) : probeTimeout;
@@ -20,6 +21,7 @@ public record WorkerSessionServerConfiguration(
     probeCancellationTimeout =
         probeCancellationTimeout == null ? Duration.ofSeconds(5) : probeCancellationTimeout;
     startReportTimeout = startReportTimeout == null ? Duration.ofSeconds(10) : startReportTimeout;
+    keepalive = keepalive == null ? WorkerSessionKeepalive.DEFAULT : keepalive;
 
     if (probeTimeout.isZero() || probeTimeout.isNegative()) {
       throw new IllegalArgumentException("Worker probe timeout must be positive");
