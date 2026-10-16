@@ -1,0 +1,72 @@
+package com.streamarr.server.fixtures;
+
+import com.streamarr.server.domain.streaming.ChromaSubsampling;
+import com.streamarr.server.domain.streaming.CompatibleBase;
+import com.streamarr.server.domain.streaming.DolbyVision;
+import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
+import com.streamarr.server.domain.streaming.Presence;
+import com.streamarr.server.domain.streaming.VideoDynamicRange;
+import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
+import java.util.Optional;
+import java.util.OptionalInt;
+import lombok.experimental.UtilityClass;
+
+/** Chosen video streams as a probe version 4 outcome describes them. */
+@UtilityClass
+public class VideoPlaybackFactsFixture {
+
+  public static final VideoDynamicRange SDR =
+      new VideoDynamicRange(
+          CompatibleBase.SDR, Presence.UNSPECIFIED, new DolbyVision.Unspecified());
+
+  public static final VideoDynamicRange SDR_WITHOUT_DOLBY_VISION =
+      new VideoDynamicRange(CompatibleBase.SDR, Presence.ABSENT, new DolbyVision.Absent());
+
+  /** 8-bit 4:2:0 SDR H.264 at High profile level 4.0, after cover art at stream 0. */
+  public static VideoPlaybackFacts.VideoPlaybackFactsBuilder sdrH264FactsBuilder() {
+    return VideoPlaybackFacts.builder()
+        .streamIndex(1)
+        .dynamicRange(SDR)
+        .bitDepth(OptionalInt.of(8))
+        .chromaSubsampling(Optional.of(ChromaSubsampling.CHROMA_420))
+        .codecString(Optional.of("avc1.640028"));
+  }
+
+  /**
+   * Dolby Vision profile 8.2: an SDR compatible base whose record claims compatibility identifier
+   * 2, the SDR base.
+   */
+  public static VideoDynamicRange dolbyVisionProfile82() {
+    return new VideoDynamicRange(
+        CompatibleBase.SDR,
+        Presence.UNSPECIFIED,
+        new DolbyVision.Present(
+            Optional.of(
+                DolbyVisionConfiguration.builder()
+                    .profile(OptionalInt.of(8))
+                    .level(OptionalInt.of(6))
+                    .baseLayerCompatibilityId(OptionalInt.of(2))
+                    .baseLayer(true)
+                    .enhancementLayer(false)
+                    .rpu(true)
+                    .build()),
+            Presence.UNSPECIFIED));
+  }
+
+  /** Dolby Vision profile 5: no compatible base, and compatibility identifier 0. */
+  public static VideoDynamicRange dolbyVisionProfile5() {
+    return new VideoDynamicRange(
+        CompatibleBase.NONE,
+        Presence.UNSPECIFIED,
+        new DolbyVision.Present(
+            Optional.of(
+                DolbyVisionConfiguration.builder()
+                    .profile(OptionalInt.of(5))
+                    .level(OptionalInt.of(6))
+                    .baseLayerCompatibilityId(OptionalInt.of(0))
+                    .baseLayer(true)
+                    .rpu(true)
+                    .build()),
+            Presence.UNSPECIFIED));
+  }
+}

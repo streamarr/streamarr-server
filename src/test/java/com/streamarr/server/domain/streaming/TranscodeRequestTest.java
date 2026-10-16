@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.exceptions.UnsupportedVideoEncodeException;
+import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import java.nio.file.Path;
+import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -120,6 +122,7 @@ class TranscodeRequestTest {
                 .videoCodecFamily("h264")
                 .audioDecision(AudioDecision.stereoAac())
                 .subtitleDecision(SubtitleDecision.exclude())
+                .videoSource(Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()))
                 .build());
   }
 

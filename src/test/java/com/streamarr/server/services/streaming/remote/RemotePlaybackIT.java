@@ -31,6 +31,7 @@ import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.RecordedStream;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
@@ -49,6 +50,7 @@ import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -760,7 +762,8 @@ class RemotePlaybackIT {
   private TranscodeDecision.TranscodeDecisionBuilder decisionBuilder() {
     return TranscodeDecision.builder()
         .videoCodecFamily("h264")
-        .subtitleDecision(SubtitleDecision.exclude());
+        .subtitleDecision(SubtitleDecision.exclude())
+        .videoSource(Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()));
   }
 
   private void assertCommandPreservesDecision(List<String> command, TranscodeDecision decision) {

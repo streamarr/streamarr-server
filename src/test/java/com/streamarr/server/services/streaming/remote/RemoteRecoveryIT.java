@@ -22,6 +22,7 @@ import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.RecordedStream;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentDelivery;
@@ -33,6 +34,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -408,6 +410,7 @@ class RemoteRecoveryIT {
         .videoCodecFamily("h264")
         .audioDecision(AudioDecision.copy("aac", 2, 128_000))
         .subtitleDecision(SubtitleDecision.exclude())
+        .videoSource(Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()))
         .build();
   }
 }

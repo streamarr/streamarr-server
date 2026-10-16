@@ -19,6 +19,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.UUID;
 
@@ -106,7 +107,9 @@ public final class StreamSessionFixture {
         .height(1080)
         .videoCodec("h264")
         .audioCodec("aac")
-        .bitrate(5_000_000);
+        .bitrate(5_000_000)
+        .videoPlaybackFacts(
+            Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().streamIndex(0).build()));
   }
 
   public static PlaybackAuthority.PlaybackAuthorityBuilder defaultPlaybackAuthorityBuilder() {
@@ -154,6 +157,8 @@ public final class StreamSessionFixture {
         .videoCodecFamily("h264")
         .audioDecision(AudioDecision.copy("aac", 2, 0))
         .subtitleDecision(SubtitleDecision.exclude())
+        .videoSource(
+            Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().streamIndex(0).build()))
         .build();
   }
 
