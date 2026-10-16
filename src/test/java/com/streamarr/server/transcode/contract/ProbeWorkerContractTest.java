@@ -160,6 +160,7 @@ class ProbeWorkerContractTest {
     assertThat(unknown.hasAudioProfile()).isFalse();
     assertThat(unknown.hasTitle()).isFalse();
     assertThat(unknown.hasHandlerName()).isFalse();
+    assertThat(unknown.hasIsHearingImpaired()).isFalse();
     assertThat(unknown.hasContainerCropping()).isFalse();
     assertThat(decoded.getMedia().getContainer().getChaptersList()).isEmpty();
   }
@@ -613,6 +614,73 @@ class ProbeWorkerContractTest {
     assertThat(decodedEmpty.hasHandlerName()).isTrue();
     assertThat(decodedEmpty.getHandlerName()).isEmpty();
     assertThat(decodedMissing.hasHandlerName()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry the hearing-impaired flag of each audio and subtitle stream when returning a probe version 4 result")
+  void shouldCarryHearingImpairedFlagOfEachAudioAndSubtitleStreamWhenReturningProbeVersion4Result()
+      throws Exception {
+    var video = ProbeStreamInfo.newBuilder().setIndex(0).setCodecType("video").build();
+    var hearingImpairedMix =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(1)
+            .setCodecType("audio")
+            .setIsHearingImpaired(true)
+            .build();
+    var sdh =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(2)
+            .setCodecType("subtitle")
+            .setTitle("English SDH")
+            .setIsHearingImpaired(true)
+            .build();
+    var unflagged =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(3)
+            .setCodecType("subtitle")
+            .setIsHearingImpaired(false)
+            .build();
+
+    var decoded =
+        ProbeAttemptResult.parseFrom(
+                probeVersion4Result(
+                        ProbeMediaInfo.newBuilder()
+                            .addStreams(video)
+                            .addStreams(hearingImpairedMix)
+                            .addStreams(sdh)
+                            .addStreams(unflagged))
+                    .toByteArray())
+            .getMedia();
+
+    assertThat(decoded.getStreamsList()).containsExactly(video, hearingImpairedMix, sdh, unflagged);
+    assertThat(decoded.getStreams(0).hasIsHearingImpaired()).isFalse();
+    assertThat(decoded.getStreams(1).getIsHearingImpaired()).isTrue();
+    assertThat(decoded.getStreams(2).getIsHearingImpaired()).isTrue();
+    assertThat(decoded.getStreams(3).hasIsHearingImpaired()).isTrue();
+    assertThat(decoded.getStreams(3).getIsHearingImpaired()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell a stream that the container leaves unflagged apart from a stream without a reported flag when decoding a subtitle stream")
+  void
+      shouldTellStreamThatContainerLeavesUnflaggedApartFromStreamWithoutReportedFlagWhenDecodingSubtitleStream()
+          throws Exception {
+    var unflagged =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(2)
+            .setCodecType("subtitle")
+            .setIsHearingImpaired(false)
+            .build();
+    var unreported = ProbeStreamInfo.newBuilder().setIndex(2).setCodecType("subtitle").build();
+
+    var decodedUnflagged = ProbeStreamInfo.parseFrom(unflagged.toByteArray());
+    var decodedUnreported = ProbeStreamInfo.parseFrom(unreported.toByteArray());
+
+    assertThat(decodedUnflagged.hasIsHearingImpaired()).isTrue();
+    assertThat(decodedUnflagged.getIsHearingImpaired()).isFalse();
+    assertThat(decodedUnreported.hasIsHearingImpaired()).isFalse();
   }
 
   @Test

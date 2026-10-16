@@ -453,7 +453,7 @@ enum ChromaSubsampling {
   CHROMA_SUBSAMPLING_MONOCHROME = 4;
 }
 
-// Only probe version 4 and later report the fields from dynamic_range to handler_name.
+// Only probe version 4 and later report the fields from dynamic_range to is_hearing_impaired.
 message ProbeStreamInfo {
   uint32 index = 1;
   string codec_type = 2;
@@ -550,6 +550,27 @@ message ProbeStreamInfo {
   // list of generic names is open-ended. A rule in the worker would need a new probe version for
   // each fix, and every file would need a new probe.
   optional string handler_name = 24;
+  // Audio and subtitle streams only: whether the container marks the stream as made for viewers
+  // who are deaf or hard of hearing, from ffprobe's hearing_impaired disposition. Such a subtitle
+  // track usually holds SDH subtitles, which also describe sounds. The worker reads the disposition
+  // from its existing -show_streams run and needs no new ffprobe argument.
+  //
+  // FFmpeg 8.1 reads the flag from these sources:
+  // - Matroska: the FlagHearingImpaired element. FFmpeg's WebM muxer never writes that element.
+  // - MP4: a kind box with the scheme urn:mpeg:dash:role:2011 and the value caption. FFmpeg reads
+  //   that box as both the hearing_impaired and the captions disposition, and FFmpeg's MP4 muxer
+  //   writes it for either disposition. FFmpeg's MOV muxer writes no kind box. FFmpeg reads no
+  //   other MP4 box for the flag, such as the media characteristics that Apple tools write.
+  // - MPEG-TS: audio type 2 in an ISO 639 language descriptor, or a DVB subtitling type from 0x20
+  //   to 0x25.
+  //
+  // True when the disposition is 1, and false when it is 0. Absent on video streams, and absent
+  // when ffprobe reports no disposition for the stream. False means only that the container does
+  // not mark the stream. It never proves that a track lacks sound descriptions, because many SDH
+  // tracks carry no flag and some containers cannot carry one. In a 300-file library sample, the
+  // flag marked only 25 of the 78 text subtitle tracks whose flag or title said SDH. So the server
+  // also reads the title (streamarr/streamarr-server#60).
+  optional bool is_hearing_impaired = 25;
 }
 
 // The number of pixels that a container crop removes from each edge of the picture. width and

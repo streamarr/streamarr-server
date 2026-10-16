@@ -284,7 +284,7 @@ Version 4 adds the facts that playing HDR and 10-bit sources as SDR needs: the d
 Version 4 also adds the end time of each audio and video stream, where the container header states the end time.
 Version 4 also adds the sample rate and profile of each audio stream, the container cropping of each video stream, and the container's chapters.
 Version 4 also adds the HDR10 static metadata that the container declares for each video stream: the mastering display color volume and the content light level.
-Version 4 also adds the title and the handler name of each audio and subtitle stream.
+Version 4 also adds the title, the handler name and the hearing-impaired flag of each audio and subtitle stream.
 Version 2 is unused.
 The worker contract defines version 4, but the server still requests version 3.
 
