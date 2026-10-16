@@ -41,8 +41,9 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 @Slf4j
 @Service
@@ -289,14 +290,14 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
         .map(summaries -> summaries.stream().map(TmdbTvSeasonSummary::getSeasonNumber).toList());
   }
 
-  @EventListener
+  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
   public void onScanEnded(ScanEndedEvent event) {
     log.debug("Clearing series metadata cache for library {}", event.libraryId());
     seasonSummariesByLibrary.remove(event.libraryId());
     failedSeasonDetailsByLibrary.remove(event.libraryId());
   }
 
-  @EventListener
+  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
   public void onRefreshEnded(RefreshEndedEvent event) {
     log.debug("Clearing series metadata cache for library {} after refresh", event.libraryId());
     seasonSummariesByLibrary.remove(event.libraryId());

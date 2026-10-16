@@ -80,7 +80,9 @@ class SeriesServiceTest {
             .imageDownloader(imageDownloader)
             .build();
     artworkRequestService = artwork.artworkRequestService();
-    artworkRun = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
+    artworkRun =
+        artworkRequestService.openLibraryOperationRun(
+            "scan", ImageRefreshMode.PRESERVE, UUID.randomUUID());
     var paginationService = new PaginationService();
     var fileSystem = Jimfs.newFileSystem(Configuration.unix());
     var imageService =

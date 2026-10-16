@@ -32,13 +32,15 @@ import java.util.function.Supplier;
  * Used to test error handling when file system traversal fails mid-stream.
  *
  * <p>Jimfs cannot simulate permission errors, so this wrapper intercepts directory stream iteration
- * and throws the configured exception after returning the first element.
+ * and throws the configured exception after each directory stream returns a set number of entries.
+ * The constructors set that number to one.
  */
 public class ThrowingFileSystemWrapper extends FileSystem {
 
   private final FileSystem delegate;
   private final ThrowingFileSystemProvider throwingProvider;
   private final Supplier<RuntimeException> exceptionSupplier;
+  private final int entriesBeforeFailure;
 
   public ThrowingFileSystemWrapper(FileSystem delegate) {
     this(
@@ -50,8 +52,20 @@ public class ThrowingFileSystemWrapper extends FileSystem {
 
   public ThrowingFileSystemWrapper(
       FileSystem delegate, Supplier<RuntimeException> exceptionSupplier) {
+    this(delegate, exceptionSupplier, 1);
+  }
+
+  /** Returns a wrapper whose directory streams fail before they return any entry. */
+  public static ThrowingFileSystemWrapper failingBeforeTheFirstEntry(
+      FileSystem delegate, Supplier<RuntimeException> exceptionSupplier) {
+    return new ThrowingFileSystemWrapper(delegate, exceptionSupplier, 0);
+  }
+
+  private ThrowingFileSystemWrapper(
+      FileSystem delegate, Supplier<RuntimeException> exceptionSupplier, int entriesBeforeFailure) {
     this.delegate = delegate;
     this.exceptionSupplier = exceptionSupplier;
+    this.entriesBeforeFailure = entriesBeforeFailure;
     this.throwingProvider = new ThrowingFileSystemProvider(delegate.provider(), this);
   }
 
@@ -390,7 +404,7 @@ public class ThrowingFileSystemWrapper extends FileSystem {
 
     private final Iterator<Path> delegate;
     private final ThrowingFileSystemWrapper fileSystem;
-    private boolean firstReturned = false;
+    private int returnedEntries = 0;
 
     ThrowingIterator(Iterator<Path> delegate, ThrowingFileSystemWrapper fileSystem) {
       this.delegate = delegate;
@@ -399,7 +413,7 @@ public class ThrowingFileSystemWrapper extends FileSystem {
 
     @Override
     public boolean hasNext() {
-      if (firstReturned) {
+      if (returnedEntries >= fileSystem.entriesBeforeFailure) {
         throw fileSystem.exceptionSupplier.get();
       }
       return delegate.hasNext();
@@ -408,7 +422,7 @@ public class ThrowingFileSystemWrapper extends FileSystem {
     @Override
     public Path next() {
       var result = delegate.next();
-      firstReturned = true;
+      returnedEntries++;
       return new WrappedPath(result, fileSystem);
     }
   }

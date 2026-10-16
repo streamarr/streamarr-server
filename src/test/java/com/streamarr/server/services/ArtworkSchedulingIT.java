@@ -24,6 +24,7 @@ import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
+import com.streamarr.server.domain.media.PendingArtworkRequest;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -359,7 +360,9 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   @DisplayName(
       "Should store no request and schedule no steps when the metadata transaction rolls back")
   void shouldStoreNoRequestAndScheduleNoStepsWhenTheMetadataTransactionRollsBack() {
-    var run = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
+    var run =
+        artworkRequestService.openLibraryOperationRun(
+            "scan", ImageRefreshMode.PRESERVE, UUID.randomUUID());
 
     transactionTemplate.executeWithoutResult(
         status -> {
@@ -387,7 +390,7 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   }
 
   private ArtworkRun requestMovieArtwork(ImageRefreshMode refreshMode, ImageSource... sources) {
-    var run = artworkRequestService.openRun("scan", refreshMode);
+    var run = artworkRequestService.openLibraryOperationRun("scan", refreshMode, UUID.randomUUID());
     transactionTemplate.executeWithoutResult(
         _ -> artworkRequestService.requestPrimaryArtwork(run, movieArtwork(sources)));
     run.close();
@@ -395,7 +398,7 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
   }
 
   private ArtworkRunSummary awaitRun(ArtworkRun run) throws Exception {
-    try (var wait = BoundedTask.start(() -> artworkRunWaiter.awaitResults(run))) {
+    try (var wait = BoundedTask.start(() -> artworkRunWaiter.awaitLibraryOperationResults(run))) {
       return wait.await(BOUND);
     }
   }
@@ -452,9 +455,8 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
       implements ArtworkRequestRepository {
 
     @Override
-    public SavedArtworkRequest saveRequest(
-        ArtworkSources artwork, ImageRefreshMode refreshMode, Instant requestedAt) {
-      return delegate.saveRequest(artwork, refreshMode, requestedAt);
+    public SavedArtworkRequest saveRequest(NewArtworkRequest request) {
+      return delegate.saveRequest(request);
     }
 
     @Override
@@ -463,8 +465,13 @@ class ArtworkSchedulingIT extends AbstractWireMockIntegrationTest {
     }
 
     @Override
-    public Optional<Long> lockPendingGeneration(ArtworkTarget target) {
-      return delegate.lockPendingGeneration(target);
+    public Optional<PendingArtworkRequest> lockPendingRequest(ArtworkTarget target) {
+      return delegate.lockPendingRequest(target);
+    }
+
+    @Override
+    public long countPrimaryImagesAwaitingResultForLibraryOperation(UUID libraryOperationId) {
+      return delegate.countPrimaryImagesAwaitingResultForLibraryOperation(libraryOperationId);
     }
 
     @Override

@@ -10,18 +10,19 @@ import com.streamarr.server.services.events.library.LibraryStatusChangedEvent;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.Optional;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Turns committed library changes into library-administration subscription payloads. Each event
- * reads the library once, for every subscriber. A status change delivers the library's latest
- * committed row. An addition delivers the library as its transaction saved it, so a status change
- * that commits soon after may overtake it. A write inside a transaction is delivered only after
- * commit; a write without one is delivered at once.
+ * reads the library once, for every subscriber, in a transaction of its own, so the payload carries
+ * the library's latest committed row. A write inside a transaction is delivered only after commit;
+ * a write without one is delivered at once.
  *
  * <p>Publication never fails the scan, refresh or commit that triggered it. A failure is counted on
  * {@value #PUBLICATION_FAILURES_METRIC} instead, and subscribers recover current state through
@@ -29,7 +30,6 @@ import org.springframework.transaction.event.TransactionalEventListener;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class LibraryAdministrationEventListener {
 
   static final String PUBLICATION_FAILURES_METRIC =
@@ -38,7 +38,23 @@ public class LibraryAdministrationEventListener {
   private final LibraryRepository libraryRepository;
   private final LibraryAdministrationBroadcasters broadcasters;
   private final MeterRegistry meterRegistry;
+  private final TransactionTemplate committedReads;
   private final MutexFactory<UUID> statusPublicationLocks = new MutexFactory<>();
+
+  public LibraryAdministrationEventListener(
+      LibraryRepository libraryRepository,
+      LibraryAdministrationBroadcasters broadcasters,
+      MeterRegistry meterRegistry,
+      PlatformTransactionManager transactionManager) {
+    this.libraryRepository = libraryRepository;
+    this.broadcasters = broadcasters;
+    this.meterRegistry = meterRegistry;
+    // An AFTER_COMMIT listener still sees the committed transaction's persistence context, whose
+    // copy of the library can predate a status that jOOQ wrote. A new transaction reads the row.
+    this.committedReads = new TransactionTemplate(transactionManager);
+    this.committedReads.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    this.committedReads.setReadOnly(true);
+  }
 
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
   public void onLibraryStatusChanged(LibraryStatusChangedEvent event) {
@@ -59,8 +75,7 @@ public class LibraryAdministrationEventListener {
 
   // Writers on different threads can save one library's status back to back. Reading and
   // broadcasting under the library's lock keeps broadcasts in read order, so the last broadcast
-  // carries the latest saved status. That holds while each read sees the latest committed row:
-  // status writes run outside transactions, so this read starts its own.
+  // carries the latest saved status, because each read sees the latest committed row.
   private void broadcastCurrentStatus(UUID libraryId) {
     var lock = statusPublicationLocks.getMutex(libraryId);
     lock.lock();
@@ -71,9 +86,10 @@ public class LibraryAdministrationEventListener {
     }
   }
 
-  // A detached copy: the payload is resolved on delivery threads, outside any persistence context.
+  // The read's own transaction closes its persistence context, so delivery threads resolve a
+  // detached library. A builder copy would drop the audit columns, which entity builders discard.
   private Optional<Library> currentLibrary(UUID libraryId) {
-    return libraryRepository.findById(libraryId).map(library -> library.toBuilder().build());
+    return committedReads.execute(_ -> libraryRepository.findById(libraryId));
   }
 
   private void publish(SubscriptionBroadcaster<?> broadcaster, Runnable publication) {

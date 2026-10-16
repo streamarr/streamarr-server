@@ -90,6 +90,7 @@ public class ArtworkStepsRunner {
             .target(target)
             .generation(request.generation())
             .attemptedAt(clock.instant())
+            .libraryOperationId(request.libraryOperationId())
             .build();
     var storedImagesByType =
         imageService.findByEntity(target.targetId(), target.targetType()).stream()
@@ -248,7 +249,9 @@ public class ArtworkStepsRunner {
             .toList();
     return switch (storeResults(attempt, unsaved)) {
       case OBSOLETE -> new ArtworkStepsOutcome.Finished(attempt.generation());
-      case NOT_STORED -> new ArtworkStepsOutcome.Unfinished(attempt.generation(), Optional.empty());
+      case NOT_STORED ->
+          new ArtworkStepsOutcome.Unfinished(
+              attempt.generation(), attempt.libraryOperationId(), Optional.empty());
       case STORED -> outcomeOfStoredAttempt(attempt, unsaved, interrupted);
     };
   }
@@ -270,7 +273,8 @@ public class ArtworkStepsRunner {
             .map(StepOutcome.ResultToStore::retryAfter)
             .flatMap(Optional::stream)
             .max(Duration::compareTo);
-    return new ArtworkStepsOutcome.Unfinished(attempt.generation(), retryAfter);
+    return new ArtworkStepsOutcome.Unfinished(
+        attempt.generation(), attempt.libraryOperationId(), retryAfter);
   }
 
   private enum ResultStorage {

@@ -79,11 +79,13 @@ public class LibraryFileWalk {
    * before the walk pulls the next file. A task that throws ends admission: files that were not
    * admitted yet are not processed in this scan.
    *
-   * @throws LibraryScanFailedException if the library cannot be walked, a file's task fails, or the
-   *     walk is interrupted
+   * @throws LibraryScanFailedException if the library cannot be walked or a file's task fails
+   * @throws InterruptedException if the walk is interrupted; the admitted tasks are interrupted and
+   *     joined first
    */
-  public FileDiscovery discoverFiles(Library library) {
-    var discovery = fileDiscoveryRuns.open("scan of", library);
+  public FileDiscovery discoverFiles(Library library, UUID libraryOperationId)
+      throws InterruptedException {
+    var discovery = fileDiscoveryRuns.openScan(library, libraryOperationId);
     try (discovery;
         var admission = libraryOperationAdmissions.openScanAdmission(library);
         var stream = Files.walk(FilepathCodec.decode(fileSystem, library.getFilepathUri()))) {
@@ -101,9 +103,6 @@ public class LibraryFileWalk {
               SystemWork.newThreadFactoryRunningAsSystemActor("library-scan-file-"));
       throwIfAnyFileFailed(library, failures);
 
-    } catch (InterruptedException exception) {
-      Thread.currentThread().interrupt();
-      throw new LibraryScanFailedException(library.getName(), exception);
     } catch (IOException | UncheckedIOException | SecurityException | InvalidPathException e) {
       throw new LibraryScanFailedException(library.getName(), e);
     }

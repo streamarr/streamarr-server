@@ -7,6 +7,7 @@ import static org.awaitility.Awaitility.await;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.fakes.FakeLibraryRepository;
+import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.graphql.dto.LibraryRemoval;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
@@ -43,7 +44,8 @@ class LibraryAdministrationEventListenerTest {
           Schedulers.immediate(),
           new SubscriptionProperties(64, 32, DataSize.ofMegabytes(1)));
   private final LibraryAdministrationEventListener listener =
-      new LibraryAdministrationEventListener(libraryRepository, broadcasters, meterRegistry);
+      new LibraryAdministrationEventListener(
+          libraryRepository, broadcasters, meterRegistry, new FakeTransactionManager());
 
   @Test
   @DisplayName("Should broadcast the current library when its status changes")
@@ -60,7 +62,25 @@ class LibraryAdministrationEventListenerTest {
             payload -> {
               assertThat(payload.getId()).isEqualTo(library.getId());
               assertThat(payload.getStatus()).isEqualTo(LibraryStatus.SCANNING);
-              assertThat(payload).isNotSameAs(library);
+            });
+  }
+
+  @Test
+  @DisplayName("Should broadcast the library's audit timestamps when its status changes")
+  void shouldBroadcastLibrarysAuditTimestampsWhenStatusChanges() {
+    var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
+    var delivered = collect(broadcasters.getStatusChanges());
+
+    listener.onLibraryStatusChanged(new LibraryStatusChangedEvent(library.getId()));
+
+    assertThat(delivered)
+        .singleElement()
+        .satisfies(
+            payload -> {
+              assertThat(payload.getCreatedOn()).isNotNull().isEqualTo(library.getCreatedOn());
+              assertThat(payload.getLastModifiedOn())
+                  .isNotNull()
+                  .isEqualTo(library.getLastModifiedOn());
             });
   }
 
@@ -72,7 +92,8 @@ class LibraryAdministrationEventListenerTest {
       throws Exception {
     var pausingRepository = new FirstReadPausingLibraryRepository();
     var orderedListener =
-        new LibraryAdministrationEventListener(pausingRepository, broadcasters, meterRegistry);
+        new LibraryAdministrationEventListener(
+            pausingRepository, broadcasters, meterRegistry, new FakeTransactionManager());
     var library = pausingRepository.save(LibraryFixtureCreator.buildFakeLibrary());
     var delivered = collect(broadcasters.getStatusChanges());
     var event = new LibraryStatusChangedEvent(library.getId());
@@ -139,7 +160,10 @@ class LibraryAdministrationEventListenerTest {
   void shouldCountPublicationFailureWithoutThrowingWhenLibraryCannotBeLoaded() {
     var failingListener =
         new LibraryAdministrationEventListener(
-            new UnavailableLibraryRepository(), broadcasters, meterRegistry);
+            new UnavailableLibraryRepository(),
+            broadcasters,
+            meterRegistry,
+            new FakeTransactionManager());
 
     assertThatCode(
             () ->

@@ -9,6 +9,7 @@ import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
 import com.streamarr.server.exceptions.InvalidPaginationCursorException;
+import com.streamarr.server.exceptions.LibraryOperationNotStartedException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.ResourceBusyException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
@@ -188,6 +189,22 @@ class StreamarrDataFetcherExceptionHandlerTest {
         .containsEntry("errorType", "UNAVAILABLE")
         .containsEntry("code", "RESOURCE_BUSY");
     assertThat(error.getMessage()).isEqualTo("Another change is in progress; try again shortly.");
+  }
+
+  @Test
+  @DisplayName(
+      "Should map a failed library operation start to unavailable when its transaction fails")
+  void shouldMapFailedLibraryOperationStartToUnavailableWhenItsTransactionFails() {
+    var error =
+        errorFor(
+            new LibraryOperationNotStartedException(
+                new CannotAcquireLockException("lock timeout on library 42")));
+
+    assertThat(error.getExtensions())
+        .containsEntry("errorType", "UNAVAILABLE")
+        .containsEntry("code", "LIBRARY_OPERATION_NOT_STARTED");
+    assertThat(error.getMessage())
+        .isEqualTo("No library scan or refresh started. Try again shortly.");
   }
 
   @Test

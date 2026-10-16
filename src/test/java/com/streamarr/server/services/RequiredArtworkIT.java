@@ -105,7 +105,9 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
   @Test
   @DisplayName("Should commit image records before the run reports required artwork finished")
   void shouldCommitImageRecordsBeforeRunReportsRequiredArtworkFinished() throws Exception {
-    var artworkRun = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
+    var artworkRun =
+        artworkRequestService.openLibraryOperationRun(
+            "scan", ImageRefreshMode.PRESERVE, UUID.randomUUID());
 
     var movie = movieService.createMovieWithAssociations(movieMetadata(), mediaFile(), artworkRun);
     var summary = closeAndAwait(artworkRun);
@@ -118,7 +120,9 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
   @Test
   @DisplayName("Should withdraw required artwork when the owning transaction rolls back")
   void shouldWithdrawRequiredArtworkWhenOwningTransactionRollsBack() throws Exception {
-    var artworkRun = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
+    var artworkRun =
+        artworkRequestService.openLibraryOperationRun(
+            "scan", ImageRefreshMode.PRESERVE, UUID.randomUUID());
     var mediaFile = mediaFile();
 
     var movie =
@@ -138,7 +142,9 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
   @Test
   @DisplayName("Should name the System actor as creator when required artwork saves images")
   void shouldNameSystemActorAsCreatorWhenRequiredArtworkSavesImages() throws Exception {
-    var artworkRun = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
+    var artworkRun =
+        artworkRequestService.openLibraryOperationRun(
+            "scan", ImageRefreshMode.PRESERVE, UUID.randomUUID());
 
     var movie = movieService.createMovieWithAssociations(movieMetadata(), mediaFile(), artworkRun);
     closeAndAwait(artworkRun);
@@ -223,7 +229,9 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
             requestBacklogArtwork(backlog.get(index), index);
           }
         });
-    var artworkRun = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
+    var artworkRun =
+        artworkRequestService.openLibraryOperationRun(
+            "scan", ImageRefreshMode.PRESERVE, UUID.randomUUID());
 
     movieService.createMovieWithAssociations(movieMetadata(), mediaFile(), artworkRun);
     var summary = closeAndAwait(artworkRun);
@@ -270,7 +278,9 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
             }
           });
       await().atMost(Duration.ofSeconds(BOUND_SECONDS)).until(() -> backgroundWaiters() == 2);
-      var artworkRun = artworkRequestService.openRun("scan", ImageRefreshMode.PRESERVE);
+      var artworkRun =
+          artworkRequestService.openLibraryOperationRun(
+              "scan", ImageRefreshMode.PRESERVE, UUID.randomUUID());
       var movie =
           movieService.createMovieWithAssociations(movieMetadata(), mediaFile(), artworkRun);
       await().atMost(Duration.ofSeconds(BOUND_SECONDS)).until(() -> primaryWaiters() == 1);
@@ -357,7 +367,8 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
 
   private ArtworkRunSummary closeAndAwait(ArtworkRun artworkRun) throws Exception {
     artworkRun.close();
-    try (var wait = BoundedTask.start(() -> artworkRunWaiter.awaitResults(artworkRun))) {
+    try (var wait =
+        BoundedTask.start(() -> artworkRunWaiter.awaitLibraryOperationResults(artworkRun))) {
       return wait.await(Duration.ofSeconds(BOUND_SECONDS));
     }
   }

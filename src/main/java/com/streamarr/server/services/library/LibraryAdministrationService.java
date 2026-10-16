@@ -16,6 +16,7 @@ public class LibraryAdministrationService {
 
   private final AuthorizationService authorizationService;
   private final LibraryManagementService libraryManagementService;
+  private final LibraryOperationService libraryOperationService;
 
   public Outcome<Library, AddLibraryRejection> addLibrary(
       AuthenticatedIdentity identity, Library library) {
@@ -23,9 +24,10 @@ public class LibraryAdministrationService {
     return libraryManagementService.addLibrary(identity, library);
   }
 
-  public void removeLibrary(AuthenticatedIdentity identity, UUID libraryId) {
+  public Outcome<UUID, LibraryOperationRejection> removeLibrary(
+      AuthenticatedIdentity identity, UUID libraryId) {
     authorizationService.requireAllowed(identity, new Intent.RemoveLibrary(libraryId));
-    libraryManagementService.removeLibrary(identity, libraryId);
+    return libraryManagementService.removeLibrary(identity, libraryId);
   }
 
   /**
@@ -36,14 +38,15 @@ public class LibraryAdministrationService {
     authorizationService.requireAllowed(identity, new Intent.ViewLibraryAdministration());
   }
 
-  public void scanLibrary(AuthenticatedIdentity identity, UUID libraryId) {
+  public Outcome<Library, LibraryOperationRejection> startLibraryScan(
+      AuthenticatedIdentity identity, UUID libraryId) {
     authorizationService.requireAllowed(identity, new Intent.ScanLibrary(libraryId));
-    libraryManagementService.triggerAsyncScan(libraryId);
+    return libraryOperationService.startLibraryScan(identity, libraryId);
   }
 
-  public void refreshLibrary(
+  public Outcome<Library, LibraryOperationRejection> startLibraryRefresh(
       AuthenticatedIdentity identity, UUID libraryId, ImageRefreshMode imageRefreshMode) {
     authorizationService.requireAllowed(identity, new Intent.RefreshLibrary(libraryId));
-    libraryManagementService.triggerAsyncRefresh(libraryId, imageRefreshMode);
+    return libraryOperationService.startLibraryRefresh(identity, libraryId, imageRefreshMode);
   }
 }

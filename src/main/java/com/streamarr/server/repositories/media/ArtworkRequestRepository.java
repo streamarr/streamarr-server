@@ -4,19 +4,21 @@ import com.streamarr.server.domain.media.ArtworkBacklog;
 import com.streamarr.server.domain.media.ArtworkCompletionEvidence;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
-import com.streamarr.server.services.ArtworkSources;
+import com.streamarr.server.domain.media.PendingArtworkRequest;
+import com.streamarr.server.services.NewArtworkRequest;
 import com.streamarr.server.services.StoredArtworkRequest;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
-import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Stores at most one artwork request per target. A request with changed sources or a stronger
  * refresh mode starts a new generation; a request that changes neither keeps the pending
- * generation.
+ * generation. A library operation's request takes over the pending request: the request then
+ * carries the operation's id, and a request from outside an operation keeps the id that the pending
+ * request carries.
  */
 public interface ArtworkRequestRepository {
 
@@ -27,6 +29,13 @@ public interface ArtworkRequestRepository {
 
     /** The pending request already covered the new one; nothing was written. */
     record Unchanged(long generation) implements SavedArtworkRequest {}
+
+    /**
+     * A library operation took over the pending request, which covered the new one: the request and
+     * each result of its generation that no retry will replace now carry the operation's id. The
+     * caller's transaction holds the request's row lock until it ends.
+     */
+    record TakenOver(long generation) implements SavedArtworkRequest {}
 
     /**
      * The request was inserted, or replaced a pending one, under a new generation. The caller's
@@ -40,16 +49,15 @@ public interface ArtworkRequestRepository {
    * stronger of the pending and the requested refresh mode. A request that changes nothing takes no
    * row lock.
    */
-  SavedArtworkRequest saveRequest(
-      ArtworkSources artwork, ImageRefreshMode refreshMode, Instant requestedAt);
+  SavedArtworkRequest saveRequest(NewArtworkRequest request);
 
   Optional<StoredArtworkRequest> findRequest(ArtworkTarget target);
 
   /**
-   * Locks the target's request until the caller's transaction ends and returns its generation, or
-   * nothing when no request is pending.
+   * Locks the target's request until the caller's transaction ends and returns its generation and
+   * library operation id, or nothing when no request is pending.
    */
-  Optional<Long> lockPendingGeneration(ArtworkTarget target);
+  Optional<PendingArtworkRequest> lockPendingRequest(ArtworkTarget target);
 
   /**
    * Deletes the target's request in the caller's transaction when {@code generation} is still the
@@ -63,6 +71,14 @@ public interface ArtworkRequestRepository {
    * A deleted target has neither.
    */
   List<ArtworkCompletionEvidence> findCompletionEvidence(Collection<ArtworkTarget> targets);
+
+  /**
+   * Counts the images that the primary artwork requests carrying the library operation's id still
+   * need: for each such request, the images of its generation that have no result carrying the
+   * operation's id. A result counts whatever its outcome, so a step that waits to retry holds no
+   * operation open.
+   */
+  long countPrimaryImagesAwaitingResultForLibraryOperation(UUID libraryOperationId);
 
   /**
    * Returns the artwork backlog of each target type: the images that pending requests still need,

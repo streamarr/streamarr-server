@@ -20,7 +20,6 @@ import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.ImageService;
-import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -84,7 +83,8 @@ class OrphanedMediaFileCleanupServiceIT extends AbstractIntegrationTest {
                 .mediaId(retainedMovie.getId())
                 .build());
 
-    orphanedMediaFileCleanupService.onScanCompleted(new ScanCompletedEvent(library.getId()));
+    transactionTemplate.executeWithoutResult(
+        _ -> orphanedMediaFileCleanupService.cleanupOrphanedFiles(library));
 
     assertThat(movieRepository.findById(deletedMovie.getId())).isEmpty();
     assertThat(movieRepository.findById(retainedMovie.getId())).isPresent();
@@ -118,7 +118,8 @@ class OrphanedMediaFileCleanupServiceIT extends AbstractIntegrationTest {
     imageService.saveImages(poster.images(), requestedAttempt(poster.images()));
     assertThat(itemResults.findByItem(movie.getId(), ImageEntityType.MOVIE)).isNotEmpty();
 
-    orphanedMediaFileCleanupService.onScanCompleted(new ScanCompletedEvent(library.getId()));
+    transactionTemplate.executeWithoutResult(
+        _ -> orphanedMediaFileCleanupService.cleanupOrphanedFiles(library));
 
     assertThat(movieRepository.findById(movie.getId())).isEmpty();
     assertThat(itemResults.findByItem(movie.getId(), ImageEntityType.MOVIE)).isEmpty();

@@ -210,6 +210,11 @@ probe:
   max-concurrent-keyframe-packet-scans: ${PROBE_MAX_CONCURRENT_KEYFRAME_PACKET_SCANS:1}
 
 library:
+  # Scans and refreshes run as library operations on their own db-scheduler with its own table.
+  # The thread count caps how many operations run at once; further operations show their busy
+  # status and wait for a thread.
+  operation-scheduling:
+    threads: ${LIBRARY_OPERATION_THREADS:8}
   watcher:
     stabilization-period-seconds: ${LIBRARY_WATCHER_STABILIZATION_PERIOD:30}
     poll-interval-seconds: ${LIBRARY_WATCHER_POLL_INTERVAL:5}

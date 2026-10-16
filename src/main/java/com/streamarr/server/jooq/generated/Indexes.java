@@ -61,6 +61,7 @@ public class Indexes {
 
     public static final Index ARTWORK_REQUEST_COMPANY_ID_IDX = Internal.createIndex(DSL.name("artwork_request_company_id_idx"), ArtworkRequest.ARTWORK_REQUEST, new OrderField[] { ArtworkRequest.ARTWORK_REQUEST.COMPANY_ID }, false);
     public static final Index ARTWORK_REQUEST_EPISODE_ID_IDX = Internal.createIndex(DSL.name("artwork_request_episode_id_idx"), ArtworkRequest.ARTWORK_REQUEST, new OrderField[] { ArtworkRequest.ARTWORK_REQUEST.EPISODE_ID }, false);
+    public static final Index ARTWORK_REQUEST_LIBRARY_OPERATION_ID_IDX = Internal.createIndex(DSL.name("artwork_request_library_operation_id_idx"), ArtworkRequest.ARTWORK_REQUEST, new OrderField[] { ArtworkRequest.ARTWORK_REQUEST.LIBRARY_OPERATION_ID }, false);
     public static final Index ARTWORK_REQUEST_MOVIE_ID_IDX = Internal.createIndex(DSL.name("artwork_request_movie_id_idx"), ArtworkRequest.ARTWORK_REQUEST, new OrderField[] { ArtworkRequest.ARTWORK_REQUEST.MOVIE_ID }, false);
     public static final Index ARTWORK_REQUEST_PERSON_ID_IDX = Internal.createIndex(DSL.name("artwork_request_person_id_idx"), ArtworkRequest.ARTWORK_REQUEST, new OrderField[] { ArtworkRequest.ARTWORK_REQUEST.PERSON_ID }, false);
     public static final Index ARTWORK_REQUEST_SEASON_ID_IDX = Internal.createIndex(DSL.name("artwork_request_season_id_idx"), ArtworkRequest.ARTWORK_REQUEST, new OrderField[] { ArtworkRequest.ARTWORK_REQUEST.SEASON_ID }, false);
@@ -136,6 +137,7 @@ public class Indexes {
     public static final Index IMAGE_SERIES_ID_IDX = Internal.createIndex(DSL.name("image_series_id_idx"), Image.IMAGE, new OrderField[] { Image.IMAGE.SERIES_ID }, false);
     public static final Index ITEM_RESULT_COMPANY_ID_IDX = Internal.createIndex(DSL.name("item_result_company_id_idx"), ItemResult.ITEM_RESULT, new OrderField[] { ItemResult.ITEM_RESULT.COMPANY_ID }, false);
     public static final Index ITEM_RESULT_EPISODE_ID_IDX = Internal.createIndex(DSL.name("item_result_episode_id_idx"), ItemResult.ITEM_RESULT, new OrderField[] { ItemResult.ITEM_RESULT.EPISODE_ID }, false);
+    public static final Index ITEM_RESULT_LIBRARY_OPERATION_ID_IDX = Internal.createIndex(DSL.name("item_result_library_operation_id_idx"), ItemResult.ITEM_RESULT, new OrderField[] { ItemResult.ITEM_RESULT.LIBRARY_OPERATION_ID }, false);
     public static final Index ITEM_RESULT_MOVIE_ID_IDX = Internal.createIndex(DSL.name("item_result_movie_id_idx"), ItemResult.ITEM_RESULT, new OrderField[] { ItemResult.ITEM_RESULT.MOVIE_ID }, false);
     public static final Index ITEM_RESULT_PERSON_ID_IDX = Internal.createIndex(DSL.name("item_result_person_id_idx"), ItemResult.ITEM_RESULT, new OrderField[] { ItemResult.ITEM_RESULT.PERSON_ID }, false);
     public static final Index ITEM_RESULT_SEASON_ID_IDX = Internal.createIndex(DSL.name("item_result_season_id_idx"), ItemResult.ITEM_RESULT, new OrderField[] { ItemResult.ITEM_RESULT.SEASON_ID }, false);

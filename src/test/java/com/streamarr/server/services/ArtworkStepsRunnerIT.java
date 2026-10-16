@@ -332,16 +332,19 @@ class ArtworkStepsRunnerIT extends AbstractWireMockIntegrationTest {
     transactionTemplate.execute(
         _ ->
             requests.saveRequest(
-                ArtworkSources.builder()
-                    .targetId(entityId)
-                    .targetType(ImageEntityType.MOVIE)
-                    .sources(
-                        List.of(
-                            new TmdbImageSource(ImageType.POSTER, "/poster.jpg"),
-                            new TmdbImageSource(ImageType.BACKDROP, "/backdrop.jpg")))
-                    .build(),
-                ImageRefreshMode.PRESERVE,
-                requestedAt));
+                NewArtworkRequest.builder()
+                    .artwork(
+                        ArtworkSources.builder()
+                            .targetId(entityId)
+                            .targetType(ImageEntityType.MOVIE)
+                            .sources(
+                                List.of(
+                                    new TmdbImageSource(ImageType.POSTER, "/poster.jpg"),
+                                    new TmdbImageSource(ImageType.BACKDROP, "/backdrop.jpg")))
+                            .build())
+                    .refreshMode(ImageRefreshMode.PRESERVE)
+                    .requestedAt(requestedAt)
+                    .build()));
     artworkStepsRunner.runSteps(movie);
     var clock = new MutableClock(new AtomicReference<>(Instant.now()));
 
@@ -380,7 +383,15 @@ class ArtworkStepsRunnerIT extends AbstractWireMockIntegrationTest {
 
   private long request(String key, ImageRefreshMode refreshMode) {
     return transactionTemplate.execute(
-        _ -> requests.saveRequest(posterArtwork(key), refreshMode, Instant.now()).generation());
+        _ ->
+            requests
+                .saveRequest(
+                    NewArtworkRequest.builder()
+                        .artwork(posterArtwork(key))
+                        .refreshMode(refreshMode)
+                        .requestedAt(Instant.now())
+                        .build())
+                .generation());
   }
 
   private ArtworkSources posterArtwork(String key) {

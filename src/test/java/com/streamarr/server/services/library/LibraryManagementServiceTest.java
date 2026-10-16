@@ -2,14 +2,10 @@ package com.streamarr.server.services.library;
 
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.defaultIdentityBuilder;
-import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
-import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -17,50 +13,40 @@ import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.config.LibraryScanProperties;
 import com.streamarr.server.domain.ExternalAgentStrategy;
-import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
-import com.streamarr.server.domain.media.Image;
-import com.streamarr.server.domain.media.ImageEntityType;
-import com.streamarr.server.domain.media.ImageType;
-import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
-import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
-import com.streamarr.server.exceptions.LibraryScanFailedException;
-import com.streamarr.server.exceptions.LibraryScanInProgressException;
+import com.streamarr.server.exceptions.LibraryOperationNotScheduledException;
+import com.streamarr.server.exceptions.LibraryOperationNotStartedException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.CountingSleeper;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
-import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.fakes.FakeLibraryMutationTransaction;
+import com.streamarr.server.fakes.FakeLibraryOperationRepository;
+import com.streamarr.server.fakes.FakeLibraryOperationScheduling;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeProbeTaskRequests;
 import com.streamarr.server.fakes.FakeSeasonRepository;
-import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.fakes.FakeTransactionManager;
-import com.streamarr.server.fakes.FixedLimitAdmissions;
-import com.streamarr.server.fakes.GatedImageDownloader;
 import com.streamarr.server.fakes.RecordingMetadataProvider;
 import com.streamarr.server.fakes.RecordingSeriesMetadataProvider;
 import com.streamarr.server.fakes.SecurityExceptionFileSystem;
-import com.streamarr.server.fakes.ThrowingFileSystemWrapper;
 import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
-import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
@@ -76,19 +62,13 @@ import com.streamarr.server.services.events.library.ItemProcessedEvent;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.events.library.LibraryStatusChangedEvent;
-import com.streamarr.server.services.events.library.RefreshEndedEvent;
-import com.streamarr.server.services.events.library.ScanCompletedEvent;
-import com.streamarr.server.services.events.library.ScanEndedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
-import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
-import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
-import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProvider;
@@ -108,30 +88,23 @@ import com.streamarr.server.services.validation.VideoExtensionValidator;
 import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.net.URI;
-import java.net.http.HttpTimeoutException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.spi.FileSystemProvider;
-import java.sql.SQLTransientConnectionException;
-import java.time.Clock;
+import java.sql.SQLException;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -142,8 +115,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.dao.DataAccessResourceFailureException;
-import org.springframework.jdbc.CannotGetJdbcConnectionException;
+import org.springframework.dao.DataIntegrityViolationException;
 
 @Tag("UnitTest")
 @ExtendWith(MockitoExtension.class)
@@ -160,7 +132,15 @@ class LibraryManagementServiceTest {
   private final MetadataProvider<Movie> tmdbMovieProvider = mock(TMDBMovieProvider.class);
   private final MovieMetadataProviderResolver fakeMovieMetadataProviderResolver =
       new MovieMetadataProviderResolver(List.of(tmdbMovieProvider));
-  private final LibraryRepository fakeLibraryRepository = new FakeLibraryRepository();
+  private Consumer<Library> beforeDeletingLibrary = _ -> {};
+  private final LibraryRepository fakeLibraryRepository =
+      new FakeLibraryRepository() {
+        @Override
+        public void delete(Library library) {
+          beforeDeletingLibrary.accept(library);
+          super.delete(library);
+        }
+      };
   private Runnable beforeProbeSchedulingReadsMediaFile = () -> {};
   private Runnable beforeCountingFileStatuses = () -> {};
   private Consumer<MediaFile> beforeSavingMediaFile = _ -> {};
@@ -185,7 +165,7 @@ class LibraryManagementServiceTest {
         }
       };
   private final MovieRepository fakeMovieRepository = new FakeMovieRepository();
-  private final SignalingEventPublisher capturingEventPublisher = new SignalingEventPublisher();
+  private final CapturingEventPublisher capturingEventPublisher = new CapturingEventPublisher();
   private final FakeTransactionManager transactionManager = new FakeTransactionManager();
   private final MutationTransactions mutationTransactions =
       new MutationTransactions(transactionManager, new ConstraintViolationTranslator());
@@ -219,14 +199,26 @@ class LibraryManagementServiceTest {
   private final SeriesFileProcessor seriesFileProcessor = mock(SeriesFileProcessor.class);
   private final SeriesService seriesService = mock(SeriesService.class);
 
-  private final LibraryRefreshService libraryRefreshService = mock(LibraryRefreshService.class);
-
   private final FakeMediaFileContainerInfoRepository probeOutcomes =
       new FakeMediaFileContainerInfoRepository();
   private final FakeProbeTaskRequests probeTaskRequests = succeedingProbeRequests(probeOutcomes);
   private final CountingSleeper probeCheckSleeper = new CountingSleeper();
   private final FileDiscoveryRuns fileDiscoveryRuns = fileDiscoveryRunsWith(artwork);
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+
+  private final FakeLibraryOperationRepository libraryOperations =
+      new FakeLibraryOperationRepository(fakeLibraryRepository);
+  private final FakeLibraryOperationScheduling libraryOperationScheduling =
+      new FakeLibraryOperationScheduling();
+  private final LibraryOperationService libraryOperationService =
+      LibraryOperationService.builder()
+          .libraryOperations(libraryOperations)
+          .scheduling(libraryOperationScheduling)
+          .mutationTransactions(mutationTransactions)
+          .libraryMutationTransaction(libraryMutationTransaction)
+          .eventPublisher(capturingEventPublisher)
+          .metrics(new LibraryOperationMetrics(meterRegistry))
+          .build();
 
   private final LibraryManagementService libraryManagementService = serviceBuilder().build();
 
@@ -244,1105 +236,6 @@ class LibraryManagementServiceTest {
   @AfterEach
   public void tearDown() throws IOException {
     fileSystem.close();
-  }
-
-  @Test
-  @DisplayName("Should become unhealthy when file processing task fails during scan")
-  void shouldBecomeUnhealthyWhenFileProcessingTaskFailsDuringScan() throws Exception {
-    var rootPath = createRootLibraryDirectory();
-    var moviePath = createMovieFile(rootPath, "Failing Movie", "Failing Movie (2024).mkv");
-
-    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenThrow(new RuntimeException("simulated search failure"));
-
-    libraryManagementService.scanLibrary(savedLibraryId);
-
-    var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-    assertThat(library.getStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
-    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
-    assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath)))
-        .as("Media file should have been created before scanLibrary returned")
-        .isPresent();
-    assertThat(probeTaskRequests.requests()).hasSize(1);
-  }
-
-  @Test
-  @DisplayName(
-      "Should fail the scan and return every admission when every admitted file task throws")
-  void shouldFailTheScanAndReturnEveryAdmissionWhenEveryAdmittedFileTaskThrows() throws Exception {
-    var rootPath = createRootLibraryDirectory();
-    createMovieFile(rootPath, "First Movie", "First Movie (2024).mkv");
-    createMovieFile(rootPath, "Second Movie", "Second Movie (2024).mkv");
-    failEverySearchOnceBothFilesSearch();
-
-    libraryManagementService.scanLibrary(savedLibraryId);
-
-    assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
-    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
-    assertThat(scanAdmissions()).isEqualTo(2);
-    assertThat(scanReports("ignored")).isEqualTo(2);
-  }
-
-  @Test
-  @DisplayName("Should report every failed file task when the file walk fails")
-  void shouldReportEveryFailedFileTaskWhenTheFileWalkFails() throws Exception {
-    var rootPath = createRootLibraryDirectory();
-    createMovieFile(rootPath, "First Movie", "First Movie (2024).mkv");
-    createMovieFile(rootPath, "Second Movie", "Second Movie (2024).mkv");
-    failEverySearchOnceBothFilesSearch();
-    var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-    var fileWalk = fileWalkBuilder().build();
-
-    var failure = catchThrowable(() -> fileWalk.discoverFiles(library));
-
-    assertThat(failure)
-        .isInstanceOf(LibraryScanFailedException.class)
-        .hasMessageStartingWith("2 file processing tasks failed");
-    assertThat(failure.getSuppressed()).hasSize(1);
-  }
-
-  private void failEverySearchOnceBothFilesSearch() {
-    var failuresReady = new CountDownLatch(2);
-    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenAnswer(
-            invocation -> {
-              var parsedFile = invocation.getArgument(0, VideoFileParserResult.class);
-              failuresReady.countDown();
-              assertThat(failuresReady.await(5, TimeUnit.SECONDS)).isTrue();
-              throw new IllegalStateException("simulated failure: " + parsedFile.title());
-            });
-  }
-
-  @Test
-  @DisplayName("Should finish submitted files when a file processing task fails")
-  void shouldFinishSubmittedFilesWhenFileProcessingTaskFails() throws Exception {
-    var rootPath = createRootLibraryDirectory();
-    var failingMoviePath =
-        createMovieFile(rootPath, "00 Failing Movie", "Failing Movie (2024).mkv");
-    var completingMoviePath =
-        createMovieFile(rootPath, "99 Completing Movie", "Completing Movie (2024).mkv");
-    var completingTaskStarted = new CountDownLatch(1);
-    var releaseCompletingTask = new CountDownLatch(1);
-    var failingTaskFinished = new CountDownLatch(1);
-
-    try (var paths = Files.walk(rootPath)) {
-      assertThat(paths.filter(Files::isRegularFile).toList())
-          .as("fixture requires the failing future to be awaited first")
-          .containsExactly(failingMoviePath, completingMoviePath);
-    }
-
-    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenAnswer(
-            invocation -> {
-              var parsedFile = invocation.getArgument(0, VideoFileParserResult.class);
-              if (parsedFile.title().equals("Completing Movie")) {
-                completingTaskStarted.countDown();
-                releaseCompletingTask.await();
-                return new NotFound();
-              }
-
-              assertThat(completingTaskStarted.await(5, TimeUnit.SECONDS)).isTrue();
-              failingTaskFinished.countDown();
-              throw new RuntimeException("simulated search failure");
-            });
-
-    var scanThread =
-        Thread.ofPlatform().start(() -> libraryManagementService.scanLibrary(savedLibraryId));
-
-    try {
-      assertThat(failingTaskFinished.await(5, TimeUnit.SECONDS)).isTrue();
-      assertThat(scanThread.isAlive())
-          .as("scan should still be waiting for the completing task")
-          .isTrue();
-    } finally {
-      releaseCompletingTask.countDown();
-    }
-
-    assertThat(scanThread.join(Duration.ofSeconds(5))).isTrue();
-    assertThat(
-            fakeMediaFileRepository
-                .findFirstByFilepathUri(FilepathCodec.encode(completingMoviePath))
-                .orElseThrow()
-                .getStatus())
-        .isEqualTo(MediaFileStatus.METADATA_NOT_FOUND);
-  }
-
-  @Test
-  @DisplayName(
-      "Should restore interrupt flag and become unhealthy when scan is interrupted during file processing")
-  void shouldRestoreInterruptFlagAndBecomeUnhealthyWhenScanIsInterruptedDuringFileProcessing()
-      throws Exception {
-    var rootPath = createRootLibraryDirectory();
-    createMovieFile(rootPath, "Interrupted Movie", "Interrupted Movie (2024).mkv");
-    var processingStarted = new CountDownLatch(1);
-    var releaseProcessing = new CountDownLatch(1);
-    var interruptRestored = new AtomicBoolean();
-    var workerInterrupted = new AtomicBoolean();
-
-    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenAnswer(
-            _ -> {
-              processingStarted.countDown();
-              try {
-                releaseProcessing.await();
-              } catch (InterruptedException exception) {
-                workerInterrupted.set(true);
-                throw exception;
-              }
-              return new NotFound();
-            });
-
-    var scanThread =
-        Thread.ofPlatform()
-            .unstarted(
-                () -> {
-                  libraryManagementService.scanLibrary(savedLibraryId);
-                  interruptRestored.set(Thread.currentThread().isInterrupted());
-                });
-    scanThread.start();
-
-    try {
-      assertThat(processingStarted.await(5, TimeUnit.SECONDS)).isTrue();
-      scanThread.interrupt();
-      assertThat(scanThread.join(Duration.ofSeconds(5))).isTrue();
-    } finally {
-      releaseProcessing.countDown();
-    }
-
-    assertThat(interruptRestored).isTrue();
-    assertThat(workerInterrupted).isTrue();
-    assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
-        .isEqualTo(LibraryStatus.UNHEALTHY);
-    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
-  }
-
-  @Test
-  @DisplayName("Should throw LibraryNotFoundException when scanning non-existent library")
-  void shouldThrowLibraryNotFoundExceptionWhenScanningNonExistentLibrary() {
-    var nonExistentId = UUID.randomUUID();
-
-    assertThrows(
-        LibraryNotFoundException.class, () -> libraryManagementService.scanLibrary(nonExistentId));
-  }
-
-  @Test
-  @DisplayName(
-      "Should throw LibraryScanInProgressException when library is currently being scanned")
-  void shouldThrowLibraryScanInProgressExceptionWhenLibraryCurrentlyBeingScanned() {
-    var library = fakeLibraryRepository.findById(savedLibraryId);
-    library.orElseThrow().setStatus(LibraryStatus.SCANNING);
-    fakeLibraryRepository.save(library.orElseThrow());
-
-    assertThrows(
-        LibraryScanInProgressException.class,
-        () -> libraryManagementService.scanLibrary(savedLibraryId));
-  }
-
-  @Test
-  @DisplayName("Should throw refresh in progress exception when scanning a refreshing library")
-  void shouldThrowRefreshInProgressExceptionWhenScanningRefreshingLibrary() {
-    var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-    library.setStatus(LibraryStatus.REFRESHING);
-    fakeLibraryRepository.save(library);
-
-    assertThrows(
-        LibraryRefreshInProgressException.class,
-        () -> libraryManagementService.scanLibrary(savedLibraryId));
-  }
-
-  @Test
-  @DisplayName(
-      "Should set library status to unhealthy when the library filepath cannot be accessed")
-  void shouldSetLibraryStatusToUnhealthyWhenLibraryFilepathInaccessible() {
-    libraryManagementService.scanLibrary(savedLibraryId);
-
-    assertThat(fakeLibraryRepository.findById(savedLibraryId)).isPresent();
-    assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus())
-        .isEqualTo(LibraryStatus.UNHEALTHY);
-  }
-
-  @Test
-  @DisplayName(
-      "Should set library status to unhealthy when file walk throws UncheckedIOException during iteration")
-  void shouldSetLibraryStatusToUnhealthyWhenFileWalkThrowsUncheckedIOException()
-      throws IOException {
-    var rootPath = createRootLibraryDirectory();
-    createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
-
-    var throwingFileSystem = new ThrowingFileSystemWrapper(fileSystem);
-
-    var serviceWithThrowingFs = serviceWith(throwingFileSystem);
-
-    serviceWithThrowingFs.scanLibrary(savedLibraryId);
-
-    assertThat(fakeLibraryRepository.findById(savedLibraryId)).isPresent();
-    assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus())
-        .isEqualTo(LibraryStatus.UNHEALTHY);
-  }
-
-  @Test
-  @DisplayName(
-      "Should set library status to unhealthy when file walk throws SecurityException during iteration")
-  void shouldSetLibraryStatusToUnhealthyWhenFileWalkThrowsSecurityException() throws IOException {
-    var rootPath = createRootLibraryDirectory();
-    createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
-
-    var throwingFileSystem =
-        new ThrowingFileSystemWrapper(
-            fileSystem,
-            () -> new SecurityException("Simulated security manager denial during traversal"));
-
-    var serviceWithThrowingFs = serviceWith(throwingFileSystem);
-
-    serviceWithThrowingFs.scanLibrary(savedLibraryId);
-
-    assertThat(fakeLibraryRepository.findById(savedLibraryId)).isPresent();
-    assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus())
-        .isEqualTo(LibraryStatus.UNHEALTHY);
-  }
-
-  @Test
-  @DisplayName("Should throw IllegalStateException when library has unsupported media type")
-  void shouldThrowIllegalStateExceptionWhenLibraryHasUnsupportedMediaType() throws IOException {
-    var otherTypeLibrary =
-        fakeLibraryRepository.save(
-            Library.builder()
-                .name("Other Type Library")
-                .backend(LibraryBackend.LOCAL)
-                .status(LibraryStatus.HEALTHY)
-                .filepathUri("file:///library/" + UUID.randomUUID())
-                .externalAgentStrategy(ExternalAgentStrategy.TMDB)
-                .type(MediaType.OTHER)
-                .build());
-
-    var libraryPath = FilepathCodec.decode(fileSystem, otherTypeLibrary.getFilepathUri());
-    Files.createDirectories(libraryPath);
-    var movieFolder = libraryPath.resolve("Test Movie");
-    Files.createDirectory(movieFolder);
-    var movieFile = movieFolder.resolve("Test Movie (2024).mkv");
-    Files.createFile(movieFile);
-
-    var libraryId = otherTypeLibrary.getId();
-
-    assertThrows(
-        IllegalStateException.class,
-        () -> libraryManagementService.processDiscoveredFile(libraryId, movieFile));
-  }
-
-  @Test
-  @DisplayName("Should set library status to healthy when the library filepath can be accessed")
-  void shouldSetLibraryStatusToHealthyWhenLibraryFilepathAccessible() throws IOException {
-    createRootLibraryDirectory();
-
-    libraryManagementService.scanLibrary(savedLibraryId);
-
-    assertThat(fakeLibraryRepository.findById(savedLibraryId)).isPresent();
-    assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus())
-        .isEqualTo(LibraryStatus.HEALTHY);
-  }
-
-  @Test
-  @DisplayName(
-      "Should publish ScanCompletedEvent with correct library ID when scan completes successfully")
-  void shouldPublishScanCompletedEventWhenScanSucceeds() throws IOException {
-    createRootLibraryDirectory();
-
-    libraryManagementService.scanLibrary(savedLibraryId);
-
-    var events = capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class);
-    assertThat(events).hasSize(1);
-    assertThat(events.getFirst().libraryId()).isEqualTo(savedLibraryId);
-  }
-
-  @Test
-  @DisplayName("Should not publish ScanCompletedEvent when library path is inaccessible")
-  void shouldNotPublishScanCompletedEventWhenLibraryPathInaccessible() {
-    libraryManagementService.scanLibrary(savedLibraryId);
-
-    var events = capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class);
-    assertThat(events).isEmpty();
-  }
-
-  @Test
-  @DisplayName("Should not publish ScanCompletedEvent when file walk throws SecurityException")
-  void shouldNotPublishScanCompletedEventWhenFileWalkThrowsSecurityException() throws IOException {
-    var rootPath = createRootLibraryDirectory();
-    createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
-
-    var throwingFileSystem =
-        new ThrowingFileSystemWrapper(
-            fileSystem,
-            () -> new SecurityException("Simulated security manager denial during traversal"));
-
-    var serviceWithThrowingFs = serviceWith(throwingFileSystem);
-
-    serviceWithThrowingFs.scanLibrary(savedLibraryId);
-
-    var events = capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class);
-    assertThat(events).isEmpty();
-  }
-
-  @Test
-  @DisplayName(
-      "Should publish ScanEndedEvent with correct library ID when scan completes successfully")
-  void shouldPublishScanEndedEventWhenScanSucceeds() throws IOException {
-    createRootLibraryDirectory();
-
-    libraryManagementService.scanLibrary(savedLibraryId);
-
-    var events = capturingEventPublisher.getEventsOfType(ScanEndedEvent.class);
-    assertThat(events).hasSize(1);
-    assertThat(events.getFirst().libraryId()).isEqualTo(savedLibraryId);
-  }
-
-  @Test
-  @DisplayName("Should publish ScanEndedEvent when library path is inaccessible")
-  void shouldPublishScanEndedEventWhenLibraryPathInaccessible() {
-    libraryManagementService.scanLibrary(savedLibraryId);
-
-    var events = capturingEventPublisher.getEventsOfType(ScanEndedEvent.class);
-    assertThat(events).hasSize(1);
-    assertThat(events.getFirst().libraryId()).isEqualTo(savedLibraryId);
-  }
-
-  @Test
-  @DisplayName(
-      "Should skip creating a media file when provided a library containing an unsupported file extension")
-  void shouldSkipCreatingMediaFileWhenProvidedLibraryContainingUnsupportedMovie()
-      throws IOException {
-    var rootPath = createRootLibraryDirectory();
-    var moviePath = createMovieFile(rootPath, "About Time", "About Time (2013).av1");
-
-    libraryManagementService.scanLibrary(savedLibraryId);
-
-    var mediaFile = fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
-
-    assertThat(mediaFile).isEmpty();
-  }
-
-  @Test
-  @DisplayName("Should match media file when filename contains external ID tag")
-  void shouldMatchMediaFileWhenFilenameContainsExternalIdTag() throws IOException {
-    var movieFolder = "Inception (2010) [imdb-tt1375666]";
-    var movieFilename = "Inception (2010) [imdb-tt1375666].mkv";
-
-    var rootPath = createRootLibraryDirectory();
-    var moviePath = createMovieFile(rootPath, movieFolder, movieFilename);
-
-    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenReturn(
-            new Found(
-                RemoteSearchResult.builder()
-                    .title("Inception")
-                    .externalId("27205")
-                    .externalSourceType(ExternalSourceType.TMDB)
-                    .build()));
-
-    when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
-        .thenReturn(
-            new MetadataFetchOutcome.Found<>(
-                new MetadataResult<>(
-                    Movie.builder().title("Inception").build(), List.of(), Map.of(), Map.of())));
-
-    libraryManagementService.scanLibrary(savedLibraryId);
-
-    var mediaFile = fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
-
-    assertThat(mediaFile).isPresent();
-    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
-  }
-
-  @Test
-  @DisplayName(
-      "Should skip updating metadata when provided a media file that has already been matched")
-  void shouldSkipUpdatingMetadataWhenProvidedMediaFileThatHasBeenMatched() throws IOException {
-    var movieFolder = "About Time";
-    var movieFilename = "About Time (2013).mkv";
-
-    var rootPath = createRootLibraryDirectory();
-    var moviePath = createMovieFile(rootPath, movieFolder, movieFilename);
-
-    var mediaFileBeforeRefresh =
-        fakeMediaFileRepository.save(
-            MediaFile.builder()
-                .libraryId(savedLibraryId)
-                .filepathUri(FilepathCodec.encode(moviePath))
-                .filename(movieFilename)
-                .status(MediaFileStatus.MATCHED)
-                .build());
-
-    libraryManagementService.scanLibrary(savedLibraryId);
-
-    var mediaFileAfterRefresh =
-        fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
-
-    assertThat(mediaFileAfterRefresh).contains(mediaFileBeforeRefresh);
-  }
-
-  @Test
-  @DisplayName("Should request probe work when scanning an already matched file")
-  void shouldRequestProbeWorkWhenScanningAlreadyMatchedFile() throws IOException {
-    var rootPath = createRootLibraryDirectory();
-    var path = createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
-    var mediaFile =
-        fakeMediaFileRepository.save(
-            MediaFile.builder()
-                .libraryId(savedLibraryId)
-                .filepathUri(FilepathCodec.encode(path))
-                .filename(path.getFileName().toString())
-                .status(MediaFileStatus.MATCHED)
-                .build());
-
-    libraryManagementService.scanLibrary(savedLibraryId);
-
-    assertThat(probeTaskRequests.requests())
-        .singleElement()
-        .satisfies(request -> assertThat(request.mediaFileId()).isEqualTo(mediaFile.getId()));
-  }
-
-  @Test
-  @DisplayName("Should keep scanning when the probe request is still being saved")
-  void shouldKeepScanningWhenTheProbeRequestIsStillBeingSaved() throws Exception {
-    var rootPath = createRootLibraryDirectory();
-    var path = createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
-    saveMatchedMediaFile(path);
-    var enqueueStarted = new CountDownLatch(1);
-    var enqueueReleased = new CountDownLatch(1);
-    probeTaskRequests.dispatchWith(
-        request -> {
-          enqueueStarted.countDown();
-          awaitEnqueueRelease(enqueueReleased);
-          probeTaskRequests.succeed(request);
-        });
-
-    try (var scan = BoundedTask.start(() -> libraryManagementService.scanLibrary(savedLibraryId))) {
-      try {
-        assertThat(enqueueStarted.await(5, TimeUnit.SECONDS)).isTrue();
-        assertThat(libraryStatus()).isEqualTo(LibraryStatus.SCANNING);
-        assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
-      } finally {
-        enqueueReleased.countDown();
-      }
-
-      scan.await(SCAN_BOUND);
-    }
-
-    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).hasSize(1);
-    assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
-        .isEqualTo(LibraryStatus.HEALTHY);
-  }
-
-  @Test
-  @DisplayName("Should fail the scan when required probe enqueue fails")
-  void shouldFailScanWhenRequiredProbeEnqueueFails() throws IOException {
-    var rootPath = createRootLibraryDirectory();
-    var path = createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
-    saveMatchedMediaFile(path);
-    probeTaskRequests.dispatchWith(
-        _ -> {
-          throw new DataAccessResourceFailureException("Queue unavailable");
-        });
-
-    libraryManagementService.scanLibrary(savedLibraryId);
-
-    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
-    assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
-        .isEqualTo(LibraryStatus.UNHEALTHY);
-  }
-
-  @Test
-  @DisplayName(
-      "Should complete a scan when one source disappears after enumeration before probe scheduling")
-  void shouldCompleteScanWhenSourceDisappearsAfterEnumerationBeforeProbeScheduling()
-      throws Exception {
-    var rootPath = createRootLibraryDirectory();
-    var path = createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
-    saveMatchedMediaFile(path);
-    beforeProbeSchedulingReadsMediaFile =
-        () -> {
-          try {
-            Files.deleteIfExists(path);
-          } catch (IOException exception) {
-            throw new UncheckedIOException(exception);
-          }
-        };
-    probeTaskRequests.dispatchWith(
-        request -> probeOutcomes.withdrawProbeRequest(request.mediaFileId()));
-
-    libraryManagementService.scanLibrary(savedLibraryId);
-
-    assertThat(Files.exists(path)).isFalse();
-    assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
-        .isEqualTo(LibraryStatus.HEALTHY);
-    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).hasSize(1);
-  }
-
-  @Test
-  @DisplayName(
-      "Should finish the scan when a source becomes unreadable after the library is listed")
-  void shouldFinishTheScanWhenASourceBecomesUnreadableAfterTheLibraryIsListed() throws Exception {
-    var rootPath = createRootLibraryDirectory();
-    var path = createMovieFile(rootPath, "Unavailable mount", "movie.mkv");
-    saveMatchedMediaFile(path);
-    beforeProbeSchedulingReadsMediaFile =
-        () -> {
-          try {
-            if (!Files.isSymbolicLink(path)) {
-              Files.delete(path);
-              Files.createSymbolicLink(path, path.getFileName());
-            }
-          } catch (IOException exception) {
-            throw new UncheckedIOException(exception);
-          }
-        };
-    probeTaskRequests.dispatchWith(
-        request ->
-            probeTaskRequests.fail(request, ItemFailureReason.SOURCE_INACCESSIBLE, Instant.now()));
-
-    libraryManagementService.scanLibrary(savedLibraryId);
-
-    assertThat(Files.isSymbolicLink(path)).isTrue();
-    assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
-        .isEqualTo(LibraryStatus.HEALTHY);
-    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).hasSize(1);
-  }
-
-  @Nested
-  @DisplayName("Scan completion")
-  class ScanCompletionTests {
-
-    @Test
-    @DisplayName("Should stay scanning when the requested probe has no outcome")
-    void shouldStayScanningWhenTheRequestedProbeHasNoOutcome() throws Exception {
-      saveMatchedMediaFile(createMovieFile(createRootLibraryDirectory(), "Held", "Held.mkv"));
-      probeTaskRequests.dispatchWith(_ -> {});
-      var whileWaiting = new AtomicReference<ScanState>();
-      probeCheckSleeper.onSleep(
-          _ -> {
-            whileWaiting.compareAndSet(null, scanState());
-            probeTaskRequests.succeed(probeTaskRequests.requests().getFirst());
-          });
-
-      scan(libraryManagementService);
-
-      assertThat(whileWaiting).hasValue(new ScanState(LibraryStatus.SCANNING, 0));
-      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
-      assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).hasSize(1);
-    }
-
-    @Test
-    @DisplayName("Should finish the scan when a probe attempt failure is recorded")
-    void shouldFinishTheScanWhenAProbeAttemptFailureIsRecorded() throws Exception {
-      saveMatchedMediaFile(createMovieFile(createRootLibraryDirectory(), "Share", "Share.mkv"));
-      probeTaskRequests.dispatchWith(_ -> {});
-      var whileWaiting = new AtomicReference<ScanState>();
-      probeCheckSleeper.onSleep(
-          _ -> {
-            whileWaiting.compareAndSet(null, scanState());
-            probeTaskRequests.fail(
-                probeTaskRequests.requests().getFirst(),
-                ItemFailureReason.SOURCE_INACCESSIBLE,
-                Instant.now());
-          });
-
-      scan(libraryManagementService);
-
-      assertThat(whileWaiting).hasValue(new ScanState(LibraryStatus.SCANNING, 0));
-      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
-    }
-
-    @Test
-    @DisplayName("Should stay scanning when required artwork is not saved")
-    void shouldStayScanningWhenRequiredArtworkIsNotSaved() throws Exception {
-      createMovieFile(createRootLibraryDirectory(), "About Time", "About Time (2013).mkv");
-      var downloader = new GatedImageDownloader(createTestImage(600, 900));
-      downloader.holdPathsStartingWith("/poster");
-      var imageRepository = new FakeImageRepository();
-      var service =
-          libraryManagementServiceWithArtwork(
-              ArtworkFixture.builder()
-                  .imageRepository(imageRepository)
-                  .imageDownloader(downloader)
-                  .build());
-      matchMovieWithPoster("About Time");
-
-      try (var scan =
-          BoundedTask.start(
-              () -> {
-                service.scanLibrary(savedLibraryId);
-                return !imageRepository.findAll().isEmpty();
-              })) {
-        downloader.awaitHeldDownloads(1, Duration.ofSeconds(5));
-        downloader.releaseHeldDownloads();
-
-        assertThat(scan.await(SCAN_BOUND)).as("poster saved when the scan returned").isTrue();
-      } finally {
-        downloader.releaseHeldDownloads();
-      }
-
-      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
-    }
-
-    @Test
-    @DisplayName(
-        "Should finish the scan healthy when a retried artwork step stores the result that failed to save")
-    void shouldFinishTheScanHealthyWhenARetriedArtworkStepStoresTheResultThatFailedToSave()
-        throws Exception {
-      createMovieFile(createRootLibraryDirectory(), "About Time", "About Time (2013).mkv");
-      var itemResults = new FakeItemResultRepository();
-      itemResults.failArtworkResultWritesWith(
-          new DataAccessResourceFailureException("database unavailable"), 1);
-      var imageDownloader = new FakeTmdbHttpService();
-      imageDownloader.setImageData(createTestImage(600, 900));
-      var retried =
-          ArtworkFixture.builder()
-              .itemResults(itemResults)
-              .imageDownloader(imageDownloader)
-              .build();
-      var service = libraryManagementServiceWithArtwork(retried);
-      matchMovieWithPoster("About Time");
-
-      try (var scan = BoundedTask.start(() -> service.scanLibrary(savedLibraryId))) {
-        retried.scheduling().awaitUnfinishedAttempt(SCAN_BOUND);
-        assertThat(libraryStatus()).isEqualTo(LibraryStatus.SCANNING);
-
-        retried.scheduling().runPendingSteps();
-
-        scan.await(SCAN_BOUND);
-      }
-
-      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
-      assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).hasSize(1);
-    }
-
-    @Test
-    @DisplayName("Should become unhealthy when the statuses of the scanned files cannot be read")
-    void shouldBecomeUnhealthyWhenTheStatusesOfTheScannedFilesCannotBeRead() throws Exception {
-      var path =
-          createMovieFile(createRootLibraryDirectory(), "About Time", "About Time (2013).mkv");
-      saveMatchedMediaFile(path);
-      beforeCountingFileStatuses =
-          () -> {
-            throw new DataAccessResourceFailureException("database unavailable");
-          };
-
-      libraryManagementService.scanLibrary(savedLibraryId);
-
-      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
-      assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
-    }
-
-    private void scan(LibraryManagementService service) throws Exception {
-      BoundedTask.runWithin(SCAN_BOUND, () -> service.scanLibrary(savedLibraryId));
-    }
-
-    private ScanState scanState() {
-      return new ScanState(
-          libraryStatus(),
-          capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class).size());
-    }
-  }
-
-  @Nested
-  @DisplayName("Scan admission")
-  class ScanAdmissionTests {
-
-    @Test
-    @DisplayName(
-        "Should return every admission when file tasks match, skip a matched file, record a failure, time out and throw")
-    void shouldReturnEveryAdmissionWhenFileTasksMatchSkipAMatchedFileRecordAFailureTimeOutAndThrow()
-        throws Exception {
-      var root = createRootLibraryDirectory();
-      createMovieFile(root, "A Alpha", "Alpha (2001).mkv");
-      saveMatchedMediaFile(createMovieFile(root, "B Bravo", "Bravo (2002).mkv"));
-      createMovieFile(root, "C Charlie", "Charlie (2003).mkv");
-      createMovieFile(root, "D Delta", "Delta (2004).mkv");
-      createMovieFile(root, "E Echo", "Echo (2005).mkv");
-      beforeSavingMediaFile =
-          mediaFile -> {
-            if (mediaFile.getFilename().startsWith("Echo")) {
-              throw new DataAccessResourceFailureException("simulated media file failure");
-            }
-          };
-      when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-      when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-          .thenAnswer(
-              invocation ->
-                  switch (invocation.getArgument(0, VideoFileParserResult.class).title()) {
-                    case "Alpha" -> foundMovie("Alpha");
-                    case "Delta" ->
-                        new TemporarilyUnavailable(new HttpTimeoutException("search timed out"));
-                    default -> new NotFound();
-                  });
-      when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
-          .thenReturn(movieMetadata("Alpha"));
-
-      scan();
-
-      assertThat(scanAdmissions()).isEqualTo(5);
-      assertThat(scanReports("latency")).isEqualTo(2);
-      assertThat(scanReports("ignored")).isEqualTo(2);
-      assertThat(scanReports("drop")).isEqualTo(1);
-      assertThat(meterRegistry.find("streamarr.library.admission.in_flight").gauges()).isEmpty();
-      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
-    }
-
-    @Test
-    @DisplayName("Should admit no further file and finish admitted files when a file task throws")
-    void shouldAdmitNoFurtherFileAndFinishAdmittedFilesWhenAFileTaskThrows() throws Exception {
-      var root = createRootLibraryDirectory();
-      var heldPath = createMovieFile(root, "A Held", "Held (2001).mkv");
-      createMovieFile(root, "B Failing", "Failing (2002).mkv");
-      var neverPath = createMovieFile(root, "C Never", "Never (2003).mkv");
-      var admissions = new FixedLimitAdmissions(2);
-      var heldSearching = new CountDownLatch(1);
-      var releaseHeld = new CountDownLatch(1);
-      when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-      when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-          .thenAnswer(
-              invocation -> {
-                if (invocation.getArgument(0, VideoFileParserResult.class).title().equals("Held")) {
-                  heldSearching.countDown();
-                  assertThat(releaseHeld.await(5, TimeUnit.SECONDS)).isTrue();
-                  return new NotFound();
-                }
-
-                assertThat(heldSearching.await(5, TimeUnit.SECONDS)).isTrue();
-                throw new IllegalStateException("simulated search failure");
-              });
-      var service =
-          serviceBuilder()
-              .libraryFileWalk(
-                  fileWalkBuilder().libraryOperationAdmissions(admissionsWith(admissions)).build())
-              .build();
-
-      try (var scan = BoundedTask.start(() -> service.scanLibrary(savedLibraryId))) {
-        admissions.awaitReports(1, SCAN_BOUND);
-        releaseHeld.countDown();
-        scan.await(SCAN_BOUND);
-      } finally {
-        releaseHeld.countDown();
-      }
-
-      assertThat(mediaFileStatus(heldPath)).isEqualTo(MediaFileStatus.METADATA_NOT_FOUND);
-      assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(neverPath)))
-          .isEmpty();
-      assertThat(scanAdmissions()).isEqualTo(2);
-      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
-    }
-
-    @Test
-    @DisplayName("Should finish the scan healthy when a file task records a matching failure")
-    void shouldFinishTheScanHealthyWhenAFileTaskRecordsAMatchingFailure() throws Exception {
-      var path = createMovieFile(createRootLibraryDirectory(), "Unknown", "Unknown (2001).mkv");
-      when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-      when(tmdbMovieProvider.search(any(VideoFileParserResult.class))).thenReturn(new NotFound());
-
-      scan();
-
-      assertThat(mediaFileStatus(path)).isEqualTo(MediaFileStatus.METADATA_NOT_FOUND);
-      assertThat(scanReports("latency")).isEqualTo(1);
-      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
-    }
-
-    @Test
-    @DisplayName("Should admit no task for a file with an unsupported extension")
-    void shouldAdmitNoTaskForAFileWithAnUnsupportedExtension() throws Exception {
-      var root = createRootLibraryDirectory();
-      createMovieFile(root, "Notes", "notes.txt");
-      saveMatchedMediaFile(createMovieFile(root, "Matched", "Matched (2001).mkv"));
-
-      scan();
-
-      assertThat(scanAdmissions()).isEqualTo(1);
-      assertThat(allScanReports()).isEqualTo(1);
-      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
-    }
-
-    @Test
-    @DisplayName("Should report an already matched file as ignored without reading artwork results")
-    void shouldReportAnAlreadyMatchedFileAsIgnoredWithoutReadingArtworkResults() throws Exception {
-      saveMatchedMediaFile(
-          createMovieFile(createRootLibraryDirectory(), "Matched", "Matched (2001).mkv"));
-
-      scan();
-
-      assertThat(scanReports("ignored")).isEqualTo(1);
-      assertThat(allScanReports()).isEqualTo(1);
-      assertThat(artwork.requests().completionEvidenceReads()).isZero();
-    }
-
-    @Test
-    @DisplayName("Should hold a file task's admission until its poster result is recorded")
-    void shouldHoldAFileTasksAdmissionUntilItsPosterResultIsRecorded() throws Exception {
-      createMovieFile(createRootLibraryDirectory(), "About Time", "About Time (2013).mkv");
-      var resultCheckSleeper = new CountingSleeper();
-      var imageDownloader = new FakeTmdbHttpService();
-      imageDownloader.setImageData(createTestImage(600, 900));
-      var heldArtwork =
-          ArtworkFixture.builder()
-              .imageDownloader(imageDownloader)
-              .sleeper(resultCheckSleeper)
-              .build();
-      heldArtwork.scheduling().holdScheduledSteps();
-      var inFlightWhilePosterPending = new AtomicReference<Double>();
-      resultCheckSleeper.onSleep(
-          _ -> {
-            inFlightWhilePosterPending.compareAndSet(null, scanTasksInFlight());
-            heldArtwork.scheduling().runPendingSteps();
-          });
-      var service = libraryManagementServiceWithArtwork(heldArtwork);
-      matchMovieWithPoster("About Time");
-
-      BoundedTask.runWithin(SCAN_BOUND, () -> service.scanLibrary(savedLibraryId));
-
-      assertThat(inFlightWhilePosterPending).hasValue(1.0);
-      assertThat(heldArtwork.scheduling().pendingTargets()).isEmpty();
-      assertThat(scanReports("latency")).isEqualTo(1);
-      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
-    }
-
-    @Test
-    @DisplayName(
-        "Should match every file and finish healthy when a file task cannot read its artwork results")
-    void shouldMatchEveryFileAndFinishHealthyWhenAFileTaskCannotReadItsArtworkResults()
-        throws Exception {
-      var root = createRootLibraryDirectory();
-      var firstPath = createMovieFile(root, "A First", "About Time (2013).mkv");
-      var secondPath = createMovieFile(root, "B Second", "About Time (2013) Remux.mkv");
-      var imageDownloader = new FakeTmdbHttpService();
-      imageDownloader.setImageData(createTestImage(600, 900));
-      var posterArtwork = ArtworkFixture.builder().imageDownloader(imageDownloader).build();
-      posterArtwork
-          .requests()
-          .failNextCompletionEvidenceReadWith(
-              new CannotGetJdbcConnectionException(
-                  "simulated pool timeout",
-                  new SQLTransientConnectionException("connection not available")));
-      var service = libraryManagementServiceWithArtwork(posterArtwork);
-      matchMovieWithPoster("About Time");
-
-      BoundedTask.runWithin(SCAN_BOUND, () -> service.scanLibrary(savedLibraryId));
-
-      assertThat(mediaFileStatus(firstPath)).isEqualTo(MediaFileStatus.MATCHED);
-      assertThat(mediaFileStatus(secondPath)).isEqualTo(MediaFileStatus.MATCHED);
-      assertThat(scanReports("drop")).isEqualTo(1);
-      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
-    }
-
-    private double scanTasksInFlight() {
-      return meterRegistry
-          .get("streamarr.library.admission.in_flight")
-          .tag("operation", "scan")
-          .gauge()
-          .value();
-    }
-
-    private void scan() throws Exception {
-      BoundedTask.runWithin(SCAN_BOUND, () -> libraryManagementService.scanLibrary(savedLibraryId));
-    }
-
-    private MediaFileStatus mediaFileStatus(Path path) {
-      return fakeMediaFileRepository
-          .findFirstByFilepathUri(FilepathCodec.encode(path))
-          .orElseThrow()
-          .getStatus();
-    }
-
-    private static Found foundMovie(String title) {
-      return new Found(
-          RemoteSearchResult.builder()
-              .title(title)
-              .externalId(title.toLowerCase())
-              .externalSourceType(ExternalSourceType.TMDB)
-              .build());
-    }
-
-    private static MetadataFetchOutcome<MetadataResult<Movie>> movieMetadata(String title) {
-      return new MetadataFetchOutcome.Found<>(
-          MetadataFixture.<Movie>metadataResultBuilder()
-              .entity(Movie.builder().title(title).titleSort(title).build())
-              .build());
-    }
-  }
-
-  private void matchMovieWithPoster(String title) {
-    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenReturn(
-            new Found(
-                RemoteSearchResult.builder()
-                    .title(title)
-                    .externalId("123")
-                    .externalSourceType(ExternalSourceType.TMDB)
-                    .build()));
-    when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
-        .thenReturn(
-            new MetadataFetchOutcome.Found<>(
-                MetadataFixture.<Movie>metadataResultBuilder()
-                    .entity(Movie.builder().title(title).titleSort(title).build())
-                    .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))
-                    .build()));
-  }
-
-  private record ScanState(LibraryStatus status, int completedEvents) {}
-
-  private LibraryStatus libraryStatus() {
-    return fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus();
-  }
-
-  private LibraryManagementService libraryManagementServiceWithArtwork(ArtworkFixture artwork) {
-    var artworkMovieService =
-        new MovieService(
-            fakeMovieRepository,
-            creditService,
-            null,
-            artwork.artworkRequestService(),
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null);
-    var artworkFileDiscoveryRuns = fileDiscoveryRunsWith(artwork);
-    return serviceBuilder()
-        .libraryFileWalk(
-            fileWalkBuilder()
-                .movieFileProcessor(
-                    new MovieFileProcessor(
-                        new DefaultVideoFileMetadataParser(),
-                        new ExternalIdVideoFileMetadataParser(),
-                        fakeMovieMetadataProviderResolver,
-                        artworkMovieService,
-                        fakeMediaFileRepository,
-                        new MutexFactoryProvider()))
-                .fileDiscoveryRuns(artworkFileDiscoveryRuns)
-                .artworkRunWaiter(artwork.artworkRunWaiter())
-                .build())
-        .movieService(artworkMovieService)
-        .fileDiscoveryRuns(artworkFileDiscoveryRuns)
-        .build();
-  }
-
-  private void saveMatchedMediaFile(Path path) {
-    fakeMediaFileRepository.save(
-        MediaFile.builder()
-            .libraryId(savedLibraryId)
-            .filepathUri(FilepathCodec.encode(path))
-            .filename(path.getFileName().toString())
-            .status(MediaFileStatus.MATCHED)
-            .build());
-  }
-
-  private static void awaitEnqueueRelease(CountDownLatch release) {
-    try {
-      assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
-    } catch (InterruptedException exception) {
-      Thread.currentThread().interrupt();
-      throw new AssertionError(exception);
-    }
-  }
-
-  @Test
-  @DisplayName(
-      "Should match media file when provided a library containing a file with a supported extension")
-  void shouldMatchMediaFileWhenProvidedLibraryContainingSupportedMovie() throws IOException {
-    var movieFolder = "About Time";
-    var movieFilename = "About Time (2013).mkv";
-
-    var rootPath = createRootLibraryDirectory();
-    var moviePath = createMovieFile(rootPath, movieFolder, movieFilename);
-
-    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenReturn(
-            new Found(
-                RemoteSearchResult.builder()
-                    .title(movieFolder)
-                    .externalId("123")
-                    .externalSourceType(ExternalSourceType.TMDB)
-                    .build()));
-
-    when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
-        .thenReturn(
-            new MetadataFetchOutcome.Found<>(
-                new MetadataResult<>(
-                    Movie.builder().title(movieFolder).build(), List.of(), Map.of(), Map.of())));
-
-    libraryManagementService.scanLibrary(savedLibraryId);
-
-    var mediaFile = fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
-
-    assertThat(mediaFile).isPresent();
-    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
-  }
-
-  @ParameterizedTest(name = "Should match existing retryable media file when status is {0}")
-  @EnumSource(
-      value = MediaFileStatus.class,
-      names = {"UNMATCHED", "METADATA_NOT_FOUND", "METADATA_UNAVAILABLE"})
-  @DisplayName("Should match existing retryable media file when status is retryable")
-  void shouldMatchExistingRetryableMediaFileWhenStatusIsRetryable(MediaFileStatus retryableStatus)
-      throws IOException {
-    var movieFolder = "About Time";
-    var movieFilename = "About Time (2013).mkv";
-
-    var rootPath = createRootLibraryDirectory();
-    var moviePath = createMovieFile(rootPath, movieFolder, movieFilename);
-
-    var mediaFileBeforeRefresh =
-        fakeMediaFileRepository.save(
-            MediaFile.builder()
-                .libraryId(savedLibraryId)
-                .filepathUri(FilepathCodec.encode(moviePath))
-                .filename(movieFilename)
-                .status(retryableStatus)
-                .build());
-
-    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenReturn(
-            new Found(RemoteSearchResult.builder().title(movieFolder).externalId("123").build()));
-
-    when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
-        .thenReturn(
-            new MetadataFetchOutcome.Found<>(
-                new MetadataResult<>(Movie.builder().build(), List.of(), Map.of(), Map.of())));
-
-    libraryManagementService.scanLibrary(savedLibraryId);
-
-    var mediaFileAfterRefresh =
-        fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
-
-    assertThat(mediaFileAfterRefresh).containsSame(mediaFileBeforeRefresh);
-    assertThat(mediaFileAfterRefresh.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
-  }
-
-  @Test
-  @DisplayName("Should mark metadata unavailable when TMDB search is temporarily unavailable")
-  void shouldMarkMetadataUnavailableWhenTmdbSearchIsTemporarilyUnavailable() throws IOException {
-    var rootPath = createRootLibraryDirectory();
-    var moviePath = createMovieFile(rootPath, "Cop Land", "Cop Land (1997).mkv");
-    var timeout = new IOException("Connection timed out");
-
-    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenReturn(new TemporarilyUnavailable(timeout));
-
-    libraryManagementService.scanLibrary(savedLibraryId);
-
-    assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath)))
-        .get()
-        .extracting(MediaFile::getStatus)
-        .isEqualTo(MediaFileStatus.METADATA_UNAVAILABLE);
   }
 
   @Test
@@ -1610,38 +503,6 @@ class LibraryManagementServiceTest {
   }
 
   @Test
-  @DisplayName("Should not attempt cleanup when library path is inaccessible")
-  void shouldNotAttemptCleanupWhenLibraryPathInaccessible() {
-    var orphanedMediaFile =
-        fakeMediaFileRepository.save(
-            MediaFile.builder()
-                .libraryId(savedLibraryId)
-                .filepathUri("/library/nonexistent/movie.mkv")
-                .filename("movie.mkv")
-                .status(MediaFileStatus.MATCHED)
-                .build());
-
-    libraryManagementService.scanLibrary(savedLibraryId);
-
-    assertThat(fakeMediaFileRepository.findById(orphanedMediaFile.getId())).isPresent();
-  }
-
-  @Test
-  @DisplayName(
-      "Should skip processing when provided a library containing a system file with a valid extension")
-  void shouldSkipProcessingWhenGivenLibraryContainingSystemFile() throws IOException {
-    var rootPath = createRootLibraryDirectory();
-    var systemFilePath = createMovieFile(rootPath, "About Time", "._About Time (2013).mkv");
-
-    libraryManagementService.scanLibrary(savedLibraryId);
-
-    var mediaFile =
-        fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(systemFilePath));
-
-    assertThat(mediaFile).isEmpty();
-  }
-
-  @Test
   @DisplayName("Should create only one MediaFile when concurrent calls probe same filepath")
   void shouldCreateOnlyOneMediaFileWhenConcurrentCallsProbeSameFilepath() throws Exception {
     var rootPath = createRootLibraryDirectory();
@@ -1665,19 +526,31 @@ class LibraryManagementServiceTest {
   }
 
   @Test
-  @DisplayName("Should start async scan on virtual thread when triggerAsyncScan called")
-  void shouldStartAsyncScanOnVirtualThreadWhenTriggerAsyncScanCalled() throws Exception {
-    createRootLibraryDirectory();
+  @DisplayName("Should throw IllegalStateException when library has unsupported media type")
+  void shouldThrowIllegalStateExceptionWhenLibraryHasUnsupportedMediaType() throws IOException {
+    var otherTypeLibrary =
+        fakeLibraryRepository.save(
+            Library.builder()
+                .name("Other Type Library")
+                .backend(LibraryBackend.LOCAL)
+                .status(LibraryStatus.HEALTHY)
+                .filepathUri("file:///library/" + UUID.randomUUID())
+                .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+                .type(MediaType.OTHER)
+                .build());
 
-    libraryManagementService.triggerAsyncScan(savedLibraryId);
+    var libraryPath = FilepathCodec.decode(fileSystem, otherTypeLibrary.getFilepathUri());
+    Files.createDirectories(libraryPath);
+    var movieFolder = libraryPath.resolve("Test Movie");
+    Files.createDirectory(movieFolder);
+    var movieFile = movieFolder.resolve("Test Movie (2024).mkv");
+    Files.createFile(movieFile);
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> {
-              var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-              assertThat(library.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
-            });
+    var libraryId = otherTypeLibrary.getId();
+
+    assertThrows(
+        IllegalStateException.class,
+        () -> libraryManagementService.processDiscoveredFile(libraryId, movieFile));
   }
 
   @Nested
@@ -1938,20 +811,75 @@ class LibraryManagementServiceTest {
     }
 
     @Test
-    @DisplayName("Should set status to HEALTHY when adding library with empty directory")
-    void shouldSetStatusToHealthyWhenAddingLibraryWithEmptyDirectory() throws IOException {
-      var newLibraryPath = fileSystem.getPath("/healthy-library");
+    @DisplayName("Should return the library SCANNING with its first scan scheduled when added")
+    void shouldReturnTheLibraryScanningWithItsFirstScanScheduledWhenAdded() throws IOException {
+      var newLibraryPath = fileSystem.getPath("/new-library");
       Files.createDirectories(newLibraryPath);
       var library =
           LibraryFixtureCreator.unsavedLibraryBuilder()
-              .name("Healthy Library")
+              .name("New Library")
               .filepathUri(newLibraryPath.toString())
               .build();
 
       var savedLibrary = accepted(libraryManagementService.addLibrary(identity, library));
 
+      assertThat(savedLibrary.getStatus()).isEqualTo(LibraryStatus.SCANNING);
       assertThat(fakeLibraryRepository.findById(savedLibrary.getId()).orElseThrow().getStatus())
-          .isEqualTo(LibraryStatus.HEALTHY);
+          .isEqualTo(LibraryStatus.SCANNING);
+      var firstScan = libraryOperations.operationFor(savedLibrary.getId()).orElseThrow();
+      assertThat(firstScan.kind()).isEqualTo(LibraryOperationKind.SCAN);
+      assertThat(firstScan.statusBeforeOperation()).isEqualTo(LibraryStatus.HEALTHY);
+      assertThat(libraryOperationScheduling.scheduledExecutions()).containsExactly(firstScan.id());
+      assertThat(capturingEventPublisher.getEventsOfType(LibraryStatusChangedEvent.class))
+          .extracting(LibraryStatusChangedEvent::libraryId)
+          .containsExactly(savedLibrary.getId());
+    }
+
+    @Test
+    @DisplayName(
+        "Should throw LibraryOperationNotStartedException and roll back the add when the first"
+            + " scan cannot be scheduled")
+    void shouldThrowLibraryOperationNotStartedAndRollBackTheAddWhenTheFirstScanCannotBeScheduled()
+        throws IOException {
+      var newLibraryPath = fileSystem.getPath("/unscheduled-library");
+      Files.createDirectories(newLibraryPath);
+      var library =
+          LibraryFixtureCreator.unsavedLibraryBuilder()
+              .name("Unscheduled Library")
+              .filepathUri(newLibraryPath.toString())
+              .build();
+      var schedulingFailure =
+          new LibraryOperationNotScheduledException(
+              UUID.randomUUID(), new IllegalStateException("task table unavailable"));
+      libraryOperationScheduling.failNextWith(schedulingFailure);
+
+      var thrown = catchThrowable(() -> libraryManagementService.addLibrary(identity, library));
+
+      assertThat(thrown)
+          .isInstanceOf(LibraryOperationNotStartedException.class)
+          .hasCause(schedulingFailure);
+      assertThat(transactionManager.commits()).isZero();
+      assertThat(transactionManager.rollbacks()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Should store no first scan when the add is refused for a registered path")
+    void shouldStoreNoFirstScanWhenTheAddIsRefusedForARegisteredPath() throws IOException {
+      var libraryPath = fileSystem.getPath("/registered-library");
+      Files.createDirectories(libraryPath);
+      var library =
+          LibraryFixtureCreator.unsavedLibraryBuilder()
+              .name("Registered Library")
+              .filepathUri(libraryPath.toString())
+              .build();
+      accepted(libraryManagementService.addLibrary(identity, library));
+
+      var duplicate =
+          libraryManagementService.addLibrary(identity, library.toBuilder().name("Twin").build());
+
+      assertThat(duplicate)
+          .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathAlreadyRegistered()));
+      assertThat(libraryOperationScheduling.scheduledExecutions()).hasSize(1);
     }
 
     @Test
@@ -2017,8 +945,10 @@ class LibraryManagementServiceTest {
                   .status(MediaFileStatus.MATCHED)
                   .build());
 
-      libraryManagementService.removeLibrary(identity, savedLibraryId);
+      var outcome = libraryManagementService.removeLibrary(identity, savedLibraryId);
 
+      assertThat(outcome).isEqualTo(Outcome.accepted(savedLibraryId));
+      assertThat(fakeLibraryRepository.findById(savedLibraryId)).isEmpty();
       var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
       assertThat(events).hasSize(1);
       assertThat(events.getFirst().libraryId()).isEqualTo(savedLibraryId);
@@ -2038,451 +968,62 @@ class LibraryManagementServiceTest {
     }
 
     @Test
-    @DisplayName("Should not publish LibraryRemovedEvent when library does not exist")
-    void shouldNotPublishLibraryRemovedEventWhenLibraryNotFound() {
+    @DisplayName(
+        "Should refuse removal and publish no LibraryRemovedEvent when library does not exist")
+    void shouldRefuseRemovalAndPublishNoLibraryRemovedEventWhenLibraryDoesNotExist() {
       var nonExistentId = UUID.randomUUID();
 
-      assertThrows(
-          LibraryNotFoundException.class,
-          () -> libraryManagementService.removeLibrary(identity, nonExistentId));
+      var outcome = libraryManagementService.removeLibrary(identity, nonExistentId);
 
+      assertThat(outcome)
+          .isEqualTo(Outcome.rejected(new LibraryOperationRejection.LibraryNotFound()));
       var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
       assertThat(events).isEmpty();
     }
 
-    @Test
-    @DisplayName("Should not publish LibraryRemovedEvent when library is currently scanning")
-    void shouldNotPublishLibraryRemovedEventWhenLibraryIsScanning() {
-      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-      library.setStatus(LibraryStatus.SCANNING);
-      fakeLibraryRepository.save(library);
+    @ParameterizedTest
+    @EnumSource(LibraryOperationKind.class)
+    @DisplayName("Should refuse removal and keep the library while a library operation runs")
+    void shouldRefuseRemovalAndKeepTheLibraryWhileALibraryOperationRuns(
+        LibraryOperationKind runningKind) {
+      libraryOperations.storeLibraryOperation(
+          switch (runningKind) {
+            case SCAN -> NewLibraryOperation.scan(savedLibraryId);
+            case REFRESH -> NewLibraryOperation.refresh(savedLibraryId, ImageRefreshMode.PRESERVE);
+          });
 
-      assertThrows(
-          LibraryScanInProgressException.class,
-          () -> libraryManagementService.removeLibrary(identity, savedLibraryId));
+      var outcome = libraryManagementService.removeLibrary(identity, savedLibraryId);
 
-      var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
-      assertThat(events).isEmpty();
-    }
-
-    @Test
-    @DisplayName("Should not publish LibraryRemovedEvent when library is refreshing")
-    void shouldNotPublishLibraryRemovedEventWhenLibraryIsRefreshing() {
-      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-      library.setStatus(LibraryStatus.REFRESHING);
-      fakeLibraryRepository.save(library);
-
-      assertThrows(
-          LibraryRefreshInProgressException.class,
-          () -> libraryManagementService.removeLibrary(identity, savedLibraryId));
-
-      var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
-      assertThat(events).isEmpty();
-    }
-  }
-
-  @Nested
-  @DisplayName("Refresh Library Tests")
-  class RefreshLibraryTests {
-
-    @Test
-    @DisplayName("Should transition library to HEALTHY when refresh succeeds")
-    void shouldTransitionToHealthyWhenRefreshSucceeds() {
-      libraryManagementService.refreshLibrary(savedLibraryId);
-
-      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-      assertThat(library.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
-    }
-
-    @Test
-    @DisplayName("Should refresh metadata and propagate artwork mode when top-level refresh runs")
-    void shouldRefreshMetadataAndPropagateArtworkModeWhenTopLevelRefreshRuns() {
-      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-      var movie =
-          fakeMovieRepository.save(
-              Movie.builder().title("Original").titleSort("original").library(library).build());
-      var stored =
-          fakeImageRepository.save(
-              imageBuilder(movie.getId()).key("/poster.jpg").path("movie/poster").build());
-      movie
-          .getExternalIds()
-          .add(
-              ExternalIdentifier.builder()
-                  .externalSourceType(ExternalSourceType.TMDB)
-                  .externalId("27205")
-                  .build());
-      when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-      when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
-          .thenReturn(
-              new MetadataFetchOutcome.Found<>(
-                  MetadataFixture.<Movie>metadataResultBuilder()
-                      .entity(Movie.builder().title("Refreshed").titleSort("refreshed").build())
-                      .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))
-                      .build()));
-      var refreshService =
-          LibraryRefreshService.builder()
-              .seriesRepository(new FakeSeriesRepository())
-              .movieRepository(fakeMovieRepository)
-              .seriesService(seriesService)
-              .movieService(movieService)
-              .seriesMetadataProviderResolver(mock(SeriesMetadataProviderResolver.class))
-              .movieMetadataProviderResolver(fakeMovieMetadataProviderResolver)
-              .artworkRequestService(artworkRequestService)
-              .artworkRunWaiter(artwork.artworkRunWaiter())
-              .itemResults(new FakeItemResultRepository())
-              .clock(Clock.systemUTC())
-              .libraryOperationAdmissions(admissionsWith(new AdaptiveAdmissions()))
-              .build();
-      var service = libraryManagementServiceWithRefreshService(refreshService);
-
-      service.refreshLibrary(savedLibraryId, ImageRefreshMode.FORCE_REFRESH);
-
-      assertThat(fakeMovieRepository.findById(movie.getId()).orElseThrow().getTitle())
-          .isEqualTo("Refreshed");
-      assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
-          .isEqualTo(LibraryStatus.HEALTHY);
-      await()
-          .atMost(Duration.ofSeconds(5))
-          .untilAsserted(
-              () ->
-                  assertThat(
-                          fakeImageRepository.findByEntityIdAndEntityType(
-                              movie.getId(), ImageEntityType.MOVIE))
-                      .extracting(Image::getId)
-                      .isNotEmpty()
-                      .doesNotContain(stored.getId()));
-    }
-
-    @Test
-    @DisplayName("Should transition library to UNHEALTHY when refresh fails")
-    void shouldTransitionToUnhealthyWhenRefreshFails() {
-      doThrow(new RuntimeException("simulated refresh failure"))
-          .when(libraryRefreshService)
-          .refreshLibrary(any(Library.class));
-
-      libraryManagementService.refreshLibrary(savedLibraryId);
-
-      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-      assertThat(library.getStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
-    }
-
-    @Test
-    @DisplayName("Should throw LibraryNotFoundException when library does not exist")
-    void shouldThrowWhenLibraryNotFoundForRefresh() {
-      var nonExistentId = UUID.randomUUID();
-
-      assertThrows(
-          LibraryNotFoundException.class,
-          () -> libraryManagementService.refreshLibrary(nonExistentId));
-    }
-
-    @Test
-    @DisplayName("Should throw LibraryScanInProgressException when library is currently scanning")
-    void shouldThrowWhenLibraryIsCurrentlyScanning() {
-      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-      library.setStatus(LibraryStatus.SCANNING);
-      fakeLibraryRepository.save(library);
-
-      assertThrows(
-          LibraryScanInProgressException.class,
-          () -> libraryManagementService.refreshLibrary(savedLibraryId));
+      assertThat(outcome)
+          .isEqualTo(
+              Outcome.rejected(
+                  new LibraryOperationRejection.LibraryBusy(
+                      runningKind.busyStatus(), runningKind)));
+      assertThat(fakeLibraryRepository.findById(savedLibraryId)).isPresent();
+      assertThat(capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class)).isEmpty();
     }
 
     @Test
     @DisplayName(
-        "Should throw LibraryRefreshInProgressException when library is currently refreshing")
-    void shouldThrowWhenLibraryIsCurrentlyRefreshing() {
-      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-      library.setStatus(LibraryStatus.REFRESHING);
-      fakeLibraryRepository.save(library);
+        "Should let the failure escape and keep the library when the removal breaks a foreign key")
+    void shouldLetTheFailureEscapeAndKeepTheLibraryWhenTheRemovalBreaksAForeignKey() {
+      var message = "update or delete on table \"library\" violates foreign key constraint";
+      var violation =
+          new DataIntegrityViolationException(
+              message,
+              new ConstraintViolationException(
+                  message, new SQLException(message, "23503"), "fk_library"));
+      beforeDeletingLibrary =
+          _ -> {
+            throw violation;
+          };
 
-      assertThrows(
-          LibraryRefreshInProgressException.class,
-          () -> libraryManagementService.refreshLibrary(savedLibraryId));
-    }
+      var thrown =
+          catchThrowable(() -> libraryManagementService.removeLibrary(identity, savedLibraryId));
 
-    @Test
-    @DisplayName("Should publish RefreshEndedEvent when refresh succeeds")
-    void shouldPublishRefreshEndedEventWhenRefreshSucceeds() {
-      libraryManagementService.refreshLibrary(savedLibraryId);
-
-      var events = capturingEventPublisher.getEventsOfType(RefreshEndedEvent.class);
-      assertThat(events).hasSize(1);
-      assertThat(events.getFirst().libraryId()).isEqualTo(savedLibraryId);
-    }
-
-    @Test
-    @DisplayName("Should publish RefreshEndedEvent when refresh fails")
-    void shouldPublishRefreshEndedEventWhenRefreshFails() {
-      doThrow(new RuntimeException("simulated refresh failure"))
-          .when(libraryRefreshService)
-          .refreshLibrary(any(Library.class));
-
-      libraryManagementService.refreshLibrary(savedLibraryId);
-
-      var events = capturingEventPublisher.getEventsOfType(RefreshEndedEvent.class);
-      assertThat(events).hasSize(1);
-      assertThat(events.getFirst().libraryId()).isEqualTo(savedLibraryId);
-    }
-
-    @Test
-    @DisplayName("Should transition from UNHEALTHY to HEALTHY when refresh succeeds")
-    void shouldTransitionFromUnhealthyToHealthyWhenRefreshSucceeds() {
-      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-      library.setStatus(LibraryStatus.UNHEALTHY);
-      fakeLibraryRepository.save(library);
-
-      libraryManagementService.refreshLibrary(savedLibraryId);
-
-      var updated = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-      assertThat(updated.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
-    }
-
-    @Test
-    @DisplayName("Should reject refresh when library is already being refreshed")
-    void shouldRejectRefreshWhenLibraryIsAlreadyBeingRefreshed() throws Exception {
-      var started = new CountDownLatch(1);
-      var release = new CountDownLatch(1);
-
-      doAnswer(
-              invocation -> {
-                started.countDown();
-                release.await(5, TimeUnit.SECONDS);
-                return null;
-              })
-          .when(libraryRefreshService)
-          .refreshLibrary(any(Library.class));
-
-      Thread.startVirtualThread(() -> libraryManagementService.refreshLibrary(savedLibraryId));
-      assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
-
-      assertThrows(
-          LibraryRefreshInProgressException.class,
-          () -> libraryManagementService.refreshLibrary(savedLibraryId));
-
-      release.countDown();
-    }
-
-    @Test
-    @DisplayName("Should start async refresh on virtual thread when triggerAsyncRefresh called")
-    void shouldStartAsyncRefreshOnVirtualThreadWhenTriggerAsyncRefreshCalled() throws Exception {
-      var controlledRefreshService = new BlockingLibraryRefreshService();
-      var service = libraryManagementServiceWithRefreshService(controlledRefreshService);
-
-      service.triggerAsyncRefresh(savedLibraryId);
-
-      assertThat(controlledRefreshService.awaitStarted()).isTrue();
-      try {
-        var executingThread = controlledRefreshService.executingThread();
-        assertThat(executingThread).isNotNull();
-        assertThat(executingThread.isVirtual()).isTrue();
-        assertThat(controlledRefreshService.isReleased()).isFalse();
-        assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
-            .isEqualTo(LibraryStatus.REFRESHING);
-      } finally {
-        controlledRefreshService.release();
-      }
-
-      assertThat(capturingEventPublisher.awaitRefreshEnded()).isTrue();
-      assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
-          .isEqualTo(LibraryStatus.HEALTHY);
-      assertThat(capturingEventPublisher.getEventsOfType(RefreshEndedEvent.class))
-          .singleElement()
-          .extracting(RefreshEndedEvent::libraryId)
-          .isEqualTo(savedLibraryId);
-    }
-
-    @Test
-    @DisplayName("Should propagate image refresh mode when async refresh runs")
-    void shouldPropagateImageRefreshModeWhenAsyncRefreshRuns() throws Exception {
-      var recordingRefreshService = new RecordingLibraryRefreshService();
-      var service = libraryManagementServiceWithRefreshService(recordingRefreshService);
-
-      service.triggerAsyncRefresh(savedLibraryId, ImageRefreshMode.REFRESH_IF_CHANGED);
-
-      assertThat(capturingEventPublisher.awaitRefreshEnded()).isTrue();
-      assertThat(recordingRefreshService.imageRefreshMode())
-          .isEqualTo(ImageRefreshMode.REFRESH_IF_CHANGED);
-      assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
-          .isEqualTo(LibraryStatus.HEALTHY);
-      assertThat(capturingEventPublisher.getEventsOfType(RefreshEndedEvent.class))
-          .singleElement()
-          .extracting(RefreshEndedEvent::libraryId)
-          .isEqualTo(savedLibraryId);
-    }
-  }
-
-  @Nested
-  @DisplayName("Library Status Change Tests")
-  class LibraryStatusChangeTests {
-
-    private final StatusObservingEventPublisher statusObserver =
-        new StatusObservingEventPublisher(fakeLibraryRepository);
-    private final LibraryManagementService service =
-        serviceBuilder().eventPublisher(statusObserver).build();
-
-    @Test
-    @DisplayName("Should publish a status change after each saved status when a scan succeeds")
-    void shouldPublishStatusChangeAfterEachSavedStatusWhenScanSucceeds() throws IOException {
-      createRootLibraryDirectory();
-
-      service.scanLibrary(savedLibraryId);
-
-      assertThat(statusObserver.observedChanges())
-          .containsExactly(
-              new ObservedStatus(savedLibraryId, LibraryStatus.SCANNING),
-              new ObservedStatus(savedLibraryId, LibraryStatus.HEALTHY));
-    }
-
-    @Test
-    @DisplayName("Should publish an UNHEALTHY status change when a scan fails")
-    void shouldPublishUnhealthyStatusChangeWhenScanFails() {
-      service.scanLibrary(savedLibraryId);
-
-      assertThat(statusObserver.observedChanges())
-          .containsExactly(
-              new ObservedStatus(savedLibraryId, LibraryStatus.SCANNING),
-              new ObservedStatus(savedLibraryId, LibraryStatus.UNHEALTHY));
-    }
-
-    @Test
-    @DisplayName("Should publish REFRESHING then HEALTHY status changes when a refresh succeeds")
-    void shouldPublishRefreshingThenHealthyStatusChangesWhenRefreshSucceeds() {
-      service.refreshLibrary(savedLibraryId);
-
-      assertThat(statusObserver.observedChanges())
-          .containsExactly(
-              new ObservedStatus(savedLibraryId, LibraryStatus.REFRESHING),
-              new ObservedStatus(savedLibraryId, LibraryStatus.HEALTHY));
-    }
-
-    @Test
-    @DisplayName("Should publish an UNHEALTHY status change when a refresh fails")
-    void shouldPublishUnhealthyStatusChangeWhenRefreshFails() {
-      doThrow(new RuntimeException("simulated refresh failure"))
-          .when(libraryRefreshService)
-          .refreshLibrary(any(Library.class));
-
-      service.refreshLibrary(savedLibraryId);
-
-      assertThat(statusObserver.observedChanges())
-          .containsExactly(
-              new ObservedStatus(savedLibraryId, LibraryStatus.REFRESHING),
-              new ObservedStatus(savedLibraryId, LibraryStatus.UNHEALTHY));
-    }
-
-    @Test
-    @DisplayName("Should publish no status change when a scan is refused because one is running")
-    void shouldPublishNoStatusChangeWhenScanIsRefusedBecauseLibraryIsAlreadyScanning() {
-      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-      library.setStatus(LibraryStatus.SCANNING);
-      fakeLibraryRepository.save(library);
-
-      assertThrows(LibraryScanInProgressException.class, () -> service.scanLibrary(savedLibraryId));
-
-      assertThat(statusObserver.observedChanges()).isEmpty();
-    }
-  }
-
-  private record ObservedStatus(UUID libraryId, LibraryStatus status) {}
-
-  // Reads the saved status at the moment each status change is published.
-  private static final class StatusObservingEventPublisher extends CapturingEventPublisher {
-
-    private final LibraryRepository libraries;
-    private final List<ObservedStatus> observedChanges = new CopyOnWriteArrayList<>();
-
-    private StatusObservingEventPublisher(LibraryRepository libraries) {
-      this.libraries = libraries;
-    }
-
-    @Override
-    public void publishEvent(Object event) {
-      super.publishEvent(event);
-      if (event instanceof LibraryStatusChangedEvent(var libraryId)) {
-        var status = libraries.findById(libraryId).orElseThrow().getStatus();
-        observedChanges.add(new ObservedStatus(libraryId, status));
-      }
-    }
-
-    private List<ObservedStatus> observedChanges() {
-      return observedChanges;
-    }
-  }
-
-  private static final class SignalingEventPublisher extends CapturingEventPublisher {
-
-    private final CountDownLatch refreshEnded = new CountDownLatch(1);
-
-    @Override
-    public void publishEvent(Object event) {
-      super.publishEvent(event);
-      if (event instanceof RefreshEndedEvent) {
-        refreshEnded.countDown();
-      }
-    }
-
-    private boolean awaitRefreshEnded() throws InterruptedException {
-      return refreshEnded.await(5, TimeUnit.SECONDS);
-    }
-  }
-
-  private static final class BlockingLibraryRefreshService extends LibraryRefreshService {
-
-    private final CountDownLatch started = new CountDownLatch(1);
-    private final CountDownLatch release = new CountDownLatch(1);
-    private final AtomicReference<Thread> executingThread = new AtomicReference<>();
-
-    private BlockingLibraryRefreshService() {
-      super(null, null, null, null, null, null, null, null, null, null, null);
-    }
-
-    @Override
-    public void refreshLibrary(Library library) {
-      executingThread.set(Thread.currentThread());
-      started.countDown();
-      try {
-        if (!release.await(5, TimeUnit.SECONDS)) {
-          throw new AssertionError("Controlled library refresh was not released");
-        }
-      } catch (InterruptedException exception) {
-        Thread.currentThread().interrupt();
-        throw new AssertionError("Controlled library refresh was interrupted", exception);
-      }
-    }
-
-    private boolean awaitStarted() throws InterruptedException {
-      return started.await(5, TimeUnit.SECONDS);
-    }
-
-    private Thread executingThread() {
-      return executingThread.get();
-    }
-
-    private boolean isReleased() {
-      return release.getCount() == 0;
-    }
-
-    private void release() {
-      release.countDown();
-    }
-  }
-
-  private static final class RecordingLibraryRefreshService extends LibraryRefreshService {
-
-    private final AtomicReference<ImageRefreshMode> imageRefreshMode = new AtomicReference<>();
-
-    private RecordingLibraryRefreshService() {
-      super(null, null, null, null, null, null, null, null, null, null, null);
-    }
-
-    @Override
-    public void refreshLibrary(Library library, ImageRefreshMode requestedImageRefreshMode) {
-      imageRefreshMode.set(requestedImageRefreshMode);
-    }
-
-    private ImageRefreshMode imageRefreshMode() {
-      return imageRefreshMode.get();
+      assertThat(thrown).isSameAs(violation);
+      assertThat(fakeLibraryRepository.findById(savedLibraryId)).isPresent();
+      assertThat(capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class)).isEmpty();
     }
   }
 
@@ -2556,12 +1097,11 @@ class LibraryManagementServiceTest {
         .movieService(movieService)
         .seriesService(seriesService)
         .eventPublisher(capturingEventPublisher)
-        .mutexFactoryProvider(new MutexFactoryProvider())
-        .libraryRefreshService(libraryRefreshService)
         .fileSystem(fileSystem)
         .libraryMutationTransaction(libraryMutationTransaction)
         .mutationTransactions(mutationTransactions)
-        .fileDiscoveryRuns(fileDiscoveryRuns);
+        .libraryOperations(libraryOperations)
+        .libraryOperationService(libraryOperationService);
   }
 
   private LibraryFileWalk.LibraryFileWalkBuilder fileWalkBuilder() {
@@ -2585,37 +1125,6 @@ class LibraryManagementServiceTest {
         .build();
   }
 
-  private double scanAdmissions() {
-    var admitted =
-        meterRegistry
-            .find("streamarr.library.admission.admitted")
-            .tag("operation", "scan")
-            .counter();
-    if (admitted == null) {
-      return 0;
-    }
-
-    return admitted.count();
-  }
-
-  private double scanReports(String report) {
-    var reports =
-        meterRegistry
-            .find("streamarr.library.admission.reports")
-            .tag("operation", "scan")
-            .tag("report", report)
-            .counter();
-    if (reports == null) {
-      return 0;
-    }
-
-    return reports.count();
-  }
-
-  private double allScanReports() {
-    return scanReports("latency") + scanReports("ignored") + scanReports("drop");
-  }
-
   private LibraryManagementService serviceWith(FileSystem alternateFileSystem) {
     return serviceBuilder()
         .fileSystem(alternateFileSystem)
@@ -2632,11 +1141,6 @@ class LibraryManagementServiceTest {
                 .seriesFileProcessor(seriesProcessor)
                 .build())
         .build();
-  }
-
-  private LibraryManagementService libraryManagementServiceWithRefreshService(
-      LibraryRefreshService refreshService) {
-    return serviceBuilder().libraryRefreshService(refreshService).build();
   }
 
   private Path pathWithDisplayName(String filepathUri, String displayName) throws IOException {

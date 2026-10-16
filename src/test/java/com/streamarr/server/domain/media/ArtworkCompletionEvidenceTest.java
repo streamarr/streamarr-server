@@ -18,9 +18,9 @@ class ArtworkCompletionEvidenceTest {
 
   @Test
   @DisplayName(
-      "Should reject completion evidence when its target, pending generation or results are missing")
-  void shouldRejectCompletionEvidenceWhenItsTargetPendingGenerationOrResultsAreMissing() {
-    var none = Optional.<Long>empty();
+      "Should reject completion evidence when its target, pending request or results are missing")
+  void shouldRejectCompletionEvidenceWhenItsTargetPendingRequestOrResultsAreMissing() {
+    var none = Optional.<PendingArtworkRequest>empty();
     var noResults = List.<ItemResult>of();
 
     assertThatNullPointerException()

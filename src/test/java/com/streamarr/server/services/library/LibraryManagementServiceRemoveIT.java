@@ -5,7 +5,6 @@ import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.default
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -25,9 +24,6 @@ import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
-import com.streamarr.server.exceptions.LibraryNotFoundException;
-import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
-import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
@@ -51,6 +47,7 @@ import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.PlaybackAuthorityGate;
 import com.streamarr.server.services.streaming.SegmentStore;
@@ -66,7 +63,6 @@ import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -74,7 +70,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -429,44 +424,12 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should throw LibraryNotFoundException when library does not exist")
-  void shouldThrowLibraryNotFoundExceptionWhenLibraryDoesNotExist() {
-    var nonExistentId = UUID.randomUUID();
+  @DisplayName("Should refuse removal with LibraryNotFound when library does not exist")
+  void shouldRefuseRemovalWithLibraryNotFoundWhenLibraryDoesNotExist() {
+    var outcome = libraryManagementService.removeLibrary(IDENTITY, UUID.randomUUID());
 
-    assertThatThrownBy(() -> libraryManagementService.removeLibrary(IDENTITY, nonExistentId))
-        .isInstanceOf(LibraryNotFoundException.class)
-        .hasMessageContaining(nonExistentId.toString());
-  }
-
-  @Test
-  @DisplayName("Should throw LibraryScanInProgressException when library is scanning")
-  void shouldThrowLibraryScanInProgressExceptionWhenLibraryIsScanning() {
-    var libraryToSave = LibraryFixtureCreator.buildFakeLibrary();
-    libraryToSave.setStatus(LibraryStatus.SCANNING);
-    var library = libraryRepository.saveAndFlush(libraryToSave);
-
-    var libraryId = library.getId();
-
-    assertThatThrownBy(() -> libraryManagementService.removeLibrary(IDENTITY, libraryId))
-        .isInstanceOf(LibraryScanInProgressException.class)
-        .hasMessageContaining(libraryId.toString());
-  }
-
-  @Test
-  @DisplayName("Should throw LibraryRefreshInProgressException when library is refreshing")
-  void shouldThrowLibraryRefreshInProgressExceptionWhenLibraryIsRefreshing() {
-    var libraryToSave = LibraryFixtureCreator.buildFakeLibrary();
-    libraryToSave.setStatus(LibraryStatus.REFRESHING);
-    var library = libraryRepository.saveAndFlush(libraryToSave);
-
-    var libraryId = library.getId();
-
-    assertThatThrownBy(() -> libraryManagementService.removeLibrary(IDENTITY, libraryId))
-        .isInstanceOf(LibraryRefreshInProgressException.class)
-        .hasMessageContaining(libraryId.toString());
-
-    var persisted = libraryRepository.findById(libraryId).orElseThrow();
-    assertThat(persisted.getStatus()).isEqualTo(LibraryStatus.REFRESHING);
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new LibraryOperationRejection.LibraryNotFound()));
   }
 
   @Test
@@ -476,16 +439,14 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
     movieRepository.saveAndFlush(Movie.builder().title("Movie").library(library).build());
 
     var barrier = new CyclicBarrier(2);
+    var outcomes = new CopyOnWriteArrayList<Outcome<UUID, LibraryOperationRejection>>();
     var unexpectedExceptions = new CopyOnWriteArrayList<Exception>();
-    var concurrentDeleteFailures = new AtomicInteger(0);
 
     Runnable task =
         () -> {
           try {
             barrier.await();
-            libraryManagementService.removeLibrary(IDENTITY, library.getId());
-          } catch (LibraryNotFoundException | ObjectOptimisticLockingFailureException _) {
-            concurrentDeleteFailures.incrementAndGet();
+            outcomes.add(libraryManagementService.removeLibrary(IDENTITY, library.getId()));
           } catch (Exception e) {
             unexpectedExceptions.add(e);
           }
@@ -498,9 +459,11 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
     assertThat(unexpectedExceptions).isEmpty();
     assertThat(libraryRepository.findById(library.getId())).isEmpty();
-    assertThat(concurrentDeleteFailures.get())
-        .as("One thread succeeds, the other fails with concurrent delete exception")
-        .isEqualTo(1);
+    assertThat(outcomes)
+        .as("One removal succeeds and the other finds no library")
+        .containsExactlyInAnyOrder(
+            Outcome.accepted(library.getId()),
+            Outcome.rejected(new LibraryOperationRejection.LibraryNotFound()));
   }
 
   @Test

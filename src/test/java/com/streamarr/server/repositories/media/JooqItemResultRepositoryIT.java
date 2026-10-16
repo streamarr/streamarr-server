@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.media.ArtworkResultCounts;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
@@ -17,9 +18,11 @@ import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.ArtworkSources;
+import com.streamarr.server.services.NewArtworkRequest;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -224,6 +227,98 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest implements Artw
     return new ArtworkTarget(savedMovieId(), ImageEntityType.MOVIE);
   }
 
+  @Test
+  @DisplayName(
+      "Should count the artwork results that carry a library operation's id by outcome when an"
+          + " operation's results are counted")
+  void shouldCountTheArtworkResultsThatCarryALibraryOperationsIdByOutcome() {
+    var operation = UUID.randomUUID();
+    var movie = new ArtworkTarget(savedMovieId(), ImageEntityType.MOVIE);
+    var generation = requestArtworkFor(movie, operation);
+    var other = new ArtworkTarget(savedMovieId(), ImageEntityType.MOVIE);
+    var otherGeneration = requestArtworkFor(other, UUID.randomUUID());
+    itemResults.overwrite(artworkResult(movie, generation, ImageType.POSTER).build());
+    itemResults.overwrite(
+        artworkResult(movie, generation, ImageType.BACKDROP)
+            .outcome(new ItemOutcome.Failed(ItemFailureReason.DOWNLOAD_FAILED, "404"))
+            .build());
+    itemResults.overwrite(artworkResult(other, otherGeneration, ImageType.POSTER).build());
+    itemResults.trySave(
+        ItemResult.builder()
+            .itemId(movie.targetId())
+            .itemType(movie.targetType())
+            .step(ItemStep.METADATA)
+            .outcome(new ItemOutcome.Succeeded())
+            .attemptedAt(EARLIER)
+            .libraryOperationId(Optional.of(operation))
+            .build());
+
+    assertThat(itemResults.countArtworkOutcomesForLibraryOperation(operation))
+        .isEqualTo(new ArtworkResultCounts(1, 0, 1));
+  }
+
+  @Test
+  @DisplayName(
+      "Should find the items whose metadata result carries a library operation's id when an"
+          + " execution after a restart reads them")
+  void shouldFindTheItemsWhoseMetadataResultCarriesALibraryOperationsId() {
+    var operation = UUID.randomUUID();
+    var refreshed = savedMovieId();
+    var refreshedByAnotherOperation = savedMovieId();
+    var withArtworkOnly = new ArtworkTarget(savedMovieId(), ImageEntityType.MOVIE);
+    itemResults.trySave(metadataResult(refreshed, Optional.of(operation)));
+    itemResults.trySave(
+        metadataResult(refreshedByAnotherOperation, Optional.of(UUID.randomUUID())));
+    var generation = requestArtworkFor(withArtworkOnly, operation);
+    itemResults.overwrite(artworkResult(withArtworkOnly, generation, ImageType.POSTER).build());
+
+    assertThat(itemResults.findItemIdsWithMetadataResultForLibraryOperation(operation))
+        .containsExactly(refreshed);
+  }
+
+  private static ItemResult metadataResult(UUID movieId, Optional<UUID> libraryOperationId) {
+    return ItemResult.builder()
+        .itemId(movieId)
+        .itemType(ImageEntityType.MOVIE)
+        .step(ItemStep.METADATA)
+        .outcome(new ItemOutcome.Succeeded())
+        .attemptedAt(EARLIER)
+        .libraryOperationId(libraryOperationId)
+        .build();
+  }
+
+  private static ItemResult.ItemResultBuilder artworkResult(
+      ArtworkTarget target, long generation, ImageType imageType) {
+    return ItemResult.builder()
+        .itemId(target.targetId())
+        .itemType(target.targetType())
+        .step(ItemStep.ARTWORK)
+        .imageType(imageType)
+        .outcome(new ItemOutcome.Succeeded())
+        .attemptedAt(EARLIER)
+        .artworkGeneration(generation);
+  }
+
+  private long requestArtworkFor(ArtworkTarget movie, UUID libraryOperationId) {
+    var artwork =
+        ArtworkSources.builder()
+            .targetId(movie.targetId())
+            .targetType(movie.targetType())
+            .sources(List.of())
+            .build();
+    return transactionTemplate.execute(
+        _ ->
+            artworkRequests
+                .saveRequest(
+                    NewArtworkRequest.builder()
+                        .artwork(artwork)
+                        .refreshMode(ImageRefreshMode.PRESERVE)
+                        .requestedAt(EARLIER)
+                        .libraryOperationId(Optional.of(libraryOperationId))
+                        .build())
+                .generation());
+  }
+
   @Override
   public long requestArtwork(ArtworkTarget movie) {
     var artwork =
@@ -233,7 +328,15 @@ class JooqItemResultRepositoryIT extends AbstractIntegrationTest implements Artw
             .sources(List.of())
             .build();
     return transactionTemplate.execute(
-        _ -> artworkRequests.saveRequest(artwork, ImageRefreshMode.PRESERVE, EARLIER).generation());
+        _ ->
+            artworkRequests
+                .saveRequest(
+                    NewArtworkRequest.builder()
+                        .artwork(artwork)
+                        .refreshMode(ImageRefreshMode.PRESERVE)
+                        .requestedAt(EARLIER)
+                        .build())
+                .generation());
   }
 
   private UUID savedMovieId() {

@@ -11,6 +11,7 @@ import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository.SavedArtworkRequest;
 import com.streamarr.server.services.ArtworkSources;
+import com.streamarr.server.services.NewArtworkRequest;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.support.BoundedTask;
@@ -91,7 +92,13 @@ class JooqArtworkRequestRepositoryIT extends AbstractIntegrationTest {
 
   private SavedArtworkRequest save(ArtworkSources artwork) {
     return transactionTemplate.execute(
-        _ -> repository.saveRequest(artwork, ImageRefreshMode.PRESERVE, REQUESTED_AT));
+        _ ->
+            repository.saveRequest(
+                NewArtworkRequest.builder()
+                    .artwork(artwork)
+                    .refreshMode(ImageRefreshMode.PRESERVE)
+                    .requestedAt(REQUESTED_AT)
+                    .build()));
   }
 
   private RowLockTarget requestRow(ArtworkSources artwork) {

@@ -31,6 +31,12 @@ type MediaFileNotFoundError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
+"No movie, episode, season or series has the given ID."
+type ItemNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
 interface InputMutationError implements MutationError {
     message: String!
     "Path of the offending field relative to the mutation's input object; list indexes are decimal strings."
@@ -40,6 +46,18 @@ interface InputMutationError implements MutationError {
 type InvalidIdError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
+}
+
+type LibraryNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"The library runs a scan or a refresh. The request changes nothing, and no request waits in a queue."
+type LibraryBusyError implements MutationError {
+    message: String!
+    "The status the library shows while its scan or refresh runs."
+    status: LibraryStatus!
 }
 
 type LibraryNameRequiredError implements InputMutationError & MutationError {

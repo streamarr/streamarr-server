@@ -37,28 +37,19 @@ public class LibraryOperationAdmissions {
 
   /** Opens the admission of one scan of {@code library}; the caller closes it. */
   public AdaptiveAdmission openScanAdmission(Library library) {
-    return open(LibraryOperation.SCAN, library.getId());
+    return open(LibraryOperationKind.SCAN, library.getId());
   }
 
   /** Opens the admission of one refresh of {@code library}; the caller closes it. */
   public AdaptiveAdmission openRefreshAdmission(Library library) {
-    return open(LibraryOperation.REFRESH, library.getId());
+    return open(LibraryOperationKind.REFRESH, library.getId());
   }
 
-  private AdaptiveAdmission open(LibraryOperation operation, UUID libraryId) {
-    var meters = new OperationMeters(operation);
+  private AdaptiveAdmission open(LibraryOperationKind kind, UUID libraryId) {
+    var meters = new OperationMeters(kind);
     var admission = admissions.open(meters);
     meters.registerGauges(admission, libraryId);
     return admission;
-  }
-
-  private enum LibraryOperation {
-    SCAN,
-    REFRESH;
-
-    private String tagValue() {
-      return name().toLowerCase(Locale.ROOT);
-    }
   }
 
   private final class OperationMeters implements AdmissionListener {
@@ -67,8 +58,8 @@ public class LibraryOperationAdmissions {
     private final Counter admitted;
     private final List<Gauge> gauges = new CopyOnWriteArrayList<>();
 
-    private OperationMeters(LibraryOperation operation) {
-      this.operationTags = Tags.of("operation", operation.tagValue());
+    private OperationMeters(LibraryOperationKind kind) {
+      this.operationTags = Tags.of("operation", kind.tagValue());
       this.admitted =
           Counter.builder(ADMITTED)
               .description("Tasks admitted by library operations")
