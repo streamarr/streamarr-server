@@ -8,6 +8,7 @@ import com.github.kagkarlsson.scheduler.task.ExecutionOperations;
 import com.github.kagkarlsson.scheduler.task.FailureHandler;
 import com.github.kagkarlsson.scheduler.task.RescheduleUpdate;
 import com.streamarr.server.domain.media.ArtworkTarget;
+import com.streamarr.server.domain.media.PendingArtworkRequest;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import java.time.Clock;
 import java.time.Duration;

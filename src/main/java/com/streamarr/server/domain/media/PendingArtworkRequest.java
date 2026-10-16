@@ -1,4 +1,4 @@
-package com.streamarr.server.services;
+package com.streamarr.server.domain.media;
 
 import java.util.Optional;
 import java.util.UUID;
