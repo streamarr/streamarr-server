@@ -1,11 +1,12 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitWaitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.AlphabetLetter;
-import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
@@ -16,13 +17,18 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.events.library.ItemProcessedEvent;
-import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.support.TestFixtureWork;
+import java.time.Instant;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
@@ -31,21 +37,25 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
 
   @Autowired private LibraryMetadataListener listener;
 
+  @Autowired private LetterIndexRecalculator letterIndexRecalculator;
+
+  @Autowired private LibraryOperationRepository libraryOperations;
+
+  @Autowired private TransactionTemplate transactionTemplate;
+
+  @Autowired private JdbcTemplate jdbcTemplate;
+
   @Autowired private LibraryRepository libraryRepository;
 
   @Autowired private MovieRepository movieRepository;
 
   @Autowired private LibraryMetadataRepository metadataRepository;
 
-  @Autowired private LibraryOperationRepository libraryOperations;
-
   @Autowired private LibraryOperationExecution libraryOperationExecution;
 
-  @Autowired private PlatformTransactionManager transactionManager;
-
   @Test
-  @DisplayName("Should calculate correct letter counts when scan completed")
-  void shouldCalculateCorrectLetterCountsWhenScanCompleted() {
+  @DisplayName("Should calculate correct letter counts when the letter index is recalculated")
+  void shouldCalculateCorrectLetterCountsWhenTheLetterIndexIsRecalculated() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     movieRepository.saveAndFlush(
         Movie.builder().title("Alpha").titleSort("Alpha").library(library).build());
@@ -56,7 +66,7 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
     movieRepository.saveAndFlush(
         Movie.builder().title("123 Numbers").titleSort("123 Numbers").library(library).build());
 
-    listener.onScanCompleted(new ScanCompletedEvent(library.getId()));
+    letterIndexRecalculator.recalculateLetterIndex(library.getId());
 
     var metadata = metadataRepository.findByLibraryIdOrderByLetterAsc(library.getId());
 
@@ -94,12 +104,12 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
       "Should count an item processed during a refresh in the letter index when the refresh ends")
   void shouldCountAnItemProcessedDuringARefreshInTheLetterIndexWhenTheRefreshEnds() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
-    var refresh = storeRefresh(library);
+    var refreshId = storeRefresh(library.getId());
     movieRepository.saveAndFlush(
         Movie.builder().title("Foxtrot").titleSort("Foxtrot").library(library).build());
     listener.onItemProcessed(new ItemProcessedEvent(library.getId()));
 
-    SystemWork.runAsSystemActor(() -> libraryOperationExecution.execute(refresh.id()));
+    SystemWork.runAsSystemActor(() -> libraryOperationExecution.execute(refreshId));
 
     var metadata = metadataRepository.findByLibraryIdOrderByLetterAsc(library.getId());
     assertThat(metadata)
@@ -127,7 +137,7 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
             .itemCount(99)
             .build());
 
-    listener.onScanCompleted(new ScanCompletedEvent(library.getId()));
+    letterIndexRecalculator.recalculateLetterIndex(library.getId());
 
     var metadata = metadataRepository.findByLibraryIdOrderByLetterAsc(library.getId());
 
@@ -148,7 +158,7 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
     movieRepository.saveAndFlush(
         Movie.builder().title("Avengers").titleSort("Avengers").library(savedCaseLibrary).build());
 
-    listener.onScanCompleted(new ScanCompletedEvent(savedCaseLibrary.getId()));
+    letterIndexRecalculator.recalculateLetterIndex(savedCaseLibrary.getId());
 
     var metadata = metadataRepository.findByLibraryIdOrderByLetterAsc(savedCaseLibrary.getId());
 
@@ -170,24 +180,111 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
             .itemCount(99)
             .build());
 
-    listener.onScanCompleted(new ScanCompletedEvent(savedEmpty.getId()));
+    letterIndexRecalculator.recalculateLetterIndex(savedEmpty.getId());
 
     var metadata = metadataRepository.findByLibraryIdOrderByLetterAsc(savedEmpty.getId());
     assertThat(metadata).isEmpty();
   }
 
-  private LibraryOperation storeRefresh(Library refreshed) {
+  @Test
+  @DisplayName(
+      "Should count an item renamed while the end of a library operation holds the library's row"
+          + " once the end commits")
+  void shouldCountAnItemRenamedWhileTheEndOfALibraryOperationHoldsTheLibrarysRow()
+      throws Exception {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var movie =
+        movieRepository.saveAndFlush(
+            Movie.builder().title("Alpha").titleSort("Alpha").library(library).build());
+    var operationId = storeRefresh(library.getId());
+    var held = new CountDownLatch(1);
+    var release = new CountDownLatch(1);
+    var endPid = new AtomicInteger();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
+      var end =
+          executor.submit(
+              () ->
+                  transactionTemplate.executeWithoutResult(
+                      _ -> {
+                        assertThat(libraryOperations.tryLockLibraryOfLibraryOperation(operationId))
+                            .isTrue();
+                        letterIndexRecalculator.recalculateLetterIndex(library.getId());
+                        endPid.set(
+                            jdbcTemplate.queryForObject("SELECT pg_backend_pid()", Integer.class));
+                        held.countDown();
+                        awaitLatch(release);
+                        assertThat(libraryOperations.tryEndLibraryOperation(endOf(operationId)))
+                            .isTrue();
+                      }));
+      try {
+        awaitLatch(held);
+        renameMovie(movie.getId(), "Zulu");
+        var listening =
+            executor.submit(
+                () -> listener.onItemProcessed(new ItemProcessedEvent(library.getId())));
+        awaitWaitersBehind(jdbcTemplate, endPid.get(), 1);
+        release.countDown();
+        end.get(10, TimeUnit.SECONDS);
+        listening.get(10, TimeUnit.SECONDS);
+      } finally {
+        release.countDown();
+      }
+    }
+
+    assertThat(metadataRepository.findByLibraryIdOrderByLetterAsc(library.getId()))
+        .extracting(LibraryMetadata::getLetter)
+        .containsExactly(AlphabetLetter.Z);
+  }
+
+  @Test
+  @DisplayName("Should skip recalculation when an item is processed while a library operation runs")
+  void shouldSkipRecalculationWhenAnItemIsProcessedWhileALibraryOperationRuns() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Alpha").titleSort("Alpha").library(library).build());
+    storeRefresh(library.getId());
+
+    listener.onItemProcessed(new ItemProcessedEvent(library.getId()));
+
+    assertThat(metadataRepository.findByLibraryIdOrderByLetterAsc(library.getId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should skip recalculation when the library of a processed item no longer exists")
+  void shouldSkipRecalculationWhenTheLibraryOfAProcessedItemNoLongerExists() {
+    var libraryId = UUID.randomUUID();
+
+    listener.onItemProcessed(new ItemProcessedEvent(libraryId));
+
+    assertThat(metadataRepository.findByLibraryIdOrderByLetterAsc(libraryId)).isEmpty();
+  }
+
+  private UUID storeRefresh(UUID libraryId) {
     var outcome =
-        new TransactionTemplate(transactionManager)
-            .execute(
-                _ ->
-                    libraryOperations.storeLibraryOperation(
-                        NewLibraryOperation.refresh(refreshed.getId(), ImageRefreshMode.PRESERVE)));
+        transactionTemplate.execute(
+            _ ->
+                libraryOperations.storeLibraryOperation(
+                    NewLibraryOperation.refresh(libraryId, ImageRefreshMode.PRESERVE)));
     return switch (outcome) {
-      case StoreOutcome.Stored(var stored, _) -> stored;
+      case StoreOutcome.Stored(var stored, _) -> stored.id();
       case StoreOutcome.Rejected(var rejection) ->
           throw new AssertionError("The refresh was not stored: " + rejection);
       case null -> throw new AssertionError("The store returned nothing");
     };
+  }
+
+  private void renameMovie(UUID movieId, String titleSort) {
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            jdbcTemplate.update(
+                "UPDATE base_collectable SET title_sort = ? WHERE id = ?", titleSort, movieId));
+  }
+
+  private static LibraryOperationEnd endOf(UUID libraryOperationId) {
+    return LibraryOperationEnd.builder()
+        .libraryOperationId(libraryOperationId)
+        .conclusion(LibraryOperationConclusion.FINISHED)
+        .endedAt(Instant.now())
+        .build();
   }
 }

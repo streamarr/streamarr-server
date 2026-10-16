@@ -6,15 +6,15 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.fakes.FakeLibraryOperationRepository;
 import com.streamarr.server.fakes.FakeLibraryRepository;
+import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.events.library.ItemProcessedEvent;
-import com.streamarr.server.services.events.library.RefreshEndedEvent;
-import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("UnitTest")
 @DisplayName("Library Metadata Listener Tests")
@@ -27,7 +27,8 @@ class LibraryMetadataListenerTest {
   private final LibraryMetadataListener listener =
       new LibraryMetadataListener(
           new LetterIndexRecalculator(libraryMetadata, new MutexFactoryProvider()),
-          libraryOperations);
+          libraryOperations,
+          new TransactionTemplate(new FakeTransactionManager()));
   private final UUID libraryId = libraries.save(LibraryFixtureCreator.buildFakeLibrary()).getId();
 
   @Test
@@ -49,31 +50,11 @@ class LibraryMetadataListenerTest {
   }
 
   @Test
-  @DisplayName("Should recalculate when a scan completes while its library operation runs")
-  void shouldRecalculateWhenAScanCompletesWhileItsLibraryOperationRuns() {
-    libraryOperations.storeLibraryOperation(NewLibraryOperation.scan(libraryId));
+  @DisplayName("Should skip recalculation when the library of a processed item no longer exists")
+  void shouldSkipRecalculationWhenTheLibraryOfAProcessedItemNoLongerExists() {
+    listener.onItemProcessed(new ItemProcessedEvent(UUID.randomUUID()));
 
-    listener.onScanCompleted(new ScanCompletedEvent(libraryId));
-
-    assertThat(libraryMetadata.letterCountReplacements()).containsExactly(libraryId);
-  }
-
-  @Test
-  @DisplayName("Should not propagate exception when scan completed recalculation fails")
-  void shouldNotPropagateExceptionWhenScanCompletedRecalculationFails() {
-    libraryMetadata.failLetterCountReplacementsWith(new RuntimeException("DB error"));
-
-    assertThatNoException()
-        .isThrownBy(() -> listener.onScanCompleted(new ScanCompletedEvent(libraryId)));
-  }
-
-  @Test
-  @DisplayName("Should not propagate exception when refresh ended recalculation fails")
-  void shouldNotPropagateExceptionWhenRefreshEndedRecalculationFails() {
-    libraryMetadata.failLetterCountReplacementsWith(new RuntimeException("DB error"));
-
-    assertThatNoException()
-        .isThrownBy(() -> listener.onRefreshEnded(new RefreshEndedEvent(libraryId)));
+    assertThat(libraryMetadata.letterCountReplacements()).isEmpty();
   }
 
   @Test

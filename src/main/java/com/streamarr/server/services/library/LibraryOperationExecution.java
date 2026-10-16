@@ -25,10 +25,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  * execution. Every execution walks the library from the start. A shutdown that interrupts the
  * execution leaves the operation stored, so the operation runs again when a scheduler starts.
  * Otherwise one transaction ends the operation, as failed when the scan or refresh threw (ADR 0027)
- * and as finished when it returned: it gives the library its final status, deletes the operation,
- * and publishes the status change and the end of the scan or refresh for listeners that run after
- * the commit. An end that cannot be saved escapes, so the scheduler runs the operation again with
- * backoff.
+ * and as finished when it returned. The transaction locks the library's row, recalculates the
+ * letter index, gives the library its final status, and deletes the operation. It also publishes
+ * the status change and the end of the scan or refresh for listeners that run after the commit. An
+ * end that cannot be saved escapes, so the scheduler runs the operation again with backoff.
  */
 @Slf4j
 @Service
@@ -42,6 +42,7 @@ public class LibraryOperationExecution {
   private final FileDiscoveryRuns fileDiscoveryRuns;
   private final LibraryFolderCheck libraryFolderCheck;
   private final LibraryRefreshService libraryRefreshService;
+  private final LetterIndexRecalculator letterIndexRecalculator;
   private final ApplicationEventPublisher eventPublisher;
   private final PlatformTransactionManager transactionManager;
   private final Clock clock;
@@ -153,12 +154,19 @@ public class LibraryOperationExecution {
     }
   }
 
+  // The letter index is recalculated last, under the library's row lock, because tasks that
+  // finished can change titles even when the operation failed.
   private boolean tryEnd(LibraryOperation operation, LibraryOperationEnd end) {
+    var libraryId = operation.libraryId();
+    if (!libraryOperations.tryLockLibraryOfLibraryOperation(operation.id())) {
+      return false;
+    }
+
+    letterIndexRecalculator.recalculateLetterIndex(libraryId);
     if (!libraryOperations.tryEndLibraryOperation(end)) {
       return false;
     }
 
-    var libraryId = operation.libraryId();
     eventPublisher.publishEvent(new LibraryStatusChangedEvent(libraryId));
     eventPublisher.publishEvent(
         switch (operation.kind()) {

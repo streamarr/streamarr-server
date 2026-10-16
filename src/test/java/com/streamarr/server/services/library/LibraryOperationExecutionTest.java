@@ -29,6 +29,7 @@ import com.streamarr.server.fakes.CountingSleeper;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
+import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.fakes.FakeLibraryMutationTransaction;
 import com.streamarr.server.fakes.FakeLibraryOperationRepository;
 import com.streamarr.server.fakes.FakeLibraryOperationScheduling;
@@ -237,6 +238,7 @@ class LibraryOperationExecutionTest {
 
   private final FakeLibraryOperationRepository libraryOperations =
       new FakeLibraryOperationRepository(fakeLibraryRepository);
+  private final FakeLibraryMetadataRepository libraryMetadata = new FakeLibraryMetadataRepository();
   private final OperationRunner operations = serviceBuilder().build();
 
   private UUID savedLibraryId;
@@ -1606,6 +1608,11 @@ class LibraryOperationExecutionTest {
                     }
 
                     @Override
+                    public boolean tryLockLibraryOfLibraryOperation(UUID id) {
+                      return libraryOperations.tryLockLibraryOfLibraryOperation(id);
+                    }
+
+                    @Override
                     public boolean tryEndLibraryOperation(LibraryOperationEnd end) {
                       throw failure;
                     }
@@ -1863,6 +1870,82 @@ class LibraryOperationExecutionTest {
         .build();
   }
 
+  @Nested
+  @DisplayName("Letter index")
+  class LetterIndexTests {
+
+    @Test
+    @DisplayName("Should recalculate the letter index when a scan finishes")
+    void shouldRecalculateTheLetterIndexWhenAScanFinishes() throws IOException {
+      createRootLibraryDirectory();
+
+      operations.scanLibrary(savedLibraryId);
+
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+      assertThat(libraryMetadata.letterCountReplacements()).containsExactly(savedLibraryId);
+    }
+
+    @Test
+    @DisplayName("Should recalculate the letter index when a scan fails")
+    void shouldRecalculateTheLetterIndexWhenAScanFails() {
+      operations.scanLibrary(savedLibraryId);
+
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+      assertThat(libraryMetadata.letterCountReplacements()).containsExactly(savedLibraryId);
+    }
+
+    @Test
+    @DisplayName("Should recalculate the letter index when a refresh finishes")
+    void shouldRecalculateTheLetterIndexWhenARefreshFinishes() {
+      operations.refreshLibrary(savedLibraryId);
+
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+      assertThat(libraryMetadata.letterCountReplacements()).containsExactly(savedLibraryId);
+    }
+
+    @Test
+    @DisplayName(
+        "Should leave the library busy when the letter index cannot be recalculated at the end")
+    void shouldLeaveTheLibraryBusyWhenTheLetterIndexCannotBeRecalculatedAtTheEnd() {
+      var failure = new DataAccessResourceFailureException("simulated connection loss");
+      libraryMetadata.failLetterCountReplacementsWith(failure);
+
+      assertThatThrownBy(() -> operations.refreshLibrary(savedLibraryId)).isSameAs(failure);
+
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.REFRESHING);
+      assertThat(libraryOperations.libraryOperations()).hasSize(1);
+      assertThat(capturingEventPublisher.getEventsOfType(RefreshEndedEvent.class)).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+        "Should not recalculate the letter index when another execution ended the operation first")
+    void shouldNotRecalculateTheLetterIndexWhenAnotherExecutionEndedTheOperationFirst() {
+      var staleRuns =
+          serviceBuilder()
+              .executionLibraryOperations(
+                  new FakeLibraryOperationRepository(fakeLibraryRepository) {
+                    @Override
+                    public Optional<LibraryOperation> findLibraryOperation(UUID id) {
+                      var operation = libraryOperations.findLibraryOperation(id);
+                      libraryOperations.tryEndLibraryOperation(
+                          LibraryOperationEnd.builder()
+                              .libraryOperationId(id)
+                              .conclusion(LibraryOperationConclusion.FINISHED)
+                              .endedAt(Instant.now())
+                              .build());
+                      return operation;
+                    }
+                  })
+              .build();
+
+      staleRuns.refreshLibrary(savedLibraryId);
+
+      assertThat(libraryMetadata.letterCountReplacements()).isEmpty();
+      assertThat(capturingEventPublisher.getEventsOfType(RefreshEndedEvent.class)).isEmpty();
+    }
+  }
+
   private RunnerBuilder serviceBuilder() {
     return new RunnerBuilder();
   }
@@ -1930,6 +2013,8 @@ class LibraryOperationExecutionTest {
               .fileDiscoveryRuns(runs)
               .libraryFolderCheck(folderCheck)
               .libraryRefreshService(refreshService)
+              .letterIndexRecalculator(
+                  new LetterIndexRecalculator(libraryMetadata, new MutexFactoryProvider()))
               .eventPublisher(publisher)
               .transactionManager(transactionManager)
               .clock(Clock.systemUTC())

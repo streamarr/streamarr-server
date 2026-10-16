@@ -96,8 +96,13 @@ public class FakeLibraryOperationRepository implements LibraryOperationRepositor
   }
 
   @Override
-  public synchronized boolean existsLibraryOperationForLibrary(UUID libraryId) {
-    return operationFor(libraryId).isPresent();
+  public synchronized boolean tryLockLibraryOfLibraryOperation(UUID libraryOperationId) {
+    return operations.containsKey(libraryOperationId);
+  }
+
+  @Override
+  public synchronized boolean tryLockLibraryWithoutLibraryOperation(UUID libraryId) {
+    return libraries.existsById(libraryId) && operationFor(libraryId).isEmpty();
   }
 
   @Override
