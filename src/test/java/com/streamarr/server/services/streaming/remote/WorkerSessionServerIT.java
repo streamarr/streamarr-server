@@ -51,6 +51,7 @@ import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeKeyframes;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeRequest;
+import com.streamarr.transcode.v1.ProbeStreamInfo;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
@@ -111,6 +112,8 @@ class WorkerSessionServerIT {
   private static final long WIDEST_KEYFRAME_TIME_DELTA = Long.MIN_VALUE;
   // worker_session.proto bounds each list of a ProbeKeyframePositionsPart to this many entries.
   private static final int MAXIMUM_KEYFRAMES_PER_PART = 4_096;
+  // worker_session.proto states the largest session message the server accepts.
+  private static final int SESSION_MESSAGE_LIMIT_BYTES = 131_072;
 
   @ParameterizedTest
   @EnumSource(SessionEnd.class)
@@ -401,6 +404,103 @@ class WorkerSessionServerIT {
         shutdown(channel);
       }
     }
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver a probe result when its session message takes exactly the contract's limit")
+  void shouldDeliverProbeResultWhenItsSessionMessageTakesExactlyTheContractsLimit()
+      throws Exception {
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+      try {
+        var worker = connectProbeWorker(channel, workerIdentity(UUID.randomUUID()));
+        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
+        var request = probeRequest();
+        var pending = dispatched(server.dispatchProbe(request));
+        assertThat(worker.nextResponse().getStartProbe().getRequest()).isEqualTo(request);
+        var message = probeResultMessageOfSize(request, SESSION_MESSAGE_LIMIT_BYTES);
+
+        worker.send(message);
+
+        assertThat(pending.get(5, TimeUnit.SECONDS).result()).isEqualTo(message.getProbeResult());
+        assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isTrue();
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should end the worker's session when a probe result's session message exceeds the"
+          + " contract's limit by one byte")
+  void shouldEndWorkersSessionWhenProbeResultsSessionMessageExceedsTheContractsLimitByOneByte()
+      throws Exception {
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+      try {
+        var worker = connectProbeWorker(channel, workerIdentity(UUID.randomUUID()));
+        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
+        var request = probeRequest();
+        var pending = dispatched(server.dispatchProbe(request));
+        assertThat(worker.nextResponse().getStartProbe().getRequest()).isEqualTo(request);
+
+        worker.send(probeResultMessageOfSize(request, SESSION_MESSAGE_LIMIT_BYTES + 1));
+
+        assertThatThrownBy(worker::awaitClosed)
+            .as("The server must end the session call")
+            .isInstanceOf(ExecutionException.class);
+        assertThatThrownBy(() -> pending.get(5, TimeUnit.SECONDS))
+            .hasCauseInstanceOf(ProbeExecutionException.class);
+        assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isFalse();
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
+  private static ProbeRequest probeRequest() {
+    return ProbeRequest.newBuilder()
+        .setProbeAttemptId(toProto(UUID.randomUUID()))
+        .setProbeVersion(1)
+        .setSource(
+            MediaSourceRef.newBuilder()
+                .setSourceNamespaceId(toProto(SOURCE_NAMESPACE_ID))
+                .setRelativeKey("movie.mkv"))
+        .build();
+  }
+
+  // Pads one stream's language tag, which neither the contract nor the worker bounds, until the
+  // session message that carries the result takes exactly the given number of bytes.
+  private static EstablishWorkerSessionRequest probeResultMessageOfSize(
+      ProbeRequest request, int bytes) {
+    var language = 0;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      var message =
+          EstablishWorkerSessionRequest.newBuilder()
+              .setProbeResult(
+                  ProbeAttemptResult.newBuilder()
+                      .setProbeAttemptId(request.getProbeAttemptId())
+                      .setProbeVersion(request.getProbeVersion())
+                      .setMedia(
+                          ProbeMediaInfo.newBuilder()
+                              .addStreams(
+                                  ProbeStreamInfo.newBuilder()
+                                      .setIndex(0)
+                                      .setCodecType("video")
+                                      .setLanguage("a".repeat(language)))))
+              .build();
+      if (message.getSerializedSize() == bytes) {
+        return message;
+      }
+
+      language += bytes - message.getSerializedSize();
+    }
+
+    throw new AssertionError("No probe result encodes to exactly " + bytes + " bytes");
   }
 
   private static ProbeKeyframePositionsPart widestKeyframePositionsPart(
