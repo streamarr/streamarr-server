@@ -181,6 +181,21 @@ class RemoteProbeResultMapperTest {
     assertThat(outcome).isEqualTo(new ProbeOutcome.Failure(ProbeError.NO_VIDEO_STREAM));
   }
 
+  @Test
+  @DisplayName(
+      "Should retain a terminal result-too-large error when the result does not fit in one session"
+          + " message")
+  void shouldRetainTerminalResultTooLargeErrorWhenResultDoesNotFitInOneSessionMessage() {
+    var result =
+        ProbeAttemptResult.newBuilder()
+            .setFailure(ProbeFailure.PROBE_FAILURE_RESULT_TOO_LARGE)
+            .build();
+
+    var outcome = new RemoteProbeResultMapper().map(reportOf(result));
+
+    assertThat(outcome).isEqualTo(new ProbeOutcome.Failure(ProbeError.RESULT_TOO_LARGE));
+  }
+
   @ParameterizedTest
   @CsvSource({
     "PROBE_FAILURE_SOURCE_UNAVAILABLE, SOURCE_INACCESSIBLE",
