@@ -39,6 +39,7 @@ final class RemoteProbeResultMapper {
     return switch (result.getFailure()) {
       case PROBE_FAILURE_INVALID_MEDIA -> new ProbeOutcome.Failure(ProbeError.INVALID_MEDIA);
       case PROBE_FAILURE_NO_VIDEO_STREAM -> new ProbeOutcome.Failure(ProbeError.NO_VIDEO_STREAM);
+      case PROBE_FAILURE_RESULT_TOO_LARGE -> new ProbeOutcome.Failure(ProbeError.RESULT_TOO_LARGE);
       case PROBE_FAILURE_CANCELLED ->
           throw new ProbeCancelledException("Worker cancelled the probe: " + result.getFailure());
       case PROBE_FAILURE_SOURCE_UNAVAILABLE ->

@@ -144,7 +144,11 @@ class StreamingResolverTest {
         Arguments.of(
             ProbeError.NO_VIDEO_STREAM,
             "MediaFileHasNoVideoError",
-            "This file has no video stream."));
+            "This file has no video stream."),
+        Arguments.of(
+            ProbeError.RESULT_TOO_LARGE,
+            "InvalidMediaFileError",
+            "This file has more streams or metadata than the server can read."));
   }
 
   @Test

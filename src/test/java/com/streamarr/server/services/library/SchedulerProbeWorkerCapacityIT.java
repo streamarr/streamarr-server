@@ -22,6 +22,8 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.ProbeError;
+import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
@@ -40,6 +42,7 @@ import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeFailure;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
@@ -243,6 +246,55 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
               assertThat(pending.getExecutionTime())
                   .isEqualTo(failed.getTimeDone().plus(Duration.ofSeconds(20)));
             });
+  }
+
+  @Test
+  @DisplayName(
+      "Should store the probe failure as final and schedule no retry when the worker reports a"
+          + " result too large for one session message")
+  void shouldStoreProbeFailureAsFinalAndScheduleNoRetryWhenWorkerReportsResultTooLarge()
+      throws Exception {
+    var request = request(createMediaFile("crowded.mkv"));
+    scheduling.request(request);
+
+    try (var server =
+        new WorkerSessionServer(
+            serverConfigurationBuilder().build(),
+            new FakeSegmentStore(),
+            new SimpleMeterRegistry())) {
+      server.start();
+      try (var worker =
+          LoopbackProbeWorker.builder()
+              .port(server.port())
+              .probeVersion(ProbeVersion.CURRENT)
+              .availableSlots(1)
+              .build()) {
+        var client =
+            startScheduler(new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, sourceRoot));
+        var dispatched = worker.nextResponse(WORKER_WAIT).getStartProbe().getRequest();
+
+        worker.reply(
+            ProbeAttemptResult.newBuilder()
+                .setProbeAttemptId(dispatched.getProbeAttemptId())
+                .setProbeVersion(dispatched.getProbeVersion())
+                .setFailure(ProbeFailure.PROBE_FAILURE_RESULT_TOO_LARGE)
+                .build());
+
+        assertThat(nextCompletion().getResult())
+            .as("A result too large for one session message is not a retryable failure")
+            .isEqualTo(ExecutionComplete.Result.OK);
+        assertThat(reader.find(request.mediaFileId()))
+            .hasValueSatisfying(
+                stored -> {
+                  assertThat(stored.outcome())
+                      .isEqualTo(new ProbeOutcome.Failure(ProbeError.RESULT_TOO_LARGE));
+                  assertThat(stored.matches(request.snapshot(), request.probeVersion())).isTrue();
+                });
+        assertThat(client.getScheduledExecution(instanceOf(request)))
+            .as("The stored failure must leave no retry scheduled")
+            .isEmpty();
+      }
+    }
   }
 
   private void whenOneWorkerSlotServesTwoProbes(BusyWorkerScenario scenario) throws Exception {

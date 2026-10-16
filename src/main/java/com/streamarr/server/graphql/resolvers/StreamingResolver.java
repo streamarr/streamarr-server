@@ -120,6 +120,9 @@ public class StreamingResolver {
       case INVALID_MEDIA ->
           new CreateStreamSessionError.InvalidMediaFileError(
               "This file cannot be read as supported media.");
+      case RESULT_TOO_LARGE ->
+          new CreateStreamSessionError.InvalidMediaFileError(
+              "This file has more streams or metadata than the server can read.");
       case NO_VIDEO_STREAM ->
           new CreateStreamSessionError.MediaFileHasNoVideoError("This file has no video stream.");
     };
