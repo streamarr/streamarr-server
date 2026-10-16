@@ -227,9 +227,8 @@ class TranscodeDecisionCopyRuleTest {
   }
 
   @Test
-  @DisplayName(
-      "Should copy the video as before probe version 4 when the probe reported no playback facts")
-  void shouldCopyTheVideoAsBeforeProbeVersion4WhenTheProbeReportedNoPlaybackFacts() {
+  @DisplayName("Should encode the video when the probe reported no playback facts")
+  void shouldEncodeTheVideoWhenTheProbeReportedNoPlaybackFacts() {
     var probe =
         Source.builder()
             .sampleEntry(SampleEntry.AVC1)
@@ -240,7 +239,7 @@ class TranscodeDecisionCopyRuleTest {
 
     var decision = service.decide(probe, options(List.of("h264")), EVERY_VIDEO_CODEC_FAMILY);
 
-    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
     assertThat(decision.videoSource()).isEmpty();
   }
 

@@ -135,6 +135,21 @@ class ProbeVersionRescanIT extends AbstractIntegrationTest {
     assertThat(Collections.frequency(scannedLibraries, movies.getId())).isOne();
   }
 
+  @Test
+  @DisplayName(
+      "Should scan each library whose version 1 or version 3 result the upgrade to version 4 deleted")
+  void shouldScanEachLibraryWhoseVersion1OrVersion3ResultTheUpgradeToVersion4Deleted() {
+    var probedAtVersion1 = createLibrary();
+    request(createMediaFile(probedAtVersion1), 1);
+    var probedAtVersion3 = createLibrary();
+    request(createMediaFile(probedAtVersion3), 3);
+
+    rescan().onStartup();
+
+    assertThat(scannedLibraries)
+        .containsOnlyOnce(probedAtVersion1.getId(), probedAtVersion3.getId());
+  }
+
   private ProbeVersionRescan rescan() {
     return new ProbeVersionRescan(rescans, libraryOperationService);
   }
