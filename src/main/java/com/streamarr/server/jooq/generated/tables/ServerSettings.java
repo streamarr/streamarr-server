@@ -137,7 +137,7 @@ public class ServerSettings extends TableImpl<ServerSettingsRecord> {
     @Override
     public List<Check<ServerSettingsRecord>> getChecks() {
         return Arrays.asList(
-            Internal.createCheck(this, DSL.name("chk_server_settings_encoder_preset"), "((encoder_preset = ANY (ARRAY['AUTOMATIC'::text, 'ULTRAFAST'::text, 'SUPERFAST'::text, 'VERYFAST'::text, 'FASTER'::text, 'FAST'::text, 'MEDIUM'::text, 'SLOW'::text, 'SLOWER'::text, 'VERYSLOW'::text])))", true),
+            Internal.createCheck(this, DSL.name("chk_server_settings_encoder_preset"), "((encoder_preset = ANY (ARRAY['AUTOMATIC'::text, 'SUPERFAST'::text, 'VERYFAST'::text, 'FASTER'::text, 'FAST'::text, 'MEDIUM'::text, 'SLOW'::text, 'SLOWER'::text, 'VERYSLOW'::text])))", true),
             Internal.createCheck(this, DSL.name("chk_server_settings_singleton"), "(singleton)", true)
         );
     }

@@ -469,7 +469,8 @@ public interface MediaFileContainerInfoRepositoryContract {
     return Stream.of(
         success("h264", "aac"),
         new ProbeOutcome.Failure(ProbeError.INVALID_MEDIA),
-        new ProbeOutcome.Failure(ProbeError.NO_VIDEO_STREAM));
+        new ProbeOutcome.Failure(ProbeError.NO_VIDEO_STREAM),
+        new ProbeOutcome.Failure(ProbeError.RESULT_TOO_LARGE));
   }
 
   private Optional<MediaFileContainerInfo> stored(UUID mediaFileId) {

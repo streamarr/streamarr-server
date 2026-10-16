@@ -174,7 +174,6 @@ final class RemoteVariantJobMapper {
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.transcode.v1.EncoderPreset encoderPreset(EncoderPreset preset) {
     return switch (preset) {
-      case ULTRAFAST -> com.streamarr.transcode.v1.EncoderPreset.ENCODER_PRESET_ULTRAFAST;
       case SUPERFAST -> com.streamarr.transcode.v1.EncoderPreset.ENCODER_PRESET_SUPERFAST;
       case VERYFAST -> com.streamarr.transcode.v1.EncoderPreset.ENCODER_PRESET_VERYFAST;
       case FASTER -> com.streamarr.transcode.v1.EncoderPreset.ENCODER_PRESET_FASTER;
