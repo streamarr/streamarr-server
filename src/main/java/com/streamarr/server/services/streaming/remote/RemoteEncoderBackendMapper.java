@@ -38,7 +38,7 @@ final class RemoteEncoderBackendMapper {
             .build());
   }
 
-  private static Optional<String> videoCodecFamilyName(VideoCodecFamily family) {
+  static Optional<String> videoCodecFamilyName(VideoCodecFamily family) {
     return switch (family) {
       case VIDEO_CODEC_FAMILY_H264 -> Optional.of("h264");
       case VIDEO_CODEC_FAMILY_HEVC -> Optional.of("hevc");
