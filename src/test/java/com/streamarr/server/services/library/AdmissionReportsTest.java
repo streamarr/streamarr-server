@@ -50,8 +50,8 @@ class AdmissionReportsTest {
 
   @ParameterizedTest(name = "{0} reports {1}")
   @MethodSource("matchingOutcomes")
-  @DisplayName("Should report what a file task's matching outcome says about capacity")
-  void shouldReportWhatAFileTasksMatchingOutcomeSaysAboutCapacity(
+  @DisplayName("Should report the expected capacity outcome when file matching ends")
+  void shouldReportExpectedCapacityOutcomeWhenFileMatchingEnds(
       MatchingOutcome outcome, AdmittedTaskReport expected) {
     assertThat(AdmissionReports.forMatching(outcome)).isEqualTo(expected);
   }

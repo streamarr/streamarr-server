@@ -48,6 +48,7 @@ import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
@@ -510,8 +511,9 @@ class LibraryManagementServiceTest {
     when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
         .thenReturn(
             new MetadataFetchOutcome.Found<>(
-                new MetadataResult<>(
-                    Movie.builder().title("About Time").build(), List.of(), Map.of(), Map.of())));
+                MetadataFixture.<Movie>metadataResultBuilder()
+                    .entity(Movie.builder().title("About Time").build())
+                    .build()));
 
     libraryManagementService.processDiscoveredFile(savedLibraryId, moviePath);
 

@@ -176,8 +176,8 @@ class SeriesFileProcessorTest {
   }
 
   @Test
-  @DisplayName("Should mark a temporary enrichment failure when creating the series throws")
-  void shouldMarkATemporaryEnrichmentFailureWhenCreatingTheSeriesThrows() {
+  @DisplayName("Should mark a temporary enrichment failure when the series lookup throws")
+  void shouldMarkTemporaryEnrichmentFailureWhenSeriesLookupThrows() {
     var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
     var mediaFile = saveEpisodeFile(library, "Breaking%20Bad/Season%2001/Breaking.Bad.S01E01.mkv");
     stubSearchFound("Breaking Bad", "1396");

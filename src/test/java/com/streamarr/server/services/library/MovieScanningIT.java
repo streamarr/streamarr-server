@@ -109,7 +109,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     var keptLibrary = createMovieLibrary(tempDir.resolve("kept"));
     createMovieFile("removed/Inception (2010)", "Inception (2010).mkv");
     var keptFile = createMovieFile("kept/Inception (2010)", "Inception (2010).mkv");
-    stubTmdbMovieSearch("Inception", "27205", "Inception", "2010-07-16");
+    stubTmdbMovieSearch();
     stubTmdbMovieMetadata("27205", "Inception");
     startProbeScheduler();
     libraryOperationDriver.scanToEnd(removedLibrary.getId());
@@ -231,7 +231,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     var library = createMovieLibrary();
     var file = createMovieFile("Inception (2010)", "movie.mkv");
 
-    stubTmdbMovieSearch("Inception", "27205", "Inception", "2010-07-16");
+    stubTmdbMovieSearch();
     stubTmdbMovieMetadata("27205", "Inception");
 
     libraryManagementService.processDiscoveredFile(library.getId(), file);
@@ -247,7 +247,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     var library = createMovieLibrary();
     var file = createMovieFile("Inception (2010)", "movie.mkv");
 
-    stubTmdbMovieSearch("Inception", "27205", "Inception", "2010-07-16");
+    stubTmdbMovieSearch();
     stubTmdbMovieMetadata("27205", "Inception");
 
     libraryManagementService.processDiscoveredFile(library.getId(), file);
@@ -264,7 +264,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     var library = createMovieLibrary();
     var file = createMovieFile("Movies", "Inception (2010).mkv");
 
-    stubTmdbMovieSearch("Inception", "27205", "Inception", "2010-07-16");
+    stubTmdbMovieSearch();
     stubTmdbMovieMetadata("27205", "Inception");
 
     libraryManagementService.processDiscoveredFile(library.getId(), file);
@@ -397,7 +397,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   private LibraryWithMovieFile createLibraryWithMatchingMovieFile() throws IOException {
     var library = createMovieLibrary();
     var movieFile = createMovieFile("Inception (2010)", "Inception (2010).mkv");
-    stubTmdbMovieSearch("Inception", "27205", "Inception", "2010-07-16");
+    stubTmdbMovieSearch();
     return new LibraryWithMovieFile(library, movieFile);
   }
 
@@ -439,10 +439,10 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     return file;
   }
 
-  private void stubTmdbMovieSearch(String query, String tmdbId, String title, String releaseDate) {
+  private void stubTmdbMovieSearch() {
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
-            .withQueryParam("query", equalTo(query))
+            .withQueryParam("query", equalTo("Inception"))
             .willReturn(
                 aResponse()
                     .withStatus(200)
@@ -453,10 +453,10 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
                           "page": 1,
                           "results": [
                             {
-                              "id": %s,
-                              "title": "%s",
-                              "original_title": "%s",
-                              "release_date": "%s",
+                              "id": 27205,
+                              "title": "Inception",
+                              "original_title": "Inception",
+                              "release_date": "2010-07-16",
                               "popularity": 100.0,
                               "vote_count": 1000,
                               "vote_average": 8.5
@@ -465,8 +465,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
                           "total_results": 1,
                           "total_pages": 1
                         }
-                        """
-                            .formatted(tmdbId, title, title, releaseDate))));
+                        """)));
   }
 
   private void stubTmdbMovieMetadata(String tmdbId, String title) {

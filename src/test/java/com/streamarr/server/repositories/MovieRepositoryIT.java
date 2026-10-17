@@ -61,10 +61,9 @@ class MovieRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName(
-      "Should save a Movie with its external identifier when no existing Movie in the database.")
+  @DisplayName("Should persist the external identifier when saving a new movie")
   @Transactional
-  void shouldSaveMovieWithExternalIdentifier() {
+  void shouldPersistExternalIdentifierWhenSavingNewMovie() {
     var fakeExternalId =
         ExternalIdentifier.builder()
             .externalId("123")

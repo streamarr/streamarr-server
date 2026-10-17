@@ -176,8 +176,8 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("Should add media file to existing series by TMDB ID")
-    void shouldAddMediaFileToExistingSeriesByTmdbId() {
+    @DisplayName("Should attach both files when the series already exists")
+    void shouldAttachBothFilesWhenSeriesAlreadyExists() {
       var series =
           Series.builder()
               .title("Game of Thrones")
