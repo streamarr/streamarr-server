@@ -1,20 +1,23 @@
 package com.streamarr.server.services.streaming;
 
-import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
-import static com.streamarr.server.fixtures.StreamSessionFixture.remuxDecision;
+import static com.streamarr.server.fixtures.StreamSessionFixture.remuxDecisionBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.data.Offset.offset;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
+import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.ServerSettingsFixture;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -52,6 +55,7 @@ class HlsRecoveryContinuitySmokeTest {
   private SegmentDeliveryCoordinator coordinator;
   @TempDir private Path temporaryDirectory;
   private Path testVideo;
+  private MediaProbe mediaProbe;
 
   @BeforeEach
   void setUp() throws Exception {
@@ -66,6 +70,18 @@ class HlsRecoveryContinuitySmokeTest {
             .segmentStore(segmentStore)
             .build();
     workerFixture.start();
+    mediaProbe =
+        switch (new RemoteFfprobeService(
+                workerFixture.workerSessions(), workerFixture.sourceNamespaceId(), sourceRoot)
+            .probe(
+                ProbeExecutionRequest.builder()
+                    .sourcePath(testVideo)
+                    .attemptId(UUID.randomUUID())
+                    .probeVersion(ProbeVersion.CURRENT)
+                    .build())) {
+          case ProbeOutcome.Success success -> success.mediaProbe();
+          case ProbeOutcome.Failure failure -> throw new AssertionError(failure);
+        };
     transcodeExecutor =
         new RemoteTranscodeExecutor(
             workerFixture.workerSessions(),
@@ -108,7 +124,7 @@ class HlsRecoveryContinuitySmokeTest {
   @Test
   @DisplayName("Should continue the absolute timeline when a dead producer is replaced")
   void shouldContinueAbsoluteTimelineWhenDeadProducerIsReplaced() throws Exception {
-    var session = startedSession(remuxDecision());
+    var session = startedSession();
     assertThat(session.getHandle().orElseThrow().processId()).isEmpty();
     var sessionId = session.getSessionId();
     await()
@@ -150,7 +166,7 @@ class HlsRecoveryContinuitySmokeTest {
   @Test
   @DisplayName("Should keep the stored initialization segment when a dead producer is replaced")
   void shouldKeepStoredInitializationSegmentWhenDeadProducerIsReplaced() throws Exception {
-    var session = startedSession(remuxDecision());
+    var session = startedSession();
     var sessionId = session.getSessionId();
     await()
         .atMost(30, TimeUnit.SECONDS)
@@ -175,12 +191,13 @@ class HlsRecoveryContinuitySmokeTest {
         .isPositive();
   }
 
-  private StreamSession startedSession(TranscodeDecision decision) {
+  private StreamSession startedSession() {
     var session =
         defaultSessionBuilder()
             .sourcePath(testVideo)
-            .mediaProbe(defaultProbeBuilder().duration(Duration.ofSeconds(10)).build())
-            .transcodeDecision(decision)
+            .mediaProbe(mediaProbe)
+            .transcodeDecision(
+                remuxDecisionBuilder().videoSource(mediaProbe.videoPlaybackFacts()).build())
             .build();
     runtimeRegistry.save(session);
     lifecycle.startFirstListedVariant(session);

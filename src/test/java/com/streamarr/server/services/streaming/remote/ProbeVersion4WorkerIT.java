@@ -104,9 +104,7 @@ class ProbeVersion4WorkerIT extends AbstractIntegrationTest {
           .containsExactlyElementsOf(CHAPTER_TITLES);
       var playback =
           new Playback(
-              new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot),
-              segmentStore,
-              worker);
+              new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot), segmentStore);
       for (var chapter : chapters) {
         var startSeconds = (Double) chapter.get("startSeconds");
         var seek = encodeRequestBuilder(source, outcome.mediaProbe()).mediaSegmentCount(3);
@@ -159,10 +157,7 @@ class ProbeVersion4WorkerIT extends AbstractIntegrationTest {
     }
   }
 
-  private record Playback(
-      RemoteTranscodeExecutor executor,
-      LocalSegmentStore segmentStore,
-      WorkerContainerFixture worker) {}
+  private record Playback(RemoteTranscodeExecutor executor, LocalSegmentStore segmentStore) {}
 
   // Each seek encodes from the media segment that holds the chapter's start. The chapters start on
   // the 6 s grid, so that segment opens at the chapter's start.
@@ -180,12 +175,9 @@ class ProbeVersion4WorkerIT extends AbstractIntegrationTest {
                 .build());
     try {
       awaitSegment(playback.segmentStore(), sessionId, index);
-      var media = tempDir.resolve("seek-" + sessionId + ".mp4");
-      Files.write(
-          media,
+      return Fmp4Fixture.firstVideoPresentationTime(
           Fmp4Fixture.withInitializationSegment(
               playback.segmentStore(), sessionId, SegmentNames.mediaSegmentName(index)));
-      return playback.worker().packetTimestamps(media).getFirst();
     } finally {
       playback.executor().stop(sessionId);
     }
