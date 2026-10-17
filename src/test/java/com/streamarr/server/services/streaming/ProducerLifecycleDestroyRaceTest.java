@@ -33,7 +33,8 @@ class ProducerLifecycleDestroyRaceTest {
   void shouldNotLeaveProducerRunningWhenDestroyInterleavesInitialStartup() throws Exception {
     var raceGate = new DestroyRaceGate();
     var transcodeExecutor = new StartGatingExecutor(raceGate);
-    var lifecycle = lifecycleWith(transcodeExecutor, raceGate.mutexFactory());
+    var runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
+    var lifecycle = lifecycleWith(transcodeExecutor, raceGate.mutexFactory(), runtimeRegistry);
     var session =
         defaultSessionBuilder()
             .variants(
@@ -51,6 +52,7 @@ class ProducerLifecycleDestroyRaceTest {
                         .label("720p")
                         .build()))
             .build();
+    runtimeRegistry.save(session);
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var start = executor.submit(() -> lifecycle.startFirstListedVariant(session));
@@ -72,7 +74,9 @@ class ProducerLifecycleDestroyRaceTest {
   }
 
   private static ProducerLifecycleService lifecycleWith(
-      FakeTranscodeExecutor transcodeExecutor, MutexFactory<UUID> sessionMutex) {
+      FakeTranscodeExecutor transcodeExecutor,
+      MutexFactory<UUID> sessionMutex,
+      FakeRuntimeStreamSessionRegistry runtimeRegistry) {
     return ProducerLifecycleService.builder()
         .transcodeExecutor(transcodeExecutor)
         .segmentStore(new FakeSegmentStore())
@@ -82,7 +86,7 @@ class ProducerLifecycleDestroyRaceTest {
                 .targetSegmentDuration(Duration.ofSeconds(6))
                 .sessionTimeout(Duration.ofSeconds(60))
                 .build())
-        .runtimeRegistry(new FakeRuntimeStreamSessionRegistry())
+        .runtimeRegistry(runtimeRegistry)
         .sessionMutex(sessionMutex)
         .serverSettings(ServerSettingsFixture.defaultServerSettings())
         .build();

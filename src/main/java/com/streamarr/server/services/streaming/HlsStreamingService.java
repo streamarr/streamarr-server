@@ -90,7 +90,7 @@ public class HlsStreamingService implements StreamingService {
               properties.maxConcurrentTranscodes()));
     }
 
-    var sessionId = UUID.randomUUID();
+    var sessionId = command.streamSessionId();
     var now = Instant.now();
 
     var session =
@@ -109,7 +109,6 @@ public class HlsStreamingService implements StreamingService {
     try {
       runtimeRegistry.save(session);
       producerLifecycle.startFirstListedVariant(session);
-      runtimeRegistry.save(session);
     } catch (RuntimeException startupFailure) {
       rollbackFailedStartup(sessionId, startupFailure);
       throw startupFailure;

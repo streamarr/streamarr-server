@@ -342,7 +342,13 @@ public class ProducerLifecycleService {
   public void startFirstListedVariant(StreamSession session) {
     withSessionLock(
         session.getSessionId(),
-        () -> startVariant(session, firstListedVariant(session), session.getCurrentSegment()));
+        () ->
+            runtimeRegistry
+                .findById(session.getSessionId())
+                .ifPresent(
+                    current ->
+                        startVariant(
+                            current, firstListedVariant(current), current.getCurrentSegment())));
   }
 
   private static String firstListedVariant(StreamSession session) {

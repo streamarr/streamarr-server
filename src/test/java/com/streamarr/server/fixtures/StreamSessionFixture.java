@@ -134,6 +134,7 @@ public final class StreamSessionFixture {
       UUID mediaFileId, UUID profileId, StreamingOptions options) {
     var authority = playbackAuthorityFor(profileId);
     return CreateStreamSessionCommand.builder()
+        .streamSessionId(UUID.randomUUID())
         .mediaFileId(mediaFileId)
         .identity(identityFor(authority))
         .options(options)

@@ -1321,6 +1321,7 @@ class HlsStreamingServiceTest {
     transcodeExecutor.setAvailableSlots(0);
     var command =
         CreateStreamSessionCommand.builder()
+            .streamSessionId(UUID.randomUUID())
             .mediaFileId(file.getId())
             .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
@@ -1432,6 +1433,67 @@ class HlsStreamingServiceTest {
 
     assertThat(playlist.lines().filter(line -> line.endsWith("/stream.m3u8?t=t")))
         .containsExactly("480p/stream.m3u8?t=t", "720p/stream.m3u8?t=t", "360p/stream.m3u8?t=t");
+  }
+
+  @Test
+  @DisplayName("Should use the reserved session identifier when dispatching its first job")
+  void shouldUseTheReservedSessionIdentifierWhenDispatchingItsFirstJob() {
+    var command =
+        createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getSessionId()).isEqualTo(command.streamSessionId());
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(TranscodeRequest::sessionId)
+        .isEqualTo(command.streamSessionId());
+  }
+
+  @Test
+  @DisplayName("Should not restore the session when it is destroyed during its first dispatch")
+  void shouldNotRestoreTheSessionWhenItIsDestroyedDuringItsFirstDispatch() {
+    var closingExecutor =
+        new FakeTranscodeExecutor() {
+          @Override
+          public TranscodeHandle start(TranscodeRequest request) {
+            var handle = super.start(request);
+            service.destroySession(request.sessionId());
+            return handle;
+          }
+        };
+    service = serviceWith(closingExecutor, runtimeRegistry);
+    var command =
+        createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    service.createSession(command);
+
+    assertThat(service.getAllSessions()).isEmpty();
+    assertThat(service.getActiveSessionCount()).isZero();
+    assertThat(closingExecutor.getRunningCount()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should not start a producer when the session is destroyed before its first dispatch")
+  void shouldNotStartAProducerWhenTheSessionIsDestroyedBeforeItsFirstDispatch() {
+    var closingRegistry =
+        new FakeRuntimeStreamSessionRegistry() {
+          @Override
+          public void save(StreamSession session) {
+            super.save(session);
+            service.destroySession(session.getSessionId());
+          }
+        };
+    service = serviceWith(transcodeExecutor, closingRegistry);
+    var command =
+        createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    service.createSession(command);
+
+    assertThat(service.getAllSessions()).isEmpty();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+    assertThat(transcodeExecutor.getRunningCount()).isZero();
   }
 
   @Test

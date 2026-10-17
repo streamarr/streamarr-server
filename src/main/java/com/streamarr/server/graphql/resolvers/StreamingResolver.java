@@ -85,6 +85,7 @@ public class StreamingResolver {
     var outcome =
         streamingService.createSession(
             CreateStreamSessionCommand.builder()
+                .streamSessionId(UUID.randomUUID())
                 .mediaFileId(mediaFileId)
                 .identity(authorizationService.currentIdentity())
                 .options(mapOptions(options))
