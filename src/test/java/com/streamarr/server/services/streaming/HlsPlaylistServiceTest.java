@@ -71,7 +71,22 @@ class HlsPlaylistServiceTest {
     return createSessionWithDuration(mode, Duration.ofSeconds(durationSeconds));
   }
 
+  private static TranscodeDecision encodedDecision(String videoCodecFamily, Fraction rate) {
+    return TranscodeDecision.builder()
+        .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+        .videoCodecFamily(videoCodecFamily)
+        .audioDecision(AudioDecision.stereoAac())
+        .subtitleDecision(SubtitleDecision.exclude())
+        .videoSource(
+            Optional.of(
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                    .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(rate))
+                    .build()))
+        .build();
+  }
+
   private StreamSession createSessionWithDuration(TranscodeMode mode, Duration duration) {
+    var source = VideoPlaybackFactsFixture.sdrH264FactsBuilder().build();
     var session =
         StreamSession.builder()
             .sessionId(UUID.randomUUID())
@@ -82,7 +97,8 @@ class HlsPlaylistServiceTest {
                 MediaProbe.builder()
                     .keyframes(new KeyframeKnowledge.NotReported())
                     .duration(duration)
-                    .framerate(OptionalDouble.of(23.976))
+                    .framerate(OptionalDouble.of(VideoPlaybackFactsFixture.FILM_RATE.toDouble()))
+                    .videoPlaybackFacts(Optional.of(source))
                     .width(1920)
                     .height(1080)
                     .videoCodec("h264")
@@ -95,6 +111,7 @@ class HlsPlaylistServiceTest {
                     .videoCodecFamily("h264")
                     .audioDecision(AudioDecision.stereoAac())
                     .subtitleDecision(SubtitleDecision.exclude())
+                    .videoSource(Optional.of(source))
                     .build())
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
             .createdAt(Instant.now())
@@ -138,6 +155,7 @@ class HlsPlaylistServiceTest {
   }
 
   private StreamSession createAbrSession(int durationSeconds) {
+    var source = VideoPlaybackFactsFixture.sdrH264FactsBuilder().build();
     var variants =
         List.of(
             QualityVariant.builder()
@@ -172,7 +190,8 @@ class HlsPlaylistServiceTest {
                 MediaProbe.builder()
                     .keyframes(new KeyframeKnowledge.NotReported())
                     .duration(Duration.ofSeconds(durationSeconds))
-                    .framerate(OptionalDouble.of(23.976))
+                    .framerate(OptionalDouble.of(VideoPlaybackFactsFixture.FILM_RATE.toDouble()))
+                    .videoPlaybackFacts(Optional.of(source))
                     .width(1920)
                     .height(1080)
                     .videoCodec("hevc")
@@ -185,6 +204,7 @@ class HlsPlaylistServiceTest {
                     .videoCodecFamily("h264")
                     .audioDecision(AudioDecision.stereoAac())
                     .subtitleDecision(SubtitleDecision.exclude())
+                    .videoSource(Optional.of(source))
                     .build())
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
             .variants(variants)
@@ -210,7 +230,8 @@ class HlsPlaylistServiceTest {
 
   @Test
   @DisplayName(
-      "Should include stream inf with bandwidth and resolution when generating multivariant playlist")
+      "Should include stream inf with bandwidth and resolution when generating multivariant"
+          + " playlist")
   void shouldIncludeStreamInfWithBandwidthAndResolutionWhenGeneratingMultivariantPlaylist() {
     var session = createSession(TranscodeMode.FULL_TRANSCODE, 120);
 
@@ -533,13 +554,46 @@ class HlsPlaylistServiceTest {
   @DisplayName("Video codec strings")
   class VideoCodecStringTests {
 
-    private StreamSession encodedLadderAt(String videoCodecFamily, double frameRate) {
+    @Test
+    @DisplayName("Should advertise AV1 level 6.2 when the exact rate exceeds level 6.1's limit")
+    void shouldAdvertiseAv1Level62WhenTheExactRateExceedsLevel61sLimit() {
+      var rate = new Fraction(1_839_478_091, 26_075_816);
+      var source =
+          VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+              .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(rate))
+              .build();
+      var session =
+          StreamSessionFixture.defaultSessionBuilder()
+              .mediaProbe(
+                  StreamSessionFixture.defaultProbeBuilder()
+                      .width(7502)
+                      .height(4042)
+                      .framerate(OptionalDouble.of(rate.toDouble()))
+                      .videoPlaybackFacts(Optional.of(source))
+                      .build())
+              .transcodeDecision(
+                  TranscodeDecision.builder()
+                      .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                      .videoCodecFamily("av1")
+                      .audioDecision(AudioDecision.stereoAac())
+                      .subtitleDecision(SubtitleDecision.exclude())
+                      .videoSource(Optional.of(source))
+                      .build())
+              .build();
+
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
+
+      assertThat(playlist).contains("CODECS=\"av01.0.18M.08,mp4a.40.2\"");
+    }
+
+    private StreamSession encodedLadderAt(String videoCodecFamily, Fraction frameRate) {
       return StreamSessionFixture.abrSessionBuilder()
           .mediaProbe(
               StreamSessionFixture.defaultProbeBuilder()
-                  .framerate(OptionalDouble.of(frameRate))
+                  .framerate(OptionalDouble.of(frameRate.toDouble()))
+                  .videoPlaybackFacts(encodedDecision(videoCodecFamily, frameRate).videoSource())
                   .build())
-          .transcodeDecision(StreamSessionFixture.fullTranscodeDecision(videoCodecFamily))
+          .transcodeDecision(encodedDecision(videoCodecFamily, frameRate))
           .build();
     }
 
@@ -552,7 +606,8 @@ class HlsPlaylistServiceTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("encodedLadderCodecCases")
     @DisplayName(
-        "Should advertise each encoded variant's own codec string when the ladder encodes the video")
+        "Should advertise each encoded variant's own codec string when the ladder encodes the"
+            + " video")
     void shouldAdvertiseEachEncodedVariantsOwnCodecStringWhenTheLadderEncodesTheVideo(
         EncodedLadderCodecCase codecCase) {
       var session = encodedLadderAt(codecCase.videoCodecFamily(), codecCase.frameRate());
@@ -569,25 +624,25 @@ class HlsPlaylistServiceTest {
       return Stream.of(
           EncodedLadderCodecCase.builder()
               .videoCodecFamily("h264")
-              .frameRate(60)
+              .frameRate(new Fraction(60, 1))
               .codecString1080p("avc1.64002A")
               .codecString720p("avc1.640020")
               .build(),
           EncodedLadderCodecCase.builder()
               .videoCodecFamily("h264")
-              .frameRate(23.976)
+              .frameRate(VideoPlaybackFactsFixture.FILM_RATE)
               .codecString1080p("avc1.640028")
               .codecString720p("avc1.64001F")
               .build(),
           EncodedLadderCodecCase.builder()
               .videoCodecFamily("av1")
-              .frameRate(60)
+              .frameRate(new Fraction(60, 1))
               .codecString1080p("av01.0.09M.08")
               .codecString720p("av01.0.08M.08")
               .build(),
           EncodedLadderCodecCase.builder()
               .videoCodecFamily("av1")
-              .frameRate(23.976)
+              .frameRate(VideoPlaybackFactsFixture.FILM_RATE)
               .codecString1080p("av01.0.08M.08")
               .codecString720p("av01.0.05M.08")
               .build());
@@ -596,7 +651,7 @@ class HlsPlaylistServiceTest {
     @Builder
     record EncodedLadderCodecCase(
         String videoCodecFamily,
-        double frameRate,
+        Fraction frameRate,
         String codecString1080p,
         String codecString720p) {
 
@@ -616,9 +671,11 @@ class HlsPlaylistServiceTest {
               .mediaProbe(
                   StreamSessionFixture.defaultProbeBuilder()
                       .framerate(OptionalDouble.of(60))
+                      .videoPlaybackFacts(
+                          encodedDecision("h264", new Fraction(60, 1)).videoSource())
                       .bitrate(5_000_000L)
                       .build())
-              .transcodeDecision(StreamSessionFixture.fullTranscodeDecision("h264"))
+              .transcodeDecision(encodedDecision("h264", new Fraction(60, 1)))
               .build();
 
       var playlist = service.generateMultivariantPlaylist(session, "test-token");
@@ -642,7 +699,8 @@ class HlsPlaylistServiceTest {
 
     @Test
     @DisplayName(
-        "Should declare an SDR video range when the session copies a Dolby Vision source with an SDR base")
+        "Should declare an SDR video range when the session copies a Dolby Vision source with an"
+            + " SDR base")
     void shouldDeclareAnSdrVideoRangeWhenTheSessionCopiesADolbyVisionSourceWithAnSdrBase() {
       var session =
           copySession(
@@ -718,7 +776,8 @@ class HlsPlaylistServiceTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("keyframeVerifiedEncoders")
     @DisplayName(
-        "Should write the tag in the multivariant playlist when every video variant comes from a keyframe-verified encoder")
+        "Should write the tag in the multivariant playlist when every video variant comes from a"
+            + " keyframe-verified encoder")
     void shouldWriteTagInMultivariantPlaylistWhenEveryVideoVariantComesFromKeyframeVerifiedEncoder(
         String videoCodecFamily, WorkerVerifiedEncoder encoder) {
       var session = encodedLadder(videoCodecFamily);
@@ -732,7 +791,8 @@ class HlsPlaylistServiceTest {
 
     @Test
     @DisplayName(
-        "Should leave the tag out of every media playlist when the multivariant playlist carries it")
+        "Should leave the tag out of every media playlist when the multivariant playlist carries"
+            + " it")
     void shouldLeaveTagOutOfEveryMediaPlaylistWhenMultivariantPlaylistCarriesIt() {
       var session = encodedLadder("h264");
       session.pinEncoder("1080p", WorkerVerifiedEncoderFixture.libx264());
@@ -752,7 +812,8 @@ class HlsPlaylistServiceTest {
 
     @Test
     @DisplayName(
-        "Should write the tag in the multivariant playlist when the only video variant comes from a keyframe-verified encoder")
+        "Should write the tag in the multivariant playlist when the only video variant comes from a"
+            + " keyframe-verified encoder")
     void
         shouldWriteTagInMultivariantPlaylistWhenOnlyVideoVariantComesFromKeyframeVerifiedEncoder() {
       var session = createSession(TranscodeMode.FULL_TRANSCODE, 120);
@@ -765,7 +826,8 @@ class HlsPlaylistServiceTest {
 
     @Test
     @DisplayName(
-        "Should write the tag only in the keyframe-verified variant's media playlist when the ladder mixes encoders")
+        "Should write the tag only in the keyframe-verified variant's media playlist when the"
+            + " ladder mixes encoders")
     void shouldWriteTagOnlyInKeyframeVerifiedVariantsMediaPlaylistWhenLadderMixesEncoders() {
       var session = encodedLadder("h264");
       session.pinEncoder("1080p", WorkerVerifiedEncoderFixture.libx264());
@@ -779,7 +841,8 @@ class HlsPlaylistServiceTest {
 
     @Test
     @DisplayName(
-        "Should write the tag only in the pinned variant's media playlist when another variant has no pinned encoder backend")
+        "Should write the tag only in the pinned variant's media playlist when another variant has"
+            + " no pinned encoder backend")
     void
         shouldWriteTagOnlyInPinnedVariantsMediaPlaylistWhenAnotherVariantHasNoPinnedEncoderBackend() {
       var session = encodedLadder("h264");
@@ -900,6 +963,7 @@ class HlsPlaylistServiceTest {
     @Test
     @DisplayName("Should use audio decision bitrate for bandwidth when audio is copied")
     void shouldUseAudioDecisionBitrateForBandwidthWhenAudioIsCopied() {
+      var source = VideoPlaybackFactsFixture.sdrH264FactsBuilder().build();
       var audio =
           AudioDecision.builder()
               .mode(AudioMode.COPY)
@@ -927,7 +991,8 @@ class HlsPlaylistServiceTest {
                   MediaProbe.builder()
                       .keyframes(new KeyframeKnowledge.NotReported())
                       .duration(Duration.ofSeconds(120))
-                      .framerate(OptionalDouble.of(23.976))
+                      .framerate(OptionalDouble.of(VideoPlaybackFactsFixture.FILM_RATE.toDouble()))
+                      .videoPlaybackFacts(Optional.of(source))
                       .width(1920)
                       .height(1080)
                       .videoCodec("hevc")
@@ -940,6 +1005,7 @@ class HlsPlaylistServiceTest {
                       .videoCodecFamily("h264")
                       .audioDecision(audio)
                       .subtitleDecision(SubtitleDecision.exclude())
+                      .videoSource(Optional.of(source))
                       .build())
               .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
               .variants(List.of(variant))
@@ -1090,7 +1156,8 @@ class HlsPlaylistServiceTest {
 
     @Test
     @DisplayName(
-        "Should advertise the rotated size when a session without a ladder copies an upright phone recording")
+        "Should advertise the rotated size when a session without a ladder copies an upright phone"
+            + " recording")
     void shouldAdvertiseTheRotatedSizeWhenASessionWithoutALadderCopiesAnUprightPhoneRecording() {
       var session =
           StreamSessionFixture.defaultSessionBuilder()
@@ -1128,12 +1195,16 @@ class HlsPlaylistServiceTest {
         "Should advertise the output frame rate to three decimals when every variant encodes")
     void shouldAdvertiseTheOutputFrameRateToThreeDecimalsWhenEveryVariantEncodes(
         int numerator, int denominator, String frameRate) {
+      var rate = new Fraction(numerator, denominator);
+      var decision = encodedDecision("h264", rate);
       var session =
           StreamSessionFixture.defaultLadderSessionBuilder()
               .mediaProbe(
                   StreamSessionFixture.defaultProbeBuilder()
-                      .framerate(OptionalDouble.of((double) numerator / denominator))
+                      .framerate(OptionalDouble.of(rate.toDouble()))
+                      .videoPlaybackFacts(decision.videoSource())
                       .build())
+              .transcodeDecision(decision)
               .build();
 
       assertThat(streamInf(session))
@@ -1143,7 +1214,8 @@ class HlsPlaylistServiceTest {
 
     @Test
     @DisplayName(
-        "Should advertise no frame rate when the session copies a stream whose declared rates agree")
+        "Should advertise no frame rate when the session copies a stream whose declared rates"
+            + " agree")
     void shouldAdvertiseNoFrameRateWhenTheSessionCopiesAStreamWhoseDeclaredRatesAgree() {
       var session =
           copySessionWithRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(25, 1)));

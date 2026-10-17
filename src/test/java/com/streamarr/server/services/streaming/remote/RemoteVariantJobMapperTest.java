@@ -14,6 +14,8 @@ import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
+import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
+import com.streamarr.server.exceptions.UnsupportedVideoEncodeException;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.transcode.v1.CompatibleBase;
 import com.streamarr.transcode.v1.ContainerFormat;
@@ -101,6 +103,12 @@ class RemoteVariantJobMapperTest {
                     .videoCodecFamily("h264")
                     .audioDecision(AudioDecision.stereoAac())
                     .subtitleDecision(SubtitleDecision.exclude())
+                    .videoSource(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                                .frameRateRule(
+                                    VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))
+                                .build()))
                     .build())
             .encoderPreset(preset)
             .build();
@@ -164,6 +172,11 @@ class RemoteVariantJobMapperTest {
       names = {"VIDEO_TRANSCODE", "FULL_TRANSCODE"})
   @DisplayName("Should plan SDR output from an unspecified source when the job encodes video")
   void shouldPlanSdrOutputFromAnUnspecifiedSourceWhenTheJobEncodesVideo(TranscodeMode mode) {
+    var source =
+        VideoPlaybackFacts.builder()
+            .streamIndex(0)
+            .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(60, 1)))
+            .build();
     var request =
         encodeAttempt("h264")
             .transcodeDecision(
@@ -172,6 +185,7 @@ class RemoteVariantJobMapperTest {
                     .videoCodecFamily("h264")
                     .audioDecision(AudioDecision.none())
                     .subtitleDecision(SubtitleDecision.exclude())
+                    .videoSource(Optional.of(source))
                     .build())
             .build();
 
@@ -186,7 +200,8 @@ class RemoteVariantJobMapperTest {
                 .setHdr10Plus(Presence.PRESENCE_ABSENT)
                 .setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance())
                 .build());
-    assertThat(video.hasStreamIndex()).isFalse();
+    assertThat(video.hasStreamIndex()).isTrue();
+    assertThat(video.getStreamIndex()).isZero();
   }
 
   @Test
@@ -438,13 +453,22 @@ class RemoteVariantJobMapperTest {
   }
 
   @Test
-  @DisplayName(
-      "Should send no output frame rate when the job encodes a source that its probe gave no playback facts")
-  void shouldSendNoOutputFrameRateWhenTheJobEncodesASourceThatItsProbeGaveNoPlaybackFacts() {
-    var execution = mapper.map(encodeAttempt("h264").build()).getExecution();
+  @DisplayName("Should refuse to map an encode when the source has no playback facts")
+  void shouldRefuseToMapAnEncodeWhenTheSourceHasNoPlaybackFacts() {
+    var request =
+        encodeAttempt("h264")
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                    .videoCodecFamily("h264")
+                    .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
+                    .build())
+            .build();
 
-    assertThat(execution.hasOutputFrameRate()).isFalse();
-    assertThat(execution.getFramerate()).isEqualTo(60);
+    assertThatThrownBy(() -> mapper.map(request))
+        .isInstanceOf(UnsupportedVideoEncodeException.class)
+        .hasMessageContaining("frame rate");
   }
 
   private static TranscodeRequest.TranscodeRequestBuilder encodeAttempt(String videoCodecFamily) {
@@ -462,6 +486,12 @@ class RemoteVariantJobMapperTest {
                 .videoCodecFamily(videoCodecFamily)
                 .audioDecision(AudioDecision.stereoAac())
                 .subtitleDecision(SubtitleDecision.exclude())
+                .videoSource(
+                    Optional.of(
+                        VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                            .frameRateRule(
+                                VideoPlaybackFactsFixture.declaredRateRule(new Fraction(60, 1)))
+                            .build()))
                 .build())
         .encoderPreset(EncoderPreset.FASTER);
   }

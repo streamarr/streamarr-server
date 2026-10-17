@@ -62,7 +62,12 @@ class VideoEncodeDecisionTest {
   @DisplayName("Should refuse the encode when no level allows the output")
   void shouldRefuseTheEncodeWhenNoLevelAllowsTheOutput(String codecFamily) {
     var output =
-        output(codecFamily).width(7680).height(4320).frameRate(240).bitrate(100_000_000L).build();
+        output(codecFamily)
+            .width(7680)
+            .height(4320)
+            .frameRate(new Fraction(240, 1))
+            .bitrate(100_000_000L)
+            .build();
 
     assertThatThrownBy(() -> VideoEncodeDecision.of(output))
         .isInstanceOf(UnsupportedVideoEncodeException.class)
@@ -70,9 +75,27 @@ class VideoEncodeDecisionTest {
   }
 
   @Test
+  @DisplayName("Should raise the AV1 level when a rational rate just exceeds its display limit")
+  void shouldRaiseTheAv1LevelWhenARationalRateJustExceedsItsDisplayLimit() {
+    var rate = new Fraction(1_839_478_091, 26_075_816);
+    var output = output("av1").width(7502).height(4042).frameRate(rate).bitrate(5_000_000L).build();
+
+    var decision = VideoEncodeDecision.of(output);
+
+    assertThat(decision.level()).isEqualTo(62);
+    assertThat(decision.codecString()).isEqualTo("av01.0.18M.08");
+  }
+
+  @Test
   @DisplayName("Should refuse the encode when the codec family has no level table")
   void shouldRefuseTheEncodeWhenTheCodecFamilyHasNoLevelTable() {
-    var output = output("hevc").width(1920).height(1080).frameRate(24).bitrate(5_000_000L).build();
+    var output =
+        output("hevc")
+            .width(1920)
+            .height(1080)
+            .frameRate(new Fraction(24, 1))
+            .bitrate(5_000_000L)
+            .build();
 
     assertThatThrownBy(() -> VideoEncodeDecision.of(output))
         .isInstanceOf(UnsupportedVideoEncodeException.class)
@@ -87,10 +110,20 @@ class VideoEncodeDecisionTest {
     try {
       var h264 =
           VideoEncodeDecision.of(
-              output("h264").width(1920).height(1080).frameRate(60).bitrate(5_000_000L).build());
+              output("h264")
+                  .width(1920)
+                  .height(1080)
+                  .frameRate(new Fraction(60, 1))
+                  .bitrate(5_000_000L)
+                  .build());
       var av1 =
           VideoEncodeDecision.of(
-              output("av1").width(1920).height(1080).frameRate(60).bitrate(5_000_000L).build());
+              output("av1")
+                  .width(1920)
+                  .height(1080)
+                  .frameRate(new Fraction(60, 1))
+                  .bitrate(5_000_000L)
+                  .build());
 
       assertThat(h264.codecString()).isEqualTo("avc1.64002A");
       assertThat(av1.codecString()).isEqualTo("av01.0.09M.08");
@@ -105,7 +138,7 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(1920)
             .height(1080)
-            .frameRate(60)
+            .frameRate(new Fraction(60, 1))
             .bitrate(5000000L)
             .level(42)
             .codecString("avc1.64002A")
@@ -113,15 +146,31 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(1920)
             .height(1080)
-            .frameRate(30)
+            .frameRate(new Fraction(30, 1))
             .bitrate(5000000L)
             .level(40)
             .codecString("avc1.640028")
             .build(),
         LevelCase.builder()
+            .width(1920)
+            .height(1080)
+            .frameRate(new Fraction(512, 17))
+            .bitrate(5000000L)
+            .level(40)
+            .codecString("avc1.640028")
+            .build(),
+        LevelCase.builder()
+            .width(1920)
+            .height(1080)
+            .frameRate(new Fraction(512000001, 17000000))
+            .bitrate(5000000L)
+            .level(42)
+            .codecString("avc1.64002A")
+            .build(),
+        LevelCase.builder()
             .width(1280)
             .height(720)
-            .frameRate(60)
+            .frameRate(new Fraction(60, 1))
             .bitrate(3000000L)
             .level(32)
             .codecString("avc1.640020")
@@ -129,7 +178,7 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(1920)
             .height(1080)
-            .frameRate(59.94005994005994)
+            .frameRate(new Fraction(60000, 1001))
             .bitrate(5000000L)
             .level(42)
             .codecString("avc1.64002A")
@@ -137,7 +186,7 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(1920)
             .height(1080)
-            .frameRate(23.976)
+            .frameRate(new Fraction(24000, 1001))
             .bitrate(5000000L)
             .level(40)
             .codecString("avc1.640028")
@@ -146,7 +195,7 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(608)
             .height(1080)
-            .frameRate(30)
+            .frameRate(new Fraction(30, 1))
             .bitrate(5000000L)
             .level(31)
             .codecString("avc1.64001F")
@@ -154,7 +203,7 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(854)
             .height(480)
-            .frameRate(23.976)
+            .frameRate(new Fraction(24000, 1001))
             .bitrate(1500000L)
             .level(30)
             .codecString("avc1.64001E")
@@ -162,7 +211,7 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(640)
             .height(360)
-            .frameRate(23.976)
+            .frameRate(new Fraction(24000, 1001))
             .bitrate(800000L)
             .level(30)
             .codecString("avc1.64001E")
@@ -170,7 +219,7 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(256)
             .height(144)
-            .frameRate(30)
+            .frameRate(new Fraction(30, 1))
             .bitrate(200000L)
             .level(12)
             .codecString("avc1.64000C")
@@ -179,7 +228,7 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(1920)
             .height(1080)
-            .frameRate(30)
+            .frameRate(new Fraction(30, 1))
             .bitrate(24000000L)
             .level(41)
             .codecString("avc1.640029")
@@ -188,7 +237,7 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(1920)
             .height(1080)
-            .frameRate(30)
+            .frameRate(new Fraction(30, 1))
             .bitrate(70000000L)
             .level(50)
             .codecString("avc1.640032")
@@ -197,7 +246,7 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(352)
             .height(288)
-            .frameRate(1)
+            .frameRate(new Fraction(1, 1))
             .bitrate(100000L)
             .level(12)
             .codecString("avc1.64000C")
@@ -206,7 +255,7 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(4096)
             .height(64)
-            .frameRate(1)
+            .frameRate(new Fraction(1, 1))
             .bitrate(100000L)
             .level(40)
             .codecString("avc1.640028")
@@ -214,7 +263,7 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(3840)
             .height(2160)
-            .frameRate(60)
+            .frameRate(new Fraction(60, 1))
             .bitrate(40000000L)
             .level(52)
             .codecString("avc1.640034")
@@ -222,10 +271,18 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(7680)
             .height(4320)
-            .frameRate(60)
+            .frameRate(new Fraction(60, 1))
             .bitrate(100000000L)
             .level(61)
             .codecString("avc1.64003D")
+            .build(),
+        LevelCase.builder()
+            .width(8192)
+            .height(4352)
+            .frameRate(new Fraction(2147483647, 2147483647))
+            .bitrate(1000000L)
+            .level(60)
+            .codecString("avc1.64003C")
             .build());
   }
 
@@ -235,7 +292,7 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(1920)
             .height(1080)
-            .frameRate(60)
+            .frameRate(new Fraction(60, 1))
             .bitrate(5000000L)
             .level(41)
             .codecString("av01.0.09M.08")
@@ -243,7 +300,7 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(1920)
             .height(1080)
-            .frameRate(30)
+            .frameRate(new Fraction(30, 1))
             .bitrate(5000000L)
             .level(40)
             .codecString("av01.0.08M.08")
@@ -251,7 +308,7 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(1280)
             .height(720)
-            .frameRate(60)
+            .frameRate(new Fraction(60, 1))
             .bitrate(3000000L)
             .level(40)
             .codecString("av01.0.08M.08")
@@ -260,7 +317,7 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(608)
             .height(1080)
-            .frameRate(30)
+            .frameRate(new Fraction(30, 1))
             .bitrate(5000000L)
             .level(30)
             .codecString("av01.0.04M.08")
@@ -268,7 +325,7 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(854)
             .height(480)
-            .frameRate(23.976)
+            .frameRate(new Fraction(24000, 1001))
             .bitrate(1500000L)
             .level(30)
             .codecString("av01.0.04M.08")
@@ -276,7 +333,7 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(640)
             .height(360)
-            .frameRate(23.976)
+            .frameRate(new Fraction(24000, 1001))
             .bitrate(800000L)
             .level(21)
             .codecString("av01.0.01M.08")
@@ -284,7 +341,7 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(256)
             .height(144)
-            .frameRate(30)
+            .frameRate(new Fraction(30, 1))
             .bitrate(200000L)
             .level(20)
             .codecString("av01.0.00M.08")
@@ -293,7 +350,7 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(1920)
             .height(1080)
-            .frameRate(30)
+            .frameRate(new Fraction(30, 1))
             .bitrate(15000000L)
             .level(41)
             .codecString("av01.0.09M.08")
@@ -302,7 +359,7 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(4096)
             .height(64)
-            .frameRate(1)
+            .frameRate(new Fraction(1, 1))
             .bitrate(100000L)
             .level(30)
             .codecString("av01.0.04M.08")
@@ -311,7 +368,7 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(64)
             .height(2560)
-            .frameRate(1)
+            .frameRate(new Fraction(1, 1))
             .bitrate(100000L)
             .level(31)
             .codecString("av01.0.05M.08")
@@ -319,7 +376,7 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(3840)
             .height(2160)
-            .frameRate(60)
+            .frameRate(new Fraction(60, 1))
             .bitrate(40000000L)
             .level(51)
             .codecString("av01.0.13M.08")
@@ -327,16 +384,32 @@ class VideoEncodeDecisionTest {
         LevelCase.builder()
             .width(7680)
             .height(4320)
-            .frameRate(60)
+            .frameRate(new Fraction(60, 1))
             .bitrate(100000000L)
             .level(61)
             .codecString("av01.0.17M.08")
+            .build(),
+        LevelCase.builder()
+            .width(7502)
+            .height(4042)
+            .frameRate(new Fraction(534773760, 7580771))
+            .bitrate(5000000L)
+            .level(61)
+            .codecString("av01.0.17M.08")
+            .build(),
+        LevelCase.builder()
+            .width(8192)
+            .height(4352)
+            .frameRate(new Fraction(2147483647, 2147483647))
+            .bitrate(160000000L)
+            .level(62)
+            .codecString("av01.0.18M.08")
             .build());
   }
 
   @Builder
   private record LevelCase(
-      int width, int height, double frameRate, long bitrate, int level, String codecString) {
+      int width, int height, Fraction frameRate, long bitrate, int level, String codecString) {
 
     @Override
     public String toString() {

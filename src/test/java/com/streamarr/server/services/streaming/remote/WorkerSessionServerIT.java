@@ -16,6 +16,7 @@ import com.google.protobuf.ByteString;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.SubtitleMode;
@@ -30,6 +31,7 @@ import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.ProducerLifecycleService;
@@ -738,7 +740,13 @@ class WorkerSessionServerIT {
         .transcodeMode(TranscodeMode.FULL_TRANSCODE)
         .videoCodecFamily("h264")
         .audioDecision(AudioDecision.stereoAac())
-        .subtitleDecision(SubtitleDecision.exclude());
+        .subtitleDecision(SubtitleDecision.exclude())
+        .videoSource(
+            Optional.of(
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                    .frameRateRule(
+                        VideoPlaybackFactsFixture.declaredRateRule(new Fraction(2_997, 125)))
+                    .build()));
   }
 
   private DispatchedJob dispatchThroughRemoteExecutor(TranscodeRequest request) throws Exception {

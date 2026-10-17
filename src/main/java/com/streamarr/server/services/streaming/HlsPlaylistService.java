@@ -6,6 +6,7 @@ import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecimalSeconds;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.EncodedVideoOutput;
+import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -113,7 +114,11 @@ public class HlsPlaylistService {
                 .codecFamily(decision.videoCodecFamily())
                 .width(variant.width())
                 .height(variant.height())
-                .probedFrameRate(session.getMediaProbe().framerate())
+                .probedFrameRate(
+                    decision
+                        .videoSource()
+                        .map(VideoPlaybackFacts::frameRateRule)
+                        .flatMap(FrameRateRule::outputFrameRate))
                 .bitrate(variant.videoBitrate())
                 .build())
         .codecString();

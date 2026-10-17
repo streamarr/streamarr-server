@@ -61,8 +61,10 @@ enum Av1Level {
   }
 
   private boolean allows(EncodedVideoOutput output) {
+    // The picture bounds and positive int fraction components keep both products within long.
     return holdsPicture(output)
-        && output.pictureSize() * output.frameRate() <= maxDisplayRate
+        && output.pictureSize() * output.frameRate().numerator()
+            <= maxDisplayRate * output.frameRate().denominator()
         && output.bitrate() <= maxMainTierBitrate;
   }
 

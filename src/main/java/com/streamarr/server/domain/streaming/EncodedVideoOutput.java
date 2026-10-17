@@ -1,7 +1,7 @@
 package com.streamarr.server.domain.streaming;
 
 import com.streamarr.server.exceptions.UnsupportedVideoEncodeException;
-import java.util.OptionalDouble;
+import java.util.Optional;
 import lombok.Builder;
 import lombok.NonNull;
 
@@ -11,12 +11,12 @@ import lombok.NonNull;
  */
 @Builder
 public record EncodedVideoOutput(
-    @NonNull String codecFamily, int width, int height, double frameRate, long bitrate) {
+    @NonNull String codecFamily, int width, int height, @NonNull Fraction frameRate, long bitrate) {
 
   public static class EncodedVideoOutputBuilder {
 
     /** An encode runs at the probed frame rate, so a source without one has no planned output. */
-    public EncodedVideoOutputBuilder probedFrameRate(@NonNull OptionalDouble probedFrameRate) {
+    public EncodedVideoOutputBuilder probedFrameRate(@NonNull Optional<Fraction> probedFrameRate) {
       return frameRate(
           probedFrameRate.orElseThrow(
               () ->

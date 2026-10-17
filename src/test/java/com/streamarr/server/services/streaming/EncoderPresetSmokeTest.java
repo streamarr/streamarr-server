@@ -196,6 +196,7 @@ class EncoderPresetSmokeTest {
                     .videoCodecFamily(videoCodecFamily)
                     .audioDecision(AudioDecision.none())
                     .subtitleDecision(SubtitleDecision.exclude())
+                    .videoSource(defaultProbeBuilder().build().videoPlaybackFacts())
                     .build())
             .build();
     runtimeRegistry.save(session);

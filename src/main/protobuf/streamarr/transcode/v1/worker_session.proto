@@ -247,8 +247,8 @@ message VideoDecision {
   // The dynamic range of the planned output. Only an encode carries it. A copy carries none until
   // streamarr/streamarr-server#396 settles the planned output of a copy.
   VideoDynamicRange output_dynamic_range = 8;
-  // The ProbeStreamInfo.index of the chosen video stream: its index in the container. The worker
-  // maps that stream. Until the server sets the field, the worker maps the first video stream.
+  // The required ProbeStreamInfo.index of the chosen video stream: its index in the container.
+  // The worker maps exactly that stream and refuses a job whose chosen stream has no index.
   optional uint32 stream_index = 9;
 }
 
@@ -300,6 +300,7 @@ message VariantSpec {
 message TranscodeExecution {
   uint32 seek_position_seconds = 1;
   uint32 target_segment_duration_seconds = 2;
+  // Deprecated decimal representation. The worker uses output_frame_rate for every encode.
   double framerate = 3;
   uint32 start_sequence_number = 4;
   // The number of media segments the variant's media playlist advertises on the zero-based grid of
@@ -315,9 +316,8 @@ message TranscodeExecution {
   // first media segment. This version of the server sets the field for no other attempt.
   google.protobuf.Duration seek_position = 6;
   // The output frame rate that the probe stored for the chosen video stream. The worker passes the
-  // exact fraction to FFmpeg and never converts it to a decimal. A job that copies the video
-  // carries none. output_frame_rate replaces framerate once the server sets it. When a job carries
-  // both, the worker uses output_frame_rate.
+  // exact fraction to FFmpeg and never converts it to a decimal. Every encode requires positive
+  // numerator and denominator terms. A job that copies the video carries none.
   Fraction output_frame_rate = 7;
 }
 
@@ -482,8 +482,8 @@ message ProbeStreamInfo {
   // Video streams only, from the pixel format.
   ChromaSubsampling chroma_subsampling = 14;
   // Video streams only: the angle, in whole degrees from -180 to 180, by which the stream's display
-  // matrix rotates the picture counterclockwise, as ffprobe reports it. A phone recording held
-  // upright usually reports -90. Absent when the stream has no display matrix.
+  // matrix rotates the picture counterclockwise, rounded to the nearest whole degree as FFmpeg
+  // applies it. A phone recording held upright usually reports -90. Absent without a display matrix.
   optional sint32 rotation_degrees = 15;
   // Video and audio streams only: the exact RFC 6381 codec string that a stream copy of the stream
   // carries, for example avc1.640028 or mp4a.40.2. The worker computes it from the stream's decoder
