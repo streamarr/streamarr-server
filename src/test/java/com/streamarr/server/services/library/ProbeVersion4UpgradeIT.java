@@ -170,6 +170,7 @@ class ProbeVersion4UpgradeIT extends AbstractIntegrationTest {
           streaming.destroySession(session.getSessionId());
         }
       }
+
       assertThat(PROBE.probeCount()).isEqualTo(2);
       await()
           .atMost(Duration.ofSeconds(20))
@@ -231,6 +232,7 @@ class ProbeVersion4UpgradeIT extends AbstractIntegrationTest {
         var source = Files.writeString(library.resolve("Movie (2024).mkv"), "media");
         files.add(new UpgradeFile(UUID.randomUUID(), version, source));
       }
+
       return new UpgradeFixture(root, List.copyOf(files));
     }
 
@@ -242,13 +244,16 @@ class ProbeVersion4UpgradeIT extends AbstractIntegrationTest {
           actor.setString(1, SystemActor.ID.toString());
           actor.execute();
         }
+
         for (var file : files) {
           seedFile(connection, file);
         }
+
         connection.commit();
       } catch (SQLException | IOException e) {
         throw new AssertionError("Could not store the pre-upgrade probe results", e);
       }
+
       assertThat(
               new JdbcTemplate(dataSource)
                   .queryForList(
@@ -269,6 +274,7 @@ class ProbeVersion4UpgradeIT extends AbstractIntegrationTest {
         insert.setString(2, FilepathCodec.encode(file.source().getParent()));
         insert.executeUpdate();
       }
+
       var snapshot =
           new SourceFileSnapshot(
               Files.size(file.source()), Files.getLastModifiedTime(file.source()).toInstant());
@@ -285,6 +291,7 @@ class ProbeVersion4UpgradeIT extends AbstractIntegrationTest {
         insert.setLong(5, snapshot.size());
         insert.executeUpdate();
       }
+
       try (var insert =
           connection.prepareStatement(
               """
@@ -300,6 +307,7 @@ class ProbeVersion4UpgradeIT extends AbstractIntegrationTest {
         insert.setInt(5, file.probeVersion());
         insert.executeUpdate();
       }
+
       try (var insert =
           connection.prepareStatement(
               """
@@ -330,6 +338,7 @@ class ProbeVersion4UpgradeIT extends AbstractIntegrationTest {
           var statement = connection.createStatement()) {
         statement.execute("CREATE DATABASE " + name);
       }
+
       var config = new HikariConfig();
       var url = connectionDetails.getJdbcUrl();
       var query = url.indexOf('?');
