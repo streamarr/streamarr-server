@@ -36,15 +36,15 @@ final class RemoteDynamicRangeMapper {
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.transcode.v1.DolbyVisionConfiguration configuration(
-      DolbyVisionConfiguration record) {
+      DolbyVisionConfiguration configuration) {
     var proto =
         com.streamarr.transcode.v1.DolbyVisionConfiguration.newBuilder()
-            .setBaseLayer(record.baseLayer())
-            .setEnhancementLayer(record.enhancementLayer())
-            .setRpu(record.rpu());
-    record.profile().ifPresent(proto::setProfile);
-    record.level().ifPresent(proto::setLevel);
-    record.baseLayerCompatibilityId().ifPresent(proto::setBaseLayerCompatibilityId);
+            .setBaseLayer(configuration.baseLayer())
+            .setEnhancementLayer(configuration.enhancementLayer())
+            .setRpu(configuration.rpu());
+    configuration.profile().ifPresent(proto::setProfile);
+    configuration.level().ifPresent(proto::setLevel);
+    configuration.baseLayerCompatibilityId().ifPresent(proto::setBaseLayerCompatibilityId);
     return proto.build();
   }
 

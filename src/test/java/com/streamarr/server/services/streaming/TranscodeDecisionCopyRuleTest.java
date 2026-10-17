@@ -339,7 +339,7 @@ class TranscodeDecisionCopyRuleTest {
     }
 
     boolean hasDisagreeingDolbyVisionCompatibility() {
-      if (!(dynamicRange.dolbyVision() instanceof DolbyVision.Present(var declared, var _))
+      if (!(dynamicRange.dolbyVision() instanceof DolbyVision.Present(var declared, _))
           || declared.isEmpty()
           || declared.get().baseLayerCompatibilityId().isEmpty()) {
         return false;
