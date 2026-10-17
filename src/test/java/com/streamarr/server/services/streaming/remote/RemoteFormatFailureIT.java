@@ -125,7 +125,8 @@ class RemoteFormatFailureIT {
       assertThat(rig.executor.terminalFailure(rig.session.getSessionId()))
           .contains(TranscodeFailure.OUTPUT_MISMATCH);
       assertThat(rig.deliver()).isInstanceOf(SegmentDelivery.Unrecoverable.class);
-      assertThatThrownBy(() -> rig.executor.start(rig.requestBuilder().build()))
+      var restartRequest = rig.requestBuilder().build();
+      assertThatThrownBy(() -> rig.executor.start(restartRequest))
           .isInstanceOf(TranscodeException.class);
       assertThat(worker.jobs).hasSize(1);
     }
@@ -251,11 +252,13 @@ class RemoteFormatFailureIT {
       rig.awaitStopped();
       worker.close();
       try (var replacement = new TestWorker(rig.server, worker.workerId)) {
-        assertThatThrownBy(() -> rig.executor.start(rig.requestBuilder().build()))
+        var restartRequest = rig.requestBuilder().build();
+        assertThatThrownBy(() -> rig.executor.start(restartRequest))
             .isInstanceOf(TranscodeException.class);
         var target =
             rig.executor.executionTargets(rig.session.getTranscodeDecision()).iterator().next();
-        assertThatThrownBy(() -> rig.executor.start(rig.requestBuilder().build(), target))
+        var targetedRequest = rig.requestBuilder().build();
+        assertThatThrownBy(() -> rig.executor.start(targetedRequest, target))
             .isInstanceOf(TranscodeException.class);
         assertThat(replacement.jobs).isEmpty();
         assertThat(rig.executor.terminalFailure(rig.session.getSessionId()))
@@ -467,7 +470,10 @@ class RemoteFormatFailureIT {
                     }
 
                     @Override
-                    public void onCompleted() {}
+                    public void onCompleted() {
+                      // TestWorker.close owns channel cleanup; completion needs no additional
+                      // action.
+                    }
                   });
       requests.onNext(
           EstablishWorkerSessionRequest.newBuilder()
