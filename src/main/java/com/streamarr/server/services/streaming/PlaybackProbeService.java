@@ -13,6 +13,7 @@ import com.streamarr.server.services.probe.ProbeAttemptEnds;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 import lombok.Builder;
@@ -47,7 +48,9 @@ public class PlaybackProbeService {
       return playable(stored.get());
     }
 
-    var requestedAt = clock.instant();
+    // A saved failure time keeps only microseconds, rounded to the nearest one. Truncating the
+    // request time keeps a failure after the request from reading back as earlier.
+    var requestedAt = clock.instant().truncatedTo(ChronoUnit.MICROS);
     eventPublisher.publishEvent(new MediaFileProbeTaskRequested(mediaFileId));
     if (!probeWorkers.hasCompatibleWorker(ProbeVersion.CURRENT)) {
       return notReady();

@@ -240,6 +240,23 @@ class PlaybackProbeServiceTest {
 
     @Test
     @DisplayName(
+        "Should refuse as not ready when an attempt fails within the microsecond of the request")
+    void shouldRefuseAsNotReadyWhenAnAttemptFailsWithinTheMicrosecondOfTheRequest()
+        throws Exception {
+      // The repository keeps the failure time to the nearest microsecond, so this failure reads
+      // back 400 ns before the request.
+      clock.advance(Duration.ofNanos(400));
+      var playback = readInBackground(service());
+      probeRequested.get(10, TimeUnit.SECONDS);
+
+      saveFailure(ItemFailureReason.SOURCE_INACCESSIBLE);
+      attemptEnds.signalEnd(mediaFileId);
+
+      assertThat(playback.get(10, TimeUnit.SECONDS)).isEqualTo(notReady());
+    }
+
+    @Test
+    @DisplayName(
         "Should keep waiting when the saved failure came from an attempt before the request")
     void shouldKeepWaitingWhenTheSavedFailureCameFromAnAttemptBeforeTheRequest() throws Exception {
       outcomes.trySaveProbeRequest(mediaFileId, REQUESTED_INPUTS);
