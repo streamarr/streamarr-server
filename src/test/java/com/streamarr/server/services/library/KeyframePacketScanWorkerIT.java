@@ -15,6 +15,7 @@ import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
@@ -91,6 +92,7 @@ class KeyframePacketScanWorkerIT extends AbstractIntegrationTest {
       throws Exception {
     try (var server =
             WorkerSessionServer.builder()
+                .eventPublisher(new CapturingEventPublisher())
                 .configuration(serverConfigurationBuilder().build())
                 .segmentStore(new FakeSegmentStore())
                 .meterRegistry(new SimpleMeterRegistry())

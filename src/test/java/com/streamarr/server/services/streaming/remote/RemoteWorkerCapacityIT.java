@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.transcode.v1.MediaSourceRef;
@@ -39,6 +40,7 @@ class RemoteWorkerCapacityIT {
 
     try (var server =
             WorkerSessionServer.builder()
+                .eventPublisher(new CapturingEventPublisher())
                 .configuration(serverConfigurationBuilder().address("127.0.0.1").build())
                 .segmentStore(new FakeSegmentStore())
                 .meterRegistry(new SimpleMeterRegistry())

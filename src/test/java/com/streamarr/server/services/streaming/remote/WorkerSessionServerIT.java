@@ -27,6 +27,7 @@ import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.BlockingSegmentStore;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamSessionFixture;
@@ -131,6 +132,7 @@ class WorkerSessionServerIT {
             .build();
     try (var server =
         WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
             .configuration(configuration)
             .segmentStore(segmentStore)
             .meterRegistry(new SimpleMeterRegistry())
@@ -1772,6 +1774,7 @@ class WorkerSessionServerIT {
 
   private WorkerSessionServer server(SegmentStore segmentStore, MeterRegistry meterRegistry) {
     return WorkerSessionServer.builder()
+        .eventPublisher(new CapturingEventPublisher())
         .configuration(serverConfigurationBuilder().build())
         .segmentStore(segmentStore)
         .meterRegistry(meterRegistry)

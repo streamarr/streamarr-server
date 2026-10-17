@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
+import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
@@ -19,6 +20,7 @@ import java.util.concurrent.TimeUnit;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 
 @Slf4j
 public final class WorkerSessionServer implements AutoCloseable {
@@ -37,7 +39,8 @@ public final class WorkerSessionServer implements AutoCloseable {
   public WorkerSessionServer(
       @NonNull WorkerSessionServerConfiguration configuration,
       @NonNull SegmentStore segmentStore,
-      @NonNull MeterRegistry meterRegistry) {
+      @NonNull MeterRegistry meterRegistry,
+      @NonNull ApplicationEventPublisher eventPublisher) {
     this.configuration = configuration;
     heldSegmentRequests = new HeldSegmentRequests(meterRegistry);
     workerConnections =
@@ -45,6 +48,7 @@ public final class WorkerSessionServer implements AutoCloseable {
             .configuration(configuration)
             .meterRegistry(meterRegistry)
             .heldRequests(heldSegmentRequests)
+            .eventPublisher(eventPublisher)
             .build();
     this.segmentStore = segmentStore;
   }
@@ -163,9 +167,19 @@ public final class WorkerSessionServer implements AutoCloseable {
     workerConnections.stopStreamSession(streamSessionId);
   }
 
+  public synchronized void destroyStreamSession(UUID streamSessionId) {
+    requireStarted();
+    workerConnections.destroyStreamSession(streamSessionId);
+  }
+
   public synchronized boolean isRunning(UUID streamSessionId, String variantLabel) {
     requireStarted();
     return workerConnections.isRunning(streamSessionId, variantLabel);
+  }
+
+  public synchronized Optional<TranscodeFailure> terminalFailure(UUID streamSessionId) {
+    requireStarted();
+    return workerConnections.terminalFailure(streamSessionId);
   }
 
   public synchronized boolean hasConnectedWorker(UUID sourceNamespaceId) {
@@ -199,6 +213,7 @@ public final class WorkerSessionServer implements AutoCloseable {
   @Override
   public synchronized void close() {
     runtime.close();
+    workerConnections.close();
     started = false;
   }
 }

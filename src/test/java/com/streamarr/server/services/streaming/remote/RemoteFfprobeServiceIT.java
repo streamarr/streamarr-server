@@ -26,6 +26,7 @@ import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeTimedOutException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.LoopbackProbeWorker;
 import com.streamarr.server.fixtures.WorkerProbeResultFixture;
@@ -77,6 +78,7 @@ class RemoteFfprobeServiceIT {
             .build();
     try (var server =
             WorkerSessionServer.builder()
+                .eventPublisher(new CapturingEventPublisher())
                 .configuration(configuration)
                 .segmentStore(new FakeSegmentStore())
                 .meterRegistry(new SimpleMeterRegistry())
@@ -198,6 +200,7 @@ class RemoteFfprobeServiceIT {
             .build();
     try (var server =
             WorkerSessionServer.builder()
+                .eventPublisher(new CapturingEventPublisher())
                 .configuration(configuration)
                 .segmentStore(new FakeSegmentStore())
                 .meterRegistry(new SimpleMeterRegistry())
@@ -798,6 +801,7 @@ class RemoteFfprobeServiceIT {
 
   private WorkerSessionServer server() {
     return WorkerSessionServer.builder()
+        .eventPublisher(new CapturingEventPublisher())
         .configuration(serverConfigurationBuilder().build())
         .segmentStore(new FakeSegmentStore())
         .meterRegistry(new SimpleMeterRegistry())

@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
@@ -22,6 +23,7 @@ final class WorkerStreamingSmokeFixture implements AutoCloseable {
     this.segmentStore = segmentStore;
     workerSessions =
         WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
             .configuration(
                 WorkerSessionServerConfiguration.builder().address("127.0.0.1").port(0).build())
             .segmentStore(segmentStore)

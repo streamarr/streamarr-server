@@ -29,6 +29,7 @@ import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
@@ -1225,6 +1226,7 @@ class HlsStreamingServiceTest {
     var file = seedMediaFile();
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     segmentStore.addSegment(session.getSessionId(), "segment0.m4s", "data".getBytes());
+    transcodeExecutor.failTerminally(session.getSessionId(), TranscodeFailure.OUTPUT_MISMATCH);
     transcodeExecutor.failOnStop(session.getSessionId());
     var sessionId = session.getSessionId();
 
@@ -1233,6 +1235,7 @@ class HlsStreamingServiceTest {
 
     assertThat(accessSession(session)).isEmpty();
     assertThat(segmentStore.segmentExists(session.getSessionId(), "segment0.m4s")).isFalse();
+    assertThat(transcodeExecutor.terminalFailure(sessionId)).isEmpty();
   }
 
   @Test
@@ -1597,6 +1600,7 @@ class HlsStreamingServiceTest {
     assertThat(runtimeRegistry.findById(sessionId)).isEmpty();
     assertThat(executor.getRunningCount()).isZero();
     assertThat(segmentStore.segmentExists(sessionId, "startup.m4s")).isFalse();
+    assertThat(executor.terminalFailure(sessionId)).isEmpty();
   }
 
   @Test
@@ -1872,6 +1876,7 @@ class HlsStreamingServiceTest {
     @Override
     public TranscodeHandle start(TranscodeRequest request) {
       attemptedRequests.add(request);
+      failTerminally(request.sessionId(), TranscodeFailure.OUTPUT_MISMATCH);
       segmentStore.addSegment(request.sessionId(), "startup.m4s", new byte[] {1});
       throw new TranscodeException("Simulated transcode startup failure");
     }

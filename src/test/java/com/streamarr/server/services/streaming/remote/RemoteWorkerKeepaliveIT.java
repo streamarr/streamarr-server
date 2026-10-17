@@ -5,6 +5,7 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigura
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -32,6 +33,7 @@ class RemoteWorkerKeepaliveIT {
   void shouldReleaseSessionAndCapacityWhenWorkerIsFrozen() throws Exception {
     try (var server =
             WorkerSessionServer.builder()
+                .eventPublisher(new CapturingEventPublisher())
                 .configuration(serverConfigurationBuilder().keepalive(SHORTEST_KEEPALIVE).build())
                 .segmentStore(new FakeSegmentStore())
                 .meterRegistry(new SimpleMeterRegistry())

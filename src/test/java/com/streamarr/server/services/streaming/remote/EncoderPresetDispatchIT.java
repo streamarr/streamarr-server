@@ -13,6 +13,7 @@ import static org.awaitility.Awaitility.await;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamingRigFixture;
@@ -61,6 +62,7 @@ class EncoderPresetDispatchIT extends AbstractIntegrationTest {
     var segmentStore = new FakeSegmentStore();
     server =
         WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
             .configuration(serverConfigurationBuilder().build())
             .segmentStore(segmentStore)
             .meterRegistry(new SimpleMeterRegistry())

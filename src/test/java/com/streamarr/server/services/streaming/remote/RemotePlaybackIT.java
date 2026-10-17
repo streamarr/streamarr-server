@@ -25,6 +25,7 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeStreamingService;
@@ -635,6 +636,7 @@ class RemotePlaybackIT {
   private WorkerSessionServer server(
       LocalSegmentStore segmentStore, SimpleMeterRegistry meterRegistry) {
     return WorkerSessionServer.builder()
+        .eventPublisher(new CapturingEventPublisher())
         .configuration(serverConfigurationBuilder().address("127.0.0.1").build())
         .segmentStore(segmentStore)
         .meterRegistry(meterRegistry)

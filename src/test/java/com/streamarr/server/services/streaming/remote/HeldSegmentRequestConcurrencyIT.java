@@ -13,9 +13,11 @@ import com.google.protobuf.ByteString;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
+import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture.StreamingRig;
@@ -48,6 +50,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
@@ -101,6 +104,7 @@ class HeldSegmentRequestConcurrencyIT {
     segmentStore = new PausingSegmentStore(new LocalSegmentStore(tempDir.resolve("segments")));
     server =
         WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
             .configuration(serverConfigurationBuilder().build())
             .segmentStore(segmentStore)
             .meterRegistry(meterRegistry)
@@ -472,8 +476,18 @@ class HeldSegmentRequestConcurrencyIT {
     }
 
     @Override
+    public void destroySession(UUID sessionId) {
+      delegate.destroySession(sessionId);
+    }
+
+    @Override
     public void stopVariant(UUID sessionId, String variantLabel) {
       delegate.stopVariant(sessionId, variantLabel);
+    }
+
+    @Override
+    public Optional<TranscodeFailure> terminalFailure(UUID sessionId) {
+      return delegate.terminalFailure(sessionId);
     }
 
     @Override

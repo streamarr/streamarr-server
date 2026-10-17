@@ -10,6 +10,7 @@ import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
@@ -37,6 +38,7 @@ class RemoteFfprobeServiceTest {
     var sourceRoot = tempDir.resolve("movies");
     try (var server =
         WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
             .configuration(serverConfigurationBuilder().build())
             .segmentStore(new FakeSegmentStore())
             .meterRegistry(new SimpleMeterRegistry())
@@ -61,6 +63,7 @@ class RemoteFfprobeServiceTest {
     var sourceRoot = Files.createDirectories(tempDir.resolve("movies"));
     try (var server =
         WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
             .configuration(serverConfigurationBuilder().build())
             .segmentStore(new FakeSegmentStore())
             .meterRegistry(new SimpleMeterRegistry())

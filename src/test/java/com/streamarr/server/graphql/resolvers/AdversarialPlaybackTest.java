@@ -17,6 +17,7 @@ import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.task.ProbePublication;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
@@ -273,6 +274,7 @@ class AdversarialPlaybackTest {
     @Bean(initMethod = "start", destroyMethod = "close")
     WorkerSessionServer sessions() {
       return WorkerSessionServer.builder()
+          .eventPublisher(new CapturingEventPublisher())
           .configuration(WorkerSessionServerConfiguration.builder().port(0).build())
           .segmentStore(segments)
           .meterRegistry(new SimpleMeterRegistry())

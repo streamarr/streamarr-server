@@ -134,7 +134,7 @@ public class HlsStreamingService implements StreamingService {
   }
 
   private void rollbackFailedStartup(UUID sessionId, RuntimeException startupFailure) {
-    suppressCleanupFailure(startupFailure, () -> transcodeExecutor.stop(sessionId));
+    suppressCleanupFailure(startupFailure, () -> transcodeExecutor.destroySession(sessionId));
     suppressCleanupFailure(startupFailure, () -> segmentStore.deleteSession(sessionId));
     suppressCleanupFailure(startupFailure, () -> runtimeRegistry.removeById(sessionId));
   }

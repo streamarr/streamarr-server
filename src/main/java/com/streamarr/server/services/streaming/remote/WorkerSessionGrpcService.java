@@ -248,7 +248,8 @@ final class WorkerSessionGrpcService
     }
 
     private void reportFailedJobAttempt(JobAttemptFailed failed) {
-      finish(failed.getJobAttemptId(), failed.getFailure().name())
+      workerConnections
+          .failJobAttempt(authenticatedWorkerId, workerSessionId, failed)
           .ifPresentOrElse(
               job ->
                   log.warn(

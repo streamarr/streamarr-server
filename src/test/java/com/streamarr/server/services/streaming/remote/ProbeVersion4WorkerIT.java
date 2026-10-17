@@ -25,6 +25,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.task.ProbePublication;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
@@ -369,6 +370,7 @@ class ProbeVersion4WorkerIT extends AbstractIntegrationTest {
 
   private static WorkerSessionServer server(LocalSegmentStore segmentStore) {
     return WorkerSessionServer.builder()
+        .eventPublisher(new CapturingEventPublisher())
         .configuration(serverConfigurationBuilder().address("127.0.0.1").build())
         .segmentStore(segmentStore)
         .meterRegistry(new SimpleMeterRegistry())

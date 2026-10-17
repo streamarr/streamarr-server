@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
@@ -60,6 +61,7 @@ class WorkerSessionServerTest {
         .isThrownBy(
             () ->
                 WorkerSessionServer.builder()
+                    .eventPublisher(new CapturingEventPublisher())
                     .configuration(null)
                     .segmentStore(segmentStore)
                     .meterRegistry(meterRegistry)
@@ -77,6 +79,7 @@ class WorkerSessionServerTest {
         .isThrownBy(
             () ->
                 WorkerSessionServer.builder()
+                    .eventPublisher(new CapturingEventPublisher())
                     .configuration(configuration)
                     .segmentStore(null)
                     .meterRegistry(meterRegistry)
@@ -94,6 +97,7 @@ class WorkerSessionServerTest {
         .isThrownBy(
             () ->
                 WorkerSessionServer.builder()
+                    .eventPublisher(new CapturingEventPublisher())
                     .configuration(configuration)
                     .segmentStore(segmentStore)
                     .meterRegistry(null)
@@ -110,9 +114,28 @@ class WorkerSessionServerTest {
     assertNotStarted(() -> server.dispatchProbe(request));
   }
 
+  @Test
+  @DisplayName("Should reject a worker session server when its event publisher is missing")
+  void shouldRejectWorkerSessionServerWhenItsEventPublisherIsMissing() {
+    var configuration = WorkerSessionServerConfiguration.builder().port(0).build();
+    var segmentStore = new FakeSegmentStore();
+    var meters = new SimpleMeterRegistry();
+
+    assertThatNullPointerException()
+        .isThrownBy(
+            () ->
+                WorkerSessionServer.builder()
+                    .configuration(configuration)
+                    .segmentStore(segmentStore)
+                    .meterRegistry(meters)
+                    .build())
+        .withMessageContaining("eventPublisher");
+  }
+
   private WorkerSessionServer unstartedServer() {
     var configuration = WorkerSessionServerConfiguration.builder().port(0).build();
     return WorkerSessionServer.builder()
+        .eventPublisher(new CapturingEventPublisher())
         .configuration(configuration)
         .segmentStore(new FakeSegmentStore())
         .meterRegistry(new SimpleMeterRegistry())
@@ -132,6 +155,8 @@ class WorkerSessionServerTest {
     assertNotStarted(() -> server.dispatch(job, pinnedEncoder));
     assertNotStarted(() -> server.hasConnectedWorker(sourceNamespaceId));
     assertNotStarted(() -> server.stopVariant(UUID.randomUUID(), "720p"));
+    assertNotStarted(() -> server.terminalFailure(UUID.randomUUID()));
+    assertNotStarted(() -> server.destroyStreamSession(UUID.randomUUID()));
   }
 
   @Test

@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
@@ -212,6 +213,7 @@ class MeshMediaHandlerIT {
     private Rig(ProbeMediaInfo media, boolean withoutWorker) throws Exception {
       server =
           WorkerSessionServer.builder()
+              .eventPublisher(new CapturingEventPublisher())
               .configuration(WorkerSessionServerConfiguration.builder().port(0).build())
               .segmentStore(segments)
               .meterRegistry(new SimpleMeterRegistry())

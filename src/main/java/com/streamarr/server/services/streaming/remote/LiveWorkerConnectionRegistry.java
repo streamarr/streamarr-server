@@ -5,13 +5,17 @@ import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.
 
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.streaming.EncoderBackend;
+import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentPublication;
+import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
+import com.streamarr.transcode.v1.JobAttemptFailed;
+import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
@@ -49,6 +53,7 @@ import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 
 @Slf4j
 final class LiveWorkerConnectionRegistry {
@@ -66,12 +71,15 @@ final class LiveWorkerConnectionRegistry {
   private final Counter initializationSegmentMismatches;
   private final Counter encoderBackendMismatches;
   private final HeldSegmentRequests heldRequests;
+  private final ApplicationEventPublisher eventPublisher;
 
   @Builder
   LiveWorkerConnectionRegistry(
       @NonNull WorkerSessionServerConfiguration configuration,
       @NonNull MeterRegistry meterRegistry,
-      @NonNull HeldSegmentRequests heldRequests) {
+      @NonNull HeldSegmentRequests heldRequests,
+      @NonNull ApplicationEventPublisher eventPublisher) {
+    this.eventPublisher = eventPublisher;
     this.heldRequests = heldRequests;
     probeTimeoutNanos = configuration.probeTimeout().toNanos();
     keyframeScanTimeoutNanos = configuration.keyframeScanTimeout().toNanos();
@@ -92,6 +100,7 @@ final class LiveWorkerConnectionRegistry {
   }
 
   private final ConcurrentHashMap<UUID, WorkerConnection> connections = new ConcurrentHashMap<>();
+  private final Map<UUID, TranscodeFailure> terminalFailures = new ConcurrentHashMap<>();
   private final Map<UUID, CompletableFuture<ProbeAttemptReport>> pendingProbes =
       new ConcurrentHashMap<>();
 
@@ -282,6 +291,14 @@ final class LiveWorkerConnectionRegistry {
     connections.values().forEach(connection -> connection.stopStreamSession(streamSessionId));
   }
 
+  synchronized void destroyStreamSession(UUID streamSessionId) {
+    try {
+      stopStreamSession(streamSessionId);
+    } finally {
+      terminalFailures.remove(streamSessionId);
+    }
+  }
+
   /** This warn is the only record an abandoned job leaves — nothing else persists it. */
   private void logAbandonedJob(VariantJob job, String reason) {
     log.warn(
@@ -336,6 +353,42 @@ final class LiveWorkerConnectionRegistry {
         .filter(connection -> connection.canEncode(decision))
         .mapToInt(WorkerConnection::availableSlots)
         .sum();
+  }
+
+  Optional<TranscodeFailure> terminalFailure(UUID streamSessionId) {
+    return Optional.ofNullable(terminalFailures.get(streamSessionId));
+  }
+
+  synchronized void close() {
+    var closed = List.copyOf(connections.values());
+    connections.clear();
+    closed.forEach(WorkerConnection::abandonAllJobsWithoutWaiting);
+    terminalFailures.clear();
+  }
+
+  Optional<VariantJob> failJobAttempt(
+      UUID workerId, UUID workerSessionId, JobAttemptFailed failed) {
+    var released = acceptJobAttemptFailure(workerId, workerSessionId, failed);
+    released
+        .filter(job -> WorkerConnection.isCopyOutputMismatch(job, failed))
+        .ifPresent(
+            job ->
+                eventPublisher.publishEvent(
+                    new VideoCopyOutputMismatchEvent(
+                        fromProto(job.getStreamSessionId()),
+                        fromProto(job.getJobAttemptId()),
+                        job.getVariant().getVariantLabel())));
+    return released;
+  }
+
+  private synchronized Optional<VariantJob> acceptJobAttemptFailure(
+      UUID workerId, UUID workerSessionId, JobAttemptFailed failed) {
+    var connection = connections.get(workerId);
+    if (connection == null || !connection.workerSessionId().equals(workerSessionId)) {
+      return Optional.empty();
+    }
+
+    return connection.failJobAttempt(failed);
   }
 
   Optional<VariantJob> releaseJobAttempt(UUID workerId, UUID workerSessionId, UUID jobAttemptId) {
@@ -436,7 +489,10 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private synchronized boolean tryDispatch(VariantJob job) {
-      if (!canAccessSource(job) || !canEncode(job.getDecision()) || availableSlots() == 0) {
+      if (terminalFailures.containsKey(fromProto(job.getStreamSessionId()))
+          || !canAccessSource(job)
+          || !canEncode(job.getDecision())
+          || availableSlots() == 0) {
         return false;
       }
 
@@ -698,6 +754,31 @@ final class LiveWorkerConnectionRegistry {
         log.warn("Failed to send command over worker session {}", workerSessionId, e);
         return false;
       }
+    }
+
+    private synchronized Optional<VariantJob> failJobAttempt(JobAttemptFailed failed) {
+      var attemptId = fromProto(failed.getJobAttemptId());
+      var job = activeVariants.get(attemptId);
+      if (job == null) {
+        return Optional.empty();
+      }
+
+      if (isCopyOutputMismatch(job, failed)) {
+        terminalFailures.put(fromProto(job.getStreamSessionId()), TranscodeFailure.OUTPUT_MISMATCH);
+      }
+
+      return releaseJobAttempt(attemptId);
+    }
+
+    private static boolean isCopyOutputMismatch(VariantJob job, JobAttemptFailed failed) {
+      if (failed.getFailure() != JobAttemptFailure.JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH) {
+        return false;
+      }
+
+      return switch (job.getDecision().getMode()) {
+        case TRANSCODE_MODE_REMUX, TRANSCODE_MODE_AUDIO_TRANSCODE -> true;
+        default -> false;
+      };
     }
 
     private synchronized Optional<VariantJob> releaseJobAttempt(UUID jobAttemptId) {

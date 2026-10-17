@@ -5,6 +5,7 @@ import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.services.streaming.remote.protocol.WorkerIdentityMetadata;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
@@ -57,6 +58,7 @@ class LoopbackWorkerSessionIT {
       var listeners = serverConfigurationBuilder().port(occupied.getLocalPort()).build();
       try (var server =
           WorkerSessionServer.builder()
+              .eventPublisher(new CapturingEventPublisher())
               .configuration(listeners)
               .segmentStore(new FakeSegmentStore())
               .meterRegistry(new SimpleMeterRegistry())
@@ -78,6 +80,7 @@ class LoopbackWorkerSessionIT {
     var listeners = serverConfigurationBuilder().build();
     try (var server =
         WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
             .configuration(listeners)
             .segmentStore(new FakeSegmentStore())
             .meterRegistry(new SimpleMeterRegistry())
@@ -102,6 +105,7 @@ class LoopbackWorkerSessionIT {
     var listeners = serverConfigurationBuilder().build();
     try (var server =
         WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
             .configuration(listeners)
             .segmentStore(new FakeSegmentStore())
             .meterRegistry(new SimpleMeterRegistry())
@@ -158,6 +162,7 @@ class LoopbackWorkerSessionIT {
     var listeners = serverConfigurationBuilder().build();
     try (var server =
         WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
             .configuration(listeners)
             .segmentStore(new FakeSegmentStore())
             .meterRegistry(new SimpleMeterRegistry())
@@ -187,6 +192,7 @@ class LoopbackWorkerSessionIT {
     var configuration = serverConfigurationBuilder().address(address.getHostAddress()).build();
     try (var server =
         WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
             .configuration(configuration)
             .segmentStore(new FakeSegmentStore())
             .meterRegistry(new SimpleMeterRegistry())
@@ -219,6 +225,7 @@ class LoopbackWorkerSessionIT {
     var listeners = serverConfigurationBuilder().build();
     try (var server =
         WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
             .configuration(listeners)
             .segmentStore(new FakeSegmentStore())
             .meterRegistry(new SimpleMeterRegistry())

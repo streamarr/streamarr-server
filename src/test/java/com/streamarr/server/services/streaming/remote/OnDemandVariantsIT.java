@@ -68,6 +68,7 @@ class OnDemandVariantsIT {
   void setUp() throws Exception {
     server =
         WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
             .configuration(serverConfigurationBuilder().build())
             .segmentStore(segmentStore)
             .meterRegistry(new SimpleMeterRegistry())

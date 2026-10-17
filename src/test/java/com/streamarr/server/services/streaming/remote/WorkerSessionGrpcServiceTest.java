@@ -12,10 +12,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.google.protobuf.ByteString;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fakes.BlockingSegmentStore;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
+import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptCompleted;
@@ -789,6 +791,7 @@ class WorkerSessionGrpcServiceTest {
     var sourceNamespaceId = UUID.randomUUID();
     var registry =
         LiveWorkerConnectionRegistry.builder()
+            .eventPublisher(new CapturingEventPublisher())
             .configuration(configuration)
             .meterRegistry(meterRegistry)
             .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
@@ -857,6 +860,91 @@ class WorkerSessionGrpcServiceTest {
           fromProto(job.getStreamSessionId()),
           job.getVariant().getVariantLabel() + "/" + SegmentNames.INITIALIZATION_SEGMENT_NAME);
     }
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  @DisplayName("Should ignore an output mismatch when its worker connection is no longer current")
+  void shouldIgnoreOutputMismatchWhenWorkerConnectionIsNoLongerCurrent(boolean reconnected)
+      throws Exception {
+    var events = new CapturingEventPublisher();
+    var registry =
+        LiveWorkerConnectionRegistry.builder()
+            .configuration(WorkerSessionServerConfiguration.builder().build())
+            .meterRegistry(new SimpleMeterRegistry())
+            .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
+            .eventPublisher(events)
+            .build();
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var oldConnection = workerSession(service, workerId, new IgnoringResponseObserver());
+    oldConnection.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setRegistration(registration(worker(workerId), sourceNamespaceId))
+            .build());
+    var job = variantJob(sourceNamespaceId).toBuilder().setDecision(streamCopyDecision()).build();
+    assertThat(registry.dispatch(job)).isPresent();
+    oldConnection.onError(Status.CANCELLED.asRuntimeException());
+    if (reconnected) {
+      var current = workerSession(service, workerId, new IgnoringResponseObserver());
+      current.onNext(
+          EstablishWorkerSessionRequest.newBuilder()
+              .setRegistration(registration(worker(workerId), sourceNamespaceId))
+              .build());
+      assertThat(registry.dispatch(job)).isPresent();
+    }
+
+    oldConnection.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptFailed(
+                JobAttemptFailed.newBuilder()
+                    .setJobAttemptId(job.getJobAttemptId())
+                    .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH))
+            .build());
+
+    assertThat(registry.terminalFailure(fromProto(job.getStreamSessionId()))).isEmpty();
+    assertThat(events.getEventsOfType(VideoCopyOutputMismatchEvent.class)).isEmpty();
+    assertThat(
+            registry.isRunning(
+                fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel()))
+        .isEqualTo(reconnected);
+  }
+
+  @Test
+  @DisplayName("Should ignore a delayed output mismatch when the worker registry is closed")
+  void shouldIgnoreDelayedOutputMismatchWhenWorkerRegistryIsClosed() throws Exception {
+    var events = new CapturingEventPublisher();
+    var registry =
+        LiveWorkerConnectionRegistry.builder()
+            .configuration(WorkerSessionServerConfiguration.builder().build())
+            .meterRegistry(new SimpleMeterRegistry())
+            .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
+            .eventPublisher(events)
+            .build();
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var connection = workerSession(service, workerId, new IgnoringResponseObserver());
+    connection.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setRegistration(registration(worker(workerId), sourceNamespaceId))
+            .build());
+    var job = variantJob(sourceNamespaceId).toBuilder().setDecision(streamCopyDecision()).build();
+    assertThat(registry.dispatch(job)).isPresent();
+
+    registry.close();
+    connection.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptFailed(
+                JobAttemptFailed.newBuilder()
+                    .setJobAttemptId(job.getJobAttemptId())
+                    .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH))
+            .build());
+
+    assertThat(registry.terminalFailure(fromProto(job.getStreamSessionId()))).isEmpty();
+    assertThat(events.getEventsOfType(VideoCopyOutputMismatchEvent.class)).isEmpty();
+    assertThat(registry.hasConnectedWorker(sourceNamespaceId)).isFalse();
   }
 
   private static boolean isStartOf(EstablishWorkerSessionResponse response, VariantJob job) {

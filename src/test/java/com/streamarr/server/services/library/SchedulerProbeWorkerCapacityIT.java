@@ -28,6 +28,7 @@ import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.MutableClock;
@@ -258,6 +259,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
 
     try (var server =
         WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
             .configuration(serverConfigurationBuilder().build())
             .segmentStore(new FakeSegmentStore())
             .meterRegistry(new SimpleMeterRegistry())
@@ -304,6 +306,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
 
     try (var server =
         WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
             .configuration(serverConfigurationBuilder().build())
             .segmentStore(new FakeSegmentStore())
             .meterRegistry(new SimpleMeterRegistry())

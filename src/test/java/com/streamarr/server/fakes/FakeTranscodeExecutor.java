@@ -1,6 +1,7 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.streaming.TranscodeDecision;
+import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
@@ -34,6 +35,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final Set<ProcessKey> running = ConcurrentHashMap.newKeySet();
   private final Set<ProcessKey> started = ConcurrentHashMap.newKeySet();
   private final Set<UUID> stopped = ConcurrentHashMap.newKeySet();
+  private final Map<UUID, TranscodeFailure> terminalFailures = new ConcurrentHashMap<>();
   private final Set<UUID> failingOnStop = ConcurrentHashMap.newKeySet();
   private final List<TranscodeRequest> startedRequests =
       Collections.synchronizedList(new ArrayList<>());
@@ -147,6 +149,15 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
+  public void destroySession(UUID sessionId) {
+    try {
+      stop(sessionId);
+    } finally {
+      terminalFailures.remove(sessionId);
+    }
+  }
+
+  @Override
   public void stopVariant(UUID sessionId, String variantLabel) {
     end(new ProcessKey(sessionId, variantLabel));
     stoppedVariants.add(sessionId + "/" + variantLabel);
@@ -233,6 +244,16 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
         }
       }
     }
+  }
+
+  @Override
+  public Optional<TranscodeFailure> terminalFailure(UUID sessionId) {
+    return Optional.ofNullable(terminalFailures.get(sessionId));
+  }
+
+  public void failTerminally(UUID sessionId, TranscodeFailure failure) {
+    terminalFailures.put(sessionId, failure);
+    endAll(sessionId);
   }
 
   @Override
