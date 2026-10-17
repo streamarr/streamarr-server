@@ -16,6 +16,7 @@ import com.streamarr.server.fixtures.PersistedProbeFixture;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -199,8 +200,17 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
       return false;
     }
 
-    failures.put(mediaFileId, failure);
+    failures.put(mediaFileId, keptToTheMicrosecond(failure));
     return true;
+  }
+
+  // PostgreSQL keeps a timestamp to the nearest microsecond.
+  private static ProbeAttemptFailure keptToTheMicrosecond(ProbeAttemptFailure failure) {
+    return ProbeAttemptFailure.builder()
+        .reason(failure.reason())
+        .detail(failure.detail())
+        .failedAt(failure.failedAt().plusNanos(500).truncatedTo(ChronoUnit.MICROS))
+        .build();
   }
 
   @Override

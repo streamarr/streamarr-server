@@ -31,6 +31,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -290,6 +291,24 @@ public interface MediaFileContainerInfoRepositoryContract {
     assertThat(saved).isFalse();
   }
 
+  @ParameterizedTest
+  @CsvSource({
+    "2026-09-12T10:00:00.000001400Z, 2026-09-12T10:00:00.000001Z",
+    "2026-09-12T10:00:00.000001600Z, 2026-09-12T10:00:00.000002Z"
+  })
+  @DisplayName("Should keep the failure time to the nearest microsecond when the failure is saved")
+  default void shouldKeepTheFailureTimeToTheNearestMicrosecondWhenTheFailureIsSaved(
+      Instant failedAt, Instant kept) {
+    var mediaFileId = createMediaFile();
+    var inputs = new ProbeInputs(SNAPSHOT_A, 1);
+    repository().trySaveProbeRequest(mediaFileId, inputs);
+
+    repository().trySaveProbeFailure(mediaFileId, inputs, failureAt(failedAt));
+
+    assertThat(repository().findProbeStates(List.of(mediaFileId)).getFirst().failure())
+        .hasValueSatisfying(failure -> assertThat(failure.failedAt()).isEqualTo(kept));
+  }
+
   @Test
   @DisplayName("Should hold no probe state when the media file has no probe yet")
   default void shouldHoldNoProbeStateWhenTheMediaFileHasNoProbeYet() {
@@ -491,10 +510,14 @@ public interface MediaFileContainerInfoRepositoryContract {
   }
 
   private static ProbeAttemptFailure failure() {
+    return failureAt(Instant.parse("2026-09-12T10:00:00Z"));
+  }
+
+  private static ProbeAttemptFailure failureAt(Instant failedAt) {
     return ProbeAttemptFailure.builder()
         .reason(ItemFailureReason.SOURCE_INACCESSIBLE)
         .detail("Worker could not read the source")
-        .failedAt(Instant.parse("2026-09-12T10:00:00Z"))
+        .failedAt(failedAt)
         .build();
   }
 
