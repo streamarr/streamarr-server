@@ -298,7 +298,12 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
     assertThat(body.get("userCode").asString()).isEqualTo(issued.get("userCode").asString());
     assertThat(body.get("deviceName").asString()).isEqualTo("Living Room Apple TV");
     assertThat(body.get("status").asString()).isEqualTo("PENDING");
-    assertThat(Instant.parse(body.get("requestedAt").asString())).isBeforeOrEqualTo(Instant.now());
+    assertThat(authorizationRepository.findAll())
+        .singleElement()
+        .satisfies(
+            authorization ->
+                assertThat(Instant.parse(body.get("requestedAt").asString()))
+                    .isEqualTo(authorization.getCreatedOn()));
   }
 
   @Test

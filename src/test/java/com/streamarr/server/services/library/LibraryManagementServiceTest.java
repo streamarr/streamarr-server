@@ -13,14 +13,18 @@ import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.config.LibraryScanProperties;
 import com.streamarr.server.domain.ExternalAgentStrategy;
+import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.media.Episode;
+import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryOperationNotScheduledException;
 import com.streamarr.server.exceptions.LibraryOperationNotStartedException;
@@ -38,6 +42,7 @@ import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeProbeTaskRequests;
 import com.streamarr.server.fakes.FakeSeasonRepository;
+import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.RecordingMetadataProvider;
@@ -47,6 +52,7 @@ import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
@@ -57,6 +63,7 @@ import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.concurrency.AdaptiveAdmissions;
+import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.events.library.ItemProcessedEvent;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
@@ -71,6 +78,7 @@ import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
+import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProvider;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
@@ -100,10 +108,14 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
+import lombok.Builder;
 import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -199,6 +211,9 @@ class LibraryManagementServiceTest {
 
   private final SeriesFileProcessor seriesFileProcessor = mock(SeriesFileProcessor.class);
   private final SeriesService seriesService = mock(SeriesService.class);
+  private final FakeSeriesRepository matchedSeries = new FakeSeriesRepository();
+  private final FakeSeasonRepository matchedSeasons = new FakeSeasonRepository();
+  private final FakeEpisodeRepository matchedEpisodes = new FakeEpisodeRepository();
 
   private final FakeMediaFileContainerInfoRepository probeOutcomes =
       new FakeMediaFileContainerInfoRepository();
@@ -379,8 +394,8 @@ class LibraryManagementServiceTest {
   }
 
   @Test
-  @DisplayName("Should search with URI-derived series metadata when processing root season file")
-  void shouldSearchWithUriDerivedSeriesMetadataWhenProcessingRootSeasonFile() throws IOException {
+  @DisplayName("Should match the episode using the URI title when processing a root season file")
+  void shouldMatchEpisodeUsingUriTitleWhenProcessingRootSeasonFile() throws IOException {
     var library = fakeLibraryRepository.save(LibraryFixtureCreator.buildFakeSeriesLibrary());
     var expectedSearch = VideoFileParserResult.builder().title("Harbor Relay").build();
     var searchResult =
@@ -389,9 +404,14 @@ class LibraryManagementServiceTest {
             .externalId("2001")
             .externalSourceType(ExternalSourceType.TMDB)
             .build();
-    var metadataProvider = new RecordingSeriesMetadataProvider();
-    metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
-    when(seriesService.findByTmdbId("2001")).thenReturn(Optional.empty());
+    var metadataProvider =
+        seriesMetadataProvider(
+            library,
+            searchResult,
+            seasonDetailsBuilder()
+                .seasonNumber(25)
+                .episodes(List.of(episodeDetailsBuilder().episodeNumber(9).build()))
+                .build());
     var service =
         libraryManagementServiceWith(movieFileProcessor, seriesFileProcessorWith(metadataProvider));
     var seriesPath =
@@ -400,14 +420,21 @@ class LibraryManagementServiceTest {
 
     service.processDiscoveredFile(library.getId(), seriesPath);
 
-    assertThat(metadataProvider.searchRequests()).containsExactly(expectedSearch);
+    assertMatchedEpisode(seriesPath, expectedSearch.title());
+    assertThat(matchedEpisodes.findAll())
+        .singleElement()
+        .extracting(Episode::getEpisodeNumber)
+        .isEqualTo(9);
+    assertThat(matchedSeasons.findAll())
+        .singleElement()
+        .extracting(season -> season.getSeasonNumber())
+        .isEqualTo(25);
   }
 
   @Test
   @DisplayName(
-      "Should search with accented series folder title when filepath URI has a season folder")
-  void shouldSearchWithAccentedSeriesFolderTitleWhenFilepathUriHasSeasonFolder()
-      throws IOException {
+      "Should match the episode using the accented title when the filepath URI has a season folder")
+  void shouldMatchEpisodeUsingAccentedTitleWhenFilepathUriHasSeasonFolder() throws IOException {
     var library = fakeLibraryRepository.save(LibraryFixtureCreator.buildFakeSeriesLibrary());
     var expectedSearch = VideoFileParserResult.builder().title("Lumière Harbor").build();
     var searchResult =
@@ -416,9 +443,14 @@ class LibraryManagementServiceTest {
             .externalId("2002")
             .externalSourceType(ExternalSourceType.TMDB)
             .build();
-    var metadataProvider = new RecordingSeriesMetadataProvider();
-    metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
-    when(seriesService.findByTmdbId("2002")).thenReturn(Optional.empty());
+    var metadataProvider =
+        seriesMetadataProvider(
+            library,
+            searchResult,
+            seasonDetailsBuilder()
+                .seasonNumber(3)
+                .episodes(List.of(episodeDetailsBuilder().episodeNumber(5).build()))
+                .build());
     var service =
         libraryManagementServiceWith(movieFileProcessor, seriesFileProcessorWith(metadataProvider));
     var filepathUri =
@@ -427,7 +459,15 @@ class LibraryManagementServiceTest {
 
     service.processDiscoveredFile(library.getId(), seriesPath);
 
-    assertThat(metadataProvider.searchRequests()).containsExactly(expectedSearch);
+    assertMatchedEpisode(seriesPath, expectedSearch.title());
+    assertThat(matchedEpisodes.findAll())
+        .singleElement()
+        .extracting(Episode::getEpisodeNumber)
+        .isEqualTo(5);
+    assertThat(matchedSeasons.findAll())
+        .singleElement()
+        .extracting(season -> season.getSeasonNumber())
+        .isEqualTo(3);
   }
 
   @Test
@@ -481,6 +521,215 @@ class LibraryManagementServiceTest {
     assertThrows(
         LibraryNotFoundException.class,
         () -> libraryManagementService.processDiscoveredFile(nonExistentId, moviePath));
+  }
+
+  @Test
+  @DisplayName("Should leave another library's file untouched when this library discovers it")
+  void shouldLeaveAnotherLibrarysFileUntouchedWhenThisLibraryDiscoversIt() throws IOException {
+    var rootPath = createRootLibraryDirectory();
+    var moviePath = createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
+    var otherLibraryId = UUID.randomUUID();
+    fakeMediaFileRepository.save(
+        MediaFile.builder()
+            .libraryId(otherLibraryId)
+            .filepathUri(FilepathCodec.encode(moviePath))
+            .filename("About Time (2013) old name.mkv")
+            .status(MediaFileStatus.METADATA_UNAVAILABLE)
+            .failureReason(ItemFailureReason.TEMPORARY)
+            .build());
+    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
+        .thenReturn(
+            new Found(
+                RemoteSearchResult.builder()
+                    .title("About Time")
+                    .externalId("456")
+                    .externalSourceType(ExternalSourceType.TMDB)
+                    .build()));
+    when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
+        .thenReturn(
+            new MetadataFetchOutcome.Found<>(
+                MetadataFixture.<Movie>metadataResultBuilder()
+                    .entity(Movie.builder().title("About Time").build())
+                    .build()));
+
+    libraryManagementService.processDiscoveredFile(savedLibraryId, moviePath);
+
+    assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath)))
+        .get()
+        .extracting(MediaFile::getLibraryId, MediaFile::getFilename, MediaFile::getStatus)
+        .containsExactly(
+            otherLibraryId, "About Time (2013) old name.mkv", MediaFileStatus.METADATA_UNAVAILABLE);
+    assertThat(fakeMovieRepository.findAll()).isEmpty();
+    assertThat(probeTaskRequests.requests()).isEmpty();
+    assertThat(capturingEventPublisher.getEventsOfType(ItemProcessedEvent.class)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should attach both versions to one movie when a library discovers the same title twice")
+  void shouldAttachBothVersionsToOneMovieWhenLibraryDiscoversSameTitleTwice() throws IOException {
+    var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+    var root = createRootLibraryDirectory();
+    var folder = Files.createDirectories(root.resolve("Amber Harbor (2001)"));
+    var first = Files.createFile(folder.resolve("Amber Harbor (2001) 1080p.mkv"));
+    var second = Files.createFile(folder.resolve("Amber Harbor (2001) 2160p.mkv"));
+    var provider = new RecordingMetadataProvider<Movie>();
+    provider.willReturnSearchResultFor(
+        VideoFileParserResult.builder().title("Amber Harbor").year("2001").build(),
+        RemoteSearchResult.builder()
+            .title("Amber Harbor")
+            .externalId("7001")
+            .externalSourceType(ExternalSourceType.TMDB)
+            .build());
+    provider.willReturnMetadataFor(
+        "7001",
+        () ->
+            MetadataFixture.<Movie>metadataResultBuilder()
+                .entity(
+                    Movie.builder()
+                        .title("Amber Harbor")
+                        .library(library)
+                        .externalIds(
+                            Set.of(
+                                ExternalIdentifier.builder()
+                                    .externalId("7001")
+                                    .externalSourceType(ExternalSourceType.TMDB)
+                                    .build()))
+                        .build())
+                .build());
+    var service =
+        libraryManagementServiceWith(movieFileProcessorWith(provider), seriesFileProcessor);
+
+    service.processDiscoveredFile(savedLibraryId, first);
+    service.processDiscoveredFile(savedLibraryId, second);
+
+    var files = fakeMediaFileRepository.findByLibraryId(savedLibraryId);
+    assertThat(files)
+        .hasSize(2)
+        .extracting(MediaFile::getStatus)
+        .containsOnly(MediaFileStatus.MATCHED);
+    assertThat(fakeMovieRepository.findAll())
+        .singleElement()
+        .satisfies(
+            movie -> {
+              assertThat(files).extracting(MediaFile::getMediaId).containsOnly(movie.getId());
+              assertThat(movie.getFiles())
+                  .extracting(MediaFile::getId)
+                  .containsExactlyInAnyOrderElementsOf(
+                      files.stream().map(MediaFile::getId).toList());
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should attach both versions to one episode when a library discovers the same episode twice")
+  void shouldAttachBothVersionsToOneEpisodeWhenLibraryDiscoversSameEpisodeTwice()
+      throws IOException {
+    var library = fakeLibraryRepository.save(LibraryFixtureCreator.buildFakeSeriesLibrary());
+    var folder = Files.createDirectories(fileSystem.getPath("/library/Harbor Relay/Season 01"));
+    var first = Files.createFile(folder.resolve("Harbor.Relay.S01E01.1080p.mkv"));
+    var second = Files.createFile(folder.resolve("Harbor.Relay.S01E01.2160p.mkv"));
+    var provider =
+        seriesMetadataProvider(
+            library,
+            RemoteSearchResult.builder()
+                .title("Harbor Relay")
+                .externalId("2001")
+                .externalSourceType(ExternalSourceType.TMDB)
+                .build(),
+            seasonDetailsBuilder()
+                .seasonNumber(1)
+                .episodes(List.of(episodeDetailsBuilder().episodeNumber(1).build()))
+                .build());
+    var service =
+        libraryManagementServiceWith(movieFileProcessor, seriesFileProcessorWith(provider));
+
+    service.processDiscoveredFile(library.getId(), first);
+    service.processDiscoveredFile(library.getId(), second);
+
+    assertMatchedEpisode(first, "Harbor Relay");
+    assertMatchedEpisode(second, "Harbor Relay");
+    assertThat(matchedSeries.findAll()).hasSize(1);
+    assertThat(matchedSeasons.findAll()).hasSize(1);
+    assertThat(matchedEpisodes.findAll())
+        .singleElement()
+        .satisfies(
+            episode -> {
+              var files = fakeMediaFileRepository.findByLibraryId(library.getId());
+              assertThat(files)
+                  .hasSize(2)
+                  .extracting(MediaFile::getMediaId)
+                  .containsOnly(episode.getId());
+              assertThat(files)
+                  .extracting(MediaFile::getFilepathUri)
+                  .containsExactlyInAnyOrder(
+                      FilepathCodec.encode(first), FilepathCodec.encode(second));
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep one owner without loser side effects when two libraries discover the same path concurrently")
+  void shouldKeepOneOwnerWithoutLoserSideEffectsWhenTwoLibrariesDiscoverSamePathConcurrently()
+      throws Exception {
+    var other = fakeLibraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
+    var path = createMovieFile(createRootLibraryDirectory(), "Shared", "Shared (2001).mkv");
+    var creating = new CountDownLatch(1);
+    var release = new CountDownLatch(1);
+    beforeSavingMediaFile =
+        file -> {
+          if (!savedLibraryId.equals(file.getLibraryId())) {
+            return;
+          }
+
+          creating.countDown();
+          try {
+            assertThat(release.await(SCAN_BOUND.toMillis(), TimeUnit.MILLISECONDS)).isTrue();
+          } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError(interrupted);
+          }
+        };
+    var mutexes = new ContendedPathMutexes();
+    var service =
+        serviceBuilder()
+            .libraryFileWalk(
+                fileWalkBuilder()
+                    .movieFileProcessor(movieFileProcessorWith(new RecordingMetadataProvider<>()))
+                    .mutexFactoryProvider(mutexes)
+                    .build())
+            .build();
+
+    try (var winner =
+        BoundedTask.start(() -> service.processDiscoveredFile(savedLibraryId, path))) {
+      assertThat(creating.await(SCAN_BOUND.toMillis(), TimeUnit.MILLISECONDS)).isTrue();
+      try (var loser =
+          BoundedTask.start(() -> service.processDiscoveredFile(other.getId(), path))) {
+        try {
+          mutexes.awaitContender(SCAN_BOUND);
+        } finally {
+          release.countDown();
+        }
+
+        winner.await(SCAN_BOUND);
+        loser.await(SCAN_BOUND);
+      }
+    } finally {
+      release.countDown();
+    }
+
+    assertThat(fakeMediaFileRepository.findAll())
+        .singleElement()
+        .extracting(MediaFile::getLibraryId, MediaFile::getFilename, MediaFile::getStatus)
+        .containsExactly(savedLibraryId, "Shared (2001).mkv", MediaFileStatus.METADATA_NOT_FOUND);
+    assertThat(fakeMediaFileRepository.findByLibraryId(other.getId())).isEmpty();
+    assertThat(probeTaskRequests.requests())
+        .singleElement()
+        .extracting(request -> request.libraryId())
+        .isEqualTo(savedLibraryId);
+    assertThat(capturingEventPublisher.getEventsOfType(ItemProcessedEvent.class))
+        .containsExactly(new ItemProcessedEvent(savedLibraryId));
   }
 
   @Test
@@ -1028,6 +1277,48 @@ class LibraryManagementServiceTest {
     }
   }
 
+  private RecordingSeriesMetadataProvider seriesMetadataProvider(
+      Library library, RemoteSearchResult searchResult, SeasonDetails season) {
+    var provider = new RecordingSeriesMetadataProvider();
+    provider.willReturnSearchResultFor(
+        VideoFileParserResult.builder().title(searchResult.title()).build(), searchResult);
+    provider.willReturnMetadataFor(
+        searchResult.externalId(),
+        () ->
+            MetadataFixture.<Series>metadataResultBuilder()
+                .entity(
+                    Series.builder()
+                        .title(searchResult.title())
+                        .library(library)
+                        .externalIds(
+                            Set.of(
+                                ExternalIdentifier.builder()
+                                    .externalSourceType(ExternalSourceType.TMDB)
+                                    .externalId(searchResult.externalId())
+                                    .build()))
+                        .build())
+                .build());
+    provider.willReturnSeasonDetailsFor(searchResult.externalId(), season);
+    return provider;
+  }
+
+  private static SeasonDetails.SeasonDetailsBuilder seasonDetailsBuilder() {
+    return SeasonDetails.builder().name("Synthetic Season").imageSources(List.of());
+  }
+
+  private static SeasonDetails.EpisodeDetails.EpisodeDetailsBuilder episodeDetailsBuilder() {
+    return SeasonDetails.EpisodeDetails.builder().name("Synthetic Episode").imageSources(List.of());
+  }
+
+  private void assertMatchedEpisode(Path path, String title) {
+    var file =
+        fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path)).orElseThrow();
+    assertThat(file.getStatus()).isEqualTo(MediaFileStatus.MATCHED);
+    var episode = matchedEpisodes.findById(file.getMediaId()).orElseThrow();
+    assertThat(episode.getSeason().getSeries().getTitle()).isEqualTo(title);
+    assertThat(episode.getLibrary().getId()).isEqualTo(file.getLibraryId());
+  }
+
   private Path createRootLibraryDirectory() throws IOException {
     var library = fakeLibraryRepository.findById(savedLibraryId);
 
@@ -1082,11 +1373,61 @@ class LibraryManagementServiceTest {
         new SeriesFolderNameParser(),
         metadataProviderResolver,
         new DateBasedEpisodeResolver(metadataProviderResolver),
-        seriesService,
+        matchingSeriesServiceBuilder()
+            .series(matchedSeries)
+            .seasons(matchedSeasons)
+            .episodes(matchedEpisodes)
+            .files(fakeMediaFileRepository)
+            .credits(creditService)
+            .artwork(artworkRequestService)
+            .build(),
         fakeMediaFileRepository,
-        new FakeSeasonRepository(),
-        new FakeEpisodeRepository(),
+        matchedSeasons,
+        matchedEpisodes,
         new MutexFactoryProvider());
+  }
+
+  @Builder(builderMethodName = "matchingSeriesServiceBuilder")
+  private static SeriesService matchingSeriesService(
+      FakeSeriesRepository series,
+      FakeSeasonRepository seasons,
+      FakeEpisodeRepository episodes,
+      MediaFileRepository files,
+      CreditService credits,
+      ArtworkRequestService artwork) {
+    return new SeriesService(
+        series, credits, null, artwork, null, seasons, episodes, files, null, null, null, null);
+  }
+
+  private static final class ContendedPathMutexes extends MutexFactoryProvider {
+    private final CountDownLatch contender = new CountDownLatch(1);
+    private final ReentrantLock lock =
+        new ReentrantLock() {
+          @Override
+          public void lock() {
+            if (isLocked() && !isHeldByCurrentThread()) {
+              contender.countDown();
+            }
+
+            super.lock();
+          }
+        };
+
+    @Override
+    public <K> MutexFactory<K> getMutexFactory() {
+      return new MutexFactory<>() {
+        @Override
+        public ReentrantLock getMutex(K key) {
+          return lock;
+        }
+      };
+    }
+
+    private void awaitContender(Duration bound) throws InterruptedException {
+      assertThat(contender.await(bound.toMillis(), TimeUnit.MILLISECONDS))
+          .as("second library reaches the path lock while the first is creating its file")
+          .isTrue();
+    }
   }
 
   private LibraryManagementService.LibraryManagementServiceBuilder serviceBuilder() {

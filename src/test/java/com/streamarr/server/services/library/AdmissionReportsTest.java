@@ -22,6 +22,8 @@ class AdmissionReportsTest {
     return Stream.of(
         Arguments.of(new MatchingOutcome.Matched(), AdmittedTaskReport.LATENCY),
         Arguments.of(new MatchingOutcome.SkippedAsMatched(), AdmittedTaskReport.IGNORED),
+        Arguments.of(
+            new MatchingOutcome.SkippedAsAnotherLibrarysFile(), AdmittedTaskReport.IGNORED),
         Arguments.of(new MatchingOutcome.Interrupted(), AdmittedTaskReport.IGNORED),
         Arguments.of(
             notMatched(MatchingFailure.of(MediaFileStatus.METADATA_PARSING_FAILED)),
@@ -48,8 +50,8 @@ class AdmissionReportsTest {
 
   @ParameterizedTest(name = "{0} reports {1}")
   @MethodSource("matchingOutcomes")
-  @DisplayName("Should report what a file task's matching outcome says about capacity")
-  void shouldReportWhatAFileTasksMatchingOutcomeSaysAboutCapacity(
+  @DisplayName("Should report the expected capacity outcome when file matching ends")
+  void shouldReportExpectedCapacityOutcomeWhenFileMatchingEnds(
       MatchingOutcome outcome, AdmittedTaskReport expected) {
     assertThat(AdmissionReports.forMatching(outcome)).isEqualTo(expected);
   }

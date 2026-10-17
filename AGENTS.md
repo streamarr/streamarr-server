@@ -276,6 +276,11 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 
 ### Conventions
 - Integration tests: `*IT.java`, `@Tag("IntegrationTest")`; extend `AbstractIntegrationTest` — singleton reusable `postgres:18-alpine` container wired via `@ServiceConnection`
+- Reset shared test state in lifecycle setup before arranging fixtures; scheduler-start helpers
+  preserve queued work. During teardown, stop and await background work before deleting the state
+  it accesses. Account for inherited lifecycle ordering: superclass `@BeforeEach` runs before
+  subclass setup, while superclass `@AfterEach` runs after subclass teardown. Keep shared cleanup
+  in the test base rather than duplicating it in subclasses.
 - Unit tests: `*Test.java`, `@Tag("UnitTest")`
 - Resolver tests use a narrowed `@SpringBootTest(classes = {…})` — no test slices (`@DataJpaTest`, `@WebMvcTest`, etc.)
 - Wait on conditions with Awaitility or a bounded future — never a bare `Thread.sleep`

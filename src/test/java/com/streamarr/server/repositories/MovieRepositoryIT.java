@@ -11,6 +11,7 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.media.MovieRepository;
+import jakarta.persistence.EntityManager;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -26,6 +27,8 @@ import org.springframework.transaction.annotation.Transactional;
 class MovieRepositoryIT extends AbstractIntegrationTest {
 
   @Autowired private MovieRepository movieRepository;
+
+  @Autowired private EntityManager entityManager;
 
   @Autowired private LibraryRepository libraryRepository;
 
@@ -61,27 +64,46 @@ class MovieRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName(
-      "Should save a Movie with its external identifier when no existing Movie in the database.")
+  @DisplayName("Should persist the external identifier when saving a new movie")
   @Transactional
-  void shouldSaveMovieWithExternalIdentifier() {
+  void shouldPersistExternalIdentifierWhenSavingNewMovie() {
     var fakeExternalId =
         ExternalIdentifier.builder()
             .externalId("123")
             .externalSourceType(ExternalSourceType.TMDB)
             .build();
 
+    var saved =
+        movieRepository.saveAndFlush(
+            Movie.builder()
+                .title("A Wonderful Test")
+                .externalIds(Set.of(fakeExternalId))
+                .library(savedLibrary)
+                .build());
     movieRepository.saveAndFlush(
         Movie.builder()
-            .title("A Wonderful Test")
-            .externalIds(Set.of(fakeExternalId))
+            .title("Unrelated Movie")
+            .externalIds(
+                Set.of(
+                    ExternalIdentifier.builder()
+                        .externalId("456")
+                        .externalSourceType(ExternalSourceType.TMDB)
+                        .build()))
             .library(savedLibrary)
             .build());
+    entityManager.clear();
 
-    var result = movieRepository.findByTmdbId(fakeExternalId.getExternalId());
+    var result =
+        movieRepository.findInLibraryByTmdbId(savedLibrary.getId(), fakeExternalId.getExternalId());
 
-    assertThat(result).isPresent();
-    assertThat(result.get().getExternalIds()).hasSize(1);
+    assertThat(result)
+        .get()
+        .extracting(Movie::getId, Movie::getTitle)
+        .containsExactly(saved.getId(), "A Wonderful Test");
+    assertThat(result.orElseThrow().getExternalIds())
+        .singleElement()
+        .extracting(ExternalIdentifier::getExternalId, ExternalIdentifier::getExternalSourceType)
+        .containsExactly("123", ExternalSourceType.TMDB);
   }
 
   @Test
@@ -114,7 +136,7 @@ class MovieRepositoryIT extends AbstractIntegrationTest {
             .library(savedLibrary)
             .build());
 
-    var result = movieRepository.findByTmdbId(sharedId);
+    var result = movieRepository.findInLibraryByTmdbId(savedLibrary.getId(), sharedId);
 
     assertThat(result).isPresent();
     assertThat(result.get().getTitle()).isEqualTo("TMDB Movie");

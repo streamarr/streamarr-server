@@ -31,8 +31,9 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
   }
 
   @Override
-  public Optional<Movie> findByTmdbId(String tmdbId) {
+  public Optional<Movie> findInLibraryByTmdbId(UUID libraryId, String tmdbId) {
     return database.values().stream()
+        .filter(movie -> movie.getLibrary() != null && libraryId.equals(movie.getLibrary().getId()))
         .filter(
             movie ->
                 movie.getExternalIds().stream()

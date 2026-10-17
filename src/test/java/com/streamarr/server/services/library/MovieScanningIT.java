@@ -22,19 +22,22 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fakes.AdvanceableSystemClock;
+import com.streamarr.server.fixtures.SessionProgressFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.services.ArtworkPriority;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.ArtworkSchedulerStarter;
 import com.streamarr.server.support.AuditColumnFixtures;
+import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.BoundedTask;
 import com.streamarr.server.support.LibraryOperationDriver;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -71,13 +74,14 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private AuditColumnFixtures auditColumns;
-  @Autowired private ProbeExecution probeExecution;
   @Autowired private ApplicationContext applicationContext;
   @Autowired private ArtworkPrioritySchedulers artworkPrioritySchedulers;
+  @Autowired private SessionProgressRepository sessionProgressRepository;
+  @Autowired private AuthTestSupport authTestSupport;
 
   @TempDir Path tempDir;
 
-  private ProbeSchedulerStarter.StartedProbeScheduler probeScheduler;
+  private AuthTestSupport.TestIdentity admin;
 
   @BeforeEach
   void cleanupDatabase() {
@@ -89,10 +93,49 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   }
 
   @AfterEach
-  void stopProbeScheduler() {
-    if (probeScheduler != null) {
-      probeScheduler.scheduler().stop();
+  void deleteAdmin() {
+    if (admin != null) {
+      authTestSupport.deleteIdentity(admin);
     }
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a library's movie, file and resume position when another library holding the"
+          + " same movie is removed")
+  void shouldKeepLibrarysMovieFileAndResumePositionWhenAnotherLibraryHoldingTheSameMovieIsRemoved()
+      throws IOException {
+    var removedLibrary = createMovieLibrary(tempDir.resolve("removed"));
+    var keptLibrary = createMovieLibrary(tempDir.resolve("kept"));
+    createMovieFile("removed/Inception (2010)", "Inception (2010).mkv");
+    var keptFile = createMovieFile("kept/Inception (2010)", "Inception (2010).mkv");
+    stubTmdbMovieSearch();
+    stubTmdbMovieMetadata("27205", "Inception");
+    startProbeScheduler();
+    libraryOperationDriver.scanToEnd(removedLibrary.getId());
+    libraryOperationDriver.scanToEnd(keptLibrary.getId());
+    admin = authTestSupport.createAdminIdentity();
+    var resumePosition = saveResumePosition(keptFile);
+
+    var removal =
+        libraryManagementService.removeLibrary(
+            authTestSupport.identityOf(admin), removedLibrary.getId());
+
+    assertThat(removal).isEqualTo(new Outcome.Accepted<>(removedLibrary.getId()));
+    assertThat(libraryRepository.findById(removedLibrary.getId())).as("removed library").isEmpty();
+    assertThat(sessionProgressRepository.findById(resumePosition))
+        .as("resume position in the kept library's file")
+        .isPresent();
+    var keptMovies = movieRepository.findByLibrary_Id(keptLibrary.getId());
+    assertThat(keptMovies)
+        .as("kept library's movies")
+        .extracting(Movie::getTitle)
+        .containsExactly("Inception");
+    assertThat(mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(keptFile)))
+        .as("kept library's file")
+        .get()
+        .extracting(MediaFile::getMediaId)
+        .isEqualTo(keptMovies.getFirst().getId());
   }
 
   @Test
@@ -189,7 +232,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     var library = createMovieLibrary();
     var file = createMovieFile("Inception (2010)", "movie.mkv");
 
-    stubTmdbMovieSearch("Inception", "27205", "Inception", "2010-07-16");
+    stubTmdbMovieSearch();
     stubTmdbMovieMetadata("27205", "Inception");
 
     libraryManagementService.processDiscoveredFile(library.getId(), file);
@@ -205,7 +248,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     var library = createMovieLibrary();
     var file = createMovieFile("Inception (2010)", "movie.mkv");
 
-    stubTmdbMovieSearch("Inception", "27205", "Inception", "2010-07-16");
+    stubTmdbMovieSearch();
     stubTmdbMovieMetadata("27205", "Inception");
 
     libraryManagementService.processDiscoveredFile(library.getId(), file);
@@ -222,7 +265,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     var library = createMovieLibrary();
     var file = createMovieFile("Movies", "Inception (2010).mkv");
 
-    stubTmdbMovieSearch("Inception", "27205", "Inception", "2010-07-16");
+    stubTmdbMovieSearch();
     stubTmdbMovieMetadata("27205", "Inception");
 
     libraryManagementService.processDiscoveredFile(library.getId(), file);
@@ -277,14 +320,6 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   }
 
   // --- Helpers ---
-
-  // Probes run in db-scheduler, and a scan finishes only after its probes have stored results.
-  private void startProbeScheduler() {
-    jdbcTemplate.update("DELETE FROM scheduled_tasks");
-    probeScheduler =
-        ProbeSchedulerStarter.fromContext(applicationContext)
-            .start(probeExecution, new AbstractSchedulerListener() {}, Clock.systemUTC());
-  }
 
   // The scan must insert the genre, so a row left by an earlier run cannot answer for it.
   private void deleteUnsharedGenre() {
@@ -363,17 +398,33 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
   private LibraryWithMovieFile createLibraryWithMatchingMovieFile() throws IOException {
     var library = createMovieLibrary();
     var movieFile = createMovieFile("Inception (2010)", "Inception (2010).mkv");
-    stubTmdbMovieSearch("Inception", "27205", "Inception", "2010-07-16");
+    stubTmdbMovieSearch();
     return new LibraryWithMovieFile(library, movieFile);
   }
 
-  private Library createMovieLibrary() {
+  private UUID saveResumePosition(Path file) {
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(file)).orElseThrow();
+    return sessionProgressRepository
+        .saveAndFlush(
+            SessionProgressFixture.progressBuilder(admin.profile().getId(), mediaFile.getId())
+                .positionSeconds(1800)
+                .build())
+        .getId();
+  }
+
+  private Library createMovieLibrary() throws IOException {
+    return createMovieLibrary(tempDir);
+  }
+
+  private Library createMovieLibrary(Path root) throws IOException {
+    Files.createDirectories(root);
     return libraryRepository.saveAndFlush(
         Library.builder()
             .name("Movies")
             .backend(LibraryBackend.LOCAL)
             .status(LibraryStatus.HEALTHY)
-            .filepathUri(FilepathCodec.encode(tempDir))
+            .filepathUri(FilepathCodec.encode(root))
             .externalAgentStrategy(ExternalAgentStrategy.TMDB)
             .type(MediaType.MOVIE)
             .build());
@@ -389,10 +440,10 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
     return file;
   }
 
-  private void stubTmdbMovieSearch(String query, String tmdbId, String title, String releaseDate) {
+  private void stubTmdbMovieSearch() {
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
-            .withQueryParam("query", equalTo(query))
+            .withQueryParam("query", equalTo("Inception"))
             .willReturn(
                 aResponse()
                     .withStatus(200)
@@ -403,10 +454,10 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
                           "page": 1,
                           "results": [
                             {
-                              "id": %s,
-                              "title": "%s",
-                              "original_title": "%s",
-                              "release_date": "%s",
+                              "id": 27205,
+                              "title": "Inception",
+                              "original_title": "Inception",
+                              "release_date": "2010-07-16",
                               "popularity": 100.0,
                               "vote_count": 1000,
                               "vote_average": 8.5
@@ -415,8 +466,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
                           "total_results": 1,
                           "total_pages": 1
                         }
-                        """
-                            .formatted(tmdbId, title, title, releaseDate))));
+                        """)));
   }
 
   private void stubTmdbMovieMetadata(String tmdbId, String title) {

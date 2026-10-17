@@ -65,8 +65,8 @@ public class SeriesService {
   }
 
   @Transactional(readOnly = true)
-  public Optional<Series> findByTmdbId(String tmdbId) {
-    return seriesRepository.findByTmdbId(tmdbId);
+  public Optional<Series> findInLibraryByTmdbId(UUID libraryId, String tmdbId) {
+    return seriesRepository.findInLibraryByTmdbId(libraryId, tmdbId);
   }
 
   @Transactional

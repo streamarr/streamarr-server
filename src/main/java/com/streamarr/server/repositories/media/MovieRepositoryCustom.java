@@ -17,7 +17,7 @@ public interface MovieRepositoryCustom {
 
   Optional<Movie> findLetterJumpPredecessor(MediaFilter filter);
 
-  Optional<Movie> findByTmdbId(String tmdbId);
+  Optional<Movie> findInLibraryByTmdbId(UUID libraryId, String tmdbId);
 
   /** Returns the given movie ids whose movie has no provider id. */
   Set<UUID> findUnmatchedMovieIds(Collection<UUID> movieIds);

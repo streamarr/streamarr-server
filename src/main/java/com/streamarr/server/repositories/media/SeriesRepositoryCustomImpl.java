@@ -104,7 +104,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
         .fetchSet(SERIES.ID);
   }
 
-  public Optional<Series> findByTmdbId(String tmdbId) {
+  public Optional<Series> findInLibraryByTmdbId(UUID libraryId, String tmdbId) {
     var query =
         context
             .select(SERIES.asterisk(), BASE_COLLECTABLE.asterisk())
@@ -117,7 +117,8 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
                 EXTERNAL_IDENTIFIER
                     .EXTERNAL_SOURCE_TYPE
                     .eq(inline(ExternalSourceType.TMDB))
-                    .and(EXTERNAL_IDENTIFIER.EXTERNAL_ID.eq(tmdbId)))
+                    .and(EXTERNAL_IDENTIFIER.EXTERNAL_ID.eq(tmdbId))
+                    .and(BASE_COLLECTABLE.LIBRARY_ID.eq(libraryId)))
             .limit(1);
 
     List<Series> results = JooqQueryHelper.nativeQuery(entityManager, query, Series.class);

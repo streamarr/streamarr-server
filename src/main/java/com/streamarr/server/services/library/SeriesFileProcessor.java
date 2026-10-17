@@ -352,7 +352,8 @@ public class SeriesFileProcessor {
 
   private MetadataFetchOutcome<Series> findOrCreateSeries(
       FileDiscovery discovery, RemoteSearchResult searchResult) {
-    var existing = seriesService.findByTmdbId(searchResult.externalId());
+    var existing =
+        seriesService.findInLibraryByTmdbId(discovery.library().getId(), searchResult.externalId());
     if (existing.isPresent()) {
       return new MetadataFetchOutcome.Found<>(existing.get());
     }

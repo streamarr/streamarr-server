@@ -11,6 +11,8 @@ import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ContentRating;
+import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
@@ -20,6 +22,7 @@ import com.streamarr.server.repositories.CompanyRepository;
 import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.PersonRepository;
+import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
@@ -27,6 +30,7 @@ import com.streamarr.server.utils.TitleSortUtil;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Stream;
 import org.jooq.SortOrder;
 import org.junit.jupiter.api.BeforeAll;
@@ -58,6 +62,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
   @Autowired private TransactionTemplate transactionTemplate;
 
   @Autowired private MovieService movieService;
+
+  @Autowired private MediaFileRepository mediaFileRepository;
 
   private Library savedLibraryA;
   private Library savedLibraryB;
@@ -419,6 +425,71 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
       assertThat(libraryAMovies.items()).hasSize(2);
       assertThat(libraryBMovies.items()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName(
+        "Should leave a file unattached when only another library holds a movie with its TMDB id")
+    void shouldLeaveFileUnattachedWhenOnlyAnotherLibraryHoldsMovieWithItsTmdbId() {
+      var tmdbId = UUID.randomUUID().toString();
+      saveMovieWithTmdbId(saveLibrary(), tmdbId);
+      var mediaFile = saveUnmatchedFile(saveLibrary());
+
+      var attachedMovie = movieService.addMediaFileToMovieByTmdbId(tmdbId, mediaFile);
+
+      assertThat(attachedMovie).isEmpty();
+      assertThat(mediaFileRepository.findById(mediaFile.getId()))
+          .get()
+          .extracting(MediaFile::getMediaId)
+          .isNull();
+    }
+
+    @Test
+    @DisplayName(
+        "Should attach a file to its own library's movie when another library also holds a movie"
+            + " with its TMDB id")
+    void shouldAttachFileToItsOwnLibrarysMovieWhenAnotherLibraryAlsoHoldsMovieWithItsTmdbId() {
+      var tmdbId = UUID.randomUUID().toString();
+      var fileLibrary = saveLibrary();
+      saveMovieWithTmdbId(saveLibrary(), tmdbId);
+      var ownMovie = saveMovieWithTmdbId(fileLibrary, tmdbId);
+      var mediaFile = saveUnmatchedFile(fileLibrary);
+
+      var attachedMovie = movieService.addMediaFileToMovieByTmdbId(tmdbId, mediaFile);
+
+      assertThat(attachedMovie).get().extracting(Movie::getId).isEqualTo(ownMovie.getId());
+      assertThat(mediaFileRepository.findById(mediaFile.getId()))
+          .get()
+          .extracting(MediaFile::getMediaId)
+          .isEqualTo(ownMovie.getId());
+    }
+
+    private Library saveLibrary() {
+      return libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    }
+
+    private Movie saveMovieWithTmdbId(Library library, String tmdbId) {
+      return movieRepository.saveAndFlush(
+          Movie.builder()
+              .title("Inception")
+              .library(library)
+              .externalIds(
+                  Set.of(
+                      ExternalIdentifier.builder()
+                          .externalId(tmdbId)
+                          .externalSourceType(ExternalSourceType.TMDB)
+                          .build()))
+              .build());
+    }
+
+    private MediaFile saveUnmatchedFile(Library library) {
+      return mediaFileRepository.saveAndFlush(
+          MediaFile.builder()
+              .libraryId(library.getId())
+              .filepathUri("file:///library/" + UUID.randomUUID() + "/Inception (2010).mkv")
+              .filename("Inception (2010).mkv")
+              .status(MediaFileStatus.UNMATCHED)
+              .build());
     }
   }
 
