@@ -114,7 +114,7 @@ public class KeyframePacketScanExecution {
           Optional.of(
               new KeyframeKnowledge.Unavailable(
                   KeyframesUnavailableReason.PACKET_SCAN_MEDIA_ERROR));
-      case ProbeOutcome.Success(_, _, var keyframes) -> reportedKeyframes(keyframes);
+      case ProbeOutcome.Success(_, _, var keyframes, _) -> reportedKeyframes(keyframes);
     };
   }
 
