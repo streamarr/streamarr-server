@@ -68,7 +68,11 @@ class TranscodeDecisionCopyRuleTest {
   void shouldCopyTheVideoOnlyWhenEveryConditionOfTheInterimCopyRuleHolds(CopyCase copyCase) {
     var decision =
         service.decide(
-            copyCase.source().probe(), options(copyCase.clientCodecs()), EVERY_VIDEO_CODEC_FAMILY);
+            TranscodeDecisionRequest.builder()
+                .source(copyCase.source().probe())
+                .clientOptions(options(copyCase.clientCodecs()))
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .build());
 
     assertThat(decision.transcodeMode().copiesVideo()).isEqualTo(copyCase.copyPermitted());
   }
@@ -140,7 +144,12 @@ class TranscodeDecisionCopyRuleTest {
             .build();
 
     var decision =
-        service.decide(source.probe(), options(List.of("h264", "hevc")), EVERY_VIDEO_CODEC_FAMILY);
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source.probe())
+                .clientOptions(options(List.of("h264", "hevc")))
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .build());
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(decision.videoSource().flatMap(VideoPlaybackFacts::codecString))
@@ -160,7 +169,12 @@ class TranscodeDecisionCopyRuleTest {
             .build();
 
     var decision =
-        service.decide(source.probe(), options(List.of("h264", "hevc")), EVERY_VIDEO_CODEC_FAMILY);
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source.probe())
+                .clientOptions(options(List.of("h264", "hevc")))
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .build());
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
     assertThat(decision.videoCodecFamily()).isEqualTo("h264");
@@ -179,7 +193,12 @@ class TranscodeDecisionCopyRuleTest {
             .build();
 
     var decision =
-        service.decide(source.probe(), options(List.of("h264", "hevc")), EVERY_VIDEO_CODEC_FAMILY);
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source.probe())
+                .clientOptions(options(List.of("h264", "hevc")))
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .build());
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
   }
@@ -191,7 +210,12 @@ class TranscodeDecisionCopyRuleTest {
         Source.builder().sampleEntry(SampleEntry.AVC1).bitDepth(OptionalInt.of(10)).build();
 
     var decision =
-        service.decide(source.probe(), options(List.of("h264")), EVERY_VIDEO_CODEC_FAMILY);
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source.probe())
+                .clientOptions(options(List.of("h264")))
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .build());
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
   }
@@ -205,7 +229,12 @@ class TranscodeDecisionCopyRuleTest {
     var source = Source.builder().sampleEntry(SampleEntry.AVC1).dynamicRange(range).build();
 
     var decision =
-        service.decide(source.probe(), options(List.of("h264")), EVERY_VIDEO_CODEC_FAMILY);
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source.probe())
+                .clientOptions(options(List.of("h264")))
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .build());
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(decision.videoSource()).isEqualTo(source.probe().videoPlaybackFacts());
@@ -220,7 +249,12 @@ class TranscodeDecisionCopyRuleTest {
     var source = Source.builder().sampleEntry(SampleEntry.HVC1).dynamicRange(range).build();
 
     var decision =
-        service.decide(source.probe(), options(List.of("h264")), EVERY_VIDEO_CODEC_FAMILY);
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source.probe())
+                .clientOptions(options(List.of("h264")))
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .build());
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
     assertThat(decision.videoSource()).isEqualTo(source.probe().videoPlaybackFacts());
@@ -237,7 +271,13 @@ class TranscodeDecisionCopyRuleTest {
             .videoPlaybackFacts(Optional.empty())
             .build();
 
-    var decision = service.decide(probe, options(List.of("h264")), EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(probe)
+                .clientOptions(options(List.of("h264")))
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .build());
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
     assertThat(decision.videoSource()).isEmpty();

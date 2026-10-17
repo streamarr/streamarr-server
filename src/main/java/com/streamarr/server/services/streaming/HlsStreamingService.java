@@ -73,7 +73,11 @@ public class HlsStreamingService implements StreamingService {
     var options = command.options();
     var decision =
         transcodeDecisionService.decide(
-            probe, options, transcodeExecutor.encodableVideoCodecFamilies());
+            TranscodeDecisionRequest.builder()
+                .source(probe)
+                .clientOptions(options)
+                .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())
+                .build());
     var variants = resolveVariants(probe, options, decision);
     if (requiresVideoTranscode(decision.transcodeMode()) && hasInvalidEncodeSize(probe, variants)) {
       return Outcome.rejected(new CreateStreamSessionRejection.InvalidPictureSize());

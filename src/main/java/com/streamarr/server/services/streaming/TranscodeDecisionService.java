@@ -43,10 +43,10 @@ public class TranscodeDecisionService {
    * An encode uses the first codec in the preference that the client declares and that a
    * worker-verified encoder encodes (ADR 0009), ending at H.264. A copy needs no encoder.
    */
-  public TranscodeDecision decide(
-      MediaProbe source,
-      StreamingOptions clientOptions,
-      @NonNull Set<String> encodableVideoCodecFamilies) {
+  public TranscodeDecision decide(@NonNull TranscodeDecisionRequest request) {
+    var source = request.source();
+    var clientOptions = request.clientOptions();
+    var encodableVideoCodecFamilies = request.encodableVideoCodecFamilies();
     var supportedCodecs = clientOptions.supportedCodecs();
     boolean videoCopyable = decideVideoCopy(source, supportedCodecs);
 
