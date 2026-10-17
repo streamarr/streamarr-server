@@ -208,12 +208,15 @@ class ProbeVersion4UpgradeIT extends AbstractIntegrationTest {
         Flyway.configure().configuration(flyway.getConfiguration()).target("95").load().migrate();
         fixture.seed(flyway.getConfiguration().getDataSource());
         flyway.migrate();
-        var jdbc = new JdbcTemplate(flyway.getConfiguration().getDataSource());
-        assertThat(jdbc.queryForList("SELECT probe_version FROM media_file_container_info"))
-            .isEmpty();
-        assertThat(jdbc.queryForList("SELECT stream_index FROM media_file_stream_info")).isEmpty();
+        var migratedDatabase = new JdbcTemplate(flyway.getConfiguration().getDataSource());
         assertThat(
-                jdbc.queryForList(
+                migratedDatabase.queryForList(
+                    "SELECT probe_version FROM media_file_container_info"))
+            .isEmpty();
+        assertThat(migratedDatabase.queryForList("SELECT stream_index FROM media_file_stream_info"))
+            .isEmpty();
+        assertThat(
+                migratedDatabase.queryForList(
                     "SELECT probe_version FROM media_file_probe_task_request", Integer.class))
             .containsExactlyInAnyOrder(1, 3);
       };

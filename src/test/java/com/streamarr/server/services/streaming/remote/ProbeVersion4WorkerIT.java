@@ -162,8 +162,7 @@ class ProbeVersion4WorkerIT extends AbstractIntegrationTest {
   // Each seek encodes from the media segment that holds the chapter's start. The chapters start on
   // the 6 s grid, so that segment opens at the chapter's start.
   private double firstTimestampAfterSeeking(
-      Playback playback, TranscodeRequest.TranscodeRequestBuilder seek, double startSeconds)
-      throws Exception {
+      Playback playback, TranscodeRequest.TranscodeRequestBuilder seek, double startSeconds) {
     var sessionId = UUID.randomUUID();
     var index = (int) Math.round(startSeconds / SEGMENT_SECONDS);
     playback
