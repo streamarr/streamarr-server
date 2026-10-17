@@ -100,7 +100,11 @@ class HeldSegmentRequestConcurrencyIT {
   void setUp() throws Exception {
     segmentStore = new PausingSegmentStore(new LocalSegmentStore(tempDir.resolve("segments")));
     server =
-        new WorkerSessionServer(serverConfigurationBuilder().build(), segmentStore, meterRegistry);
+        WorkerSessionServer.builder()
+            .configuration(serverConfigurationBuilder().build())
+            .segmentStore(segmentStore)
+            .meterRegistry(meterRegistry)
+            .build();
     server.start();
     worker = LoopbackVariantWorker.register(server.port());
     transcodeExecutor =

@@ -46,6 +46,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 
@@ -66,6 +67,7 @@ final class LiveWorkerConnectionRegistry {
   private final Counter encoderBackendMismatches;
   private final HeldSegmentRequests heldRequests;
 
+  @Builder
   LiveWorkerConnectionRegistry(
       @NonNull WorkerSessionServerConfiguration configuration,
       @NonNull MeterRegistry meterRegistry,

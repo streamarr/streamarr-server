@@ -90,10 +90,11 @@ class KeyframePacketScanWorkerIT extends AbstractIntegrationTest {
   void shouldStoreScannedKeyframePositionsWhenTheProbeOfAnMpegTsSourceAsksForAPacketScan()
       throws Exception {
     try (var server =
-            new WorkerSessionServer(
-                serverConfigurationBuilder().build(),
-                new FakeSegmentStore(),
-                new SimpleMeterRegistry());
+            WorkerSessionServer.builder()
+                .configuration(serverConfigurationBuilder().build())
+                .segmentStore(new FakeSegmentStore())
+                .meterRegistry(new SimpleMeterRegistry())
+                .build();
         var worker =
             WorkerContainerFixture.builder()
                 .workerSessions(server)

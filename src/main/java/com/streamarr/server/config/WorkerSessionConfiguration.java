@@ -29,7 +29,11 @@ public class WorkerSessionConfiguration {
                 new WorkerSessionKeepalive(
                     properties.keepalive().time(), properties.keepalive().timeout()))
             .build();
-    return new WorkerSessionServer(configuration, segmentStore, meterRegistry);
+    return WorkerSessionServer.builder()
+        .configuration(configuration)
+        .segmentStore(segmentStore)
+        .meterRegistry(meterRegistry)
+        .build();
   }
 
   @Bean

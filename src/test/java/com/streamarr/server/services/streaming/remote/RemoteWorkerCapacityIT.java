@@ -38,10 +38,11 @@ class RemoteWorkerCapacityIT {
     var nextRequest = request("next.mp4");
 
     try (var server =
-            new WorkerSessionServer(
-                serverConfigurationBuilder().address("127.0.0.1").build(),
-                new FakeSegmentStore(),
-                new SimpleMeterRegistry());
+            WorkerSessionServer.builder()
+                .configuration(serverConfigurationBuilder().address("127.0.0.1").build())
+                .segmentStore(new FakeSegmentStore())
+                .meterRegistry(new SimpleMeterRegistry())
+                .build();
         var worker =
             WorkerContainerFixture.builder()
                 .workerSessions(server)

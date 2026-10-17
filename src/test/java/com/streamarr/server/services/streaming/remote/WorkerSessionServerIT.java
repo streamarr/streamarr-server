@@ -130,7 +130,11 @@ class WorkerSessionServerIT {
             .probeCancellationTimeout(Duration.ofMillis(100))
             .build();
     try (var server =
-        new WorkerSessionServer(configuration, segmentStore, new SimpleMeterRegistry())) {
+        WorkerSessionServer.builder()
+            .configuration(configuration)
+            .segmentStore(segmentStore)
+            .meterRegistry(new SimpleMeterRegistry())
+            .build()) {
       server.start();
       var channel = workerChannel(server.port());
       var identity = workerIdentity(UUID.randomUUID());
@@ -1767,8 +1771,11 @@ class WorkerSessionServerIT {
   }
 
   private WorkerSessionServer server(SegmentStore segmentStore, MeterRegistry meterRegistry) {
-    return new WorkerSessionServer(
-        serverConfigurationBuilder().build(), segmentStore, meterRegistry);
+    return WorkerSessionServer.builder()
+        .configuration(serverConfigurationBuilder().build())
+        .segmentStore(segmentStore)
+        .meterRegistry(meterRegistry)
+        .build();
   }
 
   private ManagedChannel workerChannel(int port) {

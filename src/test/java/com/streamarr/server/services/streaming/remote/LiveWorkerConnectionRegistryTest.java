@@ -63,7 +63,13 @@ class LiveWorkerConnectionRegistryTest {
     var heldRequests = new HeldSegmentRequests(new SimpleMeterRegistry());
 
     assertThatNullPointerException()
-        .isThrownBy(() -> new LiveWorkerConnectionRegistry(null, meterRegistry, heldRequests))
+        .isThrownBy(
+            () ->
+                LiveWorkerConnectionRegistry.builder()
+                    .configuration(null)
+                    .meterRegistry(meterRegistry)
+                    .heldRequests(heldRequests)
+                    .build())
         .withMessageContaining("configuration");
   }
 
@@ -74,7 +80,13 @@ class LiveWorkerConnectionRegistryTest {
     var heldRequests = new HeldSegmentRequests(new SimpleMeterRegistry());
 
     assertThatNullPointerException()
-        .isThrownBy(() -> new LiveWorkerConnectionRegistry(configuration, null, heldRequests))
+        .isThrownBy(
+            () ->
+                LiveWorkerConnectionRegistry.builder()
+                    .configuration(configuration)
+                    .meterRegistry(null)
+                    .heldRequests(heldRequests)
+                    .build())
         .withMessageContaining("meterRegistry");
   }
 
@@ -85,7 +97,13 @@ class LiveWorkerConnectionRegistryTest {
     var meterRegistry = new SimpleMeterRegistry();
 
     assertThatNullPointerException()
-        .isThrownBy(() -> new LiveWorkerConnectionRegistry(configuration, meterRegistry, null))
+        .isThrownBy(
+            () ->
+                LiveWorkerConnectionRegistry.builder()
+                    .configuration(configuration)
+                    .meterRegistry(meterRegistry)
+                    .heldRequests(null)
+                    .build())
         .withMessageContaining("heldRequests");
   }
 
@@ -633,10 +651,11 @@ class LiveWorkerConnectionRegistryTest {
   void shouldCountRefusedInitializationSegmentWhenItsWorkerDisconnectsDuringPublication() {
     var meterRegistry = new SimpleMeterRegistry();
     var registry =
-        new LiveWorkerConnectionRegistry(
-            WorkerSessionServerConfiguration.builder().build(),
-            meterRegistry,
-            new HeldSegmentRequests(new SimpleMeterRegistry()));
+        LiveWorkerConnectionRegistry.builder()
+            .configuration(WorkerSessionServerConfiguration.builder().build())
+            .meterRegistry(meterRegistry)
+            .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
+            .build();
     var responses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
     var workerRegistration = registration();
     var workerSessionId = registry.register(WORKER_ID, workerRegistration, collecting(responses));
@@ -1122,10 +1141,11 @@ class LiveWorkerConnectionRegistryTest {
 
     private static RunningEncode dispatch(WorkerSessionServerConfiguration configuration) {
       var registry =
-          new LiveWorkerConnectionRegistry(
-              configuration,
-              new SimpleMeterRegistry(),
-              new HeldSegmentRequests(new SimpleMeterRegistry()));
+          LiveWorkerConnectionRegistry.builder()
+              .configuration(configuration)
+              .meterRegistry(new SimpleMeterRegistry())
+              .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
+              .build();
       var workerRegistration = registration(WORKER_ID, libx264Encoder());
       var workerSessionId =
           registry.register(WORKER_ID, workerRegistration, new CancellableObserver());

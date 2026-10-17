@@ -368,10 +368,11 @@ class ProbeVersion4WorkerIT extends AbstractIntegrationTest {
   }
 
   private static WorkerSessionServer server(LocalSegmentStore segmentStore) {
-    return new WorkerSessionServer(
-        serverConfigurationBuilder().address("127.0.0.1").build(),
-        segmentStore,
-        new SimpleMeterRegistry());
+    return WorkerSessionServer.builder()
+        .configuration(serverConfigurationBuilder().address("127.0.0.1").build())
+        .segmentStore(segmentStore)
+        .meterRegistry(new SimpleMeterRegistry())
+        .build();
   }
 
   private static WorkerContainerFixture.WorkerContainerFixtureBuilder workerBuilder(

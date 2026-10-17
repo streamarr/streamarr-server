@@ -16,6 +16,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 
@@ -32,6 +33,7 @@ public final class WorkerSessionServer implements AutoCloseable {
   private final WorkerSessionServerRuntime runtime = new WorkerSessionServerRuntime(log);
   private boolean started;
 
+  @Builder
   public WorkerSessionServer(
       @NonNull WorkerSessionServerConfiguration configuration,
       @NonNull SegmentStore segmentStore,
@@ -39,7 +41,11 @@ public final class WorkerSessionServer implements AutoCloseable {
     this.configuration = configuration;
     heldSegmentRequests = new HeldSegmentRequests(meterRegistry);
     workerConnections =
-        new LiveWorkerConnectionRegistry(configuration, meterRegistry, heldSegmentRequests);
+        LiveWorkerConnectionRegistry.builder()
+            .configuration(configuration)
+            .meterRegistry(meterRegistry)
+            .heldRequests(heldSegmentRequests)
+            .build();
     this.segmentStore = segmentStore;
   }
 

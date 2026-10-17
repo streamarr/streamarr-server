@@ -60,8 +60,11 @@ class EncoderPresetDispatchIT extends AbstractIntegrationTest {
     serverAdmin = authTestSupport.createAdminIdentity();
     var segmentStore = new FakeSegmentStore();
     server =
-        new WorkerSessionServer(
-            serverConfigurationBuilder().build(), segmentStore, new SimpleMeterRegistry());
+        WorkerSessionServer.builder()
+            .configuration(serverConfigurationBuilder().build())
+            .segmentStore(segmentStore)
+            .meterRegistry(new SimpleMeterRegistry())
+            .build();
     server.start();
     channel = plaintextChannelBuilder(server.port(), WORKER_ID).build();
     worker = LoopbackWorker.register(channel);

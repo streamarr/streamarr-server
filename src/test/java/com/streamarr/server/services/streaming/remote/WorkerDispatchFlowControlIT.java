@@ -103,8 +103,11 @@ class WorkerDispatchFlowControlIT {
 
   private WorkerSessionServer server() {
     var configuration = WorkerSessionServerConfiguration.builder().port(0).build();
-    return new WorkerSessionServer(
-        configuration, new FakeSegmentStore(), new SimpleMeterRegistry());
+    return WorkerSessionServer.builder()
+        .configuration(configuration)
+        .segmentStore(new FakeSegmentStore())
+        .meterRegistry(new SimpleMeterRegistry())
+        .build();
   }
 
   private ManagedChannel workerChannel(int port) {

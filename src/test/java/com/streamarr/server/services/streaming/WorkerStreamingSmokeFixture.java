@@ -21,10 +21,12 @@ final class WorkerStreamingSmokeFixture implements AutoCloseable {
       Path sourceRoot, LocalSegmentStore segmentStore, String ffmpegScript) {
     this.segmentStore = segmentStore;
     workerSessions =
-        new WorkerSessionServer(
-            WorkerSessionServerConfiguration.builder().address("127.0.0.1").port(0).build(),
-            segmentStore,
-            new SimpleMeterRegistry());
+        WorkerSessionServer.builder()
+            .configuration(
+                WorkerSessionServerConfiguration.builder().address("127.0.0.1").port(0).build())
+            .segmentStore(segmentStore)
+            .meterRegistry(new SimpleMeterRegistry())
+            .build();
     worker =
         WorkerContainerFixture.builder()
             .workerSessions(workerSessions)

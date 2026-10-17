@@ -12,9 +12,10 @@ final class LiveWorkerConnectionRegistryFixture {
   }
 
   static LiveWorkerConnectionRegistry registryWaking(HeldSegmentRequests heldRequests) {
-    return new LiveWorkerConnectionRegistry(
-        WorkerSessionServerConfiguration.builder().build(),
-        new SimpleMeterRegistry(),
-        heldRequests);
+    return LiveWorkerConnectionRegistry.builder()
+        .configuration(WorkerSessionServerConfiguration.builder().build())
+        .meterRegistry(new SimpleMeterRegistry())
+        .heldRequests(heldRequests)
+        .build();
   }
 }

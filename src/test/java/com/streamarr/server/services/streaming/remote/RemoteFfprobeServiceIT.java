@@ -76,8 +76,11 @@ class RemoteFfprobeServiceIT {
             .probeCancellationTimeout(Duration.ofMillis(100))
             .build();
     try (var server =
-            new WorkerSessionServer(
-                configuration, new FakeSegmentStore(), new SimpleMeterRegistry());
+            WorkerSessionServer.builder()
+                .configuration(configuration)
+                .segmentStore(new FakeSegmentStore())
+                .meterRegistry(new SimpleMeterRegistry())
+                .build();
         var calls = Executors.newVirtualThreadPerTaskExecutor()) {
       server.start();
       try (var worker = worker(server.port(), 1)) {
@@ -194,8 +197,11 @@ class RemoteFfprobeServiceIT {
             .keyframeScanTimeout(Duration.ofMillis(100))
             .build();
     try (var server =
-            new WorkerSessionServer(
-                configuration, new FakeSegmentStore(), new SimpleMeterRegistry());
+            WorkerSessionServer.builder()
+                .configuration(configuration)
+                .segmentStore(new FakeSegmentStore())
+                .meterRegistry(new SimpleMeterRegistry())
+                .build();
         var calls = Executors.newVirtualThreadPerTaskExecutor()) {
       server.start();
       try (var worker = worker(server.port(), 1)) {
@@ -791,8 +797,11 @@ class RemoteFfprobeServiceIT {
   }
 
   private WorkerSessionServer server() {
-    return new WorkerSessionServer(
-        serverConfigurationBuilder().build(), new FakeSegmentStore(), new SimpleMeterRegistry());
+    return WorkerSessionServer.builder()
+        .configuration(serverConfigurationBuilder().build())
+        .segmentStore(new FakeSegmentStore())
+        .meterRegistry(new SimpleMeterRegistry())
+        .build();
   }
 
   private ProbeExecutionRequest.ProbeExecutionRequestBuilder request() {

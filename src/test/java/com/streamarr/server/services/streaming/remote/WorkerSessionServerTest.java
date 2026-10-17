@@ -57,7 +57,13 @@ class WorkerSessionServerTest {
     var meterRegistry = new SimpleMeterRegistry();
 
     assertThatNullPointerException()
-        .isThrownBy(() -> new WorkerSessionServer(null, segmentStore, meterRegistry))
+        .isThrownBy(
+            () ->
+                WorkerSessionServer.builder()
+                    .configuration(null)
+                    .segmentStore(segmentStore)
+                    .meterRegistry(meterRegistry)
+                    .build())
         .withMessageContaining("configuration");
   }
 
@@ -68,7 +74,13 @@ class WorkerSessionServerTest {
     var meterRegistry = new SimpleMeterRegistry();
 
     assertThatNullPointerException()
-        .isThrownBy(() -> new WorkerSessionServer(configuration, null, meterRegistry))
+        .isThrownBy(
+            () ->
+                WorkerSessionServer.builder()
+                    .configuration(configuration)
+                    .segmentStore(null)
+                    .meterRegistry(meterRegistry)
+                    .build())
         .withMessageContaining("segmentStore");
   }
 
@@ -79,7 +91,13 @@ class WorkerSessionServerTest {
     var segmentStore = new FakeSegmentStore();
 
     assertThatNullPointerException()
-        .isThrownBy(() -> new WorkerSessionServer(configuration, segmentStore, null))
+        .isThrownBy(
+            () ->
+                WorkerSessionServer.builder()
+                    .configuration(configuration)
+                    .segmentStore(segmentStore)
+                    .meterRegistry(null)
+                    .build())
         .withMessageContaining("meterRegistry");
   }
 
@@ -94,8 +112,11 @@ class WorkerSessionServerTest {
 
   private WorkerSessionServer unstartedServer() {
     var configuration = WorkerSessionServerConfiguration.builder().port(0).build();
-    return new WorkerSessionServer(
-        configuration, new FakeSegmentStore(), new SimpleMeterRegistry());
+    return WorkerSessionServer.builder()
+        .configuration(configuration)
+        .segmentStore(new FakeSegmentStore())
+        .meterRegistry(new SimpleMeterRegistry())
+        .build();
   }
 
   @Test

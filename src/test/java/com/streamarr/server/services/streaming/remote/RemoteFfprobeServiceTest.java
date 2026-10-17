@@ -36,10 +36,11 @@ class RemoteFfprobeServiceTest {
   void shouldRejectProbingWhenSourceIsNotFileWithinItsNamespace(String relativePath) {
     var sourceRoot = tempDir.resolve("movies");
     try (var server =
-        new WorkerSessionServer(
-            serverConfigurationBuilder().build(),
-            new FakeSegmentStore(),
-            new SimpleMeterRegistry())) {
+        WorkerSessionServer.builder()
+            .configuration(serverConfigurationBuilder().build())
+            .segmentStore(new FakeSegmentStore())
+            .meterRegistry(new SimpleMeterRegistry())
+            .build()) {
       var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, sourceRoot);
       var request =
           ProbeExecutionRequest.builder()
@@ -59,10 +60,11 @@ class RemoteFfprobeServiceTest {
   void shouldReportTemporaryFailureWhenNoWorkerIsConnected() throws IOException {
     var sourceRoot = Files.createDirectories(tempDir.resolve("movies"));
     try (var server =
-        new WorkerSessionServer(
-            serverConfigurationBuilder().build(),
-            new FakeSegmentStore(),
-            new SimpleMeterRegistry())) {
+        WorkerSessionServer.builder()
+            .configuration(serverConfigurationBuilder().build())
+            .segmentStore(new FakeSegmentStore())
+            .meterRegistry(new SimpleMeterRegistry())
+            .build()) {
       server.start();
       var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, sourceRoot);
       var request =

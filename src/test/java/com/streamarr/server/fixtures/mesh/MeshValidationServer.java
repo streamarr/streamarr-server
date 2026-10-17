@@ -28,7 +28,12 @@ public final class MeshValidationServer {
     var configuration =
         WorkerSessionServerConfiguration.builder().address("0.0.0.0").port(9090).build();
     var segments = new MeshSegmentStore();
-    try (var server = new WorkerSessionServer(configuration, segments, new SimpleMeterRegistry());
+    try (var server =
+            WorkerSessionServer.builder()
+                .configuration(configuration)
+                .segmentStore(segments)
+                .meterRegistry(new SimpleMeterRegistry())
+                .build();
         var httpThreads = Executors.newVirtualThreadPerTaskExecutor()) {
       server.start();
       var http = HttpServer.create(new InetSocketAddress("0.0.0.0", 8080), 0);

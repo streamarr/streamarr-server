@@ -257,10 +257,11 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
     scheduling.request(request);
 
     try (var server =
-        new WorkerSessionServer(
-            serverConfigurationBuilder().build(),
-            new FakeSegmentStore(),
-            new SimpleMeterRegistry())) {
+        WorkerSessionServer.builder()
+            .configuration(serverConfigurationBuilder().build())
+            .segmentStore(new FakeSegmentStore())
+            .meterRegistry(new SimpleMeterRegistry())
+            .build()) {
       server.start();
       try (var worker =
           LoopbackProbeWorker.builder()
@@ -302,10 +303,11 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
     requests.forEach(scheduling::request);
 
     try (var server =
-        new WorkerSessionServer(
-            serverConfigurationBuilder().build(),
-            new FakeSegmentStore(),
-            new SimpleMeterRegistry())) {
+        WorkerSessionServer.builder()
+            .configuration(serverConfigurationBuilder().build())
+            .segmentStore(new FakeSegmentStore())
+            .meterRegistry(new SimpleMeterRegistry())
+            .build()) {
       server.start();
       try (var worker =
           LoopbackProbeWorker.builder()

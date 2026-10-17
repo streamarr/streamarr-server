@@ -40,8 +40,11 @@ class RemoteProbeDeadlineIT {
     var configuration = serverConfigurationBuilder().probeTimeout(Duration.ofSeconds(2)).build();
     try (var calls = Executors.newVirtualThreadPerTaskExecutor();
         var server =
-            new WorkerSessionServer(
-                configuration, new FakeSegmentStore(), new SimpleMeterRegistry());
+            WorkerSessionServer.builder()
+                .configuration(configuration)
+                .segmentStore(new FakeSegmentStore())
+                .meterRegistry(new SimpleMeterRegistry())
+                .build();
         var worker =
             WorkerContainerFixture.builder()
                 .workerSessions(server)

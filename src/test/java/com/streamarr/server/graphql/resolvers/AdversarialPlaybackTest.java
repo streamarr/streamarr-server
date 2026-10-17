@@ -272,10 +272,11 @@ class AdversarialPlaybackTest {
 
     @Bean(initMethod = "start", destroyMethod = "close")
     WorkerSessionServer sessions() {
-      return new WorkerSessionServer(
-          WorkerSessionServerConfiguration.builder().port(0).build(),
-          segments,
-          new SimpleMeterRegistry());
+      return WorkerSessionServer.builder()
+          .configuration(WorkerSessionServerConfiguration.builder().port(0).build())
+          .segmentStore(segments)
+          .meterRegistry(new SimpleMeterRegistry())
+          .build();
     }
 
     @Bean

@@ -211,10 +211,11 @@ class MeshMediaHandlerIT {
     @Builder
     private Rig(ProbeMediaInfo media, boolean withoutWorker) throws Exception {
       server =
-          new WorkerSessionServer(
-              WorkerSessionServerConfiguration.builder().port(0).build(),
-              segments,
-              new SimpleMeterRegistry());
+          WorkerSessionServer.builder()
+              .configuration(WorkerSessionServerConfiguration.builder().port(0).build())
+              .segmentStore(segments)
+              .meterRegistry(new SimpleMeterRegistry())
+              .build();
       server.start();
       http = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
       http.createContext("/media/", new MeshMediaHandler(server, segments));

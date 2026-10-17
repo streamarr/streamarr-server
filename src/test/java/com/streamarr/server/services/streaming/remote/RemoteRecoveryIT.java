@@ -386,8 +386,11 @@ class RemoteRecoveryIT {
   }
 
   private WorkerSessionServer server(LocalSegmentStore segmentStore, MeterRegistry meterRegistry) {
-    return new WorkerSessionServer(
-        serverConfigurationBuilder().address("127.0.0.1").build(), segmentStore, meterRegistry);
+    return WorkerSessionServer.builder()
+        .configuration(serverConfigurationBuilder().address("127.0.0.1").build())
+        .segmentStore(segmentStore)
+        .meterRegistry(meterRegistry)
+        .build();
   }
 
   private WorkerContainerFixture.WorkerContainerFixtureBuilder workerBuilder(

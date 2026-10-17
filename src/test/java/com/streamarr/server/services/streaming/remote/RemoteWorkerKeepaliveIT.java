@@ -31,10 +31,11 @@ class RemoteWorkerKeepaliveIT {
   @DisplayName("Should release the session and capacity when the worker is frozen")
   void shouldReleaseSessionAndCapacityWhenWorkerIsFrozen() throws Exception {
     try (var server =
-            new WorkerSessionServer(
-                serverConfigurationBuilder().keepalive(SHORTEST_KEEPALIVE).build(),
-                new FakeSegmentStore(),
-                new SimpleMeterRegistry());
+            WorkerSessionServer.builder()
+                .configuration(serverConfigurationBuilder().keepalive(SHORTEST_KEEPALIVE).build())
+                .segmentStore(new FakeSegmentStore())
+                .meterRegistry(new SimpleMeterRegistry())
+                .build();
         var worker =
             WorkerContainerFixture.builder()
                 .workerSessions(server)
