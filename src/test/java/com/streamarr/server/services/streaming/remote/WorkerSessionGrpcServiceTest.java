@@ -40,7 +40,9 @@ import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
 import com.streamarr.transcode.v1.VideoCodecFamily;
+import com.streamarr.transcode.v1.VideoDecision;
 import com.streamarr.transcode.v1.VideoEncoderBackend;
+import com.streamarr.transcode.v1.VideoMode;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
@@ -809,7 +811,10 @@ class WorkerSessionGrpcServiceTest {
             .setDecision(
                 TranscodeDecision.newBuilder()
                     .setMode(TranscodeMode.TRANSCODE_MODE_FULL_TRANSCODE)
-                    .setVideoCodecFamily("h264"))
+                    .setVideo(
+                        VideoDecision.newBuilder()
+                            .setMode(VideoMode.VIDEO_MODE_ENCODE)
+                            .setCodecFamily(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264)))
             .build();
     assertThat(registry.dispatch(job)).isPresent();
     return StartedEncode.builder()

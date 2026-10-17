@@ -845,18 +845,17 @@ class WorkerSessionServerIT {
 
         assertThat(executor.encodableVideoCodecFamilies())
             .containsExactlyInAnyOrder("h264", "hevc");
+        assertThat(executor.availableSlots(h264Request.transcodeDecision())).isPositive();
+        assertThat(executor.executionTargets(h264Request.transcodeDecision())).hasSize(1);
         assertThatThrownBy(() -> executor.start(av1Request)).isInstanceOf(TranscodeException.class);
         executor.start(h264Request);
 
-        assertThat(
-                worker
-                    .nextResponse()
-                    .getStartVariant()
-                    .getJob()
-                    .getDecision()
-                    .getVideoCodecFamily())
+        var decision = worker.nextResponse().getStartVariant().getJob().getDecision();
+
+        assertThat(decision.getVideoCodecFamily()).isEmpty();
+        assertThat(decision.getVideo().getCodecFamily())
             .as("the codec family of the first job that reaches the worker")
-            .isEqualTo("h264");
+            .isEqualTo(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264);
       } finally {
         shutdown(channel);
       }

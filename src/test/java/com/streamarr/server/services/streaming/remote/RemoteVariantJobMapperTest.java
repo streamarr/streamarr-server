@@ -204,12 +204,14 @@ class RemoteVariantJobMapperTest {
     assertThat(video.getStreamIndex()).isZero();
   }
 
-  @Test
-  @DisplayName("Should keep the codec family name beside the video decision when the job encodes")
-  void shouldKeepTheCodecFamilyNameBesideTheVideoDecisionWhenTheJobEncodes() {
-    var decision = mapper.map(encodeAttempt("av1").build()).getDecision();
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
+  @DisplayName("Should omit the retired codec family string when mapping a video decision")
+  void shouldOmitTheRetiredCodecFamilyStringWhenMappingAVideoDecision(boolean encodeVideo) {
+    var request = encodeVideo ? encodeAttempt("av1") : copyAttempt();
+    var decision = mapper.map(request.build()).getDecision();
 
-    assertThat(decision.getVideoCodecFamily()).isEqualTo("av1");
+    assertThat(decision.getVideoCodecFamily()).isEmpty();
     assertThat(decision.hasVideo()).isTrue();
   }
 
