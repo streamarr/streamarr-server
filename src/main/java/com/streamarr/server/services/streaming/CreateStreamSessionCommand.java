@@ -23,5 +23,15 @@ public record CreateStreamSessionCommand(
   public static class CreateStreamSessionCommandBuilder {
     private VideoFormatConstraint videoFormatConstraint = VideoFormatConstraint.COPY_OR_ENCODE;
     private Set<String> excludedEncodeCodecFamilies = Set.of();
+
+    public CreateStreamSessionCommand build() {
+      return new CreateStreamSessionCommand(
+          streamSessionId,
+          mediaFileId,
+          identity,
+          options,
+          videoFormatConstraint,
+          excludedEncodeCodecFamilies);
+    }
   }
 }

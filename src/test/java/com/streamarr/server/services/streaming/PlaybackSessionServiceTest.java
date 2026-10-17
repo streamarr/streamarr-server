@@ -190,16 +190,15 @@ class PlaybackSessionServiceTest {
   @ValueSource(ints = {0, -1})
   @DisplayName("Should reject the total attempt limit when it is not positive")
   void shouldRejectTheTotalAttemptLimitWhenItIsNotPositive(int maximum) {
-    assertThatThrownBy(
-            () ->
-                PlaybackSessionService.builder()
-                    .streamingService(streams)
-                    .authorityGate(authority)
-                    .executor(Runnable::run)
-                    .maximumFormatAttempts(maximum)
-                    .sessionRetention(Duration.ofHours(24))
-                    .build())
-        .isInstanceOf(IllegalArgumentException.class);
+    var builder =
+        PlaybackSessionService.builder()
+            .streamingService(streams)
+            .authorityGate(authority)
+            .executor(Runnable::run)
+            .maximumFormatAttempts(maximum)
+            .sessionRetention(Duration.ofHours(24));
+
+    assertThatThrownBy(builder::build).isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
@@ -265,7 +264,8 @@ class PlaybackSessionServiceTest {
   @DisplayName("Should refuse playback creation when live authority is denied")
   void shouldRefusePlaybackCreationWhenLiveAuthorityIsDenied() {
     authority.deny();
-    assertThatThrownBy(() -> service.start(startCommand().build()))
+    var start = startCommand().build();
+    assertThatThrownBy(() -> service.start(start))
         .isInstanceOf(AuthenticationRequiredException.class);
     assertThat(streams.getAllSessions()).isEmpty();
   }
@@ -287,9 +287,11 @@ class PlaybackSessionServiceTest {
     var initial = accepted(playback.start(command));
     var pending = playback.reportFormatFailure(report(initial, command).build()).orElseThrow();
     authority.deny();
-    assertThatThrownBy(() -> playback.access(request(initial, command)))
+    var pendingRequest = request(initial, command);
+    var pendingReport = report(pending, command).build();
+    assertThatThrownBy(() -> playback.access(pendingRequest))
         .isInstanceOf(AuthenticationRequiredException.class);
-    assertThatThrownBy(() -> playback.reportFormatFailure(report(pending, command).build()))
+    assertThatThrownBy(() -> playback.reportFormatFailure(pendingReport))
         .isInstanceOf(AuthenticationRequiredException.class);
     drain(work);
     assertThat(playback.access(request(initial, command))).isEmpty();
@@ -304,16 +306,15 @@ class PlaybackSessionServiceTest {
     var foreign =
         identityFor(
             defaultPlaybackAuthorityBuilder().profileId(command.identity().profileId()).build());
-    assertThatThrownBy(
-            () ->
-                service.access(
-                    PlaybackSessionRequest.builder()
-                        .playbackSessionId(initial.playbackSessionId())
-                        .identity(foreign)
-                        .build()))
+    var foreignRequest =
+        PlaybackSessionRequest.builder()
+            .playbackSessionId(initial.playbackSessionId())
+            .identity(foreign)
+            .build();
+    var foreignReport = report(initial, command).identity(foreign).build();
+    assertThatThrownBy(() -> service.access(foreignRequest))
         .isInstanceOf(AuthenticationRequiredException.class);
-    assertThatThrownBy(
-            () -> service.reportFormatFailure(report(initial, command).identity(foreign).build()))
+    assertThatThrownBy(() -> service.reportFormatFailure(foreignReport))
         .isInstanceOf(AuthenticationRequiredException.class);
     assertThat(service.access(request(initial, command))).contains(initial);
   }
@@ -345,7 +346,8 @@ class PlaybackSessionServiceTest {
       streams.duringNextCreation = close;
     }
 
-    assertThatThrownBy(() -> service.start(startCommand().build()))
+    var start = startCommand().build();
+    assertThatThrownBy(() -> service.start(start))
         .isInstanceOf(PlaybackSessionClosedException.class);
     assertThat(streams.getAllSessions()).isEmpty();
   }
@@ -432,8 +434,8 @@ class PlaybackSessionServiceTest {
         _ -> {
           throw new IllegalStateException("fixture failure");
         };
-    assertThatThrownBy(() -> service.start(startCommand().build()))
-        .isInstanceOf(IllegalStateException.class);
+    var start = startCommand().build();
+    assertThatThrownBy(() -> service.start(start)).isInstanceOf(IllegalStateException.class);
     assertThat(streams.getAllSessions()).isEmpty();
   }
 
@@ -477,7 +479,8 @@ class PlaybackSessionServiceTest {
   @DisplayName("Should reject new playback when shutdown has closed registration")
   void shouldRejectNewPlaybackWhenShutdownHasClosedRegistration() {
     service.closeAll();
-    assertThatThrownBy(() -> service.start(startCommand().build()))
+    var start = startCommand().build();
+    assertThatThrownBy(() -> service.start(start))
         .isInstanceOf(PlaybackSessionClosedException.class);
     assertThat(streams.getAllSessions()).isEmpty();
   }
@@ -652,7 +655,8 @@ class PlaybackSessionServiceTest {
           throw failure;
         };
     streams.failDestroy = true;
-    assertThatThrownBy(() -> service.start(startCommand().build()))
+    var start = startCommand().build();
+    assertThatThrownBy(() -> service.start(start))
         .isSameAs(failure)
         .satisfies(result -> assertThat(result.getSuppressed()).hasSize(1));
     assertThat(streams.getAllSessions()).isEmpty();
@@ -706,17 +710,17 @@ class PlaybackSessionServiceTest {
   @DisplayName("Should require a selected profile when starting or accessing logical playback")
   void shouldRequireASelectedProfileWhenStartingOrAccessingLogicalPlayback() {
     var account = accountScopedBuilder().build();
-    assertThatThrownBy(() -> service.start(startCommand().identity(account).build()))
+    var withoutProfile = startCommand().identity(account).build();
+    assertThatThrownBy(() -> service.start(withoutProfile))
         .isInstanceOf(AuthenticationRequiredException.class);
     var command = startCommand().build();
     var initial = accepted(service.start(command));
-    assertThatThrownBy(
-            () ->
-                service.access(
-                    PlaybackSessionRequest.builder()
-                        .playbackSessionId(initial.playbackSessionId())
-                        .identity(account)
-                        .build()))
+    var accountRequest =
+        PlaybackSessionRequest.builder()
+            .playbackSessionId(initial.playbackSessionId())
+            .identity(account)
+            .build();
+    assertThatThrownBy(() -> service.access(accountRequest))
         .isInstanceOf(AuthenticationRequiredException.class);
     assertThat(service.access(request(initial, command))).contains(initial);
   }
@@ -780,7 +784,8 @@ class PlaybackSessionServiceTest {
           throw failure;
         };
     streams.destroyFailure = failure;
-    assertThatThrownBy(() -> service.start(startCommand().build()))
+    var start = startCommand().build();
+    assertThatThrownBy(() -> service.start(start))
         .isSameAs(failure)
         .satisfies(result -> assertThat(result.getSuppressed()).isEmpty());
     assertThat(streams.getAllSessions()).isEmpty();

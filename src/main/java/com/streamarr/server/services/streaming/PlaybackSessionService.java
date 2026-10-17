@@ -387,7 +387,8 @@ public class PlaybackSessionService implements AutoCloseable {
   }
 
   private boolean allowsRecovery(PlaybackSession playback) {
-    if (!locked(playback, () -> owns(playback))) {
+    boolean owned = locked(playback, () -> owns(playback));
+    if (!owned) {
       return false;
     }
 
@@ -467,7 +468,7 @@ public class PlaybackSessionService implements AutoCloseable {
   }
 
   private void settle(PlaybackSession playback, StreamSession session) {
-    var accepted =
+    boolean accepted =
         locked(
             playback,
             () -> {
