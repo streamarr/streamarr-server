@@ -205,7 +205,7 @@ public final class WorkerContainerFixture implements AutoCloseable {
 
   public List<Double> packetTimestamps(Path media) throws Exception {
     var timestamps =
-        probeVideoPackets(media, List.of("-show_entries", "packet=pts_time")).stream()
+        probePackets(media, "v", List.of("-show_entries", "packet=pts_time")).stream()
             .filter(line -> !line.equals("N/A"))
             .map(line -> line.replace(",", ""))
             .map(Double::parseDouble)
@@ -214,14 +214,35 @@ public final class WorkerContainerFixture implements AutoCloseable {
     return timestamps;
   }
 
-  private List<String> probeVideoPackets(Path media, List<String> inspectionArguments)
-      throws Exception {
+  public List<String> videoPacketHashes(Path media) throws Exception {
+    return packetHashes(media, "v");
+  }
+
+  public List<String> audioPacketHashes(Path media) throws Exception {
+    return packetHashes(media, "a");
+  }
+
+  private List<String> packetHashes(Path media, String streamSelector) throws Exception {
+    return probePackets(
+        media,
+        streamSelector,
+        List.of("-show_entries", "packet=data_hash", "-show_data_hash", "sha256"));
+  }
+
+  private List<String> probePackets(
+      Path media, String streamSelector, List<String> inspectionArguments) throws Exception {
     var input = "/tmp/inspect-" + UUID.randomUUID() + ".mp4";
     container.copyFileToContainer(Transferable.of(Files.readAllBytes(media), 0644), input);
     // A native output file excludes launcher diagnostics and avoids truncated Docker exec stdout.
     var command =
         new ArrayList<>(
-            List.of("/cnb/lifecycle/launcher", "ffprobe", "-v", "error", "-select_streams", "v"));
+            List.of(
+                "/cnb/lifecycle/launcher",
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                streamSelector));
     command.addAll(inspectionArguments);
     command.addAll(List.of("-of", "csv=p=0", "-o", input + ".pts", input));
     var probe = container.execInContainer(command.toArray(String[]::new));
