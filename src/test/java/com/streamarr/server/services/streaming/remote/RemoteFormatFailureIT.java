@@ -453,6 +453,7 @@ class RemoteFormatFailureIT {
                         accepted.complete(null);
                         return;
                       }
+
                       if (response.hasStartVariant()) {
                         var job = response.getStartVariant().getJob();
                         jobs.add(job);
