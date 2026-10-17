@@ -1065,6 +1065,7 @@ class WorkerSessionServerIT {
       } finally {
         shutdown(channel);
       }
+
       await()
           .atMost(5, TimeUnit.SECONDS)
           .until(() -> !server.hasConnectedWorker(SOURCE_NAMESPACE_ID));
