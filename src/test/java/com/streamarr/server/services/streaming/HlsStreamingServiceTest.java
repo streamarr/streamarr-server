@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
@@ -41,7 +42,6 @@ import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.probe.PersistedProbeReader;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.URI;
 import java.nio.file.Path;
@@ -384,7 +384,7 @@ class HlsStreamingServiceTest {
         .transcodeExecutor(executor)
         .segmentStore(segmentStore)
         .playbackProbeService(
-            new PlaybackProbeService(new PersistedProbeReader(probeResults), probeEvents))
+            playbackProbeServiceBuilder(probeResults).eventPublisher(probeEvents).build())
         .transcodeDecisionService(
             new TranscodeDecisionService(properties, new SimpleMeterRegistry()))
         .qualityLadderService(new QualityLadderService())

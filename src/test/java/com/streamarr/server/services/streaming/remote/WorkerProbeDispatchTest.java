@@ -271,6 +271,49 @@ class WorkerProbeDispatchTest {
     assertThat(responses.errors).isEmpty();
   }
 
+  @Test
+  @DisplayName(
+      "Should report a compatible probe worker when a connected worker advertises the version and"
+          + " source namespace")
+  void
+      shouldReportACompatibleProbeWorkerWhenAConnectedWorkerAdvertisesTheVersionAndSourceNamespace() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var registration = registration();
+    registration.getCapabilitiesBuilder().addProbeVersions(1);
+    registry.register(WORKER_ID, registration.build(), new CapturingResponses());
+
+    assertThat(registry.hasProbeWorker(SOURCE_NAMESPACE_ID, 1)).isTrue();
+  }
+
+  @ParameterizedTest
+  @EnumSource(Incompatibility.class)
+  @DisplayName(
+      "Should report no compatible probe worker when the connected worker lacks the version or"
+          + " source namespace")
+  void shouldReportNoCompatibleProbeWorkerWhenTheConnectedWorkerLacksTheVersionOrSourceNamespace(
+      Incompatibility incompatibility) {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var registration = registration();
+    registration.getCapabilitiesBuilder().addProbeVersions(1);
+    registry.register(WORKER_ID, registration.build(), new CapturingResponses());
+
+    var compatible =
+        switch (incompatibility) {
+          case PROBE_VERSION -> registry.hasProbeWorker(SOURCE_NAMESPACE_ID, 2);
+          case SOURCE_NAMESPACE -> registry.hasProbeWorker(UUID.randomUUID(), 1);
+        };
+
+    assertThat(compatible).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should report no compatible probe worker when no worker is connected")
+  void shouldReportNoCompatibleProbeWorkerWhenNoWorkerIsConnected() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+
+    assertThat(registry.hasProbeWorker(SOURCE_NAMESPACE_ID, 1)).isFalse();
+  }
+
   @ParameterizedTest
   @EnumSource(Incompatibility.class)
   @DisplayName(

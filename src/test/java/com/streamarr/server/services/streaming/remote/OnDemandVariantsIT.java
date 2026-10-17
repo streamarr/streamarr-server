@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.WORKER_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChannelBuilder;
@@ -15,16 +16,13 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
-import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamingRigFixture;
-import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.streaming.HlsStreamingService;
-import com.streamarr.server.services.streaming.PlaybackProbeService;
 import com.streamarr.server.services.streaming.QualityLadderService;
 import com.streamarr.server.services.streaming.SegmentDelivery;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
@@ -112,9 +110,7 @@ class OnDemandVariantsIT {
             .mediaFileRepository(mediaFiles)
             .transcodeExecutor(transcodeExecutor)
             .segmentStore(segmentStore)
-            .playbackProbeService(
-                new PlaybackProbeService(
-                    new PersistedProbeReader(probeResults), new CapturingEventPublisher()))
+            .playbackProbeService(playbackProbeServiceBuilder(probeResults).build())
             .transcodeDecisionService(
                 new TranscodeDecisionService(properties, new SimpleMeterRegistry()))
             .qualityLadderService(new QualityLadderService())

@@ -26,6 +26,7 @@ public class FakeProbeTaskRequests implements ProbeTaskRequests {
 
   private final FakeMediaFileContainerInfoRepository outcomes;
   private final List<ProbeTaskRequest> requests = new CopyOnWriteArrayList<>();
+  private final List<ProbeTaskRequest> requestsAheadOfQueuedProbes = new CopyOnWriteArrayList<>();
   private final BlockingQueue<ProbeTaskRequest> unawaited = new LinkedBlockingQueue<>();
   private volatile Consumer<ProbeTaskRequest> dispatcher = _ -> {};
 
@@ -51,6 +52,17 @@ public class FakeProbeTaskRequests implements ProbeTaskRequests {
   @Override
   public void requestRetryingFailure(ProbeTaskRequest request) {
     request(request);
+  }
+
+  @Override
+  public void requestAheadOfQueuedProbes(ProbeTaskRequest request) {
+    request(request);
+    requestsAheadOfQueuedProbes.add(request);
+  }
+
+  /** The requests that asked to run before every queued probe, in the order they arrived. */
+  public List<ProbeTaskRequest> requestsAheadOfQueuedProbes() {
+    return List.copyOf(requestsAheadOfQueuedProbes);
   }
 
   public void dispatchWith(Consumer<ProbeTaskRequest> dispatcher) {

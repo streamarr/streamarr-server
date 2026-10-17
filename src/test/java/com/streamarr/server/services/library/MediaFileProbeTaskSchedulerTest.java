@@ -99,6 +99,22 @@ class MediaFileProbeTaskSchedulerTest {
                 .build());
   }
 
+  @Test
+  @DisplayName("Should request the probe ahead of queued probes when playback requests it")
+  void shouldRequestTheProbeAheadOfQueuedProbesWhenPlaybackRequestsIt() {
+    var scheduler = schedulerBuilder().build();
+
+    scheduler.onProbeTaskRequested(new MediaFileProbeTaskRequested(mediaFile.getId()));
+
+    assertThat(requests.requestsAheadOfQueuedProbes())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.mediaFileId()).isEqualTo(mediaFile.getId());
+              assertThat(request.snapshot()).isEqualTo(new SourceFileSnapshot(5, MODIFIED_AT));
+            });
+  }
+
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   @DisplayName("Should skip enqueue when the current outcome matches the observed source")

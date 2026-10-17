@@ -167,6 +167,12 @@ public final class WorkerSessionServer implements AutoCloseable {
     return workerConnections.hasConnectedWorker(sourceNamespaceId);
   }
 
+  /** Whether a connected worker can read the source namespace and probe at the version. */
+  public synchronized boolean hasProbeWorker(UUID sourceNamespaceId, int probeVersion) {
+    requireStarted();
+    return workerConnections.hasProbeWorker(sourceNamespaceId, probeVersion);
+  }
+
   public synchronized Set<String> encodableVideoCodecFamilies(UUID sourceNamespaceId) {
     requireStarted();
     return workerConnections.encodableVideoCodecFamilies(sourceNamespaceId);
