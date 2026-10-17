@@ -204,38 +204,31 @@ public final class WorkerContainerFixture implements AutoCloseable {
   }
 
   public List<Double> packetTimestamps(Path media) throws Exception {
-    var input = "/tmp/inspect-" + UUID.randomUUID() + ".mp4";
-    container.copyFileToContainer(Transferable.of(Files.readAllBytes(media), 0644), input);
-    // A native output file excludes launcher diagnostics and avoids truncated Docker exec stdout.
-    var probe =
-        container.execInContainer(
-            "/cnb/lifecycle/launcher",
-            "ffprobe",
-            "-v",
-            "error",
-            "-select_streams",
-            "v",
-            "-show_entries",
-            "packet=pts_time",
-            "-of",
-            "csv=p=0",
-            "-o",
-            input + ".pts",
-            input);
-    assertThat(probe.getExitCode()).as(probe.getStderr()).isZero();
-    var result = container.execInContainer("cat", input + ".pts");
-    assertThat(result.getExitCode()).as(result.getStderr()).isZero();
     var timestamps =
-        result
-            .getStdout()
-            .lines()
-            .map(String::trim)
-            .filter(line -> !line.isEmpty() && !line.equals("N/A"))
+        probeVideoPackets(media, List.of("-show_entries", "packet=pts_time")).stream()
+            .filter(line -> !line.equals("N/A"))
             .map(line -> line.replace(",", ""))
             .map(Double::parseDouble)
             .toList();
     assertThat(timestamps).isNotEmpty();
     return timestamps;
+  }
+
+  private List<String> probeVideoPackets(Path media, List<String> inspectionArguments)
+      throws Exception {
+    var input = "/tmp/inspect-" + UUID.randomUUID() + ".mp4";
+    container.copyFileToContainer(Transferable.of(Files.readAllBytes(media), 0644), input);
+    // A native output file excludes launcher diagnostics and avoids truncated Docker exec stdout.
+    var command =
+        new ArrayList<>(
+            List.of("/cnb/lifecycle/launcher", "ffprobe", "-v", "error", "-select_streams", "v"));
+    command.addAll(inspectionArguments);
+    command.addAll(List.of("-of", "csv=p=0", "-o", input + ".pts", input));
+    var probe = container.execInContainer(command.toArray(String[]::new));
+    assertThat(probe.getExitCode()).as(probe.getStderr()).isZero();
+    var result = container.execInContainer("cat", input + ".pts");
+    assertThat(result.getExitCode()).as(result.getStderr()).isZero();
+    return result.getStdout().lines().map(String::trim).filter(line -> !line.isEmpty()).toList();
   }
 
   public boolean probeRunning() throws Exception {
