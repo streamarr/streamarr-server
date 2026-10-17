@@ -3,6 +3,7 @@ package com.streamarr.server.services.library;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 import com.github.kagkarlsson.scheduler.SchedulerClient;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
@@ -36,6 +37,8 @@ import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.support.ControlledClockConfiguration;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -100,6 +103,15 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
   @BeforeEach
   void connectProbeWorker() {
     PROBE_WORKERS.reset(true);
+  }
+
+  // A Linux clock reads in nanoseconds, and PostgreSQL keeps each time to the nearest
+  // microsecond. Each test starts 400 ns past a microsecond, so a time read back from the
+  // database rounds down, as it does for most Linux readings.
+  @BeforeEach
+  void startTheClockBetweenMicroseconds() {
+    var pastMicrosecond = clock.instant().getNano() % 1_000;
+    clock.advance(Duration.ofNanos(Math.floorMod(400 - pastMicrosecond, 1_000)));
   }
 
   @AfterEach
@@ -222,7 +234,9 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
             retry -> {
               assertThat(retry.getConsecutiveFailures()).isOne();
               assertThat(retry.getExecutionTime())
-                  .isEqualTo(clock.instant().plus(CappedExponentialBackoff.delayAfter(0)));
+                  .isCloseTo(
+                      clock.instant().plus(CappedExponentialBackoff.delayAfter(0)),
+                      within(1, ChronoUnit.MICROS));
             });
   }
 
