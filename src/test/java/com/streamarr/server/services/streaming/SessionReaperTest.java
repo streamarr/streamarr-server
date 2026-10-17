@@ -1,5 +1,8 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.PlaybackSessionFixture.acceptedPlayback;
+import static com.streamarr.server.fixtures.PlaybackSessionFixture.playbackServiceBuilder;
+import static com.streamarr.server.fixtures.PlaybackSessionFixture.startPlaybackBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
@@ -7,43 +10,61 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.fakes.FakeCreatingStreamingService;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
-import com.streamarr.server.fakes.FakeStreamingService;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
+import com.streamarr.server.fixtures.PlaybackSessionFixture;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.ArrayDeque;
+import java.util.List;
 import java.util.OptionalDouble;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Session Reaper Tests")
 class SessionReaperTest {
 
   private FakeTranscodeExecutor executor;
-  private FakeStreamingService streamingService;
+  private FakeCreatingStreamingService streamingService;
+  private PlaybackSessionService playback;
+  private ArrayDeque<Runnable> work;
+  private StreamingProperties properties;
+  private ProducerLifecycleService producerLifecycle;
   private SessionReaper reaper;
 
   @BeforeEach
   void setUp() {
     executor = new FakeTranscodeExecutor();
     var runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
-    streamingService = new FakeStreamingService(runtimeRegistry);
-    var properties =
+    streamingService = new FakeCreatingStreamingService(runtimeRegistry);
+    work = new ArrayDeque<>();
+    playback = playbackServiceBuilder(streamingService).executor(work::add).build();
+    properties =
         StreamingProperties.builder()
             .targetSegmentDuration(Duration.ofSeconds(6))
             .sessionTimeout(Duration.ofSeconds(60))
             .sessionRetention(Duration.ofHours(24))
             .build();
-    var producerLifecycle =
+    producerLifecycle =
         StreamingRigFixture.streamingRigBuilder()
             .transcodeExecutor(executor)
             .segmentStore(new FakeSegmentStore())
@@ -51,7 +72,135 @@ class SessionReaperTest {
             .runtimeRegistry(runtimeRegistry)
             .build()
             .lifecycle();
-    reaper = new SessionReaper(streamingService, properties, producerLifecycle);
+    reaper = reaperBuilder().build();
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
+  @DisplayName("Should finish reaping child sessions when closing logical playback throws")
+  void shouldFinishReapingChildSessionsWhenClosingLogicalPlaybackThrows(
+      boolean logicalActivityExpired) {
+    var now = Instant.now();
+    var logicalActivity = logicalActivityExpired ? now.minus(Duration.ofHours(25)) : now;
+    playback =
+        playbackServiceBuilder(streamingService)
+            .clock(Clock.fixed(logicalActivity, ZoneOffset.UTC))
+            .build();
+    var command = startPlaybackBuilder().build();
+    var initial = acceptedPlayback(playback.start(command));
+    streamingService
+        .getAllSessions()
+        .iterator()
+        .next()
+        .setLastAccessedAt(now.minus(Duration.ofHours(25)));
+    streamingService.addSession(buildSession(now.minus(Duration.ofHours(25))));
+    streamingService.failNextDestroy(initial.currentFormatAttempt().streamSessionId());
+    var cleanup = reaperBuilder().build();
+
+    assertThatNoException().isThrownBy(cleanup::reapSessions);
+
+    assertThat(playback.access(PlaybackSessionFixture.playbackRequest(initial, command))).isEmpty();
+    assertThat(streamingService.getAllSessions()).isEmpty();
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"AUTO", "ORIGINAL"})
+  @DisplayName(
+      "Should reap expired logical playback when its pending or terminal attempt has no child")
+  void shouldReapExpiredLogicalPlaybackWhenItsPendingOrTerminalAttemptHasNoChild(
+      VideoQuality quality) {
+    playback =
+        playbackServiceBuilder(streamingService)
+            .executor(work::add)
+            .clock(Clock.fixed(Instant.now().minus(Duration.ofHours(25)), ZoneOffset.UTC))
+            .build();
+    var command =
+        startPlaybackBuilder()
+            .options(
+                StreamingOptions.builder()
+                    .quality(quality)
+                    .supportedCodecs(List.of("h264"))
+                    .build())
+            .build();
+    var initial = acceptedPlayback(playback.start(command));
+    var unrelated = startPlaybackBuilder().build();
+    var retained = acceptedPlayback(playback.start(unrelated));
+    var childId = initial.currentFormatAttempt().streamSessionId();
+    playback.onVideoCopyOutputMismatch(
+        new VideoCopyOutputMismatchEvent(childId, UUID.randomUUID(), "default"));
+    streamingService.destroySession(childId);
+    assertThat(
+            playback
+                .access(PlaybackSessionFixture.playbackRequest(initial, command))
+                .orElseThrow()
+                .currentFormatAttempt())
+        .isNotInstanceOf(PlaybackFormatAttempt.Ready.class);
+
+    reaperBuilder().build().reapSessions();
+    work.forEach(Runnable::run);
+
+    assertThat(playback.access(PlaybackSessionFixture.playbackRequest(initial, command))).isEmpty();
+    assertThat(playback.access(PlaybackSessionFixture.playbackRequest(retained, unrelated)))
+        .contains(retained);
+    assertThat(streamingService.getAllSessions())
+        .extracting(StreamSession::getSessionId)
+        .containsExactly(retained.currentFormatAttempt().streamSessionId());
+  }
+
+  @Test
+  @DisplayName("Should preserve replacement playback when the expired child snapshot is stale")
+  void shouldPreserveReplacementPlaybackWhenTheExpiredChildSnapshotIsStale() {
+    playback = playbackServiceBuilder(streamingService).build();
+    var command = startPlaybackBuilder().build();
+    var initial = acceptedPlayback(playback.start(command));
+    var oldChildId = initial.currentFormatAttempt().streamSessionId();
+    streamingService
+        .getAllSessions()
+        .iterator()
+        .next()
+        .setLastAccessedAt(Instant.now().minus(Duration.ofHours(25)));
+    streamingService.afterNextSnapshot(
+        () ->
+            playback.onVideoCopyOutputMismatch(
+                new VideoCopyOutputMismatchEvent(oldChildId, UUID.randomUUID(), "default")));
+
+    reaperBuilder().build().reapSessions();
+
+    var current =
+        playback
+            .access(PlaybackSessionFixture.playbackRequest(initial, command))
+            .orElseThrow()
+            .currentFormatAttempt();
+    assertThat(current).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+    assertThat(current.streamSessionId()).isNotEqualTo(oldChildId);
+    assertThat(streamingService.getAllSessions())
+        .extracting(StreamSession::getSessionId)
+        .containsExactly(current.streamSessionId());
+  }
+
+  @Test
+  @DisplayName("Should close logical playback before an expired child reports a format mismatch")
+  void shouldCloseLogicalPlaybackBeforeAnExpiredChildReportsAFormatMismatch() {
+    var command = startPlaybackBuilder().build();
+    var initial = acceptedPlayback(playback.start(command));
+    var childId = initial.currentFormatAttempt().streamSessionId();
+    streamingService
+        .getAllSessions()
+        .iterator()
+        .next()
+        .setLastAccessedAt(Instant.now().minus(Duration.ofHours(25)));
+    streamingService.beforeNextDestroy(
+        () ->
+            playback.onVideoCopyOutputMismatch(
+                new VideoCopyOutputMismatchEvent(childId, UUID.randomUUID(), "default")));
+
+    reaper.reapSessions();
+    work.forEach(Runnable::run);
+
+    assertThat(playback.access(PlaybackSessionFixture.playbackRequest(initial, command))).isEmpty();
+    assertThat(streamingService.getAllSessions()).isEmpty();
   }
 
   @Test
@@ -209,6 +358,14 @@ class SessionReaperTest {
     assertThatNoException().isThrownBy(reaper::reapSessions);
 
     assertThat(streamingService.accessSession(playbackRequest(expired))).isEmpty();
+  }
+
+  private SessionReaper.SessionReaperBuilder reaperBuilder() {
+    return SessionReaper.builder()
+        .streamingService(streamingService)
+        .properties(properties)
+        .producerLifecycle(producerLifecycle)
+        .playbackSessionService(playback);
   }
 
   private StreamSession buildSession(Instant lastAccessedAt) {

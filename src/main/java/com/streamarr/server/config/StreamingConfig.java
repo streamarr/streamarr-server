@@ -7,6 +7,7 @@ import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.PlaybackAuthorityGate;
 import com.streamarr.server.services.streaming.PlaybackProbeService;
+import com.streamarr.server.services.streaming.PlaybackSessionService;
 import com.streamarr.server.services.streaming.ProducerLifecycleService;
 import com.streamarr.server.services.streaming.QualityLadderService;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
@@ -23,6 +24,19 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class StreamingConfig {
+
+  @Bean
+  public PlaybackSessionService playbackSessionService(
+      StreamingService streamingService,
+      PlaybackAuthorityGate authorityGate,
+      StreamingProperties properties) {
+    return PlaybackSessionService.builder()
+        .streamingService(streamingService)
+        .authorityGate(authorityGate)
+        .maximumFormatAttempts(properties.maxFormatAttempts())
+        .sessionRetention(properties.sessionRetention())
+        .build();
+  }
 
   @Bean
   public LocalSegmentStore segmentStore(StreamingProperties properties) {

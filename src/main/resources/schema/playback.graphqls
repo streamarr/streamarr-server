@@ -1,0 +1,85 @@
+type PlaybackSession {
+    id: ID!
+    formatAttemptCount: Int!
+    maximumFormatAttempts: Int!
+    currentFormatAttempt: PlaybackFormatAttempt!
+}
+
+union PlaybackFormatAttempt = PendingPlaybackFormatAttempt | ReadyPlaybackFormatAttempt | FailedPlaybackFormatAttempt
+
+type PendingPlaybackFormatAttempt {
+    streamSessionId: ID!
+}
+
+type ReadyPlaybackFormatAttempt {
+    streamSession: StreamSession!
+}
+
+type FailedPlaybackFormatAttempt {
+    streamSessionId: ID!
+    error: PlaybackFormatAttemptError!
+}
+
+union PlaybackFormatAttemptError = PlaybackOutputMismatchError | PlaybackFormatRejectedError | PlaybackFormatAttemptsExhaustedError | PlaybackStartupFailedError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | MediaFileFrameRateUnknownError | TranscodeCapacityUnavailableError | NoEligibleVideoFormatError
+
+enum PlaybackFormatFailure {
+    UNSUPPORTED_FORMAT
+    DECODE_ERROR
+}
+
+input CreatePlaybackSessionInput {
+    mediaFileId: ID!
+    options: StreamingOptionsInput
+}
+
+type CreatePlaybackSessionPayload {
+    playbackSession: PlaybackSession
+    userErrors: [CreatePlaybackSessionError!]!
+}
+
+union CreatePlaybackSessionError = InvalidIdError | PlaybackSessionClosedError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | MediaFileFrameRateUnknownError | TranscodeCapacityUnavailableError | NoEligibleVideoFormatError
+
+input ReportPlaybackFormatFailureInput {
+    playbackSessionId: ID!
+    streamSessionId: ID!
+    reason: PlaybackFormatFailure!
+}
+
+type ReportPlaybackFormatFailurePayload {
+    playbackSession: PlaybackSession
+    userErrors: [ReportPlaybackFormatFailureError!]!
+}
+
+union ReportPlaybackFormatFailureError = InvalidIdError | PlaybackSessionClosedError
+
+input DestroyPlaybackSessionInput {
+    playbackSessionId: ID!
+}
+
+type DestroyPlaybackSessionPayload {
+    playbackSessionId: ID
+    userErrors: [DestroyPlaybackSessionError!]!
+}
+
+union DestroyPlaybackSessionError = InvalidIdError
+
+type PlaybackSessionClosedError implements MutationError {
+    message: String!
+}
+
+type PlaybackOutputMismatchError implements MutationError {
+    message: String!
+}
+
+type PlaybackFormatRejectedError implements MutationError {
+    message: String!
+    reason: PlaybackFormatFailure!
+}
+
+type PlaybackFormatAttemptsExhaustedError implements MutationError {
+    message: String!
+}
+
+type PlaybackStartupFailedError implements MutationError {
+    message: String!
+}

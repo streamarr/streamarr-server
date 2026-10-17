@@ -1,15 +1,23 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.fixtures.PlaybackSessionFixture.acceptedPlayback;
+import static com.streamarr.server.fixtures.PlaybackSessionFixture.playbackRequest;
+import static com.streamarr.server.fixtures.PlaybackSessionFixture.playbackServiceBuilder;
+import static com.streamarr.server.fixtures.PlaybackSessionFixture.startPlaybackBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.fakes.FakeCreatingStreamingService;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
+import com.streamarr.server.services.streaming.PlaybackFormatAttempt;
 import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.StreamingService;
+import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
+import java.util.ArrayDeque;
 import java.util.Collection;
 import java.util.Optional;
 import java.util.Set;
@@ -25,7 +33,59 @@ class StreamingSessionCleanupListenerTest {
 
   private final FakeStreamingService fakeStreamingService = new FakeStreamingService();
   private final StreamingSessionCleanupListener listener =
-      new StreamingSessionCleanupListener(fakeStreamingService);
+      new StreamingSessionCleanupListener(
+          fakeStreamingService, playbackServiceBuilder(fakeStreamingService).build());
+
+  @Test
+  @DisplayName("Should finish media cleanup when closing logical playback throws")
+  void shouldFinishMediaCleanupWhenClosingLogicalPlaybackThrows() {
+    var streams = new FakeCreatingStreamingService();
+    var playback = playbackServiceBuilder(streams).build();
+    var command = startPlaybackBuilder().build();
+    var initial = acceptedPlayback(playback.start(command));
+    streams.addSession(buildSessionForMediaFile(command.mediaFileId()));
+    streams.failNextDestroy(initial.currentFormatAttempt().streamSessionId());
+
+    new StreamingSessionCleanupListener(streams, playback)
+        .onLibraryRemoved(
+            new LibraryRemovedEvent(
+                UUID.randomUUID(), "/library/path", Set.of(command.mediaFileId())));
+
+    assertThat(playback.access(playbackRequest(initial, command))).isEmpty();
+    assertThat(streams.getAllSessions()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should close pending playback for removed media while preserving unrelated playback")
+  void shouldClosePendingPlaybackForRemovedMediaWhilePreservingUnrelatedPlayback() {
+    var streams = new FakeCreatingStreamingService();
+    var work = new ArrayDeque<Runnable>();
+    var playback = playbackServiceBuilder(streams).executor(work::add).build();
+    var removed = startPlaybackBuilder().build();
+    var initial = acceptedPlayback(playback.start(removed));
+    var unrelated = startPlaybackBuilder().build();
+    var retained = acceptedPlayback(playback.start(unrelated));
+    var oldChildId = initial.currentFormatAttempt().streamSessionId();
+    playback.onVideoCopyOutputMismatch(
+        new VideoCopyOutputMismatchEvent(oldChildId, UUID.randomUUID(), "default"));
+    streams.destroySession(oldChildId);
+    assertThat(
+            playback.access(playbackRequest(initial, removed)).orElseThrow().currentFormatAttempt())
+        .isInstanceOf(PlaybackFormatAttempt.Pending.class);
+
+    new StreamingSessionCleanupListener(streams, playback)
+        .onLibraryRemoved(
+            new LibraryRemovedEvent(
+                UUID.randomUUID(), "/library/path", Set.of(removed.mediaFileId())));
+    work.forEach(Runnable::run);
+
+    assertThat(playback.access(playbackRequest(initial, removed))).isEmpty();
+    assertThat(playback.access(playbackRequest(retained, unrelated))).contains(retained);
+    assertThat(streams.getAllSessions())
+        .extracting(StreamSession::getSessionId)
+        .containsExactly(retained.currentFormatAttempt().streamSessionId());
+  }
 
   @Test
   @DisplayName(

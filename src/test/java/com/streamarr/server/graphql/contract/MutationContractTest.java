@@ -40,7 +40,7 @@ class MutationContractTest {
 
   /** Migrated one domain slice at a time; remove a name here when its mutation migrates. */
   private static final Set<String> LEGACY_MUTATIONS =
-      Set.of("addRating", "destroyStreamSession", "reportStreamSessionTimeline");
+      Set.of("addRating", "reportStreamSessionTimeline");
 
   private static final Set<String> INPUT_ERROR_UNIONS = Set.of("AddLibraryError");
 

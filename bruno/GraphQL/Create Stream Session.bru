@@ -11,11 +11,41 @@ post {
 }
 
 body:graphql {
-  mutation CreateStreamSession($mediaFileId: ID!) {
-    createStreamSession(mediaFileId: $mediaFileId) {
-      id
-      streamUrl
-      transcodeMode
+  mutation CreatePlaybackSession($mediaFileId: ID!) {
+    createPlaybackSession(input: { mediaFileId: $mediaFileId }) {
+      playbackSession {
+        id
+        formatAttemptCount
+        maximumFormatAttempts
+        currentFormatAttempt {
+          __typename
+          ... on PendingPlaybackFormatAttempt {
+            streamSessionId
+          }
+          ... on ReadyPlaybackFormatAttempt {
+            streamSession {
+              id
+              streamUrl
+              transcodeMode
+            }
+          }
+          ... on FailedPlaybackFormatAttempt {
+            streamSessionId
+            error {
+              __typename
+              ... on MutationError {
+                message
+              }
+            }
+          }
+        }
+      }
+      userErrors {
+        __typename
+        ... on MutationError {
+          message
+        }
+      }
     }
   }
 }
@@ -27,21 +57,24 @@ body:graphql:vars {
 }
 
 script:post-response {
-  const session = res.body.data && res.body.data.createStreamSession;
-  if (res.status === 200 && session) {
-    bru.setVar("STREAM_SESSION_ID", session.id);
-    bru.setVar("STREAM_URL", session.streamUrl);
-    const token = session.streamUrl.match(/[?&]t=([^&\s]+)/);
-    if (token) {
-      bru.setVar("PLAYBACK_TOKEN", token[1]);
-    }
-  }
+  const payload = res.body?.data?.createPlaybackSession;
+  const session = res.status === 200 && !res.body?.errors?.length && payload?.userErrors?.length === 0
+    ? payload.playbackSession
+    : undefined;
+  const stream = session?.currentFormatAttempt?.__typename === "ReadyPlaybackFormatAttempt"
+    ? session.currentFormatAttempt.streamSession
+    : undefined;
+  bru.setVar("PLAYBACK_SESSION_ID", session?.id ?? "");
+  bru.setVar("STREAM_SESSION_ID", stream?.id ?? "");
+  bru.setVar("STREAM_URL", stream?.streamUrl ?? "");
+  bru.setVar("PLAYBACK_TOKEN", stream?.streamUrl?.match(/[?&]t=([^&\s]+)/)?.[1] ?? "");
 }
 
 tests {
-  test("Should create a stream session", function() {
+  test("Should create a playback session", function() {
     expect(res.status).to.equal(200);
     expect(res.body).to.not.have.property("errors");
-    expect(res.body.data.createStreamSession.streamUrl).to.be.a("string");
+    expect(res.body.data.createPlaybackSession.userErrors).to.be.empty;
+    expect(res.body.data.createPlaybackSession.playbackSession.id).to.be.a("string");
   });
 }
