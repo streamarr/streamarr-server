@@ -41,6 +41,7 @@ import com.streamarr.server.services.library.LibraryManagementService;
 import com.streamarr.server.services.library.LibraryOperationKind;
 import com.streamarr.server.services.library.LibraryOperationRejection;
 import com.streamarr.server.services.library.LibraryOperationService;
+import com.streamarr.server.services.library.LibraryPathOverlap;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.pagination.MediaPage;
@@ -50,6 +51,7 @@ import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationService;
 import com.streamarr.server.support.security.WithAccountContext;
 import com.streamarr.server.support.security.WithProfileContext;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -535,6 +537,58 @@ class LibraryResolverTest {
               });
     }
 
+    @ParameterizedTest
+    @EnumSource(MediaType.class)
+    @DisplayName(
+        "Should name the registered library by its name and path when addLibrary is refused for"
+            + " a registered path")
+    void shouldNameRegisteredLibraryByItsNameAndPathWhenAddLibraryIsRefusedForRegisteredPath(
+        MediaType conflictingType) {
+      var library = conflictingLibrary(conflictingType);
+      FAKE_LIBRARY_MANAGEMENT_SERVICE.returnOutcomeWhenAdded(
+          Outcome.rejected(
+              new AddLibraryRejection.PathAlreadyRegistered(library, CONFLICTING_PATH)));
+
+      Map<String, Object> error =
+          dgsQueryExecutor.executeAndExtractJsonPath(
+              ADD_LIBRARY_CONFLICT_MUTATION, "data.addLibrary.userErrors[0]");
+
+      assertThat(error)
+          .containsEntry(
+              "message",
+              "The library \"Audiobooks\" already uses this folder (/media/books). Choose a"
+                  + " folder that no other library covers.")
+          .containsEntry(
+              "conflictingLibrary", Map.of("id", library.getId().toString(), "name", "Audiobooks"))
+          .containsEntry("conflictingPath", "/media/books");
+    }
+
+    @ParameterizedTest(name = "Should describe a {0} overlap the same way for a {1} library")
+    @MethodSource(
+        "com.streamarr.server.graphql.resolvers.LibraryResolverTest#overlapsForEveryMediaType")
+    @DisplayName(
+        "Should name the overlapping library by its name and path when addLibrary is refused for"
+            + " an overlapping path")
+    @SuppressWarnings("checkstyle:fullyQualifiedName")
+    void shouldNameOverlappingLibraryByItsNameAndPathWhenAddLibraryIsRefusedForOverlappingPath(
+        LibraryPathOverlap relation, MediaType conflictingType, String expectedMessage) {
+      var library = conflictingLibrary(conflictingType);
+      FAKE_LIBRARY_MANAGEMENT_SERVICE.returnOutcomeWhenAdded(
+          Outcome.rejected(
+              new AddLibraryRejection.PathOverlap(relation, library, CONFLICTING_PATH)));
+
+      Map<String, Object> error =
+          dgsQueryExecutor.executeAndExtractJsonPath(
+              ADD_LIBRARY_CONFLICT_MUTATION, "data.addLibrary.userErrors[0]");
+
+      assertThat(error)
+          .containsEntry("message", expectedMessage)
+          .containsEntry("relation", relation.name())
+          .containsEntry(
+              "conflictingLibrary", Map.of("id", library.getId().toString(), "name", "Audiobooks"))
+          .containsEntry("conflictingPath", "/media/books");
+    }
+
     @Test
     @DisplayName("Should report every rejection when addLibrary is rejected for several reasons")
     void shouldReportEveryRejectionWhenAddLibraryIsRejectedForSeveralReasons() {
@@ -581,6 +635,31 @@ class LibraryResolverTest {
       }
       """;
 
+  private static final String ADD_LIBRARY_CONFLICT_MUTATION =
+      """
+      mutation {
+        addLibrary(input: {
+          name: "Movies"
+          filepath: "/media/books"
+          type: MOVIE
+          backend: LOCAL
+        }) {
+          userErrors {
+            ... on MutationError { message }
+            ... on LibraryPathAlreadyRegisteredError {
+              conflictingLibrary { id name }
+              conflictingPath
+            }
+            ... on LibraryPathOverlapError {
+              relation
+              conflictingLibrary { id name }
+              conflictingPath
+            }
+          }
+        }
+      }
+      """;
+
   static Stream<Arguments> addLibraryRejections() {
     return Stream.of(
         Arguments.of(new AddLibraryRejection.NameRequired(), "LibraryNameRequiredError", "name"),
@@ -593,9 +672,48 @@ class LibraryResolverTest {
         Arguments.of(
             new AddLibraryRejection.PathNotReadable(), "LibraryPathNotReadableError", "filepath"),
         Arguments.of(
-            new AddLibraryRejection.PathAlreadyRegistered(),
+            new AddLibraryRejection.PathAlreadyRegistered(
+                conflictingLibrary(MediaType.OTHER), CONFLICTING_PATH),
             "LibraryPathAlreadyRegisteredError",
+            "filepath"),
+        Arguments.of(
+            new AddLibraryRejection.PathOverlap(
+                LibraryPathOverlap.INSIDE, conflictingLibrary(MediaType.OTHER), CONFLICTING_PATH),
+            "LibraryPathOverlapError",
             "filepath"));
+  }
+
+  static Stream<Arguments> overlapsForEveryMediaType() {
+    return Arrays.stream(MediaType.values())
+        .flatMap(
+            type ->
+                Stream.of(
+                    Arguments.of(
+                        LibraryPathOverlap.INSIDE,
+                        type,
+                        "This folder is inside the folder of the library \"Audiobooks\""
+                            + " (/media/books). Choose a folder that no other library covers."),
+                    Arguments.of(
+                        LibraryPathOverlap.CONTAINS,
+                        type,
+                        "This folder contains the folder of the library \"Audiobooks\""
+                            + " (/media/books). Choose a folder that no other library covers.")));
+  }
+
+  private static final Path CONFLICTING_PATH = Path.of("/media/books");
+
+  private static Library conflictingLibrary(MediaType type) {
+    var library =
+        Library.builder()
+            .name("Audiobooks")
+            .filepathUri("file:///media/books/")
+            .status(LibraryStatus.HEALTHY)
+            .backend(LibraryBackend.LOCAL)
+            .type(type)
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .build();
+    library.setId(UUID.fromString("5b0c1f4e-2d37-4f7a-9c1e-8a6b3d2f0e91"));
+    return library;
   }
 
   static Stream<Arguments> libraryBusyRefusals() {

@@ -234,7 +234,10 @@ class LibraryOperationServiceIT extends AbstractIntegrationTest {
                     unsavedLibrary().toBuilder().filepathUri(tempDir.toString()).build()));
 
     assertThat(outcome)
-        .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathAlreadyRegistered()));
+        .isEqualTo(
+            Outcome.rejected(
+                new AddLibraryRejection.PathAlreadyRegistered(
+                    existing, tempDir.toAbsolutePath().normalize())));
     assertThat(statusOf(existing)).isEqualTo(LibraryStatus.HEALTHY);
     assertThat(storedLibraryOperations()).isZero();
     assertThat(scheduledLibraryOperations()).isZero();
