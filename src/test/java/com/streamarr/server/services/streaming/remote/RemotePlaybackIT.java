@@ -142,9 +142,21 @@ class RemotePlaybackIT {
           .extracting(Fmp4Fixture::firstBoxType)
           .as("the initialization segment, then media segments that each open with a fragment")
           .containsExactly("ftyp", "moof", "moof");
-      assertThat(Bytes.concat(bodies.toArray(byte[][]::new)))
-          .as("every byte FFmpeg wrote, in order and split only between segments")
-          .isEqualTo(RecordedStream.START_AT_ZERO.bytes());
+      assertThat(RecordedStream.START_AT_ZERO.bytes())
+          .as("the producer's initialization segment reaches the client unchanged")
+          .startsWith(bodies.getFirst());
+      var servedMedia =
+          Files.write(tempDir.resolve("served.mp4"), Bytes.concat(bodies.toArray(byte[][]::new)));
+      var producerMedia =
+          Files.write(tempDir.resolve("producer.mp4"), RecordedStream.START_AT_ZERO.bytes());
+      assertThat(worker.videoPacketHashes(servedMedia))
+          .as("every encoded video packet reaches the client in order")
+          .isNotEmpty()
+          .containsExactlyElementsOf(worker.videoPacketHashes(producerMedia));
+      assertThat(worker.audioPacketHashes(servedMedia))
+          .as("every encoded audio packet reaches the client in order")
+          .isNotEmpty()
+          .containsExactlyElementsOf(worker.audioPacketHashes(producerMedia));
     }
   }
 
@@ -217,10 +229,12 @@ class RemotePlaybackIT {
 
       assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
       assertThat(Fmp4Fixture.firstBoxType(response.getBody())).isEqualTo("moof");
-      assertThat(RecordedStream.START_AT_ZERO.bytes())
-          .startsWith(
+      var servedMedia =
+          Files.write(
+              tempDir.resolve("served-first-segment.mp4"),
               Fmp4Fixture.withInitializationSegment(
                   segmentStore, streamSessionId, response.getBody()));
+      assertThat(worker.decodedVideoFrameCount(servedMedia)).isPositive();
     }
   }
 
@@ -481,6 +495,8 @@ class RemotePlaybackIT {
                   "sine=sample_rate=8000:duration=4",
                   "-c:v",
                   "libx264",
+                  "-pix_fmt",
+                  "yuv420p",
                   "-g",
                   "24",
                   "-c:a",
@@ -716,11 +732,11 @@ class RemotePlaybackIT {
         .sourcePath(mediaFile)
         .targetSegmentDuration(CLIP_TIMELINE.targetSegmentDurationSeconds())
         .mediaSegmentCount(CLIP_TIMELINE.mediaSegmentCount())
-        .framerate(OptionalDouble.of(23.976))
+        .framerate(OptionalDouble.of(24))
         .transcodeDecision(transcodeDecision())
-        .width(1920)
-        .height(1080)
-        .bitrate(5_000_000)
+        .width(64)
+        .height(36)
+        .bitrate(12_000)
         .variantLabel(StreamSession.defaultVariant())
         .encoderPreset(EncoderPreset.FASTER)
         .build();
