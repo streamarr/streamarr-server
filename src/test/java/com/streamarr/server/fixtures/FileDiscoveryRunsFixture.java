@@ -10,6 +10,7 @@ import com.streamarr.server.services.library.FileDiscoveryRuns;
 import com.streamarr.server.services.library.MediaFileProbeTaskScheduler;
 import com.streamarr.server.services.library.ProbeRuns;
 import com.streamarr.server.services.probe.PersistedProbeReader;
+import com.streamarr.server.services.streaming.ProbeCapacity;
 import java.nio.file.FileSystem;
 import java.time.Clock;
 import java.time.Duration;
@@ -63,6 +64,7 @@ public final class FileDiscoveryRunsFixture {
                 .sleeper(probeSleeper)
                 .clock(probeClock)
                 .properties(new ProbeSchedulingProperties(null, CHECK_INTERVAL, null))
+                .probeCapacity(() -> ProbeCapacity.builder().build())
                 .build())
         .mediaFiles(mediaFiles)
         .build();

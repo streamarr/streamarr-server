@@ -8,6 +8,7 @@ import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeCapacityChanged;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
@@ -206,12 +207,25 @@ final class WorkerSessionGrpcService
         case PROBE_RESULT -> completeProbe(request.getProbeResult());
         case PROBE_KEYFRAME_POSITIONS_PART ->
             acceptKeyframePositionsPart(request.getProbeKeyframePositionsPart());
+        case PROBE_CAPACITY_CHANGED -> changeProbeCapacity(request.getProbeCapacityChanged());
         default ->
             log.warn(
                 "Ignoring unexpected {} event on established session of worker {}",
                 request.getEventCase(),
                 authenticatedWorkerId);
       }
+    }
+
+    private void changeProbeCapacity(ProbeCapacityChanged changed) {
+      if (workerConnections.tryChangeProbeCapacity(
+          authenticatedWorkerId, workerSessionId, changed)) {
+        return;
+      }
+
+      log.warn(
+          "Ignoring the probe capacity that worker {} reported on a session that is no longer"
+              + " current",
+          authenticatedWorkerId);
     }
 
     private void startJobAttempt(JobAttemptStarted started) {

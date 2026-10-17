@@ -251,6 +251,8 @@ spec:
               value: /media
             - name: TRANSCODE_WORKER_SLOTS
               value: "1"
+            # The probe capacity defaults to the container's cores minus 3, and at least 1. Set
+            # TRANSCODE_WORKER_PROBE_CAPACITY to override the default.
             - name: LANG
               value: C.UTF-8
           volumeMounts:

@@ -192,10 +192,11 @@ otel:
   sdk:
     disabled: true
 
-# Media file probes run as db-scheduler task instances (ADR 0032). threads caps concurrent probes
-# even though executions run on virtual threads.
+# Media file probes run as db-scheduler task instances (ADR 0032). The probe scheduler picks no more
+# probes than the connected workers' free probe capacity, so threads only caps the probes that one
+# server runs at once. Executions run on virtual threads.
 db-scheduler:
-  threads: ${PROBE_MAX_CONCURRENT:2}
+  threads: 128
   polling-interval: ${PROBE_POLLING_INTERVAL:1s}
   polling-strategy: lock-and-fetch
   polling-strategy-upper-limit-fraction-of-threads: 1.0
@@ -205,14 +206,17 @@ db-scheduler:
   delay-startup-until-context-ready: true
   shutdown-max-wait: 30s
 
-# A probe that finds every compatible worker busy stays pending and runs again after this delay,
-# without counting as a failure.
+# A probe that finds no compatible worker free when it is dispatched stays pending and runs again
+# after this delay, without counting as a failure. This happens when a keyframe packet scan takes the
+# last unit of probe capacity, or the worker disconnects, between the scheduler's pick and the
+# probe's dispatch.
 probe:
   busy-worker-retry-delay: ${PROBE_BUSY_WORKER_RETRY_DELAY:5s}
   # How often a scan that waits for its probes checks their stored results.
   result-check-interval: ${PROBE_RESULT_CHECK_INTERVAL:2s}
   # Keyframe packet scans run on their own scheduler with this many threads, apart from the probe
-  # threads above. Each scan holds a thread and a worker slot for the whole scan.
+  # threads above. Each scan holds a thread and a unit of a worker's probe capacity for the whole
+  # scan.
   max-concurrent-keyframe-packet-scans: ${PROBE_MAX_CONCURRENT_KEYFRAME_PACKET_SCANS:1}
 
 library:

@@ -93,10 +93,9 @@ public class ProbeExecution {
                   .attemptId(UUID.randomUUID())
                   .probeVersion(request.probeVersion())
                   .build());
-    } catch (ProbeWorkersBusyException _) {
+    } catch (ProbeWorkersBusyException waiting) {
       log.debug(
-          "Deferring probe for media file {}: all compatible workers are busy",
-          request.mediaFileId());
+          "Deferring probe for media file {}: {}", request.mediaFileId(), waiting.getMessage());
       return new ProbeExecutionResult.Deferred(request);
     }
 
