@@ -50,6 +50,7 @@ import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.probe.PersistedProbeReader;
+import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.URI;
 import java.nio.file.Path;
@@ -665,6 +666,109 @@ class HlsStreamingServiceTest {
         .producerLifecycle(rig.lifecycle())
         .deliveryCoordinator(rig.coordinator())
         .build();
+  }
+
+  @Test
+  @DisplayName("Should encode a new child when the copied format mismatches")
+  void shouldEncodeANewChildWhenTheCopiedFormatMismatches() {
+    var playback = logicalPlayback();
+    var command = logicalStart().build();
+    var initial = accepted(playback.start(command));
+    var oldId = initial.currentFormatAttempt().streamSessionId();
+
+    playback.onVideoCopyOutputMismatch(
+        new VideoCopyOutputMismatchEvent(oldId, UUID.randomUUID(), "default"));
+
+    var recovered =
+        playback
+            .access(
+                PlaybackSessionRequest.builder()
+                    .playbackSessionId(initial.playbackSessionId())
+                    .identity(command.identity())
+                    .build())
+            .orElseThrow();
+    assertThat(recovered.formatAttemptCount()).isEqualTo(2);
+    assertThat(recovered.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready -> {
+              assertThat(ready.streamSessionId()).isNotEqualTo(oldId);
+              assertThat(ready.session().getTranscodeDecision().transcodeMode().copiesVideo())
+                  .isFalse();
+              assertThat(ready.session().getTranscodeDecision().videoCodecFamily())
+                  .isEqualTo("h264");
+              assertThat(service.getAllSessions()).containsExactly(ready.session());
+            });
+  }
+
+  @Test
+  @DisplayName("Should reject Original when the source cannot be copied")
+  void shouldRejectOriginalWhenTheSourceCannotBeCopied() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
+    var result =
+        logicalPlayback()
+            .start(
+                logicalStart()
+                    .options(
+                        StreamingOptions.builder()
+                            .quality(VideoQuality.ORIGINAL)
+                            .supportedCodecs(List.of("h264"))
+                            .build())
+                    .build());
+
+    assertThat(result)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(service.getAllSessions()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should exclude a failed encoded family when the client reports a format failure")
+  void shouldExcludeAFailedEncodedFamilyWhenTheClientReportsAFormatFailure() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("vp9").build());
+    var playback = logicalPlayback();
+    var command = logicalStart().options(av1AndH264AutoOptions()).build();
+    var initial = accepted(playback.start(command));
+    assertThat(initial.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready ->
+                assertThat(ready.session().getTranscodeDecision().videoCodecFamily())
+                    .isEqualTo("av1"));
+
+    var recovered =
+        playback
+            .reportFormatFailure(
+                ReportPlaybackFormatFailureCommand.builder()
+                    .playbackSessionId(initial.playbackSessionId())
+                    .streamSessionId(initial.currentFormatAttempt().streamSessionId())
+                    .identity(command.identity())
+                    .reason(PlaybackFormatFailure.DECODE_ERROR)
+                    .build())
+            .orElseThrow();
+
+    assertThat(recovered.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready ->
+                assertThat(ready.session().getTranscodeDecision().videoCodecFamily())
+                    .isEqualTo("h264"));
+  }
+
+  private PlaybackSessionService logicalPlayback() {
+    return PlaybackSessionService.builder()
+        .streamingService(service)
+        .authorityGate(authorityGate)
+        .executor(Runnable::run)
+        .maximumFormatAttempts(2)
+        .sessionRetention(Duration.ofHours(24))
+        .build();
+  }
+
+  private StartPlaybackSessionCommand.StartPlaybackSessionCommandBuilder logicalStart() {
+    return StartPlaybackSessionCommand.builder()
+        .mediaFileId(seedMediaFile().getId())
+        .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
+        .options(defaultOptions());
   }
 
   private StreamingOptions defaultOptions() {

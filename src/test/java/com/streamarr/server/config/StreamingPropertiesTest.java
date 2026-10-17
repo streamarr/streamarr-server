@@ -36,6 +36,32 @@ class StreamingPropertiesTest {
     assertThat(properties.maxConcurrentTranscodes()).isEqualTo(8);
   }
 
+  @Test
+  @DisplayName("Should default the total format attempt budget to two when unset")
+  void shouldDefaultTheTotalFormatAttemptBudgetToTwoWhenUnset() {
+    assertThat(StreamingProperties.builder().build().maxFormatAttempts()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("Should use the configured total format attempt budget when positive")
+  void shouldUseTheConfiguredTotalFormatAttemptBudgetWhenPositive() {
+    CONTEXT_RUNNER
+        .withPropertyValues("streaming.max-format-attempts=4")
+        .run(
+            context ->
+                assertThat(context.getBean(StreamingProperties.class).maxFormatAttempts())
+                    .isEqualTo(4));
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {0, -1})
+  @DisplayName("Should fail startup when the total format attempt budget is not positive")
+  void shouldFailStartupWhenTheTotalFormatAttemptBudgetIsNotPositive(int maximum) {
+    CONTEXT_RUNNER
+        .withPropertyValues("streaming.max-format-attempts=" + maximum)
+        .run(context -> assertThat(context).hasFailed());
+  }
+
   @ParameterizedTest
   @ValueSource(ints = {0, -1})
   @DisplayName("Should reject max concurrent transcodes when not positive")
