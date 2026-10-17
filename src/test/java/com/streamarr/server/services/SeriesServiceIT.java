@@ -21,6 +21,7 @@ import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
+import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
@@ -51,6 +52,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
   @Autowired private ArtworkRequestService artworkRequestService;
   @Autowired private SeriesService seriesService;
   @Autowired private SeriesRepository seriesRepository;
+  @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private SeasonRepository seasonRepository;
   @Autowired private EpisodeRepository episodeRepository;
   @Autowired private LibraryRepository libraryRepository;
@@ -214,14 +216,19 @@ class SeriesServiceIT extends AbstractIntegrationTest {
 
       assertThat(found).isPresent();
 
-      var updated = seriesService.addMediaFile(found.get().getId(), secondFile);
+      seriesService.addMediaFile(found.get().getId(), secondFile);
 
-      assertThat(updated.getFiles()).hasSize(2);
+      var stored = mediaFileRepository.findByMediaId(found.orElseThrow().getId());
+      assertThat(stored)
+          .extracting(MediaFile::getFilepathUri)
+          .containsExactlyInAnyOrder(firstFile.getFilepathUri(), secondFile.getFilepathUri());
     }
 
     @Test
     @DisplayName("Should return empty when series not found by TMDB ID")
     void shouldReturnEmptyWhenSeriesNotFoundByTmdbId() {
+      saveSeriesWithTmdbId(savedLibrary, "different-tmdb-id");
+
       var result = seriesService.findInLibraryByTmdbId(savedLibrary.getId(), "99999");
 
       assertThat(result).isEmpty();
@@ -231,30 +238,43 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     @DisplayName("Should find series by TMDB ID when series exists")
     void shouldFindSeriesByTmdbIdWhenSeriesExists() {
       var tmdbId = "find-tmdb-" + UUID.randomUUID();
-      seriesRepository.saveAndFlush(
-          Series.builder()
-              .title("Findable Series")
-              .library(savedLibrary)
-              .externalIds(
-                  Set.of(
-                      ExternalIdentifier.builder()
-                          .externalSourceType(ExternalSourceType.TMDB)
-                          .externalId(tmdbId)
-                          .build()))
-              .build());
+      saveSeriesWithTmdbId(savedLibrary, "different-tmdb-id");
+      var expected =
+          seriesRepository.saveAndFlush(
+              Series.builder()
+                  .title("Findable Series")
+                  .library(savedLibrary)
+                  .externalIds(
+                      Set.of(
+                          ExternalIdentifier.builder()
+                              .externalSourceType(ExternalSourceType.TMDB)
+                              .externalId(tmdbId)
+                              .build()))
+                  .build());
 
       var result = seriesService.findInLibraryByTmdbId(savedLibrary.getId(), tmdbId);
 
       assertThat(result).isPresent();
-      assertThat(result.get().getTitle()).isEqualTo("Findable Series");
+      assertThat(result.orElseThrow().getId()).isEqualTo(expected.getId());
     }
 
     @Test
-    @DisplayName("Should return empty when no series with TMDB ID")
-    void shouldReturnEmptyWhenNoSeriesWithTmdbId() {
-      var result =
-          seriesService.findInLibraryByTmdbId(
-              savedLibrary.getId(), "nonexistent-" + UUID.randomUUID());
+    @DisplayName("Should return empty when only an IMDB identifier matches the requested TMDB ID")
+    void shouldReturnEmptyWhenOnlyImdbIdentifierMatchesRequestedTmdbId() {
+      var externalId = "shared-external-id";
+      seriesRepository.saveAndFlush(
+          Series.builder()
+              .title("IMDB-only Series")
+              .library(savedLibrary)
+              .externalIds(
+                  Set.of(
+                      ExternalIdentifier.builder()
+                          .externalSourceType(ExternalSourceType.IMDB)
+                          .externalId(externalId)
+                          .build()))
+              .build());
+
+      var result = seriesService.findInLibraryByTmdbId(savedLibrary.getId(), externalId);
 
       assertThat(result).isEmpty();
     }

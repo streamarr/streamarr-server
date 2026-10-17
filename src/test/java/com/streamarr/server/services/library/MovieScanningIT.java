@@ -122,6 +122,7 @@ class MovieScanningIT extends AbstractScanningIntegrationTest {
             authTestSupport.identityOf(admin), removedLibrary.getId());
 
     assertThat(removal).isEqualTo(new Outcome.Accepted<>(removedLibrary.getId()));
+    assertThat(libraryRepository.findById(removedLibrary.getId())).as("removed library").isEmpty();
     assertThat(sessionProgressRepository.findById(resumePosition))
         .as("resume position in the kept library's file")
         .isPresent();

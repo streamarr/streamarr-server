@@ -1151,6 +1151,46 @@ class LibraryOperationExecutionTest {
     }
 
     @Test
+    @DisplayName(
+        "Should report one ignored file without side effects when a scan finds another library's file")
+    void shouldReportOneIgnoredFileWithoutSideEffectsWhenScanFindsAnotherLibrarysFile()
+        throws Exception {
+      var path = createMovieFile(createRootLibraryDirectory(), "Foreign", "Foreign (2001).mkv");
+      var owner = UUID.randomUUID();
+      var file =
+          fakeMediaFileRepository.save(
+              MediaFile.builder()
+                  .libraryId(owner)
+                  .filepathUri(FilepathCodec.encode(path))
+                  .filename("Original name.mkv")
+                  .status(MediaFileStatus.ENRICHMENT_FAILED)
+                  .failureReason(ItemFailureReason.TEMPORARY)
+                  .build());
+
+      scan();
+
+      assertThat(scanReports("ignored")).isEqualTo(1);
+      assertThat(allScanReports()).isEqualTo(1);
+      assertThat(fakeMediaFileRepository.findById(file.getId()))
+          .get()
+          .extracting(
+              MediaFile::getLibraryId,
+              MediaFile::getFilename,
+              MediaFile::getStatus,
+              MediaFile::getFailureReason)
+          .containsExactly(
+              owner,
+              "Original name.mkv",
+              MediaFileStatus.ENRICHMENT_FAILED,
+              ItemFailureReason.TEMPORARY);
+      assertThat(probeTaskRequests.requests()).isEmpty();
+      assertThat(probeOutcomes.findByMediaFileId(file.getId())).isEmpty();
+      assertThat(fakeMovieRepository.findAll()).isEmpty();
+      assertThat(artwork.requests().requests()).isEmpty();
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+    }
+
+    @Test
     @DisplayName("Should hold a file task's admission until its poster result is recorded")
     void shouldHoldAFileTasksAdmissionUntilItsPosterResultIsRecorded() throws Exception {
       createMovieFile(createRootLibraryDirectory(), "About Time", "About Time (2013).mkv");

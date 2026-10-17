@@ -97,6 +97,7 @@ class SeriesScanningIT extends AbstractScanningIntegrationTest {
     var removal = removeLibrary(removedLibrary);
 
     assertThat(removal).isEqualTo(new Outcome.Accepted<>(removedLibrary.getId()));
+    assertThat(libraryRepository.findById(removedLibrary.getId())).as("removed library").isEmpty();
     assertThat(sessionProgressRepository.findById(resumePosition))
         .as("resume position in the kept library's file")
         .isPresent();
@@ -124,6 +125,7 @@ class SeriesScanningIT extends AbstractScanningIntegrationTest {
     var removal = removeLibrary(removedLibrary);
 
     assertThat(removal).isEqualTo(new Outcome.Accepted<>(removedLibrary.getId()));
+    assertThat(libraryRepository.findById(removedLibrary.getId())).as("removed library").isEmpty();
     var keptFileEpisodeId = fileOf(keptFile).getMediaId();
     assertThat(episodeRepository.findById(keptFileEpisodeId))
         .as("episode of the kept library's file")
@@ -156,6 +158,7 @@ class SeriesScanningIT extends AbstractScanningIntegrationTest {
     var removal = removeLibrary(outerLibrary);
 
     assertThat(removal).isEqualTo(new Outcome.Accepted<>(outerLibrary.getId()));
+    assertThat(libraryRepository.findById(outerLibrary.getId())).as("removed library").isEmpty();
     assertThat(sessionProgressRepository.findById(resumePosition))
         .as("resume position in the inner library's file")
         .isPresent();

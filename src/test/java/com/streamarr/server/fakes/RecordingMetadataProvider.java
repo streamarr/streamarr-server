@@ -15,11 +15,17 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 public class RecordingMetadataProvider<T> implements MetadataProvider<T> {
 
   private final Map<VideoFileParserResult, RemoteSearchResult> searchResults = new HashMap<>();
   private final List<VideoFileParserResult> searchRequests = new ArrayList<>();
+  private final Map<String, Supplier<MetadataResult<T>>> metadata = new HashMap<>();
+
+  public void willReturnMetadataFor(String externalId, Supplier<MetadataResult<T>> result) {
+    metadata.put(externalId, result);
+  }
 
   public RecordingMetadataProvider<T> willReturnSearchResultFor(
       VideoFileParserResult request, RemoteSearchResult result) {
@@ -42,7 +48,10 @@ public class RecordingMetadataProvider<T> implements MetadataProvider<T> {
   @Override
   public MetadataFetchOutcome<MetadataResult<T>> getMetadata(
       RemoteSearchResult remoteSearchResult, Library library) {
-    return new MetadataFetchOutcome.NotFound<>();
+    return Optional.ofNullable(metadata.get(remoteSearchResult.externalId()))
+        .<MetadataFetchOutcome<MetadataResult<T>>>map(
+            result -> new MetadataFetchOutcome.Found<>(result.get()))
+        .orElseGet(MetadataFetchOutcome.NotFound::new);
   }
 
   @Override
