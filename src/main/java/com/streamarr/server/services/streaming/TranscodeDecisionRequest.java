@@ -21,5 +21,14 @@ public record TranscodeDecisionRequest(
   public static class TranscodeDecisionRequestBuilder {
     private VideoFormatConstraint videoFormatConstraint = VideoFormatConstraint.COPY_OR_ENCODE;
     private Set<String> excludedEncodeCodecFamilies = Set.of();
+
+    public TranscodeDecisionRequest build() {
+      return new TranscodeDecisionRequest(
+          source,
+          clientOptions,
+          encodableVideoCodecFamilies,
+          videoFormatConstraint,
+          excludedEncodeCodecFamilies);
+    }
   }
 }
