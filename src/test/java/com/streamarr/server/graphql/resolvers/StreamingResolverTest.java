@@ -17,6 +17,7 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
@@ -526,7 +527,14 @@ class StreamingResolverTest {
             TranscodeDecision.builder()
                 .transcodeMode(TranscodeMode.REMUX)
                 .videoCodecFamily("h264")
-                .audioDecision(AudioDecision.copy("aac", 2, 0))
+                .audioDecision(
+                    AudioDecision.builder()
+                        .mode(AudioMode.COPY)
+                        .codec("aac")
+                        .channels(2)
+                        .bitrate(0)
+                        .sourceCodecString(Optional.of("mp4a.40.2"))
+                        .build())
                 .subtitleDecision(SubtitleDecision.exclude())
                 .videoSource(Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()))
                 .build())

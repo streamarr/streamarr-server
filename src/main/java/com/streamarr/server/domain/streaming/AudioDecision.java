@@ -4,14 +4,20 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import lombok.Builder;
+import lombok.NonNull;
 
 @Builder
-public record AudioDecision(AudioMode mode, String codec, int channels, long bitrate) {
+public record AudioDecision(
+    AudioMode mode,
+    String codec,
+    int channels,
+    long bitrate,
+    @NonNull Optional<String> sourceCodecString) {
 
-  // Every HLS variant is multiplexed fragmented MP4, which carries exactly these audio codecs. Each
-  // maps to the RFC 6381 form of what FFmpeg's mp4 muxer writes into the initialization segment.
+  // Every HLS variant is multiplexed fragmented MP4, which carries exactly these audio codecs.
+  // Encodes use these codec strings; copies carry the source's probed codec string instead.
   // MP3 is transcoded rather than copied: the muxer refuses it below 16 kHz and writes a different
-  // esds objectTypeIndication at or below 24 kHz than above, and the probe reports no sample rate.
+  // esds objectTypeIndication at or below 24 kHz than above.
   private static final Map<String, String> HLS_CODEC_STRINGS =
       Map.of(
           "aac", "mp4a.40.2",
@@ -21,16 +27,29 @@ public record AudioDecision(AudioMode mode, String codec, int channels, long bit
           "opus", "Opus",
           "alac", "alac");
 
-  public static AudioDecision stereoAac() {
-    return new AudioDecision(AudioMode.TRANSCODE, "aac", 2, 128_000L);
+  public AudioDecision {
+    if (mode == AudioMode.COPY && sourceCodecString.isEmpty()) {
+      throw new IllegalArgumentException(
+          "A decision that copies the audio needs the source's codec string");
+    }
   }
 
-  public static AudioDecision copy(String codec, int channels, long bitrate) {
-    return new AudioDecision(AudioMode.COPY, codec, channels, bitrate);
+  @SuppressWarnings("java:S1068") // Lombok builder defaults — fields are used by generated code
+  public static class AudioDecisionBuilder {
+    private Optional<String> sourceCodecString = Optional.empty();
+  }
+
+  public static AudioDecision stereoAac() {
+    return AudioDecision.builder()
+        .mode(AudioMode.TRANSCODE)
+        .codec("aac")
+        .channels(2)
+        .bitrate(128_000L)
+        .build();
   }
 
   public static AudioDecision none() {
-    return new AudioDecision(AudioMode.NONE, null, 0, 0L);
+    return AudioDecision.builder().mode(AudioMode.NONE).build();
   }
 
   /** The audio codecs that HLS delivery carries, by their probed codec names. */
@@ -39,10 +58,14 @@ public record AudioDecision(AudioMode mode, String codec, int channels, long bit
   }
 
   public String hlsCodecString() {
-    if (codec == null) {
-      return "";
-    }
+    return switch (mode) {
+      case NONE -> "";
+      case COPY -> sourceCodecString.orElseThrow();
+      case TRANSCODE -> encodedCodecString();
+    };
+  }
 
+  private String encodedCodecString() {
     return Optional.ofNullable(HLS_CODEC_STRINGS.get(codec))
         .orElseThrow(
             () -> new IllegalStateException("HLS delivery cannot carry audio codec " + codec));

@@ -8,6 +8,7 @@ import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.StreamCopySegments;
+import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.SubtitleMode;
@@ -181,11 +182,19 @@ public class TranscodeDecisionService {
     int normalizedChannels = AudioDecision.normalizeChannels(source.audioChannels().orElse(2));
     int effectiveChannels = Math.min(normalizedChannels, maxChannels);
 
-    if (candidates.contains(source.audioCodec()) && normalizedChannels <= maxChannels) {
-      return AudioDecision.copy(
-          source.audioCodec(),
-          normalizedChannels,
-          source.audioBitrate().orElse(AudioDecision.bitrateForChannels(normalizedChannels)));
+    var sourceCodecString =
+        source.audioStreams().stream().findFirst().flatMap(StreamInfo::codecString);
+    if (candidates.contains(source.audioCodec())
+        && normalizedChannels <= maxChannels
+        && sourceCodecString.isPresent()) {
+      return AudioDecision.builder()
+          .mode(AudioMode.COPY)
+          .codec(source.audioCodec())
+          .channels(normalizedChannels)
+          .bitrate(
+              source.audioBitrate().orElse(AudioDecision.bitrateForChannels(normalizedChannels)))
+          .sourceCodecString(sourceCodecString)
+          .build();
     }
 
     return selectTranscodeAudio(candidates, effectiveChannels);
@@ -213,8 +222,12 @@ public class TranscodeDecisionService {
   }
 
   private AudioDecision transcode(String codec, int channels) {
-    return new AudioDecision(
-        AudioMode.TRANSCODE, codec, channels, AudioDecision.bitrateForChannels(channels));
+    return AudioDecision.builder()
+        .mode(AudioMode.TRANSCODE)
+        .codec(codec)
+        .channels(channels)
+        .bitrate(AudioDecision.bitrateForChannels(channels))
+        .build();
   }
 
   private String selectPreferredCodec(

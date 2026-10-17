@@ -25,6 +25,7 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.QualityVariant;
+import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
@@ -818,20 +819,52 @@ class HlsStreamingServiceTest {
     assertThat(audio.bitrate()).isEqualTo(64_000L);
   }
 
-  @ParameterizedTest(name = "{0} → {1}")
+  @ParameterizedTest(name = "{0} → {1}, encodeVideo={2}")
   @CsvSource({
-    "aac, mp4a.40.2",
-    "ac3, ac-3",
-    "eac3, ec-3",
-    "flac, fLaC",
-    "opus, Opus",
-    "alac, alac"
+    "aac, mp4a.40.2, false",
+    "aac, mp4a.40.5, false",
+    "aac, mp4a.40.29, false",
+    "ac3, ac-3, false",
+    "eac3, ec-3, false",
+    "flac, fLaC, false",
+    "opus, Opus, false",
+    "alac, alac, false",
+    "aac, mp4a.40.2, true",
+    "aac, mp4a.40.5, true",
+    "aac, mp4a.40.29, true",
+    "ac3, ac-3, true",
+    "eac3, ec-3, true",
+    "flac, fLaC, true",
+    "opus, Opus, true",
+    "alac, alac, true"
   })
   @DisplayName(
       "Should advertise the copied audio codec in the playlist when the client supports the source audio codec")
   void shouldAdvertiseCopiedAudioCodecInPlaylistWhenClientSupportsSourceAudioCodec(
-      String sourceAudioCodec, String codecsParameter) {
-    probeResults.setDefaultProbe(defaultProbeBuilder().audioCodec(sourceAudioCodec).build());
+      String sourceAudioCodec, String codecsParameter, boolean encodeVideo) {
+    var probe =
+        ProbeFixture.completeProbe(
+            defaultProbeBuilder()
+                .videoCodec(encodeVideo ? "hevc" : "h264")
+                .audioCodec(sourceAudioCodec)
+                .build());
+    var audio =
+        StreamInfo.builder()
+            .index(1)
+            .codecType("audio")
+            .codec(Optional.of(sourceAudioCodec))
+            .codecString(Optional.of(codecsParameter))
+            .channels(OptionalInt.of(2))
+            .build();
+    probeResults.setDefaultOutcome(
+        new ProbeOutcome.Success(
+            probe.container(),
+            List.of(
+                probe.streams().getFirst(),
+                audio,
+                ProbeFixture.audioStreamBuilder("aac").index(2).isDefault(true).build()),
+            probe.keyframes(),
+            probe.chosenVideoStream()));
     var file = seedMediaFile();
     var options =
         StreamingOptions.builder()
@@ -845,7 +878,50 @@ class HlsStreamingServiceTest {
             .generateMultivariantPlaylist(session, "token");
 
     assertThat(session.getTranscodeDecision().audioDecision().mode()).isEqualTo(AudioMode.COPY);
-    assertThat(playlist).contains("CODECS=\"avc1.640028," + codecsParameter + "\"");
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(encodeVideo ? TranscodeMode.VIDEO_TRANSCODE : TranscodeMode.REMUX);
+    assertThat(playlist.lines().filter(line -> line.startsWith("#EXT-X-STREAM-INF:")))
+        .isNotEmpty()
+        .allSatisfy(line -> assertThat(line).contains("," + codecsParameter + "\""));
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode the first audio stream when its stored codec string is absent and a later stream has one")
+  void shouldEncodeTheFirstAudioStreamWhenItsStoredCodecStringIsAbsentAndALaterStreamHasOne() {
+    var probe = ProbeFixture.completeProbe(defaultProbeBuilder().build());
+    var firstAudio =
+        ProbeFixture.audioStreamBuilder("ac3")
+            .index(1)
+            .channels(OptionalInt.of(6))
+            .codecString(Optional.empty())
+            .build();
+    probeResults.setDefaultOutcome(
+        new ProbeOutcome.Success(
+            probe.container(),
+            List.of(
+                probe.streams().getFirst(),
+                firstAudio,
+                ProbeFixture.audioStreamBuilder("ac3").index(2).isDefault(true).build()),
+            probe.keyframes(),
+            probe.chosenVideoStream()));
+    var file = seedMediaFile();
+    var options =
+        StreamingOptions.builder()
+            .supportedCodecs(List.of("h264"))
+            .supportedAudioCodecs(List.of("ac3", "eac3"))
+            .maxAudioChannels(6)
+            .build();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
+    var playlist =
+        new HlsPlaylistService(StreamingProperties.builder().build())
+            .generateMultivariantPlaylist(session, "token");
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
+    assertThat(session.getTranscodeDecision().audioDecision().codec()).isEqualTo("eac3");
+    assertThat(playlist).contains("CODECS=\"avc1.640028,ec-3\"");
   }
 
   @ParameterizedTest
