@@ -75,4 +75,10 @@ public interface TranscodeExecutor {
    * execution target now.
    */
   Set<String> encodableVideoCodecFamilies();
+
+  /**
+   * The codec families of connected, source-accessible worker-verified encoders, including busy
+   * workers.
+   */
+  Set<String> verifiedVideoCodecFamilies();
 }

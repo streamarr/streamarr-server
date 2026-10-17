@@ -425,7 +425,8 @@ class RemotePlaybackIT {
                       .clientOptions(
                           StreamingOptions.builder().supportedCodecs(List.of("av1")).build())
                       .encodableVideoCodecFamilies(executor.encodableVideoCodecFamilies())
-                      .build());
+                      .build())
+              .orElseThrow();
       var timeline =
           new MediaSegmentTimeline.PlainGrid(mediaProbe.duration(), Duration.ofSeconds(6));
 
@@ -531,7 +532,8 @@ class RemotePlaybackIT {
                               .supportedAudioCodecs(List.of("aac", "mp3"))
                               .build())
                       .encodableVideoCodecFamilies(executor.encodableVideoCodecFamilies())
-                      .build());
+                      .build())
+              .orElseThrow();
       assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
       var timeline =
           new MediaSegmentTimeline.PlainGrid(mediaProbe.duration(), Duration.ofSeconds(6));

@@ -381,3 +381,8 @@ type UnknownEncoderPresetError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
 }
+
+"No video copy or encode satisfies the playback request."
+type NoEligibleVideoFormatError implements MutationError {
+    message: String!
+}

@@ -107,6 +107,23 @@ class HlsStreamingServiceTest {
   }
 
   @ParameterizedTest
+  @CsvSource({"0", "1"})
+  @DisplayName("Should reject a stream session when no video format is eligible")
+  void shouldRejectAStreamSessionWhenNoVideoFormatIsEligible(int availableSlots) {
+    transcodeExecutor.setAvailableSlots(availableSlots);
+    var file = seedMediaFile();
+    var options = StreamingOptions.builder().supportedCodecs(List.of("vp9")).build();
+
+    var outcome =
+        service.createSession(createStreamSessionCommand(file.getId(), UUID.randomUUID(), options));
+
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(service.getActiveSessionCount()).isZero();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  @ParameterizedTest
   @CsvSource({"aac, AUTO, VIDEO_TRANSCODE", "flac, HIGH_720P, FULL_TRANSCODE"})
   @DisplayName(
       "Should reject the stream session when the video must be encoded and the probe has no frame rate")
@@ -700,14 +717,13 @@ class HlsStreamingServiceTest {
         .containsOnly("h264");
   }
 
-  @ParameterizedTest(name = "encodable {0} → {1}")
+  @ParameterizedTest(name = "encodable {0}")
   @CsvSource(
       delimiter = '|',
-      value = {"h264,av1 | av1", "h264 | h264", "h264,hevc | h264"})
-  @DisplayName(
-      "Should encode the first declared codec that a worker-verified encoder encodes, ending at H.264, when the client declares only AV1")
-  void shouldEncodeFirstDeclaredCodecThatAWorkerVerifiedEncoderEncodesWhenClientDeclaresOnlyAv1(
-      String encodableFamilies, String expectedFamily) {
+      value = {"h264", "h264,hevc"})
+  @DisplayName("Should reject the session when no worker encoder supports the client's only codec")
+  void shouldRejectTheSessionWhenNoWorkerEncoderSupportsTheClientsOnlyCodec(
+      String encodableFamilies) {
     probeResults.setDefaultProbe(
         defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).videoCodec("hevc").build());
     transcodeExecutor.setEncodableVideoCodecFamilies(
@@ -719,12 +735,13 @@ class HlsStreamingServiceTest {
             .supportedCodecs(List.of("av1"))
             .build();
 
-    var session = createSession(file.getId(), UUID.randomUUID(), options);
+    var outcome =
+        service.createSession(createStreamSessionCommand(file.getId(), UUID.randomUUID(), options));
 
-    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo(expectedFamily);
-    assertThat(transcodeExecutor.getStartedRequests())
-        .extracting(request -> request.transcodeDecision().videoCodecFamily())
-        .containsOnly(expectedFamily);
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(service.getActiveSessionCount()).isZero();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
 
   @Test

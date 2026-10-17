@@ -41,31 +41,42 @@ public class TranscodeDecisionService {
 
   /**
    * An encode uses the first codec in the preference that the client declares and that a
-   * worker-verified encoder encodes (ADR 0009), ending at H.264. A copy needs no encoder.
+   * worker-verified encoder encodes (ADR 0009). A copy needs no encoder. Returns empty when neither
+   * a copy nor a supported encode satisfies the request's constraints.
    */
-  public TranscodeDecision decide(@NonNull TranscodeDecisionRequest request) {
+  public Optional<TranscodeDecision> decide(@NonNull TranscodeDecisionRequest request) {
     var source = request.source();
     var clientOptions = request.clientOptions();
     var encodableVideoCodecFamilies = request.encodableVideoCodecFamilies();
     var supportedCodecs = clientOptions.supportedCodecs();
-    boolean videoCopyable = decideVideoCopy(source, supportedCodecs);
+    boolean videoCopyable =
+        request.videoFormatConstraint() != VideoFormatConstraint.ENCODE_ONLY
+            && decideVideoCopy(source, supportedCodecs);
+    if (!videoCopyable && request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
+      return Optional.empty();
+    }
 
     var videoCodecFamily =
         videoCopyable
-            ? source.videoCodec()
-            : selectPreferredCodec(supportedCodecs, encodableVideoCodecFamilies);
+            ? Optional.of(source.videoCodec())
+            : selectPreferredCodec(
+                supportedCodecs,
+                encodableVideoCodecFamilies,
+                request.excludedEncodeCodecFamilies());
     var audioDecision = decideAudio(source, clientOptions);
     var subtitleDecision = SubtitleDecision.exclude();
 
     var mode = resolveTranscodeMode(videoCopyable, audioDecision, subtitleDecision);
 
-    return TranscodeDecision.builder()
-        .transcodeMode(mode)
-        .videoCodecFamily(videoCodecFamily)
-        .audioDecision(audioDecision)
-        .subtitleDecision(subtitleDecision)
-        .videoSource(source.videoPlaybackFacts())
-        .build();
+    return videoCodecFamily.map(
+        codec ->
+            TranscodeDecision.builder()
+                .transcodeMode(mode)
+                .videoCodecFamily(codec)
+                .audioDecision(audioDecision)
+                .subtitleDecision(subtitleDecision)
+                .videoSource(source.videoPlaybackFacts())
+                .build());
   }
 
   private boolean decideVideoCopy(MediaProbe source, List<String> supportedCodecs) {
@@ -240,13 +251,17 @@ public class TranscodeDecisionService {
         .build();
   }
 
-  private String selectPreferredCodec(
-      List<String> supportedCodecs, Set<String> encodableVideoCodecFamilies) {
+  private Optional<String> selectPreferredCodec(
+      List<String> supportedCodecs,
+      Set<String> encodableVideoCodecFamilies,
+      Set<String> excludedEncodeCodecFamilies) {
     for (var codec : CODEC_PREFERENCE) {
-      if (supportedCodecs.contains(codec) && encodableVideoCodecFamilies.contains(codec)) {
-        return codec;
+      if (supportedCodecs.contains(codec)
+          && encodableVideoCodecFamilies.contains(codec)
+          && !excludedEncodeCodecFamilies.contains(codec)) {
+        return Optional.of(codec);
       }
     }
-    return StreamingOptions.DEFAULT_SUPPORTED_CODECS.getFirst();
+    return Optional.empty();
   }
 }

@@ -338,6 +338,11 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
+  public Set<String> verifiedVideoCodecFamilies() {
+    return Set.copyOf(encodeSlotsByVideoCodecFamily.keySet());
+  }
+
+  @Override
   public Set<String> encodableVideoCodecFamilies() {
     return encodeSlotsByVideoCodecFamily.entrySet().stream()
         .filter(entry -> entry.getValue() > 0)

@@ -8,6 +8,8 @@ public sealed interface CreateStreamSessionError extends MutationError {
 
   record TranscodeCapacityUnavailableError(String message) implements CreateStreamSessionError {}
 
+  record NoEligibleVideoFormatError(String message) implements CreateStreamSessionError {}
+
   record InvalidIdError(String message, List<String> inputPath)
       implements CreateStreamSessionError, InputMutationError {}
 
