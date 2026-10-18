@@ -37,6 +37,7 @@ import java.util.function.Function;
 // intentionally share simple names.
 final class RemotePlaybackFactsMapper {
 
+  private static final String WORKER_PROBE_PREFIX = "Worker probe ";
   private static final int MAXIMUM_ROTATION_DEGREES = 180;
   private static final int MAXIMUM_CHROMATICITY_COORDINATE = 50000;
   private static final int MAXIMUM_CONTENT_LIGHT_LEVEL = 65535;
@@ -130,7 +131,7 @@ final class RemotePlaybackFactsMapper {
 
   private static int boundedUnsigned(int value, int maximum, String fact) {
     if (Integer.compareUnsigned(value, maximum) > 0) {
-      throw contractViolation("Worker probe " + fact + " exceeds its encoded range");
+      throw contractViolation(WORKER_PROBE_PREFIX + fact + " exceeds its encoded range");
     }
 
     return value;
@@ -406,7 +407,7 @@ final class RemotePlaybackFactsMapper {
     }
 
     if (value <= 0) {
-      throw contractViolation("Worker probe " + fact + " is not a positive integer");
+      throw contractViolation(WORKER_PROBE_PREFIX + fact + " is not a positive integer");
     }
 
     return OptionalInt.of(value);
@@ -419,7 +420,7 @@ final class RemotePlaybackFactsMapper {
   // A protobuf uint32 above Integer.MAX_VALUE arrives as a negative int.
   private static int unsignedInt(int value, String fact) {
     if (value < 0) {
-      throw contractViolation("Worker probe " + fact + " exceeds the supported integer range");
+      throw contractViolation(WORKER_PROBE_PREFIX + fact + " exceeds the supported integer range");
     }
 
     return value;
