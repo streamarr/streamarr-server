@@ -4,6 +4,7 @@ import static com.streamarr.server.fixtures.MediaEntityFixture.buildEpisode;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildMovie;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeason;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeries;
+import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackAuthorityFor;
 import static com.streamarr.server.support.TokenTestSupport.decode;
 import static com.streamarr.server.support.TokenTestSupport.tokenProperties;
@@ -42,7 +43,9 @@ import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
 import com.streamarr.server.services.streaming.PlaybackRequest;
+import com.streamarr.server.services.streaming.PlaybackSessionRequest;
 import com.streamarr.server.services.streaming.PlaybackSessionService;
+import com.streamarr.server.services.streaming.StartPlaybackSessionCommand;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.server.services.watchprogress.MarkUnwatchedRejection;
@@ -98,6 +101,53 @@ class StreamingResolverTest {
   private static final String CREATED_PLAYBACK = "data.createPlaybackSession.playbackSession";
   private static final String REPORTED_PLAYBACK =
       "data.reportPlaybackFormatFailure.playbackSession";
+
+  @Test
+  @DisplayName("Should conceal playback status when another Profile owns the session")
+  void shouldConcealPlaybackStatusWhenAnotherProfileOwnsTheSession() {
+    var otherIdentity = identityFor(playbackAuthorityFor(UUID.randomUUID()));
+    var streamId = UUID.randomUUID();
+    STUB_SERVICE.setNextResult(buildSessionOwnedBy(streamId, otherIdentity.profileId()));
+    var created =
+        playbackSessions
+            .start(
+                StartPlaybackSessionCommand.builder()
+                    .mediaFileId(UUID.randomUUID())
+                    .identity(otherIdentity)
+                    .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
+                    .build())
+            .fold(
+                snapshot -> snapshot,
+                rejections -> {
+                  throw new AssertionError(rejections);
+                });
+
+    var foreign = playbackStatus(created.playbackSessionId().toString());
+    var absent = playbackStatus(UUID.randomUUID().toString());
+
+    assertThat(foreign.jsonString()).isEqualTo(absent.jsonString());
+    assertThat(foreign.read("data.playbackSession", Object.class)).isNull();
+
+    var foreignReport =
+        reportFailure(created.playbackSessionId().toString(), streamId.toString(), "DECODE_ERROR");
+    var absentReport =
+        reportFailure(UUID.randomUUID().toString(), streamId.toString(), "DECODE_ERROR");
+    assertThat(foreignReport.jsonString()).isEqualTo(absentReport.jsonString());
+
+    var foreignClosure = destroyPlayback(created.playbackSessionId().toString());
+    assertThat(foreignClosure.read("data.destroyPlaybackSession.playbackSessionId", String.class))
+        .isEqualTo(created.playbackSessionId().toString());
+    List<Object> closureErrors = foreignClosure.read("data.destroyPlaybackSession.userErrors");
+    assertThat(closureErrors).isEmpty();
+    assertThat(
+            playbackSessions.access(
+                PlaybackSessionRequest.builder()
+                    .playbackSessionId(created.playbackSessionId())
+                    .identity(otherIdentity)
+                    .build()))
+        .contains(created);
+    assertThat(REPLACEMENT_TASKS).isEmpty();
+  }
 
   @ParameterizedTest
   @ValueSource(strings = {"playbackSessionId", "streamSessionId"})
