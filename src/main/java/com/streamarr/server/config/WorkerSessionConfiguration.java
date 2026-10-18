@@ -6,13 +6,18 @@ import com.streamarr.server.services.streaming.remote.WorkerSessionKeepalive;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
 import io.micrometer.core.instrument.MeterRegistry;
+import lombok.RequiredArgsConstructor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+@RequiredArgsConstructor
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(WorkerSessionProperties.class)
 public class WorkerSessionConfiguration {
+
+  private final ApplicationEventPublisher eventPublisher;
 
   @Bean(initMethod = "start", destroyMethod = "close")
   public WorkerSessionServer workerSessionServer(
@@ -29,7 +34,12 @@ public class WorkerSessionConfiguration {
                 new WorkerSessionKeepalive(
                     properties.keepalive().time(), properties.keepalive().timeout()))
             .build();
-    return new WorkerSessionServer(configuration, segmentStore, meterRegistry);
+    return WorkerSessionServer.builder()
+        .configuration(configuration)
+        .segmentStore(segmentStore)
+        .meterRegistry(meterRegistry)
+        .eventPublisher(eventPublisher)
+        .build();
   }
 
   @Bean

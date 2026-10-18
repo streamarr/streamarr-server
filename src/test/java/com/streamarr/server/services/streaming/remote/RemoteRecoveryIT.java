@@ -20,6 +20,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.RecordedStream;
@@ -386,8 +387,12 @@ class RemoteRecoveryIT {
   }
 
   private WorkerSessionServer server(LocalSegmentStore segmentStore, MeterRegistry meterRegistry) {
-    return new WorkerSessionServer(
-        serverConfigurationBuilder().address("127.0.0.1").build(), segmentStore, meterRegistry);
+    return WorkerSessionServer.builder()
+        .eventPublisher(new CapturingEventPublisher())
+        .configuration(serverConfigurationBuilder().address("127.0.0.1").build())
+        .segmentStore(segmentStore)
+        .meterRegistry(meterRegistry)
+        .build();
   }
 
   private WorkerContainerFixture.WorkerContainerFixtureBuilder workerBuilder(

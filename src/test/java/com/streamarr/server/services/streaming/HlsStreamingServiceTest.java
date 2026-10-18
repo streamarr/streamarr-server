@@ -29,6 +29,7 @@ import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
@@ -74,6 +75,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataAccessResourceFailureException;
 
@@ -1225,6 +1227,7 @@ class HlsStreamingServiceTest {
     var file = seedMediaFile();
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     segmentStore.addSegment(session.getSessionId(), "segment0.m4s", "data".getBytes());
+    transcodeExecutor.failTerminally(session.getSessionId(), TranscodeFailure.OUTPUT_MISMATCH);
     transcodeExecutor.failOnStop(session.getSessionId());
     var sessionId = session.getSessionId();
 
@@ -1233,6 +1236,40 @@ class HlsStreamingServiceTest {
 
     assertThat(accessSession(session)).isEmpty();
     assertThat(segmentStore.segmentExists(session.getSessionId(), "segment0.m4s")).isFalse();
+    assertThat(transcodeExecutor.terminalFailure(sessionId)).isEmpty();
+  }
+
+  @ParameterizedTest(name = "terminal copy failure: {0}")
+  @ValueSource(booleans = {true, false})
+  @DisplayName("Should release the configured transcode slot when video copy recovery is exhausted")
+  void shouldReleaseTheConfiguredTranscodeSlotWhenVideoCopyRecoveryIsExhausted(
+      boolean terminalCopyFailure) {
+    probeResults.setDefaultProbe(defaultProbeBuilder().audioCodec("flac").build());
+    var failed = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    assertThat(failed.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    failVideoCopy(failed.getSessionId(), terminalCopyFailure);
+
+    assertThat(
+            coordinator.deliver(
+                failed.getSessionId(), StreamSession.defaultVariant(), "segment0.m4s"))
+        .isInstanceOf(SegmentDelivery.Unrecoverable.class);
+
+    var next =
+        createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    assertThat(service.createSession(next)).isInstanceOf(Outcome.Accepted.class);
+  }
+
+  private void failVideoCopy(UUID sessionId, boolean terminalCopyFailure) {
+    if (terminalCopyFailure) {
+      transcodeExecutor.failTerminally(sessionId, TranscodeFailure.OUTPUT_MISMATCH);
+      return;
+    }
+
+    transcodeExecutor.markDead(sessionId);
+    transcodeExecutor.setExecutionTargets(List.of());
   }
 
   @Test
@@ -1597,6 +1634,7 @@ class HlsStreamingServiceTest {
     assertThat(runtimeRegistry.findById(sessionId)).isEmpty();
     assertThat(executor.getRunningCount()).isZero();
     assertThat(segmentStore.segmentExists(sessionId, "startup.m4s")).isFalse();
+    assertThat(executor.terminalFailure(sessionId)).isEmpty();
   }
 
   @Test
@@ -1872,6 +1910,7 @@ class HlsStreamingServiceTest {
     @Override
     public TranscodeHandle start(TranscodeRequest request) {
       attemptedRequests.add(request);
+      failTerminally(request.sessionId(), TranscodeFailure.OUTPUT_MISMATCH);
       segmentStore.addSegment(request.sessionId(), "startup.m4s", new byte[] {1});
       throw new TranscodeException("Simulated transcode startup failure");
     }

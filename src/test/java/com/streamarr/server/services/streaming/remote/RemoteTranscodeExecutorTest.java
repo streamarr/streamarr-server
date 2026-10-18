@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming.remote;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
@@ -27,10 +28,12 @@ class RemoteTranscodeExecutorTest {
 
   private static RemoteTranscodeExecutor unstartedExecutor() {
     var server =
-        new WorkerSessionServer(
-            WorkerSessionServerConfiguration.builder().port(0).build(),
-            new FakeSegmentStore(),
-            new SimpleMeterRegistry());
+        WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
+            .configuration(WorkerSessionServerConfiguration.builder().port(0).build())
+            .segmentStore(new FakeSegmentStore())
+            .meterRegistry(new SimpleMeterRegistry())
+            .build();
     return new RemoteTranscodeExecutor(server, UUID.randomUUID(), Path.of("/media"));
   }
 }

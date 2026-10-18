@@ -27,6 +27,7 @@ import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.BlockingSegmentStore;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamSessionFixture;
@@ -130,7 +131,12 @@ class WorkerSessionServerIT {
             .probeCancellationTimeout(Duration.ofMillis(100))
             .build();
     try (var server =
-        new WorkerSessionServer(configuration, segmentStore, new SimpleMeterRegistry())) {
+        WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
+            .configuration(configuration)
+            .segmentStore(segmentStore)
+            .meterRegistry(new SimpleMeterRegistry())
+            .build()) {
       server.start();
       var channel = workerChannel(server.port());
       var identity = workerIdentity(UUID.randomUUID());
@@ -1767,8 +1773,12 @@ class WorkerSessionServerIT {
   }
 
   private WorkerSessionServer server(SegmentStore segmentStore, MeterRegistry meterRegistry) {
-    return new WorkerSessionServer(
-        serverConfigurationBuilder().build(), segmentStore, meterRegistry);
+    return WorkerSessionServer.builder()
+        .eventPublisher(new CapturingEventPublisher())
+        .configuration(serverConfigurationBuilder().build())
+        .segmentStore(segmentStore)
+        .meterRegistry(meterRegistry)
+        .build();
   }
 
   private ManagedChannel workerChannel(int port) {

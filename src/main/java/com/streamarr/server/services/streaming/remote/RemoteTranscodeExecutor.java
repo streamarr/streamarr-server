@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming.remote;
 
 import com.streamarr.server.domain.streaming.TranscodeDecision;
+import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
@@ -9,6 +10,7 @@ import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import java.nio.file.Path;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import lombok.NonNull;
@@ -69,6 +71,11 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
+  public void destroySession(UUID sessionId) {
+    workerServer.destroyStreamSession(sessionId);
+  }
+
+  @Override
   public void stopVariant(UUID sessionId, String variantLabel) {
     workerServer.stopVariant(sessionId, variantLabel);
   }
@@ -76,6 +83,11 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   @Override
   public boolean isRunning(UUID sessionId, String variantLabel) {
     return workerServer.isRunning(sessionId, variantLabel);
+  }
+
+  @Override
+  public Optional<TranscodeFailure> terminalFailure(UUID sessionId) {
+    return workerServer.terminalFailure(sessionId);
   }
 
   @Override

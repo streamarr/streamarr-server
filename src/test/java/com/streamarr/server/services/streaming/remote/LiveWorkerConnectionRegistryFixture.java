@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
@@ -12,9 +13,11 @@ final class LiveWorkerConnectionRegistryFixture {
   }
 
   static LiveWorkerConnectionRegistry registryWaking(HeldSegmentRequests heldRequests) {
-    return new LiveWorkerConnectionRegistry(
-        WorkerSessionServerConfiguration.builder().build(),
-        new SimpleMeterRegistry(),
-        heldRequests);
+    return LiveWorkerConnectionRegistry.builder()
+        .eventPublisher(new CapturingEventPublisher())
+        .configuration(WorkerSessionServerConfiguration.builder().build())
+        .meterRegistry(new SimpleMeterRegistry())
+        .heldRequests(heldRequests)
+        .build();
   }
 }

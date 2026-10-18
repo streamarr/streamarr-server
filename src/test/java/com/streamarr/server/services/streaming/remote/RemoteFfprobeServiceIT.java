@@ -26,6 +26,7 @@ import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeTimedOutException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.LoopbackProbeWorker;
 import com.streamarr.server.fixtures.WorkerProbeResultFixture;
@@ -76,8 +77,12 @@ class RemoteFfprobeServiceIT {
             .probeCancellationTimeout(Duration.ofMillis(100))
             .build();
     try (var server =
-            new WorkerSessionServer(
-                configuration, new FakeSegmentStore(), new SimpleMeterRegistry());
+            WorkerSessionServer.builder()
+                .eventPublisher(new CapturingEventPublisher())
+                .configuration(configuration)
+                .segmentStore(new FakeSegmentStore())
+                .meterRegistry(new SimpleMeterRegistry())
+                .build();
         var calls = Executors.newVirtualThreadPerTaskExecutor()) {
       server.start();
       try (var worker = worker(server.port(), 1)) {
@@ -194,8 +199,12 @@ class RemoteFfprobeServiceIT {
             .keyframeScanTimeout(Duration.ofMillis(100))
             .build();
     try (var server =
-            new WorkerSessionServer(
-                configuration, new FakeSegmentStore(), new SimpleMeterRegistry());
+            WorkerSessionServer.builder()
+                .eventPublisher(new CapturingEventPublisher())
+                .configuration(configuration)
+                .segmentStore(new FakeSegmentStore())
+                .meterRegistry(new SimpleMeterRegistry())
+                .build();
         var calls = Executors.newVirtualThreadPerTaskExecutor()) {
       server.start();
       try (var worker = worker(server.port(), 1)) {
@@ -791,8 +800,12 @@ class RemoteFfprobeServiceIT {
   }
 
   private WorkerSessionServer server() {
-    return new WorkerSessionServer(
-        serverConfigurationBuilder().build(), new FakeSegmentStore(), new SimpleMeterRegistry());
+    return WorkerSessionServer.builder()
+        .eventPublisher(new CapturingEventPublisher())
+        .configuration(serverConfigurationBuilder().build())
+        .segmentStore(new FakeSegmentStore())
+        .meterRegistry(new SimpleMeterRegistry())
+        .build();
   }
 
   private ProbeExecutionRequest.ProbeExecutionRequestBuilder request() {

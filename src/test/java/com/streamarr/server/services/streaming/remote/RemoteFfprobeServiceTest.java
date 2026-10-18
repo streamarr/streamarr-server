@@ -10,6 +10,7 @@ import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
@@ -36,10 +37,12 @@ class RemoteFfprobeServiceTest {
   void shouldRejectProbingWhenSourceIsNotFileWithinItsNamespace(String relativePath) {
     var sourceRoot = tempDir.resolve("movies");
     try (var server =
-        new WorkerSessionServer(
-            serverConfigurationBuilder().build(),
-            new FakeSegmentStore(),
-            new SimpleMeterRegistry())) {
+        WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
+            .configuration(serverConfigurationBuilder().build())
+            .segmentStore(new FakeSegmentStore())
+            .meterRegistry(new SimpleMeterRegistry())
+            .build()) {
       var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, sourceRoot);
       var request =
           ProbeExecutionRequest.builder()
@@ -59,10 +62,12 @@ class RemoteFfprobeServiceTest {
   void shouldReportTemporaryFailureWhenNoWorkerIsConnected() throws IOException {
     var sourceRoot = Files.createDirectories(tempDir.resolve("movies"));
     try (var server =
-        new WorkerSessionServer(
-            serverConfigurationBuilder().build(),
-            new FakeSegmentStore(),
-            new SimpleMeterRegistry())) {
+        WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
+            .configuration(serverConfigurationBuilder().build())
+            .segmentStore(new FakeSegmentStore())
+            .meterRegistry(new SimpleMeterRegistry())
+            .build()) {
       server.start();
       var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, sourceRoot);
       var request =

@@ -10,6 +10,7 @@ import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -40,8 +41,12 @@ class RemoteProbeDeadlineIT {
     var configuration = serverConfigurationBuilder().probeTimeout(Duration.ofSeconds(2)).build();
     try (var calls = Executors.newVirtualThreadPerTaskExecutor();
         var server =
-            new WorkerSessionServer(
-                configuration, new FakeSegmentStore(), new SimpleMeterRegistry());
+            WorkerSessionServer.builder()
+                .eventPublisher(new CapturingEventPublisher())
+                .configuration(configuration)
+                .segmentStore(new FakeSegmentStore())
+                .meterRegistry(new SimpleMeterRegistry())
+                .build();
         var worker =
             WorkerContainerFixture.builder()
                 .workerSessions(server)

@@ -3,6 +3,7 @@ package com.streamarr.server.fixtures.mesh;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
 import com.streamarr.transcode.v1.MediaSourceRef;
@@ -28,7 +29,13 @@ public final class MeshValidationServer {
     var configuration =
         WorkerSessionServerConfiguration.builder().address("0.0.0.0").port(9090).build();
     var segments = new MeshSegmentStore();
-    try (var server = new WorkerSessionServer(configuration, segments, new SimpleMeterRegistry());
+    try (var server =
+            WorkerSessionServer.builder()
+                .eventPublisher(new CapturingEventPublisher())
+                .configuration(configuration)
+                .segmentStore(segments)
+                .meterRegistry(new SimpleMeterRegistry())
+                .build();
         var httpThreads = Executors.newVirtualThreadPerTaskExecutor()) {
       server.start();
       var http = HttpServer.create(new InetSocketAddress("0.0.0.0", 8080), 0);

@@ -115,6 +115,13 @@ public class ProducerLifecycleService {
       return RecoveryResult.SESSION_GONE;
     }
 
+    if (transcodeExecutor.terminalFailure(sessionId).isPresent()) {
+      session
+          .getVariantHandle(variantLabel)
+          .ifPresent(handle -> doExhaust(sessionId, variantLabel, handle.attemptId()));
+      return RecoveryResult.EXHAUSTED;
+    }
+
     // No job attempt may start at or past the media segment count it advertises, so a request
     // beyond the playlist must neither relocate nor replace the variant's producer.
     if (isUnadvertisedMediaSegment(session, segmentName)) {
@@ -556,7 +563,7 @@ public class ProducerLifecycleService {
    * the window where a concurrent replace could start a producer for a destroyed session.
    */
   public void stopForDestroy(UUID sessionId) {
-    withSessionLock(sessionId, () -> transcodeExecutor.stop(sessionId));
+    withSessionLock(sessionId, () -> transcodeExecutor.destroySession(sessionId));
   }
 
   private ReplaceResult doReplace(ReplaceProducerCommand command) {

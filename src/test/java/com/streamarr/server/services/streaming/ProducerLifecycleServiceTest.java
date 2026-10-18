@@ -28,6 +28,7 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
+import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
@@ -664,6 +665,24 @@ class ProducerLifecycleServiceTest {
 
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
     assertThat(transcodeExecutor.getStartedTargets()).containsExactly(ExecutionTargetId.LOCAL);
+  }
+
+  @Test
+  @DisplayName("Should mark the copy handle failed when a terminal output mismatch ends recovery")
+  void shouldMarkTheCopyHandleFailedWhenATerminalOutputMismatchEndsRecovery() {
+    var session = startedSession();
+    var attemptId = session.getHandle().orElseThrow().attemptId();
+    var startedRequests = transcodeExecutor.getStartedRequests();
+    transcodeExecutor.failTerminally(session.getSessionId(), TranscodeFailure.OUTPUT_MISMATCH);
+
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.EXHAUSTED);
+
+    assertThat(runtimeRegistry.findById(session.getSessionId()).orElseThrow().getHandle())
+        .contains(session.getHandle().orElseThrow().withStatus(TranscodeStatus.FAILED));
+    assertThat(session.getHandle().orElseThrow().attemptId()).isEqualTo(attemptId);
+    assertThat(transcodeExecutor.getStartedRequests()).isEqualTo(startedRequests);
+    assertThat(transcodeExecutor.terminalFailure(session.getSessionId()))
+        .contains(TranscodeFailure.OUTPUT_MISMATCH);
   }
 
   @Test

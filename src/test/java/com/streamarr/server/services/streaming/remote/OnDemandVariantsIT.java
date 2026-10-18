@@ -67,8 +67,12 @@ class OnDemandVariantsIT {
   @BeforeEach
   void setUp() throws Exception {
     server =
-        new WorkerSessionServer(
-            serverConfigurationBuilder().build(), segmentStore, new SimpleMeterRegistry());
+        WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
+            .configuration(serverConfigurationBuilder().build())
+            .segmentStore(segmentStore)
+            .meterRegistry(new SimpleMeterRegistry())
+            .build();
     server.start();
     channel = plaintextChannelBuilder(server.port(), WORKER_ID).build();
     worker = LoopbackWorker.register(channel);

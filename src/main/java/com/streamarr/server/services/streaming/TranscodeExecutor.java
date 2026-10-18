@@ -1,9 +1,11 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.TranscodeDecision;
+import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -30,9 +32,18 @@ public interface TranscodeExecutor {
 
   void stop(UUID sessionId);
 
+  /** Stops the stream's producers and discards retained outcomes when its session is destroyed. */
+  void destroySession(UUID sessionId);
+
   void stopVariant(UUID sessionId, String variantLabel);
 
   boolean isRunning(UUID sessionId, String variantLabel);
+
+  /**
+   * Remains available until the stream session is destroyed, including before its handle is
+   * installed.
+   */
+  Optional<TranscodeFailure> terminalFailure(UUID sessionId);
 
   boolean isHealthy();
 

@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming.remote;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChannelBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
@@ -103,8 +104,12 @@ class WorkerDispatchFlowControlIT {
 
   private WorkerSessionServer server() {
     var configuration = WorkerSessionServerConfiguration.builder().port(0).build();
-    return new WorkerSessionServer(
-        configuration, new FakeSegmentStore(), new SimpleMeterRegistry());
+    return WorkerSessionServer.builder()
+        .eventPublisher(new CapturingEventPublisher())
+        .configuration(configuration)
+        .segmentStore(new FakeSegmentStore())
+        .meterRegistry(new SimpleMeterRegistry())
+        .build();
   }
 
   private ManagedChannel workerChannel(int port) {

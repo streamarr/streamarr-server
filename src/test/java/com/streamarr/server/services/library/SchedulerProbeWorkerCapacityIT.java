@@ -28,6 +28,7 @@ import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.MutableClock;
@@ -257,10 +258,12 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
     scheduling.request(request);
 
     try (var server =
-        new WorkerSessionServer(
-            serverConfigurationBuilder().build(),
-            new FakeSegmentStore(),
-            new SimpleMeterRegistry())) {
+        WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
+            .configuration(serverConfigurationBuilder().build())
+            .segmentStore(new FakeSegmentStore())
+            .meterRegistry(new SimpleMeterRegistry())
+            .build()) {
       server.start();
       try (var worker =
           LoopbackProbeWorker.builder()
@@ -302,10 +305,12 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
     requests.forEach(scheduling::request);
 
     try (var server =
-        new WorkerSessionServer(
-            serverConfigurationBuilder().build(),
-            new FakeSegmentStore(),
-            new SimpleMeterRegistry())) {
+        WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
+            .configuration(serverConfigurationBuilder().build())
+            .segmentStore(new FakeSegmentStore())
+            .meterRegistry(new SimpleMeterRegistry())
+            .build()) {
       server.start();
       try (var worker =
           LoopbackProbeWorker.builder()
