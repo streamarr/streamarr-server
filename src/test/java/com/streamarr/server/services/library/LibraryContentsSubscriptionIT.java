@@ -30,6 +30,7 @@ import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.watchprogress.WatchStatusService;
 import com.streamarr.server.support.ActiveSubscriptions;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.GraphQlHttpTestClient;
@@ -48,6 +49,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -71,6 +73,8 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
   @Autowired private TransactionTemplate transactions;
   @Autowired private LetterIndexRecalculator counts;
   @Autowired private LibraryAdministrationService administration;
+  @Autowired private OrphanedMediaFileCleanupService fileCleanup;
+  @Autowired private WatchStatusService watchStatus;
   private final List<AuthTestSupport.TestIdentity> identities = new ArrayList<>();
   private final List<GraphQlTransportWsTestClient> sockets = new ArrayList<>();
 
@@ -130,6 +134,9 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
     var otherMovie =
         movies.saveAndFlush(
             Movie.builder().title("Other").titleSort("Other").library(otherLibrary).build());
+    var sentinel =
+        movies.saveAndFlush(
+            Movie.builder().title("Sentinel").titleSort("Sentinel").library(library).build());
     var identity = auth.createIdentity();
     identities.add(identity);
     var socket = GraphQlTransportWsTestClient.connectWithBearer(port, auth.profileBearer(identity));
@@ -153,6 +160,7 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
           status.setRollbackOnly();
         });
     refresh(movies.findById(movie.getId()).orElseThrow(), "Committed");
+    refresh(sentinel, "Sentinel committed");
 
     var message = socket.nextMessageFor("updates");
     assertThat(message.path("type").asString()).isEqualTo("next");
@@ -162,6 +170,71 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
         .isEqualTo("Committed");
     assertThat(message.at("/payload/data/libraryItemUpdated/item/summary").asString())
         .isEqualTo("Changed summary");
+    assertThat(
+            socket
+                .nextMessageFor("updates")
+                .at("/payload/data/libraryItemUpdated/itemId")
+                .asString())
+        .isEqualTo(sentinel.getId().toString());
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void shouldDiscardRolledBackIndirectChangesBeforeTheNextCommittedItem(boolean watchStateChange)
+      throws Exception {
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var keptFile = Files.createFile(directory.resolve("kept.mkv"));
+    var movie =
+        movies.saveAndFlush(
+            Movie.builder()
+                .title("Rolled back")
+                .titleSort("Rolled back")
+                .library(library)
+                .files(
+                    Set.of(
+                        MediaFile.builder()
+                            .libraryId(library.getId())
+                            .filename("kept.mkv")
+                            .filepathUri(FilepathCodec.encode(keptFile))
+                            .status(MediaFileStatus.MATCHED)
+                            .build(),
+                        MediaFile.builder()
+                            .libraryId(library.getId())
+                            .filename("missing.mkv")
+                            .filepathUri(FilepathCodec.encode(directory.resolve("missing.mkv")))
+                            .status(MediaFileStatus.MATCHED)
+                            .build()))
+                .build());
+    var sentinel =
+        movies.saveAndFlush(
+            Movie.builder().title("Sentinel").titleSort("Sentinel").library(library).build());
+    var identity = auth.createIdentity();
+    identities.add(identity);
+    var socket = GraphQlTransportWsTestClient.connectWithBearer(port, auth.profileBearer(identity));
+    sockets.add(socket);
+    socket.subscribe(
+        "indirect",
+        "subscription { libraryItemUpdated(libraryId: \"%s\") { itemId } }"
+            .formatted(library.getId()));
+    new ActiveSubscriptions(metrics).awaitCount("libraryItemUpdated", 1);
+    Runnable change =
+        watchStateChange
+            ? () -> watchStatus.markWatched(identity.profile().getId(), movie.getId())
+            : () -> fileCleanup.cleanupOrphanedFiles(library);
+
+    transactions.executeWithoutResult(
+        status -> {
+          change.run();
+          status.setRollbackOnly();
+        });
+    refresh(sentinel, "Committed sentinel");
+
+    assertThat(
+            socket
+                .nextMessageFor("indirect")
+                .at("/payload/data/libraryItemUpdated/itemId")
+                .asString())
+        .isEqualTo(sentinel.getId().toString());
   }
 
   private void refresh(Movie movie, String title) {
@@ -261,6 +334,11 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
     assertThat(aggregate.path("alphabetIndex"))
         .extracting(bucket -> bucket.path("count").asInt())
         .containsExactly(1, 1);
+    var administrator = auth.createAdminIdentity();
+    identities.add(administrator);
+    assertThat(administration.removeLibrary(auth.identityOf(administrator), library.getId()))
+        .isInstanceOf(Outcome.Accepted.class);
+    assertThat(socket.nextMessageFor("counts").path("type").asString()).isEqualTo("complete");
   }
 
   @ParameterizedTest
