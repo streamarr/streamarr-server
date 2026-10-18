@@ -17,13 +17,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.domain.streaming.SubtitleDecision;
+import com.streamarr.server.domain.streaming.TranscodeDecision;
+import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.exceptions.TranscodeException;
@@ -45,6 +50,7 @@ import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.LongStream;
+import org.assertj.core.api.SoftAssertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -94,6 +100,46 @@ class ProducerLifecycleServiceTest {
             .serverSettings(serverSettings)
             .build()
             .lifecycle();
+  }
+
+  @ParameterizedTest
+  @CsvSource({"60, 1, 60.000", "60000, 1001, 59.940"})
+  @DisplayName("Should use the chosen exact output rate when legacy probe timing disagrees")
+  void shouldUseTheChosenExactOutputRateWhenLegacyProbeTimingDisagrees(
+      int numerator, int denominator, String playlistRate) {
+    var rate = new Fraction(numerator, denominator);
+    var source =
+        VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+            .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(rate))
+            .build();
+    var session =
+        defaultSessionBuilder()
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                    .videoCodecFamily("h264")
+                    .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
+                    .videoSource(Optional.of(source))
+                    .build())
+            .build();
+    runtimeRegistry.save(session);
+    var playlists = new HlsPlaylistService(StreamingProperties.builder().build());
+
+    lifecycle.startFirstListedVariant(session);
+    var playlist = playlists.generateMultivariantPlaylist(session, "test-token");
+    var requests = transcodeExecutor.getStartedRequests();
+
+    assertThat(requests).hasSize(1);
+    SoftAssertions.assertSoftly(
+        softly -> {
+          softly.assertThat(playlist).contains(",FRAME-RATE=" + playlistRate);
+          softly.assertThat(playlist).contains("avc1.64002A");
+          softly.assertThat(requests.getFirst().framerate()).hasValue(rate.toDouble());
+          softly
+              .assertThat(requests.getFirst().videoEncodeDecision().orElseThrow().codecString())
+              .isEqualTo("avc1.64002A");
+        });
   }
 
   private StreamSession startedSession() {

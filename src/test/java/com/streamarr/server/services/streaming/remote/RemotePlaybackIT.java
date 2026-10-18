@@ -13,6 +13,7 @@ import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -749,6 +750,12 @@ class RemotePlaybackIT {
         .videoCodecFamily("h264")
         .audioDecision(AudioDecision.stereoAac())
         .subtitleDecision(SubtitleDecision.exclude())
+        .videoSource(
+            Optional.of(
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                    .streamIndex(0)
+                    .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))
+                    .build()))
         .build();
   }
 
@@ -916,7 +923,8 @@ class RemotePlaybackIT {
           try {
             assertThat(requestedWhileMissing.await(5, TimeUnit.SECONDS))
                 .as(
-                    "Playback must observe the missing segment before the first upload is published")
+                    "Playback must observe the missing segment before the first upload is"
+                        + " published")
                 .isTrue();
           } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();

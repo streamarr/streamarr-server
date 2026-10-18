@@ -91,7 +91,8 @@ enum H264Level {
   }
 
   private boolean holdsMacroblockRate(EncodedVideoOutput output, long frameSize) {
-    return frameSize * output.frameRate() <= maxMacroblocksPerSecond;
+    return frameSize * output.frameRate().numerator()
+        <= maxMacroblocksPerSecond * output.frameRate().denominator();
   }
 
   private boolean holdsDecodedPictureBuffer(long frameSize) {

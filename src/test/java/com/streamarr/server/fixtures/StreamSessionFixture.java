@@ -2,6 +2,7 @@ package com.streamarr.server.fixtures;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackAuthority;
@@ -110,7 +111,11 @@ public final class StreamSessionFixture {
         .audioCodec("aac")
         .bitrate(5_000_000)
         .videoPlaybackFacts(
-            Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().streamIndex(0).build()));
+            Optional.of(
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                    .streamIndex(0)
+                    .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))
+                    .build()));
   }
 
   public static PlaybackAuthority.PlaybackAuthorityBuilder defaultPlaybackAuthorityBuilder() {
@@ -170,7 +175,11 @@ public final class StreamSessionFixture {
                 .build())
         .subtitleDecision(SubtitleDecision.exclude())
         .videoSource(
-            Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().streamIndex(0).build()));
+            Optional.of(
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                    .streamIndex(0)
+                    .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))
+                    .build()));
   }
 
   public static TranscodeDecision fullTranscodeDecision(String videoCodecFamily) {
@@ -179,6 +188,7 @@ public final class StreamSessionFixture {
         .videoCodecFamily(videoCodecFamily)
         .audioDecision(AudioDecision.stereoAac())
         .subtitleDecision(SubtitleDecision.exclude())
+        .videoSource(defaultProbeBuilder().build().videoPlaybackFacts())
         .build();
   }
 

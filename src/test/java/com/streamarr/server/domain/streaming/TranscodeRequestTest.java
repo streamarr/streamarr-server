@@ -82,7 +82,7 @@ class TranscodeRequestTest {
                     .codecFamily("h264")
                     .width(1920)
                     .height(1080)
-                    .frameRate(60)
+                    .frameRate(new Fraction(60, 1))
                     .bitrate(5_000_000L)
                     .build()));
     assertThat(request.videoEncodeDecision().map(VideoEncodeDecision::codecString))
@@ -101,9 +101,73 @@ class TranscodeRequestTest {
   }
 
   @Test
+  @DisplayName("Should raise the AV1 level when the exact probed rate exceeds its display limit")
+  void shouldRaiseTheAv1LevelWhenTheExactProbedRateExceedsItsDisplayLimit() {
+    var rate = new Fraction(1_839_478_091, 26_075_816);
+    var source =
+        VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+            .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(rate))
+            .build();
+    var request =
+        requestWithoutEncoderPreset()
+            .encoderPreset(EncoderPreset.FASTER)
+            .width(7502)
+            .height(4042)
+            .bitrate(5_000_000L)
+            .framerate(OptionalDouble.of(rate.toDouble()))
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                    .videoCodecFamily("av1")
+                    .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
+                    .videoSource(Optional.of(source))
+                    .build())
+            .build();
+
+    assertThat(request.videoEncodeDecision().map(VideoEncodeDecision::level)).contains(62);
+    assertThat(request.videoEncodeDecision().map(VideoEncodeDecision::codecString))
+        .contains("av01.0.18M.08");
+  }
+
+  @Test
   @DisplayName("Should refuse to plan the encode when the attempt has no frame rate")
   void shouldRefuseToPlanTheEncodeWhenTheAttemptHasNoFrameRate() {
-    var request = attemptOf(TranscodeMode.FULL_TRANSCODE).build();
+    var source =
+        VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+            .frameRateRule(
+                FrameRateRule.builder()
+                    .outputFrameRate(Optional.empty())
+                    .basis(OutputFrameRateBasis.REFUSED)
+                    .inputs(FrameRateRuleInputs.builder().build())
+                    .build())
+            .build();
+    var request =
+        attemptOf(TranscodeMode.FULL_TRANSCODE)
+            .framerate(OptionalDouble.of(60))
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                    .videoCodecFamily("h264")
+                    .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
+                    .videoSource(Optional.of(source))
+                    .build())
+            .build();
+
+    assertThatThrownBy(request::videoEncodeDecision)
+        .isInstanceOf(UnsupportedVideoEncodeException.class)
+        .hasMessageContaining("frame rate");
+  }
+
+  @Test
+  @DisplayName("Should refuse to plan the encode when the source has no playback facts")
+  void shouldRefuseToPlanTheEncodeWhenTheSourceHasNoPlaybackFacts() {
+    var request =
+        requestWithoutEncoderPreset()
+            .encoderPreset(EncoderPreset.FASTER)
+            .framerate(OptionalDouble.of(60))
+            .build();
 
     assertThatThrownBy(request::videoEncodeDecision)
         .isInstanceOf(UnsupportedVideoEncodeException.class)
@@ -122,7 +186,12 @@ class TranscodeRequestTest {
                 .videoCodecFamily("h264")
                 .audioDecision(AudioDecision.stereoAac())
                 .subtitleDecision(SubtitleDecision.exclude())
-                .videoSource(Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()))
+                .videoSource(
+                    Optional.of(
+                        VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                            .frameRateRule(
+                                VideoPlaybackFactsFixture.declaredRateRule(new Fraction(60, 1)))
+                            .build()))
                 .build());
   }
 

@@ -59,7 +59,11 @@ public record TranscodeRequest(
                 .codecFamily(transcodeDecision.videoCodecFamily())
                 .width(width)
                 .height(height)
-                .probedFrameRate(framerate)
+                .probedFrameRate(
+                    transcodeDecision
+                        .videoSource()
+                        .map(VideoPlaybackFacts::frameRateRule)
+                        .flatMap(FrameRateRule::outputFrameRate))
                 .bitrate(bitrate)
                 .build()));
   }
