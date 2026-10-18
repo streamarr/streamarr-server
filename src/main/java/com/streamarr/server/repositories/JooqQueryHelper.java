@@ -102,7 +102,10 @@ public class JooqQueryHelper {
     if (direction == SortOrder.DESC) {
       return startLetter == AlphabetLetter.Z
           ? Optional.empty()
-          : Optional.of(titleSortField().greaterOrEqual(nextLetterValue(startLetter)));
+          : Optional.of(
+              titleSortField()
+                  .greaterOrEqual(nextLetterValue(startLetter))
+                  .or(titleSortField().isNull()));
     }
 
     return Optional.of(titleSortField().lessThan(letterValue(startLetter)));
@@ -140,7 +143,7 @@ public class JooqQueryHelper {
       return noCondition();
     }
 
-    return titleSortField().greaterOrEqual(letterValue(startLetter));
+    return titleSortField().greaterOrEqual(letterValue(startLetter)).or(titleSortField().isNull());
   }
 
   private Condition descLetterCondition(AlphabetLetter startLetter) {
@@ -156,8 +159,11 @@ public class JooqQueryHelper {
   }
 
   private Condition hashLetterCondition() {
-    var firstCharLower = lower(left(BASE_COLLECTABLE.TITLE_SORT, 1));
-    return firstCharLower.lessThan(inline("a")).or(firstCharLower.greaterThan(inline("z")));
+    var firstCharLower = lower(left(BASE_COLLECTABLE.TITLE_SORT, 1)).collate("C");
+    return firstCharLower
+        .isNull()
+        .or(firstCharLower.lessThan(inline("a")))
+        .or(firstCharLower.greaterThan(inline("z")));
   }
 
   private Field<String> letterValue(AlphabetLetter letter) {
