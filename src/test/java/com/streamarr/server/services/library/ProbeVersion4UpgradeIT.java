@@ -11,7 +11,14 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.ChapterKnowledge;
+import com.streamarr.server.domain.streaming.ChromaticityCoordinates;
+import com.streamarr.server.domain.streaming.ContentLightLevel;
 import com.streamarr.server.domain.streaming.Fraction;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.MasteringDisplayColorVolume;
+import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.FakeFfprobeService;
@@ -39,6 +46,7 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.UUID;
 import javax.sql.DataSource;
@@ -79,15 +87,63 @@ class ProbeVersion4UpgradeIT extends AbstractIntegrationTest {
   @TestBean PlaybackAuthorityGate authorityGate;
 
   static FfprobeService ffprobeService() {
-    PROBE.answerWith(
+    PROBE.answerWith(retainedProbe());
+    return PROBE;
+  }
+
+  private static ProbeOutcome.Success retainedProbe() {
+    var probe =
         ProbeFixture.completeProbe(
             defaultProbeBuilder()
                 .duration(Duration.ofSeconds(12))
                 .framerate(OptionalDouble.of(24))
                 .keyframes(
                     ProbeFixture.keyframesEvery(Duration.ofSeconds(6), Duration.ofSeconds(12)))
-                .build()));
-    return PROBE;
+                .build());
+    var sourceVideo = probe.streams().getFirst();
+    var video =
+        StreamInfo.builder()
+            .index(sourceVideo.index())
+            .codecType(sourceVideo.codecType())
+            .codec(sourceVideo.codec())
+            .width(sourceVideo.width())
+            .height(sourceVideo.height())
+            .framerate(sourceVideo.framerate())
+            .dynamicRange(sourceVideo.dynamicRange())
+            .bitDepth(sourceVideo.bitDepth())
+            .chromaSubsampling(sourceVideo.chromaSubsampling())
+            .codecString(sourceVideo.codecString())
+            .endTime(Optional.of(Duration.ofSeconds(12, 123_456_789)))
+            .masteringDisplay(
+                Optional.of(
+                    MasteringDisplayColorVolume.builder()
+                        .red(new ChromaticityCoordinates(35_400, 14_600))
+                        .green(new ChromaticityCoordinates(8_500, 39_850))
+                        .blue(new ChromaticityCoordinates(6_550, 2_300))
+                        .whitePoint(new ChromaticityCoordinates(15_635, 16_450))
+                        .maxLuminance(10_000_000L)
+                        .minLuminance(1L)
+                        .build()))
+            .contentLightLevel(Optional.of(new ContentLightLevel(1_000, 400)))
+            .build();
+    var sourceAudio = probe.streams().get(1);
+    var audio =
+        ProbeFixture.audioStreamBuilder(sourceAudio.codec().orElseThrow())
+            .index(sourceAudio.index())
+            .channels(sourceAudio.channels())
+            .bitrate(sourceAudio.bitrate())
+            .endTime(Optional.of(Duration.ofSeconds(11, 999_999_999)))
+            .title(Optional.of("English – 音声"))
+            .handlerName(Optional.of(""))
+            .hearingImpaired(Optional.of(true))
+            .build();
+    return ProbeOutcome.Success.builder()
+        .container(probe.container())
+        .streams(List.of(video, audio))
+        .keyframes(probe.keyframes())
+        .chosenVideoStream(probe.chosenVideoStream())
+        .streamTitlesOmitted(Optional.of(false))
+        .build();
   }
 
   static TranscodeExecutor transcodeExecutor() {
@@ -154,6 +210,16 @@ class ProbeVersion4UpgradeIT extends AbstractIntegrationTest {
                                         assertThat(stored.error()).isEmpty();
                                       })));
       for (var file : fixture.files()) {
+        var stored = outcomes.findByMediaFileId(file.mediaFileId()).orElseThrow();
+        assertThat(
+                stored.getOutcome(
+                    KeyframeKnowledge.NotReported::new, ChapterKnowledge.NotReported::new))
+            .isInstanceOfSatisfying(
+                ProbeOutcome.Success.class,
+                success -> {
+                  assertThat(success.streams()).isEqualTo(retainedProbe().streams());
+                  assertThat(success.streamTitlesOmitted()).contains(false);
+                });
         var session =
             accepted(
                 streaming.createSession(
