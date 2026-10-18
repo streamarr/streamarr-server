@@ -75,6 +75,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataAccessResourceFailureException;
 
@@ -1236,6 +1237,39 @@ class HlsStreamingServiceTest {
     assertThat(accessSession(session)).isEmpty();
     assertThat(segmentStore.segmentExists(session.getSessionId(), "segment0.m4s")).isFalse();
     assertThat(transcodeExecutor.terminalFailure(sessionId)).isEmpty();
+  }
+
+  @ParameterizedTest(name = "terminal copy failure: {0}")
+  @ValueSource(booleans = {true, false})
+  @DisplayName("Should release the configured transcode slot when video copy recovery is exhausted")
+  void shouldReleaseTheConfiguredTranscodeSlotWhenVideoCopyRecoveryIsExhausted(
+      boolean terminalCopyFailure) {
+    probeResults.setDefaultProbe(defaultProbeBuilder().audioCodec("flac").build());
+    var failed = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    assertThat(failed.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    failVideoCopy(failed.getSessionId(), terminalCopyFailure);
+
+    assertThat(
+            coordinator.deliver(
+                failed.getSessionId(), StreamSession.defaultVariant(), "segment0.m4s"))
+        .isInstanceOf(SegmentDelivery.Unrecoverable.class);
+
+    var next =
+        createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    assertThat(service.createSession(next)).isInstanceOf(Outcome.Accepted.class);
+  }
+
+  private void failVideoCopy(UUID sessionId, boolean terminalCopyFailure) {
+    if (terminalCopyFailure) {
+      transcodeExecutor.failTerminally(sessionId, TranscodeFailure.OUTPUT_MISMATCH);
+      return;
+    }
+
+    transcodeExecutor.markDead(sessionId);
+    transcodeExecutor.setExecutionTargets(List.of());
   }
 
   @Test

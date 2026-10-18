@@ -116,6 +116,9 @@ public class ProducerLifecycleService {
     }
 
     if (transcodeExecutor.terminalFailure(sessionId).isPresent()) {
+      session
+          .getVariantHandle(variantLabel)
+          .ifPresent(handle -> doExhaust(sessionId, variantLabel, handle.attemptId()));
       return RecoveryResult.EXHAUSTED;
     }
 
