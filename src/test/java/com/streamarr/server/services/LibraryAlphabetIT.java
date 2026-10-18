@@ -16,6 +16,7 @@ import com.streamarr.server.services.library.LibraryCountsService;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import java.util.List;
+import java.util.Map;
 import org.jooq.SortOrder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -33,6 +34,49 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
   @Autowired private MovieService movieService;
   @Autowired private LetterIndexRecalculator recalculator;
   @Autowired private LibraryCountsService counts;
+
+  @ParameterizedTest
+  @ValueSource(strings = {"C", "en-US-x-icu", "tr-TR-x-icu"})
+  @DisplayName("Should use ASCII alphabet membership before Unicode case folding")
+  void shouldUseAsciiAlphabetMembershipBeforeUnicodeCaseFolding(String collation) {
+    jdbc.execute(
+        "ALTER TABLE base_collectable ALTER COLUMN title_sort TYPE VARCHAR(255) COLLATE \""
+            + collation
+            + "\"");
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    for (var title : List.of("İstanbul", "Kelvin", "indigo", "Kelvin")) {
+      movies.saveAndFlush(Movie.builder().title(title).titleSort(title).library(library).build());
+    }
+    recalculator.recalculateLetterIndex(library.getId());
+
+    var totals = counts.getItemCounts(List.of(library.getId())).get(library.getId());
+    assertThat(totals.total()).isEqualTo(4);
+    assertThat(totals.alphabetIndex())
+        .extracting(LibraryMetadata::getLetter, LibraryMetadata::getItemCount)
+        .containsExactlyInAnyOrder(
+            tuple(AlphabetLetter.HASH, 2), tuple(AlphabetLetter.I, 1), tuple(AlphabetLetter.K, 1));
+    var expected =
+        Map.of(
+            AlphabetLetter.HASH, List.of("İstanbul", "Kelvin"),
+            AlphabetLetter.I, List.of("indigo"),
+            AlphabetLetter.K, List.of("Kelvin"));
+    expected.forEach(
+        (letter, titles) -> {
+          var page =
+              movieService.getMoviesWithFilter(
+                  buildForwardOptions(
+                      10,
+                      MediaFilter.builder()
+                          .libraryId(library.getId())
+                          .sortBy(OrderMediaBy.ADDED)
+                          .startLetter(letter)
+                          .build()));
+          assertThat(page.items())
+              .extracting(item -> item.item().getTitle())
+              .as("titles in %s under %s", letter, collation)
+              .containsExactlyInAnyOrderElementsOf(titles);
+        });
+  }
 
   @ParameterizedTest
   @EnumSource(
