@@ -261,7 +261,7 @@ public class JooqQueryHelper {
     }
 
     if (!isNullableSortField(filter.getSortBy())) {
-      var fields = Arrays.stream(orderByColumns).map(SortField::$field).toList();
+      var fields = orderByColumns.stream().map(SortField::$field).toList();
       var seekValues = new Object[] {coercedValue, cursorId};
       return isAsc ? row(fields).greaterOrEqual(seekValues) : row(fields).lessOrEqual(seekValues);
     }
@@ -269,7 +269,7 @@ public class JooqQueryHelper {
     var typedCol = (Field<Object>) sortCol;
 
     if (coercedValue != null) {
-      var fields = Arrays.stream(orderByColumns).map(SortField::$field).toList();
+      var fields = orderByColumns.stream().map(SortField::$field).toList();
       var seekValues = new Object[] {coercedValue, cursorId};
       var rowSeek =
           isAsc ? row(fields).greaterOrEqual(seekValues) : row(fields).lessOrEqual(seekValues);

@@ -87,7 +87,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
             MediaSeek.builder()
                 .filter(filter)
                 .sortColumn(sortField(filter))
-                .orderByColumns(orderByColumns)
+                .orderByColumns(List.of(orderByColumns))
                 .cursorId(options.getCursorId().orElseThrow())
                 .reversePage(shouldReverse)
                 .build());
