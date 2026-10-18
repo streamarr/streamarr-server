@@ -621,9 +621,9 @@ class StreamingResolverTest {
   void shouldReturnATypedInvalidFileErrorWhenTheDisplayedPictureHasNoArea() {
     STUB_SERVICE.setRejection(new CreateStreamSessionRejection.InvalidPictureSize());
     var context = requestSession(UUID.randomUUID().toString());
-    List<Map<String, String>> errors = context.read("data.createStreamSession.userErrors");
+    List<Map<String, String>> errors = context.read("data.createPlaybackSession.userErrors");
 
-    assertThat(context.read("data.createStreamSession.session", Object.class)).isNull();
+    assertThat(context.read("data.createPlaybackSession.playbackSession", Object.class)).isNull();
     assertThat(errors)
         .containsExactly(
             Map.of(
