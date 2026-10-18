@@ -147,7 +147,8 @@ class LibraryRefreshServiceTest {
             new ImageVariantService(),
             new ImageProperties("/data/images"),
             fileSystem,
-            new FakeItemResultRepository());
+            new FakeItemResultRepository(),
+            _ -> {});
 
     var seriesService =
         new SeriesService(
@@ -162,7 +163,8 @@ class LibraryRefreshServiceTest {
             null,
             null,
             null,
-            null);
+            null,
+            _ -> {});
 
     var movieService =
         new MovieService(
@@ -177,7 +179,8 @@ class LibraryRefreshServiceTest {
             null,
             null,
             null,
-            null);
+            null,
+            _ -> {});
 
     return LibraryRefreshService.builder()
         .seriesRepository(seriesRepository)

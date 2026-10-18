@@ -173,7 +173,7 @@ public class JooqQueryHelper {
   }
 
   public Field<String> titleSortField() {
-    return lower(BASE_COLLECTABLE.TITLE_SORT);
+    return lower(BASE_COLLECTABLE.TITLE_SORT).collate("C");
   }
 
   public Condition yearCondition(Field<LocalDate> dateField, List<Integer> years) {
@@ -246,19 +246,18 @@ public class JooqQueryHelper {
   }
 
   @SuppressWarnings("unchecked")
-  public Condition buildSeekCondition(
-      MediaFilter filter, Field<?> sortCol, SortField<?>[] orderByColumns, UUID cursorId) {
+  public Condition buildSeekCondition(MediaSeek seek) {
+    var filter = seek.filter();
+    var sortCol = seek.sortColumn();
+    var orderByColumns = seek.orderByColumns();
+    var cursorId = seek.cursorId();
+    var reversePage = seek.reversePage();
     var idField = BASE_COLLECTABLE.ID;
     var coercedValue = coerceSortValue(filter);
     var isAsc = filter.getSortDirection() == SortOrder.ASC;
 
     if (filter.getSortBy() == OrderMediaBy.TITLE) {
-      var titleSortCol = (Field<String>) sortCol;
-      var cursorTitleSortValue = titleSortValue(coercedValue);
-      var cursorTitleSort = lower(val(cursorTitleSortValue));
-      var fields = row(titleSortCol, idField);
-      var seekValues = row(cursorTitleSort, val(cursorId));
-      return isAsc ? fields.greaterOrEqual(seekValues) : fields.lessOrEqual(seekValues);
+      return titleSeekCondition(filter, (Field<String>) sortCol, cursorId);
     }
 
     if (!isNullableSortField(filter.getSortBy())) {
@@ -274,14 +273,27 @@ public class JooqQueryHelper {
       var seekValues = new Object[] {coercedValue, cursorId};
       var rowSeek =
           isAsc ? row(fields).greaterOrEqual(seekValues) : row(fields).lessOrEqual(seekValues);
-      // NULLS LAST: null rows come after all non-null rows regardless of sort direction
-      return rowSeek.or(typedCol.isNull());
+      return reversePage ? rowSeek : rowSeek.or(typedCol.isNull());
     }
 
-    if (isAsc) {
-      return typedCol.isNull().and(idField.greaterOrEqual(cursorId));
+    var idSeek = isAsc ? idField.ge(cursorId) : idField.le(cursorId);
+    var nullSeek = typedCol.isNull().and(idSeek);
+    return reversePage ? nullSeek.or(typedCol.isNotNull()) : nullSeek;
+  }
+
+  private Condition titleSeekCondition(MediaFilter filter, Field<String> title, UUID cursorId) {
+    var value = coerceSortValue(filter);
+    var isAsc = filter.getSortDirection() == SortOrder.ASC;
+    var idSeek = isAsc ? BASE_COLLECTABLE.ID.ge(cursorId) : BASE_COLLECTABLE.ID.le(cursorId);
+    if (value == null) {
+      var nullSeek = title.isNull().and(idSeek);
+      return isAsc ? nullSeek : nullSeek.or(title.isNotNull());
     }
-    return typedCol.isNull().and(idField.lessOrEqual(cursorId));
+
+    var fields = row(title, BASE_COLLECTABLE.ID);
+    var seekValues = row(lower(val(titleSortValue(value))), val(cursorId));
+    var seek = isAsc ? fields.ge(seekValues) : fields.le(seekValues);
+    return isAsc ? seek.or(title.isNull()) : seek;
   }
 
   private String titleSortValue(@NonNull Object value) {

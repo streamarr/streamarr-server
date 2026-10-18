@@ -2,6 +2,7 @@ package com.streamarr.server.services;
 
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
@@ -17,6 +18,7 @@ import com.streamarr.server.repositories.ReviewRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
+import com.streamarr.server.services.events.library.LibraryItemChangedEvent;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
@@ -36,6 +38,7 @@ import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -56,6 +59,7 @@ public class MovieService {
   private final RatingRepository ratingRepository;
   private final ReviewRepository reviewRepository;
   private final WatchHistoryRepository watchHistoryRepository;
+  private final ApplicationEventPublisher events;
 
   /**
    * Attaches the file to the movie with this TMDB id in the file's own library. Versions of a title
@@ -71,7 +75,15 @@ public class MovieService {
     }
 
     movie.get().addFile(mediaFile);
-    return Optional.of(movieRepository.saveAndFlush(movie.get()));
+    var saved = movieRepository.saveAndFlush(movie.get());
+    events.publishEvent(
+        LibraryItemChangedEvent.builder()
+            .change(LibraryItemChangedEvent.Change.UPDATED)
+            .libraryId(saved.getLibrary().getId())
+            .itemId(saved.getId())
+            .kind(MediaType.MOVIE)
+            .build());
+    return Optional.of(saved);
   }
 
   @Transactional
@@ -91,6 +103,15 @@ public class MovieService {
 
     imageService.prepareMovieDeletion(movies.stream().map(Movie::getId).toList());
     movieRepository.deleteAll(movies);
+    movies.forEach(
+        movie ->
+            events.publishEvent(
+                LibraryItemChangedEvent.builder()
+                    .change(LibraryItemChangedEvent.Change.REMOVED)
+                    .libraryId(movie.getLibrary().getId())
+                    .itemId(movie.getId())
+                    .kind(MediaType.MOVIE)
+                    .build()));
   }
 
   @Transactional
@@ -114,6 +135,14 @@ public class MovieService {
     var savedMovie = saveMovieWithMediaFile(movie, mediaFile);
 
     requestPrimaryArtwork(savedMovie.getId(), metadataResult.imageSources(), artworkRun);
+
+    events.publishEvent(
+        LibraryItemChangedEvent.builder()
+            .change(LibraryItemChangedEvent.Change.ADDED)
+            .libraryId(savedMovie.getLibrary().getId())
+            .itemId(savedMovie.getId())
+            .kind(MediaType.MOVIE)
+            .build());
 
     return savedMovie;
   }
@@ -139,6 +168,13 @@ public class MovieService {
 
     var saved = movieRepository.saveAndFlush(existing);
     requestPrimaryArtwork(saved.getId(), metadataResult.imageSources(), artworkRun);
+    events.publishEvent(
+        LibraryItemChangedEvent.builder()
+            .change(LibraryItemChangedEvent.Change.UPDATED)
+            .libraryId(saved.getLibrary().getId())
+            .itemId(saved.getId())
+            .kind(MediaType.MOVIE)
+            .build());
     return saved;
   }
 

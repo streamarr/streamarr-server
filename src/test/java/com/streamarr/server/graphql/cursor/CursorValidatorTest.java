@@ -21,6 +21,14 @@ class CursorValidatorTest {
 
   private final CursorValidator cursorValidator = new CursorValidator();
 
+  @Test
+  void shouldAcceptAnUntitledItemsCursorWhenItsFilterMatches() {
+    var filter = MediaFilter.builder().sortBy(OrderMediaBy.TITLE).build();
+    var decoded = MediaPaginationOptions.builder().mediaFilter(filter).build();
+    assertThatNoException()
+        .isThrownBy(() -> cursorValidator.validateCursorAgainstFilter(decoded, filter));
+  }
+
   @Nested
   @DisplayName("Matching Filters")
   class MatchingFilters {

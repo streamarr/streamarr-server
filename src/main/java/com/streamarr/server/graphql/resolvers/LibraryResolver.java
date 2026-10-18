@@ -37,7 +37,7 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.library.LibraryAdministrationService;
-import com.streamarr.server.services.library.LibraryManagementService;
+import com.streamarr.server.services.library.LibraryCountsService.Counts;
 import com.streamarr.server.services.pagination.MediaPaginationOptionsResolver;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
@@ -45,7 +45,9 @@ import graphql.schema.DataFetchingEnvironment;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import lombok.RequiredArgsConstructor;
+import org.dataloader.DataLoader;
 
 @DgsComponent
 @RequiredArgsConstructor
@@ -54,7 +56,6 @@ public class LibraryResolver {
   private final LibraryRepository libraryRepository;
   private final AuthorizationService authorizationService;
   private final LibraryAdministrationService libraryAdministrationService;
-  private final LibraryManagementService libraryManagementService;
   private final MovieService movieService;
   private final SeriesService seriesService;
   private final PaginationService paginationService;
@@ -180,12 +181,17 @@ public class LibraryResolver {
   }
 
   @DgsData(parentType = "Library")
-  public List<AlphabetIndexDto> alphabetIndex(DataFetchingEnvironment dfe) {
+  public CompletableFuture<List<AlphabetIndexDto>> alphabetIndex(DataFetchingEnvironment dfe) {
     authorizationService.requireProfile();
     Library library = dfe.getSource();
-    return libraryManagementService.getAlphabetIndex(library.getId()).stream()
-        .map(m -> new AlphabetIndexDto(m.getLetter(), m.getItemCount()))
-        .toList();
+    DataLoader<UUID, Counts> loader = dfe.getDataLoader("libraryItemCount");
+    return loader
+        .load(library.getId())
+        .thenApply(
+            counts ->
+                counts.alphabetIndex().stream()
+                    .map(m -> new AlphabetIndexDto(m.getLetter(), m.getItemCount()))
+                    .toList());
   }
 
   @DgsTypeResolver(name = "Media")

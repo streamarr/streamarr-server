@@ -3,6 +3,7 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.pagination.ItemSortValue;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
@@ -20,6 +21,11 @@ import java.util.stream.Stream;
 import org.jooq.SortOrder;
 
 public class FakeSeriesRepository extends FakeJpaRepository<Series> implements SeriesRepository {
+
+  @Override
+  public Optional<ItemSortValue> findItemPosition(UUID itemId, MediaFilter filter) {
+    throw new UnsupportedOperationException("Placement is tested against PostgreSQL");
+  }
 
   @Override
   public Set<UUID> findUnmatchedSeriesIds(Collection<UUID> ids) {

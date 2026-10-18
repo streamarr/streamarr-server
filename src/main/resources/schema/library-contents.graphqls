@@ -1,0 +1,37 @@
+"A committed change to a top-level item in a library."
+type LibraryItemChange {
+    libraryId: ID!
+    itemId: ID!
+    kind: MediaType!
+    "Current selectable movie or series fields; null if the item has since been removed."
+    item: Media
+    "Current filter membership and pagination position. TITLE startLetter remains a seek anchor, not a filter."
+    position(sort: MediaSort, filter: MediaFilter): LibraryItemPosition!
+}
+
+extend type Subscription {
+    "A top-level item was added to the library. Requires a selected Profile, as the library query does."
+    libraryItemAdded(libraryId: ID!): LibraryItemChange
+    "A top-level item's selectable fields changed. Uses the same visibility as libraryItemAdded."
+    libraryItemUpdated(libraryId: ID!): LibraryItemChange
+    "A top-level item was removed. Uses the same visibility as libraryItemAdded."
+    libraryItemRemoved(libraryId: ID!): LibraryItemRemoval
+    "The authoritative itemCount and alphabetIndex were recomputed. Includes changes outside a loaded page."
+    libraryCountsChanged(libraryId: ID!): Library
+}
+
+"The identity and scope of an item that no longer exists."
+type LibraryItemRemoval {
+    libraryId: ID!
+    itemId: ID!
+    kind: MediaType!
+}
+
+"The server evaluates the same filters and ordering as Library.items."
+type LibraryItemPosition {
+    matchesFilter: Boolean!
+    "A Library.items cursor for this item and these arguments; null when it no longer matches or exists."
+    cursor: String
+    "Comparable to MediaEdge.orderKey in the same view; null when matchesFilter is false."
+    orderKey: String
+}

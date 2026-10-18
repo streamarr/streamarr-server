@@ -120,6 +120,41 @@ class KeyedSubscriptionBroadcasterTest {
   }
 
   @Test
+  void shouldCompleteOnlyTheRemovedScopeAfterDeliveringItsQueuedValues() throws Exception {
+    var ended = broadcaster.register("library-a").collectList().toFuture();
+    var kept = new RecordingSubscriber(Long.MAX_VALUE);
+    broadcaster.register("library-b").subscribe(kept);
+
+    broadcaster.broadcast("library-a", "before-removal");
+    broadcaster.complete("library-a");
+    broadcaster.broadcast("library-b", "still-listening");
+
+    assertThat(ended.get(BOUND.toMillis(), TimeUnit.MILLISECONDS))
+        .containsExactly("before-removal");
+    assertThat(kept.take()).isEqualTo("still-listening");
+    assertThat(activeRegistrations()).isEqualTo(1);
+  }
+
+  @Test
+  void shouldCompleteWhenTheScopeWasRemovedBeforeOrDuringRegistration() throws Exception {
+    var missing = broadcaster.register("missing", () -> false).collectList().toFuture();
+    var removedDuringCheck =
+        broadcaster
+            .register(
+                "racing",
+                () -> {
+                  broadcaster.complete("racing");
+                  return true;
+                })
+            .collectList()
+            .toFuture();
+
+    assertThat(missing.get(BOUND.toMillis(), TimeUnit.MILLISECONDS)).isEmpty();
+    assertThat(removedDuringCheck.get(BOUND.toMillis(), TimeUnit.MILLISECONDS)).isEmpty();
+    assertThat(activeRegistrations()).isZero();
+  }
+
+  @Test
   @DisplayName("Should fail only the operation whose buffer overflows when it stops requesting")
   void shouldFailOnlyOperationWhoseBufferOverflowsWhenItStopsRequesting() {
     // Immediate delivery renews the keeping-up operation's demand before the next broadcast.

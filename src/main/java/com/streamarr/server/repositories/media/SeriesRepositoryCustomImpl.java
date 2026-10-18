@@ -24,7 +24,9 @@ import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.jooq.generated.enums.ExternalSourceType;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import com.streamarr.server.repositories.LastWatchedExpression;
+import com.streamarr.server.repositories.MediaSeek;
 import com.streamarr.server.repositories.WatchStateConditions;
+import com.streamarr.server.services.pagination.ItemSortValue;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
@@ -49,6 +51,22 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
   private final DSLContext context;
   private final EntityManager entityManager;
 
+  @Override
+  public Optional<ItemSortValue> findItemPosition(UUID itemId, MediaFilter filter) {
+    return context
+        .select(sortField(filter))
+        .from(SERIES)
+        .join(BASE_COLLECTABLE)
+        .on(SERIES.ID.eq(BASE_COLLECTABLE.ID))
+        .where(SERIES.ID.eq(itemId))
+        .and(JooqQueryHelper.libraryCondition(filter.getLibraryId()))
+        .and(
+            JooqQueryHelper.startLetterCursorPageCondition(
+                filter.getStartLetter(), filter.getSortBy()))
+        .and(filterConditions(filter))
+        .fetchOptional(row -> new ItemSortValue(row.value1()));
+  }
+
   public List<Series> seekWithFilter(MediaPaginationOptions options) {
 
     var shouldReverse =
@@ -60,11 +78,19 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
     }
 
     var orderByColumns =
-        new SortField[] {buildOrderBy(filter), BASE_COLLECTABLE.ID.sort(filter.getSortDirection())};
+        new SortField[] {
+          buildOrderBy(filter, shouldReverse), BASE_COLLECTABLE.ID.sort(filter.getSortDirection())
+        };
 
     var seekCondition =
         JooqQueryHelper.buildSeekCondition(
-            filter, sortField(filter), orderByColumns, options.getCursorId().orElseThrow());
+            MediaSeek.builder()
+                .filter(filter)
+                .sortColumn(sortField(filter))
+                .orderByColumns(orderByColumns)
+                .cursorId(options.getCursorId().orElseThrow())
+                .reversePage(shouldReverse)
+                .build());
 
     var query =
         context
@@ -134,7 +160,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
 
     var orderByColumns =
         new SortField[] {
-          buildOrderBy(options.getMediaFilter()),
+          buildOrderBy(options.getMediaFilter(), false),
           BASE_COLLECTABLE.ID.sort(options.getMediaFilter().getSortDirection())
         };
 
@@ -168,7 +194,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
     var reversed = JooqQueryHelper.reverseFilter(filter);
     var orderByColumns =
         new SortField[] {
-          buildOrderBy(reversed), BASE_COLLECTABLE.ID.sort(reversed.getSortDirection())
+          buildOrderBy(reversed, true), BASE_COLLECTABLE.ID.sort(reversed.getSortDirection())
         };
 
     var query =
@@ -295,8 +321,11 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
     };
   }
 
-  private SortField<?> buildOrderBy(MediaFilter filter) {
+  private SortField<?> buildOrderBy(MediaFilter filter, boolean reversePage) {
     var direction = filter.getSortDirection();
+    if (reversePage && JooqQueryHelper.isNullableSortField(filter.getSortBy())) {
+      return sortField(filter).sort(direction).nullsFirst();
+    }
 
     return switch (filter.getSortBy()) {
       case TITLE -> JooqQueryHelper.titleSortField().sort(direction);

@@ -5,8 +5,9 @@ and mutations run only over HTTP POST on /graphql.
 A subscription delivers changes from the moment it registers. It sends no snapshot and replays
 nothing missed. To build current state, subscribe first, then run the queries the field names,
 and apply each later change by id. For library administration, query
-`libraries { id name status scanStartedOn scanCompletedOn }`. A subscription never completes
-normally while the server runs.
+`libraries { id name status scanStartedOn scanCompletedOn }`. Library-content subscriptions complete
+when their library is removed, or if it is already absent when they register. Other subscriptions
+do not normally complete while the server runs.
 
 A field error does not end the operation. When a selected field of one change fails to resolve,
 the server still delivers the change with the failed value as null and with errors, and later

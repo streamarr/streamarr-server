@@ -22,10 +22,12 @@ import com.streamarr.server.exceptions.LibraryOperationNotStartedException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
+import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.graphql.StreamarrDataFetcherExceptionHandler;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.CursorValidator;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
+import com.streamarr.server.graphql.dataloaders.LibraryItemCountDataLoader;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.MovieService;
@@ -37,6 +39,7 @@ import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.library.AddLibraryRejection;
 import com.streamarr.server.services.library.LibraryAdministrationService;
+import com.streamarr.server.services.library.LibraryCountsService;
 import com.streamarr.server.services.library.LibraryManagementService;
 import com.streamarr.server.services.library.LibraryOperationKind;
 import com.streamarr.server.services.library.LibraryOperationRejection;
@@ -83,6 +86,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @SpringBootTest(
     classes = {
       LibraryResolver.class,
+      LibraryItemCountDataLoader.class,
       LibraryAdministrationService.class,
       PaginationService.class,
       CursorUtil.class,
@@ -101,6 +105,15 @@ class LibraryResolverTest {
 
   private static final FakeLibraryOperationService FAKE_LIBRARY_OPERATION_SERVICE =
       new FakeLibraryOperationService();
+
+  private static final FakeLibraryMetadataRepository FAKE_COUNTS =
+      new FakeLibraryMetadataRepository();
+
+  @TestBean private LibraryCountsService libraryCountsService;
+
+  static LibraryCountsService libraryCountsService() {
+    return new LibraryCountsService(FAKE_COUNTS);
+  }
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
@@ -796,41 +809,6 @@ class LibraryResolverTest {
     }
 
     @Test
-    @DisplayName("Should return GraphQL error when TITLE cursor is missing sort value")
-    void shouldReturnGraphQLErrorWhenTitleCursorIsMissingSortValue() {
-      var libraryId = UUID.randomUUID();
-      var library = buildMovieLibrary(libraryId);
-
-      var movie = Movie.builder().title("Batman").titleSort("Batman").build();
-      movie.setId(UUID.randomUUID());
-      var page = new MediaPage<>(List.of(new PageItem<>(movie, null)), false, true);
-
-      when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
-      when(movieService.getMoviesWithFilter(any(MediaPaginationOptions.class))).thenReturn(page);
-
-      String cursor =
-          dgsQueryExecutor.executeAndExtractJsonPath(
-              String.format(
-                  """
-                  { library(id: "%s") { items(first: 1) { edges { cursor } } } }
-                  """,
-                  libraryId),
-              "data.library.items.edges[0].cursor");
-
-      var result =
-          dgsQueryExecutor.execute(
-              String.format(
-                  """
-                  { library(id: "%s") { items(first: 1, after: "%s") { edges { node { ... on Movie { title } } } } } }
-                  """,
-                  libraryId, cursor));
-
-      assertThat(result.getErrors()).hasSize(1);
-      assertThat(result.getErrors().getFirst().getMessage())
-          .contains("Cursor sort value is required for TITLE sort");
-    }
-
-    @Test
     @DisplayName("Should return GraphQL error when start letter changes on non-TITLE cursor")
     void shouldReturnGraphQLErrorWhenStartLetterChangesOnNonTitleCursor() {
       var libraryId = UUID.randomUUID();
@@ -1024,8 +1002,7 @@ class LibraryResolverTest {
     @Test
     @DisplayName("Should throw with simple class name when unsupported media type in type resolver")
     void shouldThrowWithSimpleClassNameWhenUnsupportedMediaTypeInTypeResolver() {
-      var resolver =
-          new LibraryResolver(null, null, null, null, null, null, null, null, null, null);
+      var resolver = new LibraryResolver(null, null, null, null, null, null, null, null, null);
 
       var unsupportedMedia = new Object();
 
@@ -1167,6 +1144,8 @@ class LibraryResolverTest {
 
     private void returnAlphabetIndex(List<LibraryMetadata> metadata) {
       alphabetIndex = metadata;
+      FAKE_COUNTS.deleteAll();
+      FAKE_COUNTS.saveAll(metadata);
     }
 
     private List<UUID> removedLibraryIds() {
@@ -1183,6 +1162,7 @@ class LibraryResolverTest {
       addLibraryOutcome = null;
       addedLibrary = null;
       alphabetIndex = List.of();
+      FAKE_COUNTS.deleteAll();
       removedLibraryIds.clear();
       removalRejection = null;
     }

@@ -15,6 +15,7 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
@@ -26,6 +27,7 @@ import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.events.library.CollectablesChangedEvent;
 import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
@@ -41,8 +43,10 @@ import com.streamarr.server.services.parsers.show.regex.EpisodeRegexFixtures;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.io.IOException;
 import java.nio.file.FileSystems;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -75,7 +79,8 @@ class SeriesFileProcessorTest {
           fakeMediaFileRepository,
           fakeSeasonRepository,
           fakeEpisodeRepository,
-          new MutexFactoryProvider());
+          new MutexFactoryProvider(),
+          _ -> {});
 
   @Test
   @DisplayName("Should restore interrupt flag when enrichment throws InterruptedException")
@@ -421,6 +426,58 @@ class SeriesFileProcessorTest {
 
     assertMatchingFailure(mediaFile, MediaFileStatus.UNMATCHED, null);
     assertThat(thrown).isSameAs(failure);
+  }
+
+  @Test
+  void shouldPublishTheCreatedEpisodeWhenAssociatingItsFileFails() {
+    var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
+    var series =
+        Series.builder().id(UUID.randomUUID()).library(library).title("Breaking Bad").build();
+    var season =
+        fakeSeasonRepository.save(
+            Season.builder().series(series).library(library).seasonNumber(1).build());
+    var files =
+        new FakeMediaFileRepository() {
+          @Override
+          public <S extends MediaFile> S save(S entity) {
+            if (entity.getStatus() == MediaFileStatus.MATCHED) {
+              throw new DataAccessResourceFailureException("file association failed");
+            }
+
+            return super.save(entity);
+          }
+        };
+    var file =
+        files.save(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .filepathUri("file:///library/Breaking%20Bad/Season%2001/Breaking.Bad.S01E01.mkv")
+                .filename("Breaking.Bad.S01E01.mkv")
+                .status(MediaFileStatus.UNMATCHED)
+                .build());
+    stubSearchFound("Breaking Bad", "1396");
+    when(seriesService.findInLibraryByTmdbId(library.getId(), "1396"))
+        .thenReturn(Optional.of(series));
+    var events = new ArrayList<Object>();
+    var processor =
+        new SeriesFileProcessor(
+            new EpisodePathMetadataParser(new EpisodeRegexFixtures()),
+            new SeasonPathMetadataParser(),
+            new SeriesFolderNameParser(),
+            seriesMetadataProviderResolver,
+            new DateBasedEpisodeResolver(seriesMetadataProviderResolver),
+            seriesService,
+            files,
+            fakeSeasonRepository,
+            fakeEpisodeRepository,
+            new MutexFactoryProvider(),
+            events::add);
+
+    processor.process(discoveryOf(library), file);
+
+    var episode =
+        fakeEpisodeRepository.findBySeasonIdAndEpisodeNumber(season.getId(), 1).orElseThrow();
+    assertThat(events).containsExactly(new CollectablesChangedEvent(Set.of(episode.getId())));
   }
 
   private MediaFile saveEpisodeFile(Library library, String relativeUri) {

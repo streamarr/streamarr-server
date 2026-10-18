@@ -1,0 +1,307 @@
+package com.streamarr.server.graphql.resolvers;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.media.Episode;
+import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.media.Season;
+import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.fixtures.MetadataFixture;
+import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.media.EpisodeRepository;
+import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.repositories.media.SeasonRepository;
+import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.ArtworkRequestService;
+import com.streamarr.server.services.MovieService;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.support.ActiveSubscriptions;
+import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.GraphQlHttpTestClient;
+import com.streamarr.server.support.GraphQlTransportWsTestClient;
+import io.micrometer.core.instrument.MeterRegistry;
+import java.net.URI;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import org.jooq.SortOrder;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalServerPort;
+
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+class LibraryItemPlacementIT extends AbstractIntegrationTest {
+  @LocalServerPort private int port;
+  @Autowired private AuthTestSupport auth;
+  @Autowired private LibraryRepository libraries;
+  @Autowired private MovieRepository movies;
+  @Autowired private SeriesRepository seriesRepository;
+  @Autowired private SeasonRepository seasons;
+  @Autowired private EpisodeRepository episodes;
+  @Autowired private MovieService movieService;
+  @Autowired private ArtworkRequestService artwork;
+  @Autowired private MeterRegistry metrics;
+
+  @Test
+  void shouldSupplyTheSameOrderKeyAsAQueryAndACursorUsableForTheNextPage() {
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    movies.saveAndFlush(Movie.builder().title("Alpha").titleSort("Alpha").library(library).build());
+    var changed =
+        movies.saveAndFlush(
+            Movie.builder().title("Charlie").titleSort("Charlie").library(library).build());
+    var last =
+        movies.saveAndFlush(
+            Movie.builder().title("Delta").titleSort("Delta").library(library).build());
+    var identity = auth.createIdentity();
+    var bearer = auth.profileBearer(identity);
+    try (var http =
+            new GraphQlHttpTestClient(URI.create("http://localhost:%d/graphql".formatted(port)));
+        var socket = GraphQlTransportWsTestClient.connectWithBearer(port, bearer)) {
+      var before =
+          http.execute(
+              bearer,
+              """
+          { library(id: "%s") { items(first: 1, sort: {by: TITLE, direction: ASC}, filter: {unmatched: true}) {
+            edges { cursor orderKey node { ... on Movie { id } } }
+          } } }
+          """
+                  .formatted(library.getId()));
+      assertThat(before.has("errors")).as(before.toPrettyString()).isFalse();
+      var firstKey = before.at("/data/library/items/edges/0/orderKey").asString();
+      socket.subscribe(
+          "placement",
+          """
+          subscription { libraryItemUpdated(libraryId: "%s") {
+            itemId item { ... on Movie { title } }
+            position(sort: {by: TITLE, direction: ASC}, filter: {unmatched: true}) {
+              matchesFilter cursor orderKey
+            }
+            excluded: position(filter: {years: [1900]}) { matchesFilter cursor orderKey }
+          } }
+          """
+              .formatted(library.getId()));
+      new ActiveSubscriptions(metrics).awaitCount("libraryItemUpdated", 1);
+      try (var run = artwork.openRun("Placement test", ImageRefreshMode.PRESERVE)) {
+        movieService.refreshMovieMetadata(
+            changed,
+            MetadataFixture.<Movie>metadataResultBuilder()
+                .entity(Movie.builder().title("Bravo").titleSort("Bravo").build())
+                .build(),
+            run);
+      }
+
+      var message = socket.nextMessageFor("placement");
+      assertThat(message.path("payload").has("errors")).as(message.toPrettyString()).isFalse();
+      var update = message.at("/payload/data/libraryItemUpdated");
+      var position = update.path("position");
+      assertThat(position.path("matchesFilter").asBoolean()).isTrue();
+      assertThat(position.path("orderKey").asString()).isGreaterThan(firstKey);
+      assertThat(update.at("/excluded/matchesFilter").asBoolean()).isFalse();
+      assertThat(update.at("/excluded/cursor").isNull()).isTrue();
+      assertThat(update.at("/excluded/orderKey").isNull()).isTrue();
+      var after =
+          http.execute(
+              bearer,
+              """
+          { library(id: "%s") { items(first: 1, after: "%s", sort: {by: TITLE, direction: ASC}, filter: {unmatched: true}) {
+            edges { cursor orderKey node { ... on Movie { id } } }
+          } } }
+          """
+                  .formatted(library.getId(), position.path("cursor").asString()));
+      assertThat(after.has("errors")).as(after.toPrettyString()).isFalse();
+      assertThat(after.at("/data/library/items/edges/0/node/id").asString())
+          .isEqualTo(last.getId().toString());
+      assertThat(after.at("/data/library/items/edges/0/orderKey").asString())
+          .isGreaterThan(position.path("orderKey").asString());
+      var all =
+          http.execute(
+              bearer,
+              """
+          { library(id: "%s") { items(first: 10, sort: {by: TITLE, direction: ASC}, filter: {unmatched: true}) {
+            edges { orderKey node { ... on Movie { id } } }
+          } } }
+          """
+                  .formatted(library.getId()));
+      assertThat(all.at("/data/library/items/edges/1/orderKey").asString())
+          .isEqualTo(position.path("orderKey").asString());
+    } finally {
+      new ActiveSubscriptions(metrics).awaitNoneActive();
+      auth.deleteIdentity(identity);
+    }
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "TITLE,ASC",
+    "TITLE,DESC",
+    "ADDED,ASC",
+    "ADDED,DESC",
+    "RELEASE_DATE,ASC",
+    "RELEASE_DATE,DESC",
+    "RUNTIME,ASC",
+    "RUNTIME,DESC",
+    "LAST_WATCHED,ASC",
+    "LAST_WATCHED,DESC"
+  })
+  void shouldKeepOrderKeysAndCursorsConsistentForEverySort(OrderMediaBy by, SortOrder direction) {
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var created = new ArrayList<Movie>();
+    var titles = new String[] {"a", "A", "aé", "ä", null};
+    for (int i = 0; i < titles.length; i++) {
+      created.add(
+          movies.saveAndFlush(
+              Movie.builder()
+                  .title(titles[i])
+                  .titleSort(titles[i])
+                  .runtime(i % 2 == 0 ? null : 90)
+                  .releaseDate(i % 2 == 0 ? null : LocalDate.of(2020, 1, 1))
+                  .library(library)
+                  .build()));
+    }
+
+    var identity = auth.createIdentity();
+    var bearer = auth.profileBearer(identity);
+    try (var http =
+        new GraphQlHttpTestClient(URI.create("http://localhost:%d/graphql".formatted(port)))) {
+      for (var movie : List.of(created.getFirst(), created.get(2))) {
+        var marked =
+            http.execute(
+                bearer,
+                "mutation { markWatched(input: {itemId: \"%s\"}) { userErrors { __typename } } }"
+                    .formatted(movie.getId()));
+        assertThat(marked.at("/data/markWatched/userErrors").isEmpty())
+            .as(marked.toPrettyString())
+            .isTrue();
+      }
+
+      var query =
+          """
+          { library(id: "%s") { items(%%s, sort: {by: %s, direction: %s}) {
+            edges { cursor orderKey node { ... on Movie { id } } }
+          } } }
+          """
+              .formatted(library.getId(), by.name(), direction.name());
+      var full = http.execute(bearer, query.formatted("first: 10"));
+      assertThat(full.has("errors")).as(full.toPrettyString()).isFalse();
+      var edges = full.at("/data/library/items/edges");
+      var keys = edges.valueStream().map(edge -> edge.path("orderKey").asString()).toList();
+      assertThat(keys).hasSize(5).doesNotHaveDuplicates().isSorted();
+      var ids = edges.valueStream().map(edge -> edge.at("/node/id").asString()).toList();
+      for (int i = 0; i < edges.size(); i++) {
+        var cursor = edges.get(i).path("cursor").asString();
+        var next =
+            http.execute(bearer, query.formatted("first: 10, after: \"%s\"".formatted(cursor)));
+        assertThat(next.has("errors")).as(next.toPrettyString()).isFalse();
+        assertThat(
+                next.at("/data/library/items/edges")
+                    .valueStream()
+                    .map(edge -> edge.at("/node/id").asString())
+                    .toList())
+            .as("items after %s under %s %s", i, by, direction)
+            .isEqualTo(ids.subList(i + 1, ids.size()));
+        var previous =
+            http.execute(bearer, query.formatted("last: 10, before: \"%s\"".formatted(cursor)));
+        assertThat(previous.has("errors")).as(previous.toPrettyString()).isFalse();
+        assertThat(
+                previous
+                    .at("/data/library/items/edges")
+                    .valueStream()
+                    .map(edge -> edge.at("/node/id").asString())
+                    .toList())
+            .as("items before %s under %s %s", i, by, direction)
+            .isEqualTo(ids.subList(0, i));
+      }
+    } finally {
+      auth.deleteIdentity(identity);
+    }
+  }
+
+  @Test
+  void shouldPlaceTheParentSeriesFromTheSelectedProfilesEpisodeWatchState() {
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+    var series =
+        seriesRepository.saveAndFlush(
+            Series.builder().title("Series").titleSort("Series").library(library).build());
+    var season =
+        seasons.saveAndFlush(
+            Season.builder().seasonNumber(1).series(series).library(library).build());
+    var episode =
+        episodes.saveAndFlush(
+            Episode.builder()
+                .episodeNumber(1)
+                .title("Pilot")
+                .season(season)
+                .library(library)
+                .files(
+                    Set.of(
+                        MediaFile.builder()
+                            .libraryId(library.getId())
+                            .status(MediaFileStatus.MATCHED)
+                            .filename("pilot.mkv")
+                            .filepathUri("file:///media/" + UUID.randomUUID() + ".mkv")
+                            .build()))
+                .build());
+    var identity = auth.createIdentity();
+    var bearer = auth.profileBearer(identity);
+    try (var http =
+            new GraphQlHttpTestClient(URI.create("http://localhost:%d/graphql".formatted(port)));
+        var socket = GraphQlTransportWsTestClient.connectWithBearer(port, bearer)) {
+      socket.subscribe(
+          "series",
+          """
+          subscription { libraryItemUpdated(libraryId: "%s") {
+            itemId kind item { ... on Series { watchStatus lastWatchedAt } }
+            position(sort: {by: LAST_WATCHED, direction: DESC}, filter: {watchStatus: WATCHED}) {
+              matchesFilter cursor orderKey
+            }
+            excluded: position(filter: {watchStatus: UNWATCHED}) { matchesFilter }
+          } }
+          """
+              .formatted(library.getId()));
+      new ActiveSubscriptions(metrics).awaitCount("libraryItemUpdated", 1);
+      var marked =
+          http.execute(
+              bearer,
+              "mutation { markWatched(input: {itemId: \"%s\"}) { userErrors { __typename } } }"
+                  .formatted(episode.getId()));
+      assertThat(marked.at("/data/markWatched/userErrors").isEmpty())
+          .as(marked.toPrettyString())
+          .isTrue();
+      var message = socket.nextMessageFor("series");
+      assertThat(message.path("payload").has("errors")).as(message.toPrettyString()).isFalse();
+      var change = message.at("/payload/data/libraryItemUpdated");
+      assertThat(change.path("itemId").asString()).isEqualTo(series.getId().toString());
+      assertThat(change.path("kind").asString()).isEqualTo("SERIES");
+      assertThat(change.at("/position/matchesFilter").asBoolean()).isTrue();
+      assertThat(change.at("/excluded/matchesFilter").asBoolean()).isFalse();
+      assertThat(change.at("/item/watchStatus").asString()).isEqualTo("WATCHED");
+      var query =
+          http.execute(
+              bearer,
+              """
+          { library(id: "%s") { items(first: 10, sort: {by: LAST_WATCHED, direction: DESC}, filter: {watchStatus: WATCHED}) {
+            edges { orderKey node { ... on Series { id } } }
+          } } }
+          """
+                  .formatted(library.getId()));
+      assertThat(query.has("errors")).as(query.toPrettyString()).isFalse();
+      assertThat(query.at("/data/library/items/edges/0/node/id").asString())
+          .isEqualTo(series.getId().toString());
+      assertThat(query.at("/data/library/items/edges/0/orderKey").asString())
+          .isEqualTo(change.at("/position/orderKey").asString());
+    } finally {
+      new ActiveSubscriptions(metrics).awaitNoneActive();
+      auth.deleteIdentity(identity);
+    }
+  }
+}

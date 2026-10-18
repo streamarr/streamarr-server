@@ -61,7 +61,8 @@ class LibraryOperationFinishingStepsRunnerTest {
           null,
           null,
           null,
-          null);
+          null,
+          _ -> {});
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
   private final LibraryOperationFinishingStepsRunner runner = runnerWith(mediaFiles);
@@ -264,7 +265,8 @@ class LibraryOperationFinishingStepsRunnerTest {
         .libraryRepository(libraries)
         .libraryFolderCheck(new LibraryFolderCheck(fileSystem, mediaFileRepository, meterRegistry))
         .orphanedMediaFileCleanupService(
-            new OrphanedMediaFileCleanupService(mediaFileRepository, movieService, fileSystem))
+            new OrphanedMediaFileCleanupService(
+                mediaFileRepository, movieService, fileSystem, _ -> {}))
         .transactionManager(new FakeTransactionManager());
   }
 

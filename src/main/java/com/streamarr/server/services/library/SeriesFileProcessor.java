@@ -15,6 +15,7 @@ import com.streamarr.server.services.SeasonWithEpisodesRequest;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.events.library.CollectablesChangedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
@@ -29,7 +30,9 @@ import com.streamarr.server.services.parsers.show.SeriesFolderNameParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -46,6 +49,7 @@ public class SeriesFileProcessor {
   private final SeasonRepository seasonRepository;
   private final EpisodeRepository episodeRepository;
   private final MutexFactory<String> mutexFactory;
+  private final ApplicationEventPublisher events;
 
   public SeriesFileProcessor(
       EpisodePathMetadataParser episodePathMetadataParser,
@@ -57,7 +61,8 @@ public class SeriesFileProcessor {
       MediaFileRepository mediaFileRepository,
       SeasonRepository seasonRepository,
       EpisodeRepository episodeRepository,
-      MutexFactoryProvider mutexFactoryProvider) {
+      MutexFactoryProvider mutexFactoryProvider,
+      ApplicationEventPublisher events) {
     this.episodePathMetadataParser = episodePathMetadataParser;
     this.seasonPathMetadataParser = seasonPathMetadataParser;
     this.seriesFolderNameParser = seriesFolderNameParser;
@@ -68,6 +73,7 @@ public class SeriesFileProcessor {
     this.seasonRepository = seasonRepository;
     this.episodeRepository = episodeRepository;
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
+    this.events = events;
   }
 
   public MatchingOutcome process(FileDiscovery discovery, MediaFile mediaFile) {
@@ -300,6 +306,7 @@ public class SeriesFileProcessor {
 
       mediaFile.setMediaId(episode.getId());
       markAsMatched(mediaFile);
+      events.publishEvent(new CollectablesChangedEvent(Set.of(episode.getId())));
       return new MatchingOutcome.Matched();
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
@@ -339,15 +346,20 @@ public class SeriesFileProcessor {
   private Episode findOrCreateEpisode(Season season, Library library, int episodeNumber) {
     return episodeRepository
         .findBySeasonIdAndEpisodeNumber(season.getId(), episodeNumber)
-        .orElseGet(
-            () ->
-                episodeRepository.saveAndFlush(
-                    Episode.builder()
-                        .title("Episode " + episodeNumber)
-                        .episodeNumber(episodeNumber)
-                        .season(season)
-                        .library(library)
-                        .build()));
+        .orElseGet(() -> createEpisode(season, library, episodeNumber));
+  }
+
+  private Episode createEpisode(Season season, Library library, int episodeNumber) {
+    var episode =
+        episodeRepository.saveAndFlush(
+            Episode.builder()
+                .title("Episode " + episodeNumber)
+                .episodeNumber(episodeNumber)
+                .season(season)
+                .library(library)
+                .build());
+    events.publishEvent(new CollectablesChangedEvent(Set.of(episode.getId())));
+    return episode;
   }
 
   private MetadataFetchOutcome<Series> findOrCreateSeries(

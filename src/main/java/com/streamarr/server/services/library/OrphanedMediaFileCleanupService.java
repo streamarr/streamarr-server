@@ -4,6 +4,7 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.MovieService;
+import com.streamarr.server.services.events.library.CollectablesChangedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
@@ -14,6 +15,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -24,6 +26,7 @@ public class OrphanedMediaFileCleanupService {
   private final MediaFileRepository mediaFileRepository;
   private final MovieService movieService;
   private final FileSystem fileSystem;
+  private final ApplicationEventPublisher events;
 
   /**
    * Removes the library's media files that no longer exist on disk, in the caller's transaction,
@@ -48,6 +51,7 @@ public class OrphanedMediaFileCleanupService {
     mediaFileRepository.deleteAll(orphanedFiles);
 
     deleteMoviesWithNoRemainingFiles(affectedMovieIds);
+    events.publishEvent(new CollectablesChangedEvent(affectedMovieIds));
 
     log.info(
         "Removed {} orphaned media file(s) from {} library.",

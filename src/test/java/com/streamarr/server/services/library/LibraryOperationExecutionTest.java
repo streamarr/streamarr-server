@@ -187,7 +187,8 @@ class LibraryOperationExecutionTest {
           null,
           null,
           null,
-          null);
+          null,
+          _ -> {});
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
 
   private final MovieFileProcessor movieFileProcessor =
@@ -212,7 +213,8 @@ class LibraryOperationExecutionTest {
           null,
           null,
           null,
-          null);
+          null,
+          _ -> {});
   private final SeriesMetadataProviderResolver seriesMetadataProviderResolver =
       new SeriesMetadataProviderResolver(List.of());
   private final SeriesFileProcessor seriesFileProcessor =
@@ -226,7 +228,8 @@ class LibraryOperationExecutionTest {
           fakeMediaFileRepository,
           new FakeSeasonRepository(),
           new FakeEpisodeRepository(),
-          new MutexFactoryProvider());
+          new MutexFactoryProvider(),
+          _ -> {});
 
   private final ScriptedLibraryRefreshService libraryRefreshService =
       new ScriptedLibraryRefreshService();
@@ -1320,7 +1323,8 @@ class LibraryOperationExecutionTest {
             null,
             null,
             null,
-            null);
+            null,
+            _ -> {});
     var artworkFileDiscoveryRuns = fileDiscoveryRunsWith(artwork);
     return serviceBuilder()
         .libraryFileWalk(
@@ -1927,7 +1931,11 @@ class LibraryOperationExecutionTest {
     @Override
     public MetadataFetchOutcome<MetadataResult<Movie>> getMetadata(
         RemoteSearchResult remoteSearchResult, Library library) {
-      return metadata;
+      return metadata.map(
+          result -> {
+            result.entity().setLibrary(library);
+            return result;
+          });
     }
 
     @Override
@@ -2125,11 +2133,11 @@ class LibraryOperationExecutionTest {
                       .libraryFolderCheck(folderCheck)
                       .orphanedMediaFileCleanupService(
                           new OrphanedMediaFileCleanupService(
-                              fakeMediaFileRepository, movieService, fileSystem))
+                              fakeMediaFileRepository, movieService, fileSystem, _ -> {}))
                       .transactionManager(transactionManager)
                       .build())
               .letterIndexRecalculator(
-                  new LetterIndexRecalculator(libraryMetadata, new MutexFactoryProvider()))
+                  new LetterIndexRecalculator(libraryMetadata, new MutexFactoryProvider(), _ -> {}))
               .eventPublisher(publisher)
               .transactionManager(transactionManager)
               .clock(Clock.systemUTC())

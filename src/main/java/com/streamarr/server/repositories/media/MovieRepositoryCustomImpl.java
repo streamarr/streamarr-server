@@ -16,7 +16,9 @@ import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.jooq.generated.enums.ExternalSourceType;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import com.streamarr.server.repositories.LastWatchedExpression;
+import com.streamarr.server.repositories.MediaSeek;
 import com.streamarr.server.repositories.WatchStateConditions;
+import com.streamarr.server.services.pagination.ItemSortValue;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
@@ -41,6 +43,22 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
   private final DSLContext context;
   private final EntityManager entityManager;
 
+  @Override
+  public Optional<ItemSortValue> findItemPosition(UUID itemId, MediaFilter filter) {
+    return context
+        .select(sortField(filter))
+        .from(MOVIE)
+        .join(BASE_COLLECTABLE)
+        .on(MOVIE.ID.eq(BASE_COLLECTABLE.ID))
+        .where(MOVIE.ID.eq(itemId))
+        .and(JooqQueryHelper.libraryCondition(filter.getLibraryId()))
+        .and(
+            JooqQueryHelper.startLetterCursorPageCondition(
+                filter.getStartLetter(), filter.getSortBy()))
+        .and(filterConditions(filter))
+        .fetchOptional(row -> new ItemSortValue(row.value1()));
+  }
+
   public List<Movie> seekWithFilter(MediaPaginationOptions options) {
 
     var shouldReverse =
@@ -52,11 +70,19 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     }
 
     var orderByColumns =
-        new SortField[] {buildOrderBy(filter), BASE_COLLECTABLE.ID.sort(filter.getSortDirection())};
+        new SortField[] {
+          buildOrderBy(filter, shouldReverse), BASE_COLLECTABLE.ID.sort(filter.getSortDirection())
+        };
 
     var seekCondition =
         JooqQueryHelper.buildSeekCondition(
-            filter, sortField(filter), orderByColumns, options.getCursorId().orElseThrow());
+            MediaSeek.builder()
+                .filter(filter)
+                .sortColumn(sortField(filter))
+                .orderByColumns(orderByColumns)
+                .cursorId(options.getCursorId().orElseThrow())
+                .reversePage(shouldReverse)
+                .build());
 
     var query =
         context
@@ -113,7 +139,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
 
     var orderByColumns =
         new SortField[] {
-          buildOrderBy(options.getMediaFilter()),
+          buildOrderBy(options.getMediaFilter(), false),
           BASE_COLLECTABLE.ID.sort(options.getMediaFilter().getSortDirection())
         };
 
@@ -158,7 +184,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     var reversed = JooqQueryHelper.reverseFilter(filter);
     var orderByColumns =
         new SortField[] {
-          buildOrderBy(reversed), BASE_COLLECTABLE.ID.sort(reversed.getSortDirection())
+          buildOrderBy(reversed, true), BASE_COLLECTABLE.ID.sort(reversed.getSortDirection())
         };
 
     var query =
@@ -261,8 +287,11 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     };
   }
 
-  private SortField<?> buildOrderBy(MediaFilter filter) {
+  private SortField<?> buildOrderBy(MediaFilter filter, boolean reversePage) {
     var direction = filter.getSortDirection();
+    if (reversePage && JooqQueryHelper.isNullableSortField(filter.getSortBy())) {
+      return sortField(filter).sort(direction).nullsFirst();
+    }
 
     return switch (filter.getSortBy()) {
       case TITLE -> JooqQueryHelper.titleSortField().sort(direction);
