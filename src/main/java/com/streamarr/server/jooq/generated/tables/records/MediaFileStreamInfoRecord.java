@@ -480,6 +480,256 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
         return (String) get(31);
     }
 
+    /**
+     * Setter for <code>public.media_file_stream_info.end_time_seconds</code>.
+     */
+    public void setEndTimeSeconds(Long value) {
+        set(32, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.end_time_seconds</code>.
+     */
+    public Long getEndTimeSeconds() {
+        return (Long) get(32);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.end_time_nanos</code>.
+     */
+    public void setEndTimeNanos(Integer value) {
+        set(33, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.end_time_nanos</code>.
+     */
+    public Integer getEndTimeNanos() {
+        return (Integer) get(33);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.mastering_red_x</code>.
+     */
+    public void setMasteringRedX(Integer value) {
+        set(34, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.mastering_red_x</code>.
+     */
+    public Integer getMasteringRedX() {
+        return (Integer) get(34);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.mastering_red_y</code>.
+     */
+    public void setMasteringRedY(Integer value) {
+        set(35, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.mastering_red_y</code>.
+     */
+    public Integer getMasteringRedY() {
+        return (Integer) get(35);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.mastering_green_x</code>.
+     */
+    public void setMasteringGreenX(Integer value) {
+        set(36, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.mastering_green_x</code>.
+     */
+    public Integer getMasteringGreenX() {
+        return (Integer) get(36);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.mastering_green_y</code>.
+     */
+    public void setMasteringGreenY(Integer value) {
+        set(37, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.mastering_green_y</code>.
+     */
+    public Integer getMasteringGreenY() {
+        return (Integer) get(37);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.mastering_blue_x</code>.
+     */
+    public void setMasteringBlueX(Integer value) {
+        set(38, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.mastering_blue_x</code>.
+     */
+    public Integer getMasteringBlueX() {
+        return (Integer) get(38);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.mastering_blue_y</code>.
+     */
+    public void setMasteringBlueY(Integer value) {
+        set(39, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.mastering_blue_y</code>.
+     */
+    public Integer getMasteringBlueY() {
+        return (Integer) get(39);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.mastering_white_point_x</code>.
+     */
+    public void setMasteringWhitePointX(Integer value) {
+        set(40, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.mastering_white_point_x</code>.
+     */
+    public Integer getMasteringWhitePointX() {
+        return (Integer) get(40);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.mastering_white_point_y</code>.
+     */
+    public void setMasteringWhitePointY(Integer value) {
+        set(41, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.mastering_white_point_y</code>.
+     */
+    public Integer getMasteringWhitePointY() {
+        return (Integer) get(41);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.mastering_max_luminance</code>.
+     */
+    public void setMasteringMaxLuminance(Long value) {
+        set(42, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.mastering_max_luminance</code>.
+     */
+    public Long getMasteringMaxLuminance() {
+        return (Long) get(42);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.mastering_min_luminance</code>.
+     */
+    public void setMasteringMinLuminance(Long value) {
+        set(43, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.mastering_min_luminance</code>.
+     */
+    public Long getMasteringMinLuminance() {
+        return (Long) get(43);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.max_content_light_level</code>.
+     */
+    public void setMaxContentLightLevel(Integer value) {
+        set(44, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.max_content_light_level</code>.
+     */
+    public Integer getMaxContentLightLevel() {
+        return (Integer) get(44);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.max_frame_average_light_level</code>.
+     */
+    public void setMaxFrameAverageLightLevel(Integer value) {
+        set(45, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.max_frame_average_light_level</code>.
+     */
+    public Integer getMaxFrameAverageLightLevel() {
+        return (Integer) get(45);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.title</code>.
+     */
+    public void setTitle(String value) {
+        set(46, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.title</code>.
+     */
+    public String getTitle() {
+        return (String) get(46);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.handler_name</code>.
+     */
+    public void setHandlerName(String value) {
+        set(47, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.handler_name</code>.
+     */
+    public String getHandlerName() {
+        return (String) get(47);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.hearing_impaired</code>.
+     */
+    public void setHearingImpaired(Boolean value) {
+        set(48, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.hearing_impaired</code>.
+     */
+    public Boolean getHearingImpaired() {
+        return (Boolean) get(48);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -503,7 +753,7 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
     /**
      * Create a detached, initialised MediaFileStreamInfoRecord
      */
-    public MediaFileStreamInfoRecord(UUID mediaFileId, Integer streamIndex, String codecType, String codec, Integer width, Integer height, Double framerate, Integer channels, Long bitrate, String language, Boolean isDefault, Boolean isForced, String dynamicRangeCompatibleBase, String hdr10Plus, String dolbyVision, String dolbyVisionObservedRpu, Integer dolbyVisionProfile, Integer dolbyVisionLevel, Integer dolbyVisionBaseLayerCompatibilityId, Boolean dolbyVisionBaseLayer, Boolean dolbyVisionEnhancementLayer, Boolean dolbyVisionRpu, Integer bitDepth, String chromaSubsampling, Integer rotationDegrees, Integer cropTop, Integer cropBottom, Integer cropLeft, Integer cropRight, String codecString, Integer sampleRateHz, String audioProfile) {
+    public MediaFileStreamInfoRecord(UUID mediaFileId, Integer streamIndex, String codecType, String codec, Integer width, Integer height, Double framerate, Integer channels, Long bitrate, String language, Boolean isDefault, Boolean isForced, String dynamicRangeCompatibleBase, String hdr10Plus, String dolbyVision, String dolbyVisionObservedRpu, Integer dolbyVisionProfile, Integer dolbyVisionLevel, Integer dolbyVisionBaseLayerCompatibilityId, Boolean dolbyVisionBaseLayer, Boolean dolbyVisionEnhancementLayer, Boolean dolbyVisionRpu, Integer bitDepth, String chromaSubsampling, Integer rotationDegrees, Integer cropTop, Integer cropBottom, Integer cropLeft, Integer cropRight, String codecString, Integer sampleRateHz, String audioProfile, Long endTimeSeconds, Integer endTimeNanos, Integer masteringRedX, Integer masteringRedY, Integer masteringGreenX, Integer masteringGreenY, Integer masteringBlueX, Integer masteringBlueY, Integer masteringWhitePointX, Integer masteringWhitePointY, Long masteringMaxLuminance, Long masteringMinLuminance, Integer maxContentLightLevel, Integer maxFrameAverageLightLevel, String title, String handlerName, Boolean hearingImpaired) {
         super(MediaFileStreamInfo.MEDIA_FILE_STREAM_INFO);
 
         setMediaFileId(mediaFileId);
@@ -538,6 +788,23 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
         setCodecString(codecString);
         setSampleRateHz(sampleRateHz);
         setAudioProfile(audioProfile);
+        setEndTimeSeconds(endTimeSeconds);
+        setEndTimeNanos(endTimeNanos);
+        setMasteringRedX(masteringRedX);
+        setMasteringRedY(masteringRedY);
+        setMasteringGreenX(masteringGreenX);
+        setMasteringGreenY(masteringGreenY);
+        setMasteringBlueX(masteringBlueX);
+        setMasteringBlueY(masteringBlueY);
+        setMasteringWhitePointX(masteringWhitePointX);
+        setMasteringWhitePointY(masteringWhitePointY);
+        setMasteringMaxLuminance(masteringMaxLuminance);
+        setMasteringMinLuminance(masteringMinLuminance);
+        setMaxContentLightLevel(maxContentLightLevel);
+        setMaxFrameAverageLightLevel(maxFrameAverageLightLevel);
+        setTitle(title);
+        setHandlerName(handlerName);
+        setHearingImpaired(hearingImpaired);
         resetTouchedOnNotNull();
     }
 }

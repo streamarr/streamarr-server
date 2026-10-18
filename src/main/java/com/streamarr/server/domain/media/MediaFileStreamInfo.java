@@ -1,10 +1,13 @@
 package com.streamarr.server.domain.media;
 
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
+import com.streamarr.server.domain.streaming.ChromaticityCoordinates;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.ContainerCropping;
+import com.streamarr.server.domain.streaming.ContentLightLevel;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
+import com.streamarr.server.domain.streaming.MasteringDisplayColorVolume;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
@@ -13,6 +16,7 @@ import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import java.time.Duration;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
@@ -76,6 +80,40 @@ public class MediaFileStreamInfo {
   private Integer sampleRate;
 
   private String audioProfile;
+  private Long endTimeSeconds;
+  private Integer endTimeNanos;
+
+  @Column(name = "mastering_red_x")
+  private Integer masteringRedX;
+
+  @Column(name = "mastering_red_y")
+  private Integer masteringRedY;
+
+  @Column(name = "mastering_green_x")
+  private Integer masteringGreenX;
+
+  @Column(name = "mastering_green_y")
+  private Integer masteringGreenY;
+
+  @Column(name = "mastering_blue_x")
+  private Integer masteringBlueX;
+
+  @Column(name = "mastering_blue_y")
+  private Integer masteringBlueY;
+
+  @Column(name = "mastering_white_point_x")
+  private Integer masteringWhitePointX;
+
+  @Column(name = "mastering_white_point_y")
+  private Integer masteringWhitePointY;
+
+  private Long masteringMaxLuminance;
+  private Long masteringMinLuminance;
+  private Integer maxContentLightLevel;
+  private Integer maxFrameAverageLightLevel;
+  private String title;
+  private String handlerName;
+  private Boolean hearingImpaired;
 
   @Override
   public boolean equals(Object other) {
@@ -117,7 +155,33 @@ public class MediaFileStreamInfo {
         .codecString(Optional.ofNullable(codecString))
         .sampleRate(optionalInt(sampleRate))
         .audioProfile(Optional.ofNullable(audioProfile))
+        .endTime(
+            Optional.ofNullable(endTimeSeconds)
+                .map(seconds -> Duration.ofSeconds(seconds, endTimeNanos)))
+        .masteringDisplay(masteringDisplay())
+        .contentLightLevel(
+            Optional.ofNullable(maxContentLightLevel)
+                .map(maximum -> new ContentLightLevel(maximum, maxFrameAverageLightLevel)))
+        .title(Optional.ofNullable(title))
+        .handlerName(Optional.ofNullable(handlerName))
+        .hearingImpaired(Optional.ofNullable(hearingImpaired))
         .build();
+  }
+
+  private Optional<MasteringDisplayColorVolume> masteringDisplay() {
+    if (masteringRedX == null) {
+      return Optional.empty();
+    }
+
+    return Optional.of(
+        MasteringDisplayColorVolume.builder()
+            .red(new ChromaticityCoordinates(masteringRedX, masteringRedY))
+            .green(new ChromaticityCoordinates(masteringGreenX, masteringGreenY))
+            .blue(new ChromaticityCoordinates(masteringBlueX, masteringBlueY))
+            .whitePoint(new ChromaticityCoordinates(masteringWhitePointX, masteringWhitePointY))
+            .maxLuminance(masteringMaxLuminance)
+            .minLuminance(masteringMinLuminance)
+            .build());
   }
 
   private Optional<VideoDynamicRange> dynamicRange() {
@@ -193,7 +257,30 @@ public class MediaFileStreamInfo {
       codecString = info.codecString().orElse(null);
       sampleRate = nullableInt(info.sampleRate());
       audioProfile = info.audioProfile().orElse(null);
+      endTimeSeconds = info.endTime().map(Duration::getSeconds).orElse(null);
+      endTimeNanos = info.endTime().map(Duration::getNano).orElse(null);
+      info.masteringDisplay().ifPresent(this::masteringDisplay);
+      maxContentLightLevel =
+          info.contentLightLevel().map(ContentLightLevel::maxContentLightLevel).orElse(null);
+      maxFrameAverageLightLevel =
+          info.contentLightLevel().map(ContentLightLevel::maxFrameAverageLightLevel).orElse(null);
+      title = info.title().orElse(null);
+      handlerName = info.handlerName().orElse(null);
+      hearingImpaired = info.hearingImpaired().orElse(null);
       return this;
+    }
+
+    private void masteringDisplay(MasteringDisplayColorVolume display) {
+      masteringRedX = display.red().x();
+      masteringRedY = display.red().y();
+      masteringGreenX = display.green().x();
+      masteringGreenY = display.green().y();
+      masteringBlueX = display.blue().x();
+      masteringBlueY = display.blue().y();
+      masteringWhitePointX = display.whitePoint().x();
+      masteringWhitePointY = display.whitePoint().y();
+      masteringMaxLuminance = display.maxLuminance();
+      masteringMinLuminance = display.minLuminance();
     }
 
     private void dynamicRange(VideoDynamicRange range) {

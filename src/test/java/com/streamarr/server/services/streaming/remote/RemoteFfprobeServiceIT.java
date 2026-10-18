@@ -12,8 +12,11 @@ import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.Chapter;
 import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.ChosenVideoStream;
+import com.streamarr.server.domain.streaming.ChromaticityCoordinates;
 import com.streamarr.server.domain.streaming.CompatibleBase;
+import com.streamarr.server.domain.streaming.ContentLightLevel;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.MasteringDisplayColorVolume;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -663,6 +666,89 @@ class RemoteFfprobeServiceIT {
         }
       }
     }
+  }
+
+  @Test
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @DisplayName("Should retain every version 4 fact when the worker reports a complete result")
+  void shouldRetainEveryVersion4FactWhenWorkerReportsCompleteResult() throws Exception {
+    var media = WorkerProbeResultFixture.version4MediaBuilder();
+    media
+        .getStreamsBuilder(0)
+        .setEndTime(newBuilder().setSeconds(250).setNanos(123))
+        .setMasteringDisplay(
+            com.streamarr.transcode.v1.MasteringDisplayColorVolume.newBuilder()
+                .setRed(coordinates(35400, 14600))
+                .setGreen(coordinates(8500, 39850))
+                .setBlue(coordinates(6550, 2300))
+                .setWhitePoint(coordinates(15635, 16450))
+                .setMaxLuminance(0xffff_ffff)
+                .setMinLuminance(50))
+        .setContentLightLevel(
+            com.streamarr.transcode.v1.ContentLightLevel.newBuilder()
+                .setMaxContentLightLevel(0)
+                .setMaxFrameAverageLightLevel(65535));
+    media.addStreams(
+        ProbeStreamInfo.newBuilder()
+            .setIndex(1)
+            .setCodecType("audio")
+            .setEndTime(newBuilder().setSeconds(90).setNanos(250_000_000))
+            .setTitle("English SDH")
+            .setHandlerName("")
+            .setIsHearingImpaired(false));
+    media.addStreams(
+        ProbeStreamInfo.newBuilder()
+            .setIndex(2)
+            .setCodecType("subtitle")
+            .setTitle("Français")
+            .setHandlerName("SubtitleHandler")
+            .setIsHearingImpaired(true));
+    try (var server = server()) {
+      server.start();
+      try (var worker = worker(server.port(), 4)) {
+        var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
+        try (var result =
+            BoundedTask.start(() -> service.probe(request().probeVersion(4).build()))) {
+          var dispatched = worker.nextResponse().getStartProbe().getRequest();
+          worker.reply(answer(dispatched).setMedia(media).build());
+          var outcome = result.await(Duration.ofSeconds(5));
+          assertThat(outcome).isInstanceOf(ProbeOutcome.Success.class);
+          var success = (ProbeOutcome.Success) outcome;
+          assertThat(success.streamTitlesOmitted()).contains(false);
+          var video = success.streams().getFirst();
+          assertThat(video.endTime()).contains(Duration.ofSeconds(250, 123));
+          assertThat(video.masteringDisplay())
+              .contains(
+                  MasteringDisplayColorVolume.builder()
+                      .red(new ChromaticityCoordinates(35400, 14600))
+                      .green(new ChromaticityCoordinates(8500, 39850))
+                      .blue(new ChromaticityCoordinates(6550, 2300))
+                      .whitePoint(new ChromaticityCoordinates(15635, 16450))
+                      .maxLuminance(4_294_967_295L)
+                      .minLuminance(50)
+                      .build());
+          assertThat(video.contentLightLevel()).contains(new ContentLightLevel(0, 65535));
+          assertThat(video.title()).isEmpty();
+          assertThat(video.handlerName()).isEmpty();
+          assertThat(video.hearingImpaired()).isEmpty();
+          var audio = success.streams().get(1);
+          assertThat(audio.endTime()).contains(Duration.ofMillis(90_250));
+          assertThat(audio.title()).contains("English SDH");
+          assertThat(audio.handlerName()).contains("");
+          assertThat(audio.hearingImpaired()).contains(false);
+          var subtitle = success.streams().get(2);
+          assertThat(subtitle.title()).contains("Français");
+          assertThat(subtitle.handlerName()).contains("SubtitleHandler");
+          assertThat(subtitle.hearingImpaired()).contains(true);
+          assertThat(subtitle.endTime()).isEmpty();
+        }
+      }
+    }
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static com.streamarr.transcode.v1.ChromaticityCoordinates coordinates(int x, int y) {
+    return com.streamarr.transcode.v1.ChromaticityCoordinates.newBuilder().setX(x).setY(y).build();
   }
 
   private ProbeOutcome.Success remoteOutcome(ProbeMediaInfo media) throws Exception {

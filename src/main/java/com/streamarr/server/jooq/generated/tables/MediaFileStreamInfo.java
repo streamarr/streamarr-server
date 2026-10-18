@@ -225,6 +225,97 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
      */
     public final TableField<MediaFileStreamInfoRecord, String> AUDIO_PROFILE = createField(DSL.name("audio_profile"), SQLDataType.CLOB, this, "");
 
+    /**
+     * The column <code>public.media_file_stream_info.end_time_seconds</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Long> END_TIME_SECONDS = createField(DSL.name("end_time_seconds"), SQLDataType.BIGINT, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.end_time_nanos</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> END_TIME_NANOS = createField(DSL.name("end_time_nanos"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.mastering_red_x</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> MASTERING_RED_X = createField(DSL.name("mastering_red_x"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.mastering_red_y</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> MASTERING_RED_Y = createField(DSL.name("mastering_red_y"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.mastering_green_x</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> MASTERING_GREEN_X = createField(DSL.name("mastering_green_x"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.mastering_green_y</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> MASTERING_GREEN_Y = createField(DSL.name("mastering_green_y"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.mastering_blue_x</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> MASTERING_BLUE_X = createField(DSL.name("mastering_blue_x"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.mastering_blue_y</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> MASTERING_BLUE_Y = createField(DSL.name("mastering_blue_y"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.mastering_white_point_x</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> MASTERING_WHITE_POINT_X = createField(DSL.name("mastering_white_point_x"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.mastering_white_point_y</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> MASTERING_WHITE_POINT_Y = createField(DSL.name("mastering_white_point_y"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.mastering_max_luminance</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Long> MASTERING_MAX_LUMINANCE = createField(DSL.name("mastering_max_luminance"), SQLDataType.BIGINT, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.mastering_min_luminance</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Long> MASTERING_MIN_LUMINANCE = createField(DSL.name("mastering_min_luminance"), SQLDataType.BIGINT, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.max_content_light_level</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> MAX_CONTENT_LIGHT_LEVEL = createField(DSL.name("max_content_light_level"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.max_frame_average_light_level</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> MAX_FRAME_AVERAGE_LIGHT_LEVEL = createField(DSL.name("max_frame_average_light_level"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.title</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, String> TITLE = createField(DSL.name("title"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.handler_name</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, String> HANDLER_NAME = createField(DSL.name("handler_name"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.hearing_impaired</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Boolean> HEARING_IMPAIRED = createField(DSL.name("hearing_impaired"), SQLDataType.BOOLEAN, this, "");
+
     private MediaFileStreamInfo(Name alias, Table<MediaFileStreamInfoRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -321,8 +412,11 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
     public List<Check<MediaFileStreamInfoRecord>> getChecks() {
         return Arrays.asList(
             Internal.createCheck(this, DSL.name("complete_container_cropping"), "((((crop_top IS NULL) = (crop_bottom IS NULL)) AND ((crop_top IS NULL) = (crop_left IS NULL)) AND ((crop_top IS NULL) = (crop_right IS NULL))))", true),
+            Internal.createCheck(this, DSL.name("complete_content_light_level"), "(((max_content_light_level IS NULL) = (max_frame_average_light_level IS NULL)))", true),
             Internal.createCheck(this, DSL.name("complete_dolby_vision_record"), "((((dolby_vision_base_layer IS NULL) = (dolby_vision_enhancement_layer IS NULL)) AND ((dolby_vision_base_layer IS NULL) = (dolby_vision_rpu IS NULL))))", true),
             Internal.createCheck(this, DSL.name("complete_dynamic_range"), "((((dynamic_range_compatible_base IS NULL) = (hdr10_plus IS NULL)) AND ((dynamic_range_compatible_base IS NULL) = (dolby_vision IS NULL))))", true),
+            Internal.createCheck(this, DSL.name("complete_mastering_display"), "((num_nonnulls(mastering_red_x, mastering_red_y, mastering_green_x, mastering_green_y, mastering_blue_x, mastering_blue_y, mastering_white_point_x, mastering_white_point_y, mastering_max_luminance, mastering_min_luminance) = ANY (ARRAY[0, 10])))", true),
+            Internal.createCheck(this, DSL.name("complete_stream_end_time"), "(((end_time_seconds IS NULL) = (end_time_nanos IS NULL)))", true),
             Internal.createCheck(this, DSL.name("dolby_vision_claims_require_record"), "(((dolby_vision_base_layer IS NOT NULL) OR ((dolby_vision_profile IS NULL) AND (dolby_vision_level IS NULL) AND (dolby_vision_base_layer_compatibility_id IS NULL))))", true),
             Internal.createCheck(this, DSL.name("dolby_vision_details_require_presence"), "(((dolby_vision_observed_rpu IS NOT NULL) = (NOT (dolby_vision IS DISTINCT FROM 'PRESENT'::text))))", true),
             Internal.createCheck(this, DSL.name("dolby_vision_record_requires_presence"), "(((dolby_vision_base_layer IS NULL) OR (dolby_vision = 'PRESENT'::text)))", true),
@@ -339,10 +433,25 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
             Internal.createCheck(this, DSL.name("media_file_stream_info_dolby_vision_observed_rpu_check"), "((dolby_vision_observed_rpu = ANY (ARRAY['UNSPECIFIED'::text, 'ABSENT'::text, 'PRESENT'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_dolby_vision_profile_check"), "((dolby_vision_profile >= 0))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_dynamic_range_compatible_base_check"), "((dynamic_range_compatible_base = ANY (ARRAY['UNSPECIFIED'::text, 'NONE'::text, 'SDR'::text, 'PQ'::text, 'HLG'::text])))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_end_time_nanos_check"), "(((end_time_nanos >= 0) AND (end_time_nanos <= 999999999)))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_handler_name_check"), "((octet_length(handler_name) <= 512))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_hdr10_plus_check"), "((hdr10_plus = ANY (ARRAY['UNSPECIFIED'::text, 'ABSENT'::text, 'PRESENT'::text])))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_mastering_blue_x_check"), "(((mastering_blue_x >= 0) AND (mastering_blue_x <= 50000)))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_mastering_blue_y_check"), "(((mastering_blue_y >= 0) AND (mastering_blue_y <= 50000)))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_mastering_green_x_check"), "(((mastering_green_x >= 0) AND (mastering_green_x <= 50000)))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_mastering_green_y_check"), "(((mastering_green_y >= 0) AND (mastering_green_y <= 50000)))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_mastering_max_luminance_check"), "(((mastering_max_luminance >= 0) AND (mastering_max_luminance <= '4294967295'::bigint)))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_mastering_min_luminance_check"), "(((mastering_min_luminance >= 0) AND (mastering_min_luminance <= '4294967295'::bigint)))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_mastering_red_x_check"), "(((mastering_red_x >= 0) AND (mastering_red_x <= 50000)))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_mastering_red_y_check"), "(((mastering_red_y >= 0) AND (mastering_red_y <= 50000)))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_mastering_white_point_x_check"), "(((mastering_white_point_x >= 0) AND (mastering_white_point_x <= 50000)))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_mastering_white_point_y_check"), "(((mastering_white_point_y >= 0) AND (mastering_white_point_y <= 50000)))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_max_content_light_level_check"), "(((max_content_light_level >= 0) AND (max_content_light_level <= 65535)))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_max_frame_average_light_level_check"), "(((max_frame_average_light_level >= 0) AND (max_frame_average_light_level <= 65535)))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_rotation_degrees_check"), "(((rotation_degrees >= '-180'::integer) AND (rotation_degrees <= 180)))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_sample_rate_hz_check"), "((sample_rate_hz > 0))", true),
-            Internal.createCheck(this, DSL.name("media_file_stream_info_stream_index_check"), "((stream_index >= 0))", true)
+            Internal.createCheck(this, DSL.name("media_file_stream_info_stream_index_check"), "((stream_index >= 0))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_title_check"), "((octet_length(title) <= 512))", true)
         );
     }
 

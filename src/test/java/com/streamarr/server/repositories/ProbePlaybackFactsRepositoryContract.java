@@ -7,8 +7,10 @@ import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.ChosenVideoStream;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
+import com.streamarr.server.domain.streaming.ChromaticityCoordinates;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.ContainerCropping;
+import com.streamarr.server.domain.streaming.ContentLightLevel;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.FieldOrder;
@@ -17,6 +19,7 @@ import com.streamarr.server.domain.streaming.FrameRatePacketScan;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.MasteringDisplayColorVolume;
 import com.streamarr.server.domain.streaming.MatroskaStatistics;
 import com.streamarr.server.domain.streaming.OutputFrameRateBasis;
 import com.streamarr.server.domain.streaming.Presence;
@@ -69,6 +72,62 @@ public interface ProbePlaybackFactsRepositoryContract {
     var stored = storedOutcome(mediaFileId);
     assertThat(stored.streams()).isEqualTo(published.streams());
     assertThat(stored.chosenVideoStream()).isEqualTo(published.chosenVideoStream());
+  }
+
+  @ParameterizedTest
+  @MethodSource("titleOmissionStates")
+  @DisplayName("Should retain every optional metadata fact when a probe outcome is published")
+  default void shouldRetainEveryOptionalMetadataFactWhenAProbeOutcomeIsPublished(
+      Optional<Boolean> titlesOmitted) {
+    var mediaFileId = createMediaFile();
+    var display =
+        MasteringDisplayColorVolume.builder()
+            .red(new ChromaticityCoordinates(50000, 0))
+            .green(new ChromaticityCoordinates(8500, 39850))
+            .blue(new ChromaticityCoordinates(6550, 2300))
+            .whitePoint(new ChromaticityCoordinates(15635, 16450))
+            .maxLuminance(4_294_967_295L)
+            .minLuminance(0)
+            .build();
+    var audio =
+        StreamInfo.builder()
+            .index(1)
+            .codecType("audio")
+            .endTime(Optional.of(Duration.ofNanos(-1)))
+            .hearingImpaired(Optional.of(false));
+    var subtitle =
+        StreamInfo.builder().index(2).codecType("subtitle").hearingImpaired(Optional.of(true));
+    if (titlesOmitted.equals(Optional.of(false))) {
+      audio.title(Optional.of("English SDH")).handlerName(Optional.of(""));
+      subtitle.title(Optional.of("Français")).handlerName(Optional.of("SubtitleHandler"));
+    }
+
+    var published =
+        outcomeBuilder()
+            .streams(
+                List.of(
+                    video()
+                        .endTime(Optional.of(Duration.ofSeconds(250, 123)))
+                        .masteringDisplay(Optional.of(display))
+                        .contentLightLevel(Optional.of(new ContentLightLevel(0, 65535)))
+                        .build(),
+                    audio.build(),
+                    subtitle.build()))
+            .streamTitlesOmitted(titlesOmitted)
+            .build();
+
+    repository().publish(publication(mediaFileId, published));
+
+    assertThat(storedOutcome(mediaFileId)).isEqualTo(published);
+
+    var absent = outcomeBuilder().streams(List.of(video().build())).build();
+    repository().publish(publication(mediaFileId, absent));
+
+    assertThat(storedOutcome(mediaFileId)).isEqualTo(absent);
+  }
+
+  static Stream<Optional<Boolean>> titleOmissionStates() {
+    return Stream.of(Optional.empty(), Optional.of(false), Optional.of(true));
   }
 
   @ParameterizedTest

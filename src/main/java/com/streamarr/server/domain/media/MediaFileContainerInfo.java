@@ -53,6 +53,9 @@ public class MediaFileContainerInfo {
   private int probeVersion;
 
   @Getter(AccessLevel.NONE)
+  private Boolean streamTitlesOmitted;
+
+  @Getter(AccessLevel.NONE)
   private String format;
 
   @Getter(AccessLevel.NONE)
@@ -114,6 +117,7 @@ public class MediaFileContainerInfo {
         .container(getContainer().toBuilder().chapters(chapters.get()).build())
         .streams(streams.stream().map(MediaFileStreamInfo::toStreamInfo).toList())
         .keyframes(keyframes.get())
+        .streamTitlesOmitted(Optional.ofNullable(streamTitlesOmitted))
         .chosenVideoStream(
             Optional.ofNullable(chosenVideoStream)
                 .map(ChosenVideoStreamColumns::toChosenVideoStream))
@@ -153,6 +157,11 @@ public class MediaFileContainerInfo {
     public MediaFileContainerInfoBuilder chosenVideoStream(
         @NonNull Optional<ChosenVideoStream> stream) {
       chosenVideoStream = stream.map(ChosenVideoStreamColumns::of).orElse(null);
+      return this;
+    }
+
+    public MediaFileContainerInfoBuilder streamTitlesOmitted(@NonNull Optional<Boolean> omitted) {
+      streamTitlesOmitted = omitted.orElse(null);
       return this;
     }
 

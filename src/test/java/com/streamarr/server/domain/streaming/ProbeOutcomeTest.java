@@ -124,10 +124,11 @@ class ProbeOutcomeTest {
 
     assertThatNullPointerException()
         .isThrownBy(() -> new ProbeOutcome.Success(container, streams, null));
-    assertThatNullPointerException()
-        .isThrownBy(() -> new ProbeOutcome.Success(container, streams, null, Optional.empty()));
-    assertThatNullPointerException()
-        .isThrownBy(() -> new ProbeOutcome.Success(container, streams, keyframes, null));
+    var missingKeyframes = ProbeOutcome.Success.builder().container(container).streams(streams);
+    var missingChosen =
+        ProbeOutcome.Success.builder().container(container).streams(streams).keyframes(keyframes);
+    assertThatNullPointerException().isThrownBy(missingKeyframes::build);
+    assertThatNullPointerException().isThrownBy(() -> missingChosen.chosenVideoStream(null));
   }
 
   @Test

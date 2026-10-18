@@ -139,6 +139,12 @@ public class MediaFileContainerInfo extends TableImpl<MediaFileContainerInfoReco
 
     /**
      * The column
+     * <code>public.media_file_container_info.stream_titles_omitted</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, Boolean> STREAM_TITLES_OMITTED = createField(DSL.name("stream_titles_omitted"), SQLDataType.BOOLEAN, this, "");
+
+    /**
+     * The column
      * <code>public.media_file_container_info.chosen_video_stream_index</code>.
      */
     public final TableField<MediaFileContainerInfoRecord, Integer> CHOSEN_VIDEO_STREAM_INDEX = createField(DSL.name("chosen_video_stream_index"), SQLDataType.INTEGER, this, "");
@@ -394,6 +400,7 @@ public class MediaFileContainerInfo extends TableImpl<MediaFileContainerInfoReco
             Internal.createCheck(this, DSL.name("failed_probe_has_no_chosen_video_stream"), "(((probe_error IS NULL) OR (chosen_video_stream_index IS NULL)))", true),
             Internal.createCheck(this, DSL.name("failed_probe_has_no_container_properties"), "(((probe_error IS NULL) OR ((format IS NULL) AND (duration_seconds IS NULL) AND (duration_nanos IS NULL) AND (total_bitrate IS NULL))))", true),
             Internal.createCheck(this, DSL.name("failed_probe_has_no_keyframe_status"), "(((probe_error IS NULL) OR (keyframe_status IS NULL)))", true),
+            Internal.createCheck(this, DSL.name("failed_probe_has_no_title_omission"), "(((probe_error IS NULL) OR (stream_titles_omitted IS NULL)))", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_average_rate_denominator_check"), "((average_rate_denominator > 0))", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_average_rate_numerator_check"), "((average_rate_numerator > 0))", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_base_rate_denominator_check"), "((base_rate_denominator > 0))", true),

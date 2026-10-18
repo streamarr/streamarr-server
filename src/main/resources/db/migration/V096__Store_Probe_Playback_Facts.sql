@@ -3,6 +3,9 @@
 -- output frame rate is NULL exactly when the rule refused to choose one. Fractions keep both
 -- positive terms, and durations are seconds and nanoseconds.
 ALTER TABLE media_file_container_info
+    ADD COLUMN stream_titles_omitted BOOLEAN,
+    ADD CONSTRAINT failed_probe_has_no_title_omission
+        CHECK (probe_error IS NULL OR stream_titles_omitted IS NULL),
     ADD COLUMN chosen_video_stream_index INTEGER CHECK (chosen_video_stream_index >= 0),
     ADD COLUMN output_frame_rate_basis TEXT CHECK (output_frame_rate_basis IN (
         'DECLARED_RATES', 'MATROSKA_STATISTICS', 'PACKET_SCAN', 'DECLARED_RATE_FALLBACK', 'REFUSED')),
@@ -76,6 +79,31 @@ ALTER TABLE media_file_stream_info
     ADD COLUMN codec_string TEXT CHECK (codec_string <> ''),
     ADD COLUMN sample_rate_hz INTEGER CHECK (sample_rate_hz > 0),
     ADD COLUMN audio_profile TEXT,
+    ADD COLUMN end_time_seconds BIGINT,
+    ADD COLUMN end_time_nanos INTEGER CHECK (end_time_nanos BETWEEN 0 AND 999999999),
+    ADD COLUMN mastering_red_x INTEGER CHECK (mastering_red_x BETWEEN 0 AND 50000),
+    ADD COLUMN mastering_red_y INTEGER CHECK (mastering_red_y BETWEEN 0 AND 50000),
+    ADD COLUMN mastering_green_x INTEGER CHECK (mastering_green_x BETWEEN 0 AND 50000),
+    ADD COLUMN mastering_green_y INTEGER CHECK (mastering_green_y BETWEEN 0 AND 50000),
+    ADD COLUMN mastering_blue_x INTEGER CHECK (mastering_blue_x BETWEEN 0 AND 50000),
+    ADD COLUMN mastering_blue_y INTEGER CHECK (mastering_blue_y BETWEEN 0 AND 50000),
+    ADD COLUMN mastering_white_point_x INTEGER CHECK (mastering_white_point_x BETWEEN 0 AND 50000),
+    ADD COLUMN mastering_white_point_y INTEGER CHECK (mastering_white_point_y BETWEEN 0 AND 50000),
+    ADD COLUMN mastering_max_luminance BIGINT CHECK (mastering_max_luminance BETWEEN 0 AND 4294967295),
+    ADD COLUMN mastering_min_luminance BIGINT CHECK (mastering_min_luminance BETWEEN 0 AND 4294967295),
+    ADD COLUMN max_content_light_level INTEGER CHECK (max_content_light_level BETWEEN 0 AND 65535),
+    ADD COLUMN max_frame_average_light_level INTEGER CHECK (max_frame_average_light_level BETWEEN 0 AND 65535),
+    ADD COLUMN title TEXT CHECK (octet_length(title) <= 512),
+    ADD COLUMN handler_name TEXT CHECK (octet_length(handler_name) <= 512),
+    ADD COLUMN hearing_impaired BOOLEAN,
+    ADD CONSTRAINT complete_stream_end_time
+        CHECK ((end_time_seconds IS NULL) = (end_time_nanos IS NULL)),
+    ADD CONSTRAINT complete_mastering_display CHECK (
+        num_nonnulls(mastering_red_x, mastering_red_y, mastering_green_x, mastering_green_y,
+                     mastering_blue_x, mastering_blue_y, mastering_white_point_x,
+                     mastering_white_point_y, mastering_max_luminance, mastering_min_luminance) IN (0, 10)),
+    ADD CONSTRAINT complete_content_light_level
+        CHECK ((max_content_light_level IS NULL) = (max_frame_average_light_level IS NULL)),
     ADD CONSTRAINT complete_dynamic_range CHECK (
         (dynamic_range_compatible_base IS NULL) = (hdr10_plus IS NULL) AND
         (dynamic_range_compatible_base IS NULL) = (dolby_vision IS NULL)),

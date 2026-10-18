@@ -10,6 +10,7 @@ import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.experimental.UtilityClass;
 
@@ -23,6 +24,7 @@ public class PersistedProbeFixture {
         .snapshot(new SourceFileSnapshot(1000, Instant.EPOCH))
         .probeVersion(ProbeVersion.CURRENT)
         .container(probe.container())
+        .streamTitlesOmitted(probe.streamTitlesOmitted())
         .streams(
             probe.streams().stream()
                 .map(stream -> MediaFileStreamInfo.builder().stream(mediaFileId, stream).build())
@@ -30,16 +32,21 @@ public class PersistedProbeFixture {
   }
 
   public static void storeProbe(EntityManager entityManager, MediaFileContainerInfo row) {
+    var outcome =
+        row.getOutcome(KeyframeKnowledge.NotReported::new, ChapterKnowledge.NotReported::new);
     entityManager.persist(
         MediaFileContainerInfo.builder()
             .mediaFileId(row.getMediaFileId())
             .snapshot(row.getSnapshot())
             .probeVersion(row.getProbeVersion())
             .container(row.getContainer())
+            .streamTitlesOmitted(
+                outcome instanceof ProbeOutcome.Success success
+                    ? success.streamTitlesOmitted()
+                    : Optional.empty())
             .probeError(row.getProbeError().orElse(null))
             .build());
-    if (row.getOutcome(KeyframeKnowledge.NotReported::new, ChapterKnowledge.NotReported::new)
-        instanceof ProbeOutcome.Success success) {
+    if (outcome instanceof ProbeOutcome.Success success) {
       success
           .streams()
           .forEach(
