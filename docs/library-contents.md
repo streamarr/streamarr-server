@@ -82,6 +82,10 @@ an event must not duplicate an edge.
 Keep the loaded window's bounds separately from its changing item count. Preserve usable
 server pagination anchors if removal empties a partial window; a cursor represents a
 position even when its original item has been removed. Page merges deduplicate IDs.
+This retained-position behavior is Streamarr's keyset contract: the
+[Relay reference algorithm](https://relay.dev/graphql/connections.htm#sec-Pagination-algorithm)
+only applies a boundary when its edge still exists. Keep retained navigation anchors separate
+from a live connection's `pageInfo` cursors, which describe its current first and last edges.
 Whole-library counts cannot be derived from a loaded window. Apply the separate count
 payload even when a change affects a title outside that window. See
 [library-counts.md](library-counts.md) for the recount schedule and top-level semantics.

@@ -38,6 +38,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import tools.jackson.databind.JsonNode;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class LibraryItemPlacementIT extends AbstractIntegrationTest {
@@ -188,11 +189,13 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
           """
           { library(id: "%s") { items(%%s, sort: {by: %s, direction: %s}) {
             edges { cursor orderKey node { ... on Movie { id } } }
+            pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
           } } }
           """
               .formatted(library.getId(), by.name(), direction.name());
       var full = http.execute(bearer, query.formatted("first: 10"));
       assertThat(full.has("errors")).as(full.toPrettyString()).isFalse();
+      assertPageCursorsMatchEdges(full.at("/data/library/items"));
       var edges = full.at("/data/library/items/edges");
       var keys = edges.valueStream().map(edge -> edge.path("orderKey").asString()).toList();
       assertThat(keys).hasSize(5).doesNotHaveDuplicates().isSorted();
@@ -202,6 +205,8 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
         var next =
             http.execute(bearer, query.formatted("first: 10, after: \"%s\"".formatted(cursor)));
         assertThat(next.has("errors")).as(next.toPrettyString()).isFalse();
+        assertPageCursorsMatchEdges(next.at("/data/library/items"));
+        assertThat(next.at("/data/library/items/pageInfo/hasNextPage").asBoolean()).isFalse();
         assertThat(
                 next.at("/data/library/items/edges")
                     .valueStream()
@@ -212,6 +217,9 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
         var previous =
             http.execute(bearer, query.formatted("last: 10, before: \"%s\"".formatted(cursor)));
         assertThat(previous.has("errors")).as(previous.toPrettyString()).isFalse();
+        assertPageCursorsMatchEdges(previous.at("/data/library/items"));
+        assertThat(previous.at("/data/library/items/pageInfo/hasPreviousPage").asBoolean())
+            .isFalse();
         assertThat(
                 previous
                     .at("/data/library/items/edges")
@@ -224,6 +232,19 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
     } finally {
       auth.deleteIdentity(identity);
     }
+  }
+
+  private void assertPageCursorsMatchEdges(JsonNode connection) {
+    var edges = connection.path("edges");
+    var pageInfo = connection.path("pageInfo");
+    if (edges.isEmpty()) {
+      assertThat(pageInfo.path("startCursor").isNull()).isTrue();
+      assertThat(pageInfo.path("endCursor").isNull()).isTrue();
+      return;
+    }
+
+    assertThat(pageInfo.path("startCursor")).isEqualTo(edges.get(0).path("cursor"));
+    assertThat(pageInfo.path("endCursor")).isEqualTo(edges.get(edges.size() - 1).path("cursor"));
   }
 
   @Test
