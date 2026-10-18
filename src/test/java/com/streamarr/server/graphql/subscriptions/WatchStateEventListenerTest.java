@@ -3,7 +3,7 @@ package com.streamarr.server.graphql.subscriptions;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.graphql.dto.WatchStateChange;
-import com.streamarr.server.services.watchprogress.events.WatchStateChangedEvent;
+import com.streamarr.server.services.events.watchprogress.WatchStateChangedEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
 import java.util.Set;

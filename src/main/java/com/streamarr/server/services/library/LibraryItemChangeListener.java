@@ -3,7 +3,7 @@ package com.streamarr.server.services.library;
 import com.streamarr.server.repositories.LibraryItemScopeRepository;
 import com.streamarr.server.services.events.library.CollectablesChangedEvent;
 import com.streamarr.server.services.events.library.LibraryItemChangedEvent;
-import com.streamarr.server.services.watchprogress.events.WatchStateChangedEvent;
+import com.streamarr.server.services.events.watchprogress.WatchStateChangedEvent;
 import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;

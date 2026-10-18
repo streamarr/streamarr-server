@@ -29,7 +29,7 @@ import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.fixtures.StreamSessionFixture;
-import com.streamarr.server.services.watchprogress.events.WatchStateChangedEvent;
+import com.streamarr.server.services.events.watchprogress.WatchStateChangedEvent;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
