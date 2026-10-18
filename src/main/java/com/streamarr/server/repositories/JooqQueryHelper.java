@@ -181,6 +181,20 @@ public class JooqQueryHelper {
     };
   }
 
+  public SortField<?>[] mediaOrderBy(MediaFilter filter, Field<?> sortField, boolean reversePage) {
+    var direction = filter.getSortDirection();
+    if (filter.getSortBy() == OrderMediaBy.TITLE) {
+      return titleOrderBy(direction);
+    }
+
+    var order = sortField.sort(direction);
+    if (isNullableSortField(filter.getSortBy())) {
+      order = reversePage ? order.nullsFirst() : order.nullsLast();
+    }
+
+    return new SortField<?>[] {order, BASE_COLLECTABLE.ID.sort(direction)};
+  }
+
   private Field<String> titleSeekField() {
     return coalesce(lower(BASE_COLLECTABLE.TITLE_SORT), inline("")).collate("C");
   }

@@ -29,7 +29,6 @@ import com.streamarr.server.repositories.WatchStateConditions;
 import com.streamarr.server.services.pagination.ItemSortValue;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
-import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import jakarta.persistence.EntityManager;
 import java.time.OffsetDateTime;
@@ -313,16 +312,6 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
   }
 
   private SortField<?>[] buildOrderBy(MediaFilter filter, boolean reversePage) {
-    var direction = filter.getSortDirection();
-    if (filter.getSortBy() == OrderMediaBy.TITLE) {
-      return JooqQueryHelper.titleOrderBy(direction);
-    }
-
-    var order = sortField(filter).sort(direction);
-    if (JooqQueryHelper.isNullableSortField(filter.getSortBy())) {
-      order = reversePage ? order.nullsFirst() : order.nullsLast();
-    }
-
-    return new SortField<?>[] {order, BASE_COLLECTABLE.ID.sort(direction)};
+    return JooqQueryHelper.mediaOrderBy(filter, sortField(filter), reversePage);
   }
 }
