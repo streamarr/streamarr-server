@@ -7,11 +7,10 @@ import com.streamarr.server.domain.streaming.Chapter;
 import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.fixtures.WorkerProbeResultFixture;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeChapter;
 import com.streamarr.transcode.v1.ProbeContainerInfo;
-import com.streamarr.transcode.v1.ProbeMediaInfo;
-import com.streamarr.transcode.v1.ProbeStreamInfo;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -175,10 +174,7 @@ class RemoteProbeResultChaptersMapperTest {
   private static ProbeAttemptResult result(int probeVersion, ProbeContainerInfo.Builder container) {
     return ProbeAttemptResult.newBuilder()
         .setProbeVersion(probeVersion)
-        .setMedia(
-            ProbeMediaInfo.newBuilder()
-                .setContainer(container)
-                .addStreams(ProbeStreamInfo.newBuilder().setCodecType("video")))
+        .setMedia(WorkerProbeResultFixture.version4MediaBuilder().setContainer(container))
         .build();
   }
 

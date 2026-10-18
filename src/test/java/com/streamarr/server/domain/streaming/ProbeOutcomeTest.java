@@ -115,6 +115,22 @@ class ProbeOutcomeTest {
   }
 
   @Test
+  @DisplayName(
+      "Should reject a success when its keyframe knowledge or chosen video stream is missing")
+  void shouldRejectASuccessWhenItsKeyframeKnowledgeOrChosenVideoStreamIsMissing() {
+    var container = ProbeContainer.builder().build();
+    var streams = List.of(streamBuilder("video", "h264").build());
+    var keyframes = new KeyframeKnowledge.NotReported();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> new ProbeOutcome.Success(container, streams, null));
+    assertThatNullPointerException()
+        .isThrownBy(() -> new ProbeOutcome.Success(container, streams, null, Optional.empty()));
+    assertThatNullPointerException()
+        .isThrownBy(() -> new ProbeOutcome.Success(container, streams, keyframes, null));
+  }
+
+  @Test
   @DisplayName("Should reject a success when a stream entry is missing")
   void shouldRejectASuccessWhenAStreamEntryIsMissing() {
     var container = ProbeContainer.builder().build();

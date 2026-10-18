@@ -5,6 +5,8 @@ import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.Chapter;
 import com.streamarr.server.domain.streaming.ChapterKnowledge;
+import com.streamarr.server.domain.streaming.ChosenVideoStream;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -29,6 +31,8 @@ final class RemoteProbeResultMapper {
   private static final int MAXIMUM_PROTOBUF_DURATION_NANOS = 999_999_999;
 
   private final RemoteKeyframeKnowledgeMapper keyframeMapper = new RemoteKeyframeKnowledgeMapper();
+  private final RemotePlaybackFactsMapper playbackFactsMapper =
+      new RemotePlaybackFactsMapper(RemoteProbeResultMapper::toDuration);
 
   ProbeOutcome map(ProbeAttemptReport report) {
     var result = report.result();
@@ -68,11 +72,33 @@ final class RemoteProbeResultMapper {
       throw contractViolation("Worker probe success contains no video stream");
     }
 
-    var streams = media.getStreamsList().stream().map(this::stream).toList();
-    return new ProbeOutcome.Success(
-        container(media.getContainer(), result.getProbeVersion()),
-        streams,
-        keyframeMapper.map(media, keyframePositionsParts));
+    var reportsPlaybackFacts = reportsPlaybackFacts(result.getProbeVersion());
+    var streams =
+        media.getStreamsList().stream()
+            .map(stream -> stream(stream, reportsPlaybackFacts))
+            .toList();
+    var keyframes = keyframeMapper.map(media, keyframePositionsParts);
+    var chosenVideoStream =
+        reportsPlaybackFacts
+            ? Optional.of(playbackFactsMapper.chosenVideoStream(media, streams))
+            : Optional.<ChosenVideoStream>empty();
+    if (chosenVideoStream.isPresent()
+        && keyframes instanceof KeyframeKnowledge.Known(var positions)
+        && positions.streamIndex() != chosenVideoStream.get().streamIndex()) {
+      throw contractViolation(
+          "Worker probe keyframes belong to another stream than the chosen one");
+    }
+
+    return ProbeOutcome.Success.builder()
+        .container(container(media.getContainer(), result.getProbeVersion()))
+        .streams(streams)
+        .keyframes(keyframes)
+        .chosenVideoStream(chosenVideoStream)
+        .build();
+  }
+
+  private static boolean reportsPlaybackFacts(int probeVersion) {
+    return Integer.compareUnsigned(probeVersion, ProbeVersion.FIRST_TO_REPORT_PLAYBACK_FACTS) >= 0;
   }
 
   private ProbeContainer container(ProbeContainerInfo container, int probeVersion) {
@@ -150,7 +176,7 @@ final class RemoteProbeResultMapper {
     return Duration.ofSeconds(seconds, nanos);
   }
 
-  private StreamInfo stream(ProbeStreamInfo stream) {
+  private StreamInfo stream(ProbeStreamInfo stream, boolean reportsPlaybackFacts) {
     if (stream.getIndex() < 0) {
       throw contractViolation("Worker probe stream index exceeds the supported integer range");
     }
@@ -159,25 +185,30 @@ final class RemoteProbeResultMapper {
       throw contractViolation("Worker probe stream is missing codec_type");
     }
 
-    return StreamInfo.builder()
-        .index(stream.getIndex())
-        .codecType(stream.getCodecType())
-        .codec(stream.hasCodec() ? Optional.of(stream.getCodec()) : Optional.empty())
-        .language(stream.hasLanguage() ? Optional.of(stream.getLanguage()) : Optional.empty())
-        .channels(optionalUnsignedInt(stream.hasChannels(), stream.getChannels()))
-        .bitrate(
-            stream.hasBitrateBitsPerSecond()
-                ? OptionalLong.of(stream.getBitrateBitsPerSecond())
-                : OptionalLong.empty())
-        .width(optionalUnsignedInt(stream.hasWidth(), stream.getWidth()))
-        .height(optionalUnsignedInt(stream.hasHeight(), stream.getHeight()))
-        .framerate(
-            Double.isFinite(stream.getFramerate()) && stream.getFramerate() > 0
-                ? OptionalDouble.of(stream.getFramerate())
-                : OptionalDouble.empty())
-        .isDefault(stream.getIsDefault())
-        .isForced(stream.getIsForced())
-        .build();
+    var builder =
+        StreamInfo.builder()
+            .index(stream.getIndex())
+            .codecType(stream.getCodecType())
+            .codec(stream.hasCodec() ? Optional.of(stream.getCodec()) : Optional.empty())
+            .language(stream.hasLanguage() ? Optional.of(stream.getLanguage()) : Optional.empty())
+            .channels(optionalUnsignedInt(stream.hasChannels(), stream.getChannels()))
+            .bitrate(
+                stream.hasBitrateBitsPerSecond()
+                    ? OptionalLong.of(stream.getBitrateBitsPerSecond())
+                    : OptionalLong.empty())
+            .width(optionalUnsignedInt(stream.hasWidth(), stream.getWidth()))
+            .height(optionalUnsignedInt(stream.hasHeight(), stream.getHeight()))
+            .framerate(
+                Double.isFinite(stream.getFramerate()) && stream.getFramerate() > 0
+                    ? OptionalDouble.of(stream.getFramerate())
+                    : OptionalDouble.empty())
+            .isDefault(stream.getIsDefault())
+            .isForced(stream.getIsForced());
+    if (reportsPlaybackFacts) {
+      playbackFactsMapper.addStreamFacts(builder, stream);
+    }
+
+    return builder.build();
   }
 
   private OptionalInt optionalUnsignedInt(boolean present, int value) {
