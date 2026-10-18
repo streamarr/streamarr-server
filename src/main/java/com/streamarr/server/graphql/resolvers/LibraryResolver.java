@@ -19,6 +19,8 @@ import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.AlphabetIndexDto;
 import com.streamarr.server.graphql.inputs.AddLibraryInput;
 import com.streamarr.server.graphql.inputs.MediaFilterInput;
+import com.streamarr.server.graphql.inputs.MediaFilterMapper;
+import com.streamarr.server.graphql.inputs.MediaFilterRequest;
 import com.streamarr.server.graphql.inputs.MediaSortInput;
 import com.streamarr.server.graphql.inputs.RemoveLibraryInput;
 import com.streamarr.server.graphql.inputs.StartLibraryRefreshInput;
@@ -36,7 +38,6 @@ import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.library.LibraryAdministrationService;
 import com.streamarr.server.services.library.LibraryManagementService;
-import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptionsResolver;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
@@ -152,27 +153,14 @@ public class LibraryResolver {
     int last = dfe.getArgumentOrDefault("last", 0);
     String before = dfe.getArgument("before");
 
-    var builder =
-        MediaFilter.builder()
-            .libraryId(library.getId())
-            .profileId(authorizationService.requireProfile());
-
-    applySortOptions(builder, sort);
-
-    if (filter != null) {
-      builder
-          .startLetter(filter.startLetter())
-          .genreIds(parseUuidList(filter.genreIds()))
-          .years(filter.years())
-          .contentRatings(filter.contentRatings())
-          .studioIds(parseUuidList(filter.studioIds()))
-          .directorIds(parseUuidList(filter.directorIds()))
-          .castMemberIds(parseUuidList(filter.castMemberIds()))
-          .unmatched(filter.unmatched())
-          .watchStatus(filter.watchStatus());
-    }
-
-    var effectiveFilter = builder.build();
+    var effectiveFilter =
+        MediaFilterMapper.from(
+            MediaFilterRequest.builder()
+                .libraryId(library.getId())
+                .profileId(authorizationService.requireProfile())
+                .sort(sort)
+                .filter(filter)
+                .build());
     var paginationOptions = paginationService.getPaginationOptions(first, after, last, before);
     var options =
         MediaPaginationOptionsResolver.resolve(
@@ -213,30 +201,11 @@ public class LibraryResolver {
     throw new UnsupportedMediaTypeException(media.getClass().getSimpleName());
   }
 
-  private void applySortOptions(MediaFilter.MediaFilterBuilder builder, MediaSortInput sort) {
-    if (sort == null) {
-      return;
-    }
-    if (sort.by() != null) {
-      builder.sortBy(sort.by());
-    }
-    if (sort.direction() != null) {
-      builder.sortDirection(sort.direction().toSortOrder());
-    }
-  }
-
   private UUID parseUuid(String id) {
     try {
       return UUID.fromString(id);
     } catch (IllegalArgumentException _) {
       throw new InvalidIdException(id);
     }
-  }
-
-  private List<UUID> parseUuidList(List<String> ids) {
-    if (ids == null || ids.isEmpty()) {
-      return List.of();
-    }
-    return ids.stream().map(this::parseUuid).toList();
   }
 }
