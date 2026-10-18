@@ -3,6 +3,7 @@ package com.streamarr.server.domain.streaming;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import lombok.Builder;
@@ -53,7 +54,7 @@ public sealed interface ProbeOutcome {
           .videoCodec(video.codec().orElse(null))
           .width(video.width().orElse(0))
           .height(video.height().orElse(0))
-          .framerate(video.framerate())
+          .framerate(framerate(video))
           .audioCodec(audio.flatMap(StreamInfo::codec).orElse(null))
           .audioChannels(audio.map(StreamInfo::channels).orElse(OptionalInt.empty()))
           .audioBitrate(audio.map(StreamInfo::bitrate).orElse(OptionalLong.empty()))
@@ -68,8 +69,25 @@ public sealed interface ProbeOutcome {
                           .bitDepth(video.bitDepth())
                           .chromaSubsampling(video.chromaSubsampling())
                           .codecString(video.codecString())
+                          .rotationDegrees(video.rotationDegrees())
+                          .containerCropping(video.containerCropping())
+                          .frameRateRule(chosen.frameRateRule())
                           .build()))
           .build();
+    }
+
+    // An encode runs at the frame-rate rule's output frame rate, so a refused rule leaves none.
+    private OptionalDouble framerate(StreamInfo video) {
+      if (chosenVideoStream.isEmpty()) {
+        return video.framerate();
+      }
+
+      return chosenVideoStream
+          .get()
+          .frameRateRule()
+          .outputFrameRate()
+          .map(rate -> OptionalDouble.of(rate.toDouble()))
+          .orElse(OptionalDouble.empty());
     }
 
     // Before probe version 4, an outcome names no chosen video stream, and the transcode decision

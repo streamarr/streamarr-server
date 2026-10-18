@@ -63,12 +63,22 @@ public class HlsStreamingService implements StreamingService {
       return Outcome.rejected(new CreateStreamSessionRejection.NoMediaSegments());
     }
 
+    var picture = probe.displayedSize();
+    if (picture.width() <= 0 || picture.height() <= 0) {
+      return Outcome.rejected(new CreateStreamSessionRejection.InvalidPictureSize());
+    }
+
     var authority = command.identity().playbackAuthority();
     var mediaFileId = command.mediaFileId();
     var options = command.options();
     var decision =
         transcodeDecisionService.decide(
             probe, options, transcodeExecutor.encodableVideoCodecFamilies());
+    var variants = resolveVariants(probe, options, decision);
+    if (requiresVideoTranscode(decision.transcodeMode()) && hasInvalidEncodeSize(probe, variants)) {
+      return Outcome.rejected(new CreateStreamSessionRejection.InvalidPictureSize());
+    }
+
     // Workers encode at the probed frame rate and refuse an encode without one.
     if (requiresVideoTranscode(decision.transcodeMode()) && probe.framerate().isEmpty()) {
       return Outcome.rejected(new CreateStreamSessionRejection.FrameRateUnknown());
@@ -79,8 +89,6 @@ public class HlsStreamingService implements StreamingService {
           new CreateStreamSessionRejection.TranscodeCapacityUnavailable(
               properties.maxConcurrentTranscodes()));
     }
-
-    var variants = resolveVariants(probe, options, decision);
 
     var sessionId = UUID.randomUUID();
     var now = Instant.now();
@@ -114,6 +122,16 @@ public class HlsStreamingService implements StreamingService {
         variants.size());
 
     return Outcome.accepted(session);
+  }
+
+  private static boolean hasInvalidEncodeSize(MediaProbe probe, List<QualityVariant> variants) {
+    if (!variants.isEmpty()) {
+      return variants.stream().anyMatch(variant -> variant.width() <= 0 || variant.height() <= 0);
+    }
+
+    var source = probe.displayedSize();
+    var output = EncodedPictureSizes.atHeight(source, source.height());
+    return output.width() <= 0 || output.height() <= 0;
   }
 
   private void rollbackFailedStartup(UUID sessionId, RuntimeException startupFailure) {

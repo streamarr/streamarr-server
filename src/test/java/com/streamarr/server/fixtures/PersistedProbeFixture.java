@@ -24,6 +24,7 @@ public class PersistedProbeFixture {
         .snapshot(new SourceFileSnapshot(1000, Instant.EPOCH))
         .probeVersion(ProbeVersion.CURRENT)
         .container(probe.container())
+        .chosenVideoStream(probe.chosenVideoStream())
         .streamTitlesOmitted(probe.streamTitlesOmitted())
         .streams(
             probe.streams().stream()
@@ -34,26 +35,29 @@ public class PersistedProbeFixture {
   public static void storeProbe(EntityManager entityManager, MediaFileContainerInfo row) {
     var outcome =
         row.getOutcome(KeyframeKnowledge.NotReported::new, ChapterKnowledge.NotReported::new);
+    var success =
+        outcome instanceof ProbeOutcome.Success stored
+            ? Optional.of(stored)
+            : Optional.<ProbeOutcome.Success>empty();
     entityManager.persist(
         MediaFileContainerInfo.builder()
             .mediaFileId(row.getMediaFileId())
             .snapshot(row.getSnapshot())
             .probeVersion(row.getProbeVersion())
             .container(row.getContainer())
-            .streamTitlesOmitted(
-                outcome instanceof ProbeOutcome.Success success
-                    ? success.streamTitlesOmitted()
-                    : Optional.empty())
+            .chosenVideoStream(success.flatMap(ProbeOutcome.Success::chosenVideoStream))
+            .streamTitlesOmitted(success.flatMap(ProbeOutcome.Success::streamTitlesOmitted))
             .probeError(row.getProbeError().orElse(null))
             .build());
-    if (outcome instanceof ProbeOutcome.Success success) {
-      success
-          .streams()
-          .forEach(
-              stream ->
-                  entityManager.persist(
-                      MediaFileStreamInfo.builder().stream(row.getMediaFileId(), stream).build()));
-    }
+    success.ifPresent(
+        stored ->
+            stored
+                .streams()
+                .forEach(
+                    stream ->
+                        entityManager.persist(
+                            MediaFileStreamInfo.builder().stream(row.getMediaFileId(), stream)
+                                .build())));
 
     entityManager.flush();
     entityManager.clear();

@@ -643,8 +643,13 @@ public class ProducerLifecycleService {
     }
 
     var probe = session.getMediaProbe();
-    request.width(probe.width());
-    request.height(probe.height());
+    var source = probe.displayedSize();
+    var size =
+        session.getTranscodeDecision().transcodeMode().copiesVideo()
+            ? source
+            : EncodedPictureSizes.atHeight(source, source.height());
+    request.width(size.width());
+    request.height(size.height());
     request.bitrate(probe.bitrate());
     return request.build();
   }

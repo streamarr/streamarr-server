@@ -14,6 +14,7 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.fixtures.ProbeFixture;
+import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -324,7 +325,7 @@ class TranscodeDecisionCopyRuleTest {
           .keyframes(ProbeFixture.keyframesEvery(Duration.ofSeconds(2), Duration.ofMinutes(10)))
           .videoPlaybackFacts(
               Optional.of(
-                  VideoPlaybackFacts.builder()
+                  VideoPlaybackFactsFixture.sdrH264FactsBuilder()
                       .streamIndex(1)
                       .dynamicRange(dynamicRange)
                       .bitDepth(bitDepth)

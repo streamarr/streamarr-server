@@ -3,6 +3,7 @@ package com.streamarr.server.domain.streaming;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -15,7 +16,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 class TranscodeDecisionTest {
 
   private static final VideoPlaybackFacts FACTS_WITHOUT_CODEC_STRING =
-      VideoPlaybackFacts.builder().streamIndex(0).build();
+      VideoPlaybackFactsFixture.sdrH264FactsBuilder().codecString(Optional.empty()).build();
 
   @ParameterizedTest
   @EnumSource(

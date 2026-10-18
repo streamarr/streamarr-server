@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import java.util.ArrayList;
@@ -19,7 +20,9 @@ public class QualityLadderService {
           new QualityTier(480, 1_500_000L, 96_000L, "480p"),
           new QualityTier(360, 800_000L, 64_000L, "360p"));
 
-  public List<QualityVariant> generateVariants(MediaProbe source, StreamingOptions options) {
+  /** Sizes each variant from the picture that a player shows, after cropping and rotation. */
+  public List<QualityVariant> generateVariants(MediaProbe probe, StreamingOptions options) {
+    var source = probe.displayedSize();
     var maxHeight = resolveMaxHeight(source, options);
     var maxBitrate = resolveMaxBitrate(options);
 
@@ -37,12 +40,12 @@ public class QualityLadderService {
         continue;
       }
 
-      var width = computeWidthForHeight(source, tier.height());
+      var size = EncodedPictureSizes.atHeight(source, tier.height());
 
       variants.add(
           QualityVariant.builder()
-              .width(width)
-              .height(tier.height())
+              .width(size.width())
+              .height(size.height())
               .videoBitrate(tier.videoBitrate())
               .audioBitrate(tier.audioBitrate())
               .label(tier.label())
@@ -50,33 +53,26 @@ public class QualityLadderService {
     }
 
     if (variants.isEmpty()) {
+      var size = EncodedPictureSizes.atHeight(source, source.height());
       variants.add(
           QualityVariant.builder()
-              .width(computeWidthForHeight(source, source.height()))
-              .height(source.height())
-              .videoBitrate(source.bitrate())
+              .width(size.width())
+              .height(size.height())
+              .videoBitrate(probe.bitrate())
               .audioBitrate(64_000L)
-              .label(source.height() + "p")
+              .label(size.height() + "p")
               .build());
     }
 
     return List.copyOf(variants);
   }
 
-  private int resolveMaxHeight(MediaProbe source, StreamingOptions options) {
+  private int resolveMaxHeight(PictureSize source, StreamingOptions options) {
     if (options.maxHeight() != null && options.maxHeight() > 0) {
       return Math.min(options.maxHeight(), source.height());
     }
 
     return source.height();
-  }
-
-  private int computeWidthForHeight(MediaProbe source, int targetHeight) {
-    int width = (int) Math.round((double) source.width() / source.height() * targetHeight);
-    if (width % 2 != 0) {
-      width++;
-    }
-    return width;
   }
 
   private Integer resolveMaxBitrate(StreamingOptions options) {

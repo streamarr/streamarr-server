@@ -18,6 +18,8 @@ public sealed interface CreateStreamSessionRejection {
   /** The video must be encoded, and the probe recorded no usable frame rate to encode it at. */
   record FrameRateUnknown() implements CreateStreamSessionRejection {}
 
+  record InvalidPictureSize() implements CreateStreamSessionRejection {}
+
   /** The probed duration, missing or under a millisecond, gives the playlist no media segment. */
   record NoMediaSegments() implements CreateStreamSessionRejection {}
 }
