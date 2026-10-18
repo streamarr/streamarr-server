@@ -125,6 +125,30 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStartedRequests()).isEqualTo(startedRequests);
   }
 
+  @ParameterizedTest
+  @CsvSource({
+    "0, 0, AUTO",
+    "0, 1080, AUTO",
+    "1920, 0, AUTO",
+    "0, 0, HIGH_720P",
+    "0, 1080, HIGH_720P",
+    "1920, 0, HIGH_720P"
+  })
+  @DisplayName("Should reject session creation when the displayed picture has no area")
+  void shouldRejectSessionCreationWhenTheDisplayedPictureHasNoArea(
+      int width, int height, VideoQuality quality) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").width(width).height(height).build());
+    var options =
+        StreamingOptions.builder().quality(quality).supportedCodecs(List.of("h264")).build();
+    var command = createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    assertThat(service.createSession(command))
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.InvalidPictureSize()));
+    assertThat(service.getActiveSessionCount()).isZero();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
   @Test
   @DisplayName(
       "Should report the unknown frame rate when the video must be encoded and no transcode slot is free")

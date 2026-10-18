@@ -201,6 +201,21 @@ class StreamingResolverTest {
   }
 
   @Test
+  @DisplayName("Should return a typed invalid file error when the displayed picture has no area")
+  void shouldReturnATypedInvalidFileErrorWhenTheDisplayedPictureHasNoArea() {
+    STUB_SERVICE.setRejection(new CreateStreamSessionRejection.InvalidPictureSize());
+    var context = requestSession(UUID.randomUUID().toString());
+    List<Map<String, String>> errors = context.read("data.createStreamSession.userErrors");
+
+    assertThat(context.read("data.createStreamSession.session", Object.class)).isNull();
+    assertThat(errors)
+        .containsExactly(
+            Map.of(
+                "__typename", "InvalidMediaFileError",
+                "message", "This file's video has no usable picture size."));
+  }
+
+  @Test
   @DisplayName("Should return a playable session payload when creation succeeds")
   void shouldReturnAPlayableSessionPayloadWhenCreationSucceeds() {
     var session = buildSession(UUID.randomUUID());

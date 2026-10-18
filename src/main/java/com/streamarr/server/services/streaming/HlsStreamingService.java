@@ -63,6 +63,11 @@ public class HlsStreamingService implements StreamingService {
       return Outcome.rejected(new CreateStreamSessionRejection.NoMediaSegments());
     }
 
+    var picture = probe.displayedSize();
+    if (picture.width() <= 0 || picture.height() <= 0) {
+      return Outcome.rejected(new CreateStreamSessionRejection.InvalidPictureSize());
+    }
+
     var authority = command.identity().playbackAuthority();
     var mediaFileId = command.mediaFileId();
     var options = command.options();
