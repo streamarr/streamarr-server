@@ -17,6 +17,7 @@ import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.services.events.library.LibraryCountsChangedEvent;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -26,6 +27,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Import(LibraryItemCountsIT.CommittedCounts.class)
+@Tag("IntegrationTest")
 class LibraryItemCountsIT extends AbstractIntegrationTest {
 
   @Autowired private LibraryRepository libraries;
