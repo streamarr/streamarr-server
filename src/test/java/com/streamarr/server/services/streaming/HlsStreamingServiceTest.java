@@ -92,6 +92,7 @@ class HlsStreamingServiceTest {
   private FakeRuntimeStreamSessionRegistry runtimeRegistry;
   private HlsStreamingService service;
   private SegmentDeliveryCoordinator coordinator;
+  private SimpleMeterRegistry meters;
 
   @Test
   @DisplayName("Should reject session creation when the media file has no persisted probe outcome")
@@ -153,6 +154,34 @@ class HlsStreamingServiceTest {
 
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(service.getAllSessions()).containsExactly(session);
+  }
+
+  @ParameterizedTest
+  @CsvSource({"COPY_OR_ENCODE, true", "COPY_ONLY, false"})
+  @DisplayName("Should count one copy refusal when every video encoder is busy")
+  void shouldCountOneCopyRefusalWhenEveryVideoEncoderIsBusy(
+      VideoFormatConstraint constraint, boolean capacityUnavailable) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().keyframes(new KeyframeKnowledge.NotReported()).build());
+    transcodeExecutor.setEncodeSlots(Map.of("h264", 0));
+    var command =
+        CreateStreamSessionCommand.builder()
+            .streamSessionId(UUID.randomUUID())
+            .mediaFileId(seedMediaFile().getId())
+            .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
+            .options(defaultOptions())
+            .videoFormatConstraint(constraint)
+            .build();
+
+    var expectedRejection =
+        capacityUnavailable
+            ? new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)
+            : new CreateStreamSessionRejection.NoEligibleVideoFormat();
+    assertThat(service.createSession(command)).isEqualTo(Outcome.rejected(expectedRejection));
+    assertThat(meters.get("streamarr.streaming.stream_copy_refusals").counter().count())
+        .isEqualTo(1.0);
+    assertThat(service.getActiveSessionCount()).isZero();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
 
   @ParameterizedTest
@@ -603,6 +632,7 @@ class HlsStreamingServiceTest {
     probeEvents = new CapturingEventPublisher();
     authorityGate = new FakePlaybackAuthorityGate();
     runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
+    meters = new SimpleMeterRegistry();
     service = serviceWith(transcodeExecutor, runtimeRegistry);
   }
 
@@ -632,8 +662,7 @@ class HlsStreamingServiceTest {
         .segmentStore(segmentStore)
         .playbackProbeService(
             new PlaybackProbeService(new PersistedProbeReader(probeResults), probeEvents))
-        .transcodeDecisionService(
-            new TranscodeDecisionService(properties, new SimpleMeterRegistry()))
+        .transcodeDecisionService(new TranscodeDecisionService(properties, meters))
         .qualityLadderService(new QualityLadderService())
         .properties(properties)
         .authorityGate(authorityGate)

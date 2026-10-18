@@ -144,12 +144,22 @@ public class HlsStreamingService implements StreamingService {
   }
 
   private CreateStreamSessionRejection unavailableVideoFormat(TranscodeDecisionRequest request) {
+    if (!transcodeExecutor.isHealthy()) {
+      return new CreateStreamSessionRejection.TranscodeCapacityUnavailable(
+          properties.maxConcurrentTranscodes());
+    }
+
+    if (request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
+      return new CreateStreamSessionRejection.NoEligibleVideoFormat();
+    }
+
     var verifiedCandidate =
         transcodeDecisionService.decide(
             request.toBuilder()
+                .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
                 .encodableVideoCodecFamilies(transcodeExecutor.verifiedVideoCodecFamilies())
                 .build());
-    return !transcodeExecutor.isHealthy() || verifiedCandidate.isPresent()
+    return verifiedCandidate.isPresent()
         ? new CreateStreamSessionRejection.TranscodeCapacityUnavailable(
             properties.maxConcurrentTranscodes())
         : new CreateStreamSessionRejection.NoEligibleVideoFormat();
