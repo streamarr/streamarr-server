@@ -119,6 +119,112 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
      */
     public final TableField<MediaFileStreamInfoRecord, Boolean> IS_FORCED = createField(DSL.name("is_forced"), SQLDataType.BOOLEAN.nullable(false).defaultValue(DSL.field(DSL.raw("false"), SQLDataType.BOOLEAN)), this, "");
 
+    /**
+     * The column
+     * <code>public.media_file_stream_info.dynamic_range_compatible_base</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, String> DYNAMIC_RANGE_COMPATIBLE_BASE = createField(DSL.name("dynamic_range_compatible_base"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.hdr10_plus</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, String> HDR10_PLUS = createField(DSL.name("hdr10_plus"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.dolby_vision</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, String> DOLBY_VISION = createField(DSL.name("dolby_vision"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.dolby_vision_observed_rpu</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, String> DOLBY_VISION_OBSERVED_RPU = createField(DSL.name("dolby_vision_observed_rpu"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.dolby_vision_profile</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> DOLBY_VISION_PROFILE = createField(DSL.name("dolby_vision_profile"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.dolby_vision_level</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> DOLBY_VISION_LEVEL = createField(DSL.name("dolby_vision_level"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.dolby_vision_base_layer_compatibility_id</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> DOLBY_VISION_BASE_LAYER_COMPATIBILITY_ID = createField(DSL.name("dolby_vision_base_layer_compatibility_id"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.dolby_vision_base_layer</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Boolean> DOLBY_VISION_BASE_LAYER = createField(DSL.name("dolby_vision_base_layer"), SQLDataType.BOOLEAN, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.dolby_vision_enhancement_layer</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Boolean> DOLBY_VISION_ENHANCEMENT_LAYER = createField(DSL.name("dolby_vision_enhancement_layer"), SQLDataType.BOOLEAN, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.dolby_vision_rpu</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Boolean> DOLBY_VISION_RPU = createField(DSL.name("dolby_vision_rpu"), SQLDataType.BOOLEAN, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.bit_depth</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> BIT_DEPTH = createField(DSL.name("bit_depth"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.chroma_subsampling</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, String> CHROMA_SUBSAMPLING = createField(DSL.name("chroma_subsampling"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.rotation_degrees</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> ROTATION_DEGREES = createField(DSL.name("rotation_degrees"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.crop_top</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> CROP_TOP = createField(DSL.name("crop_top"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.crop_bottom</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> CROP_BOTTOM = createField(DSL.name("crop_bottom"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.crop_left</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> CROP_LEFT = createField(DSL.name("crop_left"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.crop_right</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> CROP_RIGHT = createField(DSL.name("crop_right"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.codec_string</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, String> CODEC_STRING = createField(DSL.name("codec_string"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.sample_rate_hz</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> SAMPLE_RATE_HZ = createField(DSL.name("sample_rate_hz"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.audio_profile</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, String> AUDIO_PROFILE = createField(DSL.name("audio_profile"), SQLDataType.CLOB, this, "");
+
     private MediaFileStreamInfo(Name alias, Table<MediaFileStreamInfoRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -214,6 +320,28 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
     @Override
     public List<Check<MediaFileStreamInfoRecord>> getChecks() {
         return Arrays.asList(
+            Internal.createCheck(this, DSL.name("complete_container_cropping"), "((((crop_top IS NULL) = (crop_bottom IS NULL)) AND ((crop_top IS NULL) = (crop_left IS NULL)) AND ((crop_top IS NULL) = (crop_right IS NULL))))", true),
+            Internal.createCheck(this, DSL.name("complete_dolby_vision_record"), "((((dolby_vision_base_layer IS NULL) = (dolby_vision_enhancement_layer IS NULL)) AND ((dolby_vision_base_layer IS NULL) = (dolby_vision_rpu IS NULL))))", true),
+            Internal.createCheck(this, DSL.name("complete_dynamic_range"), "((((dynamic_range_compatible_base IS NULL) = (hdr10_plus IS NULL)) AND ((dynamic_range_compatible_base IS NULL) = (dolby_vision IS NULL))))", true),
+            Internal.createCheck(this, DSL.name("dolby_vision_claims_require_record"), "(((dolby_vision_base_layer IS NOT NULL) OR ((dolby_vision_profile IS NULL) AND (dolby_vision_level IS NULL) AND (dolby_vision_base_layer_compatibility_id IS NULL))))", true),
+            Internal.createCheck(this, DSL.name("dolby_vision_details_require_presence"), "(((dolby_vision_observed_rpu IS NOT NULL) = (NOT (dolby_vision IS DISTINCT FROM 'PRESENT'::text))))", true),
+            Internal.createCheck(this, DSL.name("dolby_vision_record_requires_presence"), "(((dolby_vision_base_layer IS NULL) OR (dolby_vision = 'PRESENT'::text)))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_bit_depth_check"), "((bit_depth > 0))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_chroma_subsampling_check"), "((chroma_subsampling = ANY (ARRAY['CHROMA_420'::text, 'CHROMA_422'::text, 'CHROMA_444'::text, 'MONOCHROME'::text])))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_codec_string_check"), "((codec_string <> ''::text))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_crop_bottom_check"), "((crop_bottom >= 0))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_crop_left_check"), "((crop_left >= 0))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_crop_right_check"), "((crop_right >= 0))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_crop_top_check"), "((crop_top >= 0))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_dolby_vision_base_layer_compatibil_check"), "((dolby_vision_base_layer_compatibility_id >= 0))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_dolby_vision_check"), "((dolby_vision = ANY (ARRAY['UNSPECIFIED'::text, 'ABSENT'::text, 'PRESENT'::text])))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_dolby_vision_level_check"), "((dolby_vision_level >= 0))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_dolby_vision_observed_rpu_check"), "((dolby_vision_observed_rpu = ANY (ARRAY['UNSPECIFIED'::text, 'ABSENT'::text, 'PRESENT'::text])))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_dolby_vision_profile_check"), "((dolby_vision_profile >= 0))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_dynamic_range_compatible_base_check"), "((dynamic_range_compatible_base = ANY (ARRAY['UNSPECIFIED'::text, 'NONE'::text, 'SDR'::text, 'PQ'::text, 'HLG'::text])))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_hdr10_plus_check"), "((hdr10_plus = ANY (ARRAY['UNSPECIFIED'::text, 'ABSENT'::text, 'PRESENT'::text])))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_rotation_degrees_check"), "(((rotation_degrees >= '-180'::integer) AND (rotation_degrees <= 180)))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_sample_rate_hz_check"), "((sample_rate_hz > 0))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_stream_index_check"), "((stream_index >= 0))", true)
         );
     }
