@@ -250,6 +250,8 @@ class HlsCopySeekSmokeTest {
                 "sine=frequency=440:duration=36",
                 "-c:v",
                 "libx264",
+                "-pix_fmt",
+                "yuv420p",
                 "-g",
                 "1000",
                 "-keyint_min",

@@ -46,11 +46,13 @@ class TranscodeDecisionTest {
   }
 
   @Test
-  @DisplayName("Should accept a copy when the probe version reports no playback facts")
-  void shouldAcceptACopyWhenTheProbeVersionReportsNoPlaybackFacts() {
-    var decision = decisionBuilder(TranscodeMode.REMUX).build();
+  @DisplayName("Should refuse a copy when the decision holds no playback facts")
+  void shouldRefuseACopyWhenTheDecisionHoldsNoPlaybackFacts() {
+    var decision = decisionBuilder(TranscodeMode.REMUX).videoSource(Optional.empty());
 
-    assertThat(decision.videoSource()).isEmpty();
+    assertThatThrownBy(decision::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("codec string");
   }
 
   @Test

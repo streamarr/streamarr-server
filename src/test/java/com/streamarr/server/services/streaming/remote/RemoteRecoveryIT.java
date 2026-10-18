@@ -11,6 +11,7 @@ import com.google.common.primitives.Bytes;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -105,14 +106,14 @@ class RemoteRecoveryIT {
             rig.coordinator()
                 .deliver(streamSessionId, StreamSession.defaultVariant(), "segment0.m4s");
 
-        assertThat(delivery)
-            .isInstanceOfSatisfying(
-                SegmentDelivery.Ready.class,
-                ready ->
-                    assertThat(RecordedStream.START_AT_ZERO.bytes())
-                        .startsWith(
-                            Fmp4Fixture.withInitializationSegment(
-                                segmentStore, streamSessionId, ready.data())));
+        var media =
+            switch (delivery) {
+              case SegmentDelivery.Ready(var data) ->
+                  Fmp4Fixture.withInitializationSegment(segmentStore, streamSessionId, data);
+              default -> throw new AssertionError(delivery);
+            };
+        var recoveredMedia = Files.write(tempDir.resolve("recovered.mp4"), media);
+        assertThat(healthyWorker.decodedVideoFrameCount(recoveredMedia)).isPositive();
         assertThat(rig.session().getHandle().orElseThrow().status())
             .isEqualTo(TranscodeStatus.ACTIVE);
       }
@@ -195,18 +196,26 @@ class RemoteRecoveryIT {
           rig.coordinator()
               .deliver(streamSessionId, StreamSession.defaultVariant(), "segment1.m4s");
 
-      assertThat(delivery)
-          .isInstanceOfSatisfying(
-              SegmentDelivery.Ready.class,
-              ready ->
-                  assertThat(
-                          Bytes.concat(
-                              Fmp4Fixture.withInitializationSegment(
-                                  segmentStore, streamSessionId, "segment0.m4s"),
-                              ready.data()))
-                      .as(
-                          "the stored initialization segment, the initial attempt's segment 0 and the replacement attempt's segment 1")
-                      .isEqualTo(RecordedStream.START_AT_ZERO.bytes()));
+      var media =
+          switch (delivery) {
+            case SegmentDelivery.Ready(var data) ->
+                Bytes.concat(
+                    Fmp4Fixture.withInitializationSegment(
+                        segmentStore, streamSessionId, "segment0.m4s"),
+                    data);
+            default -> throw new AssertionError(delivery);
+          };
+      var recoveredMedia = Files.write(tempDir.resolve("recovered.mp4"), media);
+      var producerMedia =
+          Files.write(tempDir.resolve("producer.mp4"), RecordedStream.START_AT_ZERO.bytes());
+      assertThat(worker.videoPacketHashes(recoveredMedia))
+          .as("the initial and replacement attempts preserve every video packet in order")
+          .isNotEmpty()
+          .containsExactlyElementsOf(worker.videoPacketHashes(producerMedia));
+      assertThat(worker.audioPacketHashes(recoveredMedia))
+          .as("the initial and replacement attempts preserve every audio packet in order")
+          .isNotEmpty()
+          .containsExactlyElementsOf(worker.audioPacketHashes(producerMedia));
       var replacementAttemptId = rig.session().getHandle().orElseThrow().attemptId();
       assertThat(replacementAttemptId)
           .as("recovery replaced the initial attempt")
@@ -249,6 +258,8 @@ class RemoteRecoveryIT {
                   .executor(new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot))
                   .build());
       startThenKillInitialAttempt(rig, List.of(firstWorker, secondWorker));
+      var storedMedia =
+          Fmp4Fixture.withInitializationSegment(segmentStore, streamSessionId, "segment0.m4s");
 
       var delivery =
           rig.coordinator()
@@ -258,7 +269,10 @@ class RemoteRecoveryIT {
       assertThat(initializationSegmentMismatches(meterRegistry))
           .as("each eligible worker ran one replacement attempt and was refused")
           .isEqualTo(2);
-      assertInitialAttemptsSegmentsStored(segmentStore, streamSessionId);
+      assertThat(
+              Fmp4Fixture.withInitializationSegment(segmentStore, streamSessionId, "segment0.m4s"))
+          .as("the initial attempt's initialization segment and segment 0 stay stored")
+          .isEqualTo(storedMedia);
       assertThat(segmentStore.segmentExists(streamSessionId, "segment1.m4s")).isFalse();
       assertThat(rig.session().getHandle().orElseThrow().status())
           .isEqualTo(TranscodeStatus.FAILED);
@@ -285,14 +299,6 @@ class RemoteRecoveryIT {
             initialAttemptId,
             RecordedStream.START_AT_ZERO.containerPath(),
             WorkerContainerFixture.emitRecordedStream(replacementRecording));
-  }
-
-  private static void assertInitialAttemptsSegmentsStored(
-      LocalSegmentStore segmentStore, UUID streamSessionId) {
-    assertThat(RecordedStream.START_AT_ZERO.bytes())
-        .as("the initial attempt's initialization segment and segment 0 stay stored")
-        .startsWith(
-            Fmp4Fixture.withInitializationSegment(segmentStore, streamSessionId, "segment0.m4s"));
   }
 
   private void startThenKillInitialAttempt(RecoveryRig rig, List<WorkerContainerFixture> workers)
@@ -346,7 +352,14 @@ class RemoteRecoveryIT {
             .mediaFileId(UUID.randomUUID())
             .authority(playbackAuthorityFor(UUID.randomUUID()))
             .sourcePath(initialAttempt.sourcePath())
-            .mediaProbe(defaultProbeBuilder().build())
+            .mediaProbe(
+                defaultProbeBuilder()
+                    .framerate(OptionalDouble.of(24))
+                    .width(64)
+                    .height(36)
+                    .bitrate(12_000)
+                    .videoPlaybackFacts(initialAttempt.transcodeDecision().videoSource())
+                    .build())
             .transcodeDecision(initialAttempt.transcodeDecision())
             .build();
     var registry = new FakeRuntimeStreamSessionRegistry();
@@ -394,11 +407,11 @@ class RemoteRecoveryIT {
         .sourcePath(mediaFile)
         .targetSegmentDuration(sessionTimeline.targetSegmentDurationSeconds())
         .mediaSegmentCount(sessionTimeline.mediaSegmentCount())
-        .framerate(OptionalDouble.of(23.976))
+        .framerate(OptionalDouble.of(24))
         .transcodeDecision(transcodeDecision(mode))
-        .width(1920)
-        .height(1080)
-        .bitrate(5_000_000)
+        .width(64)
+        .height(36)
+        .bitrate(12_000)
         .variantLabel(StreamSession.defaultVariant())
         .encoderPreset(EncoderPreset.FASTER)
         .build();
@@ -410,7 +423,13 @@ class RemoteRecoveryIT {
         .videoCodecFamily("h264")
         .audioDecision(AudioDecision.copy("aac", 2, 128_000))
         .subtitleDecision(SubtitleDecision.exclude())
-        .videoSource(Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()))
+        .videoSource(
+            Optional.of(
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                    .streamIndex(0)
+                    .codecString(Optional.of("avc1.64000A"))
+                    .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))
+                    .build()))
         .build();
   }
 }

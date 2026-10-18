@@ -2,6 +2,7 @@ package com.streamarr.server.services.library;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
+import static com.streamarr.server.fixtures.WorkerProbeResultFixture.version4MediaBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.kagkarlsson.scheduler.Scheduler;
@@ -43,9 +44,7 @@ import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeFailure;
-import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeRequest;
-import com.streamarr.transcode.v1.ProbeStreamInfo;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.nio.file.FileSystems;
@@ -400,12 +399,12 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
   }
 
   private static ProbeAttemptResult success(ProbeRequest request) {
+    var media = version4MediaBuilder();
+    media.getStreamsBuilder(0).setWidth(1920);
     return ProbeAttemptResult.newBuilder()
         .setProbeAttemptId(request.getProbeAttemptId())
         .setProbeVersion(request.getProbeVersion())
-        .setMedia(
-            ProbeMediaInfo.newBuilder()
-                .addStreams(ProbeStreamInfo.newBuilder().setCodecType("video").setWidth(1920)))
+        .setMedia(media)
         .build();
   }
 

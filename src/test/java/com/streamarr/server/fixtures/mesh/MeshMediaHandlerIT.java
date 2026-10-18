@@ -2,11 +2,13 @@ package com.streamarr.server.fixtures.mesh;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.streamCopyDecision;
+import static com.streamarr.server.fixtures.WorkerProbeResultFixture.version4MediaBuilder;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
@@ -65,17 +67,10 @@ class MeshMediaHandlerIT {
   @Test
   @DisplayName("Should confirm real media when the authorized worker returns the fixture probe")
   void shouldConfirmRealMediaWhenTheAuthorizedWorkerReturnsTheFixtureProbe() throws Exception {
-    var media =
-        ProbeMediaInfo.newBuilder()
-            .setContainer(ProbeContainerInfo.newBuilder().setFormat("mov,mp4,m4a,3gp,3g2,mj2"))
-            .addStreams(
-                ProbeStreamInfo.newBuilder()
-                    .setCodecType("video")
-                    .setCodec("h264")
-                    .setWidth(320)
-                    .setHeight(180))
-            .build();
-    try (var rig = Rig.builder().media(media).build()) {
+    var media = version4MediaBuilder();
+    media.setContainer(ProbeContainerInfo.newBuilder().setFormat("mov,mp4,m4a,3gp,3g2,mj2"));
+    media.getStreamsBuilder(0).setCodec("h264").setWidth(320).setHeight(180);
+    try (var rig = Rig.builder().media(media.build()).build()) {
       var response = rig.probe();
 
       assertThat(response.statusCode()).isEqualTo(200);
@@ -150,11 +145,11 @@ class MeshMediaHandlerIT {
     }
   }
 
-  @Test
-  @DisplayName(
-      "Should return decodable fMP4 media when the standalone worker image executes the media job")
-  void shouldReturnDecodableFmp4MediaWhenStandaloneWorkerImageExecutesTheMediaJob(
-      @TempDir Path tempDir) throws Exception {
+  @ParameterizedTest(name = "{0}")
+  @ValueSource(strings = {"/media/probe", "/media/segment"})
+  @DisplayName("Should return verified media when the standalone worker image handles the request")
+  void shouldReturnVerifiedMediaWhenStandaloneWorkerImageHandlesTheRequest(
+      String path, @TempDir Path tempDir) throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var clip = MeshMediaHandlerIT.class.getResource("/BigBuckBunny_320x180_10s.mp4");
     assertThat(clip).isNotNull();
@@ -176,9 +171,15 @@ class MeshMediaHandlerIT {
                       .eligibleWorkers(MeshValidationServer.SOURCE_ID, streamCopyDecision())
                       .isEmpty());
 
-      var response = rig.requestMedia("/media/segment");
+      var response = rig.requestMedia(path);
 
       assertThat(response.statusCode()).isEqualTo(200);
+      if (path.equals("/media/probe")) {
+        assertThat(new String(response.body(), StandardCharsets.UTF_8))
+            .isEqualTo("MEDIA_PROBE_COMPLETED");
+        return;
+      }
+
       assertThat(Fmp4Fixture.firstBoxType(response.body())).isEqualTo("ftyp");
       var media = Files.write(tempDir.resolve("mesh-media.mp4"), response.body());
       assertThat(worker.decodedVideoFrameCount(media)).isPositive();
@@ -244,7 +245,7 @@ class MeshMediaHandlerIT {
                       .setCapabilities(
                           WorkerCapabilities.newBuilder()
                               .addSourceNamespaceIds(toProto(MeshValidationServer.SOURCE_ID))
-                              .addProbeVersions(1)
+                              .addProbeVersions(ProbeVersion.CURRENT)
                               .addVideoEncoders(
                                   softwareEncoder(
                                       VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264"))))

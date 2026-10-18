@@ -639,31 +639,6 @@ class HlsPlaylistServiceTest {
       assertThat(playlist).contains("CODECS=\"" + codecString + ",mp4a.40.2\"");
     }
 
-    @ParameterizedTest(name = "{0} → {1}")
-    @CsvSource({"h264, avc1.640028", "hevc, hvc1.1.6.L120.90", "av1, av01.0.08M.08"})
-    @DisplayName(
-        "Should advertise the codec family's fixed codec string when the session copies a source without playback facts")
-    void
-        shouldAdvertiseTheCodecFamilysFixedCodecStringWhenTheSessionCopiesASourceWithoutPlaybackFacts(
-            String videoCodecFamily, String codecString) {
-      var session =
-          StreamSessionFixture.defaultSessionBuilder()
-              .transcodeDecision(
-                  TranscodeDecision.builder()
-                      .transcodeMode(TranscodeMode.REMUX)
-                      .videoCodecFamily(videoCodecFamily)
-                      .audioDecision(AudioDecision.copy("aac", 2, 128_000L))
-                      .subtitleDecision(SubtitleDecision.exclude())
-                      .build())
-              .build();
-
-      var playlist = service.generateMultivariantPlaylist(session, "test-token");
-
-      assertThat(playlist)
-          .contains("CODECS=\"" + codecString + ",mp4a.40.2\"")
-          .doesNotContain("VIDEO-RANGE");
-    }
-
     @Test
     @DisplayName(
         "Should declare an SDR video range when the session copies a Dolby Vision source with an SDR base")
@@ -1127,23 +1102,6 @@ class HlsPlaylistServiceTest {
     void shouldAdvertiseNoFrameRateWhenTheSessionCopiesAStreamWhoseDeclaredRatesAgree() {
       var session =
           copySessionWithRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(25, 1)));
-
-      assertThat(streamInf(session)).singleElement().asString().doesNotContain("FRAME-RATE");
-    }
-
-    @Test
-    @DisplayName(
-        "Should advertise no frame rate when the session copies a source that its probe gave no playback facts")
-    void shouldAdvertiseNoFrameRateWhenTheSessionCopiesASourceThatItsProbeGaveNoPlaybackFacts() {
-      var session =
-          StreamSessionFixture.defaultSessionBuilder()
-              .mediaProbe(
-                  StreamSessionFixture.defaultProbeBuilder()
-                      .videoPlaybackFacts(Optional.empty())
-                      .build())
-              .transcodeDecision(
-                  StreamSessionFixture.remuxDecisionBuilder().videoSource(Optional.empty()).build())
-              .build();
 
       assertThat(streamInf(session)).singleElement().asString().doesNotContain("FRAME-RATE");
     }

@@ -27,7 +27,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.OptionalDouble;
 import java.util.concurrent.TimeUnit;
@@ -143,8 +142,10 @@ class EncoderPresetSmokeTest {
   }
 
   // Automatic resolves to SVT-AV1 preset 10, and veryfast is preset 11. SVT-AV1 writes no preset
-  // into its sequence header, so only the media bytes show it. The bytes must also differ from an
-  // encode at SVT-AV1's default preset, which a worker that passes no preset produces.
+  // into its sequence header, so the encoded packets show it. The worker rebuilds the MP4
+  // fragments, so compare packet hashes independently of their container headers. The packets must
+  // also differ from an encode at SVT-AV1's default preset, which a worker that passes no preset
+  // produces.
   @ParameterizedTest(name = "{0}")
   @CsvSource({"AUTOMATIC, 10", "VERYFAST, 11"})
   @DisplayName("Should reach FFmpeg when an AV1 job carries the server's encoder preset")
@@ -154,16 +155,22 @@ class EncoderPresetSmokeTest {
 
     var session = startedVideoTranscode("av1");
 
-    var produced =
-        Fmp4Fixture.withInitializationSegment(
-            segmentStore, session.getSessionId(), firstMediaSegment(session));
+    var producedMedia =
+        Files.write(
+            temporaryDirectory.resolve("produced.mp4"),
+            Fmp4Fixture.withInitializationSegment(
+                segmentStore, session.getSessionId(), firstMediaSegment(session)));
+    var produced = workerFixture.worker().videoPacketHashes(producedMedia);
     var command = workerCommand(session);
-    assertThat(firstDifference(svtAv1Reference(command, expectedSvtAv1Preset), produced))
-        .as("the first byte that differs from an encode at SVT-AV1 preset %d", expectedSvtAv1Preset)
-        .isEqualTo(-1);
-    assertThat(firstDifference(svtAv1Reference(command, SVT_AV1_DEFAULT_PRESET), produced))
-        .as("the first byte that differs from an encode at SVT-AV1's default preset")
-        .isNotEqualTo(-1);
+    assertThat(produced).as("the served segment's encoded video packets").isNotEmpty();
+    assertThat(svtAv1Reference(command, expectedSvtAv1Preset))
+        .as("the encoded video packets at SVT-AV1 preset %d", expectedSvtAv1Preset)
+        .startsWith(produced.toArray(String[]::new));
+    var defaultPreset = svtAv1Reference(command, SVT_AV1_DEFAULT_PRESET);
+    assertThat(defaultPreset).hasSizeGreaterThanOrEqualTo(produced.size());
+    assertThat(produced)
+        .as("the encoded video packets differ from SVT-AV1's default preset")
+        .isNotEqualTo(defaultPreset.subList(0, produced.size()));
   }
 
   private void chooseEncoderPreset(EncoderPresetChoice choice) {
@@ -223,7 +230,8 @@ class EncoderPresetSmokeTest {
 
   // Runs the worker's command again with the image's own FFmpeg at the given SVT-AV1 preset,
   // writing to a file instead of the worker's pipe.
-  private byte[] svtAv1Reference(List<String> workerCommand, int svtAv1Preset) throws Exception {
+  private List<String> svtAv1Reference(List<String> workerCommand, int svtAv1Preset)
+      throws Exception {
     assertThat(workerCommand).as("the worker's FFmpeg arguments").endsWith("pipe:1");
     var arguments = new ArrayList<>(workerCommand.subList(0, workerCommand.size() - 1));
     var presetFlagIndex = arguments.indexOf("-preset");
@@ -240,18 +248,8 @@ class EncoderPresetSmokeTest {
         .isPositive();
     arguments.set(svtAv1ParametersIndex, arguments.get(svtAv1ParametersIndex) + ONE_SVT_AV1_THREAD);
     var reference = temporaryDirectory.resolve("svtav1-preset-" + svtAv1Preset + ".mp4");
-    return Files.readAllBytes(workerFixture.worker().generateMedia(reference, arguments));
-  }
-
-  // -1 when the produced bytes open the reference, otherwise the index of the first difference.
-  // Produced bytes that run past the end of the reference differ at the reference's length.
-  private static int firstDifference(byte[] reference, byte[] produced) {
-    var sharedLength = Math.min(reference.length, produced.length);
-    var mismatch = Arrays.mismatch(reference, 0, sharedLength, produced, 0, sharedLength);
-    if (mismatch != -1 || produced.length <= reference.length) {
-      return mismatch;
-    }
-
-    return sharedLength;
+    return workerFixture
+        .worker()
+        .videoPacketHashes(workerFixture.worker().generateMedia(reference, arguments));
   }
 }

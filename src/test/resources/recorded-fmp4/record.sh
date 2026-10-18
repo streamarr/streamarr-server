@@ -25,9 +25,9 @@
 #   gets no -ss, and it forces a keyframe at 6 s only. The worker discards its media segment 0 as
 #   preroll. Its output is byte-identical to start-0s.fmp4, which this script checks, so the tests
 #   replay start-0s.fmp4 for it.
-# - replacement-differing-initialization.fmp4: that replacement attempt with -profile:v baseline,
-#   standing in for a different encoder backend. Its initialization segment differs from
-#   start-0s.fmp4's.
+# - replacement-differing-initialization.fmp4: that replacement attempt with -refs 2. Its
+#   initialization segment differs while retaining the same profile and level, so it passes
+#   codec validation and reaches the server's initialization-segment identity check.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -58,7 +58,7 @@ record() {
 
 record start-0s.fmp4 0,6
 record replacement.fmp4 6
-record replacement-differing-initialization.fmp4 6 -profile:v baseline
+record replacement-differing-initialization.fmp4 6 -refs 2
 
 if ! cmp "$work/start-0s.fmp4" "$work/replacement.fmp4"; then
   echo "The replacement attempt's output differs from start-0s.fmp4, which the tests replay for it." >&2
