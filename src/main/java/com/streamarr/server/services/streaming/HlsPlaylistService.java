@@ -184,9 +184,8 @@ public class HlsPlaylistService {
   }
 
   // RFC 8216 section 4.3.4.2 gives FRAME-RATE as the maximum rate, to three decimals. An encode
-  // runs
-  // at the session's frame rate. A copy keeps the source's timing, whose maximum rate the probe
-  // does not measure, so its entry leaves FRAME-RATE out.
+  // runs at the session's frame rate. A copy keeps the source's timing, whose maximum rate the
+  // probe does not measure, so its entry leaves FRAME-RATE out.
   private static void appendFrameRate(StringBuilder sb, StreamSession session) {
     var frameRate = session.getMediaProbe().framerate();
     if (session.getTranscodeDecision().transcodeMode().copiesVideo() || frameRate.isEmpty()) {
