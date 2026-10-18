@@ -84,7 +84,7 @@ public class PlaybackSessionService implements AutoCloseable {
   }
 
   @Builder
-  private record Replacement(
+  private record FormatAttemptReservation(
       PlaybackSession playback, UUID retiredStreamId, Optional<UUID> streamId) {}
 
   public Outcome<PlaybackSessionSnapshot, CreateStreamSessionRejection> start(
@@ -177,7 +177,7 @@ public class PlaybackSessionService implements AutoCloseable {
     return Optional.of(playback);
   }
 
-  /** Rolls back an unpublished start, including any replacement already reserved. */
+  /** Rolls back an unpublished start, including any format attempt already reserved. */
   public void abandonStart(@NonNull UUID playbackSessionId) {
     var playback = sessions.get(playbackSessionId);
     if (playback == null) {
@@ -250,11 +250,12 @@ public class PlaybackSessionService implements AutoCloseable {
 
   private void recover(
       PlaybackSession playback, UUID failedId, PlaybackSessionFailure fixedFailure) {
-    var replacement = locked(playback, () -> reserveReplacement(playback, failedId, fixedFailure));
-    replacement.ifPresent(this::schedule);
+    var reservation =
+        locked(playback, () -> reserveFormatAttempt(playback, failedId, fixedFailure));
+    reservation.ifPresent(this::schedule);
   }
 
-  private Optional<Replacement> reserveReplacement(
+  private Optional<FormatAttemptReservation> reserveFormatAttempt(
       PlaybackSession playback, UUID failedId, PlaybackSessionFailure fixedFailure) {
     if (!owns(playback)
         || !playback.current.streamSessionId().equals(failedId)
@@ -264,7 +265,7 @@ public class PlaybackSessionService implements AutoCloseable {
       return Optional.empty();
     }
 
-    var work = Replacement.builder().playback(playback).retiredStreamId(failedId);
+    var work = FormatAttemptReservation.builder().playback(playback).retiredStreamId(failedId);
     playback.lastAccessedAt = clock.instant();
     var quality = playback.command.options().quality();
     if (quality != null && quality != VideoQuality.AUTO) {
@@ -296,15 +297,15 @@ public class PlaybackSessionService implements AutoCloseable {
     return Optional.of(work.streamId(Optional.of(childId)).build());
   }
 
-  private void schedule(Replacement work) {
+  private void schedule(FormatAttemptReservation work) {
     try {
-      executor.execute(() -> replace(work));
+      executor.execute(() -> startFormatAttempt(work));
     } catch (RejectedExecutionException failure) {
-      failReplacement(work, failure, true);
+      failFormatAttempt(work, failure, true);
     }
   }
 
-  private void replace(Replacement work) {
+  private void startFormatAttempt(FormatAttemptReservation work) {
     try {
       if (!allowsRecovery(work.playback())) {
         return;
@@ -332,11 +333,12 @@ public class PlaybackSessionService implements AutoCloseable {
         }
       }
     } catch (RuntimeException failure) {
-      failReplacement(work, failure, false);
+      failFormatAttempt(work, failure, false);
     }
   }
 
-  private void failReplacement(Replacement work, RuntimeException failure, boolean retireOld) {
+  private void failFormatAttempt(
+      FormatAttemptReservation work, RuntimeException failure, boolean retireOld) {
     work.streamId()
         .ifPresent(
             id -> failCurrent(work.playback(), id, new PlaybackSessionFailure.StartupFailed()));
@@ -352,7 +354,7 @@ public class PlaybackSessionService implements AutoCloseable {
       suppress(failure, cleanupFailure);
     }
 
-    log.warn("Format replacement failed for playback session {}", work.playback().id, failure);
+    log.warn("Format attempt failed for playback session {}", work.playback().id, failure);
   }
 
   private void failCurrent(PlaybackSession playback, UUID childId, PlaybackSessionFailure reason) {
