@@ -107,6 +107,55 @@ class HlsStreamingServiceTest {
   }
 
   @ParameterizedTest
+  @CsvSource({"h264", "hevc"})
+  @DisplayName("Should report transient capacity when no worker can access the source")
+  void shouldReportTransientCapacityWhenNoWorkerCanAccessTheSource(String videoCodec) {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec(videoCodec).build());
+    transcodeExecutor.setHealthy(false);
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of());
+    transcodeExecutor.setAvailableSlots(0);
+    var command =
+        createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(service.createSession(command))
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(service.getActiveSessionCount()).isZero();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should reject an encode when a connected worker has no verified video encoder")
+  void shouldRejectAnEncodeWhenAConnectedWorkerHasNoVerifiedVideoEncoder() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
+    transcodeExecutor.setHealthy(true);
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of());
+    transcodeExecutor.setAvailableSlots(1);
+    var command =
+        createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(service.createSession(command))
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(service.getActiveSessionCount()).isZero();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should copy video when a connected worker has no verified video encoder")
+  void shouldCopyVideoWhenAConnectedWorkerHasNoVerifiedVideoEncoder() {
+    transcodeExecutor.setHealthy(true);
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of());
+    transcodeExecutor.setAvailableSlots(1);
+    var command =
+        createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(service.getAllSessions()).containsExactly(session);
+  }
+
+  @ParameterizedTest
   @CsvSource({"0", "1"})
   @DisplayName("Should reject a stream session when no video format is eligible")
   void shouldRejectAStreamSessionWhenNoVideoFormatIsEligible(int availableSlots) {

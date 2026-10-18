@@ -149,7 +149,7 @@ public class HlsStreamingService implements StreamingService {
             request.toBuilder()
                 .encodableVideoCodecFamilies(transcodeExecutor.verifiedVideoCodecFamilies())
                 .build());
-    return verifiedCandidate.isPresent()
+    return !transcodeExecutor.isHealthy() || verifiedCandidate.isPresent()
         ? new CreateStreamSessionRejection.TranscodeCapacityUnavailable(
             properties.maxConcurrentTranscodes())
         : new CreateStreamSessionRejection.NoEligibleVideoFormat();

@@ -121,14 +121,13 @@ class AdversarialPlaybackTest {
 
   @Test
   @DisplayName(
-      "Should return the typed no-eligible-format payload when video transcode has no connected worker")
-  void shouldReturnTypedNoEligibleFormatPayloadWhenVideoTranscodeHasNoConnectedWorker()
-      throws Exception {
+      "Should retain the typed capacity payload when video transcode has no connected worker")
+  void shouldRetainTypedCapacityPayloadWhenVideoTranscodeHasNoConnectedWorker() throws Exception {
     var source = Files.writeString(directory.resolve("movie.mkv"), "media");
     var file = saveFile(source);
     publishProbe(file, defaultProbeBuilder().videoCodec("hevc").build());
 
-    assertPayload(file, "NoEligibleVideoFormatError");
+    assertPayload(file, "TranscodeCapacityUnavailableError");
   }
 
   @Test
