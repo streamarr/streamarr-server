@@ -4,8 +4,6 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamingOptions;
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.stereotype.Service;
@@ -42,12 +40,12 @@ public class QualityLadderService {
         continue;
       }
 
-      var width = computeWidthForHeight(source, tier.height());
+      var size = EncodedPictureSizes.atHeight(source, tier.height());
 
       variants.add(
           QualityVariant.builder()
-              .width(width)
-              .height(tier.height())
+              .width(size.width())
+              .height(size.height())
               .videoBitrate(tier.videoBitrate())
               .audioBitrate(tier.audioBitrate())
               .label(tier.label())
@@ -55,13 +53,14 @@ public class QualityLadderService {
     }
 
     if (variants.isEmpty()) {
+      var size = EncodedPictureSizes.atHeight(source, source.height());
       variants.add(
           QualityVariant.builder()
-              .width(computeWidthForHeight(source, source.height()))
-              .height(source.height())
+              .width(size.width())
+              .height(size.height())
               .videoBitrate(probe.bitrate())
               .audioBitrate(64_000L)
-              .label(source.height() + "p")
+              .label(size.height() + "p")
               .build());
     }
 
@@ -74,15 +73,6 @@ public class QualityLadderService {
     }
 
     return source.height();
-  }
-
-  // The worker scales with scale=-2:<height>. FFmpeg computes that width as
-  // round(height * width / (2 * height)) * 2, rounding half away from zero.
-  private static int computeWidthForHeight(PictureSize source, int targetHeight) {
-    var halfWidth =
-        BigDecimal.valueOf((long) targetHeight * source.width())
-            .divide(BigDecimal.valueOf(2L * source.height()), 0, RoundingMode.HALF_UP);
-    return halfWidth.intValueExact() * 2;
   }
 
   private Integer resolveMaxBitrate(StreamingOptions options) {

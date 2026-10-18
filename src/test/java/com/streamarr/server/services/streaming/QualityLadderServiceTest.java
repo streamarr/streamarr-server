@@ -1,8 +1,10 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
+import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
@@ -20,6 +22,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
@@ -84,6 +87,37 @@ class QualityLadderServiceTest {
     assertThat(variants).hasSize(1);
     assertThat(variants.get(0).width()).isEqualTo(320);
     assertThat(variants.get(0).height()).isEqualTo(180);
+  }
+
+  @ParameterizedTest
+  @CsvSource({"CHROMA_444, 316", "CHROMA_422, 314"})
+  @DisplayName("Should round the output height down when a cropped source is below every tier")
+  void shouldRoundTheOutputHeightDownWhenACroppedSourceIsBelowEveryTier(
+      ChromaSubsampling subsampling, int expectedWidth) {
+    var probe =
+        defaultProbeBuilder()
+            .width(320)
+            .height(240)
+            .bitrate(500_000L)
+            .videoPlaybackFacts(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .chromaSubsampling(Optional.of(subsampling))
+                        .containerCropping(
+                            Optional.of(
+                                ContainerCropping.builder()
+                                    .top(1)
+                                    .bottom(2)
+                                    .left(1)
+                                    .right(2)
+                                    .build()))
+                        .build()))
+            .build();
+    var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
+
+    assertThat(service.generateVariants(probe, options))
+        .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::label)
+        .containsExactly(tuple(expectedWidth, 236, "236p"));
   }
 
   @Test
@@ -196,9 +230,9 @@ class QualityLadderServiceTest {
     var variants = service.generateVariants(probe, options);
 
     assertThat(variants).hasSize(1);
-    assertThat(variants.get(0).width()).isEqualTo(320);
-    assertThat(variants.get(0).height()).isEqualTo(179);
-    assertThat(variants.get(0).label()).isEqualTo("179p");
+    assertThat(variants.get(0).width()).isEqualTo(318);
+    assertThat(variants.get(0).height()).isEqualTo(178);
+    assertThat(variants.get(0).label()).isEqualTo("178p");
   }
 
   private MediaProbe buildProbe(int width, int height, long bitrate) {

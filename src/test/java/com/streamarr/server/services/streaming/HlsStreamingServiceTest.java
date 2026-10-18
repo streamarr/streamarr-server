@@ -15,10 +15,13 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.ChromaSubsampling;
+import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
+import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.QualityVariant;
@@ -147,6 +150,154 @@ class HlsStreamingServiceTest {
         .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.InvalidPictureSize()));
     assertThat(service.getActiveSessionCount()).isZero();
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  @ParameterizedTest
+  @CsvSource({"CHROMA_444, 1916", "CHROMA_422, 1914"})
+  @DisplayName(
+      "Should plan even output dimensions when a fixed quality encodes an odd cropped picture")
+  void shouldPlanEvenOutputDimensionsWhenAFixedQualityEncodesAnOddCroppedPicture(
+      ChromaSubsampling subsampling, int expectedWidth) {
+    probeResults.setDefaultProbe(oddCroppedProbe(subsampling).build());
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.HIGH_720P)
+            .supportedCodecs(List.of("h264"))
+            .build();
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+    var playlist =
+        new HlsPlaylistService(StreamingProperties.builder().build())
+            .generateMultivariantPlaylist(session, "test-token");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.height()).isEqualTo(1076);
+              assertThat(request.width()).isEqualTo(expectedWidth);
+            });
+    assertThat(playlist).contains(",RESOLUTION=" + expectedWidth + "x1076,");
+    assertThat(session.getMediaProbe().displayedSize().height()).isEqualTo(1077);
+  }
+
+  @ParameterizedTest
+  @CsvSource({"CHROMA_444, 316", "CHROMA_422, 314"})
+  @DisplayName("Should plan even output dimensions when Auto encodes below the smallest tier")
+  void shouldPlanEvenOutputDimensionsWhenAutoEncodesBelowTheSmallestTier(
+      ChromaSubsampling subsampling, int expectedWidth) {
+    probeResults.setDefaultProbe(oddCroppedProbe(subsampling).width(320).height(240).build());
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    var playlist =
+        new HlsPlaylistService(StreamingProperties.builder().build())
+            .generateMultivariantPlaylist(session, "test-token");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.height()).isEqualTo(236);
+              assertThat(request.width()).isEqualTo(expectedWidth);
+            });
+    assertThat(playlist).contains(",RESOLUTION=" + expectedWidth + "x236,");
+    assertThat(session.getMediaProbe().displayedSize().height()).isEqualTo(237);
+  }
+
+  @ParameterizedTest
+  @CsvSource({"AUTO", "HIGH_720P"})
+  @DisplayName("Should reject an encode when the displayed height cannot contain a chroma sample")
+  void shouldRejectAnEncodeWhenTheDisplayedHeightCannotContainAChromaSample(VideoQuality quality) {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").height(1).build());
+    var options =
+        StreamingOptions.builder().quality(quality).supportedCodecs(List.of("h264")).build();
+    var command = createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    assertThat(service.createSession(command))
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.InvalidPictureSize()));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+    assertThat(service.getActiveSessionCount()).isZero();
+  }
+
+  @ParameterizedTest
+  @CsvSource({"AUTO, 3", "HIGH_720P, 3", "AUTO, 1080"})
+  @DisplayName("Should reject an encode when a planned output width rounds to zero")
+  void shouldRejectAnEncodeWhenAPlannedOutputWidthRoundsToZero(VideoQuality quality, int height) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").width(1).height(height).build());
+    var options =
+        StreamingOptions.builder().quality(quality).supportedCodecs(List.of("h264")).build();
+    var command = createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    assertThat(service.createSession(command))
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.InvalidPictureSize()));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+    assertThat(service.getActiveSessionCount()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should encode a narrow picture when its planned output has positive dimensions")
+  void shouldEncodeANarrowPictureWhenItsPlannedOutputHasPositiveDimensions() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").width(1).height(1080).build());
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.HIGH_720P)
+            .supportedCodecs(List.of("h264"))
+            .build();
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+    var playlist =
+        new HlsPlaylistService(StreamingProperties.builder().build())
+            .generateMultivariantPlaylist(session, "test-token");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(2);
+              assertThat(request.height()).isEqualTo(1080);
+            });
+    assertThat(playlist).contains(",RESOLUTION=2x1080,");
+  }
+
+  @Test
+  @DisplayName("Should preserve odd displayed dimensions when the source video is copied")
+  void shouldPreserveOddDisplayedDimensionsWhenTheSourceVideoIsCopied() {
+    probeResults.setDefaultProbe(oddCroppedProbe(ChromaSubsampling.CHROMA_444).build());
+    var options = StreamingOptions.builder().supportedCodecs(List.of("hevc")).build();
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+    var playlist =
+        new HlsPlaylistService(StreamingProperties.builder().build())
+            .generateMultivariantPlaylist(session, "test-token");
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(1917);
+              assertThat(request.height()).isEqualTo(1077);
+            });
+    assertThat(playlist).contains(",RESOLUTION=1917x1077,");
+  }
+
+  private static MediaProbe.MediaProbeBuilder oddCroppedProbe(ChromaSubsampling subsampling) {
+    return defaultProbeBuilder()
+        .videoCodec("hevc")
+        .width(1920)
+        .height(1080)
+        .videoPlaybackFacts(
+            Optional.of(
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                    .streamIndex(0)
+                    .chromaSubsampling(Optional.of(subsampling))
+                    .codecString(Optional.of("hvc1.1.6.L120.B0"))
+                    .containerCropping(
+                        Optional.of(
+                            ContainerCropping.builder().top(1).bottom(2).left(1).right(2).build()))
+                    .build()));
   }
 
   @Test

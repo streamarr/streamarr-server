@@ -82,11 +82,15 @@ public class HlsPlaylistService {
     return sb.toString();
   }
 
-  // A stream session without a ladder plays at the size that a player shows and at the source's
-  // bitrate.
+  // A stream session without a ladder keeps the source bitrate and sizes an encode for the
+  // worker's output format. A copy retains the displayed source dimensions.
   private static QualityVariant sourceSizedVariant(StreamSession session) {
     var probe = session.getMediaProbe();
-    var size = probe.displayedSize();
+    var source = probe.displayedSize();
+    var size =
+        session.getTranscodeDecision().transcodeMode().copiesVideo()
+            ? source
+            : EncodedPictureSizes.atHeight(source, source.height());
     return QualityVariant.builder()
         .width(size.width())
         .height(size.height())
