@@ -9,6 +9,8 @@ import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import tools.jackson.databind.ObjectMapper;
 
@@ -69,12 +71,14 @@ class LibraryCountsMigrationIT extends AbstractIntegrationTest {
     }
   }
 
-  @Test
-  void shouldReplaceLegacyChildCountsAndRemoveStaleBucketsDuringUpgrade() throws SQLException {
+  @ParameterizedTest
+  @ValueSource(strings = {"C", "tr-TR-x-icu"})
+  void shouldReplaceLegacyChildCountsAndRemoveStaleBucketsDuringUpgrade(String collation)
+      throws SQLException {
     var schema = "library_counts_" + UUID.randomUUID().toString().replace("-", "");
     dsl.createSchema(schema).execute();
     try {
-      seedLegacyCounts(schema);
+      seedLegacyCounts(schema, collation);
       Flyway.configure()
           .configuration(flyway.getConfiguration())
           .schemas(schema)
@@ -98,8 +102,12 @@ class LibraryCountsMigrationIT extends AbstractIntegrationTest {
         assertThat(rows.getInt("item_count")).isOne();
         assertThat(rows.next()).isTrue();
         assertThat(rows.getInt("library_id")).isEqualTo(2);
+        assertThat(rows.getString("letter")).isEqualTo("I");
+        assertThat(rows.getInt("item_count")).isOne();
+        assertThat(rows.next()).isTrue();
+        assertThat(rows.getInt("library_id")).isEqualTo(2);
         assertThat(rows.getString("letter")).isEqualTo("HASH");
-        assertThat(rows.getInt("item_count")).isEqualTo(2);
+        assertThat(rows.getInt("item_count")).isEqualTo(3);
         assertThat(rows.next()).isFalse();
       }
     } finally {
@@ -107,13 +115,16 @@ class LibraryCountsMigrationIT extends AbstractIntegrationTest {
     }
   }
 
-  private void seedLegacyCounts(String schema) throws SQLException {
+  private void seedLegacyCounts(String schema, String collation) throws SQLException {
     try (var connection = dataSource.getConnection();
         var statement = connection.createStatement()) {
       statement.execute("SET search_path = " + schema + ", public");
       statement.execute(
+          "CREATE TABLE base_collectable (id INT PRIMARY KEY, library_id INT, title_sort TEXT COLLATE \""
+              + collation
+              + "\")");
+      statement.execute(
           """
-          CREATE TABLE base_collectable (id INT PRIMARY KEY, library_id INT, title_sort TEXT);
           CREATE INDEX idx_base_collectable_library_titlesort_ci_id
             ON base_collectable (library_id, LOWER(title_sort), id);
           CREATE TABLE movie (id INT PRIMARY KEY);
@@ -123,8 +134,9 @@ class LibraryCountsMigrationIT extends AbstractIntegrationTest {
             item_count INT, UNIQUE(library_id, letter));
           INSERT INTO base_collectable VALUES (1, 1, 'Alpha'), (2, 2, NULL), (3, 2, '123');
           INSERT INTO base_collectable SELECT n, 1, 'Season or Episode' FROM generate_series(4,25) n;
+          INSERT INTO base_collectable VALUES (26, 2, 'indigo'), (27, 2, 'Kelvin');
           INSERT INTO series VALUES (1);
-          INSERT INTO movie VALUES (2), (3);
+          INSERT INTO movie VALUES (2), (3), (26), (27);
           INSERT INTO library_metadata (library_id, letter, item_count)
             VALUES (1, 'A', 1), (1, 'S', 22), (2, 'HASH', 1), (3, 'B', 4);
           """);
