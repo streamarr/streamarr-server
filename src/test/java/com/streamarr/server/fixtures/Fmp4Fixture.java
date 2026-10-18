@@ -21,6 +21,24 @@ public final class Fmp4Fixture {
     return new String(media, 4, 4, StandardCharsets.US_ASCII);
   }
 
+  /** The AVC codec parameter carried by the video track's initialization sample entry. */
+  public static String avcCodecString(byte[] initialization) {
+    var track =
+        requiredBox(boxes(ByteBuffer.wrap(initialization)), "moov").children("trak").stream()
+            .filter(Fmp4Fixture::isVideo)
+            .findFirst()
+            .orElseThrow();
+    var descriptions = track.child("mdia").child("minf").child("stbl").child("stsd").payload();
+    // stsd has a full-box header and entry count; an AVC visual sample entry has 78 fixed bytes.
+    var sample =
+        requiredBox(boxes(descriptions.slice(8, descriptions.remaining() - 8)), "avc1").payload();
+    var configuration =
+        requiredBox(boxes(sample.slice(78, sample.remaining() - 78)), "avcC").payload();
+    assertThat(configuration.get(0)).isEqualTo((byte) 1);
+    return "avc1.%02X%02X%02X"
+        .formatted(configuration.get(1), configuration.get(2), configuration.get(3));
+  }
+
   /** The first video sample's composition time in seconds, without a demuxer's timestamp shift. */
   public static double firstVideoPresentationTime(byte[] media) {
     var topLevel = boxes(ByteBuffer.wrap(media));
