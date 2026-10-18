@@ -397,7 +397,7 @@ public class SeriesService {
             .toList();
 
     return paginationService.buildMediaPage(
-        pageItems, resolvedOptions.getPaginationOptions(), resolvedOptions.getCursorId());
+        pageItems, resolvedOptions, seriesRepository::seekWithFilter);
   }
 
   private Map<UUID, Instant> lastWatchedFor(MediaFilter filter, List<Series> seriesList) {
