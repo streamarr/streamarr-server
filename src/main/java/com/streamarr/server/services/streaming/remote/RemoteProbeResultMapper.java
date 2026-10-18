@@ -17,6 +17,7 @@ import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeChapter;
 import com.streamarr.transcode.v1.ProbeContainerInfo;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
+import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
 import java.time.Duration;
 import java.util.List;
@@ -94,7 +95,23 @@ final class RemoteProbeResultMapper {
         .streams(streams)
         .keyframes(keyframes)
         .chosenVideoStream(chosenVideoStream)
+        .streamTitlesOmitted(titleOmission(media, reportsPlaybackFacts))
         .build();
+  }
+
+  private static Optional<Boolean> titleOmission(
+      ProbeMediaInfo media, boolean reportsPlaybackFacts) {
+    if (!reportsPlaybackFacts) {
+      return Optional.empty();
+    }
+
+    if (media.getStreamTitlesOmitted()
+        && media.getStreamsList().stream()
+            .anyMatch(stream -> stream.hasTitle() || stream.hasHandlerName())) {
+      throw contractViolation("Worker probe omitted its stream names and still listed some");
+    }
+
+    return Optional.of(media.getStreamTitlesOmitted());
   }
 
   private static boolean reportsPlaybackFacts(int probeVersion) {

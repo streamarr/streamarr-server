@@ -4,14 +4,17 @@ import com.google.protobuf.DurationOrBuilder;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.streaming.ChosenVideoStream;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
+import com.streamarr.server.domain.streaming.ChromaticityCoordinates;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.ContainerCropping;
+import com.streamarr.server.domain.streaming.ContentLightLevel;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.FrameRatePacketScan;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
+import com.streamarr.server.domain.streaming.MasteringDisplayColorVolume;
 import com.streamarr.server.domain.streaming.MatroskaStatistics;
 import com.streamarr.server.domain.streaming.OutputFrameRateBasis;
 import com.streamarr.server.domain.streaming.Presence;
@@ -21,6 +24,7 @@ import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.transcode.v1.FrameRateRuleResult;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -33,7 +37,11 @@ import java.util.function.Function;
 // intentionally share simple names.
 final class RemotePlaybackFactsMapper {
 
+  private static final String WORKER_PROBE_PREFIX = "Worker probe ";
   private static final int MAXIMUM_ROTATION_DEGREES = 180;
+  private static final int MAXIMUM_CHROMATICITY_COORDINATE = 50000;
+  private static final int MAXIMUM_CONTENT_LIGHT_LEVEL = 65535;
+  private static final int MAXIMUM_STREAM_TEXT_BYTES = 512;
 
   private final Function<DurationOrBuilder, Duration> durations;
 
@@ -58,7 +66,87 @@ final class RemotePlaybackFactsMapper {
         .codecString(codecString(stream))
         .sampleRate(positive(stream.hasSampleRateHz(), stream.getSampleRateHz(), "sample rate"))
         .audioProfile(
-            stream.hasAudioProfile() ? Optional.of(stream.getAudioProfile()) : Optional.empty());
+            stream.hasAudioProfile() ? Optional.of(stream.getAudioProfile()) : Optional.empty())
+        .endTime(
+            stream.hasEndTime()
+                ? Optional.of(durations.apply(stream.getEndTime()))
+                : Optional.empty())
+        .masteringDisplay(
+            stream.hasMasteringDisplay()
+                ? Optional.of(masteringDisplay(stream.getMasteringDisplay()))
+                : Optional.empty())
+        .contentLightLevel(
+            stream.hasContentLightLevel()
+                ? Optional.of(contentLightLevel(stream.getContentLightLevel()))
+                : Optional.empty())
+        .title(streamText(stream.hasTitle(), stream.getTitle()))
+        .handlerName(streamText(stream.hasHandlerName(), stream.getHandlerName()))
+        .hearingImpaired(
+            stream.hasIsHearingImpaired()
+                ? Optional.of(stream.getIsHearingImpaired())
+                : Optional.empty());
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static MasteringDisplayColorVolume masteringDisplay(
+      com.streamarr.transcode.v1.MasteringDisplayColorVolume display) {
+    if (!display.hasRed()
+        || !display.hasGreen()
+        || !display.hasBlue()
+        || !display.hasWhitePoint()) {
+      throw contractViolation("Worker probe mastering display lacks chromaticity coordinates");
+    }
+
+    return MasteringDisplayColorVolume.builder()
+        .red(coordinates(display.getRed()))
+        .green(coordinates(display.getGreen()))
+        .blue(coordinates(display.getBlue()))
+        .whitePoint(coordinates(display.getWhitePoint()))
+        .maxLuminance(Integer.toUnsignedLong(display.getMaxLuminance()))
+        .minLuminance(Integer.toUnsignedLong(display.getMinLuminance()))
+        .build();
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static ChromaticityCoordinates coordinates(
+      com.streamarr.transcode.v1.ChromaticityCoordinates coordinates) {
+    return new ChromaticityCoordinates(
+        boundedUnsigned(
+            coordinates.getX(), MAXIMUM_CHROMATICITY_COORDINATE, "chromaticity coordinate"),
+        boundedUnsigned(
+            coordinates.getY(), MAXIMUM_CHROMATICITY_COORDINATE, "chromaticity coordinate"));
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static ContentLightLevel contentLightLevel(
+      com.streamarr.transcode.v1.ContentLightLevel level) {
+    return new ContentLightLevel(
+        boundedUnsigned(
+            level.getMaxContentLightLevel(), MAXIMUM_CONTENT_LIGHT_LEVEL, "content light level"),
+        boundedUnsigned(
+            level.getMaxFrameAverageLightLevel(),
+            MAXIMUM_CONTENT_LIGHT_LEVEL,
+            "content light level"));
+  }
+
+  private static int boundedUnsigned(int value, int maximum, String fact) {
+    if (Integer.compareUnsigned(value, maximum) > 0) {
+      throw contractViolation(WORKER_PROBE_PREFIX + fact + " exceeds its encoded range");
+    }
+
+    return value;
+  }
+
+  private static Optional<String> streamText(boolean present, String value) {
+    if (!present) {
+      return Optional.empty();
+    }
+
+    if (value.getBytes(StandardCharsets.UTF_8).length > MAXIMUM_STREAM_TEXT_BYTES) {
+      throw contractViolation("Worker probe stream text exceeds the UTF-8 byte limit");
+    }
+
+    return Optional.of(value);
   }
 
   ChosenVideoStream chosenVideoStream(ProbeMediaInfo media, List<StreamInfo> streams) {
@@ -319,7 +407,7 @@ final class RemotePlaybackFactsMapper {
     }
 
     if (value <= 0) {
-      throw contractViolation("Worker probe " + fact + " is not a positive integer");
+      throw contractViolation(WORKER_PROBE_PREFIX + fact + " is not a positive integer");
     }
 
     return OptionalInt.of(value);
@@ -332,7 +420,7 @@ final class RemotePlaybackFactsMapper {
   // A protobuf uint32 above Integer.MAX_VALUE arrives as a negative int.
   private static int unsignedInt(int value, String fact) {
     if (value < 0) {
-      throw contractViolation("Worker probe " + fact + " exceeds the supported integer range");
+      throw contractViolation(WORKER_PROBE_PREFIX + fact + " exceeds the supported integer range");
     }
 
     return value;

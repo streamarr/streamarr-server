@@ -504,8 +504,15 @@ public class MediaFileContainerInfoRepositoryCustomImpl
     row.setProbeVersion(publication.probeVersion());
     switch (publication.outcome()) {
       case ProbeOutcome.Failure(var error) -> row.setProbeError(error.name());
-      case ProbeOutcome.Success(var container, _, var keyframes, _) -> {
+      case ProbeOutcome.Success(
+              var container,
+              _,
+              var keyframes,
+              var chosenVideoStream,
+              var titlesOmitted) -> {
+        row.setStreamTitlesOmitted(titlesOmitted.orElse(null));
         setKeyframeStatus(row, keyframes);
+        chosenVideoStream.ifPresent(stream -> ChosenVideoStreamRow.set(row, stream));
         setChapterStatus(row, container.chapters());
         row.setFormat(container.format().orElse(null));
         row.setTotalBitrate(
@@ -517,7 +524,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
 
     dsl.executeInsert(row);
     if (!(publication.outcome()
-        instanceof ProbeOutcome.Success(var container, var streams, var keyframes, _))) {
+        instanceof ProbeOutcome.Success(var container, var streams, var keyframes, _, _))) {
       return;
     }
 
@@ -617,6 +624,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
     row.setLanguage(stream.language().orElse(null));
     row.setIsDefault(stream.isDefault());
     row.setIsForced(stream.isForced());
+    StreamPlaybackFactsRow.set(row, stream);
     return row;
   }
 }

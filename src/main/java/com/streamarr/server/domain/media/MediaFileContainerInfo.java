@@ -1,11 +1,13 @@
 package com.streamarr.server.domain.media;
 
 import com.streamarr.server.domain.streaming.ChapterKnowledge;
+import com.streamarr.server.domain.streaming.ChosenVideoStream;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import jakarta.persistence.Column;
+import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -51,6 +53,9 @@ public class MediaFileContainerInfo {
   private int probeVersion;
 
   @Getter(AccessLevel.NONE)
+  private Boolean streamTitlesOmitted;
+
+  @Getter(AccessLevel.NONE)
   private String format;
 
   @Getter(AccessLevel.NONE)
@@ -65,6 +70,10 @@ public class MediaFileContainerInfo {
   @Getter(AccessLevel.NONE)
   @Enumerated(EnumType.STRING)
   private ProbeError probeError;
+
+  @Getter(AccessLevel.NONE)
+  @Embedded
+  private ChosenVideoStreamColumns chosenVideoStream;
 
   @Getter(AccessLevel.NONE)
   @OneToMany
@@ -104,10 +113,15 @@ public class MediaFileContainerInfo {
       return new ProbeOutcome.Failure(probeError);
     }
 
-    return new ProbeOutcome.Success(
-        getContainer().toBuilder().chapters(chapters.get()).build(),
-        streams.stream().map(MediaFileStreamInfo::toStreamInfo).toList(),
-        keyframes.get());
+    return ProbeOutcome.Success.builder()
+        .container(getContainer().toBuilder().chapters(chapters.get()).build())
+        .streams(streams.stream().map(MediaFileStreamInfo::toStreamInfo).toList())
+        .keyframes(keyframes.get())
+        .streamTitlesOmitted(Optional.ofNullable(streamTitlesOmitted))
+        .chosenVideoStream(
+            Optional.ofNullable(chosenVideoStream)
+                .map(ChosenVideoStreamColumns::toChosenVideoStream))
+        .build();
   }
 
   public Optional<ProbeError> getProbeError() {
@@ -137,6 +151,17 @@ public class MediaFileContainerInfo {
       durationSeconds = container.duration().map(Duration::getSeconds).orElse(null);
       durationNanos = container.duration().map(Duration::getNano).orElse(null);
       totalBitrate = container.bitrate().isPresent() ? container.bitrate().getAsLong() : null;
+      return this;
+    }
+
+    public MediaFileContainerInfoBuilder chosenVideoStream(
+        @NonNull Optional<ChosenVideoStream> stream) {
+      chosenVideoStream = stream.map(ChosenVideoStreamColumns::of).orElse(null);
+      return this;
+    }
+
+    public MediaFileContainerInfoBuilder streamTitlesOmitted(@NonNull Optional<Boolean> omitted) {
+      streamTitlesOmitted = omitted.orElse(null);
       return this;
     }
 

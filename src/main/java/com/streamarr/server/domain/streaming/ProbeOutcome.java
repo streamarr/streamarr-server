@@ -27,7 +27,8 @@ public sealed interface ProbeOutcome {
       @NonNull ProbeContainer container,
       @NonNull List<StreamInfo> streams,
       @NonNull KeyframeKnowledge keyframes,
-      @NonNull Optional<ChosenVideoStream> chosenVideoStream)
+      @NonNull Optional<ChosenVideoStream> chosenVideoStream,
+      @NonNull Optional<Boolean> streamTitlesOmitted)
       implements ProbeOutcome {
 
     public Success {
@@ -39,7 +40,7 @@ public sealed interface ProbeOutcome {
         @NonNull ProbeContainer container,
         @NonNull List<StreamInfo> streams,
         @NonNull KeyframeKnowledge keyframes) {
-      this(container, streams, keyframes, Optional.empty());
+      this(container, streams, keyframes, Optional.empty(), Optional.empty());
     }
 
     public MediaProbe mediaProbe() {
@@ -78,6 +79,7 @@ public sealed interface ProbeOutcome {
     @SuppressWarnings("java:S1068") // Lombok builder defaults — fields are used by generated code
     public static class SuccessBuilder {
       private Optional<ChosenVideoStream> chosenVideoStream = Optional.empty();
+      private Optional<Boolean> streamTitlesOmitted = Optional.empty();
     }
   }
 }

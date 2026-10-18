@@ -1,5 +1,6 @@
 package com.streamarr.server.domain.streaming;
 
+import java.time.Duration;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
@@ -8,8 +9,8 @@ import lombok.Builder;
 import lombok.NonNull;
 
 /**
- * One stream of a probed source. The facts from {@code dynamicRange} to {@code audioProfile} come
- * from probe version 4 and later. An earlier probe version leaves them empty.
+ * One stream of a probed source. The facts from {@code dynamicRange} to {@code hearingImpaired}
+ * come from probe version 4 and later. An earlier probe version leaves them empty.
  */
 @Builder
 public record StreamInfo(
@@ -31,7 +32,13 @@ public record StreamInfo(
     @NonNull Optional<ContainerCropping> containerCropping,
     @NonNull Optional<String> codecString,
     @NonNull OptionalInt sampleRate,
-    @NonNull Optional<String> audioProfile) {
+    @NonNull Optional<String> audioProfile,
+    @NonNull Optional<Duration> endTime,
+    @NonNull Optional<MasteringDisplayColorVolume> masteringDisplay,
+    @NonNull Optional<ContentLightLevel> contentLightLevel,
+    @NonNull Optional<String> title,
+    @NonNull Optional<String> handlerName,
+    @NonNull Optional<Boolean> hearingImpaired) {
 
   @SuppressWarnings("java:S1068") // Lombok builder defaults — fields are used by generated code
   public static class StreamInfoBuilder {
@@ -50,5 +57,11 @@ public record StreamInfo(
     private Optional<String> codecString = Optional.empty();
     private OptionalInt sampleRate = OptionalInt.empty();
     private Optional<String> audioProfile = Optional.empty();
+    private Optional<Duration> endTime = Optional.empty();
+    private Optional<MasteringDisplayColorVolume> masteringDisplay = Optional.empty();
+    private Optional<ContentLightLevel> contentLightLevel = Optional.empty();
+    private Optional<String> title = Optional.empty();
+    private Optional<String> handlerName = Optional.empty();
+    private Optional<Boolean> hearingImpaired = Optional.empty();
   }
 }
