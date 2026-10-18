@@ -12,7 +12,9 @@ import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.not;
 import static org.jooq.impl.DSL.row;
 import static org.jooq.impl.DSL.select;
+import static org.jooq.impl.DSL.upper;
 import static org.jooq.impl.DSL.val;
+import static org.jooq.impl.DSL.when;
 
 import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.services.pagination.MediaFilter;
@@ -122,20 +124,7 @@ public class JooqQueryHelper {
   }
 
   private Condition equalityLetterCondition(AlphabetLetter startLetter) {
-    if (startLetter == AlphabetLetter.HASH) {
-      return hashLetterCondition();
-    }
-
-    var titleSort = titleSortField();
-    if (startLetter == AlphabetLetter.Z) {
-      return titleSort
-          .greaterOrEqual(letterValue(startLetter))
-          .and(lower(left(BASE_COLLECTABLE.TITLE_SORT, 1)).eq(letterValue(startLetter)));
-    }
-
-    return titleSort
-        .greaterOrEqual(letterValue(startLetter))
-        .and(titleSort.lessThan(nextLetterValue(startLetter)));
+    return alphabetLetterField().eq(inline(startLetter.name()));
   }
 
   private Condition ascLetterCondition(AlphabetLetter startLetter) {
@@ -159,11 +148,13 @@ public class JooqQueryHelper {
   }
 
   private Condition hashLetterCondition() {
-    var firstCharLower = lower(left(BASE_COLLECTABLE.TITLE_SORT, 1)).collate("C");
-    return firstCharLower
-        .isNull()
-        .or(firstCharLower.lessThan(inline("a")))
-        .or(firstCharLower.greaterThan(inline("z")));
+    return equalityLetterCondition(AlphabetLetter.HASH);
+  }
+
+  public Field<String> alphabetLetterField() {
+    var firstChar = left(BASE_COLLECTABLE.TITLE_SORT, inline(1)).collate("C");
+    return when(firstChar.likeRegex(inline("[a-zA-Z]")), upper(firstChar))
+        .otherwise(inline("HASH"));
   }
 
   private Field<String> letterValue(AlphabetLetter letter) {
