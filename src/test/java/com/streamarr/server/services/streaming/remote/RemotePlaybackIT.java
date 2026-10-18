@@ -11,6 +11,7 @@ import com.streamarr.server.controllers.StreamController;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
@@ -755,7 +756,14 @@ class RemotePlaybackIT {
     return List.of(
         decisionBuilder()
             .transcodeMode(TranscodeMode.REMUX)
-            .audioDecision(AudioDecision.copy("aac", 2, 128_000))
+            .audioDecision(
+                AudioDecision.builder()
+                    .mode(AudioMode.COPY)
+                    .codec("aac")
+                    .channels(2)
+                    .bitrate(128_000)
+                    .sourceCodecString(Optional.of("mp4a.40.2"))
+                    .build())
             .build(),
         decisionBuilder()
             .transcodeMode(TranscodeMode.AUDIO_TRANSCODE)
@@ -767,7 +775,14 @@ class RemotePlaybackIT {
             .build(),
         decisionBuilder()
             .transcodeMode(TranscodeMode.FULL_TRANSCODE)
-            .audioDecision(AudioDecision.copy("aac", 2, 128_000))
+            .audioDecision(
+                AudioDecision.builder()
+                    .mode(AudioMode.COPY)
+                    .codec("aac")
+                    .channels(2)
+                    .bitrate(128_000)
+                    .sourceCodecString(Optional.of("mp4a.40.2"))
+                    .build())
             .build(),
         decisionBuilder()
             .transcodeMode(TranscodeMode.FULL_TRANSCODE)

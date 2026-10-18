@@ -3,6 +3,7 @@ package com.streamarr.server.domain.streaming;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -41,7 +42,16 @@ class AudioDecisionTest {
   @Test
   @DisplayName("Should return the codec's HLS codec string when HLS delivery carries the codec")
   void shouldReturnCodecsHlsCodecStringWhenHlsDeliveryCarriesTheCodec() {
-    assertThat(AudioDecision.copy("eac3", 6, 640_000L).hlsCodecString()).isEqualTo("ec-3");
+    assertThat(
+            AudioDecision.builder()
+                .mode(AudioMode.COPY)
+                .codec("eac3")
+                .channels(6)
+                .bitrate(640_000L)
+                .sourceCodecString(Optional.of("ec-3"))
+                .build()
+                .hlsCodecString())
+        .isEqualTo("ec-3");
   }
 
   @Test
@@ -51,9 +61,27 @@ class AudioDecisionTest {
   }
 
   @Test
+  @DisplayName("Should refuse an audio copy when the source codec string is absent")
+  void shouldRefuseAnAudioCopyWhenTheSourceCodecStringIsAbsent() {
+    var decision =
+        AudioDecision.builder().mode(AudioMode.COPY).codec("aac").channels(2).bitrate(128_000L);
+
+    assertThatThrownBy(decision::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("codec string");
+  }
+
+  @Test
   @DisplayName("Should preserve source values when copy decision created")
   void shouldPreserveSourceValuesWhenCopyDecisionCreated() {
-    var decision = AudioDecision.copy("ac3", 6, 384_000L);
+    var decision =
+        AudioDecision.builder()
+            .mode(AudioMode.COPY)
+            .codec("ac3")
+            .channels(6)
+            .bitrate(384_000L)
+            .sourceCodecString(Optional.of("ac-3"))
+            .build();
 
     assertThat(decision.mode()).isEqualTo(AudioMode.COPY);
     assertThat(decision.codec()).isEqualTo("ac3");
@@ -64,7 +92,13 @@ class AudioDecisionTest {
   @Test
   @DisplayName("Should refuse an HLS codec string when HLS delivery cannot carry the codec")
   void shouldRefuseHlsCodecStringWhenHlsDeliveryCannotCarryTheCodec() {
-    var decision = new AudioDecision(AudioMode.COPY, "dts", 6, 768_000L);
+    var decision =
+        AudioDecision.builder()
+            .mode(AudioMode.TRANSCODE)
+            .codec("dts")
+            .channels(6)
+            .bitrate(768_000L)
+            .build();
 
     assertThatThrownBy(decision::hlsCodecString)
         .isInstanceOf(IllegalStateException.class)

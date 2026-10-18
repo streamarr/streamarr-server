@@ -320,6 +320,7 @@ class TranscodeDecisionCopyRuleTest {
           .height(1080)
           .videoCodec(sampleEntry.codec)
           .audioCodec("aac")
+          .streams(List.of(ProbeFixture.audioStreamBuilder("aac").index(2).build()))
           .bitrate(5_000_000)
           .keyframes(ProbeFixture.keyframesEvery(Duration.ofSeconds(2), Duration.ofMinutes(10)))
           .videoPlaybackFacts(

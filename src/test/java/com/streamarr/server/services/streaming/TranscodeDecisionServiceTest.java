@@ -310,6 +310,10 @@ class TranscodeDecisionServiceTest {
         .height(1080)
         .videoCodec(videoCodec)
         .audioCodec(audioCodec)
+        .streams(
+            audioCodec == null
+                ? List.of()
+                : List.of(ProbeFixture.audioStreamBuilder(audioCodec).index(1).build()))
         .bitrate(5_000_000L)
         .audioChannels(OptionalInt.of(2))
         .audioBitrate(OptionalLong.of(128_000L))

@@ -10,6 +10,7 @@ import static org.awaitility.Awaitility.await;
 import com.google.common.primitives.Bytes;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
@@ -421,7 +422,14 @@ class RemoteRecoveryIT {
     return TranscodeDecision.builder()
         .transcodeMode(mode)
         .videoCodecFamily("h264")
-        .audioDecision(AudioDecision.copy("aac", 2, 128_000))
+        .audioDecision(
+            AudioDecision.builder()
+                .mode(AudioMode.COPY)
+                .codec("aac")
+                .channels(2)
+                .bitrate(128_000)
+                .sourceCodecString(Optional.of("mp4a.40.2"))
+                .build())
         .subtitleDecision(SubtitleDecision.exclude())
         .videoSource(
             Optional.of(

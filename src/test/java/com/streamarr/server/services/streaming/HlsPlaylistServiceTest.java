@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.within;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
@@ -683,7 +684,14 @@ class HlsPlaylistServiceTest {
               TranscodeDecision.builder()
                   .transcodeMode(TranscodeMode.REMUX)
                   .videoCodecFamily("hevc")
-                  .audioDecision(AudioDecision.copy("aac", 2, 128_000L))
+                  .audioDecision(
+                      AudioDecision.builder()
+                          .mode(AudioMode.COPY)
+                          .codec("aac")
+                          .channels(2)
+                          .bitrate(128_000L)
+                          .sourceCodecString(Optional.of("mp4a.40.2"))
+                          .build())
                   .subtitleDecision(SubtitleDecision.exclude())
                   .videoSource(Optional.of(source.build()))
                   .build())
@@ -829,11 +837,23 @@ class HlsPlaylistServiceTest {
       return Stream.of(
           Arguments.of(
               "AC-3 codec string",
-              AudioDecision.copy("ac3", 6, 384_000L),
+              AudioDecision.builder()
+                  .mode(AudioMode.COPY)
+                  .codec("ac3")
+                  .channels(6)
+                  .bitrate(384_000L)
+                  .sourceCodecString(Optional.of("ac-3"))
+                  .build(),
               "CODECS=\"avc1.640028,ac-3\""),
           Arguments.of(
               "E-AC-3 codec string",
-              AudioDecision.copy("eac3", 6, 640_000L),
+              AudioDecision.builder()
+                  .mode(AudioMode.COPY)
+                  .codec("eac3")
+                  .channels(6)
+                  .bitrate(640_000L)
+                  .sourceCodecString(Optional.of("ec-3"))
+                  .build(),
               "CODECS=\"avc1.640028,ec-3\""));
     }
 
@@ -880,7 +900,14 @@ class HlsPlaylistServiceTest {
     @Test
     @DisplayName("Should use audio decision bitrate for bandwidth when audio is copied")
     void shouldUseAudioDecisionBitrateForBandwidthWhenAudioIsCopied() {
-      var audio = AudioDecision.copy("ac3", 6, 384_000L);
+      var audio =
+          AudioDecision.builder()
+              .mode(AudioMode.COPY)
+              .codec("ac3")
+              .channels(6)
+              .bitrate(384_000L)
+              .sourceCodecString(Optional.of("ac-3"))
+              .build();
       var variant =
           QualityVariant.builder()
               .width(1920)
@@ -947,7 +974,16 @@ class HlsPlaylistServiceTest {
     @Test
     @DisplayName("Should include EXT-X-MEDIA with CHANNELS when audio is surround")
     void shouldIncludeExtXMediaWithChannelsWhenAudioIsSurround() {
-      var session = createSessionWithAudio(AudioDecision.copy("ac3", 6, 384_000L), "h264");
+      var session =
+          createSessionWithAudio(
+              AudioDecision.builder()
+                  .mode(AudioMode.COPY)
+                  .codec("ac3")
+                  .channels(6)
+                  .bitrate(384_000L)
+                  .sourceCodecString(Optional.of("ac-3"))
+                  .build(),
+              "h264");
 
       var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
@@ -1011,7 +1047,16 @@ class HlsPlaylistServiceTest {
     @Test
     @DisplayName("Should not include CHANNELS on STREAM-INF when audio is surround")
     void shouldNotIncludeChannelsOnStreamInfWhenAudioIsSurround() {
-      var session = createSessionWithAudio(AudioDecision.copy("ac3", 6, 384_000L), "h264");
+      var session =
+          createSessionWithAudio(
+              AudioDecision.builder()
+                  .mode(AudioMode.COPY)
+                  .codec("ac3")
+                  .channels(6)
+                  .bitrate(384_000L)
+                  .sourceCodecString(Optional.of("ac-3"))
+                  .build(),
+              "h264");
 
       var playlist = service.generateMultivariantPlaylist(session, "test-token");
 

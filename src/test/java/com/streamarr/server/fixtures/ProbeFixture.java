@@ -19,6 +19,7 @@ import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
@@ -29,6 +30,22 @@ import lombok.experimental.UtilityClass;
 
 @UtilityClass
 public class ProbeFixture {
+
+  private static final Map<String, String> AUDIO_CODEC_STRINGS =
+      Map.of(
+          "aac", "mp4a.40.2",
+          "ac3", "ac-3",
+          "eac3", "ec-3",
+          "flac", "fLaC",
+          "opus", "Opus",
+          "alac", "alac");
+
+  public static StreamInfo.StreamInfoBuilder audioStreamBuilder(String codec) {
+    return StreamInfo.builder()
+        .codecType("audio")
+        .codec(Optional.ofNullable(codec))
+        .codecString(Optional.ofNullable(AUDIO_CODEC_STRINGS.get(codec)));
+  }
 
   /**
    * A probe outcome whose {@link ProbeOutcome.Success#mediaProbe()} reads back the given probe. A
@@ -139,10 +156,8 @@ public class ProbeFixture {
     }
 
     streams.add(
-        StreamInfo.builder()
+        audioStreamBuilder(probe.audioCodec())
             .index(videoIndex + 1)
-            .codecType("audio")
-            .codec(Optional.of(probe.audioCodec()))
             .channels(probe.audioChannels())
             .bitrate(probe.audioBitrate())
             .build());

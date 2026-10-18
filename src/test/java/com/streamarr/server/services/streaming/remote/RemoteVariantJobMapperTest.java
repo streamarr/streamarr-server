@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.Fraction;
@@ -481,7 +482,14 @@ class RemoteVariantJobMapperTest {
     return TranscodeDecision.builder()
         .transcodeMode(TranscodeMode.REMUX)
         .videoCodecFamily("h264")
-        .audioDecision(AudioDecision.copy("aac", 2, 0))
+        .audioDecision(
+            AudioDecision.builder()
+                .mode(AudioMode.COPY)
+                .codec("aac")
+                .channels(2)
+                .bitrate(0)
+                .sourceCodecString(Optional.of("mp4a.40.2"))
+                .build())
         .subtitleDecision(SubtitleDecision.exclude())
         .videoSource(Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()));
   }

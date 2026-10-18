@@ -8,6 +8,7 @@ import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.StreamCopySegments;
+import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.SubtitleMode;
@@ -29,6 +30,9 @@ import org.springframework.stereotype.Service;
 public class TranscodeDecisionService {
 
   private static final List<String> CODEC_PREFERENCE = List.of("av1", "h264");
+  // The plain aac declaration covers LC, HE-AAC and HE-AAC v2.
+  private static final Set<String> COPYABLE_AAC_CODEC_STRINGS =
+      Set.of("mp4a.40.2", "mp4a.40.5", "mp4a.40.29");
   private static final String STREAM_COPY_REFUSALS_METRIC =
       "streamarr.streaming.stream_copy_refusals";
 
@@ -181,14 +185,29 @@ public class TranscodeDecisionService {
     int normalizedChannels = AudioDecision.normalizeChannels(source.audioChannels().orElse(2));
     int effectiveChannels = Math.min(normalizedChannels, maxChannels);
 
-    if (candidates.contains(source.audioCodec()) && normalizedChannels <= maxChannels) {
-      return AudioDecision.copy(
-          source.audioCodec(),
-          normalizedChannels,
-          source.audioBitrate().orElse(AudioDecision.bitrateForChannels(normalizedChannels)));
+    var sourceCodecString =
+        source.audioStreams().stream()
+            .findFirst()
+            .flatMap(StreamInfo::codecString)
+            .filter(codecString -> isCopyableAudioCodecString(source.audioCodec(), codecString));
+    if (candidates.contains(source.audioCodec())
+        && normalizedChannels <= maxChannels
+        && sourceCodecString.isPresent()) {
+      return AudioDecision.builder()
+          .mode(AudioMode.COPY)
+          .codec(source.audioCodec())
+          .channels(normalizedChannels)
+          .bitrate(
+              source.audioBitrate().orElse(AudioDecision.bitrateForChannels(normalizedChannels)))
+          .sourceCodecString(sourceCodecString)
+          .build();
     }
 
     return selectTranscodeAudio(candidates, effectiveChannels);
+  }
+
+  private static boolean isCopyableAudioCodecString(String codec, String codecString) {
+    return !"aac".equals(codec) || COPYABLE_AAC_CODEC_STRINGS.contains(codecString);
   }
 
   private AudioDecision selectTranscodeAudio(Set<String> candidates, int effectiveChannels) {
@@ -213,8 +232,12 @@ public class TranscodeDecisionService {
   }
 
   private AudioDecision transcode(String codec, int channels) {
-    return new AudioDecision(
-        AudioMode.TRANSCODE, codec, channels, AudioDecision.bitrateForChannels(channels));
+    return AudioDecision.builder()
+        .mode(AudioMode.TRANSCODE)
+        .codec(codec)
+        .channels(channels)
+        .bitrate(AudioDecision.bitrateForChannels(channels))
+        .build();
   }
 
   private String selectPreferredCodec(
