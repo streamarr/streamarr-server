@@ -114,6 +114,9 @@ public class StreamingResolver {
       case CreateStreamSessionRejection.InvalidPictureSize() ->
           new CreateStreamSessionError.InvalidMediaFileError(
               "This file's video has no usable picture size.");
+      case CreateStreamSessionRejection.NoEligibleVideoFormat() ->
+          new CreateStreamSessionError.NoEligibleVideoFormatError(
+              "No supported video format is available for this playback request.");
       case CreateStreamSessionRejection.NoMediaSegments() ->
           new CreateStreamSessionError.InvalidMediaFileError("This file has no playable duration.");
     };

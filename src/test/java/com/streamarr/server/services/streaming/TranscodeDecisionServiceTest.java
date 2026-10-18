@@ -12,12 +12,14 @@ import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -31,6 +33,8 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
@@ -55,6 +59,105 @@ class TranscodeDecisionServiceTest {
           StreamingProperties.builder().targetSegmentDuration(Duration.ofSeconds(6)).build(),
           meterRegistry);
 
+  @Test
+  @DisplayName("Should encode a copyable video when the format attempt requires encoding")
+  void shouldEncodeACopyableVideoWhenTheFormatAttemptRequiresEncoding() {
+    var source = probe("h264", "aac");
+    var clientCodecs = new ArrayList<>(List.of("h264"));
+    var clientOptions = options(clientCodecs);
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(Set.of("h264"))
+                    .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+    assertThat(decision.videoSource()).isEqualTo(source.videoPlaybackFacts());
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
+    assertThat(clientOptions.supportedCodecs()).containsExactly("h264");
+    assertThat(clientCodecs).containsExactly("h264");
+  }
+
+  @Test
+  @DisplayName(
+      "Should return no decision when copy-only video has no usable copy segment boundaries")
+  void shouldReturnNoDecisionWhenCopyOnlyVideoHasNoUsableCopySegmentBoundaries() {
+    var source = h264Probe(KEYFRAMES_LEAVING_AN_INTERVAL_EMPTY, "aac");
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .clientOptions(options(List.of("h264")))
+                .encodableVideoCodecFamilies(Set.of("h264"))
+                .videoFormatConstraint(VideoFormatConstraint.COPY_ONLY)
+                .build());
+
+    assertThat(decision).isEmpty();
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = VideoFormatConstraint.class,
+      names = {"COPY_OR_ENCODE", "COPY_ONLY"})
+  @DisplayName("Should copy video and negotiate audio when no video encoder is available")
+  void shouldCopyVideoAndNegotiateAudioWhenNoVideoEncoderIsAvailable(
+      VideoFormatConstraint constraint) {
+    var source = probe("h264", "flac");
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(options(List.of("h264")))
+                    .encodableVideoCodecFamilies(Set.of())
+                    .excludedEncodeCodecFamilies(Set.of("h264"))
+                    .videoFormatConstraint(constraint)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
+    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+    assertThat(decision.videoSource()).isEqualTo(source.videoPlaybackFacts());
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
+    assertThat(decision.audioDecision().codec()).isEqualTo("aac");
+  }
+
+  @ParameterizedTest
+  @CsvSource({"false,h264", "true,"})
+  @DisplayName("Should choose only untried encodes when previous codec families are excluded")
+  void shouldChooseOnlyUntriedEncodesWhenPreviousCodecFamiliesAreExcluded(
+      boolean excludeH264, String expectedFamily) {
+    var excludedFamilies = new HashSet<>(Set.of("av1"));
+    if (excludeH264) {
+      excludedFamilies.add("h264");
+    }
+
+    var request =
+        TranscodeDecisionRequest.builder()
+            .source(probe("hevc", "aac"))
+            .clientOptions(options(List.of("av1", "h264")))
+            .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+            .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+            .excludedEncodeCodecFamilies(excludedFamilies)
+            .build();
+    excludedFamilies.clear();
+
+    var decision = service.decide(request);
+
+    assertThat(decision.map(TranscodeDecision::videoCodecFamily))
+        .isEqualTo(Optional.ofNullable(expectedFamily));
+    assertThat(request.clientOptions().supportedCodecs()).containsExactly("av1", "h264");
+  }
+
   @ParameterizedTest(name = "{1}")
   @MethodSource("keyframesThatRuleOutAStreamCopy")
   @DisplayName("Should count a refused stream copy by why the keyframes rule it out")
@@ -63,7 +166,14 @@ class TranscodeDecisionServiceTest {
     var source =
         probeBuilder("h264", "aac").duration(Duration.ofSeconds(20)).keyframes(keyframes).build();
 
-    service.decide(source, options(List.of("h264")), EVERY_VIDEO_CODEC_FAMILY);
+    service
+        .decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .clientOptions(options(List.of("h264")))
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .build())
+        .orElseThrow();
 
     assertThat(meterRegistry.get(STREAM_COPY_REFUSALS).counters())
         .singleElement()
@@ -119,7 +229,15 @@ class TranscodeDecisionServiceTest {
             .keyframes(millisecondKeyframes(0, 6_000, 12_000, 18_000))
             .build();
 
-    var decision = service.decide(source, options(List.of("h264")), EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(options(List.of("h264")))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(meterRegistry.find(STREAM_COPY_REFUSALS).counters()).isEmpty();
@@ -130,7 +248,15 @@ class TranscodeDecisionServiceTest {
   void shouldCountNoRefusalWhenTheClientCannotPlayTheSourcesVideoCodec() {
     var source = h264Probe(new KeyframeKnowledge.NotReported(), "aac");
 
-    var decision = service.decide(source, options(List.of("av1")), EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(options(List.of("av1")))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
     assertThat(meterRegistry.find(STREAM_COPY_REFUSALS).counters()).isEmpty();
@@ -141,7 +267,15 @@ class TranscodeDecisionServiceTest {
   void shouldEncodeTheVideoWhenASegmentIntervalOfTheSourceHoldsNoKeyframe() {
     var source = h264Probe(KEYFRAMES_LEAVING_AN_INTERVAL_EMPTY, "aac");
 
-    var decision = service.decide(source, options(List.of("h264")), EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(options(List.of("h264")))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
     assertThat(decision.videoCodecFamily()).isEqualTo("h264");
@@ -154,7 +288,15 @@ class TranscodeDecisionServiceTest {
   void shouldEncodeBothStreamsWhenTheAudioNeedsEncodingAndAnIntervalHoldsNoKeyframe() {
     var source = h264Probe(KEYFRAMES_LEAVING_AN_INTERVAL_EMPTY, "flac");
 
-    var decision = service.decide(source, options(List.of("h264")), EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(options(List.of("h264")))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.FULL_TRANSCODE);
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
@@ -167,7 +309,14 @@ class TranscodeDecisionServiceTest {
     var source = h264Probe(KEYFRAMES_LEAVING_AN_INTERVAL_EMPTY, "aac");
 
     var decision =
-        service.decide(source, options(List.of("av1", "h264")), EVERY_VIDEO_CODEC_FAMILY);
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(options(List.of("av1", "h264")))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
     assertThat(decision.videoCodecFamily()).isEqualTo("av1");
@@ -184,7 +333,15 @@ class TranscodeDecisionServiceTest {
             .keyframes(ProbeFixture.keyframesEvery(Duration.ofSeconds(6), Duration.ofSeconds(12)))
             .build();
 
-    var decision = service.decide(source, options(List.of("h264")), EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(options(List.of("h264")))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(meterRegistry.find(STREAM_COPY_REFUSALS).counters()).isEmpty();
@@ -201,7 +358,15 @@ class TranscodeDecisionServiceTest {
             .keyframes(millisecondKeyframes(0, 6_000))
             .build();
 
-    var decision = service.decide(source, options(List.of("h264")), EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(options(List.of("h264")))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
   }
@@ -215,7 +380,15 @@ class TranscodeDecisionServiceTest {
             .keyframes(millisecondKeyframes(500))
             .build();
 
-    var decision = service.decide(source, options(List.of("h264")), EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(options(List.of("h264")))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
     assertThat(
@@ -236,7 +409,15 @@ class TranscodeDecisionServiceTest {
             .keyframes(ProbeFixture.keyframesEvery(Duration.ofSeconds(6), Duration.ofSeconds(18)))
             .build();
 
-    var decision = service.decide(source, options(List.of("h264")), EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(options(List.of("h264")))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
   }
@@ -247,7 +428,15 @@ class TranscodeDecisionServiceTest {
   void shouldEncodeTheVideoWhenTheSourcesKeyframePositionsAreNotKnown(KeyframeKnowledge keyframes) {
     var source = h264Probe(keyframes, "aac");
 
-    var decision = service.decide(source, options(List.of("h264")), EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(options(List.of("h264")))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
   }
@@ -263,7 +452,15 @@ class TranscodeDecisionServiceTest {
         h264Probe(
             ProbeFixture.keyframesEvery(Duration.ofMillis(5_005), Duration.ofMinutes(120)), "aac");
 
-    var decision = service.decide(source, options(List.of("h264")), EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(options(List.of("h264")))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
   }
@@ -354,7 +551,15 @@ class TranscodeDecisionServiceTest {
     var source = probe("h264", "aac");
     var clientOptions = options(List.of("h264"));
 
-    var decision = service.decide(source, clientOptions, EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(decision.videoCodecFamily()).isEqualTo("h264");
@@ -367,7 +572,15 @@ class TranscodeDecisionServiceTest {
     var source = probe("h264", "flac", 2, 0);
     var clientOptions = options(List.of("h264"));
 
-    var decision = service.decide(source, clientOptions, EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
     assertThat(decision.videoCodecFamily()).isEqualTo("h264");
@@ -380,7 +593,15 @@ class TranscodeDecisionServiceTest {
     var source = probe("hevc", "aac");
     var clientOptions = options(List.of("h264"));
 
-    var decision = service.decide(source, clientOptions, EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
     assertThat(decision.videoCodecFamily()).isEqualTo("h264");
@@ -394,7 +615,15 @@ class TranscodeDecisionServiceTest {
     var source = probe("hevc", "aac");
     var clientOptions = options(List.of("av1", "h264"));
 
-    var decision = service.decide(source, clientOptions, EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
     assertThat(decision.videoCodecFamily()).isEqualTo("av1");
@@ -407,7 +636,15 @@ class TranscodeDecisionServiceTest {
     var source = probe("hevc", "aac");
     var clientOptions = options(List.of("av1", "h264"));
 
-    var decision = service.decide(source, clientOptions, Set.of("h264", "hevc"));
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(Set.of("h264", "hevc"))
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
     assertThat(decision.videoCodecFamily()).isEqualTo("h264");
@@ -415,15 +652,20 @@ class TranscodeDecisionServiceTest {
 
   @Test
   @DisplayName(
-      "Should encode H.264 when the client declares only AV1 and no worker-verified encoder encodes any codec")
-  void shouldEncodeH264WhenClientDeclaresOnlyAv1AndNoWorkerVerifiedEncoderEncodesAnyCodec() {
+      "Should return no decision when no worker-verified encoder supports the client codecs")
+  void shouldReturnNoDecisionWhenNoWorkerVerifiedEncoderSupportsTheClientCodecs() {
     var source = probe("hevc", "aac");
     var clientOptions = options(List.of("av1"));
 
-    var decision = service.decide(source, clientOptions, Set.of());
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .clientOptions(clientOptions)
+                .encodableVideoCodecFamilies(Set.of())
+                .build());
 
-    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
-    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+    assertThat(decision).isEmpty();
   }
 
   @Test
@@ -433,7 +675,15 @@ class TranscodeDecisionServiceTest {
     var source = probe("av1", "aac");
     var clientOptions = options(List.of("av1", "h264"));
 
-    var decision = service.decide(source, clientOptions, Set.of("h264"));
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(Set.of("h264"))
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(decision.videoCodecFamily()).isEqualTo("av1");
@@ -445,7 +695,15 @@ class TranscodeDecisionServiceTest {
     var source = probe("av1", "aac");
     var clientOptions = options(List.of("av1", "h264"));
 
-    var decision = service.decide(source, clientOptions, EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(decision.videoCodecFamily()).isEqualTo("av1");
@@ -457,7 +715,15 @@ class TranscodeDecisionServiceTest {
     var source = probe("av1", "dts", 6, 1_500_000L);
     var clientOptions = options(List.of("av1"));
 
-    var decision = service.decide(source, clientOptions, EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
     assertThat(decision.videoCodecFamily()).isEqualTo("av1");
@@ -465,15 +731,20 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("Should fallback to default codec when client supports neither preference")
-  void shouldFallbackToDefaultCodecWhenClientSupportsNeitherPreference() {
+  @DisplayName("Should return no decision when the client supports no eligible encoding codec")
+  void shouldReturnNoDecisionWhenTheClientSupportsNoEligibleEncodingCodec() {
     var source = probe("hevc", "aac");
     var clientOptions = options(List.of("vp9"));
 
-    var decision = service.decide(source, clientOptions, EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .clientOptions(clientOptions)
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .build());
 
-    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
-    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(decision).isEmpty();
   }
 
   // --- Video-only (no audio stream) ---
@@ -488,7 +759,15 @@ class TranscodeDecisionServiceTest {
             .build();
     var clientOptions = options(List.of("h264"));
 
-    var decision = service.decide(source, clientOptions, EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.NONE);
@@ -504,7 +783,15 @@ class TranscodeDecisionServiceTest {
     var source = probe("h264", "ac3", 6, 384_000L);
     var clientOptions = options(List.of("h264"), List.of("aac", "ac3"), 6);
 
-    var decision = service.decide(source, clientOptions, EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
@@ -518,7 +805,15 @@ class TranscodeDecisionServiceTest {
     var source = probe("h264", "eac3", 6, 640_000L);
     var clientOptions = options(List.of("h264"), List.of("aac", "eac3"), 8);
 
-    var decision = service.decide(source, clientOptions, EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
@@ -533,7 +828,15 @@ class TranscodeDecisionServiceTest {
     var source = probe("h264", "flac", 2, 0);
     var clientOptions = options(List.of("h264"));
 
-    var decision = service.decide(source, clientOptions, EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
     assertThat(decision.audioDecision().codec()).isEqualTo("aac");
@@ -546,7 +849,15 @@ class TranscodeDecisionServiceTest {
     var source = probe("h264", "ac3", 8, 640_000L);
     var clientOptions = options(List.of("h264"), List.of("ac3"), 6);
 
-    var decision = service.decide(source, clientOptions, EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
     assertThat(decision.audioDecision().codec()).isEqualTo("ac3");
@@ -559,7 +870,15 @@ class TranscodeDecisionServiceTest {
     var source = probe("h264", "flac", 6, 0);
     var clientOptions = options(List.of("h264"), List.of("aac", "flac"), 6);
 
-    var decision = service.decide(source, clientOptions, EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
@@ -573,7 +892,15 @@ class TranscodeDecisionServiceTest {
     var source = probe("h264", "mp3", 2, 128_000L);
     var clientOptions = options(List.of("h264"), List.of("aac", "mp3"), 2);
 
-    var decision = service.decide(source, clientOptions, EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
@@ -587,7 +914,15 @@ class TranscodeDecisionServiceTest {
     var source = probe("hevc", "ac3", 6, 384_000L);
     var clientOptions = options(List.of("h264"), List.of("ac3"), 6);
 
-    var decision = service.decide(source, clientOptions, EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
@@ -601,7 +936,15 @@ class TranscodeDecisionServiceTest {
     var source = probe("hevc", "flac", 6, 0);
     var clientOptions = options(List.of("h264"), List.of("aac"), 2);
 
-    var decision = service.decide(source, clientOptions, EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.FULL_TRANSCODE);
     assertThat(decision.audioDecision().codec()).isEqualTo("aac");
@@ -614,7 +957,15 @@ class TranscodeDecisionServiceTest {
     var source = probe("h264", "aac", 6, 384_000L);
     var clientOptions = options(List.of("h264"), List.of("aac"), 6);
 
-    var decision = service.decide(source, clientOptions, EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
@@ -628,7 +979,15 @@ class TranscodeDecisionServiceTest {
     var source = probe("h264", "dts", 8, 640_000L);
     var clientOptions = options(List.of("h264"), List.of("eac3", "aac"), 8);
 
-    var decision = service.decide(source, clientOptions, EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
@@ -643,7 +1002,15 @@ class TranscodeDecisionServiceTest {
     var source = probe("h264", "dts", 6, 1_500_000L);
     var clientOptions = options(List.of("h264"), List.of("aac"), 6);
 
-    var decision = service.decide(source, clientOptions, EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
@@ -657,7 +1024,15 @@ class TranscodeDecisionServiceTest {
     var source = probe("h264", "aac", 2, 128_000L);
     var clientOptions = options(List.of("h264"), List.of("aac"), 2);
 
-    var decision = service.decide(source, clientOptions, EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
@@ -678,7 +1053,15 @@ class TranscodeDecisionServiceTest {
             .maxAudioChannels(null)
             .build();
 
-    var decision = service.decide(source, clientOptions, EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
@@ -695,7 +1078,15 @@ class TranscodeDecisionServiceTest {
             .build();
     var clientOptions = options(List.of("h264"));
 
-    var decision = service.decide(source, clientOptions, EVERY_VIDEO_CODEC_FAMILY);
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);

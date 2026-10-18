@@ -11,6 +11,8 @@ public sealed interface CreateStreamSessionRejection {
 
   record MediaFileNotFound(@NonNull UUID mediaFileId) implements CreateStreamSessionRejection {}
 
+  record NoEligibleVideoFormat() implements CreateStreamSessionRejection {}
+
   record ProbeNotReady() implements CreateStreamSessionRejection {}
 
   record ProbeFailed(@NonNull ProbeError reason) implements CreateStreamSessionRejection {}

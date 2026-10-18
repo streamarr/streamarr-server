@@ -1046,6 +1046,35 @@ class WorkerSessionServerIT {
   }
 
   @Test
+  @DisplayName("Should retain verified encoder families when the worker has no free slot")
+  void shouldRetainVerifiedEncoderFamiliesWhenTheWorkerHasNoFreeSlot() throws Exception {
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+      try (var worker = connect(channel, AUTHENTICATED_WORKER_ID)) {
+        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
+        var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, Path.of("/media"));
+        var otherSource = new RemoteTranscodeExecutor(server, UUID.randomUUID(), Path.of("/media"));
+        assertThat(executor.encodableVideoCodecFamilies()).containsExactly("h264");
+        executor.start(encodeRequest(fullTranscodeH264Decision()));
+        assertThat(worker.nextResponse().hasStartVariant()).isTrue();
+
+        assertThat(executor.encodableVideoCodecFamilies()).isEmpty();
+        assertThat(executor.verifiedVideoCodecFamilies()).containsExactly("h264");
+        assertThat(otherSource.verifiedVideoCodecFamilies()).isEmpty();
+      } finally {
+        shutdown(channel);
+      }
+
+      await()
+          .atMost(5, TimeUnit.SECONDS)
+          .until(() -> !server.hasConnectedWorker(SOURCE_NAMESPACE_ID));
+      assertThat(server.encodableVideoCodecFamilies(SOURCE_NAMESPACE_ID)).isEmpty();
+      assertThat(server.verifiedVideoCodecFamilies(SOURCE_NAMESPACE_ID)).isEmpty();
+    }
+  }
+
+  @Test
   @DisplayName(
       "Should bound active variant ownership by advertised worker capacity when handling a worker session")
   void shouldBoundActiveVariantOwnershipByAdvertisedWorkerCapacityWhenHandlingWorkerSession()

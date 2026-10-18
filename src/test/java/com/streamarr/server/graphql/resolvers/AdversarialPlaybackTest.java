@@ -121,8 +121,8 @@ class AdversarialPlaybackTest {
 
   @Test
   @DisplayName(
-      "Should return the typed capacity payload when video transcode has no connected worker")
-  void shouldReturnTypedCapacityPayloadWhenVideoTranscodeHasNoConnectedWorker() throws Exception {
+      "Should retain the typed capacity payload when video transcode has no connected worker")
+  void shouldRetainTypedCapacityPayloadWhenVideoTranscodeHasNoConnectedWorker() throws Exception {
     var source = Files.writeString(directory.resolve("movie.mkv"), "media");
     var file = saveFile(source);
     publishProbe(file, defaultProbeBuilder().videoCodec("hevc").build());

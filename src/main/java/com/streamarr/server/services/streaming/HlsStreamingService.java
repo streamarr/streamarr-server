@@ -71,9 +71,19 @@ public class HlsStreamingService implements StreamingService {
     var authority = command.identity().playbackAuthority();
     var mediaFileId = command.mediaFileId();
     var options = command.options();
-    var decision =
-        transcodeDecisionService.decide(
-            probe, options, transcodeExecutor.encodableVideoCodecFamilies());
+    var request =
+        TranscodeDecisionRequest.builder()
+            .source(probe)
+            .clientOptions(options)
+            .videoFormatConstraint(VideoFormatConstraint.COPY_OR_ENCODE)
+            .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())
+            .build();
+    var candidate = transcodeDecisionService.decide(request);
+    if (candidate.isEmpty()) {
+      return Outcome.rejected(unavailableVideoFormat(request));
+    }
+
+    var decision = candidate.orElseThrow();
     var variants = resolveVariants(probe, options, decision);
     if (requiresVideoTranscode(decision.transcodeMode()) && hasInvalidEncodeSize(probe, variants)) {
       return Outcome.rejected(new CreateStreamSessionRejection.InvalidPictureSize());
@@ -131,6 +141,28 @@ public class HlsStreamingService implements StreamingService {
     var source = probe.displayedSize();
     var output = EncodedPictureSizes.atHeight(source, source.height());
     return output.width() <= 0 || output.height() <= 0;
+  }
+
+  private CreateStreamSessionRejection unavailableVideoFormat(TranscodeDecisionRequest request) {
+    if (!transcodeExecutor.isHealthy()) {
+      return new CreateStreamSessionRejection.TranscodeCapacityUnavailable(
+          properties.maxConcurrentTranscodes());
+    }
+
+    if (request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
+      return new CreateStreamSessionRejection.NoEligibleVideoFormat();
+    }
+
+    var verifiedCandidate =
+        transcodeDecisionService.decide(
+            request.toBuilder()
+                .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                .encodableVideoCodecFamilies(transcodeExecutor.verifiedVideoCodecFamilies())
+                .build());
+    return verifiedCandidate.isPresent()
+        ? new CreateStreamSessionRejection.TranscodeCapacityUnavailable(
+            properties.maxConcurrentTranscodes())
+        : new CreateStreamSessionRejection.NoEligibleVideoFormat();
   }
 
   private void rollbackFailedStartup(UUID sessionId, RuntimeException startupFailure) {

@@ -320,6 +320,14 @@ final class LiveWorkerConnectionRegistry {
         .anyMatch(connection -> connection.canAccessSourceNamespace(sourceNamespace));
   }
 
+  Set<String> verifiedVideoCodecFamilies(UUID sourceNamespaceId) {
+    var sourceNamespace = toProto(sourceNamespaceId);
+    return connections.values().stream()
+        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
+        .flatMap(connection -> connection.countedEncoders.keySet().stream())
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
   Set<String> encodableVideoCodecFamilies(UUID sourceNamespaceId) {
     var sourceNamespace = toProto(sourceNamespaceId);
     return connections.values().stream()

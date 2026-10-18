@@ -42,6 +42,7 @@ import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
+import com.streamarr.server.services.streaming.TranscodeDecisionRequest;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -419,9 +420,13 @@ class RemotePlaybackIT {
                       .build(),
                   new SimpleMeterRegistry())
               .decide(
-                  mediaProbe,
-                  StreamingOptions.builder().supportedCodecs(List.of("av1")).build(),
-                  executor.encodableVideoCodecFamilies());
+                  TranscodeDecisionRequest.builder()
+                      .source(mediaProbe)
+                      .clientOptions(
+                          StreamingOptions.builder().supportedCodecs(List.of("av1")).build())
+                      .encodableVideoCodecFamilies(executor.encodableVideoCodecFamilies())
+                      .build())
+              .orElseThrow();
       var timeline =
           new MediaSegmentTimeline.PlainGrid(mediaProbe.duration(), Duration.ofSeconds(6));
 
@@ -519,12 +524,16 @@ class RemotePlaybackIT {
                       .build(),
                   new SimpleMeterRegistry())
               .decide(
-                  mediaProbe,
-                  StreamingOptions.builder()
-                      .supportedCodecs(List.of("h264"))
-                      .supportedAudioCodecs(List.of("aac", "mp3"))
-                      .build(),
-                  executor.encodableVideoCodecFamilies());
+                  TranscodeDecisionRequest.builder()
+                      .source(mediaProbe)
+                      .clientOptions(
+                          StreamingOptions.builder()
+                              .supportedCodecs(List.of("h264"))
+                              .supportedAudioCodecs(List.of("aac", "mp3"))
+                              .build())
+                      .encodableVideoCodecFamilies(executor.encodableVideoCodecFamilies())
+                      .build())
+              .orElseThrow();
       assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
       var timeline =
           new MediaSegmentTimeline.PlainGrid(mediaProbe.duration(), Duration.ofSeconds(6));

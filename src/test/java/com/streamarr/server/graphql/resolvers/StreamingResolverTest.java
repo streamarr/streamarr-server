@@ -186,6 +186,21 @@ class StreamingResolverTest {
   }
 
   @Test
+  @DisplayName("Should return a typed format error when no video format is eligible")
+  void shouldReturnATypedFormatErrorWhenNoVideoFormatIsEligible() {
+    STUB_SERVICE.setRejection(new CreateStreamSessionRejection.NoEligibleVideoFormat());
+    var context = requestSession(UUID.randomUUID().toString());
+    List<Map<String, String>> errors = context.read("data.createStreamSession.userErrors");
+
+    assertThat(context.read("data.createStreamSession.session", Object.class)).isNull();
+    assertThat(errors)
+        .containsExactly(
+            Map.of(
+                "__typename", "NoEligibleVideoFormatError",
+                "message", "No supported video format is available for this playback request."));
+  }
+
+  @Test
   @DisplayName(
       "Should return a typed invalid file error when the probed media gives no media segment")
   void shouldReturnATypedInvalidFileErrorWhenTheProbedMediaGivesNoMediaSegment() {

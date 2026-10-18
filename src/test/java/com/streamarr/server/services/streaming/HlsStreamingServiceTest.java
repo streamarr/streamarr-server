@@ -92,6 +92,7 @@ class HlsStreamingServiceTest {
   private FakeRuntimeStreamSessionRegistry runtimeRegistry;
   private HlsStreamingService service;
   private SegmentDeliveryCoordinator coordinator;
+  private SimpleMeterRegistry meters;
 
   @Test
   @DisplayName("Should reject session creation when the media file has no persisted probe outcome")
@@ -104,6 +105,95 @@ class HlsStreamingServiceTest {
         .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.ProbeNotReady()));
     assertThat(service.getActiveSessionCount()).isZero();
     assertThat(transcodeExecutor.getRunningCount()).isZero();
+  }
+
+  @ParameterizedTest
+  @CsvSource({"h264", "hevc"})
+  @DisplayName("Should report transient capacity when no worker can access the source")
+  void shouldReportTransientCapacityWhenNoWorkerCanAccessTheSource(String videoCodec) {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec(videoCodec).build());
+    transcodeExecutor.setHealthy(false);
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of());
+    transcodeExecutor.setAvailableSlots(0);
+    var command =
+        createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(service.createSession(command))
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(service.getActiveSessionCount()).isZero();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should reject an encode when a connected worker has no verified video encoder")
+  void shouldRejectAnEncodeWhenAConnectedWorkerHasNoVerifiedVideoEncoder() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
+    transcodeExecutor.setHealthy(true);
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of());
+    transcodeExecutor.setAvailableSlots(1);
+    var command =
+        createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(service.createSession(command))
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(service.getActiveSessionCount()).isZero();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should copy video when a connected worker has no verified video encoder")
+  void shouldCopyVideoWhenAConnectedWorkerHasNoVerifiedVideoEncoder() {
+    transcodeExecutor.setHealthy(true);
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of());
+    transcodeExecutor.setAvailableSlots(1);
+    var command =
+        createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(service.getAllSessions()).containsExactly(session);
+  }
+
+  @Test
+  @DisplayName("Should count one copy refusal when every video encoder is busy")
+  void shouldCountOneCopyRefusalWhenEveryVideoEncoderIsBusy() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().keyframes(new KeyframeKnowledge.NotReported()).build());
+    transcodeExecutor.setEncodeSlots(Map.of("h264", 0));
+    var command =
+        CreateStreamSessionCommand.builder()
+            .streamSessionId(UUID.randomUUID())
+            .mediaFileId(seedMediaFile().getId())
+            .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
+            .options(defaultOptions())
+            .build();
+
+    assertThat(service.createSession(command))
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(meters.get("streamarr.streaming.stream_copy_refusals").counter().count())
+        .isEqualTo(1.0);
+    assertThat(service.getActiveSessionCount()).isZero();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  @ParameterizedTest
+  @CsvSource({"0", "1"})
+  @DisplayName("Should reject a stream session when no video format is eligible")
+  void shouldRejectAStreamSessionWhenNoVideoFormatIsEligible(int availableSlots) {
+    transcodeExecutor.setAvailableSlots(availableSlots);
+    var file = seedMediaFile();
+    var options = StreamingOptions.builder().supportedCodecs(List.of("vp9")).build();
+
+    var outcome =
+        service.createSession(createStreamSessionCommand(file.getId(), UUID.randomUUID(), options));
+
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(service.getActiveSessionCount()).isZero();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
 
   @ParameterizedTest
@@ -537,6 +627,7 @@ class HlsStreamingServiceTest {
     probeEvents = new CapturingEventPublisher();
     authorityGate = new FakePlaybackAuthorityGate();
     runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
+    meters = new SimpleMeterRegistry();
     service = serviceWith(transcodeExecutor, runtimeRegistry);
   }
 
@@ -566,8 +657,7 @@ class HlsStreamingServiceTest {
         .segmentStore(segmentStore)
         .playbackProbeService(
             new PlaybackProbeService(new PersistedProbeReader(probeResults), probeEvents))
-        .transcodeDecisionService(
-            new TranscodeDecisionService(properties, new SimpleMeterRegistry()))
+        .transcodeDecisionService(new TranscodeDecisionService(properties, meters))
         .qualityLadderService(new QualityLadderService())
         .properties(properties)
         .authorityGate(authorityGate)
@@ -700,14 +790,13 @@ class HlsStreamingServiceTest {
         .containsOnly("h264");
   }
 
-  @ParameterizedTest(name = "encodable {0} → {1}")
+  @ParameterizedTest(name = "encodable {0}")
   @CsvSource(
       delimiter = '|',
-      value = {"h264,av1 | av1", "h264 | h264", "h264,hevc | h264"})
-  @DisplayName(
-      "Should encode the first declared codec that a worker-verified encoder encodes, ending at H.264, when the client declares only AV1")
-  void shouldEncodeFirstDeclaredCodecThatAWorkerVerifiedEncoderEncodesWhenClientDeclaresOnlyAv1(
-      String encodableFamilies, String expectedFamily) {
+      value = {"h264", "h264,hevc"})
+  @DisplayName("Should reject the session when no worker encoder supports the client's only codec")
+  void shouldRejectTheSessionWhenNoWorkerEncoderSupportsTheClientsOnlyCodec(
+      String encodableFamilies) {
     probeResults.setDefaultProbe(
         defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).videoCodec("hevc").build());
     transcodeExecutor.setEncodableVideoCodecFamilies(
@@ -719,12 +808,13 @@ class HlsStreamingServiceTest {
             .supportedCodecs(List.of("av1"))
             .build();
 
-    var session = createSession(file.getId(), UUID.randomUUID(), options);
+    var outcome =
+        service.createSession(createStreamSessionCommand(file.getId(), UUID.randomUUID(), options));
 
-    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo(expectedFamily);
-    assertThat(transcodeExecutor.getStartedRequests())
-        .extracting(request -> request.transcodeDecision().videoCodecFamily())
-        .containsOnly(expectedFamily);
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(service.getActiveSessionCount()).isZero();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
 
   @Test
