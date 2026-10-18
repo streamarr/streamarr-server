@@ -2,12 +2,14 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
@@ -15,6 +17,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -772,7 +775,12 @@ public class ProducerLifecycleService {
 
   private TranscodeRequest.TranscodeRequestBuilder baseRequest(
       StreamSession session, String variantLabel, int startSequenceNumber) {
-    var probe = session.getMediaProbe();
+    var frameRate =
+        session
+            .getTranscodeDecision()
+            .videoSource()
+            .map(VideoPlaybackFacts::frameRateRule)
+            .flatMap(FrameRateRule::outputFrameRate);
     var timeline = timelineOf(session);
     return TranscodeRequest.builder()
         .sessionId(session.getSessionId())
@@ -782,7 +790,10 @@ public class ProducerLifecycleService {
         .seekPosition(timeline.mediaSegmentStartSeconds(startSequenceNumber))
         .keyframeSeekPosition(timeline.keyframeSeekPosition(startSequenceNumber))
         .targetSegmentDuration(timeline.targetSegmentDurationSeconds())
-        .framerate(probe.framerate())
+        .framerate(
+            frameRate
+                .map(rate -> OptionalDouble.of(rate.toDouble()))
+                .orElseGet(OptionalDouble::empty))
         .transcodeDecision(session.getTranscodeDecision())
         .startSequenceNumber(startSequenceNumber)
         .mediaSegmentCount(timeline.mediaSegmentCount());

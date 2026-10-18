@@ -181,15 +181,23 @@ public class HlsPlaylistService {
   // runs at the session's frame rate. A copy keeps the source's timing, whose maximum rate the
   // probe does not measure, so its entry leaves FRAME-RATE out.
   private static void appendFrameRate(StringBuilder sb, StreamSession session) {
-    var frameRate = session.getMediaProbe().framerate();
+    var frameRate =
+        session
+            .getTranscodeDecision()
+            .videoSource()
+            .map(VideoPlaybackFacts::frameRateRule)
+            .flatMap(FrameRateRule::outputFrameRate);
     if (session.getTranscodeDecision().transcodeMode().copiesVideo() || frameRate.isEmpty()) {
       return;
     }
 
     sb.append(",FRAME-RATE=")
         .append(
-            BigDecimal.valueOf(frameRate.getAsDouble())
-                .setScale(3, RoundingMode.HALF_UP)
+            BigDecimal.valueOf(frameRate.orElseThrow().numerator())
+                .divide(
+                    BigDecimal.valueOf(frameRate.orElseThrow().denominator()),
+                    3,
+                    RoundingMode.HALF_UP)
                 .toPlainString());
   }
 
