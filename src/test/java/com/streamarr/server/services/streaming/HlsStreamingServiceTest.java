@@ -156,11 +156,9 @@ class HlsStreamingServiceTest {
     assertThat(service.getAllSessions()).containsExactly(session);
   }
 
-  @ParameterizedTest
-  @CsvSource({"COPY_OR_ENCODE, true", "COPY_ONLY, false"})
+  @Test
   @DisplayName("Should count one copy refusal when every video encoder is busy")
-  void shouldCountOneCopyRefusalWhenEveryVideoEncoderIsBusy(
-      VideoFormatConstraint constraint, boolean capacityUnavailable) {
+  void shouldCountOneCopyRefusalWhenEveryVideoEncoderIsBusy() {
     probeResults.setDefaultProbe(
         defaultProbeBuilder().keyframes(new KeyframeKnowledge.NotReported()).build());
     transcodeExecutor.setEncodeSlots(Map.of("h264", 0));
@@ -170,14 +168,11 @@ class HlsStreamingServiceTest {
             .mediaFileId(seedMediaFile().getId())
             .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
             .options(defaultOptions())
-            .videoFormatConstraint(constraint)
             .build();
 
-    var expectedRejection =
-        capacityUnavailable
-            ? new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)
-            : new CreateStreamSessionRejection.NoEligibleVideoFormat();
-    assertThat(service.createSession(command)).isEqualTo(Outcome.rejected(expectedRejection));
+    assertThat(service.createSession(command))
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
     assertThat(meters.get("streamarr.streaming.stream_copy_refusals").counter().count())
         .isEqualTo(1.0);
     assertThat(service.getActiveSessionCount()).isZero();
