@@ -18,12 +18,15 @@ import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.pagination.MediaFilter;
+import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.support.AuthTestSupport;
 import java.util.HashMap;
 import java.util.List;
@@ -39,6 +42,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -65,6 +69,36 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
 
   private AuthTestSupport.TestIdentity serverAdmin;
   private AuthTestSupport.TestIdentity resident;
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  @DisplayName("Should reject an administrative cursor when its name is missing")
+  void shouldRejectAdministrativeCursorWhenItsNameIsMissing(boolean nestedAccounts)
+      throws Exception {
+    var cursor =
+        new CursorUtil(objectMapper)
+            .encodeMediaCursor(
+                MediaPaginationOptions.builder().mediaFilter(MediaFilter.builder().build()).build(),
+                UUID.randomUUID(),
+                null)
+            .getValue();
+    var query =
+        nestedAccounts
+            ? """
+              query { householdAdministration(householdId: "%s") {
+                accounts(first: 1, after: "%s") { edges { node { id } } }
+              } }
+              """
+                .formatted(resident.household().getId(), cursor)
+            : """
+              query { households(first: 1, after: "%s") { edges { node { id } } } }
+              """
+                .formatted(cursor);
+
+    graphql(authTestSupport.accountBearer(serverAdmin), query)
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
+  }
 
   @BeforeEach
   void setUp() {

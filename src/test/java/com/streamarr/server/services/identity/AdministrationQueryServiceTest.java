@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.exceptions.InvalidPaginationCursorException;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
@@ -15,10 +16,13 @@ import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.PaginationService;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.access.AccessDeniedException;
 
 @Tag("UnitTest")
@@ -36,6 +40,25 @@ class AdministrationQueryServiceTest {
           new PaginationService(),
           profiles,
           new FakeAccountInvitationRepository());
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  @DisplayName("Should reject an administrative cursor when its name is missing")
+  void shouldRejectAdministrativeCursorWhenItsNameIsMissing(boolean nestedAccounts) {
+    authorization.allowAll();
+    var options =
+        PaginationFixture.buildForwardOptions(10, MediaFilter.builder().build()).toBuilder()
+            .cursorId(UUID.randomUUID())
+            .build();
+    Runnable query =
+        nestedAccounts
+            ? () -> service.accountPagesOf(Set.of(UUID.randomUUID()), options)
+            : () -> service.households(authorization.currentIdentity(), options);
+
+    assertThatThrownBy(query::run)
+        .isInstanceOf(InvalidPaginationCursorException.class)
+        .hasMessage("Cursor sort value is required.");
+  }
 
   @Test
   @DisplayName("Should fail closed when Household administration visibility cannot be decided")
