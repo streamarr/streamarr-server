@@ -31,6 +31,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
@@ -140,6 +141,16 @@ class ProducerLifecycleServiceTest {
               .assertThat(requests.getFirst().videoEncodeDecision().orElseThrow().codecString())
               .isEqualTo("avc1.64002A");
         });
+  }
+
+  @Test
+  @DisplayName("Should refuse initial dispatch when the session is no longer registered")
+  void shouldRefuseInitialDispatchWhenTheSessionIsNoLongerRegistered() {
+    var session = defaultSessionBuilder().build();
+
+    assertThatThrownBy(() -> lifecycle.startFirstListedVariant(session))
+        .isInstanceOf(SessionNotFoundException.class);
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
 
   private StreamSession startedSession() {

@@ -6,6 +6,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBui
 import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest;
+import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libx264;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -34,6 +35,7 @@ import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
@@ -1466,7 +1468,8 @@ class HlsStreamingServiceTest {
     var command =
         createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
 
-    service.createSession(command);
+    assertThatThrownBy(() -> service.createSession(command))
+        .isInstanceOf(SessionNotFoundException.class);
 
     assertThat(service.getAllSessions()).isEmpty();
     assertThat(service.getActiveSessionCount()).isZero();
@@ -1489,11 +1492,65 @@ class HlsStreamingServiceTest {
     var command =
         createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
 
-    service.createSession(command);
+    assertThatThrownBy(() -> service.createSession(command))
+        .isInstanceOf(SessionNotFoundException.class);
 
     assertThat(service.getAllSessions()).isEmpty();
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
     assertThat(transcodeExecutor.getRunningCount()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should retain the started producer when the registry returns detached sessions")
+  void shouldRetainTheStartedProducerWhenTheRegistryReturnsDetachedSessions() {
+    var detachedRegistry =
+        new FakeRuntimeStreamSessionRegistry() {
+          @Override
+          public Optional<StreamSession> findById(UUID sessionId) {
+            return super.findById(sessionId).map(HlsStreamingServiceTest::detachedSession);
+          }
+        };
+    service = serviceWith(transcodeExecutor, detachedRegistry);
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
+    transcodeExecutor.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(libx264()));
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.HIGH_720P)
+            .supportedCodecs(List.of("h264"))
+            .build();
+    var command = createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    var created = accepted(service.createSession(command));
+    var stored = service.accessSession(playbackRequest(created)).orElseThrow();
+
+    assertThat(stored.getHandle()).isPresent();
+    assertThat(created.getHandle()).isEqualTo(stored.getHandle());
+    assertThat(stored.getCurrentSegment()).isEqualTo(created.getCurrentSegment());
+    assertThat(stored.getPinnedEncoder(StreamSession.defaultVariant())).contains(libx264());
+  }
+
+  private static StreamSession detachedSession(StreamSession source) {
+    var copy =
+        StreamSession.builder()
+            .sessionId(source.getSessionId())
+            .mediaFileId(source.getMediaFileId())
+            .authority(source.getAuthority())
+            .sourcePath(source.getSourcePath())
+            .mediaProbe(source.getMediaProbe())
+            .transcodeDecision(source.getTranscodeDecision())
+            .options(source.getOptions())
+            .createdAt(source.getCreatedAt())
+            .variants(source.getVariants())
+            .build();
+    copy.setCurrentSegment(source.getCurrentSegment());
+    source
+        .getVariantHandles()
+        .forEach(
+            (label, handle) -> {
+              copy.setVariantHandle(label, handle);
+              source.getPinnedEncoder(label).ifPresent(encoder -> copy.pinEncoder(label, encoder));
+            });
+    return copy;
   }
 
   @Test
