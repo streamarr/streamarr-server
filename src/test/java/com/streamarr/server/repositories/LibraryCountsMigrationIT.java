@@ -26,9 +26,9 @@ class LibraryCountsMigrationIT extends AbstractIntegrationTest {
           .configuration(flyway.getConfiguration())
           .schemas(schema)
           .defaultSchema(schema)
-          .baselineVersion("93")
+          .baselineVersion("97")
           .baselineOnMigrate(true)
-          .target("94")
+          .target("latest")
           .load()
           .migrate();
 
@@ -61,6 +61,8 @@ class LibraryCountsMigrationIT extends AbstractIntegrationTest {
       statement.execute(
           """
           CREATE TABLE base_collectable (id INT PRIMARY KEY, library_id INT, title_sort TEXT);
+          CREATE INDEX idx_base_collectable_library_titlesort_ci_id
+            ON base_collectable (library_id, LOWER(title_sort), id);
           CREATE TABLE movie (id INT PRIMARY KEY);
           CREATE TABLE series (id INT PRIMARY KEY);
           CREATE TABLE library_metadata (
