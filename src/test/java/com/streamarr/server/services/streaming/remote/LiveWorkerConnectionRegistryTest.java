@@ -25,6 +25,8 @@ import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
 import com.streamarr.transcode.v1.VideoCodecFamily;
+import com.streamarr.transcode.v1.VideoDecision;
+import com.streamarr.transcode.v1.VideoMode;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
@@ -34,6 +36,7 @@ import io.grpc.stub.StreamObserver;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -453,7 +456,10 @@ class LiveWorkerConnectionRegistryTest {
             .setDecision(
                 TranscodeDecision.newBuilder()
                     .setMode(TranscodeMode.TRANSCODE_MODE_REMUX)
-                    .setVideoCodecFamily("av1"))
+                    .setVideo(
+                        VideoDecision.newBuilder()
+                            .setMode(VideoMode.VIDEO_MODE_COPY)
+                            .setCodecFamily(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1)))
             .build();
 
     assertThat(registry.dispatch(copyJob)).isPresent();
@@ -511,6 +517,10 @@ class LiveWorkerConnectionRegistryTest {
     var hevcCopy =
         encodeJob("hevc").getDecision().toBuilder()
             .setMode(TranscodeMode.TRANSCODE_MODE_REMUX)
+            .setVideo(
+                VideoDecision.newBuilder()
+                    .setMode(VideoMode.VIDEO_MODE_COPY)
+                    .setCodecFamily(VideoCodecFamily.VIDEO_CODEC_FAMILY_HEVC))
             .build();
 
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, encodeJob("av1").getDecision()))
@@ -1233,7 +1243,13 @@ class LiveWorkerConnectionRegistryTest {
         .setDecision(
             TranscodeDecision.newBuilder()
                 .setMode(TranscodeMode.TRANSCODE_MODE_FULL_TRANSCODE)
-                .setVideoCodecFamily(videoCodecFamily))
+                .setVideo(
+                    VideoDecision.newBuilder()
+                        .setMode(VideoMode.VIDEO_MODE_ENCODE)
+                        .setCodecFamily(
+                            VideoCodecFamily.valueOf(
+                                "VIDEO_CODEC_FAMILY_"
+                                    + videoCodecFamily.toUpperCase(Locale.ROOT)))))
         .build();
   }
 

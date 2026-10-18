@@ -254,9 +254,7 @@ message VideoDecision {
 
 message TranscodeDecision {
   TranscodeMode mode = 1;
-  // video.codec_family replaces this string once the server fills video. While the server sends
-  // both, the worker fails the job attempt with JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION when they
-  // name different codec families.
+  // Current jobs leave this retired field empty and use video.codec_family.
   string video_codec_family = 2;
   AudioDecision audio = 3;
   SubtitleDecision subtitle = 4;

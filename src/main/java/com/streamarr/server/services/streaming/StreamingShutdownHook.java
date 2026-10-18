@@ -14,15 +14,25 @@ import org.springframework.stereotype.Component;
 public class StreamingShutdownHook {
 
   private final StreamingService streamingService;
+  private final PlaybackSessionService playbackSessionService;
 
   @PreDestroy
   public void onShutdown() {
+    closePlaybackSessions();
     var sessions = streamingService.getAllSessions();
     if (sessions.isEmpty()) {
       return;
     }
 
     destroySessions(sessions);
+  }
+
+  private void closePlaybackSessions() {
+    try {
+      playbackSessionService.closeAll();
+    } catch (RuntimeException failure) {
+      log.warn("Failed to close logical playback sessions during shutdown", failure);
+    }
   }
 
   private void destroySessions(Collection<StreamSession> sessions) {

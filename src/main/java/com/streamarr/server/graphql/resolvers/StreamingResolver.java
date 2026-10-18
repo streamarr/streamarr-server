@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.resolvers;
 
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
+import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.DgsTypeResolver;
 import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.config.StreamingProperties;
@@ -15,13 +16,22 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.InvalidIdException;
+import com.streamarr.server.exceptions.PlaybackSessionClosedException;
+import com.streamarr.server.graphql.dto.PlaybackFormatAttemptDto;
+import com.streamarr.server.graphql.dto.PlaybackSessionDto;
 import com.streamarr.server.graphql.dto.StreamSessionDto;
 import com.streamarr.server.graphql.dto.StreamingOptionsInput;
 import com.streamarr.server.graphql.mutation.InputPath;
+import com.streamarr.server.graphql.mutation.MutationError;
 import com.streamarr.server.graphql.mutation.MutationPayloads;
+import com.streamarr.server.graphql.mutation.streaming.CreatePlaybackSessionInput;
+import com.streamarr.server.graphql.mutation.streaming.CreatePlaybackSessionPayload;
 import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionError;
-import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionInput;
-import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionPayload;
+import com.streamarr.server.graphql.mutation.streaming.DestroyPlaybackSessionInput;
+import com.streamarr.server.graphql.mutation.streaming.DestroyPlaybackSessionPayload;
+import com.streamarr.server.graphql.mutation.streaming.PlaybackSessionError;
+import com.streamarr.server.graphql.mutation.streaming.ReportPlaybackFormatFailureInput;
+import com.streamarr.server.graphql.mutation.streaming.ReportPlaybackFormatFailurePayload;
 import com.streamarr.server.graphql.mutation.watchprogress.MarkUnwatchedError;
 import com.streamarr.server.graphql.mutation.watchprogress.MarkUnwatchedInput;
 import com.streamarr.server.graphql.mutation.watchprogress.MarkUnwatchedPayload;
@@ -30,14 +40,20 @@ import com.streamarr.server.graphql.mutation.watchprogress.MarkWatchedInput;
 import com.streamarr.server.graphql.mutation.watchprogress.MarkWatchedPayload;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.authorization.AuthorizationService;
-import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
-import com.streamarr.server.services.streaming.StreamingService;
+import com.streamarr.server.services.streaming.PlaybackFormatAttempt;
+import com.streamarr.server.services.streaming.PlaybackSessionFailure;
+import com.streamarr.server.services.streaming.PlaybackSessionRequest;
+import com.streamarr.server.services.streaming.PlaybackSessionService;
+import com.streamarr.server.services.streaming.PlaybackSessionSnapshot;
+import com.streamarr.server.services.streaming.ReportPlaybackFormatFailureCommand;
+import com.streamarr.server.services.streaming.StartPlaybackSessionCommand;
 import com.streamarr.server.services.watchprogress.MarkUnwatchedRejection;
 import com.streamarr.server.services.watchprogress.MarkWatchedRejection;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -50,25 +66,25 @@ public class StreamingResolver {
   private static final String INVALID_ITEM_ID = "Enter a valid item ID.";
   private static final String ITEM_NOT_FOUND = "This item no longer exists.";
 
-  private final StreamingService streamingService;
+  private final PlaybackSessionService playbackSessions;
   private final AuthorizationService authorizationService;
   private final PlaybackTokenIssuer playbackTokenIssuer;
   private final StreamingProperties streamingProperties;
   private final SessionProgressService sessionProgressService;
   private final WatchStatusService watchStatusService;
 
-  private StreamSessionDto toCreatedSessionDto(StreamSession session) {
+  private PlaybackSessionDto toCreatedSessionDto(PlaybackSessionSnapshot session) {
     try {
-      return toDto(session);
+      return toPlaybackDto(session);
     } catch (RuntimeException exception) {
-      streamingService.destroySession(session.getSessionId());
+      playbackSessions.abandonStart(session.playbackSessionId());
       throw exception;
     }
   }
 
   @DgsMutation
-  public CreateStreamSessionPayload createStreamSession(
-      @InputArgument CreateStreamSessionInput input) {
+  public CreatePlaybackSessionPayload createPlaybackSession(
+      @InputArgument CreatePlaybackSessionInput input) {
     authorizationService.requireProfile();
     return MutationPayloads.withUuid(
         input.mediaFileId(),
@@ -77,23 +93,26 @@ public class StreamingResolver {
             MutationPayloads.inputError(
                 new CreateStreamSessionError.InvalidIdError(
                     "Enter a valid media file ID.", InputPath.of("mediaFileId")),
-                CreateStreamSessionPayload::new));
+                CreatePlaybackSessionPayload::new));
   }
 
-  private CreateStreamSessionPayload createSession(
+  private CreatePlaybackSessionPayload createSession(
       UUID mediaFileId, StreamingOptionsInput options) {
-    var outcome =
-        streamingService.createSession(
-            CreateStreamSessionCommand.builder()
-                .streamSessionId(UUID.randomUUID())
-                .mediaFileId(mediaFileId)
-                .identity(authorizationService.currentIdentity())
-                .options(mapOptions(options))
-                .build());
-    return MutationPayloads.payload(
-        outcome.map(this::toCreatedSessionDto),
-        this::createSessionError,
-        CreateStreamSessionPayload::new);
+    try {
+      var outcome =
+          playbackSessions.start(
+              StartPlaybackSessionCommand.builder()
+                  .mediaFileId(mediaFileId)
+                  .identity(authorizationService.currentIdentity())
+                  .options(mapOptions(options))
+                  .build());
+      return MutationPayloads.payload(
+          outcome.map(this::toCreatedSessionDto),
+          this::createSessionError,
+          CreatePlaybackSessionPayload::new);
+    } catch (PlaybackSessionClosedException _) {
+      return MutationPayloads.inputError(closedError(), CreatePlaybackSessionPayload::new);
+    }
   }
 
   private CreateStreamSessionError createSessionError(CreateStreamSessionRejection rejection) {
@@ -135,11 +154,117 @@ public class StreamingResolver {
     };
   }
 
-  @DgsMutation
-  public boolean destroyStreamSession(@InputArgument String sessionId) {
-    streamingService.destroySession(parseUuid(sessionId), authorizationService.requireProfile());
+  @DgsQuery
+  public Optional<PlaybackSessionDto> playbackSession(@InputArgument String id) {
+    authorizationService.requireProfile();
+    return playbackSessions.access(playbackRequest(parseUuid(id))).map(this::toPlaybackDto);
+  }
 
-    return true;
+  @DgsMutation
+  public ReportPlaybackFormatFailurePayload reportPlaybackFormatFailure(
+      @InputArgument ReportPlaybackFormatFailureInput input) {
+    authorizationService.requireProfile();
+    return MutationPayloads.withUuid(
+        input.playbackSessionId(),
+        playbackId ->
+            MutationPayloads.withUuid(
+                input.streamSessionId(),
+                streamId -> reportFailure(input, playbackId, streamId),
+                () -> invalidReportId("streamSessionId")),
+        () -> invalidReportId("playbackSessionId"));
+  }
+
+  private ReportPlaybackFormatFailurePayload reportFailure(
+      ReportPlaybackFormatFailureInput input, UUID playbackId, UUID streamId) {
+    return playbackSessions
+        .reportFormatFailure(
+            ReportPlaybackFormatFailureCommand.builder()
+                .playbackSessionId(playbackId)
+                .streamSessionId(streamId)
+                .identity(authorizationService.currentIdentity())
+                .reason(input.reason())
+                .build())
+        .map(
+            snapshot ->
+                new ReportPlaybackFormatFailurePayload(
+                    Optional.of(toPlaybackDto(snapshot)), List.of()))
+        .orElseGet(
+            () ->
+                MutationPayloads.inputError(
+                    closedError(), ReportPlaybackFormatFailurePayload::new));
+  }
+
+  private ReportPlaybackFormatFailurePayload invalidReportId(String field) {
+    return MutationPayloads.inputError(
+        invalidPlaybackId(field), ReportPlaybackFormatFailurePayload::new);
+  }
+
+  @DgsMutation
+  public DestroyPlaybackSessionPayload destroyPlaybackSession(
+      @InputArgument DestroyPlaybackSessionInput input) {
+    authorizationService.requireProfile();
+    return MutationPayloads.withUuid(
+        input.playbackSessionId(),
+        id -> {
+          playbackSessions.close(playbackRequest(id));
+          return new DestroyPlaybackSessionPayload(Optional.of(id.toString()), List.of());
+        },
+        () ->
+            MutationPayloads.inputError(
+                invalidPlaybackId("playbackSessionId"), DestroyPlaybackSessionPayload::new));
+  }
+
+  private PlaybackSessionRequest playbackRequest(UUID id) {
+    return PlaybackSessionRequest.builder()
+        .playbackSessionId(id)
+        .identity(authorizationService.currentIdentity())
+        .build();
+  }
+
+  private CreateStreamSessionError.InvalidIdError invalidPlaybackId(String field) {
+    return new CreateStreamSessionError.InvalidIdError(
+        "Enter a valid session ID.", InputPath.of(field));
+  }
+
+  private PlaybackSessionError.PlaybackSessionClosedError closedError() {
+    return new PlaybackSessionError.PlaybackSessionClosedError("This playback session has ended.");
+  }
+
+  private PlaybackSessionDto toPlaybackDto(PlaybackSessionSnapshot snapshot) {
+    var attempt =
+        switch (snapshot.currentFormatAttempt()) {
+          case PlaybackFormatAttempt.Pending(var streamId) ->
+              new PlaybackFormatAttemptDto.PendingPlaybackFormatAttempt(streamId.toString());
+          case PlaybackFormatAttempt.Ready(var session) ->
+              new PlaybackFormatAttemptDto.ReadyPlaybackFormatAttempt(toDto(session));
+          case PlaybackFormatAttempt.Failed(var streamId, var reason) ->
+              new PlaybackFormatAttemptDto.FailedPlaybackFormatAttempt(
+                  streamId.toString(), playbackFailure(reason));
+        };
+    return PlaybackSessionDto.builder()
+        .id(snapshot.playbackSessionId().toString())
+        .formatAttemptCount(snapshot.formatAttemptCount())
+        .maximumFormatAttempts(snapshot.maximumFormatAttempts())
+        .currentFormatAttempt(attempt)
+        .build();
+  }
+
+  private MutationError playbackFailure(PlaybackSessionFailure failure) {
+    return switch (failure) {
+      case PlaybackSessionFailure.OutputMismatch() ->
+          new PlaybackSessionError.PlaybackOutputMismatchError(
+              "The source video cannot be copied for playback.");
+      case PlaybackSessionFailure.FixedFormatFailed(var reason) ->
+          new PlaybackSessionError.PlaybackFormatRejectedError(
+              "The player cannot play this video format.", reason);
+      case PlaybackSessionFailure.AttemptsExhausted() ->
+          new PlaybackSessionError.PlaybackFormatAttemptsExhaustedError(
+              "Playback could not start within the allowed format attempts.");
+      case PlaybackSessionFailure.CreationRejected(var rejection) -> createSessionError(rejection);
+      case PlaybackSessionFailure.StartupFailed() ->
+          new PlaybackSessionError.PlaybackStartupFailedError(
+              "The server could not start the next format attempt.");
+    };
   }
 
   @DgsMutation

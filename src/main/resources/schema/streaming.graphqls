@@ -4,18 +4,6 @@ type StreamSession {
     transcodeMode: TranscodeMode!
 }
 
-input CreateStreamSessionInput {
-    mediaFileId: ID!
-    options: StreamingOptionsInput
-}
-
-type CreateStreamSessionPayload {
-    session: StreamSession
-    userErrors: [CreateStreamSessionError!]!
-}
-
-union CreateStreamSessionError = InvalidIdError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | MediaFileFrameRateUnknownError | TranscodeCapacityUnavailableError | NoEligibleVideoFormatError
-
 enum TranscodeMode {
     REMUX
     AUDIO_TRANSCODE
@@ -37,6 +25,7 @@ input StreamingOptionsInput {
 
 enum VideoQuality {
     AUTO
+    ORIGINAL
     LOW_360P
     MEDIUM_480P
     HIGH_720P

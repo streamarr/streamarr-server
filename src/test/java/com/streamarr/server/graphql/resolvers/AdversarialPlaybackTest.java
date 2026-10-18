@@ -36,6 +36,7 @@ import com.streamarr.server.services.library.MediaFileProbeTaskScheduler;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.PlaybackProbeService;
+import com.streamarr.server.services.streaming.PlaybackSessionService;
 import com.streamarr.server.services.streaming.QualityLadderService;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
@@ -148,7 +149,7 @@ class AdversarialPlaybackTest {
               assertThat(error.getMessage())
                   .isNotBlank()
                   .doesNotContain(source.toString(), file.getId().toString(), "Exception");
-              assertThat(error.getPath()).containsExactly("createStreamSession");
+              assertThat(error.getPath()).containsExactly("createPlaybackSession");
               assertThat(error.getExtensions())
                   .containsOnlyKeys("errorType", "code", "requestId")
                   .containsEntry("errorType", "INTERNAL")
@@ -156,7 +157,8 @@ class AdversarialPlaybackTest {
               assertThat(error.getExtensions().get("requestId")).asString().isNotBlank();
             });
     assertThat(
-            JsonPath.parse(result.toSpecification()).read("data.createStreamSession", Object.class))
+            JsonPath.parse(result.toSpecification())
+                .read("data.createPlaybackSession", Object.class))
         .isNull();
   }
 
@@ -197,8 +199,8 @@ class AdversarialPlaybackTest {
 
     assertThat(result.getErrors()).as("GraphQL response: %s", result.toSpecification()).isEmpty();
     var document = JsonPath.parse(result.toSpecification());
-    assertThat(document.read("data.createStreamSession.session", Object.class)).isNull();
-    List<String> errorTypes = document.read("data.createStreamSession.userErrors[*].__typename");
+    assertThat(document.read("data.createPlaybackSession.playbackSession", Object.class)).isNull();
+    List<String> errorTypes = document.read("data.createPlaybackSession.userErrors[*].__typename");
     assertThat(errorTypes).containsExactly(errorType);
   }
 
@@ -206,8 +208,8 @@ class AdversarialPlaybackTest {
     return queries.execute(
         """
         mutation($id: ID!) {
-          createStreamSession(input: {mediaFileId: $id}) {
-            session { id }
+          createPlaybackSession(input: {mediaFileId: $id}) {
+            playbackSession { id }
             userErrors { __typename ... on MutationError { message } }
           }
         }
@@ -228,6 +230,17 @@ class AdversarialPlaybackTest {
             .sessionTimeout(Duration.ofMinutes(1))
             .sessionRetention(Duration.ofHours(1))
             .build();
+
+    @Bean
+    PlaybackSessionService playbackSessions(HlsStreamingService streaming) {
+      return PlaybackSessionService.builder()
+          .streamingService(streaming)
+          .authorityGate(new FakePlaybackAuthorityGate())
+          .executor(Runnable::run)
+          .maximumFormatAttempts(2)
+          .sessionRetention(Duration.ofHours(1))
+          .build();
+    }
 
     @Bean
     FileSystem sourceFileSystem() {

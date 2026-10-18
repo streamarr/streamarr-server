@@ -702,7 +702,7 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private boolean canEncode(TranscodeDecision decision) {
-      return !encodesVideo(decision) || countedEncoders.containsKey(decision.getVideoCodecFamily());
+      return !encodesVideo(decision) || encoderFor(decision).isPresent();
     }
 
     private Optional<WorkerVerifiedEncoder> encoderFor(VariantJob job) {
@@ -710,7 +710,12 @@ final class LiveWorkerConnectionRegistry {
         return Optional.empty();
       }
 
-      return Optional.ofNullable(countedEncoders.get(job.getDecision().getVideoCodecFamily()));
+      return encoderFor(job.getDecision());
+    }
+
+    private Optional<WorkerVerifiedEncoder> encoderFor(TranscodeDecision decision) {
+      return RemoteEncoderBackendMapper.videoCodecFamilyName(decision.getVideo().getCodecFamily())
+          .map(countedEncoders::get);
     }
 
     // The keyframe-verified flag must match too: a playlist that carries
@@ -884,7 +889,7 @@ final class LiveWorkerConnectionRegistry {
       var stopped = tryStop(jobAttemptId);
       // The worker runs another encoder than it advertised, so no later attempt may rely on the
       // advertisement, including a replacement attempt of this variant.
-      countedEncoders.remove(job.getDecision().getVideoCodecFamily());
+      countedEncoders.remove(pinned.codecFamily());
       encoderBackendMismatches.increment();
       log.warn(
           "Stopped job attempt {} for stream session {} variant {} because the worker reported"

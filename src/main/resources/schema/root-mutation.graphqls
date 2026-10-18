@@ -4,8 +4,9 @@ type Mutation {
     removeLibrary(input: RemoveLibraryInput!): RemoveLibraryPayload
     startLibraryScan(input: StartLibraryScanInput!): StartLibraryScanPayload
     startLibraryRefresh(input: StartLibraryRefreshInput!): StartLibraryRefreshPayload
-    createStreamSession(input: CreateStreamSessionInput!): CreateStreamSessionPayload
-    destroyStreamSession(sessionId: ID!): Boolean!
+    createPlaybackSession(input: CreatePlaybackSessionInput!): CreatePlaybackSessionPayload
+    reportPlaybackFormatFailure(input: ReportPlaybackFormatFailureInput!): ReportPlaybackFormatFailurePayload
+    destroyPlaybackSession(input: DestroyPlaybackSessionInput!): DestroyPlaybackSessionPayload
     reportStreamSessionTimeline(sessionId: ID!, positionSeconds: Int!, state: PlaybackState!): Boolean!
     "Marks an item watched for the selected Profile. A season or a series marks each of its episodes."
     markWatched(input: MarkWatchedInput!): MarkWatchedPayload

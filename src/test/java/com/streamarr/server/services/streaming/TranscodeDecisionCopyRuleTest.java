@@ -112,6 +112,7 @@ class TranscodeDecisionCopyRuleTest {
   private static List<DolbyVision> dolbyVisionClaims() {
     var claims = new ArrayList<DolbyVision>();
     claims.add(new DolbyVision.Unspecified());
+    claims.add(new DolbyVision.Absent());
     claims.add(new DolbyVision.Present(Optional.empty(), Presence.UNSPECIFIED));
     claims.add(dolbyVisionRecord(OptionalInt.empty()));
     for (var compatibilityId : List.of(0, 1, 2, 3, 4, 6)) {
@@ -125,6 +126,8 @@ class TranscodeDecisionCopyRuleTest {
     return List.of(
         Optional.of(ChromaSubsampling.CHROMA_420),
         Optional.of(ChromaSubsampling.CHROMA_422),
+        Optional.of(ChromaSubsampling.CHROMA_444),
+        Optional.of(ChromaSubsampling.MONOCHROME),
         Optional.empty());
   }
 

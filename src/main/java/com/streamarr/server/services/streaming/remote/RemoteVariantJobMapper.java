@@ -116,7 +116,13 @@ final class RemoteVariantJobMapper {
   static com.streamarr.transcode.v1.TranscodeDecision decision(TranscodeDecision decision) {
     return com.streamarr.transcode.v1.TranscodeDecision.newBuilder()
         .setMode(mode(decision.transcodeMode()))
-        .setVideoCodecFamily(decision.videoCodecFamily())
+        .setVideo(
+            com.streamarr.transcode.v1.VideoDecision.newBuilder()
+                .setMode(
+                    decision.transcodeMode().copiesVideo()
+                        ? VideoMode.VIDEO_MODE_COPY
+                        : VideoMode.VIDEO_MODE_ENCODE)
+                .setCodecFamily(codecFamily(decision.videoCodecFamily())))
         .setAudio(audio(decision.audioDecision()))
         .setSubtitle(subtitle(decision.subtitleDecision()))
         // Every HLS variant is fMP4 (ADR 0037); the additive contract keeps the field.
