@@ -23,6 +23,7 @@ import com.streamarr.server.services.pagination.PaginationDirection;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -31,6 +32,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 @Transactional
+@Tag("IntegrationTest")
 class MediaPaginationBoundaryIT extends AbstractIntegrationTest {
   @Autowired private LibraryRepository libraries;
   @Autowired private MovieRepository movies;

@@ -18,6 +18,7 @@ import com.streamarr.server.services.pagination.OrderMediaBy;
 import java.util.List;
 import java.util.Map;
 import org.jooq.SortOrder;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -27,6 +28,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 @Transactional
+@Tag("IntegrationTest")
 class LibraryAlphabetIT extends AbstractIntegrationTest {
   @Autowired private JdbcTemplate jdbc;
   @Autowired private LibraryRepository libraries;

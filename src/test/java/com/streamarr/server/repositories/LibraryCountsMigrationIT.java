@@ -8,12 +8,14 @@ import java.util.UUID;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 import org.jooq.DSLContext;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import tools.jackson.databind.ObjectMapper;
 
+@Tag("IntegrationTest")
 class LibraryCountsMigrationIT extends AbstractIntegrationTest {
   @Autowired private DataSource dataSource;
   @Autowired private DSLContext dsl;

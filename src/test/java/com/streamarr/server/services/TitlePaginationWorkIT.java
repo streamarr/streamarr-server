@@ -15,6 +15,7 @@ import org.jooq.DSLContext;
 import org.jooq.Select;
 import org.jooq.VisitListener;
 import org.jooq.impl.DSL;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 
 @Transactional
+@Tag("IntegrationTest")
 class TitlePaginationWorkIT extends AbstractIntegrationTest {
   @Autowired private LibraryRepository libraries;
   @Autowired private MovieRepository movies;
