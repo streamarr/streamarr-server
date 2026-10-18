@@ -1,6 +1,6 @@
 package com.streamarr.server.services.library;
 
-import com.streamarr.server.domain.BaseCollectable;
+import com.streamarr.server.domain.Collectable;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
@@ -36,10 +36,10 @@ public class LibraryContentsService {
   }
 
   @Transactional(readOnly = true)
-  public Optional<? extends BaseCollectable<?>> findItem(LibraryItemChangedEvent change) {
+  public Optional<Collectable> findItem(LibraryItemChangedEvent change) {
     return switch (change.kind()) {
-      case MOVIE -> movies.findById(change.itemId());
-      case SERIES -> series.findById(change.itemId());
+      case MOVIE -> movies.findById(change.itemId()).map(item -> item);
+      case SERIES -> series.findById(change.itemId()).map(item -> item);
       default -> throw new IllegalArgumentException("Library items must be movies or series");
     };
   }

@@ -4,7 +4,7 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsSubscription;
 import com.netflix.graphql.dgs.InputArgument;
-import com.streamarr.server.domain.BaseCollectable;
+import com.streamarr.server.domain.Collectable;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.graphql.cursor.CursorUtil;
@@ -40,7 +40,7 @@ public class LibraryContentsSubscriptionResolver {
   }
 
   @DgsData(parentType = "LibraryItemChange")
-  public BaseCollectable<?> item(DataFetchingEnvironment environment) {
+  public Collectable item(DataFetchingEnvironment environment) {
     return contents.findItem(environment.getSource()).orElse(null);
   }
 
