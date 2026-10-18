@@ -10,6 +10,7 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
+import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
@@ -339,10 +340,23 @@ public class ProducerLifecycleService {
    * Starts the variant that the multivariant playlist lists first, at the stream session's current
    * segment. No other variant starts until the player requests one of its segments (ADR 0019).
    */
-  public void startFirstListedVariant(StreamSession session) {
-    withSessionLock(
-        session.getSessionId(),
-        () -> startVariant(session, firstListedVariant(session), session.getCurrentSegment()));
+  public StreamSession startFirstListedVariant(StreamSession session) {
+    var sessionId = session.getSessionId();
+    return withSessionLock(
+        sessionId,
+        () -> {
+          var current =
+              runtimeRegistry
+                  .findById(sessionId)
+                  .orElseThrow(() -> new SessionNotFoundException(sessionId));
+          startVariant(current, firstListedVariant(current), current.getCurrentSegment());
+          if (runtimeRegistry.findById(sessionId).isEmpty()) {
+            throw new SessionNotFoundException(sessionId);
+          }
+
+          runtimeRegistry.save(current);
+          return current;
+        });
   }
 
   private static String firstListedVariant(StreamSession session) {

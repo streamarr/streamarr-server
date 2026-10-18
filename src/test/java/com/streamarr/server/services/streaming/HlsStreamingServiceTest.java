@@ -6,6 +6,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBui
 import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest;
+import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libx264;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -34,6 +35,7 @@ import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
@@ -1321,6 +1323,7 @@ class HlsStreamingServiceTest {
     transcodeExecutor.setAvailableSlots(0);
     var command =
         CreateStreamSessionCommand.builder()
+            .streamSessionId(UUID.randomUUID())
             .mediaFileId(file.getId())
             .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
@@ -1432,6 +1435,122 @@ class HlsStreamingServiceTest {
 
     assertThat(playlist.lines().filter(line -> line.endsWith("/stream.m3u8?t=t")))
         .containsExactly("480p/stream.m3u8?t=t", "720p/stream.m3u8?t=t", "360p/stream.m3u8?t=t");
+  }
+
+  @Test
+  @DisplayName("Should use the reserved session identifier when dispatching its first job")
+  void shouldUseTheReservedSessionIdentifierWhenDispatchingItsFirstJob() {
+    var command =
+        createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getSessionId()).isEqualTo(command.streamSessionId());
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(TranscodeRequest::sessionId)
+        .isEqualTo(command.streamSessionId());
+  }
+
+  @Test
+  @DisplayName("Should not restore the session when it is destroyed during its first dispatch")
+  void shouldNotRestoreTheSessionWhenItIsDestroyedDuringItsFirstDispatch() {
+    var closingExecutor =
+        new FakeTranscodeExecutor() {
+          @Override
+          public TranscodeHandle start(TranscodeRequest request) {
+            var handle = super.start(request);
+            service.destroySession(request.sessionId());
+            return handle;
+          }
+        };
+    service = serviceWith(closingExecutor, runtimeRegistry);
+    var command =
+        createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThatThrownBy(() -> service.createSession(command))
+        .isInstanceOf(SessionNotFoundException.class);
+
+    assertThat(service.getAllSessions()).isEmpty();
+    assertThat(service.getActiveSessionCount()).isZero();
+    assertThat(closingExecutor.getRunningCount()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should not start a producer when the session is destroyed before its first dispatch")
+  void shouldNotStartAProducerWhenTheSessionIsDestroyedBeforeItsFirstDispatch() {
+    var closingRegistry =
+        new FakeRuntimeStreamSessionRegistry() {
+          @Override
+          public void save(StreamSession session) {
+            super.save(session);
+            service.destroySession(session.getSessionId());
+          }
+        };
+    service = serviceWith(transcodeExecutor, closingRegistry);
+    var command =
+        createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThatThrownBy(() -> service.createSession(command))
+        .isInstanceOf(SessionNotFoundException.class);
+
+    assertThat(service.getAllSessions()).isEmpty();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+    assertThat(transcodeExecutor.getRunningCount()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should retain the started producer when the registry returns detached sessions")
+  void shouldRetainTheStartedProducerWhenTheRegistryReturnsDetachedSessions() {
+    var detachedRegistry =
+        new FakeRuntimeStreamSessionRegistry() {
+          @Override
+          public Optional<StreamSession> findById(UUID sessionId) {
+            return super.findById(sessionId).map(HlsStreamingServiceTest::detachedSession);
+          }
+        };
+    service = serviceWith(transcodeExecutor, detachedRegistry);
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
+    transcodeExecutor.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(libx264()));
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.HIGH_720P)
+            .supportedCodecs(List.of("h264"))
+            .build();
+    var command = createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    var created = accepted(service.createSession(command));
+    var stored = service.accessSession(playbackRequest(created)).orElseThrow();
+
+    assertThat(stored.getHandle()).isPresent();
+    assertThat(created.getHandle()).isEqualTo(stored.getHandle());
+    assertThat(stored.getCurrentSegment()).isEqualTo(created.getCurrentSegment());
+    assertThat(stored.getPinnedEncoder(StreamSession.defaultVariant())).contains(libx264());
+  }
+
+  private static StreamSession detachedSession(StreamSession source) {
+    var copy =
+        StreamSession.builder()
+            .sessionId(source.getSessionId())
+            .mediaFileId(source.getMediaFileId())
+            .authority(source.getAuthority())
+            .sourcePath(source.getSourcePath())
+            .mediaProbe(source.getMediaProbe())
+            .transcodeDecision(source.getTranscodeDecision())
+            .options(source.getOptions())
+            .createdAt(source.getCreatedAt())
+            .variants(source.getVariants())
+            .build();
+    copy.setCurrentSegment(source.getCurrentSegment());
+    source
+        .getVariantHandles()
+        .forEach(
+            (label, handle) -> {
+              copy.setVariantHandle(label, handle);
+              source.getPinnedEncoder(label).ifPresent(encoder -> copy.pinEncoder(label, encoder));
+            });
+    return copy;
   }
 
   @Test
