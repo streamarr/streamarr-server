@@ -59,6 +59,16 @@ public sealed interface ProbeOutcome {
           .audioBitrate(audio.map(StreamInfo::bitrate).orElse(OptionalLong.empty()))
           .streams(streams)
           .keyframes(keyframes)
+          .videoPlaybackFacts(
+              chosenVideoStream.map(
+                  chosen ->
+                      VideoPlaybackFacts.builder()
+                          .streamIndex(chosen.streamIndex())
+                          .dynamicRange(video.dynamicRange().orElse(VideoDynamicRange.UNSPECIFIED))
+                          .bitDepth(video.bitDepth())
+                          .chromaSubsampling(video.chromaSubsampling())
+                          .codecString(video.codecString())
+                          .build()))
           .build();
     }
 

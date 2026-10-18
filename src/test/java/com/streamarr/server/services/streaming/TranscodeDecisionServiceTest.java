@@ -14,10 +14,13 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.fixtures.ProbeFixture;
+import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
@@ -309,8 +312,18 @@ class TranscodeDecisionServiceTest {
         .audioCodec(audioCodec)
         .bitrate(5_000_000L)
         .audioChannels(OptionalInt.of(2))
-        .audioBitrate(OptionalLong.of(128_000L));
+        .audioBitrate(OptionalLong.of(128_000L))
+        .videoPlaybackFacts(
+            Optional.of(
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                    .streamIndex(0)
+                    .codecString(Optional.ofNullable(SDR_CODEC_STRINGS.get(videoCodec)))
+                    .build()));
   }
+
+  // The codec string that the probe stores for an 8-bit SDR source of each codec.
+  private static final Map<String, String> SDR_CODEC_STRINGS =
+      Map.of("h264", "avc1.640028", "hevc", "hvc1.1.6.L120.90", "av1", "av01.0.08M.08");
 
   private StreamingOptions options(List<String> supportedCodecs) {
     return StreamingOptions.builder()
@@ -465,15 +478,9 @@ class TranscodeDecisionServiceTest {
   @DisplayName("Should decide audio mode none when source has no audio stream")
   void shouldDecideAudioModeNoneWhenSourceHasNoAudioStream() {
     var source =
-        MediaProbe.builder()
-            .keyframes(KEYFRAMES_EVERY_TWO_SECONDS)
-            .duration(Duration.ofMinutes(120))
-            .framerate(OptionalDouble.of(23.976))
-            .width(1920)
-            .height(1080)
-            .videoCodec("h264")
-            .audioCodec(null)
-            .bitrate(5_000_000L)
+        probeBuilder("h264", null)
+            .audioChannels(OptionalInt.empty())
+            .audioBitrate(OptionalLong.empty())
             .build();
     var clientOptions = options(List.of("h264"));
 
@@ -678,15 +685,7 @@ class TranscodeDecisionServiceTest {
   @DisplayName("Should default to stereo when source audio channels are empty")
   void shouldDefaultToStereoWhenSourceAudioChannelsAreEmpty() {
     var source =
-        MediaProbe.builder()
-            .keyframes(KEYFRAMES_EVERY_TWO_SECONDS)
-            .duration(Duration.ofMinutes(120))
-            .framerate(OptionalDouble.of(23.976))
-            .width(1920)
-            .height(1080)
-            .videoCodec("h264")
-            .audioCodec("aac")
-            .bitrate(5_000_000L)
+        probeBuilder("h264", "aac")
             .audioChannels(OptionalInt.empty())
             .audioBitrate(OptionalLong.empty())
             .build();

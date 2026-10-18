@@ -9,6 +9,10 @@ import java.util.OptionalLong;
 import lombok.Builder;
 import lombok.NonNull;
 
+/**
+ * The playback view of a probe outcome. {@code videoPlaybackFacts} is empty when the outcome's
+ * probe version reports no playback facts, which every version before 4 does.
+ */
 @Builder
 public record MediaProbe(
     Duration duration,
@@ -22,7 +26,8 @@ public record MediaProbe(
     OptionalLong audioBitrate,
     Optional<String> containerFormat,
     List<StreamInfo> streams,
-    @NonNull KeyframeKnowledge keyframes) {
+    @NonNull KeyframeKnowledge keyframes,
+    @NonNull Optional<VideoPlaybackFacts> videoPlaybackFacts) {
 
   public MediaProbe {
     if (audioChannels == null) {
@@ -40,6 +45,7 @@ public record MediaProbe(
   public static class MediaProbeBuilder {
     private Optional<String> containerFormat = Optional.empty();
     private OptionalDouble framerate = OptionalDouble.empty();
+    private Optional<VideoPlaybackFacts> videoPlaybackFacts = Optional.empty();
   }
 
   public List<StreamInfo> audioStreams() {
