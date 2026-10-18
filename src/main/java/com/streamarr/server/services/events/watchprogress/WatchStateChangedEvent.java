@@ -1,4 +1,4 @@
-package com.streamarr.server.services.watchprogress.events;
+package com.streamarr.server.services.events.watchprogress;
 
 import java.util.Set;
 import java.util.UUID;
