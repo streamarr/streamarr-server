@@ -3,8 +3,8 @@ DELETE FROM library_metadata;
 
 INSERT INTO library_metadata (library_id, letter, item_count)
 SELECT item.library_id,
-       (CASE WHEN LEFT(item.title_sort, 1) ~ '[a-zA-Z]'
-             THEN UPPER(LEFT(item.title_sort, 1)) ELSE 'HASH' END)::alphabet_letter,
+       (CASE WHEN LEFT(item.title_sort, 1) COLLATE "C" ~ '[a-zA-Z]'
+             THEN UPPER(LEFT(item.title_sort, 1) COLLATE "C") ELSE 'HASH' END)::alphabet_letter,
        COUNT(*)
 FROM base_collectable item
 LEFT JOIN movie ON movie.id = item.id
