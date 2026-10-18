@@ -10,11 +10,64 @@ import org.flywaydb.core.Flyway;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import tools.jackson.databind.ObjectMapper;
 
 class LibraryCountsMigrationIT extends AbstractIntegrationTest {
   @Autowired private DataSource dataSource;
   @Autowired private DSLContext dsl;
   @Autowired private Flyway flyway;
+  @Autowired private ObjectMapper objectMapper;
+
+  @Test
+  void shouldSeekALateTitlePageWithBoundedWorkAfterUpgrade() throws SQLException {
+    var schema = "title_page_" + UUID.randomUUID().toString().replace("-", "");
+    dsl.createSchema(schema).execute();
+    try (var connection = dataSource.getConnection();
+        var statement = connection.createStatement()) {
+      statement.execute("SET search_path = " + schema + ", public");
+      statement.execute(
+          """
+          CREATE TABLE base_collectable (id INT PRIMARY KEY, library_id INT, title_sort TEXT);
+          CREATE INDEX idx_base_collectable_library_titlesort_ci_id
+            ON base_collectable (library_id, LOWER(title_sort), id);
+          INSERT INTO base_collectable
+            SELECT n, 1, 'title' || lpad(n::text, 6, '0') FROM generate_series(1,200000) n;
+          INSERT INTO base_collectable VALUES (200001, 1, NULL);
+          """);
+      Flyway.configure()
+          .configuration(flyway.getConfiguration())
+          .schemas(schema)
+          .defaultSchema(schema)
+          .baselineVersion("98")
+          .baselineOnMigrate(true)
+          .target("latest")
+          .load()
+          .migrate();
+      statement.execute("ANALYZE base_collectable");
+
+      try (var rows =
+          statement.executeQuery(
+              """
+              EXPLAIN (ANALYZE, FORMAT JSON)
+              SELECT id FROM base_collectable
+              WHERE library_id = 1
+                AND (title_sort IS NULL, COALESCE(LOWER(title_sort), '') COLLATE "C", id)
+                  >= (false, 'title180000', 180000)
+              ORDER BY title_sort IS NULL, COALESCE(LOWER(title_sort), '') COLLATE "C", id
+              LIMIT 50
+              """)) {
+        assertThat(rows.next()).isTrue();
+        var plan = objectMapper.readTree(rows.getString(1));
+        assertThat(plan.findValues("Actual Rows"))
+            .isNotEmpty()
+            .allSatisfy(count -> assertThat(count.asLong()).isLessThanOrEqualTo(100));
+        assertThat(plan.findValues("Rows Removed by Filter"))
+            .allSatisfy(count -> assertThat(count.asLong()).isLessThanOrEqualTo(100));
+      }
+    } finally {
+      dsl.dropSchema(schema).cascade().execute();
+    }
+  }
 
   @Test
   void shouldReplaceLegacyChildCountsAndRemoveStaleBucketsDuringUpgrade() throws SQLException {

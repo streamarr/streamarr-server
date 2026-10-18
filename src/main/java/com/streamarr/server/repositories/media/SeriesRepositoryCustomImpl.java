@@ -29,6 +29,7 @@ import com.streamarr.server.repositories.WatchStateConditions;
 import com.streamarr.server.services.pagination.ItemSortValue;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import jakarta.persistence.EntityManager;
 import java.time.OffsetDateTime;
@@ -77,10 +78,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
       filter = JooqQueryHelper.reverseFilter(filter);
     }
 
-    var orderByColumns =
-        new SortField[] {
-          buildOrderBy(filter, shouldReverse), BASE_COLLECTABLE.ID.sort(filter.getSortDirection())
-        };
+    var orderByColumns = buildOrderBy(filter, shouldReverse);
 
     var seekCondition =
         JooqQueryHelper.buildSeekCondition(
@@ -158,11 +156,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
 
   public List<Series> findFirstWithFilter(MediaPaginationOptions options) {
 
-    var orderByColumns =
-        new SortField[] {
-          buildOrderBy(options.getMediaFilter(), false),
-          BASE_COLLECTABLE.ID.sort(options.getMediaFilter().getSortDirection())
-        };
+    var orderByColumns = buildOrderBy(options.getMediaFilter(), false);
 
     var query =
         context
@@ -192,10 +186,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
     }
 
     var reversed = JooqQueryHelper.reverseFilter(filter);
-    var orderByColumns =
-        new SortField[] {
-          buildOrderBy(reversed, true), BASE_COLLECTABLE.ID.sort(reversed.getSortDirection())
-        };
+    var orderByColumns = buildOrderBy(reversed, true);
 
     var query =
         context
@@ -321,18 +312,17 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
     };
   }
 
-  private SortField<?> buildOrderBy(MediaFilter filter, boolean reversePage) {
+  private SortField<?>[] buildOrderBy(MediaFilter filter, boolean reversePage) {
     var direction = filter.getSortDirection();
-    if (reversePage && JooqQueryHelper.isNullableSortField(filter.getSortBy())) {
-      return sortField(filter).sort(direction).nullsFirst();
+    if (filter.getSortBy() == OrderMediaBy.TITLE) {
+      return JooqQueryHelper.titleOrderBy(direction);
     }
 
-    return switch (filter.getSortBy()) {
-      case TITLE -> JooqQueryHelper.titleSortField().sort(direction);
-      case ADDED -> BASE_COLLECTABLE.CREATED_ON.sort(direction);
-      case RELEASE_DATE -> SERIES.FIRST_AIR_DATE.sort(direction).nullsLast();
-      case RUNTIME -> SERIES.RUNTIME.sort(direction).nullsLast();
-      case LAST_WATCHED -> lastWatchedAt(filter).sort(direction).nullsLast();
-    };
+    var order = sortField(filter).sort(direction);
+    if (JooqQueryHelper.isNullableSortField(filter.getSortBy())) {
+      order = reversePage ? order.nullsFirst() : order.nullsLast();
+    }
+
+    return new SortField<?>[] {order, BASE_COLLECTABLE.ID.sort(direction)};
   }
 }
