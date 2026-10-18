@@ -266,7 +266,7 @@ public class MovieService {
             .toList();
 
     return paginationService.buildMediaPage(
-        pageItems, resolvedOptions.getPaginationOptions(), resolvedOptions.getCursorId());
+        pageItems, resolvedOptions, movieRepository::seekWithFilter);
   }
 
   private Map<UUID, Instant> lastWatchedFor(MediaFilter filter, List<Movie> movies) {
