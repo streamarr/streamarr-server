@@ -88,7 +88,19 @@ public class MovieService {
 
   @Transactional
   public void deleteMovieById(UUID movieId) {
-    movieRepository.findById(movieId).ifPresent(movie -> deleteMovies(List.of(movie)));
+    movieRepository
+        .findById(movieId)
+        .ifPresent(
+            movie -> {
+              deleteMovies(List.of(movie));
+              events.publishEvent(
+                  LibraryItemChangedEvent.builder()
+                      .change(LibraryItemChangedEvent.Change.REMOVED)
+                      .libraryId(movie.getLibrary().getId())
+                      .itemId(movie.getId())
+                      .kind(MediaType.MOVIE)
+                      .build());
+            });
   }
 
   @Transactional
@@ -103,15 +115,6 @@ public class MovieService {
 
     imageService.prepareMovieDeletion(movies.stream().map(Movie::getId).toList());
     movieRepository.deleteAll(movies);
-    movies.forEach(
-        movie ->
-            events.publishEvent(
-                LibraryItemChangedEvent.builder()
-                    .change(LibraryItemChangedEvent.Change.REMOVED)
-                    .libraryId(movie.getLibrary().getId())
-                    .itemId(movie.getId())
-                    .kind(MediaType.MOVIE)
-                    .build()));
   }
 
   @Transactional
