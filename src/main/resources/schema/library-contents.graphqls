@@ -1,22 +1,54 @@
-"A committed change to a top-level item in a library."
+"""
+A committed change to a top-level movie or series. Read library queries for initial
+state; these operations have no snapshot or readiness handshake. Selectable fields
+are read at delivery and may reflect a later commit. Operations do not establish a
+global event order. See Subscription for transport errors, completion and recovery.
+"""
 type LibraryItemChange {
     libraryId: ID!
     itemId: ID!
     kind: MediaType!
     "Current selectable movie or series fields; null if the item has since been removed."
     item: Media
-    "Current filter membership and pagination position. TITLE startLetter remains a seek anchor, not a filter."
+    """
+    Current membership and position using the same sort and filter as the displayed
+    Library.items connection. TITLE startLetter is a seek anchor, not a membership
+    filter. Normalize item fields and reconcile edges by itemId without rereading the
+    query. In-range additions grow the window; removals shrink it without backfilling.
+    Preserve pagination anchors when a partial window becomes empty.
+    """
     position(sort: MediaSort, filter: MediaFilter): LibraryItemPosition!
 }
 
 extend type Subscription {
-    "A top-level item was added to the library. Requires a selected Profile, as the library query does."
+    """
+    A top-level item was committed to the library. Initial state comes from
+    Library.items queries. Requires a selected Profile and
+    uses the same visibility as library queries. Library removal completes the
+    operation; refusal of readable scope is an error, not evidence of deletion.
+    """
     libraryItemAdded(libraryId: ID!): LibraryItemChange
-    "A top-level item's selectable fields changed. Uses the same visibility as libraryItemAdded."
+    """
+    Committed metadata, artwork, file or nested season/episode changes identify the
+    affected movie or parent series. Watch-state changes reach only the authenticated
+    connection's selected Profile; other changes reach all subscribed Profiles, with
+    watch-state fields resolved for each subscriber. Update the initially queried
+    Library.items state using item and position. Uses libraryItemAdded visibility.
+    """
     libraryItemUpdated(libraryId: ID!): LibraryItemChange
-    "A top-level item was removed. Uses the same visibility as libraryItemAdded."
+    """
+    A top-level item's deletion committed. Remove its edge from initially queried
+    Library.items state by itemId without fetching a replacement. Whole-library
+    removal completes the scope instead of publishing each item. Uses the same
+    visibility as libraryItemAdded and Subscription's common delivery/recovery rules.
+    """
     libraryItemRemoved(libraryId: ID!): LibraryItemRemoval
-    "The authoritative itemCount and alphabetIndex were recomputed. Includes changes outside a loaded page."
+    """
+    Authoritative itemCount and alphabetIndex after a committed recount, including
+    changes outside the loaded window. Apply these values independently of loaded
+    edges. Initial counts come from library or libraries queries. Uses
+    libraryItemAdded visibility and requires no follow-up query.
+    """
     libraryCountsChanged(libraryId: ID!): Library
 }
 
@@ -32,6 +64,12 @@ type LibraryItemPosition {
     matchesFilter: Boolean!
     "A Library.items cursor for this item and these arguments; null when it no longer matches or exists."
     cursor: String
-    "Comparable to MediaEdge.orderKey in the same view; null when matchesFilter is false."
+    """
+    Compare with MediaEdge.orderKey from the same sort/filter view as ascending ASCII
+    strings, including for descending sorts. Keys encode server ordering, null
+    placement and the ID tie-breaker; treat their representation as opaque. This is
+    not a cursor. A matching item outside a partial window waits for pagination;
+    a window loaded to an end can extend there. Null when matchesFilter is false.
+    """
     orderKey: String
 }
