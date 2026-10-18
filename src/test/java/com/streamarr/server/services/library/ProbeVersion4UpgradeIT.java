@@ -205,7 +205,7 @@ class ProbeVersion4UpgradeIT extends AbstractIntegrationTest {
     @Bean
     FlywayMigrationStrategy upgradeFromStoredResults(UpgradeFixture fixture) {
       return flyway -> {
-        Flyway.configure().configuration(flyway.getConfiguration()).target("95").load().migrate();
+        Flyway.configure().configuration(flyway.getConfiguration()).target("96").load().migrate();
         fixture.seed(flyway.getConfiguration().getDataSource());
         flyway.migrate();
         var migratedDatabase = new JdbcTemplate(flyway.getConfiguration().getDataSource());
@@ -328,7 +328,7 @@ class ProbeVersion4UpgradeIT extends AbstractIntegrationTest {
     }
   }
 
-  // A separate database gives this startup the real V095 schema without changing the shared
+  // A separate database gives this startup the real V096 schema without changing the shared
   // container's other test databases or relying on hand-built copies of historical tables.
   private record UpgradeDatabase(
       JdbcConnectionDetails connectionDetails, String name, HikariDataSource dataSource)

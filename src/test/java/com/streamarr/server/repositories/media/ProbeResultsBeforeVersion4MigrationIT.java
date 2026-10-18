@@ -114,15 +114,15 @@ class ProbeResultsBeforeVersion4MigrationIT extends AbstractIntegrationTest {
     migrations().load().migrate();
   }
 
-  // Baselining at V095 applies only this change's migration to the hand-built tables.
+  // Baselining at V096 applies only this change's migration to the hand-built tables.
   private FluentConfiguration migrations() {
     return Flyway.configure()
         .configuration(flyway.getConfiguration())
         .schemas(schema)
         .defaultSchema(schema)
-        .baselineVersion("95")
+        .baselineVersion("96")
         .baselineOnMigrate(true)
-        .target("96");
+        .target("97");
   }
 
   private void storeResult(UUID mediaFileId, int probeVersion) throws SQLException {
