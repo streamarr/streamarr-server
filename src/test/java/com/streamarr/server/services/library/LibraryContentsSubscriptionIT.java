@@ -46,6 +46,8 @@ import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -261,9 +263,26 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
         .containsExactly(1, 1);
   }
 
-  @Test
-  void shouldCompleteEverySubscriptionWhenItsLibraryIsRemovedAndCompleteALateRegistration() {
-    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+  @ParameterizedTest
+  @EnumSource(
+      value = MediaType.class,
+      names = {"MOVIE", "SERIES"})
+  void shouldCompleteEverySubscriptionWhenItsLibraryIsRemovedAndCompleteALateRegistration(
+      MediaType type) {
+    var library =
+        libraries.saveAndFlush(
+            LibraryFixtureCreator.buildFakeLibrary().toBuilder().type(type).build());
+    for (var index = 0; index < 65; index++) {
+      var title = "Item " + index;
+      if (type == MediaType.MOVIE) {
+        movies.saveAndFlush(Movie.builder().title(title).titleSort(title).library(library).build());
+        continue;
+      }
+
+      seriesRepository.saveAndFlush(
+          Series.builder().title(title).titleSort(title).library(library).build());
+    }
+
     var identity = auth.createIdentity();
     identities.add(identity);
     var administrator = auth.createAdminIdentity();

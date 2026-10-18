@@ -263,7 +263,13 @@ public class SeriesService {
 
   @Transactional
   public void deleteSeriesById(UUID seriesId) {
-    seriesRepository.findById(seriesId).ifPresent(series -> deleteSeries(List.of(series)));
+    seriesRepository
+        .findById(seriesId)
+        .ifPresent(
+            series -> {
+              deleteSeries(List.of(series));
+              publishChange(series, LibraryItemChangedEvent.Change.REMOVED);
+            });
   }
 
   private void deleteSeries(List<Series> seriesList) {
@@ -273,7 +279,6 @@ public class SeriesService {
 
     imageService.prepareSeriesDeletion(seriesList.stream().map(Series::getId).toList());
     seriesRepository.deleteAll(seriesList);
-    seriesList.forEach(series -> publishChange(series, LibraryItemChangedEvent.Change.REMOVED));
   }
 
   private void publishChange(Series series, LibraryItemChangedEvent.Change change) {
