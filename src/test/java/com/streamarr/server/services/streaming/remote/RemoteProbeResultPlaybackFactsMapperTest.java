@@ -449,6 +449,12 @@ class RemoteProbeResultPlaybackFactsMapperTest {
                       .addStreams(ProbeStreamInfo.newBuilder().setIndex(1).setCodecType("audio"))
                       .setChosenVideoStreamIndex(1)),
           violation("a chosen stream that is missing", media -> media.setChosenVideoStreamIndex(7)),
+          violation(
+              "an unrecognized compatible base",
+              media -> {
+                media.getStreamsBuilder(0).getDynamicRangeBuilder().setCompatibleBaseValue(99);
+                return media;
+              }),
           violation("no frame-rate rule", ProbeMediaInfo.Builder::clearFrameRateRule),
           violation(
               "a frame-rate rule without a basis",

@@ -95,7 +95,9 @@ final class RemotePlaybackFactsMapper {
       case COMPATIBLE_BASE_SDR -> CompatibleBase.SDR;
       case COMPATIBLE_BASE_PQ -> CompatibleBase.PQ;
       case COMPATIBLE_BASE_HLG -> CompatibleBase.HLG;
-      case COMPATIBLE_BASE_UNSPECIFIED, UNRECOGNIZED -> CompatibleBase.UNSPECIFIED;
+      case COMPATIBLE_BASE_UNSPECIFIED -> CompatibleBase.UNSPECIFIED;
+      case UNRECOGNIZED ->
+          throw contractViolation("Worker probe result carries an unrecognized compatible base");
     };
   }
 

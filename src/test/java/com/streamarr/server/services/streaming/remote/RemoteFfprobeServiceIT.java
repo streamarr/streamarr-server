@@ -12,11 +12,13 @@ import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.Chapter;
 import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.ChosenVideoStream;
+import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeTimedOutException;
@@ -380,6 +382,38 @@ class RemoteFfprobeServiceIT {
     }
   }
 
+  @ParameterizedTest
+  @ValueSource(ints = {5, 99, -1})
+  @DisplayName("Should fail the probe when a worker reports an unrecognized compatible base")
+  void shouldFailTheProbeWhenAWorkerReportsAnUnrecognizedCompatibleBase(int compatibleBase) {
+    var media = WorkerProbeResultFixture.version4MediaBuilder();
+    media.getStreamsBuilder(0).getDynamicRangeBuilder().setCompatibleBaseValue(compatibleBase);
+
+    assertThatThrownBy(() -> replyToVersion4Probe(media))
+        .isInstanceOfSatisfying(
+            ProbeExecutionException.class,
+            failure -> assertThat(failure.reason()).isEqualTo(ItemFailureReason.TEMPORARY));
+  }
+
+  @Test
+  @DisplayName(
+      "Should retain unspecified transfer when a worker reports the explicit compatible base")
+  void shouldRetainUnspecifiedTransferWhenAWorkerReportsTheExplicitCompatibleBase()
+      throws Exception {
+    var media = WorkerProbeResultFixture.version4MediaBuilder();
+    media.getStreamsBuilder(0).getDynamicRangeBuilder().setCompatibleBaseValue(0);
+
+    var outcome = replyToVersion4Probe(media);
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            ProbeOutcome.Success.class,
+            success ->
+                assertThat(success.streams().getFirst().dynamicRange())
+                    .map(VideoDynamicRange::compatibleBase)
+                    .contains(CompatibleBase.UNSPECIFIED));
+  }
+
   @Test
   @DisplayName("Should return the chapters when a probe version 4 worker reports them")
   void shouldReturnTheChaptersWhenAProbeVersion4WorkerReportsThem() throws Exception {
@@ -609,6 +643,26 @@ class RemoteFfprobeServiceIT {
                         .setFailure(ProbeFailure.PROBE_FAILURE_CANCELLED)))
         .isInstanceOf(ProbeCancelledException.class)
         .isNotInstanceOf(ProbeExecutionException.class);
+  }
+
+  private ProbeOutcome replyToVersion4Probe(ProbeMediaInfo.Builder media) throws Exception {
+    try (var server = server()) {
+      server.start();
+      try (var worker = worker(server.port(), ProbeVersion.FIRST_TO_REPORT_PLAYBACK_FACTS)) {
+        var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
+        var request = request().probeVersion(ProbeVersion.FIRST_TO_REPORT_PLAYBACK_FACTS).build();
+        try (var result = BoundedTask.start(() -> service.probe(request))) {
+          var dispatched = worker.nextResponse().getStartProbe().getRequest();
+          worker.reply(
+              ProbeAttemptResult.newBuilder()
+                  .setProbeAttemptId(dispatched.getProbeAttemptId())
+                  .setProbeVersion(dispatched.getProbeVersion())
+                  .setMedia(media)
+                  .build());
+          return result.await(Duration.ofSeconds(5));
+        }
+      }
+    }
   }
 
   private ProbeOutcome.Success remoteOutcome(ProbeMediaInfo media) throws Exception {
