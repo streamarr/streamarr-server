@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.media;
 
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.services.pagination.ItemSortValue;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import java.util.Collection;
@@ -10,6 +11,8 @@ import java.util.Set;
 import java.util.UUID;
 
 public interface MovieRepositoryCustom {
+
+  Optional<ItemSortValue> findItemPosition(UUID itemId, MediaFilter filter);
 
   List<Movie> seekWithFilter(MediaPaginationOptions options);
 

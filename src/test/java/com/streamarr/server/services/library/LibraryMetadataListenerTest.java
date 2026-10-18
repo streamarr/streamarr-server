@@ -26,7 +26,7 @@ class LibraryMetadataListenerTest {
   private final FakeLibraryMetadataRepository libraryMetadata = new FakeLibraryMetadataRepository();
   private final LibraryMetadataListener listener =
       new LibraryMetadataListener(
-          new LetterIndexRecalculator(libraryMetadata, new MutexFactoryProvider()),
+          new LetterIndexRecalculator(libraryMetadata, new MutexFactoryProvider(), _ -> {}),
           libraryOperations,
           new TransactionTemplate(new FakeTransactionManager()));
   private final UUID libraryId = libraries.save(LibraryFixtureCreator.buildFakeLibrary()).getId();

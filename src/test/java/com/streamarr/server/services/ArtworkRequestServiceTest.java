@@ -1026,7 +1026,8 @@ class ArtworkRequestServiceTest {
                   new ImageVariantService(),
                   new ImageProperties("/data/images"),
                   artwork.fileSystem(),
-                  itemResults),
+                  itemResults,
+                  _ -> {}),
               clock);
       var movie = movieArtwork(UUID.randomUUID(), POSTER);
       var operationRun =

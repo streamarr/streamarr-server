@@ -52,11 +52,13 @@ class OrphanedMediaFileCleanupServiceTest {
           null,
           null,
           null,
-          null);
+          null,
+          _ -> {});
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
 
   private final OrphanedMediaFileCleanupService orphanedMediaFileCleanupService =
-      new OrphanedMediaFileCleanupService(fakeMediaFileRepository, movieService, fileSystem);
+      new OrphanedMediaFileCleanupService(
+          fakeMediaFileRepository, movieService, fileSystem, _ -> {});
 
   private Library library;
 
@@ -130,7 +132,8 @@ class OrphanedMediaFileCleanupServiceTest {
   @Test
   @DisplayName("Should delete movie when all its media files are orphaned")
   void shouldDeleteMovieWhenAllItsMediaFilesAreOrphaned() {
-    var movie = fakeMovieRepository.save(Movie.builder().title("Gone Movie").build());
+    var movie =
+        fakeMovieRepository.save(Movie.builder().library(library).title("Gone Movie").build());
 
     fakeMediaFileRepository.save(
         MediaFile.builder()
@@ -232,7 +235,10 @@ class OrphanedMediaFileCleanupServiceTest {
                 .build());
     var serviceWithDeniedAccess =
         new OrphanedMediaFileCleanupService(
-            fakeMediaFileRepository, movieService, new SecurityExceptionFileSystem(fileSystem));
+            fakeMediaFileRepository,
+            movieService,
+            new SecurityExceptionFileSystem(fileSystem),
+            _ -> {});
 
     assertThatThrownBy(() -> serviceWithDeniedAccess.cleanupOrphanedFiles(library))
         .isInstanceOf(SecurityException.class);

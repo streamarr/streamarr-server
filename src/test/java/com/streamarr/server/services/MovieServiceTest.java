@@ -28,6 +28,7 @@ import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.CreditServiceFixture;
+import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.ImageVariantService;
@@ -86,7 +87,8 @@ class MovieServiceTest {
             new ImageVariantService(),
             new ImageProperties("/data/images"),
             fileSystem,
-            new FakeItemResultRepository());
+            new FakeItemResultRepository(),
+            _ -> {});
     movieService =
         new MovieService(
             movieRepository,
@@ -100,7 +102,8 @@ class MovieServiceTest {
             null,
             null,
             null,
-            null);
+            null,
+            _ -> {});
   }
 
   @AfterEach
@@ -842,7 +845,11 @@ class MovieServiceTest {
     @Test
     @DisplayName("Should fetch required artwork for saved movie when creating movie")
     void shouldFetchRequiredArtworkForSavedMovieWhenCreatingMovie() {
-      var movie = Movie.builder().title("Inception").build();
+      var movie =
+          Movie.builder()
+              .library(LibraryFixtureCreator.buildFakeLibrary())
+              .title("Inception")
+              .build();
       var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
       var metadataResult = new MetadataResult<>(movie, imageSources, Map.of(), Map.of());
 
@@ -858,7 +865,11 @@ class MovieServiceTest {
     @Test
     @DisplayName("Should report unavailable artwork when creating movie without image sources")
     void shouldReportUnavailableArtworkWhenCreatingMovieWithoutImageSources() {
-      var movie = Movie.builder().title("Inception").build();
+      var movie =
+          Movie.builder()
+              .library(LibraryFixtureCreator.buildFakeLibrary())
+              .title("Inception")
+              .build();
       var metadataResult = new MetadataResult<>(movie, List.of(), Map.of(), Map.of());
 
       movieService.createMovieWithAssociations(metadataResult, mediaFile(), artworkRun);
@@ -874,6 +885,7 @@ class MovieServiceTest {
       var existing =
           movieRepository.save(
               Movie.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibrary())
                   .title("Old Title")
                   .originalTitle("Old Original")
                   .titleSort("old title")
@@ -886,6 +898,7 @@ class MovieServiceTest {
 
       var fresh =
           Movie.builder()
+              .library(LibraryFixtureCreator.buildFakeLibrary())
               .title("New Title")
               .originalTitle("New Original")
               .titleSort("new title")
@@ -919,13 +932,19 @@ class MovieServiceTest {
       var existing =
           movieRepository.save(
               Movie.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibrary())
                   .title("Inception")
                   .tagline("Old tagline")
                   .summary("Old summary")
                   .contentRating(new ContentRating("MPAA", "PG", "US"))
                   .build());
 
-      var fresh = Movie.builder().title("Inception").titleSort("inception").build();
+      var fresh =
+          Movie.builder()
+              .library(LibraryFixtureCreator.buildFakeLibrary())
+              .title("Inception")
+              .titleSort("inception")
+              .build();
       var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
 
       var result = movieService.refreshMovieMetadata(existing, metadataResult, artworkRun);
@@ -938,10 +957,16 @@ class MovieServiceTest {
     @Test
     @DisplayName("Should update associations when refreshing movie metadata")
     void shouldUpdateAssociationsWhenRefreshingMovieMetadata() {
-      var existing = movieRepository.save(Movie.builder().title("Inception").build());
+      var existing =
+          movieRepository.save(
+              Movie.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .title("Inception")
+                  .build());
 
       var fresh =
           Movie.builder()
+              .library(LibraryFixtureCreator.buildFakeLibrary())
               .title("Inception")
               .cast(List.of(Person.builder().name("Leonardo DiCaprio").sourceId("6193").build()))
               .directors(
@@ -964,9 +989,18 @@ class MovieServiceTest {
     @Test
     @DisplayName("Should fetch required artwork for existing movie when refreshing metadata")
     void shouldFetchRequiredArtworkForExistingMovieWhenRefreshingMetadata() {
-      var existing = movieRepository.save(Movie.builder().title("Inception").build());
+      var existing =
+          movieRepository.save(
+              Movie.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .title("Inception")
+                  .build());
       var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
-      var fresh = Movie.builder().title("Inception").build();
+      var fresh =
+          Movie.builder()
+              .library(LibraryFixtureCreator.buildFakeLibrary())
+              .title("Inception")
+              .build();
       var metadataResult = new MetadataResult<>(fresh, imageSources, Map.of(), Map.of());
 
       movieService.refreshMovieMetadata(existing, metadataResult, artworkRun);
@@ -982,12 +1016,23 @@ class MovieServiceTest {
     @Test
     @DisplayName("Should replace stored artwork when refresh run forces refresh")
     void shouldReplaceStoredArtworkWhenRefreshRunForcesRefresh() {
-      var existing = movieRepository.save(Movie.builder().title("Inception").build());
+      var existing =
+          movieRepository.save(
+              Movie.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .title("Inception")
+                  .build());
       var stored = seedImage(existing.getId());
       var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
       var metadataResult =
           new MetadataResult<>(
-              Movie.builder().title("Inception").build(), imageSources, Map.of(), Map.of());
+              Movie.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .title("Inception")
+                  .build(),
+              imageSources,
+              Map.of(),
+              Map.of());
 
       var forcedRun =
           artworkRequestService.openLibraryOperationRun(
@@ -1007,8 +1052,17 @@ class MovieServiceTest {
     @DisplayName(
         "Should report unavailable artwork when refreshing movie metadata with empty sources")
     void shouldReportUnavailableArtworkWhenRefreshingMovieMetadataWithEmptySources() {
-      var existing = movieRepository.save(Movie.builder().title("Inception").build());
-      var fresh = Movie.builder().title("Inception").build();
+      var existing =
+          movieRepository.save(
+              Movie.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .title("Inception")
+                  .build());
+      var fresh =
+          Movie.builder()
+              .library(LibraryFixtureCreator.buildFakeLibrary())
+              .title("Inception")
+              .build();
       var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
 
       movieService.refreshMovieMetadata(existing, metadataResult, artworkRun);

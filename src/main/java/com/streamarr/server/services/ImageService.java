@@ -12,6 +12,7 @@ import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.exceptions.ImageStorageException;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
+import com.streamarr.server.services.events.library.CollectablesChangedEvent;
 import com.streamarr.server.services.metadata.ImageVariantService;
 import java.io.IOException;
 import java.nio.file.FileSystem;
@@ -25,10 +26,12 @@ import java.util.EnumSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,6 +53,7 @@ public class ImageService {
   private final ImageProperties imageProperties;
   private final FileSystem fileSystem;
   private final ItemResultRepository itemResults;
+  private final ApplicationEventPublisher events;
 
   public record ProcessedImage(List<Image> images, List<Path> writtenFiles) {}
 
@@ -131,6 +135,7 @@ public class ImageService {
     }
 
     itemResults.overwrite(savedArtwork(first, attempt, storedKey));
+    publishArtworkChange(first);
 
     for (var image : images) {
       if (insertedImageIds.contains(image.getId()) || imageRepository.existsById(image.getId())) {
@@ -164,6 +169,7 @@ public class ImageService {
       var replacedPaths = imageRepository.replaceLogicalArtwork(replacement.images(), attempt);
       var first = replacement.images().getFirst();
       itemResults.overwrite(savedArtwork(first, attempt, first.getKey()));
+      publishArtworkChange(first);
       deleteFilesAfterCommit(resolveAbsolutePaths(replacedPaths));
     } catch (RuntimeException e) {
       if (!cleanupDeferred) {
@@ -171,6 +177,15 @@ public class ImageService {
       }
       throw e;
     }
+  }
+
+  private void publishArtworkChange(Image image) {
+    if (image.getEntityType() == ImageEntityType.PERSON
+        || image.getEntityType() == ImageEntityType.COMPANY) {
+      return;
+    }
+
+    events.publishEvent(new CollectablesChangedEvent(Set.of(image.getEntityId())));
   }
 
   private String storedKeyOf(Image image) {

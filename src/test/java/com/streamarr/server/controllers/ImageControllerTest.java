@@ -53,7 +53,8 @@ class ImageControllerTest {
             imageVariantService,
             imageProperties,
             fileSystem,
-            new FakeItemResultRepository());
+            new FakeItemResultRepository(),
+            _ -> {});
     var controller = new ImageController(imageService);
     mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
   }
@@ -171,7 +172,8 @@ class ImageControllerTest {
             new ImageVariantService(),
             new ImageProperties("/data/images"),
             fileSystem,
-            new FakeItemResultRepository());
+            new FakeItemResultRepository(),
+            _ -> {});
 
     assertThat(secondImageService.findByEntity(entityId, ImageEntityType.MOVIE)).isEmpty();
 

@@ -1,0 +1,46 @@
+package com.streamarr.server.services.library;
+
+import com.streamarr.server.domain.BaseCollectable;
+import com.streamarr.server.domain.Library;
+import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.events.library.LibraryItemChangedEvent;
+import com.streamarr.server.services.pagination.ItemSortValue;
+import com.streamarr.server.services.pagination.MediaFilter;
+import java.util.Optional;
+import java.util.UUID;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@RequiredArgsConstructor
+public class LibraryContentsService {
+
+  private final LibraryRepository libraries;
+  private final MovieRepository movies;
+  private final SeriesRepository series;
+
+  public Optional<Library> findLibrary(UUID libraryId) {
+    return libraries.findById(libraryId);
+  }
+
+  @Transactional(readOnly = true)
+  public Optional<ItemSortValue> findPosition(LibraryItemChangedEvent change, MediaFilter filter) {
+    return switch (change.kind()) {
+      case MOVIE -> movies.findItemPosition(change.itemId(), filter);
+      case SERIES -> series.findItemPosition(change.itemId(), filter);
+      default -> throw new IllegalArgumentException("Library items must be movies or series");
+    };
+  }
+
+  @Transactional(readOnly = true)
+  public Optional<? extends BaseCollectable<?>> findItem(LibraryItemChangedEvent change) {
+    return switch (change.kind()) {
+      case MOVIE -> movies.findById(change.itemId());
+      case SERIES -> series.findById(change.itemId());
+      default -> throw new IllegalArgumentException("Library items must be movies or series");
+    };
+  }
+}

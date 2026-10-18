@@ -3,6 +3,7 @@ package com.streamarr.server.services;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Company;
@@ -17,6 +18,7 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
+import com.streamarr.server.services.events.library.LibraryItemChangedEvent;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.pagination.LetterJumpResolver;
@@ -35,6 +37,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -54,6 +57,7 @@ public class SeriesService {
   private final GenreRepository genreRepository;
   private final CompanyRepository companyRepository;
   private final WatchHistoryRepository watchHistoryRepository;
+  private final ApplicationEventPublisher events;
 
   @Transactional
   public Series saveSeriesWithMediaFile(Series series, MediaFile mediaFile) {
@@ -93,6 +97,7 @@ public class SeriesService {
             .sources(metadataResult.imageSources())
             .build());
 
+    publishChange(savedSeries, LibraryItemChangedEvent.Change.ADDED);
     return savedSeries;
   }
 
@@ -138,6 +143,7 @@ public class SeriesService {
     var savedEpisodes = episodeRepository.saveAllAndFlush(episodes);
     requestEpisodeArtwork(savedEpisodes, request);
 
+    publishChange(series, LibraryItemChangedEvent.Change.UPDATED);
     return season;
   }
 
@@ -168,6 +174,7 @@ public class SeriesService {
             .targetType(ImageEntityType.SERIES)
             .sources(metadataResult.imageSources())
             .build());
+    publishChange(saved, LibraryItemChangedEvent.Change.UPDATED);
     return saved;
   }
 
@@ -219,6 +226,7 @@ public class SeriesService {
     var savedEpisodes = episodeRepository.saveAllAndFlush(episodes);
     requestEpisodeArtwork(savedEpisodes, request);
 
+    publishChange(series, LibraryItemChangedEvent.Change.UPDATED);
     return savedSeason;
   }
 
@@ -265,6 +273,17 @@ public class SeriesService {
 
     imageService.prepareSeriesDeletion(seriesList.stream().map(Series::getId).toList());
     seriesRepository.deleteAll(seriesList);
+    seriesList.forEach(series -> publishChange(series, LibraryItemChangedEvent.Change.REMOVED));
+  }
+
+  private void publishChange(Series series, LibraryItemChangedEvent.Change change) {
+    events.publishEvent(
+        LibraryItemChangedEvent.builder()
+            .change(change)
+            .libraryId(series.getLibrary().getId())
+            .itemId(series.getId())
+            .kind(MediaType.SERIES)
+            .build());
   }
 
   @Transactional(readOnly = true)
