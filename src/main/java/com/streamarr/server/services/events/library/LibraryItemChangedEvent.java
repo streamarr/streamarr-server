@@ -10,6 +10,8 @@ import lombok.Builder;
 public record LibraryItemChangedEvent(
     Change change, UUID libraryId, UUID itemId, MediaType kind, Optional<UUID> profileId) {
   public static class LibraryItemChangedEventBuilder {
+    // Lombok reads this default from the generated build() method.
+    @SuppressWarnings("java:S1068")
     private Optional<UUID> profileId = Optional.empty();
   }
 
