@@ -850,7 +850,10 @@ class RemotePlaybackIT {
         .isLessThanOrEqualTo(12);
     assertThat(command)
         .as("video encoding settings for %s", decision)
-        .containsSubsequence("-vf", "scale=-2:720,format=yuv420p")
+        .containsSubsequence(
+            "-vf",
+            "scale=-2:720:out_color_matrix=bt709:out_range=tv:out_primaries=bt709:out_transfer=bt709,format=yuv420p")
+        .containsSubsequence("-r:v:0", "24000/1001")
         .containsSubsequence("-b:v", "2500000")
         .containsSubsequence("-maxrate", "2500000")
         .containsSubsequence("-bufsize", "5000000")
