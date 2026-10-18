@@ -63,8 +63,10 @@ clients do not reconstruct filters from a partially selected entity.
   Treat their representation as opaque; only compare keys from the same view.
 - Pass the cursor unchanged to `before`/`after`. A key is not a cursor. Never synthesize
   a cursor or decode one to recreate sorting logic.
-- TITLE ordering uses PostgreSQL `lower(title_sort) COLLATE "C"`; the matching functional
-  index has the same expression. The database performs case normalization for keys too,
+- TITLE ordering uses PostgreSQL `lower(title_sort) COLLATE "C"`. Its seek index orders
+  a null flag, the normalized title with null coalesced to an empty string, and the ID.
+  Comparing that whole tuple keeps nullable cursor seeks within the index range instead
+  of scanning earlier titles. The database performs case normalization for keys too,
   so client locale and Unicode casing cannot disagree with query ordering. Numeric/date
   sorts keep nulls last in either direction; TITLE retains SQL's ascending-null-last and
   descending-null-first ordering. Backward seeks reverse the physical null order too.
