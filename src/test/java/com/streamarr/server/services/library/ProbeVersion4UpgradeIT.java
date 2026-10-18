@@ -128,8 +128,13 @@ class ProbeVersion4UpgradeIT extends AbstractIntegrationTest {
             .build();
     var sourceAudio = probe.streams().get(1);
     var audio =
-        ProbeFixture.audioStreamBuilder(sourceAudio.codec().orElseThrow())
+        StreamInfo.builder()
             .index(sourceAudio.index())
+            .codecType(sourceAudio.codecType())
+            .codec(sourceAudio.codec())
+            .codecString(sourceAudio.codecString())
+            .audioProfile(sourceAudio.audioProfile())
+            .sampleRate(sourceAudio.sampleRate())
             .channels(sourceAudio.channels())
             .bitrate(sourceAudio.bitrate())
             .endTime(Optional.of(Duration.ofSeconds(11, 999_999_999)))
