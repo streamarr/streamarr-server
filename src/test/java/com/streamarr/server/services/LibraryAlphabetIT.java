@@ -47,6 +47,7 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
     for (var title : List.of("İstanbul", "Kelvin", "indigo", "Kelvin")) {
       movies.saveAndFlush(Movie.builder().title(title).titleSort(title).library(library).build());
     }
+
     recalculator.recalculateLetterIndex(library.getId());
 
     var totals = counts.getItemCounts(List.of(library.getId())).get(library.getId());

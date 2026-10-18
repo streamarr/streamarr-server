@@ -15,6 +15,7 @@ import org.jooq.DSLContext;
 import org.jooq.Select;
 import org.jooq.VisitListener;
 import org.jooq.impl.DSL;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -31,6 +32,7 @@ class TitlePaginationWorkIT extends AbstractIntegrationTest {
   @Autowired private ObjectMapper objectMapper;
 
   @Test
+  @DisplayName("Should read a late title page without scanning earlier titles")
   void shouldReadALateTitlePageWithoutScanningEarlierTitles() {
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     var anchor =
@@ -65,6 +67,7 @@ class TitlePaginationWorkIT extends AbstractIntegrationTest {
                   if (Thread.currentThread() != caller) {
                     return;
                   }
+
                   if (context.queryPartsLength() == 1 && context.queryPart() instanceof Select<?>) {
                     statements.add(DSL.using(dsl.dialect()).renderInlined(context.queryPart()));
                   }
