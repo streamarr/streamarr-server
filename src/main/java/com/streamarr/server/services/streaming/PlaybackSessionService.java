@@ -136,38 +136,45 @@ public class PlaybackSessionService implements AutoCloseable {
   }
 
   public Optional<PlaybackSessionSnapshot> access(@NonNull PlaybackSessionRequest request) {
-    var playback = sessions.get(request.playbackSessionId());
-    if (playback == null) {
-      return Optional.empty();
-    }
-
-    requireAuthority(request.identity(), playback.command.identity().playbackAuthority());
-    return snapshot(playback);
+    return accessibleSession(request.playbackSessionId(), request.identity())
+        .flatMap(this::snapshot);
   }
 
   public Optional<PlaybackSessionSnapshot> reportFormatFailure(
       @NonNull ReportPlaybackFormatFailureCommand command) {
-    var playback = sessions.get(command.playbackSessionId());
+    return accessibleSession(command.playbackSessionId(), command.identity())
+        .flatMap(
+            playback -> {
+              recover(
+                  playback,
+                  command.streamSessionId(),
+                  new PlaybackSessionFailure.FixedFormatFailed(command.reason()));
+              return snapshot(playback);
+            });
+  }
+
+  public void close(@NonNull PlaybackSessionRequest request) {
+    accessibleSession(request.playbackSessionId(), request.identity()).ifPresent(this::discard);
+  }
+
+  private Optional<PlaybackSession> accessibleSession(
+      UUID playbackSessionId, AuthenticatedIdentity identity) {
+    var playback = sessions.get(playbackSessionId);
     if (playback == null) {
       return Optional.empty();
     }
 
-    requireAuthority(command.identity(), playback.command.identity().playbackAuthority());
-    recover(
-        playback,
-        command.streamSessionId(),
-        new PlaybackSessionFailure.FixedFormatFailed(command.reason()));
-    return snapshot(playback);
-  }
-
-  public void close(@NonNull PlaybackSessionRequest request) {
-    var playback = sessions.get(request.playbackSessionId());
-    if (playback == null) {
-      return;
+    if (identity.profileId() == null) {
+      throw new AuthenticationRequiredException();
     }
 
-    requireAuthority(request.identity(), playback.command.identity().playbackAuthority());
-    discard(playback);
+    var owner = playback.command.identity().playbackAuthority();
+    if (!identity.playbackAuthority().equals(owner)) {
+      return Optional.empty();
+    }
+
+    requireAuthority(identity, owner);
+    return Optional.of(playback);
   }
 
   /** Rolls back an unpublished start, including any replacement already reserved. */

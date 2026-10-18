@@ -298,25 +298,39 @@ class PlaybackSessionServiceTest {
     assertThat(streams.getAllSessions()).isEmpty();
   }
 
-  @Test
+  @ParameterizedTest
+  @ValueSource(strings = {"authSessionId", "accountId", "householdId"})
   @DisplayName("Should refuse another authority when its profile matches the playback owner")
-  void shouldRefuseAnotherAuthorityWhenItsProfileMatchesThePlaybackOwner() {
+  void shouldRefuseAnotherAuthorityWhenItsProfileMatchesThePlaybackOwner(String changedField) {
     var command = startCommand().build();
     var initial = accepted(service.start(command));
+    var owner = command.identity().playbackAuthority();
+    var foreignAuthority =
+        defaultPlaybackAuthorityBuilder()
+            .authSessionId(owner.authSessionId())
+            .accountId(owner.accountId())
+            .householdId(owner.householdId())
+            .profileId(owner.profileId());
     var foreign =
         identityFor(
-            defaultPlaybackAuthorityBuilder().profileId(command.identity().profileId()).build());
+            switch (changedField) {
+              case "authSessionId" -> foreignAuthority.authSessionId(UUID.randomUUID()).build();
+              case "accountId" -> foreignAuthority.accountId(UUID.randomUUID()).build();
+              case "householdId" -> foreignAuthority.householdId(UUID.randomUUID()).build();
+              default -> throw new IllegalArgumentException(changedField);
+            });
     var foreignRequest =
         PlaybackSessionRequest.builder()
             .playbackSessionId(initial.playbackSessionId())
             .identity(foreign)
             .build();
     var foreignReport = report(initial, command).identity(foreign).build();
-    assertThatThrownBy(() -> service.access(foreignRequest))
-        .isInstanceOf(AuthenticationRequiredException.class);
-    assertThatThrownBy(() -> service.reportFormatFailure(foreignReport))
-        .isInstanceOf(AuthenticationRequiredException.class);
+    assertThat(service.access(foreignRequest)).isEmpty();
+    assertThat(service.reportFormatFailure(foreignReport)).isEmpty();
+    service.close(foreignRequest);
+
     assertThat(service.access(request(initial, command))).contains(initial);
+    assertThat(streams.getActiveSessionCount()).isEqualTo(1);
   }
 
   @ParameterizedTest
