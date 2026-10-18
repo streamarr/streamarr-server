@@ -137,6 +137,17 @@ class RemoteProbeResultPlaybackFactsMapperTest {
                   .build());
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = {-180, 180})
+    @DisplayName("Should keep the signed rotation when it is at either supported boundary")
+    void shouldKeepTheSignedRotationWhenItIsAtEitherSupportedBoundary(int rotation) {
+      var video = ProbeStreamInfo.newBuilder().setCodecType("video").setRotationDegrees(rotation);
+
+      var stream = streamsOf(result(media -> media.setStreams(0, video))).getFirst();
+
+      assertThat(stream.rotationDegrees()).hasValue(rotation);
+    }
+
     @SuppressWarnings("checkstyle:fullyQualifiedName")
     @ParameterizedTest
     @MethodSource("dolbyVisionStates")
@@ -467,6 +478,12 @@ class RemoteProbeResultPlaybackFactsMapperTest {
           violation(
               "a rotation beyond 180 degrees",
               media -> media.setStreams(0, video().setRotationDegrees(270))),
+          violation(
+              "a rotation below -180 degrees",
+              media -> media.setStreams(0, video().setRotationDegrees(-181))),
+          violation(
+              "the minimum signed integer as a rotation",
+              media -> media.setStreams(0, video().setRotationDegrees(Integer.MIN_VALUE))),
           violation(
               "a blank codec string", media -> media.setStreams(0, video().setCodecString(" "))),
           violation("a bit depth of 0", media -> media.setStreams(0, video().setBitDepth(0))),

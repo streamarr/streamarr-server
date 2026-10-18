@@ -159,7 +159,7 @@ final class RemotePlaybackFactsMapper {
     }
 
     var degrees = stream.getRotationDegrees();
-    if (Math.abs(degrees) > MAXIMUM_ROTATION_DEGREES) {
+    if (degrees < -MAXIMUM_ROTATION_DEGREES || degrees > MAXIMUM_ROTATION_DEGREES) {
       throw contractViolation("Worker probe rotation lies outside -180 to 180 degrees");
     }
 
