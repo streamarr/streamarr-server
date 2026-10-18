@@ -888,6 +888,58 @@ class HlsStreamingServiceTest {
         .allSatisfy(line -> assertThat(line).contains("," + codecsParameter + "\""));
   }
 
+  @ParameterizedTest(name = "{0}, encodeVideo={1}")
+  @CsvSource({
+    "mp4a.40.1, false",
+    "mp4a.40.3, false",
+    "mp4a.40.4, false",
+    "mp4a.40.99, false",
+    "mp4a.40.1, true",
+    "mp4a.40.3, true",
+    "mp4a.40.4, true",
+    "mp4a.40.99, true"
+  })
+  @DisplayName("Should encode audio when its AAC object type is outside the plain AAC declaration")
+  void shouldEncodeAudioWhenItsAacObjectTypeIsOutsideThePlainAacDeclaration(
+      String sourceCodecString, boolean encodeVideo) {
+    var probe =
+        ProbeFixture.completeProbe(
+            defaultProbeBuilder().videoCodec(encodeVideo ? "hevc" : "h264").build());
+    var audio =
+        ProbeFixture.audioStreamBuilder("aac")
+            .index(1)
+            .codecString(Optional.of(sourceCodecString))
+            .build();
+    probeResults.setDefaultOutcome(
+        ProbeOutcome.Success.builder()
+            .container(probe.container())
+            .streams(List.of(probe.streams().getFirst(), audio))
+            .keyframes(probe.keyframes())
+            .chosenVideoStream(probe.chosenVideoStream())
+            .build());
+    var file = seedMediaFile();
+    var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
+    var playlist =
+        new HlsPlaylistService(StreamingProperties.builder().build())
+            .generateMultivariantPlaylist(session, "token");
+
+    var decision = session.getTranscodeDecision().audioDecision();
+    assertThat(decision.mode()).isEqualTo(AudioMode.TRANSCODE);
+    assertThat(decision.codec()).isEqualTo("aac");
+    assertThat(decision.hlsCodecString()).isEqualTo("mp4a.40.2");
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(encodeVideo ? TranscodeMode.FULL_TRANSCODE : TranscodeMode.AUDIO_TRANSCODE);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .isNotEmpty()
+        .allSatisfy(
+            request -> assertThat(request.transcodeDecision().audioDecision()).isEqualTo(decision));
+    assertThat(playlist.lines().filter(line -> line.startsWith("#EXT-X-STREAM-INF:")))
+        .isNotEmpty()
+        .allSatisfy(line -> assertThat(line).contains(",mp4a.40.2\""));
+  }
+
   @Test
   @DisplayName(
       "Should encode the first audio stream when its stored codec string is absent and a later stream has one")

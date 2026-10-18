@@ -30,6 +30,9 @@ import org.springframework.stereotype.Service;
 public class TranscodeDecisionService {
 
   private static final List<String> CODEC_PREFERENCE = List.of("av1", "h264");
+  // The plain aac declaration covers LC, HE-AAC and HE-AAC v2.
+  private static final Set<String> COPYABLE_AAC_CODEC_STRINGS =
+      Set.of("mp4a.40.2", "mp4a.40.5", "mp4a.40.29");
   private static final String STREAM_COPY_REFUSALS_METRIC =
       "streamarr.streaming.stream_copy_refusals";
 
@@ -183,7 +186,10 @@ public class TranscodeDecisionService {
     int effectiveChannels = Math.min(normalizedChannels, maxChannels);
 
     var sourceCodecString =
-        source.audioStreams().stream().findFirst().flatMap(StreamInfo::codecString);
+        source.audioStreams().stream()
+            .findFirst()
+            .flatMap(StreamInfo::codecString)
+            .filter(codecString -> isCopyableAudioCodecString(source.audioCodec(), codecString));
     if (candidates.contains(source.audioCodec())
         && normalizedChannels <= maxChannels
         && sourceCodecString.isPresent()) {
@@ -198,6 +204,10 @@ public class TranscodeDecisionService {
     }
 
     return selectTranscodeAudio(candidates, effectiveChannels);
+  }
+
+  private static boolean isCopyableAudioCodecString(String codec, String codecString) {
+    return !"aac".equals(codec) || COPYABLE_AAC_CODEC_STRINGS.contains(codecString);
   }
 
   private AudioDecision selectTranscodeAudio(Set<String> candidates, int effectiveChannels) {
