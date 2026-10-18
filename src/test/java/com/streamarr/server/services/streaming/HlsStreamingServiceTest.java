@@ -857,14 +857,17 @@ class HlsStreamingServiceTest {
             .channels(OptionalInt.of(2))
             .build();
     probeResults.setDefaultOutcome(
-        new ProbeOutcome.Success(
-            probe.container(),
-            List.of(
-                probe.streams().getFirst(),
-                audio,
-                ProbeFixture.audioStreamBuilder("aac").index(2).isDefault(true).build()),
-            probe.keyframes(),
-            probe.chosenVideoStream()));
+        ProbeOutcome.Success.builder()
+            .container(probe.container())
+            .streams(
+                List.of(
+                    probe.streams().getFirst(),
+                    audio,
+                    ProbeFixture.audioStreamBuilder("aac").index(2).isDefault(true).build()))
+            .keyframes(probe.keyframes())
+            .chosenVideoStream(probe.chosenVideoStream())
+            .streamTitlesOmitted(probe.streamTitlesOmitted())
+            .build());
     var file = seedMediaFile();
     var options =
         StreamingOptions.builder()
@@ -897,14 +900,17 @@ class HlsStreamingServiceTest {
             .codecString(Optional.empty())
             .build();
     probeResults.setDefaultOutcome(
-        new ProbeOutcome.Success(
-            probe.container(),
-            List.of(
-                probe.streams().getFirst(),
-                firstAudio,
-                ProbeFixture.audioStreamBuilder("ac3").index(2).isDefault(true).build()),
-            probe.keyframes(),
-            probe.chosenVideoStream()));
+        ProbeOutcome.Success.builder()
+            .container(probe.container())
+            .streams(
+                List.of(
+                    probe.streams().getFirst(),
+                    firstAudio,
+                    ProbeFixture.audioStreamBuilder("ac3").index(2).isDefault(true).build()))
+            .keyframes(probe.keyframes())
+            .chosenVideoStream(probe.chosenVideoStream())
+            .streamTitlesOmitted(probe.streamTitlesOmitted())
+            .build());
     var file = seedMediaFile();
     var options =
         StreamingOptions.builder()
