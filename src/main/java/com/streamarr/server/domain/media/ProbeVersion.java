@@ -12,4 +12,8 @@ public final class ProbeVersion {
   public static final int CURRENT = 3;
 
   public static final int FIRST_TO_REPORT_CHAPTERS = 4;
+
+  // The chosen video stream, its frame-rate rule, and each stream's dynamic range, bit depth,
+  // chroma subsampling, rotation, container cropping, codec string, sample rate and audio profile.
+  public static final int FIRST_TO_REPORT_PLAYBACK_FACTS = 4;
 }

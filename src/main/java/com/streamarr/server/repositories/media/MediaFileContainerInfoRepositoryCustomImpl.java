@@ -504,7 +504,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
     row.setProbeVersion(publication.probeVersion());
     switch (publication.outcome()) {
       case ProbeOutcome.Failure(var error) -> row.setProbeError(error.name());
-      case ProbeOutcome.Success(var container, _, var keyframes) -> {
+      case ProbeOutcome.Success(var container, _, var keyframes, _) -> {
         setKeyframeStatus(row, keyframes);
         setChapterStatus(row, container.chapters());
         row.setFormat(container.format().orElse(null));
@@ -517,7 +517,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
 
     dsl.executeInsert(row);
     if (!(publication.outcome()
-        instanceof ProbeOutcome.Success(var container, var streams, var keyframes))) {
+        instanceof ProbeOutcome.Success(var container, var streams, var keyframes, _))) {
       return;
     }
 
