@@ -230,6 +230,8 @@ class StreamingResolverTest {
             status.read(
                 "data.playbackSession.currentFormatAttempt.error['__typename']", String.class))
         .isEqualTo("PlaybackStartupFailedError");
+    assertThat(status.read("data.playbackSession.currentFormatAttempt.error.message", String.class))
+        .isEqualTo("The server could not start the next format attempt.");
     assertThat(status.jsonString()).doesNotContain("private infrastructure detail");
   }
 

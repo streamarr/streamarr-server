@@ -263,7 +263,7 @@ public class StreamingResolver {
       case PlaybackSessionFailure.CreationRejected(var rejection) -> createSessionError(rejection);
       case PlaybackSessionFailure.StartupFailed() ->
           new PlaybackSessionError.PlaybackStartupFailedError(
-              "The server could not start the replacement stream.");
+              "The server could not start the next format attempt.");
     };
   }
 
