@@ -75,7 +75,8 @@ public class HlsStreamingService implements StreamingService {
         TranscodeDecisionRequest.builder()
             .source(probe)
             .clientOptions(options)
-            .videoFormatConstraint(VideoFormatConstraint.COPY_OR_ENCODE)
+            .videoFormatConstraint(command.videoFormatConstraint())
+            .excludedEncodeCodecFamilies(command.excludedEncodeCodecFamilies())
             .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())
             .build();
     var candidate = transcodeDecisionService.decide(request);

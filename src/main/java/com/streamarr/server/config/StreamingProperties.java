@@ -13,6 +13,7 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties(prefix = "streaming")
 public record StreamingProperties(
     Integer maxConcurrentTranscodes,
+    Integer maxFormatAttempts,
     Duration targetSegmentDuration,
     Duration sessionTimeout,
     // Session retention contributes the playback token's pause/slow-playback slack; reject a
@@ -31,6 +32,15 @@ public record StreamingProperties(
     if (maxConcurrentTranscodes <= 0) {
       throw new IllegalArgumentException(
           "streaming.max-concurrent-transcodes must be positive, got " + maxConcurrentTranscodes);
+    }
+
+    if (maxFormatAttempts == null) {
+      maxFormatAttempts = 2;
+    }
+
+    if (maxFormatAttempts <= 0) {
+      throw new IllegalArgumentException(
+          "streaming.max-format-attempts must be positive, got " + maxFormatAttempts);
     }
 
     if (targetSegmentDuration == null) {
