@@ -1,6 +1,5 @@
 package com.streamarr.server.services.pagination;
 
-import java.time.Instant;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.NonNull;
@@ -17,15 +16,6 @@ public record MediaOrder(
         .direction(filter.getSortDirection())
         .itemId(itemId)
         .value(value)
-        .build();
-  }
-
-  public static MediaOrder newestWatchedFirst(UUID itemId, Instant lastWatchedAt) {
-    return builder()
-        .by(OrderMediaBy.LAST_WATCHED)
-        .direction(SortDirection.DESC)
-        .itemId(itemId)
-        .value(lastWatchedAt)
         .build();
   }
 }

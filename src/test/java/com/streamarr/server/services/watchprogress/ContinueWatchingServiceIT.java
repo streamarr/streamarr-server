@@ -27,6 +27,8 @@ import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
@@ -195,6 +197,84 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
   class GetContinueWatchingTests {
 
     @Test
+    @DisplayName("Should share membership and ordering when placing a batch beyond the shelf cap")
+    void shouldShareMembershipAndOrderingWhenPlacingBatchBeyondShelfCap() {
+      var missing = UUID.randomUUID();
+      var positions =
+          continueWatchingService.getPositions(
+              profileId,
+              Set.of(
+                  inProgressMovie.getId(),
+                  inProgressEpisode.getId(),
+                  watchedMovie.getId(),
+                  unwatchedMovie.getId(),
+                  missing));
+
+      assertThat(continueWatchingService.getContinueWatching(profileId, 1))
+          .extracting(BaseCollectable::getId)
+          .containsExactly(inProgressEpisode.getId());
+      assertThat(
+              positions.entrySet().stream()
+                  .filter(entry -> entry.getValue().matchesFilter())
+                  .sorted(Comparator.comparing(entry -> entry.getValue().orderKey()))
+                  .map(Map.Entry::getKey))
+          .containsExactly(inProgressEpisode.getId(), inProgressMovie.getId());
+      for (var excluded : List.of(watchedMovie.getId(), unwatchedMovie.getId(), missing)) {
+        assertThat(positions.get(excluded)).isEqualTo(new ContinueWatchingPosition(false, null));
+      }
+      assertThat(continueWatchingService.getPositions(profileId, Set.of())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should agree on placement when completion and resume position membership changes")
+    void shouldAgreeOnPlacementWhenCompletionAndResumePositionMembershipChanges() {
+      var owner = authTestSupport.createIdentity();
+      var ownerId = owner.profile().getId();
+      var movie = createMovieWithFile("Membership transitions");
+      var fileId = movie.getFiles().iterator().next().getId();
+      try {
+        var progress = saveProgress(ownerId, fileId);
+        pinSessionProgressTimestamp(fileId, MOVIE_ACTIVITY_AT);
+        assertPlacement(ownerId, movie.getId(), true);
+        var completion =
+            watchHistoryRepository.saveAndFlush(
+                WatchHistory.builder()
+                    .profileId(ownerId)
+                    .collectableId(movie.getId())
+                    .watchedAt(MOVIE_ACTIVITY_AT)
+                    .build());
+        assertPlacement(ownerId, movie.getId(), false);
+
+        pinSessionProgressTimestamp(fileId, MOVIE_ACTIVITY_AT.plusNanos(1000));
+        assertPlacement(ownerId, movie.getId(), true);
+        pinSessionProgressTimestamp(fileId, MOVIE_ACTIVITY_AT);
+        completion.setDismissedAt(Instant.now());
+        watchHistoryRepository.saveAndFlush(completion);
+        assertPlacement(ownerId, movie.getId(), true);
+
+        progress.setPositionSeconds(0);
+        sessionProgressRepository.saveAndFlush(progress);
+        assertPlacement(ownerId, movie.getId(), false);
+      } finally {
+        authTestSupport.deleteIdentity(owner);
+      }
+    }
+
+    private void assertPlacement(UUID owner, UUID itemId, boolean matches) {
+      assertThat(continueWatchingService.getContinueWatching(owner, 12))
+          .extracting(BaseCollectable::getId)
+          .containsExactlyElementsOf(matches ? List.of(itemId) : List.of());
+      var position = continueWatchingService.getPositions(owner, Set.of(itemId)).get(itemId);
+      assertThat(position.matchesFilter()).isEqualTo(matches);
+      if (!matches) {
+        assertThat(position.orderKey()).isNull();
+        return;
+      }
+
+      assertThat(position.orderKey()).isNotBlank();
+    }
+
+    @Test
     @DisplayName("Should return exactly the in-progress movie and episode when querying")
     void shouldReturnExactlyTheInProgressMovieAndEpisodeWhenQuerying() {
       var results = continueWatchingService.getContinueWatching(profileId, 20);
@@ -235,6 +315,15 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
         assertThat(otherResults)
             .extracting(BaseCollectable::getId)
             .containsExactly(otherMovie.getId());
+        var requested = Set.of(inProgressMovie.getId(), otherMovie.getId());
+        var ownPositions = continueWatchingService.getPositions(profileId, requested);
+        var otherPositions = continueWatchingService.getPositions(otherProfileId, requested);
+        assertThat(ownPositions.get(inProgressMovie.getId()).matchesFilter()).isTrue();
+        assertThat(ownPositions.get(otherMovie.getId()))
+            .isEqualTo(new ContinueWatchingPosition(false, null));
+        assertThat(otherPositions.get(otherMovie.getId()).matchesFilter()).isTrue();
+        assertThat(otherPositions.get(inProgressMovie.getId()))
+            .isEqualTo(new ContinueWatchingPosition(false, null));
       } finally {
         authTestSupport.deleteIdentity(otherIdentity);
       }
@@ -315,13 +404,19 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
         var results = continueWatchingService.getContinueWatching(tiedProfileId, 20);
 
         assertThat(results).extracting(BaseCollectable::getId).containsExactlyElementsOf(expected);
+        var positions = continueWatchingService.getPositions(tiedProfileId, Set.copyOf(movieIds));
+        assertThat(
+                positions.entrySet().stream()
+                    .sorted(Comparator.comparing(entry -> entry.getValue().orderKey()))
+                    .map(Map.Entry::getKey))
+            .containsExactlyElementsOf(expected);
       } finally {
         authTestSupport.deleteIdentity(tiedIdentity);
       }
     }
 
-    private void saveProgress(UUID owner, UUID mediaFileId) {
-      sessionProgressRepository.saveAndFlush(
+    private SessionProgress saveProgress(UUID owner, UUID mediaFileId) {
+      return sessionProgressRepository.saveAndFlush(
           SessionProgress.builder()
               .sessionId(UUID.randomUUID())
               .profileId(owner)

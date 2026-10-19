@@ -229,9 +229,10 @@ There is no order across operations or across fields.
 A client keeps its lists current with the same rules the server's queries use.
 It needs no follow-up query.
 
-* *Continue Watching* holds each movie and episode whose `watchStatus` is `IN_PROGRESS`.
-It orders them by `lastWatchedAt`, newest first, then by `id`.
-A client inserts an item when the item becomes `IN_PROGRESS`, moves the item when `lastWatchedAt` changes, and removes the item when the item leaves `IN_PROGRESS`.
+* *Continue Watching* uses the server's `continueWatchingPosition { matchesFilter, orderKey }` on movies and episodes.
+The initial shelf and placement fields share the same counted-resume-position membership and last-watched ordering, including the descending ID tie-breaker.
+Clients merge matching items by ID, compare opaque `orderKey` values as ascending ASCII strings, and retain at most their shelf cap.
+An excluded item is removed without reading a replacement; placement is independent of the cap.
 * *Library views* hold an item when `library { id }` names the view's library and the item matches every active filter.
 The `watchStatus` filter compares the item's `watchStatus`.
 The `unmatched` filter compares the item's `unmatched` field.

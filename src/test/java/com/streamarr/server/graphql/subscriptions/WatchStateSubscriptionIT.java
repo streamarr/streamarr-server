@@ -153,12 +153,14 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
     assertThat(shelf.path("data").path("continueWatching").get(0).path("continueWatchingPosition"))
         .isEqualTo(placement);
     var otherShelf = http.execute(authTestSupport.profileBearer(otherIdentity), query);
+    assertThat(otherShelf.path("errors").isMissingNode()).isTrue();
     assertThat(otherShelf.path("data").path("continueWatching").isEmpty()).isTrue();
     var otherItem =
         http.execute(
             authTestSupport.profileBearer(otherIdentity),
             "{ episode(id: \"%s\") { continueWatchingPosition { matchesFilter orderKey } } }"
                 .formatted(episode.getId()));
+    assertThat(otherItem.path("errors").isMissingNode()).isTrue();
     var otherPlacement = otherItem.path("data").path("episode").path("continueWatchingPosition");
     assertThat(otherPlacement.path("matchesFilter").asBoolean()).isFalse();
     assertThat(otherPlacement.path("orderKey").isNull()).isTrue();
