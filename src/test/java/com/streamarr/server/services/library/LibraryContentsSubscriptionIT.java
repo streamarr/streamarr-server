@@ -44,8 +44,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -234,6 +235,60 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
     assertThat(
             socket
                 .nextMessageFor("indirect")
+                .at("/payload/data/libraryItemUpdated/itemId")
+                .asString())
+        .isEqualTo(sentinel.getId().toString());
+  }
+
+  @Test
+  @DisplayName("Should send a removal without an update when orphan cleanup deletes a movie")
+  void shouldDeliverNoUpdateForAMovieRemovedByOrphanCleanup() {
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var removed =
+        movies.saveAndFlush(
+            Movie.builder()
+                .title("Removed")
+                .titleSort("Removed")
+                .library(library)
+                .files(
+                    Set.of(
+                        MediaFile.builder()
+                            .libraryId(library.getId())
+                            .filename("missing.mkv")
+                            .filepathUri(FilepathCodec.encode(directory.resolve("missing.mkv")))
+                            .status(MediaFileStatus.MATCHED)
+                            .build()))
+                .build());
+    var sentinel =
+        movies.saveAndFlush(
+            Movie.builder().title("Sentinel").titleSort("Sentinel").library(library).build());
+    var identity = auth.createIdentity();
+    identities.add(identity);
+    var socket = GraphQlTransportWsTestClient.connectWithBearer(port, auth.profileBearer(identity));
+    sockets.add(socket);
+    socket.subscribe(
+        "cleanup-updates",
+        "subscription { libraryItemUpdated(libraryId: \"%s\") { itemId } }"
+            .formatted(library.getId()));
+    socket.subscribe(
+        "cleanup-removals",
+        "subscription { libraryItemRemoved(libraryId: \"%s\") { itemId } }"
+            .formatted(library.getId()));
+    new ActiveSubscriptions(metrics).awaitCount("libraryItemUpdated", 1);
+    new ActiveSubscriptions(metrics).awaitCount("libraryItemRemoved", 1);
+
+    transactions.executeWithoutResult(_ -> fileCleanup.cleanupOrphanedFiles(library));
+    refresh(sentinel, "After cleanup");
+
+    assertThat(
+            socket
+                .nextMessageFor("cleanup-removals")
+                .at("/payload/data/libraryItemRemoved/itemId")
+                .asString())
+        .isEqualTo(removed.getId().toString());
+    assertThat(
+            socket
+                .nextMessageFor("cleanup-updates")
                 .at("/payload/data/libraryItemUpdated/itemId")
                 .asString())
         .isEqualTo(sentinel.getId().toString());

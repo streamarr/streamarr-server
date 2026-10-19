@@ -9,6 +9,7 @@ import com.streamarr.server.services.filepath.FilepathCodec;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -50,8 +51,10 @@ public class OrphanedMediaFileCleanupService {
 
     mediaFileRepository.deleteAll(orphanedFiles);
 
-    deleteMoviesWithNoRemainingFiles(affectedMovieIds);
-    events.publishEvent(new CollectablesChangedEvent(affectedMovieIds));
+    var changedItemIds = deleteMoviesWithNoRemainingFiles(affectedMovieIds);
+    if (!changedItemIds.isEmpty()) {
+      events.publishEvent(new CollectablesChangedEvent(changedItemIds));
+    }
 
     log.info(
         "Removed {} orphaned media file(s) from {} library.",
@@ -72,18 +75,23 @@ public class OrphanedMediaFileCleanupService {
     return Files.exists(path);
   }
 
-  private void deleteMoviesWithNoRemainingFiles(Set<UUID> movieIds) {
+  private Set<UUID> deleteMoviesWithNoRemainingFiles(Set<UUID> movieIds) {
     if (movieIds.isEmpty()) {
-      return;
+      return Set.of();
     }
 
     var mediaIdsWithRemainingFiles = mediaFileRepository.findDistinctMediaIdsByMediaIdIn(movieIds);
+    var remainingIds = new HashSet<>(movieIds);
 
     for (var movieId : movieIds) {
-      if (!mediaIdsWithRemainingFiles.contains(movieId)) {
-        movieService.deleteMovieById(movieId);
-        log.info("Deleted Movie id: {} — no remaining media files.", movieId);
+      if (mediaIdsWithRemainingFiles.contains(movieId) || !movieService.deleteMovieById(movieId)) {
+        continue;
       }
+
+      remainingIds.remove(movieId);
+      log.info("Deleted Movie id: {} — no remaining media files.", movieId);
     }
+
+    return remainingIds;
   }
 }
