@@ -15,6 +15,10 @@ public record LibraryItemChangedEvent(
     private Optional<UUID> profileId = Optional.empty();
   }
 
+  public boolean visibleTo(UUID selectedProfileId) {
+    return profileId.map(selectedProfileId::equals).orElse(true);
+  }
+
   public enum Change {
     ADDED,
     UPDATED,

@@ -2,9 +2,11 @@ package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Collectable;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.events.library.LibraryItemChangedEvent;
 import com.streamarr.server.services.pagination.ItemSortValue;
 import com.streamarr.server.services.pagination.MediaFilter;
@@ -21,6 +23,14 @@ public class LibraryContentsService {
   private final LibraryRepository libraries;
   private final MovieRepository movies;
   private final SeriesRepository series;
+
+  public UUID requireSubscriptionProfile(AuthenticatedIdentity identity) {
+    if (identity.profileId() == null) {
+      throw new ProfileRequiredException();
+    }
+
+    return identity.profileId();
+  }
 
   public Optional<Library> findLibrary(UUID libraryId) {
     return libraries.findById(libraryId);
