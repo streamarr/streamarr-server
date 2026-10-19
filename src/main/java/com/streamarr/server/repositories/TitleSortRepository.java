@@ -1,6 +1,5 @@
 package com.streamarr.server.repositories;
 
-import static org.jooq.impl.DSL.lower;
 import static org.jooq.impl.DSL.unnest;
 
 import java.util.Collection;
@@ -21,7 +20,7 @@ public class TitleSortRepository {
 
     var values = unnest(titles.toArray(String[]::new)).as("titles", "title");
     var title = values.field("title", String.class);
-    var normalized = lower(title);
+    var normalized = JooqQueryHelper.normalizeTitle(title);
     return context.select(title, normalized).from(values).fetchMap(title, normalized);
   }
 }

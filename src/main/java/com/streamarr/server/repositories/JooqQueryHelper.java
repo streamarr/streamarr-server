@@ -177,7 +177,11 @@ public class JooqQueryHelper {
   }
 
   public Field<String> titleSortField() {
-    return lower(BASE_COLLECTABLE.TITLE_SORT).collate("C");
+    return normalizeTitle(BASE_COLLECTABLE.TITLE_SORT);
+  }
+
+  public Field<String> normalizeTitle(Field<String> title) {
+    return lower(title.collate("C"));
   }
 
   public List<SortField<?>> titleOrderBy(SortDirection direction) {
@@ -205,7 +209,7 @@ public class JooqQueryHelper {
   }
 
   private Field<String> titleSeekField() {
-    return coalesce(lower(BASE_COLLECTABLE.TITLE_SORT), inline("")).collate("C");
+    return coalesce(titleSortField(), inline("")).collate("C");
   }
 
   private Row2<Boolean, String> titleSeekPosition() {
@@ -325,7 +329,7 @@ public class JooqQueryHelper {
     var seekValues =
         row(
             inline(value == null),
-            value == null ? inline("") : lower(val(titleSortValue(value))),
+            value == null ? inline("") : normalizeTitle(val(titleSortValue(value))),
             val(cursorId));
     return isAsc ? fields.ge(seekValues) : fields.le(seekValues);
   }
