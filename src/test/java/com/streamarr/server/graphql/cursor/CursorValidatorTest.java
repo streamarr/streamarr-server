@@ -35,7 +35,13 @@ class CursorValidatorTest {
 
   @ParameterizedTest
   @NullSource
-  @ValueSource(strings = {"not-a-timestamp", "2026-10-19T15:07Z"})
+  @ValueSource(
+      strings = {
+        "not-a-timestamp",
+        "2026-10-19T15:07Z",
+        "+1000000000-01-01T00:00:00Z",
+        "+300000-01-01T00:00:00Z"
+      })
   @DisplayName("Should reject unusable timestamps when validating a Continue Watching cursor")
   void shouldRejectUnusableTimestampsWhenValidatingContinueWatchingCursor(String timestamp) {
     var filter = MediaFilter.builder().sortBy(OrderMediaBy.LAST_WATCHED).build();

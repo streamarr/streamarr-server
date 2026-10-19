@@ -9,6 +9,8 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class CursorValidator {
+  private static final Instant EARLIEST_TIMESTAMP = Instant.parse("0001-01-01T00:00:00Z");
+  private static final Instant LATEST_TIMESTAMP = Instant.parse("9999-12-31T23:59:59.999999Z");
 
   public void validateContinueWatchingCursor(
       MediaPaginationOptions decodedOptions, MediaFilter filter) {
@@ -19,10 +21,18 @@ public class CursorValidator {
           "Continue Watching cursors require an item ID and timestamp.");
     }
 
-    try {
-      Instant.parse(timestamp.toString());
-    } catch (DateTimeParseException _) {
+    if (!isStorableTimestamp(timestamp.toString())) {
       throw new InvalidCursorException("Continue Watching cursor timestamp is invalid.");
+    }
+  }
+
+  // Instant spans years PostgreSQL timestamptz cannot store; progress times have four-digit years.
+  private static boolean isStorableTimestamp(String value) {
+    try {
+      var instant = Instant.parse(value);
+      return !instant.isBefore(EARLIEST_TIMESTAMP) && !instant.isAfter(LATEST_TIMESTAMP);
+    } catch (DateTimeParseException _) {
+      return false;
     }
   }
 
