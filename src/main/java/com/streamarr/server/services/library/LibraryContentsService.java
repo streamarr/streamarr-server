@@ -2,13 +2,11 @@ package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Collectable;
 import com.streamarr.server.domain.Library;
-import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
-import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.events.library.LibraryItemChangedEvent;
 import com.streamarr.server.services.pagination.ItemSortValue;
 import com.streamarr.server.services.pagination.MediaFilter;
@@ -28,12 +26,7 @@ public class LibraryContentsService {
   private final AuthorizationService authorization;
 
   public UUID requireSubscriptionProfile(AuthenticatedIdentity identity) {
-    if (identity.profileId() == null) {
-      throw new ProfileRequiredException();
-    }
-
-    authorization.requireAllowed(identity, new Intent.ViewProfileActivity(identity.profileId()));
-    return identity.profileId();
+    return authorization.requireViewProfileActivity(identity);
   }
 
   public Optional<Library> findLibrary(UUID libraryId) {

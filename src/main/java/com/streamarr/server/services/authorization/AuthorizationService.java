@@ -1,6 +1,7 @@
 package com.streamarr.server.services.authorization;
 
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import java.time.Instant;
 import java.util.UUID;
@@ -37,6 +38,21 @@ public interface AuthorizationService {
   UUID requireHousehold();
 
   UUID requireProfile();
+
+  default UUID requireProfile(AuthenticatedIdentity identity) {
+    var profileId = identity.profileId();
+    if (profileId == null) {
+      throw new ProfileRequiredException();
+    }
+
+    return profileId;
+  }
+
+  default UUID requireViewProfileActivity(AuthenticatedIdentity identity) {
+    var profileId = requireProfile(identity);
+    requireAllowed(identity, new Intent.ViewProfileActivity(profileId));
+    return profileId;
+  }
 
   /**
    * Decides a resource operation whose expected denial belongs in the mutation's payload user

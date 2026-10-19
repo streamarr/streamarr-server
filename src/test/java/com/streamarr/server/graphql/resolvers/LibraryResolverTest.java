@@ -44,6 +44,7 @@ import com.streamarr.server.services.library.LibraryManagementService;
 import com.streamarr.server.services.library.LibraryOperationKind;
 import com.streamarr.server.services.library.LibraryOperationRejection;
 import com.streamarr.server.services.library.LibraryOperationService;
+import com.streamarr.server.services.library.LibraryQueryService;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.pagination.MediaPage;
@@ -86,6 +87,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @SpringBootTest(
     classes = {
       LibraryResolver.class,
+      LibraryQueryService.class,
       LibraryItemCountDataLoader.class,
       LibraryAdministrationService.class,
       PaginationService.class,
@@ -1002,7 +1004,7 @@ class LibraryResolverTest {
     @Test
     @DisplayName("Should throw with simple class name when unsupported media type in type resolver")
     void shouldThrowWithSimpleClassNameWhenUnsupportedMediaTypeInTypeResolver() {
-      var resolver = new LibraryResolver(null, null, null, null, null, null, null, null, null);
+      var resolver = new LibraryResolver(null, null, null, null, null, null, null);
 
       var unsupportedMedia = new Object();
 

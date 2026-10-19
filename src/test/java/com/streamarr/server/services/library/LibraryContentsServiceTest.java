@@ -46,7 +46,9 @@ class LibraryContentsServiceTest {
   @Test
   @DisplayName("Should require a Profile when no Profile is selected")
   void shouldRequireProfileWhenNoProfileIsSelected() {
-    assertThatThrownBy(() -> service.requireSubscriptionProfile(accountScopedBuilder().build()))
+    var identity = accountScopedBuilder().build();
+
+    assertThatThrownBy(() -> service.requireSubscriptionProfile(identity))
         .isInstanceOf(ProfileRequiredException.class);
   }
 
@@ -55,7 +57,9 @@ class LibraryContentsServiceTest {
   void shouldRefuseSubscriptionWhenViewingProfileActivityIsDenied() {
     authorization.denyAll();
 
-    assertThatThrownBy(() -> service.requireSubscriptionProfile(profileScopedBuilder().build()))
+    var identity = profileScopedBuilder().build();
+
+    assertThatThrownBy(() -> service.requireSubscriptionProfile(identity))
         .isInstanceOf(AccessDeniedException.class);
   }
 
@@ -64,7 +68,9 @@ class LibraryContentsServiceTest {
   void shouldFailClosedWhenAuthorizationDecisionIsUnavailable() {
     authorization.failWith(Decision.FailureCause.EVALUATION_ERROR);
 
-    assertThatThrownBy(() -> service.requireSubscriptionProfile(profileScopedBuilder().build()))
+    var identity = profileScopedBuilder().build();
+
+    assertThatThrownBy(() -> service.requireSubscriptionProfile(identity))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 }
