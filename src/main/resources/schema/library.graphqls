@@ -11,6 +11,7 @@ type Library {
     status: LibraryStatus!
     backend: LibraryBackend!
     type: MediaType!
+    "Requires a selected Profile and ViewProfileActivity permission for that Profile."
     items(first: Int
           after: String
           last: Int
