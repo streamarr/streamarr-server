@@ -1,14 +1,18 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static com.streamarr.server.jooq.generated.tables.BaseCollectable.BASE_COLLECTABLE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.streaming.WatchHistory;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -16,22 +20,29 @@ import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.services.ArtworkRequestService;
 import com.streamarr.server.services.MovieService;
+import com.streamarr.server.services.events.library.LibraryItemChangedEvent;
+import com.streamarr.server.services.library.LibraryContentsService;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.SortDirection;
 import com.streamarr.server.support.ActiveSubscriptions;
+import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.GraphQlHttpTestClient;
 import com.streamarr.server.support.GraphQlTransportWsTestClient;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.net.URI;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -39,6 +50,8 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -54,6 +67,137 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
   @Autowired private MovieService movieService;
   @Autowired private ArtworkRequestService artwork;
   @Autowired private MeterRegistry metrics;
+  @Autowired private AuditColumnFixtures auditColumns;
+  @Autowired private WatchHistoryRepository history;
+  @Autowired private ApplicationEventPublisher events;
+  @Autowired private TransactionTemplate transactions;
+  @Autowired private LibraryContentsService contents;
+
+  private static final Instant WHOLE_MINUTE = Instant.parse("2026-10-19T15:07:00Z");
+
+  @ParameterizedTest
+  @CsvSource({
+    "MOVIE,ADDED,ASC", "MOVIE,ADDED,DESC",
+    "MOVIE,LAST_WATCHED,ASC", "MOVIE,LAST_WATCHED,DESC",
+    "SERIES,ADDED,ASC", "SERIES,ADDED,DESC",
+    "SERIES,LAST_WATCHED,ASC", "SERIES,LAST_WATCHED,DESC"
+  })
+  @DisplayName("Should preserve query and event placement when a timestamp falls on a whole minute")
+  void shouldPreserveQueryAndEventPlacementWhenTimestampFallsOnWholeMinute(
+      MediaType kind, OrderMediaBy by, SortDirection direction) {
+    var identity = auth.createIdentity();
+    var bearer = auth.profileBearer(identity);
+    var change = timestampItem(kind, identity.profile().getId());
+    var arguments =
+        "sort: {by: %s, direction: %s}, filter: {unmatched: true}".formatted(by, direction);
+    try (var http =
+            new GraphQlHttpTestClient(URI.create("http://localhost:%d/graphql".formatted(port)));
+        var socket = GraphQlTransportWsTestClient.connectWithBearer(port, bearer)) {
+      var query =
+          http.execute(
+              bearer,
+              """
+          { library(id: "%s") { items(first: 10, %s) {
+            edges { orderKey node { ... on Movie { id } ... on Series { id } } }
+          } } }
+          """
+                  .formatted(change.libraryId(), arguments));
+      assertThat(query.has("errors")).as(query.toPrettyString()).isFalse();
+      assertThat(query.at("/data/library/items/edges").size()).isEqualTo(1);
+      socket.subscribe(
+          "minute",
+          """
+          subscription { libraryItemUpdated(libraryId: "%s") {
+            itemId position(%s) { matchesFilter cursor orderKey }
+          } }
+          """
+              .formatted(change.libraryId(), arguments));
+      new ActiveSubscriptions(metrics).awaitCount("libraryItemUpdated", 1);
+      transactions.executeWithoutResult(_ -> events.publishEvent(change));
+      var message = socket.nextMessageFor("minute");
+      assertThat(message.at("/payload").has("errors")).as(message.toPrettyString()).isFalse();
+      assertThat(message.at("/payload/data/libraryItemUpdated/itemId").asString())
+          .isEqualTo(change.itemId().toString());
+      assertThat(message.at("/payload/data/libraryItemUpdated/position/matchesFilter").asBoolean())
+          .isTrue();
+      assertThat(message.at("/payload/data/libraryItemUpdated/position/orderKey").asString())
+          .isEqualTo(query.at("/data/library/items/edges/0/orderKey").asString());
+    } finally {
+      new ActiveSubscriptions(metrics).awaitNoneActive();
+      auth.deleteIdentity(identity);
+    }
+  }
+
+  @ParameterizedTest
+  @CsvSource({"MOVIE,ADDED", "MOVIE,LAST_WATCHED", "SERIES,ADDED", "SERIES,LAST_WATCHED"})
+  @DisplayName("Should expose Instants when locating timestamp-sorted Library items")
+  void shouldExposeInstantsWhenLocatingTimestampSortedLibraryItems(
+      MediaType kind, OrderMediaBy by) {
+    var identity = auth.createIdentity();
+    try {
+      var change = timestampItem(kind, identity.profile().getId());
+      var filter =
+          MediaFilter.builder()
+              .libraryId(change.libraryId())
+              .profileId(identity.profile().getId())
+              .sortBy(by)
+              .build();
+      assertThat(contents.findPosition(change, filter).orElseThrow().value())
+          .isEqualTo(WHOLE_MINUTE);
+    } finally {
+      auth.deleteIdentity(identity);
+    }
+  }
+
+  private LibraryItemChangedEvent timestampItem(MediaType kind, UUID profileId) {
+    var library =
+        libraries.saveAndFlush(
+            LibraryFixtureCreator.buildFakeLibrary().toBuilder().type(kind).build());
+    BaseCollectable<?> item =
+        switch (kind) {
+          case MOVIE ->
+              movies.saveAndFlush(Movie.builder().title("Whole minute").library(library).build());
+          case SERIES ->
+              seriesRepository.saveAndFlush(
+                  Series.builder().title("Whole minute").library(library).build());
+          default -> throw new IllegalArgumentException("Expected a Library item");
+        };
+    var watchedId =
+        switch (item) {
+          case Movie movie -> movie.getId();
+          case Series series ->
+              episodes
+                  .saveAndFlush(
+                      Episode.builder()
+                          .title("Episode")
+                          .episodeNumber(1)
+                          .library(library)
+                          .season(
+                              seasons.saveAndFlush(
+                                  Season.builder()
+                                      .seasonNumber(1)
+                                      .series(series)
+                                      .library(library)
+                                      .build()))
+                          .build())
+                  .getId();
+          default -> throw new IllegalArgumentException("Expected a Library item");
+        };
+    history.saveAndFlush(
+        WatchHistory.builder()
+            .profileId(profileId)
+            .collectableId(watchedId)
+            .watchedAt(WHOLE_MINUTE)
+            .build());
+    auditColumns.overwriteCreatedOn(
+        BASE_COLLECTABLE, BASE_COLLECTABLE.ID.eq(item.getId()), WHOLE_MINUTE);
+    return LibraryItemChangedEvent.builder()
+        .change(LibraryItemChangedEvent.Change.UPDATED)
+        .libraryId(library.getId())
+        .itemId(item.getId())
+        .kind(kind)
+        .build();
+  }
 
   @Test
   void shouldSupplyTheSameOrderKeyAsAQueryAndACursorUsableForTheNextPage() {
