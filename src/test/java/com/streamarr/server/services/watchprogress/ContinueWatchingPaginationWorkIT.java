@@ -50,7 +50,7 @@ class ContinueWatchingPaginationWorkIT extends AbstractIntegrationTest {
     var profile = identities.createIdentity().profile().getId();
     var otherProfile = identities.createIdentity().profile().getId();
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
-    for (var index = 0; index < 32; index++) {
+    for (var index = 0; index < 50; index++) {
       var file =
           MediaFile.builder()
               .libraryId(library.getId())
@@ -66,6 +66,10 @@ class ContinueWatchingPaginationWorkIT extends AbstractIntegrationTest {
                   .library(library)
                   .files(Set.of(file))
                   .build());
+      if (index >= 32) {
+        continue;
+      }
+
       progress.saveAndFlush(
           SessionProgress.builder()
               .sessionId(UUID.randomUUID())
@@ -126,10 +130,13 @@ class ContinueWatchingPaginationWorkIT extends AbstractIntegrationTest {
                 "EXPLAIN (ANALYZE, FORMAT JSON) " + statements.iterator().next(), String.class));
     assertThat(plan.at("/0/Plan/Node Type").asString()).isEqualTo("Limit");
     assertThat(plan.at("/0/Plan/Actual Rows").asLong()).isEqualTo(14);
-    assertThat(plan.findValues("Actual Rows"))
+    assertThat(plan.findParents("Relation Name"))
+        .filteredOn(node -> node.path("Relation Name").asString().equals("session_progress"))
         .isNotEmpty()
-        .allSatisfy(rows -> assertThat(rows.asLong()).isLessThanOrEqualTo(32));
-    assertThat(plan.findValues("Rows Removed by Filter"))
-        .allSatisfy(rows -> assertThat(rows.asLong()).isLessThanOrEqualTo(32));
+        .allSatisfy(
+            node -> {
+              assertThat(node.path("Actual Rows").asLong()).isLessThanOrEqualTo(32);
+              assertThat(node.path("Rows Removed by Filter").asLong()).isLessThanOrEqualTo(32);
+            });
   }
 }
