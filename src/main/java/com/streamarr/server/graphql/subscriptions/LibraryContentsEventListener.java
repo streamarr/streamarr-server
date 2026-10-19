@@ -16,16 +16,10 @@ public class LibraryContentsEventListener {
 
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
   public void onItemChanged(LibraryItemChangedEvent event) {
-    if (event.change() == LibraryItemChangedEvent.Change.ADDED) {
-      broadcasters.getAdditions().broadcast(event.libraryId(), event);
-    }
-
-    if (event.change() == LibraryItemChangedEvent.Change.UPDATED) {
-      broadcasters.getUpdates().broadcast(event.libraryId(), event);
-    }
-
-    if (event.change() == LibraryItemChangedEvent.Change.REMOVED) {
-      broadcasters.getRemovals().broadcast(event.libraryId(), event);
+    switch (event.change()) {
+      case ADDED -> broadcasters.getAdditions().broadcast(event.libraryId(), event);
+      case UPDATED -> broadcasters.getUpdates().broadcast(event.libraryId(), event);
+      case REMOVED -> broadcasters.getRemovals().broadcast(event.libraryId(), event);
     }
   }
 
