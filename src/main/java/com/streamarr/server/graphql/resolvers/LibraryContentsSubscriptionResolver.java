@@ -79,9 +79,9 @@ public class LibraryContentsSubscriptionResolver {
 
   @DgsSubscription
   public Publisher<LibraryItemChangedEvent> libraryItemUpdated(@InputArgument String libraryId) {
-    var profileId = authorization.requireProfile();
+    var profileId = authorization.currentIdentity().profileId();
     return register(libraryId, broadcasters.getUpdates())
-        .filter(change -> change.profileId().map(profileId::equals).orElse(true));
+        .filter(change -> change.visibleTo(profileId));
   }
 
   private UUID parseId(String id) {
@@ -105,7 +105,7 @@ public class LibraryContentsSubscriptionResolver {
 
   private <T> Flux<T> register(
       String libraryId, KeyedSubscriptionBroadcaster<UUID, T> broadcaster) {
-    authorization.requireProfile();
+    contents.requireSubscriptionProfile(authorization.currentIdentity());
     var id = parseId(libraryId);
     return broadcaster.register(id, () -> contents.findLibrary(id).isPresent());
   }
