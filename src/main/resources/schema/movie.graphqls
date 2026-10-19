@@ -22,6 +22,8 @@ type Movie implements BaseCollectable {
     images(type: ImageType): [Image]!
     watchProgress: WatchProgress
     watchStatus: WatchStatus!
+    "Membership and ordering in the selected Profile's Continue Watching list."
+    continueWatchingPosition: ContinueWatchingPosition!
     """
     When the selected Profile last watched this movie, as an ISO-8601 instant. It is the later of
     the latest completion or manual mark that has not been dismissed and the latest session

@@ -67,11 +67,15 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
               id
               watchStatus
               lastWatchedAt
+              continueWatchingPosition { matchesFilter orderKey }
               watchProgress { positionSeconds }
               library { id }
               unmatched
             }
-            ... on Episode { id watchStatus lastWatchedAt watchProgress { positionSeconds } }
+            ... on Episode {
+              id watchStatus lastWatchedAt watchProgress { positionSeconds }
+              continueWatchingPosition { matchesFilter orderKey }
+            }
             ... on Season { id watchStatus watchProgress { positionSeconds } }
             ... on Series {
               id
@@ -120,6 +124,53 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
     activeSubscriptions.awaitNoneActive();
     streamSessionIds.forEach(runtimeRegistry::removeById);
     identities.forEach(authTestSupport::deleteIdentity);
+  }
+
+  @Test
+  @DisplayName("Should match query placement when an episode enters and leaves Continue Watching")
+  void shouldMatchQueryPlacementWhenAnEpisodeEntersAndLeavesContinueWatching() {
+    var identity = createIdentity();
+    var otherIdentity = createIdentity();
+    var episode = createEpisode();
+    var session = openStreamSession(identity, episode);
+    var reporter = authTestSupport.profileBearer(identity);
+    var subscriber = subscribedSocket(reporter);
+
+    reportPaused(reporter, session, PAUSED_POSITION_SECONDS);
+
+    var added = itemsById(nextChange(subscriber)).get(episode.getId().toString());
+    var placement = added.path("continueWatchingPosition");
+    assertThat(placement.path("matchesFilter").asBoolean()).isTrue();
+    assertThat(placement.path("orderKey").asString()).isNotBlank();
+    var query =
+        """
+        { continueWatching(first: 12) {
+          ... on Episode { id continueWatchingPosition { matchesFilter orderKey } }
+        } }
+        """;
+    var shelf = http.execute(reporter, query);
+    assertThat(shelf.path("errors").isMissingNode()).isTrue();
+    assertThat(shelf.path("data").path("continueWatching").get(0).path("continueWatchingPosition"))
+        .isEqualTo(placement);
+    var otherShelf = http.execute(authTestSupport.profileBearer(otherIdentity), query);
+    assertThat(otherShelf.path("data").path("continueWatching").isEmpty()).isTrue();
+    var otherItem =
+        http.execute(
+            authTestSupport.profileBearer(otherIdentity),
+            "{ episode(id: \"%s\") { continueWatchingPosition { matchesFilter orderKey } } }"
+                .formatted(episode.getId()));
+    var otherPlacement = otherItem.path("data").path("episode").path("continueWatchingPosition");
+    assertThat(otherPlacement.path("matchesFilter").asBoolean()).isFalse();
+    assertThat(otherPlacement.path("orderKey").isNull()).isTrue();
+
+    markWatched(reporter, episode.getId());
+
+    var removed = itemsById(nextChange(subscriber)).get(episode.getId().toString());
+    assertThat(removed.path("continueWatchingPosition").path("matchesFilter").asBoolean())
+        .isFalse();
+    assertThat(removed.path("continueWatchingPosition").path("orderKey").isNull()).isTrue();
+    assertThat(http.execute(reporter, query).path("data").path("continueWatching").isEmpty())
+        .isTrue();
   }
 
   @Test

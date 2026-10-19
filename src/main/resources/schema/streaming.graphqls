@@ -53,6 +53,14 @@ type WatchProgress {
 
 union ContinueWatchingMedia = Movie | Episode
 
+"Placement in Continue Watching, independent of a client's shelf size."
+type ContinueWatchingPosition {
+    "Whether this movie or episode belongs to the selected Profile's Continue Watching list."
+    matchesFilter: Boolean!
+    "Compare keys as ascending ASCII strings. Includes last-watched descending and the ID tie-breaker. Null when matchesFilter is false."
+    orderKey: String
+}
+
 "An item whose watch state a Profile can change."
 union WatchStateItem = Movie | Episode | Season | Series
 
