@@ -231,6 +231,9 @@ It needs no follow-up query.
 
 * *Continue Watching* queries `continueWatching(first, after) { edges { cursor orderKey node { ... } } pageInfo { ... } }`.
 The existing watch-state subscription carries `items` for independent entity updates and `continueWatching { itemId edge { cursor orderKey node { ... } } }` for list changes.
+The change list includes every touched movie or episode, including departures with a null edge.
+A null change list means membership is unknown: preserve the shelf and still apply usable `items`.
+Continuation work is bounded by the selected Profile: the query groups that Profile's progress before applying the cursor, so it does not promise an index seek directly to the next shelf page.
 The connection and event edges share counted-resume-position membership and last-watched ordering, including the descending ID tie-breaker.
 Clients select full card fields on event nodes, merge eligible edges by ID, compare opaque `orderKey` values as ascending ASCII strings, and retain at most their shelf cap.
 An explicitly null edge with no error affecting that change's response path removes the item without reading a replacement; membership is independent of the cap.

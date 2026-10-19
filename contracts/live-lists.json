@@ -85,11 +85,6 @@
     "steps": [
       {
         "name": "eligible existing item moves to the tail",
-        "item": {
-          "id": "i01",
-          "orderKey": "90",
-          "matchesFilter": true
-        },
         "expected": {
           "12": [
             "i02",
@@ -127,15 +122,19 @@
             "i20",
             "i01"
           ]
+        },
+        "change": {
+          "itemId": "i01",
+          "edge": {
+            "orderKey": "90",
+            "node": {
+              "id": "i01"
+            }
+          }
         }
       },
       {
         "name": "new head trims the cap",
-        "item": {
-          "id": "head",
-          "orderKey": "00",
-          "matchesFilter": true
-        },
         "expected": {
           "12": [
             "head",
@@ -173,15 +172,19 @@
             "i19",
             "i20"
           ]
+        },
+        "change": {
+          "itemId": "head",
+          "edge": {
+            "orderKey": "00",
+            "node": {
+              "id": "head"
+            }
+          }
         }
       },
       {
         "name": "duplicate event is idempotent",
-        "item": {
-          "id": "head",
-          "orderKey": "00",
-          "matchesFilter": true
-        },
         "expected": {
           "12": [
             "head",
@@ -219,15 +222,19 @@
             "i19",
             "i20"
           ]
+        },
+        "change": {
+          "itemId": "head",
+          "edge": {
+            "orderKey": "00",
+            "node": {
+              "id": "head"
+            }
+          }
         }
       },
       {
         "name": "new tail is outside a full shelf",
-        "item": {
-          "id": "tail",
-          "orderKey": "99",
-          "matchesFilter": true
-        },
         "expected": {
           "12": [
             "head",
@@ -265,15 +272,19 @@
             "i19",
             "i20"
           ]
+        },
+        "change": {
+          "itemId": "tail",
+          "edge": {
+            "orderKey": "99",
+            "node": {
+              "id": "tail"
+            }
+          }
         }
       },
       {
         "name": "server nonmembership removes without backfill",
-        "item": {
-          "id": "i05",
-          "orderKey": null,
-          "matchesFilter": false
-        },
         "expected": {
           "12": [
             "head",
@@ -309,15 +320,14 @@
             "i19",
             "i20"
           ]
+        },
+        "change": {
+          "itemId": "i05",
+          "edge": null
         }
       },
       {
         "name": "new tail fills a short shelf",
-        "item": {
-          "id": "tail",
-          "orderKey": "99",
-          "matchesFilter": true
-        },
         "expected": {
           "12": [
             "head",
@@ -355,15 +365,19 @@
             "i20",
             "tail"
           ]
+        },
+        "change": {
+          "itemId": "tail",
+          "edge": {
+            "orderKey": "99",
+            "node": {
+              "id": "tail"
+            }
+          }
         }
       },
       {
         "name": "positive progress does not override nonmembership",
-        "item": {
-          "id": "head",
-          "orderKey": null,
-          "matchesFilter": false
-        },
         "expected": {
           "12": [
             "i02",
@@ -399,6 +413,10 @@
             "i20",
             "tail"
           ]
+        },
+        "change": {
+          "itemId": "head",
+          "edge": null
         }
       }
     ]
@@ -577,6 +595,123 @@
         "1917",
         "a",
         "ab",
+        "b"
+      ]
+    }
+  ],
+  "edgeCases": [
+    {
+      "name": "explicit nonmembership removes only the named item",
+      "changes": [
+        {
+          "itemId": "a",
+          "edge": null
+        }
+      ],
+      "errorPaths": [],
+      "expected": [
+        "b"
+      ]
+    },
+    {
+      "name": "a failed edge preserves membership while its sibling leaves",
+      "changes": [
+        {
+          "itemId": "a",
+          "edge": null
+        },
+        {
+          "itemId": "b",
+          "edge": null
+        }
+      ],
+      "errorPaths": [
+        [
+          "watchStateChanged",
+          "continueWatching",
+          0,
+          "edge",
+          "orderKey"
+        ]
+      ],
+      "expected": [
+        "a"
+      ]
+    },
+    {
+      "name": "a null node is not a removal",
+      "changes": [
+        {
+          "itemId": "a",
+          "edge": {
+            "orderKey": "10",
+            "node": null
+          }
+        },
+        {
+          "itemId": "b",
+          "edge": null
+        }
+      ],
+      "errorPaths": [],
+      "expected": [
+        "a"
+      ]
+    },
+    {
+      "name": "failed change list preserves the shelf and usable items",
+      "changes": null,
+      "errorPaths": [
+        [
+          "watchStateChanged",
+          "continueWatching"
+        ]
+      ],
+      "expected": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "name": "ancestor error protects all changes",
+      "changes": [
+        {
+          "itemId": "a",
+          "edge": null
+        },
+        {
+          "itemId": "b",
+          "edge": null
+        }
+      ],
+      "errorPaths": [
+        [
+          "watchStateChanged",
+          "continueWatching"
+        ]
+      ],
+      "expected": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "name": "an item error does not block usable membership",
+      "changes": [
+        {
+          "itemId": "a",
+          "edge": null
+        }
+      ],
+      "errorPaths": [
+        [
+          "watchStateChanged",
+          "items",
+          1,
+          "watchProgress"
+        ]
+      ],
+      "expected": [
         "b"
       ]
     }
