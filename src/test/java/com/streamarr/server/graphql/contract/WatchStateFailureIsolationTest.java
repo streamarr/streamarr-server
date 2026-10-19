@@ -39,6 +39,7 @@ class WatchStateFailureIsolationTest {
               .map(WatchStateFailureIsolationTest::read)
               .collect(Collectors.joining("\n"));
     }
+
     var schema = SchemaGenerator.createdMockedSchema(sdl);
     var lookups = new AtomicInteger();
     var registry =
@@ -55,6 +56,7 @@ class WatchStateFailureIsolationTest {
                 (DataFetchingEnvironment _) -> {
                   if (lookups.getAndIncrement() == 0)
                     throw new QueryTimeoutException("Unavailable");
+
                   return List.of();
                 })
             .typeResolver("WatchStateItem", _ -> schema.getObjectType("Movie"))
