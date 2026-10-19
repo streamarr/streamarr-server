@@ -139,7 +139,7 @@ public class LibraryResolver {
   }
 
   @DgsData(parentType = "Library")
-  public Connection<? extends BaseCollectable<?>> items(
+  public Connection<BaseCollectable<?>> items(
       @InputArgument MediaSortInput sort,
       @InputArgument MediaFilterInput filter,
       DataFetchingEnvironment dfe) {
