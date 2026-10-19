@@ -19,8 +19,10 @@ type LibraryItemChange {
     """
     Current edge using the same sort and filter as the displayed
     Library.items connection. TITLE startLetter is a seek anchor, not a membership
-    filter. Normalize item fields and reconcile edges by itemId without rereading the
-    query. In-range additions grow the window; removals shrink it without backfilling.
+    filter, except the initial descending HASH (#) landing page retains its
+    non-alphabetic membership restriction. Normalize item fields and reconcile edges
+    by itemId without rereading the query. In-range additions grow the window;
+    removals shrink it without backfilling.
     Preserve pagination anchors when a partial window becomes empty.
 
     Null means the item is not in this view, unless this change has a field error.
