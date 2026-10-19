@@ -31,15 +31,20 @@ public class RelayConnectionAdapter {
 
   public <S extends BaseAuditableEntity<?>, T> Connection<T> toConnection(
       MediaPage<S> page, MediaPaginationOptions options, Function<S, T> nodeOf) {
-    return toConnection(
-        page,
-        pageItem ->
-            new MediaEdge<>(
-                nodeOf.apply(pageItem.item()),
-                cursorUtil.encodeMediaCursor(
-                    options, pageItem.item().getId(), pageItem.sortValue()),
-                MediaOrder.from(
-                    options.getMediaFilter(), pageItem.item().getId(), pageItem.sortValue())));
+    return toConnection(page, pageItem -> toEdge(pageItem, options, nodeOf));
+  }
+
+  public <T extends BaseAuditableEntity<?>> MediaEdge<T> toEdge(
+      PageItem<T> item, MediaPaginationOptions options) {
+    return toEdge(item, options, Function.identity());
+  }
+
+  private <S extends BaseAuditableEntity<?>, T> MediaEdge<T> toEdge(
+      PageItem<S> item, MediaPaginationOptions options, Function<S, T> nodeOf) {
+    return new MediaEdge<>(
+        nodeOf.apply(item.item()),
+        cursorUtil.encodeMediaCursor(options, item.item().getId(), item.sortValue()),
+        MediaOrder.from(options.getMediaFilter(), item.item().getId(), item.sortValue()));
   }
 
   public <S, T> Connection<T> toConnection(
