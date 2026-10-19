@@ -262,6 +262,15 @@ class ArchitectureTest {
                   + " virtual threads");
 
   @ArchTest
+  static final ArchRule servicesMustNotDependOnJooq =
+      noClasses()
+          .that()
+          .resideInAPackage("..services..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("org.jooq..");
+
+  @ArchTest
   static final ArchRule authServicesMustNotDependOnJooq =
       noClasses()
           .that()

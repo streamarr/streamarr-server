@@ -6,7 +6,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.IntStream;
-import org.jooq.SortOrder;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -17,7 +16,7 @@ class MediaOrderKeyTest {
   @Test
   void shouldOrderPrefixesUnicodeAndIdTiesInBothDirections() {
     var titles = List.of("a", "a", "a ", "aé", "a😀", "ä");
-    for (var direction : List.of(SortOrder.ASC, SortOrder.DESC)) {
+    for (var direction : List.of(SortDirection.ASC, SortDirection.DESC)) {
       var orders =
           IntStream.range(0, titles.size())
               .mapToObj(
@@ -35,7 +34,7 @@ class MediaOrderKeyTest {
               .map(order -> order.itemId().getLeastSignificantBits())
               .toList();
       var expected = List.of(1L, 2L, 3L, 4L, 5L, 6L);
-      assertThat(sorted).isEqualTo(direction == SortOrder.ASC ? expected : expected.reversed());
+      assertThat(sorted).isEqualTo(direction == SortDirection.ASC ? expected : expected.reversed());
     }
   }
 
@@ -49,7 +48,7 @@ class MediaOrderKeyTest {
   void shouldOrderScalarsAndKeepNullableSortsNullsLast(
       OrderMediaBy by, String earlier, String later) {
     var id = new UUID(0, 1);
-    for (var direction : List.of(SortOrder.ASC, SortOrder.DESC)) {
+    for (var direction : List.of(SortDirection.ASC, SortDirection.DESC)) {
       var first =
           MediaOrderKey.encode(
               MediaOrder.builder().by(by).direction(direction).itemId(id).value(earlier).build());
@@ -59,9 +58,9 @@ class MediaOrderKeyTest {
       var missing =
           MediaOrderKey.encode(
               MediaOrder.builder().by(by).direction(direction).itemId(id).value(null).build());
-      assertThat(first.compareTo(second) < 0).isEqualTo(direction == SortOrder.ASC);
+      assertThat(first.compareTo(second) < 0).isEqualTo(direction == SortDirection.ASC);
       assertThat(missing.compareTo(first) > 0)
-          .isEqualTo(by != OrderMediaBy.ADDED || direction == SortOrder.ASC);
+          .isEqualTo(by != OrderMediaBy.ADDED || direction == SortDirection.ASC);
     }
   }
 }

@@ -15,9 +15,9 @@ import com.streamarr.server.services.library.LetterIndexRecalculator;
 import com.streamarr.server.services.library.LibraryCountsService;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.pagination.SortDirection;
 import java.util.List;
 import java.util.Map;
-import org.jooq.SortOrder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -83,10 +83,10 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
 
   @ParameterizedTest
   @EnumSource(
-      value = SortOrder.class,
+      value = SortDirection.class,
       names = {"ASC", "DESC"})
   @DisplayName("Should preserve null-title placement when jumping to a letter")
-  void shouldPreserveNullTitlePlacementWhenJumpingToLetter(SortOrder direction) {
+  void shouldPreserveNullTitlePlacementWhenJumpingToLetter(SortDirection direction) {
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     movies.saveAllAndFlush(
         List.of(
@@ -104,11 +104,11 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
                     .build()));
 
     var expectedTitles =
-        direction == SortOrder.ASC ? List.of("Alpha", "Unnamed") : List.of("Alpha");
+        direction == SortDirection.ASC ? List.of("Alpha", "Unnamed") : List.of("Alpha");
     assertThat(items.items())
         .extracting(item -> item.item().getTitle())
         .containsExactlyElementsOf(expectedTitles);
-    assertThat(items.hasPreviousPage()).isEqualTo(direction == SortOrder.DESC);
+    assertThat(items.hasPreviousPage()).isEqualTo(direction == SortDirection.DESC);
     assertThat(items.hasNextPage()).isFalse();
   }
 

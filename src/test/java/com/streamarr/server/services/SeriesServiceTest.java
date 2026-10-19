@@ -40,12 +40,12 @@ import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.services.pagination.SortDirection;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import org.jooq.SortOrder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -216,7 +216,10 @@ class SeriesServiceTest {
       seriesRepository.save(seriesBuilder("Zebra").build());
 
       var filter =
-          MediaFilter.builder().sortBy(OrderMediaBy.TITLE).sortDirection(SortOrder.DESC).build();
+          MediaFilter.builder()
+              .sortBy(OrderMediaBy.TITLE)
+              .sortDirection(SortDirection.DESC)
+              .build();
 
       var result = seriesService.getSeriesWithFilter(buildForwardOptions(10, filter));
 

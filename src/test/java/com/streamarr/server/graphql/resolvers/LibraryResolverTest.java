@@ -51,6 +51,7 @@ import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.services.pagination.SortDirection;
 import com.streamarr.server.support.security.WithAccountContext;
 import com.streamarr.server.support.security.WithProfileContext;
 import java.time.Instant;
@@ -62,7 +63,6 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
-import org.jooq.SortOrder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -901,7 +901,7 @@ class LibraryResolverTest {
                   (MediaPaginationOptions opts) -> {
                     var f = opts.getMediaFilter();
                     return f.getSortBy() == OrderMediaBy.ADDED
-                        && f.getSortDirection() == SortOrder.DESC;
+                        && f.getSortDirection() == SortDirection.DESC;
                   })))
           .thenReturn(page);
 

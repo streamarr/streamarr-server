@@ -40,7 +40,7 @@ public final class MediaFilterMapper {
     }
 
     if (sort.direction() != null) {
-      builder.sortDirection(sort.direction().toSortOrder());
+      builder.sortDirection(sort.direction());
     }
   }
 

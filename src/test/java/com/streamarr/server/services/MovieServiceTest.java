@@ -39,12 +39,12 @@ import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.services.pagination.SortDirection;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import org.jooq.SortOrder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -136,7 +136,10 @@ class MovieServiceTest {
       movieRepository.save(movieBuilder("Zebra").build());
 
       var filter =
-          MediaFilter.builder().sortBy(OrderMediaBy.TITLE).sortDirection(SortOrder.DESC).build();
+          MediaFilter.builder()
+              .sortBy(OrderMediaBy.TITLE)
+              .sortDirection(SortDirection.DESC)
+              .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
@@ -158,7 +161,7 @@ class MovieServiceTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
@@ -179,7 +182,7 @@ class MovieServiceTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
@@ -197,7 +200,10 @@ class MovieServiceTest {
       movieRepository.save(Movie.builder().title("Medium").runtime(120).build());
 
       var filter =
-          MediaFilter.builder().sortBy(OrderMediaBy.RUNTIME).sortDirection(SortOrder.ASC).build();
+          MediaFilter.builder()
+              .sortBy(OrderMediaBy.RUNTIME)
+              .sortDirection(SortDirection.ASC)
+              .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
@@ -213,7 +219,10 @@ class MovieServiceTest {
       movieRepository.save(Movie.builder().title("Long").runtime(180).build());
 
       var filter =
-          MediaFilter.builder().sortBy(OrderMediaBy.RUNTIME).sortDirection(SortOrder.DESC).build();
+          MediaFilter.builder()
+              .sortBy(OrderMediaBy.RUNTIME)
+              .sortDirection(SortDirection.DESC)
+              .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
@@ -232,7 +241,7 @@ class MovieServiceTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
@@ -252,7 +261,7 @@ class MovieServiceTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
@@ -269,7 +278,10 @@ class MovieServiceTest {
       movieRepository.save(Movie.builder().title("No Runtime").build());
 
       var filter =
-          MediaFilter.builder().sortBy(OrderMediaBy.RUNTIME).sortDirection(SortOrder.ASC).build();
+          MediaFilter.builder()
+              .sortBy(OrderMediaBy.RUNTIME)
+              .sortDirection(SortDirection.ASC)
+              .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
@@ -335,7 +347,10 @@ class MovieServiceTest {
       movieRepository.save(movieBuilder("Cherry").build());
 
       var filter =
-          MediaFilter.builder().sortBy(OrderMediaBy.TITLE).sortDirection(SortOrder.DESC).build();
+          MediaFilter.builder()
+              .sortBy(OrderMediaBy.TITLE)
+              .sortDirection(SortDirection.DESC)
+              .build();
 
       var allMovies = movieService.getMoviesWithFilter(buildForwardOptions(3, filter));
       assertThat(allMovies.items()).hasSize(3);
@@ -394,7 +409,7 @@ class MovieServiceTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .build();
 
       var firstPage = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
@@ -437,7 +452,7 @@ class MovieServiceTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .libraryId(libraryId)
               .startLetter(AlphabetLetter.HASH)
               .build();
@@ -461,7 +476,7 @@ class MovieServiceTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.ADDED)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .libraryId(libraryId)
               .startLetter(AlphabetLetter.A)
               .build();
@@ -485,7 +500,7 @@ class MovieServiceTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.TITLE)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .libraryId(libraryId)
               .startLetter(AlphabetLetter.A)
               .build();
@@ -511,7 +526,7 @@ class MovieServiceTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.TITLE)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .libraryId(libraryId)
               .startLetter(AlphabetLetter.B)
               .build();

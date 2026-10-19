@@ -34,11 +34,11 @@ import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.MediaPaginationOptionsResolver;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.services.pagination.SortDirection;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
 import java.time.Clock;
 import lombok.RequiredArgsConstructor;
-import org.jooq.SortOrder;
 
 @DgsComponent
 @RequiredArgsConstructor
@@ -162,7 +162,7 @@ public class CredentialAdministrationResolver {
     var paginationOptions =
         ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
     var filter =
-        MediaFilter.builder().sortBy(OrderMediaBy.ADDED).sortDirection(SortOrder.DESC).build();
+        MediaFilter.builder().sortBy(OrderMediaBy.ADDED).sortDirection(SortDirection.DESC).build();
     return MediaPaginationOptionsResolver.resolve(
         paginationOptions,
         filter,
