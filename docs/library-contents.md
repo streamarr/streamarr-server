@@ -10,10 +10,9 @@ Library queries supply initial state. Four independent operations on the shared
 | `libraryItemRemoved(libraryId)` | Library ID, item ID and kind, which remain meaningful after deletion |
 | `libraryCountsChanged(libraryId)` | A selectable `Library`, including authoritative `itemCount` and `alphabetIndex` |
 
-All four require a selected Profile and `ViewProfileActivity` permission for that
-Profile, matching `library`, `libraries`, and `Library.items`. The service evaluates
-the live Account authority, so a disabled Account cannot keep querying with an
-unexpired token. Enabled device-bound sessions use the same rule.
+Queries, including recovery queries, authorize the selected Profile from the signed token.
+Subscriptions check live Profile activity authority once when they open; delivery remains
+bounded by the opening token's expiry (ADRs 0016, 0025 and 0042).
 They do not require ServerAdmin authority. Library-administration status subscriptions
 remain separate. The current catalog queries expose all libraries to a selected
 Profile; these operations use that same visibility. A future restriction on readable

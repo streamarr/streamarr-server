@@ -38,9 +38,8 @@ type LibraryItemChange {
 extend type Subscription {
     """
     A top-level item was committed to the library. Initial state comes from
-    Library.items queries. Requires a selected Profile and ViewProfileActivity
-    permission for that Profile. Library removal completes the operation; refusal of
-    readable scope is an error, not evidence of deletion.
+    Library.items queries. Requires a selected Profile and ViewProfileActivity permission for that Profile. Library removal completes the
+    operation; refusal of readable scope is an error, not evidence of deletion.
     """
     libraryItemAdded(libraryId: ID!): LibraryItemChange
     """
@@ -56,16 +55,16 @@ extend type Subscription {
     A top-level item's deletion committed. Remove its edge from initially queried
     Library.items state by itemId without fetching a replacement. Whole-library
     removal completes the scope instead of publishing each item. Uses the same
-    visibility as libraryItemAdded: a selected Profile with ViewProfileActivity
-    permission for that Profile. Follows Subscription's common delivery/recovery rules.
+    visibility as libraryItemAdded, requires ViewProfileActivity for the selected Profile,
+    and follows Subscription's common delivery/recovery rules.
     """
     libraryItemRemoved(libraryId: ID!): LibraryItemRemoval
     """
     Authoritative itemCount and alphabetIndex after a committed recount, including
     changes outside the loaded window. Apply these values independently of loaded
     edges. Initial counts come from library or libraries queries. Uses
-    libraryItemAdded visibility: a selected Profile with ViewProfileActivity
-    permission for that Profile. Requires no follow-up query.
+    libraryItemAdded visibility, requires ViewProfileActivity for the selected Profile,
+    and requires no follow-up query.
     """
     libraryCountsChanged(libraryId: ID!): Library
 }
