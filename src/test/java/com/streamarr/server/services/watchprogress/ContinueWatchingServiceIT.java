@@ -205,7 +205,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
   }
 
   @Nested
-  @DisplayName("getContinueWatching")
+  @DisplayName("Continue Watching membership and ordering")
   class GetContinueWatchingTests {
 
     @Test

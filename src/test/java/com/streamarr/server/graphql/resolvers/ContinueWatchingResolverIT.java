@@ -105,6 +105,44 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
   }
 
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  @DisplayName("Should reject a foreign list or Profile when continuing Continue Watching")
+  void shouldRejectForeignListOrProfileWhenContinuingContinueWatching(boolean otherProfile)
+      throws Exception {
+    identity = authTestSupport.createIdentity();
+    var filter =
+        MediaFilter.builder()
+            .profileId(otherProfile ? UUID.randomUUID() : identity.profile().getId())
+            .libraryId(otherProfile ? null : UUID.randomUUID())
+            .sortBy(OrderMediaBy.LAST_WATCHED)
+            .sortDirection(SortDirection.DESC)
+            .build();
+    var cursor =
+        cursors
+            .encodeMediaCursor(
+                MediaPaginationOptions.builder().mediaFilter(filter).build(),
+                UUID.randomUUID(),
+                "2026-10-19T15:07:00Z")
+            .getValue();
+    var body =
+        new ObjectMapper()
+            .writeValueAsString(
+                Map.of(
+                    "query",
+                    "query($after: String) { continueWatching(first: 1, after: $after) { edges { cursor } } }",
+                    "variables",
+                    Map.of("after", cursor)));
+    mockMvc
+        .perform(
+            post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body)
+                .with(bearer(authTestSupport.profileBearer(identity))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
+  }
+
   @Test
   @DisplayName("Should resolve episode season details when continue watching returns an episode")
   void shouldResolveEpisodeSeasonDetailsWhenContinueWatchingReturnsAnEpisode() throws Exception {
