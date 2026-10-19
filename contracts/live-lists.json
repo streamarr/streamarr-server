@@ -1,0 +1,584 @@
+{
+  "continueWatching": {
+    "initial": [
+      {
+        "id": "i01",
+        "orderKey": "10"
+      },
+      {
+        "id": "i02",
+        "orderKey": "11"
+      },
+      {
+        "id": "i03",
+        "orderKey": "12"
+      },
+      {
+        "id": "i04",
+        "orderKey": "13"
+      },
+      {
+        "id": "i05",
+        "orderKey": "14"
+      },
+      {
+        "id": "i06",
+        "orderKey": "15"
+      },
+      {
+        "id": "i07",
+        "orderKey": "16"
+      },
+      {
+        "id": "i08",
+        "orderKey": "17"
+      },
+      {
+        "id": "i09",
+        "orderKey": "18"
+      },
+      {
+        "id": "i10",
+        "orderKey": "19"
+      },
+      {
+        "id": "i11",
+        "orderKey": "20"
+      },
+      {
+        "id": "i12",
+        "orderKey": "21"
+      },
+      {
+        "id": "i13",
+        "orderKey": "22"
+      },
+      {
+        "id": "i14",
+        "orderKey": "23"
+      },
+      {
+        "id": "i15",
+        "orderKey": "24"
+      },
+      {
+        "id": "i16",
+        "orderKey": "25"
+      },
+      {
+        "id": "i17",
+        "orderKey": "26"
+      },
+      {
+        "id": "i18",
+        "orderKey": "27"
+      },
+      {
+        "id": "i19",
+        "orderKey": "28"
+      },
+      {
+        "id": "i20",
+        "orderKey": "29"
+      }
+    ],
+    "steps": [
+      {
+        "name": "eligible existing item moves to the tail",
+        "item": {
+          "id": "i01",
+          "orderKey": "90",
+          "matchesFilter": true
+        },
+        "expected": {
+          "12": [
+            "i02",
+            "i03",
+            "i04",
+            "i05",
+            "i06",
+            "i07",
+            "i08",
+            "i09",
+            "i10",
+            "i11",
+            "i12",
+            "i01"
+          ],
+          "20": [
+            "i02",
+            "i03",
+            "i04",
+            "i05",
+            "i06",
+            "i07",
+            "i08",
+            "i09",
+            "i10",
+            "i11",
+            "i12",
+            "i13",
+            "i14",
+            "i15",
+            "i16",
+            "i17",
+            "i18",
+            "i19",
+            "i20",
+            "i01"
+          ]
+        }
+      },
+      {
+        "name": "new head trims the cap",
+        "item": {
+          "id": "head",
+          "orderKey": "00",
+          "matchesFilter": true
+        },
+        "expected": {
+          "12": [
+            "head",
+            "i02",
+            "i03",
+            "i04",
+            "i05",
+            "i06",
+            "i07",
+            "i08",
+            "i09",
+            "i10",
+            "i11",
+            "i12"
+          ],
+          "20": [
+            "head",
+            "i02",
+            "i03",
+            "i04",
+            "i05",
+            "i06",
+            "i07",
+            "i08",
+            "i09",
+            "i10",
+            "i11",
+            "i12",
+            "i13",
+            "i14",
+            "i15",
+            "i16",
+            "i17",
+            "i18",
+            "i19",
+            "i20"
+          ]
+        }
+      },
+      {
+        "name": "duplicate event is idempotent",
+        "item": {
+          "id": "head",
+          "orderKey": "00",
+          "matchesFilter": true
+        },
+        "expected": {
+          "12": [
+            "head",
+            "i02",
+            "i03",
+            "i04",
+            "i05",
+            "i06",
+            "i07",
+            "i08",
+            "i09",
+            "i10",
+            "i11",
+            "i12"
+          ],
+          "20": [
+            "head",
+            "i02",
+            "i03",
+            "i04",
+            "i05",
+            "i06",
+            "i07",
+            "i08",
+            "i09",
+            "i10",
+            "i11",
+            "i12",
+            "i13",
+            "i14",
+            "i15",
+            "i16",
+            "i17",
+            "i18",
+            "i19",
+            "i20"
+          ]
+        }
+      },
+      {
+        "name": "new tail is outside a full shelf",
+        "item": {
+          "id": "tail",
+          "orderKey": "99",
+          "matchesFilter": true
+        },
+        "expected": {
+          "12": [
+            "head",
+            "i02",
+            "i03",
+            "i04",
+            "i05",
+            "i06",
+            "i07",
+            "i08",
+            "i09",
+            "i10",
+            "i11",
+            "i12"
+          ],
+          "20": [
+            "head",
+            "i02",
+            "i03",
+            "i04",
+            "i05",
+            "i06",
+            "i07",
+            "i08",
+            "i09",
+            "i10",
+            "i11",
+            "i12",
+            "i13",
+            "i14",
+            "i15",
+            "i16",
+            "i17",
+            "i18",
+            "i19",
+            "i20"
+          ]
+        }
+      },
+      {
+        "name": "server nonmembership removes without backfill",
+        "item": {
+          "id": "i05",
+          "orderKey": null,
+          "matchesFilter": false
+        },
+        "expected": {
+          "12": [
+            "head",
+            "i02",
+            "i03",
+            "i04",
+            "i06",
+            "i07",
+            "i08",
+            "i09",
+            "i10",
+            "i11",
+            "i12"
+          ],
+          "20": [
+            "head",
+            "i02",
+            "i03",
+            "i04",
+            "i06",
+            "i07",
+            "i08",
+            "i09",
+            "i10",
+            "i11",
+            "i12",
+            "i13",
+            "i14",
+            "i15",
+            "i16",
+            "i17",
+            "i18",
+            "i19",
+            "i20"
+          ]
+        }
+      },
+      {
+        "name": "new tail fills a short shelf",
+        "item": {
+          "id": "tail",
+          "orderKey": "99",
+          "matchesFilter": true
+        },
+        "expected": {
+          "12": [
+            "head",
+            "i02",
+            "i03",
+            "i04",
+            "i06",
+            "i07",
+            "i08",
+            "i09",
+            "i10",
+            "i11",
+            "i12",
+            "tail"
+          ],
+          "20": [
+            "head",
+            "i02",
+            "i03",
+            "i04",
+            "i06",
+            "i07",
+            "i08",
+            "i09",
+            "i10",
+            "i11",
+            "i12",
+            "i13",
+            "i14",
+            "i15",
+            "i16",
+            "i17",
+            "i18",
+            "i19",
+            "i20",
+            "tail"
+          ]
+        }
+      },
+      {
+        "name": "positive progress does not override nonmembership",
+        "item": {
+          "id": "head",
+          "orderKey": null,
+          "matchesFilter": false
+        },
+        "expected": {
+          "12": [
+            "i02",
+            "i03",
+            "i04",
+            "i06",
+            "i07",
+            "i08",
+            "i09",
+            "i10",
+            "i11",
+            "i12",
+            "tail"
+          ],
+          "20": [
+            "i02",
+            "i03",
+            "i04",
+            "i06",
+            "i07",
+            "i08",
+            "i09",
+            "i10",
+            "i11",
+            "i12",
+            "i13",
+            "i14",
+            "i15",
+            "i16",
+            "i17",
+            "i18",
+            "i19",
+            "i20",
+            "tail"
+          ]
+        }
+      }
+    ]
+  },
+  "library": [
+    {
+      "name": "move across pages, recover, then insert at the true start",
+      "startLetter": null,
+      "pageSize": 2,
+      "initialLoaded": 6,
+      "initial": [
+        {
+          "id": "a",
+          "orderKey": "a",
+          "title": "A"
+        },
+        {
+          "id": "b",
+          "orderKey": "b",
+          "title": "B"
+        },
+        {
+          "id": "c",
+          "orderKey": "c",
+          "title": "C"
+        },
+        {
+          "id": "d",
+          "orderKey": "d",
+          "title": "D"
+        },
+        {
+          "id": "e",
+          "orderKey": "e",
+          "title": "E"
+        },
+        {
+          "id": "f",
+          "orderKey": "f",
+          "title": "F"
+        },
+        {
+          "id": "g",
+          "orderKey": "g",
+          "title": "G"
+        }
+      ],
+      "change": {
+        "id": "a",
+        "orderKey": "ea",
+        "title": "Eraserhead"
+      },
+      "expectedChanged": [
+        "b",
+        "c",
+        "d",
+        "e",
+        "a",
+        "f"
+      ],
+      "recovered": [
+        {
+          "id": "b",
+          "orderKey": "b",
+          "title": "B"
+        },
+        {
+          "id": "c",
+          "orderKey": "c",
+          "title": "C"
+        },
+        {
+          "id": "d",
+          "orderKey": "d",
+          "title": "D"
+        },
+        {
+          "id": "e",
+          "orderKey": "e",
+          "title": "E"
+        },
+        {
+          "id": "a",
+          "orderKey": "ea",
+          "title": "Eraserhead"
+        },
+        {
+          "id": "f",
+          "orderKey": "f",
+          "title": "F"
+        },
+        {
+          "id": "g",
+          "orderKey": "g",
+          "title": "G"
+        }
+      ],
+      "expectedRecovered": [
+        "b",
+        "c",
+        "d",
+        "e",
+        "a",
+        "f"
+      ],
+      "followUp": {
+        "id": "1917",
+        "orderKey": "0",
+        "title": "1917"
+      },
+      "expectedFinal": [
+        "1917",
+        "b",
+        "c",
+        "d",
+        "e",
+        "a",
+        "f"
+      ]
+    },
+    {
+      "name": "pre-anchor addition survives recovery from a proven true start",
+      "startLetter": "A",
+      "pageSize": 2,
+      "initialLoaded": 2,
+      "initial": [
+        {
+          "id": "a",
+          "orderKey": "a",
+          "title": "A"
+        },
+        {
+          "id": "b",
+          "orderKey": "b",
+          "title": "B"
+        }
+      ],
+      "change": {
+        "id": "1917",
+        "orderKey": "1917",
+        "title": "1917"
+      },
+      "expectedChanged": [
+        "1917",
+        "a",
+        "b"
+      ],
+      "recovered": [
+        {
+          "id": "1917",
+          "orderKey": "1917",
+          "title": "1917"
+        },
+        {
+          "id": "a",
+          "orderKey": "a",
+          "title": "A"
+        },
+        {
+          "id": "b",
+          "orderKey": "b",
+          "title": "B"
+        }
+      ],
+      "expectedRecovered": [
+        "1917",
+        "a",
+        "b"
+      ],
+      "followUp": {
+        "id": "ab",
+        "orderKey": "ab",
+        "title": "AB"
+      },
+      "expectedFinal": [
+        "1917",
+        "a",
+        "ab",
+        "b"
+      ]
+    }
+  ]
+}
