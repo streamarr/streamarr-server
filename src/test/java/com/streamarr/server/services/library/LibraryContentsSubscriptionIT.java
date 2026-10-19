@@ -19,6 +19,7 @@ import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
@@ -44,6 +45,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -64,6 +66,7 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
   @LocalServerPort private int port;
   @TempDir Path directory;
   @Autowired private AuthTestSupport auth;
+  @Autowired private UserAccountRepository accounts;
   @Autowired private LibraryRepository libraries;
   @Autowired private LibraryOperationDriver operations;
   @Autowired private MeterRegistry metrics;
@@ -760,6 +763,38 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
                   .asString())
           .isEqualTo("Refreshed pilot");
     }
+  }
+
+  @Test
+  @DisplayName("Should refuse every library subscription when the selected Account is disabled")
+  void shouldRefuseEveryLibrarySubscriptionWhenSelectedAccountIsDisabled() {
+    var identity = auth.createIdentity();
+    identities.add(identity);
+    var bearer = auth.profileBearer(identity);
+    var account = accounts.findById(identity.account().getId()).orElseThrow();
+    account.setEnabled(false);
+    accounts.saveAndFlush(account);
+    var socket = GraphQlTransportWsTestClient.connectWithBearer(port, bearer);
+    sockets.add(socket);
+    for (var field :
+        List.of(
+            "libraryItemAdded",
+            "libraryItemUpdated",
+            "libraryItemRemoved",
+            "libraryCountsChanged")) {
+      var selection = field.equals("libraryCountsChanged") ? "id" : "itemId";
+      socket.subscribe(
+          field,
+          "subscription { %s(libraryId: \"%s\") { %s } }"
+              .formatted(field, UUID.randomUUID(), selection));
+      var refusal = socket.nextMessageFor(field);
+      assertThat(refusal.at("/payload/errors/0/extensions/code").asString())
+          .as(refusal.toPrettyString())
+          .isEqualTo("FORBIDDEN");
+      assertThat(socket.nextMessageFor(field).path("type").asString()).isEqualTo("complete");
+    }
+
+    new ActiveSubscriptions(metrics).awaitNoneActive();
   }
 
   @Test
