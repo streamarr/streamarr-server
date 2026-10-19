@@ -17,6 +17,7 @@ import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
 import com.streamarr.server.domain.AlphabetLetter;
+import com.streamarr.server.services.pagination.ItemSortValue;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.SortDirection;
@@ -25,6 +26,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.Temporal;
 import java.util.Arrays;
+import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -78,6 +80,10 @@ public class JooqQueryHelper {
     var javaType = types.getJavaTypeRegistry().resolveDescriptor(valueClass);
     var jdbcType = javaType.getRecommendedJdbcType(types.getCurrentBaseSqlTypeIndicators());
     return types.getBasicTypeRegistry().resolve(javaType, jdbcType);
+  }
+
+  public ItemSortValue itemSortValue(Object value) {
+    return new ItemSortValue(value instanceof OffsetDateTime time ? time.toInstant() : value);
   }
 
   public Condition startLetterCondition(

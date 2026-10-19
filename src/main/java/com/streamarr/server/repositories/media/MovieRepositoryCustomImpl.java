@@ -56,7 +56,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
             JooqQueryHelper.startLetterCursorPageCondition(
                 filter.getStartLetter(), filter.getSortBy()))
         .and(filterConditions(filter))
-        .fetchOptional(row -> new ItemSortValue(row.value1()));
+        .fetchOptional(row -> JooqQueryHelper.itemSortValue(row.value1()));
   }
 
   public List<Movie> seekWithFilter(MediaPaginationOptions options) {
