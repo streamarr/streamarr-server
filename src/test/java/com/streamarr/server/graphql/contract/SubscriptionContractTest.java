@@ -115,6 +115,7 @@ class SubscriptionContractTest {
           .extracting(FieldDefinition::getName)
           .doesNotContain("continueWatchingPosition");
     }
+
     assertThat(SCHEMA.getType("ContinueWatchingPosition")).isEmpty();
     assertThat(objectType("ContinueWatchingChange").getFieldDefinitions())
         .filteredOn(field -> field.getName().equals("edge"))

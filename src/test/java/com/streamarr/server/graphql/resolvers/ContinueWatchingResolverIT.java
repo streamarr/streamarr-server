@@ -163,6 +163,7 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
           SESSION_PROGRESS.MEDIA_FILE_ID.eq(item.getFiles().iterator().next().getId()),
           Instant.parse("2026-10-19T15:07:00Z"));
     }
+
     var expected =
         items.stream()
             .map(item -> item.getId().toString())

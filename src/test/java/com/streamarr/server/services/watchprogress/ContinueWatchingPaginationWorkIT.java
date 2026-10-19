@@ -76,6 +76,7 @@ class ContinueWatchingPaginationWorkIT extends AbstractIntegrationTest {
               .durationSeconds(3000)
               .build());
     }
+
     jdbc.update(
         """
         INSERT INTO session_progress
@@ -103,6 +104,7 @@ class ContinueWatchingPaginationWorkIT extends AbstractIntegrationTest {
             VisitListener.onVisitStart(
                 context -> {
                   if (Thread.currentThread() != caller) return;
+
                   if (context.queryPartsLength() == 1 && context.queryPart() instanceof Select<?>) {
                     statements.add(DSL.using(dsl.dialect()).renderInlined(context.queryPart()));
                   }
@@ -116,6 +118,7 @@ class ContinueWatchingPaginationWorkIT extends AbstractIntegrationTest {
     } finally {
       dsl.configuration().set(previous);
     }
+
     assertThat(statements).hasSize(1);
     var plan =
         mapper.readTree(
