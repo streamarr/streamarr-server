@@ -61,20 +61,21 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
       """
       subscription {
         watchStateChanged {
+          continueWatching {
+            itemId edge { cursor orderKey node { ... on Movie { id title } ... on Episode { id title } } }
+          }
           items {
             __typename
             ... on Movie {
               id
               watchStatus
               lastWatchedAt
-              continueWatchingPosition { matchesFilter orderKey }
               watchProgress { positionSeconds }
               library { id }
               unmatched
             }
             ... on Episode {
               id watchStatus lastWatchedAt watchProgress { positionSeconds }
-              continueWatchingPosition { matchesFilter orderKey }
             }
             ... on Season { id watchStatus watchProgress { positionSeconds } }
             ... on Series {
@@ -138,43 +139,40 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
 
     reportPaused(reporter, session, PAUSED_POSITION_SECONDS);
 
-    var added = itemsById(nextChange(subscriber)).get(episode.getId().toString());
-    var placement = added.path("continueWatchingPosition");
-    assertThat(placement.path("matchesFilter").asBoolean()).isTrue();
-    assertThat(placement.path("orderKey").asString()).isNotBlank();
+    var added = nextChange(subscriber);
+    var changes = added.path("continueWatching");
+    assertThat(changes.isArray()).isTrue();
+    assertThat(changes.size()).isEqualTo(1);
+    assertThat(changes.get(0).path("itemId").asString()).isEqualTo(episode.getId().toString());
+    var edge = changes.get(0).path("edge");
+    assertThat(edge.path("orderKey").asString()).isNotBlank();
+    assertThat(edge.at("/node/id").asString()).isEqualTo(episode.getId().toString());
     var query =
         """
         { continueWatching(first: 12) {
-          ... on Episode { id continueWatchingPosition { matchesFilter orderKey } }
+          edges { cursor orderKey node { ... on Episode { id title } } }
         } }
         """;
     var shelf = http.execute(reporter, query);
     assertThat(shelf.path("errors").isMissingNode()).isTrue();
-    assertThat(shelf.path("data").path("continueWatching").get(0).path("continueWatchingPosition"))
-        .isEqualTo(placement);
+    assertThat(shelf.at("/data/continueWatching/edges/0")).isEqualTo(edge);
     var otherShelf = http.execute(authTestSupport.profileBearer(otherIdentity), query);
     assertThat(otherShelf.path("errors").isMissingNode()).isTrue();
-    assertThat(otherShelf.path("data").path("continueWatching").isEmpty()).isTrue();
-    var otherItem =
-        http.execute(
-            authTestSupport.profileBearer(otherIdentity),
-            "{ episode(id: \"%s\") { continueWatchingPosition { matchesFilter orderKey } } }"
-                .formatted(episode.getId()));
-    assertThat(otherItem.path("errors").isMissingNode()).isTrue();
-    var otherPlacement = otherItem.path("data").path("episode").path("continueWatchingPosition");
-    assertThat(otherPlacement.path("matchesFilter").asBoolean()).isFalse();
-    assertThat(otherPlacement.path("orderKey").isNull()).isTrue();
+    assertThat(otherShelf.at("/data/continueWatching/edges").isArray()).isTrue();
+    assertThat(otherShelf.at("/data/continueWatching/edges").isEmpty()).isTrue();
 
     markWatched(reporter, episode.getId());
 
-    var removed = itemsById(nextChange(subscriber)).get(episode.getId().toString());
-    assertThat(removed.path("continueWatchingPosition").path("matchesFilter").asBoolean())
-        .isFalse();
-    assertThat(removed.path("continueWatchingPosition").path("orderKey").isNull()).isTrue();
+    var removed = nextChange(subscriber);
+    assertThat(itemsById(removed).get(episode.getId().toString()).path("watchStatus").asString())
+        .isEqualTo("WATCHED");
+    assertThat(removed.at("/continueWatching/0/itemId").asString())
+        .isEqualTo(episode.getId().toString());
+    assertThat(removed.at("/continueWatching/0/edge").isNull()).isTrue();
     var afterRemoval = http.execute(reporter, query);
     assertThat(afterRemoval.path("errors").isMissingNode()).isTrue();
-    assertThat(afterRemoval.at("/data/continueWatching").isArray()).isTrue();
-    assertThat(afterRemoval.at("/data/continueWatching").isEmpty()).isTrue();
+    assertThat(afterRemoval.at("/data/continueWatching/edges").isArray()).isTrue();
+    assertThat(afterRemoval.at("/data/continueWatching/edges").isEmpty()).isTrue();
   }
 
   @Test

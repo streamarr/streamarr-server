@@ -366,8 +366,12 @@ class WatchStateParityIT extends AbstractIntegrationTest {
   }
 
   private List<UUID> continueWatchingIds() {
-    return continueWatchingService.getContinueWatching(profileId, CONTINUE_WATCHING_LIMIT).stream()
-        .map(BaseCollectable::getId)
+    return continueWatchingService
+        .getPage(
+            profileId, buildForwardOptions(CONTINUE_WATCHING_LIMIT, MediaFilter.builder().build()))
+        .items()
+        .stream()
+        .map(item -> item.item().getId())
         .toList();
   }
 

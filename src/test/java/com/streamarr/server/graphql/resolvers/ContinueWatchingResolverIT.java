@@ -24,7 +24,9 @@ import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -34,6 +36,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @Tag("IntegrationTest")
@@ -70,20 +73,24 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     """
-                    {"query": "{ continueWatching(first: 1) { ... on Episode { title season \
-                    { seasonNumber series { title } } } } }"}""")
+                    {"query": "{ continueWatching(first: 1) { edges { node { ... on Episode { title season \
+                    { seasonNumber series { title } } } } } } }"}""")
                 .with(bearer(authTestSupport.profileBearer(identity))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.continueWatching[0].title").value(episode.getTitle()))
-        .andExpect(jsonPath("$.data.continueWatching[0].season.seasonNumber").value(1))
-        .andExpect(jsonPath("$.data.continueWatching[0].season.series.title").value("Test Series"));
+        .andExpect(
+            jsonPath("$.data.continueWatching.edges[0].node.title").value(episode.getTitle()))
+        .andExpect(jsonPath("$.data.continueWatching.edges[0].node.season.seasonNumber").value(1))
+        .andExpect(
+            jsonPath("$.data.continueWatching.edges[0].node.season.series.title")
+                .value("Test Series"));
   }
 
   @Test
-  @DisplayName("Should include placement when an episode belongs to Continue Watching")
-  void shouldIncludePlacementWhenAnEpisodeBelongsToContinueWatching() throws Exception {
+  @DisplayName("Should return a bounded connection with a cursor and order key for each item")
+  void shouldReturnABoundedConnectionWithCursorAndOrderKeyForEachItem() throws Exception {
     identity = authTestSupport.createIdentity();
+    createEpisodeWithProgress();
     createEpisodeWithProgress();
 
     mockMvc
@@ -92,16 +99,16 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     """
-                    {"query": "{ continueWatching(first: 12) { ... on Episode { \
-                    continueWatchingPosition { matchesFilter orderKey } } } }"}""")
+                    {"query": "{ continueWatching(first: 1) { edges { cursor orderKey node { ... on Episode { id } } } pageInfo { hasNextPage hasPreviousPage endCursor } } }"}""")
                 .with(bearer(authTestSupport.profileBearer(identity))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(
-            jsonPath("$.data.continueWatching[0].continueWatchingPosition.matchesFilter")
-                .value(true))
-        .andExpect(
-            jsonPath("$.data.continueWatching[0].continueWatchingPosition.orderKey").isNotEmpty());
+        .andExpect(jsonPath("$.data.continueWatching.edges.length()").value(1))
+        .andExpect(jsonPath("$.data.continueWatching.edges[0].cursor").isNotEmpty())
+        .andExpect(jsonPath("$.data.continueWatching.edges[0].orderKey").isNotEmpty())
+        .andExpect(jsonPath("$.data.continueWatching.edges[0].node.id").isNotEmpty())
+        .andExpect(jsonPath("$.data.continueWatching.pageInfo.hasNextPage").value(true))
+        .andExpect(jsonPath("$.data.continueWatching.pageInfo.hasPreviousPage").value(false));
   }
 
   @Test
@@ -128,8 +135,7 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         """
-            {"query": "{ continueWatching(first: 12) { ... on Episode { id \
-            continueWatchingPosition { matchesFilter orderKey } } } }"}""")
+            {"query": "{ continueWatching(first: 12) { edges { orderKey node { ... on Episode { id } } } } }"}""")
                     .with(bearer(authTestSupport.profileBearer(identity))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.errors").doesNotExist())
@@ -137,14 +143,71 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
             .getResponse()
             .getContentAsString();
 
-    var entries = new ObjectMapper().readTree(response).path("data").path("continueWatching");
-    assertThat(entries.get(2).path("id").asString()).isEqualTo(earlier.getId().toString());
-    var keys =
-        entries
-            .valueStream()
-            .map(entry -> entry.path("continueWatchingPosition").path("orderKey").asString())
-            .toList();
+    var entries = new ObjectMapper().readTree(response).at("/data/continueWatching/edges");
+    assertThat(entries.get(2).at("/node/id").asString()).isEqualTo(earlier.getId().toString());
+    var keys = entries.valueStream().map(entry -> entry.path("orderKey").asString()).toList();
     assertThat(keys).hasSize(3).doesNotHaveDuplicates().isSorted();
+  }
+
+  @Test
+  @DisplayName(
+      "Should continue across tied timestamps after the cursor item leaves Continue Watching")
+  void shouldContinueAcrossTiedTimestampsAfterCursorItemLeavesContinueWatching() throws Exception {
+    identity = authTestSupport.createIdentity();
+    var items =
+        List.of(
+            createEpisodeWithProgress(), createEpisodeWithProgress(), createEpisodeWithProgress());
+    for (var item : items) {
+      auditColumns.overwriteLastModifiedOn(
+          SESSION_PROGRESS,
+          SESSION_PROGRESS.MEDIA_FILE_ID.eq(item.getFiles().iterator().next().getId()),
+          Instant.parse("2026-10-19T15:07:00Z"));
+    }
+    var expected =
+        items.stream()
+            .map(item -> item.getId().toString())
+            .sorted(Comparator.reverseOrder())
+            .toList();
+    var first =
+        execute(
+            "{ continueWatching(first: 1) { edges { cursor node { ... on Episode { id } } } pageInfo { hasNextPage } } }");
+    assertThat(first.at("/data/continueWatching/edges/0/node/id").asString())
+        .isEqualTo(expected.getFirst());
+    assertThat(first.at("/data/continueWatching/pageInfo/hasNextPage").asBoolean()).isTrue();
+    var cursor = first.at("/data/continueWatching/edges/0/cursor").asString();
+    execute(
+        "mutation { markWatched(input: { itemId: \"%s\" }) { userErrors { __typename } } }"
+            .formatted(expected.getFirst()));
+    var next =
+        execute(
+            """
+        { continueWatching(first: 1, after: "%s") {
+          edges { cursor node { ... on Episode { id } } }
+          pageInfo { hasNextPage hasPreviousPage }
+        } }
+        """
+                .formatted(cursor));
+    assertThat(next.at("/data/continueWatching/edges/0/node/id").asString())
+        .isEqualTo(expected.get(1));
+    assertThat(next.at("/data/continueWatching/pageInfo/hasNextPage").asBoolean()).isTrue();
+    assertThat(next.at("/data/continueWatching/pageInfo/hasPreviousPage").asBoolean()).isFalse();
+  }
+
+  private JsonNode execute(String query) throws Exception {
+    var mapper = new ObjectMapper();
+    var result =
+        mockMvc
+            .perform(
+                post("/graphql")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(mapper.writeValueAsString(Map.of("query", query)))
+                    .with(bearer(authTestSupport.profileBearer(identity))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return mapper.readTree(result);
   }
 
   private Episode createEpisodeWithProgress() {

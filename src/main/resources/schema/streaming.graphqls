@@ -53,22 +53,18 @@ type WatchProgress {
 
 union ContinueWatchingMedia = Movie | Episode
 
-"""
-Placement in the selected Profile's Continue Watching list, independent of a client's shelf size.
-Select this field in both the initial continueWatching query and watchStateChanged payloads.
-For a matching item, merge by ID, sort by orderKey and retain at most the client's shelf cap.
-An existing eligible item that moves to the tail remains while it fits that cap. Do not infer
-an exclusion boundary from an initially full shelf. Remove non-matches without reading replacements.
-"""
-type ContinueWatchingPosition {
-    "Whether this movie or episode belongs to the selected Profile's Continue Watching list."
-    matchesFilter: Boolean!
-    """
-    Opaque key comparable as an ascending ASCII string only with other Continue Watching keys
-    for this Profile. Includes last-watched descending and the ID tie-breaker.
-    Null when matchesFilter is false.
-    """
-    orderKey: String
+"A page of the selected Profile's Continue Watching list."
+type ContinueWatchingConnection {
+    edges: [ContinueWatchingEdge]!
+    pageInfo: PageInfo!
+}
+
+"Membership and ordering in Continue Watching, shared by queries and change payloads."
+type ContinueWatchingEdge {
+    node: ContinueWatchingMedia
+    cursor: String!
+    "Compare as ascending ASCII strings; includes last-watched descending and the ID tie-breaker."
+    orderKey: String!
 }
 
 "An item whose watch state a Profile can change."

@@ -7,16 +7,27 @@ import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
+import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
+import com.streamarr.server.graphql.cursor.CursorUtil;
+import com.streamarr.server.graphql.cursor.CursorValidator;
+import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
+import com.streamarr.server.services.pagination.MediaFilter;
+import com.streamarr.server.services.pagination.MediaPage;
+import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.services.pagination.SortDirection;
 import com.streamarr.server.services.watchprogress.ContinueWatchingService;
 import com.streamarr.server.support.security.TestIdentityConstants;
 import com.streamarr.server.support.security.WithProfileContext;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -24,6 +35,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
@@ -33,6 +45,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
     classes = {
       ContinueWatchingResolver.class,
       PaginationService.class,
+      CursorUtil.class,
+      CursorValidator.class,
+      RelayConnectionAdapter.class,
+      JacksonAutoConfiguration.class,
       SecurityContextAuthorizationService.class,
       FakeAuthorizationDecider.class
     })
@@ -46,6 +62,23 @@ class ContinueWatchingResolverTest {
   @MockitoBean private ContinueWatchingService continueWatchingService;
   @MockitoBean private UserAccountRepository userAccountRepository;
 
+  private MediaPage<BaseCollectable<?>> page(BaseCollectable<?> item) {
+    return new MediaPage<>(
+        List.of(new PageItem<>(item, Instant.parse("2026-10-19T15:07:00Z"))), false, false);
+  }
+
+  private MediaPaginationOptions options(int first) {
+    return MediaPaginationOptions.builder()
+        .paginationOptions(new PaginationService().getPaginationOptions(first, null, 0, null))
+        .mediaFilter(
+            MediaFilter.builder()
+                .profileId(PROFILE_ID)
+                .sortBy(OrderMediaBy.LAST_WATCHED)
+                .sortDirection(SortDirection.DESC)
+                .build())
+        .build();
+  }
+
   @Nested
   @DisplayName("continueWatching query")
   class ContinueWatchingQueryTests {
@@ -56,12 +89,12 @@ class ContinueWatchingResolverTest {
       var movie = Movie.builder().title("Test Movie").titleSort("Test Movie").build();
       movie.setId(UUID.randomUUID());
 
-      when(continueWatchingService.getContinueWatching(PROFILE_ID, 10)).thenReturn(List.of(movie));
+      when(continueWatchingService.getPage(PROFILE_ID, options(10))).thenReturn(page(movie));
 
       List<String> titles =
           dgsQueryExecutor.executeAndExtractJsonPath(
-              "{ continueWatching(first: 10) { ... on Movie { title } } }",
-              "data.continueWatching[*].title");
+              "{ continueWatching(first: 10) { edges { node { ... on Movie { title } } } } }",
+              "data.continueWatching.edges[*].node.title");
 
       assertThat(titles).containsExactly("Test Movie");
     }
@@ -69,12 +102,13 @@ class ContinueWatchingResolverTest {
     @Test
     @DisplayName("Should return empty list when no items in progress")
     void shouldReturnEmptyListWhenNoItemsInProgress() {
-      when(continueWatchingService.getContinueWatching(PROFILE_ID, 20)).thenReturn(List.of());
+      when(continueWatchingService.getPage(PROFILE_ID, options(20)))
+          .thenReturn(new MediaPage<>(List.of(), false, false));
 
       List<Object> results =
           dgsQueryExecutor.executeAndExtractJsonPath(
-              "{ continueWatching(first: 20) { ... on Movie { title } } }",
-              "data.continueWatching");
+              "{ continueWatching(first: 20) { edges { node { ... on Movie { title } } } } }",
+              "data.continueWatching.edges");
 
       assertThat(results).isEmpty();
     }
@@ -85,12 +119,12 @@ class ContinueWatchingResolverTest {
       var movie = Movie.builder().title("Movie Item").titleSort("Movie Item").build();
       movie.setId(UUID.randomUUID());
 
-      when(continueWatchingService.getContinueWatching(PROFILE_ID, 20)).thenReturn(List.of(movie));
+      when(continueWatchingService.getPage(PROFILE_ID, options(20))).thenReturn(page(movie));
 
       String typename =
           dgsQueryExecutor.executeAndExtractJsonPath(
-              "{ continueWatching(first: 20) { __typename } }",
-              "data.continueWatching[0].__typename");
+              "{ continueWatching(first: 20) { edges { node { __typename } } } }",
+              "data.continueWatching.edges[0].node.__typename");
 
       assertThat(typename).isEqualTo("Movie");
     }
@@ -101,13 +135,12 @@ class ContinueWatchingResolverTest {
       var episode = Episode.builder().title("Episode Item").episodeNumber(1).build();
       episode.setId(UUID.randomUUID());
 
-      when(continueWatchingService.getContinueWatching(PROFILE_ID, 20))
-          .thenReturn(List.of(episode));
+      when(continueWatchingService.getPage(PROFILE_ID, options(20))).thenReturn(page(episode));
 
       String typename =
           dgsQueryExecutor.executeAndExtractJsonPath(
-              "{ continueWatching(first: 20) { __typename } }",
-              "data.continueWatching[0].__typename");
+              "{ continueWatching(first: 20) { edges { node { __typename } } } }",
+              "data.continueWatching.edges[0].node.__typename");
 
       assertThat(typename).isEqualTo("Episode");
     }
@@ -116,7 +149,8 @@ class ContinueWatchingResolverTest {
     @DisplayName("Should return error when first is negative")
     void shouldReturnErrorWhenFirstIsNegative() {
       var result =
-          dgsQueryExecutor.execute("{ continueWatching(first: -1) { ... on Movie { title } } }");
+          dgsQueryExecutor.execute(
+              "{ continueWatching(first: -1) { edges { node { ... on Movie { title } } } } }");
 
       assertThat(result.getErrors()).isNotEmpty();
       assertThat(result.getErrors().getFirst().getMessage()).contains("first must not be negative");
@@ -135,7 +169,10 @@ class ContinueWatchingResolverTest {
               mock(ContinueWatchingService.class),
               new SecurityContextAuthorizationService(
                   new FakeAuthorizationDecider(), new FakeUserAccountRepository()),
-              new PaginationService());
+              new PaginationService(),
+              mock(RelayConnectionAdapter.class),
+              mock(CursorUtil.class),
+              new CursorValidator());
       var unsupported = new Object();
 
       assertThatThrownBy(() -> resolver.resolveContinueWatchingMedia(unsupported))
