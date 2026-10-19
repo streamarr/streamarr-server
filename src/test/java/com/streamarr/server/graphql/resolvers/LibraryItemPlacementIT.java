@@ -98,7 +98,7 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
               bearer,
               """
           { library(id: "%s") { items(first: 10, %s) {
-            edges { orderKey node { ... on Movie { id } ... on Series { id } } }
+            edges { cursor orderKey node { ... on Movie { id } ... on Series { id } } }
           } } }
           """
                   .formatted(change.libraryId(), arguments));
@@ -120,8 +120,8 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
           .isEqualTo(change.itemId().toString());
       assertThat(message.at("/payload/data/libraryItemUpdated/edge/node/id").asString())
           .isEqualTo(change.itemId().toString());
-      assertThat(message.at("/payload/data/libraryItemUpdated/edge/orderKey").asString())
-          .isEqualTo(query.at("/data/library/items/edges/0/orderKey").asString());
+      assertThat(message.at("/payload/data/libraryItemUpdated/edge"))
+          .isEqualTo(query.at("/data/library/items/edges/0"));
     } finally {
       new ActiveSubscriptions(metrics).awaitNoneActive();
       auth.deleteIdentity(identity);
@@ -276,7 +276,7 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
               bearer,
               """
           { library(id: "%s") { items(first: 10, sort: {by: TITLE, direction: ASC}, filter: {unmatched: true}) {
-            edges { orderKey node { ... on Movie { id } } }
+            edges { cursor orderKey node { ... on Movie { id } } }
           } } }
           """
                   .formatted(library.getId()));
@@ -459,15 +459,14 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
               bearer,
               """
           { library(id: "%s") { items(first: 10, sort: {by: LAST_WATCHED, direction: DESC}, filter: {watchStatus: WATCHED}) {
-            edges { orderKey node { ... on Series { id } } }
+            edges { cursor orderKey node { ... on Series { id } } }
           } } }
           """
                   .formatted(library.getId()));
       assertThat(query.has("errors")).as(query.toPrettyString()).isFalse();
       assertThat(query.at("/data/library/items/edges/0/node/id").asString())
           .isEqualTo(series.getId().toString());
-      assertThat(query.at("/data/library/items/edges/0/orderKey").asString())
-          .isEqualTo(change.at("/edge/orderKey").asString());
+      assertThat(query.at("/data/library/items/edges/0")).isEqualTo(change.at("/edge"));
     } finally {
       new ActiveSubscriptions(metrics).awaitNoneActive();
       auth.deleteIdentity(identity);
