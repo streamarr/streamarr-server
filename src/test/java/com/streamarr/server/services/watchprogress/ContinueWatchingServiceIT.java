@@ -220,7 +220,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
                   .map(Map.Entry::getKey))
           .containsExactly(inProgressEpisode.getId(), inProgressMovie.getId());
       for (var excluded : List.of(watchedMovie.getId(), unwatchedMovie.getId(), missing)) {
-        assertThat(positions.get(excluded)).isEqualTo(new ContinueWatchingPosition(false, null));
+        assertThat(positions).containsEntry(excluded, new ContinueWatchingPosition(false, null));
       }
 
       assertThat(continueWatchingService.getPositions(profileId, Set.of())).isEmpty();
@@ -320,11 +320,11 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
         var ownPositions = continueWatchingService.getPositions(profileId, requested);
         var otherPositions = continueWatchingService.getPositions(otherProfileId, requested);
         assertThat(ownPositions.get(inProgressMovie.getId()).matchesFilter()).isTrue();
-        assertThat(ownPositions.get(otherMovie.getId()))
-            .isEqualTo(new ContinueWatchingPosition(false, null));
+        assertThat(ownPositions)
+            .containsEntry(otherMovie.getId(), new ContinueWatchingPosition(false, null));
         assertThat(otherPositions.get(otherMovie.getId()).matchesFilter()).isTrue();
-        assertThat(otherPositions.get(inProgressMovie.getId()))
-            .isEqualTo(new ContinueWatchingPosition(false, null));
+        assertThat(otherPositions)
+            .containsEntry(inProgressMovie.getId(), new ContinueWatchingPosition(false, null));
       } finally {
         authTestSupport.deleteIdentity(otherIdentity);
       }
