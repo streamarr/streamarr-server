@@ -20,6 +20,7 @@ import com.streamarr.server.services.ArtworkRequestService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.pagination.SortDirection;
 import com.streamarr.server.support.ActiveSubscriptions;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.GraphQlHttpTestClient;
@@ -31,7 +32,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import org.jooq.SortOrder;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -156,7 +156,8 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
     "LAST_WATCHED,ASC",
     "LAST_WATCHED,DESC"
   })
-  void shouldKeepOrderKeysAndCursorsConsistentForEverySort(OrderMediaBy by, SortOrder direction) {
+  void shouldKeepOrderKeysAndCursorsConsistentForEverySort(
+      OrderMediaBy by, SortDirection direction) {
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     var created = new ArrayList<Movie>();
     var titles = new String[] {"a", "A", "aé", "ä", null};

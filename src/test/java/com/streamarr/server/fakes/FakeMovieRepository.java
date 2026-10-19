@@ -8,6 +8,7 @@ import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.services.pagination.SortDirection;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -18,7 +19,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import org.jooq.SortOrder;
 
 public class FakeMovieRepository extends FakeJpaRepository<Movie> implements MovieRepository {
 
@@ -180,15 +180,15 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
       return stream.filter(m -> FakeFilterHelper.matchesLetterEquality(m.getTitleSort(), letter));
     }
 
-    if (filter.getSortDirection() == SortOrder.DESC) {
+    if (filter.getSortDirection() == SortDirection.DESC) {
       return stream.filter(m -> FakeFilterHelper.matchesLetterDescRange(m.getTitleSort(), letter));
     }
 
     return stream.filter(m -> FakeFilterHelper.matchesLetterAscRange(m.getTitleSort(), letter));
   }
 
-  private Comparator<Movie> comparatorFor(MediaFilter filter, SortOrder idSortOrder) {
-    var isDesc = filter.getSortDirection() == SortOrder.DESC;
+  private Comparator<Movie> comparatorFor(MediaFilter filter, SortDirection idSortOrder) {
+    var isDesc = filter.getSortDirection() == SortDirection.DESC;
 
     Comparator<Movie> primary =
         switch (filter.getSortBy()) {
@@ -205,7 +205,7 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
         };
 
     Comparator<Movie> idComparator = Comparator.comparing(Movie::getId);
-    if (idSortOrder == SortOrder.DESC) {
+    if (idSortOrder == SortDirection.DESC) {
       idComparator = idComparator.reversed();
     }
 

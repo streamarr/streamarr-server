@@ -19,6 +19,7 @@ import static org.jooq.impl.DSL.when;
 import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.pagination.SortDirection;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -80,7 +81,7 @@ public class JooqQueryHelper {
   }
 
   public Condition startLetterCondition(
-      AlphabetLetter startLetter, SortOrder direction, OrderMediaBy sortBy) {
+      AlphabetLetter startLetter, SortDirection direction, OrderMediaBy sortBy) {
     if (startLetter == null) {
       return noCondition();
     }
@@ -89,7 +90,7 @@ public class JooqQueryHelper {
       return equalityLetterCondition(startLetter);
     }
 
-    return direction == SortOrder.DESC
+    return direction == SortDirection.DESC
         ? descLetterCondition(startLetter)
         : ascLetterCondition(startLetter);
   }
@@ -99,12 +100,12 @@ public class JooqQueryHelper {
   // ASC, Z at the top under DESC, and DESC HASH matches two non-adjacent runs of the ordering so
   // it has no single anchor to sit below.
   public Optional<Condition> letterJumpPredecessorCondition(
-      AlphabetLetter startLetter, SortOrder direction) {
+      AlphabetLetter startLetter, SortDirection direction) {
     if (startLetter == AlphabetLetter.HASH) {
       return Optional.empty();
     }
 
-    if (direction == SortOrder.DESC) {
+    if (direction == SortDirection.DESC) {
       return startLetter == AlphabetLetter.Z
           ? Optional.empty()
           : Optional.of(titleSeekPosition().ge(row(inline(false), nextLetterValue(startLetter))));
@@ -173,11 +174,12 @@ public class JooqQueryHelper {
     return lower(BASE_COLLECTABLE.TITLE_SORT).collate("C");
   }
 
-  public List<SortField<?>> titleOrderBy(SortOrder direction) {
+  public List<SortField<?>> titleOrderBy(SortDirection direction) {
+    var sqlDirection = direction == SortDirection.ASC ? SortOrder.ASC : SortOrder.DESC;
     return List.of(
-        field(BASE_COLLECTABLE.TITLE_SORT.isNull()).sort(direction),
-        titleSeekField().sort(direction),
-        BASE_COLLECTABLE.ID.sort(direction));
+        field(BASE_COLLECTABLE.TITLE_SORT.isNull()).sort(sqlDirection),
+        titleSeekField().sort(sqlDirection),
+        BASE_COLLECTABLE.ID.sort(sqlDirection));
   }
 
   public List<SortField<?>> mediaOrderBy(
@@ -187,12 +189,13 @@ public class JooqQueryHelper {
       return titleOrderBy(direction);
     }
 
-    var order = sortField.sort(direction);
+    var sqlDirection = direction == SortDirection.ASC ? SortOrder.ASC : SortOrder.DESC;
+    var order = sortField.sort(sqlDirection);
     if (isNullableSortField(filter.getSortBy())) {
       order = reversePage ? order.nullsFirst() : order.nullsLast();
     }
 
-    return List.of(order, BASE_COLLECTABLE.ID.sort(direction));
+    return List.of(order, BASE_COLLECTABLE.ID.sort(sqlDirection));
   }
 
   private Field<String> titleSeekField() {
@@ -246,11 +249,11 @@ public class JooqQueryHelper {
   }
 
   public MediaFilter reverseFilter(MediaFilter filter) {
-    if (filter.getSortDirection().equals(SortOrder.DESC)) {
-      return filter.toBuilder().sortDirection(SortOrder.ASC).build();
+    if (filter.getSortDirection().equals(SortDirection.DESC)) {
+      return filter.toBuilder().sortDirection(SortDirection.ASC).build();
     }
 
-    return filter.toBuilder().sortDirection(SortOrder.DESC).build();
+    return filter.toBuilder().sortDirection(SortDirection.DESC).build();
   }
 
   public boolean isNullableSortField(OrderMediaBy sortBy) {
@@ -281,7 +284,7 @@ public class JooqQueryHelper {
     var reversePage = seek.reversePage();
     var idField = BASE_COLLECTABLE.ID;
     var coercedValue = coerceSortValue(filter);
-    var isAsc = filter.getSortDirection() == SortOrder.ASC;
+    var isAsc = filter.getSortDirection() == SortDirection.ASC;
 
     if (filter.getSortBy() == OrderMediaBy.TITLE) {
       return titleSeekCondition(filter, cursorId);
@@ -310,7 +313,7 @@ public class JooqQueryHelper {
 
   private Condition titleSeekCondition(MediaFilter filter, UUID cursorId) {
     var value = coerceSortValue(filter);
-    var isAsc = filter.getSortDirection() == SortOrder.ASC;
+    var isAsc = filter.getSortDirection() == SortDirection.ASC;
     var fields =
         row(field(BASE_COLLECTABLE.TITLE_SORT.isNull()), titleSeekField(), BASE_COLLECTABLE.ID);
     var seekValues =

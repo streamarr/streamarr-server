@@ -7,7 +7,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.HexFormat;
-import org.jooq.SortOrder;
 
 public final class MediaOrderKey {
   private MediaOrderKey() {}
@@ -21,14 +20,14 @@ public final class MediaOrderKey {
             .putLong(order.itemId().getLeastSignificantBits())
             .array());
     var payload = bytes.toByteArray();
-    if (order.direction() == SortOrder.DESC) {
+    if (order.direction() == SortDirection.DESC) {
       for (int i = 0; i < payload.length; i++) {
         payload[i] = (byte) ~payload[i];
       }
     }
 
     var nullsFirst =
-        order.direction() == SortOrder.DESC
+        order.direction() == SortDirection.DESC
             && (order.by() == OrderMediaBy.TITLE || order.by() == OrderMediaBy.ADDED);
     var prefix = (order.value() == null) == nullsFirst ? "0" : "1";
     return "1:" + prefix + HexFormat.of().formatHex(payload);

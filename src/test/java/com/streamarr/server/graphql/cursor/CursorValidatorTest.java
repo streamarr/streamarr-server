@@ -7,9 +7,9 @@ import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.pagination.SortDirection;
 import java.util.List;
 import java.util.UUID;
-import org.jooq.SortOrder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
@@ -58,7 +58,7 @@ class CursorValidatorTest {
           MediaFilter.builder()
               .libraryId(libraryId)
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .genreIds(List.of(genreId))
               .years(List.of(2024))
               .contentRatings(List.of("PG-13"))
@@ -119,8 +119,8 @@ class CursorValidatorTest {
     @Test
     @DisplayName("Should throw when sortDirection changes between queries")
     void shouldThrowWhenSortDirectionChangesBetweenQueries() {
-      var cursorFilter = MediaFilter.builder().sortDirection(SortOrder.ASC).build();
-      var currentFilter = MediaFilter.builder().sortDirection(SortOrder.DESC).build();
+      var cursorFilter = MediaFilter.builder().sortDirection(SortDirection.ASC).build();
+      var currentFilter = MediaFilter.builder().sortDirection(SortDirection.DESC).build();
       var decoded = MediaPaginationOptions.builder().mediaFilter(cursorFilter).build();
 
       assertThatThrownBy(() -> cursorValidator.validateCursorAgainstFilter(decoded, currentFilter))

@@ -9,12 +9,12 @@ import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationOptions;
+import com.streamarr.server.services.pagination.SortDirection;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.jooq.SortOrder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
@@ -91,7 +91,7 @@ class CursorUtilTest {
               .libraryId(libraryId)
               .profileId(profileId)
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .genreIds(List.of(genreId))
               .years(List.of(2024))
               .contentRatings(List.of("PG-13"))
@@ -128,7 +128,7 @@ class CursorUtilTest {
       assertThat(decoded.getMediaFilter().getLibraryId()).isEqualTo(libraryId);
       assertThat(decoded.getMediaFilter().getProfileId()).isEqualTo(profileId);
       assertThat(decoded.getMediaFilter().getSortBy()).isEqualTo(OrderMediaBy.RELEASE_DATE);
-      assertThat(decoded.getMediaFilter().getSortDirection()).isEqualTo(SortOrder.DESC);
+      assertThat(decoded.getMediaFilter().getSortDirection()).isEqualTo(SortDirection.DESC);
       assertThat(decoded.getMediaFilter().getGenreIds()).containsExactly(genreId);
       assertThat(decoded.getMediaFilter().getYears()).containsExactly(2024);
       assertThat(decoded.getMediaFilter().getContentRatings()).containsExactly("PG-13");
@@ -168,7 +168,7 @@ class CursorUtilTest {
 
       assertThat(decoded.getCursorId()).contains(cursorId);
       assertThat(decoded.getMediaFilter().getSortBy()).isEqualTo(OrderMediaBy.TITLE);
-      assertThat(decoded.getMediaFilter().getSortDirection()).isEqualTo(SortOrder.ASC);
+      assertThat(decoded.getMediaFilter().getSortDirection()).isEqualTo(SortDirection.ASC);
       assertThat(decoded.getMediaFilter().getLibraryId()).isNull();
       assertThat(decoded.getMediaFilter().getGenreIds()).isNull();
       assertThat(decoded.getMediaFilter().getYears()).isNull();
