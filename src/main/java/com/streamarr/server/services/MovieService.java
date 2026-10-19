@@ -87,10 +87,10 @@ public class MovieService {
   }
 
   @Transactional
-  public void deleteMovieById(UUID movieId) {
-    movieRepository
+  public boolean deleteMovieById(UUID movieId) {
+    return movieRepository
         .findById(movieId)
-        .ifPresent(
+        .map(
             movie -> {
               deleteMovies(List.of(movie));
               events.publishEvent(
@@ -100,7 +100,9 @@ public class MovieService {
                       .itemId(movie.getId())
                       .kind(MediaType.MOVIE)
                       .build());
-            });
+              return true;
+            })
+        .orElse(false);
   }
 
   @Transactional
