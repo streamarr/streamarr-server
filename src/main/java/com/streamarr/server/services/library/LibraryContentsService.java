@@ -1,6 +1,6 @@
 package com.streamarr.server.services.library;
 
-import com.streamarr.server.domain.Collectable;
+import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
@@ -10,6 +10,7 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.events.library.LibraryItemChangedEvent;
 import com.streamarr.server.services.pagination.ItemSortValue;
 import com.streamarr.server.services.pagination.MediaFilter;
+import com.streamarr.server.services.pagination.PageItem;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -34,7 +35,14 @@ public class LibraryContentsService {
   }
 
   @Transactional(readOnly = true)
-  public Optional<ItemSortValue> findPosition(LibraryItemChangedEvent change, MediaFilter filter) {
+  public Optional<PageItem<BaseCollectable<?>>> findMatchingItem(
+      LibraryItemChangedEvent change, MediaFilter filter) {
+    return findSortValue(change, filter)
+        .flatMap(value -> findItem(change).map(item -> new PageItem<>(item, value.value())));
+  }
+
+  private Optional<ItemSortValue> findSortValue(
+      LibraryItemChangedEvent change, MediaFilter filter) {
     return switch (change.kind()) {
       case MOVIE -> movies.findItemPosition(change.itemId(), filter);
       case SERIES -> series.findItemPosition(change.itemId(), filter);
@@ -43,7 +51,7 @@ public class LibraryContentsService {
   }
 
   @Transactional(readOnly = true)
-  public Optional<Collectable> findItem(LibraryItemChangedEvent change) {
+  public Optional<BaseCollectable<?>> findItem(LibraryItemChangedEvent change) {
     return switch (change.kind()) {
       case MOVIE -> movies.findById(change.itemId()).map(item -> item);
       case SERIES -> series.findById(change.itemId()).map(item -> item);

@@ -108,7 +108,7 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
           "minute",
           """
           subscription { libraryItemUpdated(libraryId: "%s") {
-            itemId position(%s) { matchesFilter cursor orderKey }
+            itemId edge(%s) { cursor orderKey node { ... on Movie { id } ... on Series { id } } }
           } }
           """
               .formatted(change.libraryId(), arguments));
@@ -118,9 +118,9 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
       assertThat(message.at("/payload").has("errors")).as(message.toPrettyString()).isFalse();
       assertThat(message.at("/payload/data/libraryItemUpdated/itemId").asString())
           .isEqualTo(change.itemId().toString());
-      assertThat(message.at("/payload/data/libraryItemUpdated/position/matchesFilter").asBoolean())
-          .isTrue();
-      assertThat(message.at("/payload/data/libraryItemUpdated/position/orderKey").asString())
+      assertThat(message.at("/payload/data/libraryItemUpdated/edge/node/id").asString())
+          .isEqualTo(change.itemId().toString());
+      assertThat(message.at("/payload/data/libraryItemUpdated/edge/orderKey").asString())
           .isEqualTo(query.at("/data/library/items/edges/0/orderKey").asString());
     } finally {
       new ActiveSubscriptions(metrics).awaitNoneActive();
@@ -142,7 +142,7 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
               .profileId(identity.profile().getId())
               .sortBy(by)
               .build();
-      assertThat(contents.findPosition(change, filter).orElseThrow().value())
+      assertThat(contents.findMatchingItem(change, filter).orElseThrow().sortValue())
           .isEqualTo(WHOLE_MINUTE);
     } finally {
       auth.deleteIdentity(identity);
@@ -200,6 +200,7 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should share query edges while retaining an item excluded from another view")
   void shouldSupplyTheSameOrderKeyAsAQueryAndACursorUsableForTheNextPage() {
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     movies.saveAndFlush(Movie.builder().title("Alpha").titleSort("Alpha").library(library).build());
@@ -230,10 +231,10 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
           """
           subscription { libraryItemUpdated(libraryId: "%s") {
             itemId item { ... on Movie { title } }
-            position(sort: {by: TITLE, direction: ASC}, filter: {unmatched: true}) {
-              matchesFilter cursor orderKey
+            edge(sort: {by: TITLE, direction: ASC}, filter: {unmatched: true}) {
+              cursor orderKey node { ... on Movie { id title } }
             }
-            excluded: position(filter: {years: [1900]}) { matchesFilter cursor orderKey }
+            excluded: edge(filter: {years: [1900]}) { cursor orderKey node { ... on Movie { id title } } }
           } }
           """
               .formatted(library.getId()));
@@ -250,12 +251,12 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
       var message = socket.nextMessageFor("placement");
       assertThat(message.path("payload").has("errors")).as(message.toPrettyString()).isFalse();
       var update = message.at("/payload/data/libraryItemUpdated");
-      var position = update.path("position");
-      assertThat(position.path("matchesFilter").asBoolean()).isTrue();
-      assertThat(position.path("orderKey").asString()).isGreaterThan(firstKey);
-      assertThat(update.at("/excluded/matchesFilter").asBoolean()).isFalse();
-      assertThat(update.at("/excluded/cursor").isNull()).isTrue();
-      assertThat(update.at("/excluded/orderKey").isNull()).isTrue();
+      var edge = update.path("edge");
+      assertThat(edge.at("/node/id").asString()).isEqualTo(changed.getId().toString());
+      assertThat(edge.at("/node/title").asString()).isEqualTo("Bravo");
+      assertThat(update.at("/item/title").asString()).isEqualTo("Bravo");
+      assertThat(edge.path("orderKey").asString()).isGreaterThan(firstKey);
+      assertThat(update.path("excluded").isNull()).isTrue();
       var after =
           http.execute(
               bearer,
@@ -264,12 +265,12 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
             edges { cursor orderKey node { ... on Movie { id } } }
           } } }
           """
-                  .formatted(library.getId(), position.path("cursor").asString()));
+                  .formatted(library.getId(), edge.path("cursor").asString()));
       assertThat(after.has("errors")).as(after.toPrettyString()).isFalse();
       assertThat(after.at("/data/library/items/edges/0/node/id").asString())
           .isEqualTo(last.getId().toString());
       assertThat(after.at("/data/library/items/edges/0/orderKey").asString())
-          .isGreaterThan(position.path("orderKey").asString());
+          .isGreaterThan(edge.path("orderKey").asString());
       var all =
           http.execute(
               bearer,
@@ -280,7 +281,7 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
           """
                   .formatted(library.getId()));
       assertThat(all.at("/data/library/items/edges/1/orderKey").asString())
-          .isEqualTo(position.path("orderKey").asString());
+          .isEqualTo(edge.path("orderKey").asString());
     } finally {
       new ActiveSubscriptions(metrics).awaitNoneActive();
       auth.deleteIdentity(identity);
@@ -429,10 +430,10 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
           """
           subscription { libraryItemUpdated(libraryId: "%s") {
             itemId kind item { ... on Series { watchStatus lastWatchedAt } }
-            position(sort: {by: LAST_WATCHED, direction: DESC}, filter: {watchStatus: WATCHED}) {
-              matchesFilter cursor orderKey
+            edge(sort: {by: LAST_WATCHED, direction: DESC}, filter: {watchStatus: WATCHED}) {
+              cursor orderKey node { ... on Series { id } }
             }
-            excluded: position(filter: {watchStatus: UNWATCHED}) { matchesFilter }
+            excluded: edge(filter: {watchStatus: UNWATCHED}) { cursor }
           } }
           """
               .formatted(library.getId()));
@@ -450,8 +451,8 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
       var change = message.at("/payload/data/libraryItemUpdated");
       assertThat(change.path("itemId").asString()).isEqualTo(series.getId().toString());
       assertThat(change.path("kind").asString()).isEqualTo("SERIES");
-      assertThat(change.at("/position/matchesFilter").asBoolean()).isTrue();
-      assertThat(change.at("/excluded/matchesFilter").asBoolean()).isFalse();
+      assertThat(change.at("/edge/node/id").asString()).isEqualTo(series.getId().toString());
+      assertThat(change.path("excluded").isNull()).isTrue();
       assertThat(change.at("/item/watchStatus").asString()).isEqualTo("WATCHED");
       var query =
           http.execute(
@@ -466,7 +467,7 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
       assertThat(query.at("/data/library/items/edges/0/node/id").asString())
           .isEqualTo(series.getId().toString());
       assertThat(query.at("/data/library/items/edges/0/orderKey").asString())
-          .isEqualTo(change.at("/position/orderKey").asString());
+          .isEqualTo(change.at("/edge/orderKey").asString());
     } finally {
       new ActiveSubscriptions(metrics).awaitNoneActive();
       auth.deleteIdentity(identity);

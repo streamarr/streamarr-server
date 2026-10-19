@@ -5,7 +5,7 @@ Library queries supply initial state. Four independent operations on the shared
 
 | Subscription | Payload |
 | --- | --- |
-| `libraryItemAdded(libraryId)` | `LibraryItemChange`: library ID, item ID, kind, selectable `Movie` or `Series`, and `position(sort, filter)` |
+| `libraryItemAdded(libraryId)` | `LibraryItemChange`: library ID, item ID, kind, selectable `Movie` or `Series`, and `edge(sort, filter)` |
 | `libraryItemUpdated(libraryId)` | The same payload, including changes to a series' seasons or episodes |
 | `libraryItemRemoved(libraryId)` | Library ID, item ID and kind, which remain meaningful after deletion |
 | `libraryCountsChanged(libraryId)` | A selectable `Library`, including authoritative `itemCount` and `alphabetIndex` |
@@ -29,7 +29,7 @@ selected watch-state fields still resolve for each subscriber's own Profile.
 
 ## Placement and pagination
 
-Select `orderKey` on ordinary `MediaEdge` results. Select `position` with the **same sort
+Select `orderKey` on ordinary `MediaEdge` results. Select `edge` with the **same sort
 and filter** on addition and update payloads:
 
 ```graphql
@@ -43,10 +43,13 @@ subscription LibraryAdditions($id: ID!, $sort: MediaSort, $filter: MediaFilter) 
       ... on Movie { id title }
       ... on Series { id title }
     }
-    position(sort: $sort, filter: $filter) {
-      matchesFilter
+    edge(sort: $sort, filter: $filter) {
       cursor
       orderKey
+      node {
+        ... on Movie { id title }
+        ... on Series { id title }
+      }
     }
   }
 }
@@ -57,9 +60,14 @@ needed by their screens, including images, credits, genres, watch state and nest
 seasons/episodes. The server evaluates membership with the query's filter predicates;
 clients do not reconstruct filters from a partially selected entity.
 
-- `matchesFilter: true` supplies a real `Library.items` cursor and an `orderKey`.
-- `matchesFilter: false` supplies null cursor/key: remove an existing edge without
-  fetching a replacement. It also covers an item deleted before delivery.
+- A present `edge` is the same `MediaEdge` shape as `Library.items`, with its cursor,
+  order key and selectable node. Query pages and changes share edge construction.
+- An explicitly resolved `edge: null` means the item is not in this view, including
+  an item deleted before delivery. Remove an existing edge without backfilling only
+  if no error response path starts at this change's path (aliases and list indices
+  included). An edge with `node: null` never means removal. Preserve an errored
+  change's entity and membership until shared query recovery succeeds.
+- Leaving a filtered view does not evict the entity. Only deletion receipts do.
 - `item` may be null when a later commit has already removed it.
 - Compare keys as **ascending ASCII strings**, even for a descending sort. Do not use
   locale-aware comparison. Keys include the ID tie-breaker and encode null placement.
@@ -133,7 +141,7 @@ foreground or online return, silently revalidate desired queries through the sha
 connection/recovery mechanism.
 
 The explicit contents operations coexist with `watchStateChanged`. The latter can update
-normalized watch fields and Continue Watching; a connection using `LibraryItemChange.position`
+normalized watch fields and Continue Watching; a connection using `LibraryItemChange.edge`
 must have one owner for library membership so the two consumers cannot invent competing
 edges or cursors.
 
