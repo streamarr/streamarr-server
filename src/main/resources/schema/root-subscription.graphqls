@@ -91,9 +91,10 @@ type WatchStateChange {
     items: [WatchStateItem]!
     """
     Continue Watching membership for every touched movie or episode, independent of
-    the client's shelf cap. Entity updates remain available through items.
+    the client's shelf cap, including departures with a null edge. A null list means membership
+    could not be evaluated: preserve the shelf and still apply usable entity updates through items.
     """
-    continueWatching: [ContinueWatchingChange]!
+    continueWatching: [ContinueWatchingChange]
 }
 
 "A touched item's current membership in the selected Profile's Continue Watching list."

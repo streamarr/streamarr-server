@@ -78,7 +78,7 @@ class SubscriptionContractTest {
   void shouldDeliverNonNullListOfNullableItemsWhenWatchStateChangeIsDelivered() {
     assertThat(objectType("WatchStateChange").getFieldDefinitions())
         .extracting(field -> field.getName() + ": " + AstPrinter.printAst(field.getType()))
-        .containsExactly("items: [WatchStateItem]!", "continueWatching: [ContinueWatchingChange]!");
+        .containsExactly("items: [WatchStateItem]!", "continueWatching: [ContinueWatchingChange]");
   }
 
   @Test
