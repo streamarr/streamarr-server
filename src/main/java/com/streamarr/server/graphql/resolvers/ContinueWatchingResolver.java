@@ -49,7 +49,7 @@ public class ContinueWatchingResolver {
             pagination,
             options(profileId).getMediaFilter(),
             cursors::decodeMediaCursor,
-            cursorValidator::validateCursorAgainstFilter);
+            cursorValidator::validateContinueWatchingCursor);
     return connections.toConnection(continueWatchingService.getPage(profileId, options), options);
   }
 

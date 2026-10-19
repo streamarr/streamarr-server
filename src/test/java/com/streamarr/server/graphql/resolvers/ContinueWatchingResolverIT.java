@@ -16,11 +16,16 @@ import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
+import com.streamarr.server.services.pagination.MediaFilter;
+import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.pagination.SortDirection;
 import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
@@ -33,6 +38,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -44,6 +52,7 @@ import tools.jackson.databind.ObjectMapper;
 class ContinueWatchingResolverIT extends AbstractIntegrationTest {
 
   @Autowired private MockMvc mockMvc;
+  @Autowired private CursorUtil cursors;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private SeriesRepository seriesRepository;
@@ -59,6 +68,41 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
     if (identity != null) {
       authTestSupport.deleteIdentity(identity);
     }
+  }
+
+  @ParameterizedTest
+  @NullSource
+  @ValueSource(strings = {"not-a-timestamp", "2026-10-19T15:07Z"})
+  @DisplayName("Should reject a malformed Continue Watching timestamp as an invalid cursor")
+  void shouldRejectMalformedContinueWatchingTimestampAsInvalidCursor(String timestamp)
+      throws Exception {
+    identity = authTestSupport.createIdentity();
+    var options =
+        MediaPaginationOptions.builder()
+            .mediaFilter(
+                MediaFilter.builder()
+                    .profileId(identity.profile().getId())
+                    .sortBy(OrderMediaBy.LAST_WATCHED)
+                    .sortDirection(SortDirection.DESC)
+                    .build())
+            .build();
+    var cursor = cursors.encodeMediaCursor(options, UUID.randomUUID(), timestamp).getValue();
+    var body =
+        new ObjectMapper()
+            .writeValueAsString(
+                Map.of(
+                    "query",
+                    "query($after: String) { continueWatching(first: 1, after: $after) { edges { cursor } } }",
+                    "variables",
+                    Map.of("after", cursor)));
+    mockMvc
+        .perform(
+            post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body)
+                .with(bearer(authTestSupport.profileBearer(identity))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
   }
 
   @Test
