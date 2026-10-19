@@ -171,8 +171,10 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
     assertThat(removed.path("continueWatchingPosition").path("matchesFilter").asBoolean())
         .isFalse();
     assertThat(removed.path("continueWatchingPosition").path("orderKey").isNull()).isTrue();
-    assertThat(http.execute(reporter, query).path("data").path("continueWatching").isEmpty())
-        .isTrue();
+    var afterRemoval = http.execute(reporter, query);
+    assertThat(afterRemoval.path("errors").isMissingNode()).isTrue();
+    assertThat(afterRemoval.at("/data/continueWatching").isArray()).isTrue();
+    assertThat(afterRemoval.at("/data/continueWatching").isEmpty()).isTrue();
   }
 
   @Test

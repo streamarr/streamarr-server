@@ -68,7 +68,8 @@ class SubscriptionContractTest {
     assertThat(descriptionOf(subscriptionField("watchStateChanged")))
         .contains("selected Profile")
         .contains("ViewProfileActivity")
-        .contains("continueWatching");
+        .contains("continueWatching")
+        .contains("continueWatchingPosition");
   }
 
   @Test

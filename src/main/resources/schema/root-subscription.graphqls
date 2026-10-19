@@ -65,7 +65,10 @@ type Subscription {
     receives carries the latest values.
 
     To build current state, subscribe first, then query `continueWatching` and the library views
-    the client shows. Select the same fields in the change as in those queries.
+    the client shows. Select the same fields in the change as in those queries. For Continue
+    Watching, select continueWatchingPosition on movies and episodes; the server supplies
+    membership and opaque ordering keys. Merge by ID, sort by those keys and retain the client's
+    shelf cap. Remove non-matches without backfill. See ContinueWatchingPosition for that policy.
 
     A field that fails to resolve does not end the operation. The `errors` of the message name the
     path of each failed field. A failed nullable field arrives as null. A failed non-null field of
