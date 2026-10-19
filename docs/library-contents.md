@@ -63,7 +63,7 @@ clients do not reconstruct filters from a partially selected entity.
   Treat their representation as opaque; only compare keys from the same view.
 - Pass the cursor unchanged to `before`/`after`. A key is not a cursor. Never synthesize
   a cursor or decode one to recreate sorting logic.
-- TITLE ordering uses PostgreSQL `lower(title_sort) COLLATE "C"`. Its seek index orders
+- TITLE ordering uses PostgreSQL `lower(title_sort COLLATE "C")`. Its seek index orders
   a null flag, the normalized title with null coalesced to an empty string, and the ID.
   Comparing that whole tuple keeps nullable cursor seeks within the index range instead
   of scanning earlier titles. The database performs case normalization for keys too,
@@ -71,7 +71,10 @@ clients do not reconstruct filters from a partially selected entity.
   sorts keep nulls last in either direction; TITLE retains SQL's ascending-null-last and
   descending-null-first ordering. Backward seeks reverse the physical null order too.
 - TITLE `startLetter` remains a seek anchor under ADR 0023. It is not a membership
-  restriction. Under other sorts it remains a filter.
+  restriction for event placement or cursor pages. The descending HASH landing page
+  is the documented exception: its non-alphabetic titles occupy disjoint runs, so
+  the initial page keeps a HASH restriction and has no single predecessor anchor.
+  Under other sorts the letter remains a filter on every page.
 
 Normalize entity fields, then reconcile the selected connection by item ID. An in-range
 addition grows 48 items to 49. A matching item outside a partial window waits for ordinary

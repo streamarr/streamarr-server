@@ -1,5 +1,6 @@
 package com.streamarr.server.services;
 
+import static com.streamarr.server.fixtures.PaginationFixture.buildForwardContinuation;
 import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
@@ -14,13 +15,19 @@ import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.library.LetterIndexRecalculator;
 import com.streamarr.server.services.library.LibraryCountsService;
 import com.streamarr.server.services.pagination.MediaFilter;
+import com.streamarr.server.services.pagination.MediaOrder;
+import com.streamarr.server.services.pagination.MediaOrderKeys;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.SortDirection;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,6 +43,62 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
   @Autowired private MovieService movieService;
   @Autowired private LetterIndexRecalculator recalculator;
   @Autowired private LibraryCountsService counts;
+  @Autowired private MediaOrderKeys orderKeys;
+
+  @ParameterizedTest
+  @CsvSource({
+    "C,ASC", "C,DESC", "en-US-x-icu,ASC", "en-US-x-icu,DESC",
+    "tr-TR-x-icu,ASC", "tr-TR-x-icu,DESC", "az-Latn-x-icu,ASC", "az-Latn-x-icu,DESC"
+  })
+  @DisplayName("Should keep title order and continuation independent of database collation")
+  void shouldKeepTitleOrderAndContinuationIndependentOfDatabaseCollation(
+      String collation, SortDirection direction) {
+    jdbc.execute(
+        "ALTER TABLE base_collectable ALTER COLUMN title_sort TYPE VARCHAR(255) COLLATE \""
+            + collation
+            + "\"");
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    for (var title : List.of("Zulu", "INDIGO", "Alpha")) {
+      movies.saveAndFlush(Movie.builder().title(title).titleSort(title).library(library).build());
+    }
+    var filter = MediaFilter.builder().libraryId(library.getId()).sortDirection(direction).build();
+    var expected =
+        direction == SortDirection.ASC
+            ? List.of("Alpha", "INDIGO", "Zulu")
+            : List.of("Zulu", "INDIGO", "Alpha");
+    var complete = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
+    assertThat(complete.items())
+        .extracting(item -> item.item().getTitle())
+        .containsExactlyElementsOf(expected);
+
+    var orders =
+        complete.items().stream()
+            .map(item -> MediaOrder.from(filter, item.item().getId(), item.sortValue()))
+            .collect(Collectors.toSet());
+    var keys = orderKeys.getKeys(orders);
+    assertThat(
+            complete.items().stream()
+                .sorted(
+                    Comparator.comparing(
+                        item ->
+                            keys.get(
+                                MediaOrder.from(filter, item.item().getId(), item.sortValue()))))
+                .map(item -> item.item().getTitle())
+                .toList())
+        .containsExactlyElementsOf(expected);
+
+    var traversed = new ArrayList<String>();
+    var options = buildForwardOptions(1, filter);
+    for (int index = 0; index < expected.size(); index++) {
+      var page = movieService.getMoviesWithFilter(options);
+      assertThat(page.items()).hasSize(1);
+      var item = page.items().getFirst();
+      traversed.add(item.item().getTitle());
+      options = buildForwardContinuation(1, filter, item);
+      assertThat(page.hasNextPage()).isEqualTo(index < expected.size() - 1);
+    }
+    assertThat(traversed).containsExactlyElementsOf(expected);
+  }
 
   @ParameterizedTest
   @ValueSource(strings = {"C", "en-US-x-icu", "tr-TR-x-icu"})
