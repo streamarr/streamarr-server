@@ -222,6 +222,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
       for (var excluded : List.of(watchedMovie.getId(), unwatchedMovie.getId(), missing)) {
         assertThat(positions.get(excluded)).isEqualTo(new ContinueWatchingPosition(false, null));
       }
+
       assertThat(continueWatchingService.getPositions(profileId, Set.of())).isEmpty();
     }
 
