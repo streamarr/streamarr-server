@@ -173,15 +173,15 @@ public class JooqQueryHelper {
     return lower(BASE_COLLECTABLE.TITLE_SORT).collate("C");
   }
 
-  public SortField<?>[] titleOrderBy(SortOrder direction) {
-    return new SortField<?>[] {
-      field(BASE_COLLECTABLE.TITLE_SORT.isNull()).sort(direction),
-      titleSeekField().sort(direction),
-      BASE_COLLECTABLE.ID.sort(direction)
-    };
+  public List<SortField<?>> titleOrderBy(SortOrder direction) {
+    return List.of(
+        field(BASE_COLLECTABLE.TITLE_SORT.isNull()).sort(direction),
+        titleSeekField().sort(direction),
+        BASE_COLLECTABLE.ID.sort(direction));
   }
 
-  public SortField<?>[] mediaOrderBy(MediaFilter filter, Field<?> sortField, boolean reversePage) {
+  public List<SortField<?>> mediaOrderBy(
+      MediaFilter filter, Field<?> sortField, boolean reversePage) {
     var direction = filter.getSortDirection();
     if (filter.getSortBy() == OrderMediaBy.TITLE) {
       return titleOrderBy(direction);
@@ -192,7 +192,7 @@ public class JooqQueryHelper {
       order = reversePage ? order.nullsFirst() : order.nullsLast();
     }
 
-    return new SortField<?>[] {order, BASE_COLLECTABLE.ID.sort(direction)};
+    return List.of(order, BASE_COLLECTABLE.ID.sort(direction));
   }
 
   private Field<String> titleSeekField() {

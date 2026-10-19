@@ -84,7 +84,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
             MediaSeek.builder()
                 .filter(filter)
                 .sortColumn(sortField(filter))
-                .orderByColumns(List.of(orderByColumns))
+                .orderByColumns(orderByColumns)
                 .cursorId(options.getCursorId().orElseThrow())
                 .reversePage(shouldReverse)
                 .build());
@@ -311,7 +311,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
     };
   }
 
-  private SortField<?>[] buildOrderBy(MediaFilter filter, boolean reversePage) {
+  private List<SortField<?>> buildOrderBy(MediaFilter filter, boolean reversePage) {
     return JooqQueryHelper.mediaOrderBy(filter, sortField(filter), reversePage);
   }
 }
