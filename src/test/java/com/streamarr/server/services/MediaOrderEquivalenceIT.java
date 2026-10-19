@@ -159,6 +159,7 @@ class MediaOrderEquivalenceIT extends AbstractIntegrationTest {
       assertThat(page.hasNextPage()).isEqualTo(actual.size() < expected.size());
       options = buildForwardContinuation(3, filter, page.items().getLast());
     }
+
     assertThat(actual)
         .as("cursor traversal for %s %s", kind, filter.getSortBy())
         .containsExactlyElementsOf(expected);
@@ -234,6 +235,7 @@ class MediaOrderEquivalenceIT extends AbstractIntegrationTest {
               .watchedAt(sample.watched())
               .build());
     }
+
     return item;
   }
 
@@ -241,6 +243,7 @@ class MediaOrderEquivalenceIT extends AbstractIntegrationTest {
     if (item instanceof Movie) {
       return item.getId();
     }
+
     var season =
         seasons.saveAndFlush(
             Season.builder()
@@ -299,6 +302,7 @@ class MediaOrderEquivalenceIT extends AbstractIntegrationTest {
               .watched(index % 4 == 0 ? null : WHOLE_MINUTE.plusSeconds(random.nextInt(4) * 60L))
               .build());
     }
+
     return samples;
   }
 

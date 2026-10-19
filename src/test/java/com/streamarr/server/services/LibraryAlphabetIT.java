@@ -61,6 +61,7 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
     for (var title : List.of("Zulu", "INDIGO", "Alpha")) {
       movies.saveAndFlush(Movie.builder().title(title).titleSort(title).library(library).build());
     }
+
     var filter = MediaFilter.builder().libraryId(library.getId()).sortDirection(direction).build();
     var expected =
         direction == SortDirection.ASC
@@ -97,6 +98,7 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
       options = buildForwardContinuation(1, filter, item);
       assertThat(page.hasNextPage()).isEqualTo(index < expected.size() - 1);
     }
+
     assertThat(traversed).containsExactlyElementsOf(expected);
   }
 
