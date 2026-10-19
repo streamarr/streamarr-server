@@ -4,7 +4,6 @@ import com.streamarr.server.config.security.StreamarrAuthenticationToken;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
-import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
@@ -68,12 +67,7 @@ public class SecurityContextAuthorizationService implements AuthorizationService
 
   @Override
   public UUID requireProfile() {
-    var profileId = currentIdentity().profileId();
-    if (profileId == null) {
-      throw new ProfileRequiredException();
-    }
-
-    return profileId;
+    return requireProfile(currentIdentity());
   }
 
   @Override

@@ -32,12 +32,10 @@ import com.streamarr.server.graphql.mutation.library.LibraryOperationErrors;
 import com.streamarr.server.graphql.mutation.library.RemoveLibraryPayload;
 import com.streamarr.server.graphql.mutation.library.StartLibraryRefreshPayload;
 import com.streamarr.server.graphql.mutation.library.StartLibraryScanPayload;
-import com.streamarr.server.repositories.LibraryRepository;
-import com.streamarr.server.services.MovieService;
-import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.library.LibraryAdministrationService;
 import com.streamarr.server.services.library.LibraryCountsService.Counts;
+import com.streamarr.server.services.library.LibraryQueryService;
 import com.streamarr.server.services.pagination.MediaPaginationOptionsResolver;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
@@ -53,11 +51,9 @@ import org.dataloader.DataLoader;
 @RequiredArgsConstructor
 public class LibraryResolver {
 
-  private final LibraryRepository libraryRepository;
+  private final LibraryQueryService libraryQueries;
   private final AuthorizationService authorizationService;
   private final LibraryAdministrationService libraryAdministrationService;
-  private final MovieService movieService;
-  private final SeriesService seriesService;
   private final PaginationService paginationService;
   private final CursorUtil cursorUtil;
   private final CursorValidator cursorValidator;
@@ -133,14 +129,13 @@ public class LibraryResolver {
 
   @DgsQuery
   public List<Library> libraries() {
-    authorizationService.requireProfile();
-    return libraryRepository.findAll();
+    return libraryQueries.findAll(authorizationService.currentIdentity());
   }
 
   @DgsQuery
   public Optional<Library> library(String id) {
     authorizationService.requireProfile();
-    return libraryRepository.findById(parseUuid(id));
+    return libraryQueries.findById(authorizationService.currentIdentity(), parseUuid(id));
   }
 
   @DgsData(parentType = "Library")
@@ -171,11 +166,7 @@ public class LibraryResolver {
             cursorValidator::validateCursorAgainstFilter);
 
     var page =
-        switch (library.getType()) {
-          case MOVIE -> movieService.getMoviesWithFilter(options);
-          case SERIES -> seriesService.getSeriesWithFilter(options);
-          default -> throw new UnsupportedMediaTypeException(library.getType().name());
-        };
+        libraryQueries.getItems(authorizationService.currentIdentity(), library.getType(), options);
 
     return relayConnectionAdapter.toConnection(page, options);
   }
