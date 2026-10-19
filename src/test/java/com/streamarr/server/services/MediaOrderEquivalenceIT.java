@@ -52,8 +52,12 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.transaction.annotation.Transactional;
 
+// Schema-mutating fixtures use a separate pool without cached result-column metadata.
+@TestPropertySource(
+    properties = "spring.datasource.hikari.data-source-properties.prepareThreshold=0")
 @Transactional
 @Tag("IntegrationTest")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -94,7 +98,7 @@ class MediaOrderEquivalenceIT extends AbstractIntegrationTest {
   void shouldAgreeOnQueryOrderPlacementAndCursorsWhenValuesAndCollationsVary(
       MediaType kind, String collation) {
     jdbc.execute(
-        "ALTER TABLE base_collectable ALTER COLUMN title_sort TYPE VARCHAR(255) COLLATE \""
+        "ALTER TABLE base_collectable ALTER COLUMN title_sort TYPE TEXT COLLATE \""
             + collation
             + "\"");
     var library =

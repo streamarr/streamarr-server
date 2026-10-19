@@ -55,9 +55,9 @@ class LibraryCountsMigrationIT extends AbstractIntegrationTest {
               EXPLAIN (ANALYZE, FORMAT JSON)
               SELECT id FROM base_collectable
               WHERE library_id = 1
-                AND (title_sort IS NULL, COALESCE(LOWER(title_sort), '') COLLATE "C", id)
+                AND (title_sort IS NULL, COALESCE(LOWER(title_sort COLLATE "C"), '') COLLATE "C", id)
                   >= (false, 'title180000', 180000)
-              ORDER BY title_sort IS NULL, COALESCE(LOWER(title_sort), '') COLLATE "C", id
+              ORDER BY title_sort IS NULL, COALESCE(LOWER(title_sort COLLATE "C"), '') COLLATE "C", id
               LIMIT 50
               """)) {
         assertThat(rows.next()).isTrue();
