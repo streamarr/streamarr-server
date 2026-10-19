@@ -6,7 +6,9 @@ type Query {
     season(id: ID!): Season
     episode(id: ID!): Episode
     rating(id: ID!): Rating!
+    "Requires a selected Profile and ViewProfileActivity permission for that Profile."
     library(id: ID!): Library!
+    "Requires a selected Profile and ViewProfileActivity permission for that Profile."
     libraries: [Library!]!
     continueWatching(first: Int): [ContinueWatchingMedia!]!
     householdAdministration(householdId: ID!): HouseholdAdministration

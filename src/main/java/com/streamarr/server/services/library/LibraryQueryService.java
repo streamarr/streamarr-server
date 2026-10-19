@@ -26,18 +26,18 @@ public class LibraryQueryService {
   private final AuthorizationService authorization;
 
   public List<Library> findAll(AuthenticatedIdentity identity) {
-    authorization.requireProfile(identity);
+    authorization.requireViewProfileActivity(identity);
     return libraries.findAll();
   }
 
   public Optional<Library> findById(AuthenticatedIdentity identity, UUID libraryId) {
-    authorization.requireProfile(identity);
+    authorization.requireViewProfileActivity(identity);
     return libraries.findById(libraryId);
   }
 
   public MediaPage<? extends BaseCollectable<?>> getItems(
       AuthenticatedIdentity identity, MediaType kind, MediaPaginationOptions options) {
-    authorization.requireProfile(identity);
+    authorization.requireViewProfileActivity(identity);
     return switch (kind) {
       case MOVIE -> movies.getMoviesWithFilter(options);
       case SERIES -> series.getSeriesWithFilter(options);
