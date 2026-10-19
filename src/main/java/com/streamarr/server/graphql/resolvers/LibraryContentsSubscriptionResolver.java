@@ -18,6 +18,7 @@ import com.streamarr.server.graphql.subscriptions.LibraryContentsBroadcasters;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.events.library.LibraryItemChangedEvent;
 import com.streamarr.server.services.library.LibraryContentsService;
+import com.streamarr.server.services.pagination.MediaOrder;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import graphql.schema.DataFetchingEnvironment;
 import java.util.UUID;
@@ -68,7 +69,12 @@ public class LibraryContentsSubscriptionResolver {
                         change.itemId(),
                         found.value())
                     .getValue());
-    return new LibraryItemPosition(cursor.isPresent(), cursor.orElse(null));
+    return new LibraryItemPosition(
+        cursor.isPresent(),
+        cursor.orElse(null),
+        value
+            .map(found -> MediaOrder.from(effectiveFilter, change.itemId(), found.value()))
+            .orElse(null));
   }
 
   @DgsSubscription

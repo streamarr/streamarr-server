@@ -1,6 +1,8 @@
 package com.streamarr.server.graphql.cursor;
 
 import com.streamarr.server.domain.BaseAuditableEntity;
+import com.streamarr.server.graphql.dto.MediaEdge;
+import com.streamarr.server.services.pagination.MediaOrder;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PageItem;
@@ -31,26 +33,32 @@ public class RelayConnectionAdapter {
       MediaPage<S> page, MediaPaginationOptions options, Function<S, T> nodeOf) {
     return toConnection(
         page,
-        pageItem -> nodeOf.apply(pageItem.item()),
         pageItem ->
-            cursorUtil.encodeMediaCursor(options, pageItem.item().getId(), pageItem.sortValue()));
+            new MediaEdge<>(
+                nodeOf.apply(pageItem.item()),
+                cursorUtil.encodeMediaCursor(
+                    options, pageItem.item().getId(), pageItem.sortValue()),
+                MediaOrder.from(
+                    options.getMediaFilter(), pageItem.item().getId(), pageItem.sortValue())));
   }
 
   public <S, T> Connection<T> toConnection(
       MediaPage<S> page,
       Function<PageItem<S>, T> nodeOf,
       Function<PageItem<S>, ConnectionCursor> cursorOf) {
+    return toConnection(
+        page, pageItem -> new DefaultEdge<>(nodeOf.apply(pageItem), cursorOf.apply(pageItem)));
+  }
+
+  private <S, T> Connection<T> toConnection(
+      MediaPage<S> page, Function<PageItem<S>, Edge<T>> edgeOf) {
     if (page.items().isEmpty()) {
       return new DefaultConnection<>(
           Collections.emptyList(),
           new DefaultPageInfo(null, null, page.hasPreviousPage(), page.hasNextPage()));
     }
 
-    List<Edge<T>> edges =
-        page.items().stream()
-            .<Edge<T>>map(
-                pageItem -> new DefaultEdge<>(nodeOf.apply(pageItem), cursorOf.apply(pageItem)))
-            .toList();
+    List<Edge<T>> edges = page.items().stream().map(edgeOf).toList();
 
     var first = edges.getFirst();
     var last = edges.getLast();

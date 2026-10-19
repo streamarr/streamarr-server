@@ -1,3 +1,5 @@
 package com.streamarr.server.graphql.dto;
 
-public record LibraryItemPosition(boolean matchesFilter, String cursor) {}
+import com.streamarr.server.services.pagination.MediaOrder;
+
+public record LibraryItemPosition(boolean matchesFilter, String cursor, MediaOrder order) {}
