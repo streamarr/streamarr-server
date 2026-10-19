@@ -32,8 +32,12 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.transaction.annotation.Transactional;
 
+// Schema-mutating fixtures use a separate pool without cached result-column metadata.
+@TestPropertySource(
+    properties = "spring.datasource.hikari.data-source-properties.prepareThreshold=0")
 @Transactional
 @Tag("IntegrationTest")
 class LibraryAlphabetIT extends AbstractIntegrationTest {
@@ -54,7 +58,7 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
   void shouldKeepTitleOrderAndContinuationIndependentOfDatabaseCollation(
       String collation, SortDirection direction) {
     jdbc.execute(
-        "ALTER TABLE base_collectable ALTER COLUMN title_sort TYPE VARCHAR(255) COLLATE \""
+        "ALTER TABLE base_collectable ALTER COLUMN title_sort TYPE TEXT COLLATE \""
             + collation
             + "\"");
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
@@ -107,7 +111,7 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
   @DisplayName("Should use ASCII alphabet membership before Unicode case folding")
   void shouldUseAsciiAlphabetMembershipBeforeUnicodeCaseFolding(String collation) {
     jdbc.execute(
-        "ALTER TABLE base_collectable ALTER COLUMN title_sort TYPE VARCHAR(255) COLLATE \""
+        "ALTER TABLE base_collectable ALTER COLUMN title_sort TYPE TEXT COLLATE \""
             + collation
             + "\"");
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
@@ -182,7 +186,7 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
   @DisplayName("Should include null and accented sort titles in the counted HASH bucket")
   void shouldIncludeNullAndAccentedSortTitlesInCountedHashBucket(String collation) {
     jdbc.execute(
-        "ALTER TABLE base_collectable ALTER COLUMN title_sort TYPE VARCHAR(255) COLLATE \""
+        "ALTER TABLE base_collectable ALTER COLUMN title_sort TYPE TEXT COLLATE \""
             + collation
             + "\"");
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
