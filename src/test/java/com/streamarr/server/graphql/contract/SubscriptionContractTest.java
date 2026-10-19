@@ -42,6 +42,15 @@ class SubscriptionContractTest {
   }
 
   @Test
+  @DisplayName("Should check extension fields when enforcing the subscription contract")
+  void shouldCheckExtensionFieldsWhenEnforcingSubscriptionContract() {
+    assertThat(subscriptionFields())
+        .extracting(FieldDefinition::getName)
+        .contains(
+            "libraryItemAdded", "libraryItemUpdated", "libraryItemRemoved", "libraryCountsChanged");
+  }
+
+  @Test
   @DisplayName("Should state who may subscribe when each subscription field is documented")
   void shouldStateWhoMaySubscribeWhenEachSubscriptionFieldIsDocumented() {
     assertThat(subscriptionFields())
@@ -102,7 +111,11 @@ class SubscriptionContractTest {
   }
 
   private static List<FieldDefinition> subscriptionFields() {
-    return objectType("Subscription").getFieldDefinitions();
+    return Stream.concat(
+            objectType("Subscription").getFieldDefinitions().stream(),
+            SCHEMA.objectTypeExtensions().getOrDefault("Subscription", List.of()).stream()
+                .flatMap(extension -> extension.getFieldDefinitions().stream()))
+        .toList();
   }
 
   private static FieldDefinition subscriptionField(String name) {
