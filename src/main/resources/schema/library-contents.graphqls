@@ -3,6 +3,12 @@ A committed change to a top-level movie or series. Read library queries for init
 state; these operations have no snapshot or readiness handshake. Selectable fields
 are read at delivery and may reflect a later commit. Operations do not establish a
 global event order. See Subscription for transport errors, completion and recovery.
+
+On field errors, clients may treat the selected item and its position as one atomic
+update: preserve both cached entity fields and membership until shared query recovery
+succeeds, even if position is usable. This avoids writing failure-null fields or
+inserting an incomplete card, at the cost of delaying a usable move or removal.
+Normal payloads still update entity and membership without a follow-up query.
 """
 type LibraryItemChange {
     libraryId: ID!
