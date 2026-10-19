@@ -136,7 +136,7 @@ class MediaOrderEquivalenceIT extends AbstractIntegrationTest {
             .map(
                 item -> {
                   var change = changeFor(item.item());
-                  var value = contents.findPosition(change, filter).orElseThrow().value();
+                  var value = contents.findMatchingItem(change, filter).orElseThrow().sortValue();
                   return MediaOrder.from(filter, change.itemId(), value);
                 })
             .collect(Collectors.toSet());
@@ -177,7 +177,7 @@ class MediaOrderEquivalenceIT extends AbstractIntegrationTest {
             .collect(Collectors.toSet());
     assertThat(selected).isNotEmpty().hasSizeLessThan(items.size());
     for (var item : items) {
-      assertThat(contents.findPosition(changeFor(item), filter).isPresent())
+      assertThat(contents.findMatchingItem(changeFor(item), filter).isPresent())
           .as("membership for %s under %s", item.getId(), filter.getSortBy())
           .isEqualTo(selected.contains(item.getId()));
     }

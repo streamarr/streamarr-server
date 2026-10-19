@@ -4,11 +4,12 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsSubscription;
 import com.netflix.graphql.dgs.InputArgument;
+import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.Collectable;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.exceptions.InvalidIdException;
-import com.streamarr.server.graphql.cursor.CursorUtil;
-import com.streamarr.server.graphql.dto.LibraryItemPosition;
+import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
+import com.streamarr.server.graphql.dto.MediaEdge;
 import com.streamarr.server.graphql.inputs.MediaFilterInput;
 import com.streamarr.server.graphql.inputs.MediaFilterMapper;
 import com.streamarr.server.graphql.inputs.MediaFilterRequest;
@@ -18,7 +19,6 @@ import com.streamarr.server.graphql.subscriptions.LibraryContentsBroadcasters;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.events.library.LibraryItemChangedEvent;
 import com.streamarr.server.services.library.LibraryContentsService;
-import com.streamarr.server.services.pagination.MediaOrder;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import graphql.schema.DataFetchingEnvironment;
 import java.util.UUID;
@@ -33,7 +33,7 @@ public class LibraryContentsSubscriptionResolver {
   private final AuthorizationService authorization;
   private final LibraryContentsService contents;
   private final LibraryContentsBroadcasters broadcasters;
-  private final CursorUtil cursors;
+  private final RelayConnectionAdapter connections;
 
   @DgsSubscription
   public Publisher<LibraryItemChangedEvent> libraryItemAdded(@InputArgument String libraryId) {
@@ -46,7 +46,7 @@ public class LibraryContentsSubscriptionResolver {
   }
 
   @DgsData(parentType = "LibraryItemChange")
-  public LibraryItemPosition position(
+  public MediaEdge<BaseCollectable<?>> edge(
       @InputArgument MediaSortInput sort,
       @InputArgument MediaFilterInput filter,
       DataFetchingEnvironment environment) {
@@ -59,22 +59,11 @@ public class LibraryContentsSubscriptionResolver {
                 .sort(sort)
                 .filter(filter)
                 .build());
-    var value = contents.findPosition(change, effectiveFilter);
-    var cursor =
-        value.map(
-            found ->
-                cursors
-                    .encodeMediaCursor(
-                        MediaPaginationOptions.builder().mediaFilter(effectiveFilter).build(),
-                        change.itemId(),
-                        found.value())
-                    .getValue());
-    return new LibraryItemPosition(
-        cursor.isPresent(),
-        cursor.orElse(null),
-        value
-            .map(found -> MediaOrder.from(effectiveFilter, change.itemId(), found.value()))
-            .orElse(null));
+    var options = MediaPaginationOptions.builder().mediaFilter(effectiveFilter).build();
+    return contents
+        .findMatchingItem(change, effectiveFilter)
+        .map(item -> connections.toEdge(item, options))
+        .orElse(null);
   }
 
   @DgsSubscription
