@@ -5,7 +5,6 @@ import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
-import com.streamarr.server.exceptions.InvalidPaginationCursorException;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -98,7 +97,7 @@ public class AdministrationQueryService {
   public MediaPage<Household> households(
       AuthenticatedIdentity identity, MediaPaginationOptions options) {
     authorizationService.requireAllowed(identity, new Intent.ViewHouseholds());
-    requireCursorName(options);
+    paginationService.requireCursorSortValue(options);
     var items =
         householdRepository.findForAdministration(options).stream()
             .map(household -> new PageItem<>(household, household.getName()))
@@ -110,7 +109,7 @@ public class AdministrationQueryService {
   /** A bounded page of Accounts for one already-authorized Household. */
   public Map<UUID, MediaPage<UserAccount>> accountPagesOf(
       Set<UUID> householdIds, MediaPaginationOptions options) {
-    requireCursorName(options);
+    paginationService.requireCursorSortValue(options);
     var accountsByHousehold = userAccountRepository.findAdministrationPages(householdIds, options);
     var pages = new LinkedHashMap<UUID, MediaPage<UserAccount>>();
     householdIds.forEach(
@@ -119,13 +118,6 @@ public class AdministrationQueryService {
                 householdId,
                 accountPage(accountsByHousehold.getOrDefault(householdId, List.of()), options)));
     return pages;
-  }
-
-  private void requireCursorName(MediaPaginationOptions options) {
-    if (options.getCursorId().isPresent()
-        && options.getMediaFilter().getPreviousSortFieldValue() == null) {
-      throw new InvalidPaginationCursorException("Cursor sort value is required.");
-    }
   }
 
   private MediaPage<UserAccount> accountPage(

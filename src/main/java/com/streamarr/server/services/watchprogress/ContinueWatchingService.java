@@ -4,10 +4,13 @@ import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.streaming.ContinueWatchingRepository;
+import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.services.pagination.SortDirection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,8 +46,21 @@ public class ContinueWatchingService {
                 entry -> new PageItem<>(entry.getValue(), orders.get(entry.getKey()))));
   }
 
+  /** The scope and ordering of a Profile's Continue Watching list, shared by pages and changes. */
+  public static MediaPaginationOptions listOptions(UUID profileId) {
+    return MediaPaginationOptions.builder()
+        .mediaFilter(
+            MediaFilter.builder()
+                .profileId(profileId)
+                .sortBy(OrderMediaBy.LAST_WATCHED)
+                .sortDirection(SortDirection.DESC)
+                .build())
+        .build();
+  }
+
   @Transactional(readOnly = true)
   public MediaPage<BaseCollectable<?>> getPage(UUID profileId, MediaPaginationOptions options) {
+    paginationService.requireCursorSortValue(options);
     return paginationService.buildMediaPage(
         loadPage(profileId, options),
         options,

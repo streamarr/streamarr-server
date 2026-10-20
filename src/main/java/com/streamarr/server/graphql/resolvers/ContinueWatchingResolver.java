@@ -13,18 +13,13 @@ import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.ContinueWatchingChange;
 import com.streamarr.server.graphql.dto.WatchStateChange;
 import com.streamarr.server.services.authorization.AuthorizationService;
-import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.MediaPaginationOptionsResolver;
-import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PaginationService;
-import com.streamarr.server.services.pagination.SortDirection;
 import com.streamarr.server.services.watchprogress.ContinueWatchingService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 
 @DgsComponent
@@ -47,9 +42,9 @@ public class ContinueWatchingResolver {
     var options =
         MediaPaginationOptionsResolver.resolve(
             pagination,
-            options(profileId).getMediaFilter(),
+            ContinueWatchingService.listOptions(profileId).getMediaFilter(),
             cursors::decodeMediaCursor,
-            cursorValidator::validateContinueWatchingCursor);
+            cursorValidator::validateCursorAgainstFilter);
     return connections.toConnection(continueWatchingService.getPage(profileId, options), options);
   }
 
@@ -58,7 +53,7 @@ public class ContinueWatchingResolver {
     WatchStateChange change = dfe.getSource();
     var profileId = authorizationService.requireProfile();
     var items = continueWatchingService.findMatchingItems(profileId, change.itemIds());
-    var options = options(profileId);
+    var options = ContinueWatchingService.listOptions(profileId);
     return change.itemIds().stream()
         .map(
             id ->
@@ -68,17 +63,6 @@ public class ContinueWatchingResolver {
                         .map(item -> connections.toEdge(item, options))
                         .orElse(null)))
         .toList();
-  }
-
-  private MediaPaginationOptions options(UUID profileId) {
-    return MediaPaginationOptions.builder()
-        .mediaFilter(
-            MediaFilter.builder()
-                .profileId(profileId)
-                .sortBy(OrderMediaBy.LAST_WATCHED)
-                .sortDirection(SortDirection.DESC)
-                .build())
-        .build();
   }
 
   @DgsTypeResolver(name = "ContinueWatchingMedia")

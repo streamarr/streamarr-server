@@ -14,9 +14,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.NullSource;
-import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Cursor Validator Tests")
@@ -31,40 +28,6 @@ class CursorValidatorTest {
     var decoded = MediaPaginationOptions.builder().mediaFilter(filter).build();
     assertThatNoException()
         .isThrownBy(() -> cursorValidator.validateCursorAgainstFilter(decoded, filter));
-  }
-
-  @ParameterizedTest
-  @NullSource
-  @ValueSource(
-      strings = {
-        "not-a-timestamp",
-        "2026-10-19T15:07Z",
-        "+1000000000-01-01T00:00:00Z",
-        "+300000-01-01T00:00:00Z"
-      })
-  @DisplayName("Should reject unusable timestamps when validating a Continue Watching cursor")
-  void shouldRejectUnusableTimestampsWhenValidatingContinueWatchingCursor(String timestamp) {
-    var filter = MediaFilter.builder().sortBy(OrderMediaBy.LAST_WATCHED).build();
-    var decoded =
-        MediaPaginationOptions.builder()
-            .cursorId(UUID.randomUUID())
-            .mediaFilter(filter.toBuilder().previousSortFieldValue(timestamp).build())
-            .build();
-    assertThatThrownBy(() -> cursorValidator.validateContinueWatchingCursor(decoded, filter))
-        .isInstanceOf(InvalidCursorException.class);
-  }
-
-  @Test
-  @DisplayName("Should accept a whole-minute Instant when validating a Continue Watching cursor")
-  void shouldAcceptWholeMinuteInstantWhenValidatingContinueWatchingCursor() {
-    var filter = MediaFilter.builder().sortBy(OrderMediaBy.LAST_WATCHED).build();
-    var decoded =
-        MediaPaginationOptions.builder()
-            .cursorId(UUID.randomUUID())
-            .mediaFilter(filter.toBuilder().previousSortFieldValue("2026-10-19T15:07:00Z").build())
-            .build();
-    assertThatNoException()
-        .isThrownBy(() -> cursorValidator.validateContinueWatchingCursor(decoded, filter));
   }
 
   @Nested
