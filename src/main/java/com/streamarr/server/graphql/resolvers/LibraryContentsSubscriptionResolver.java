@@ -5,7 +5,6 @@ import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsSubscription;
 import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.BaseCollectable;
-import com.streamarr.server.domain.Collectable;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
@@ -24,10 +23,12 @@ import com.streamarr.server.services.events.library.LibraryItemUpdatedEvent;
 import com.streamarr.server.services.library.LibraryContentsService;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import graphql.schema.DataFetchingEnvironment;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 @DgsComponent
 @RequiredArgsConstructor
@@ -44,12 +45,12 @@ public class LibraryContentsSubscriptionResolver {
   }
 
   @DgsData(parentType = "LibraryItemChange")
-  public Collectable item(DataFetchingEnvironment environment) {
-    return contents.findItem(environment.getSource()).orElse(null);
+  public Optional<BaseCollectable<?>> item(DataFetchingEnvironment environment) {
+    return contents.findItem(environment.getSource());
   }
 
   @DgsData(parentType = "LibraryItemChange")
-  public MediaEdge<BaseCollectable<?>> edge(
+  public Optional<MediaEdge<BaseCollectable<?>>> edge(
       @InputArgument MediaSortInput sort,
       @InputArgument MediaFilterInput filter,
       DataFetchingEnvironment environment) {
@@ -65,8 +66,7 @@ public class LibraryContentsSubscriptionResolver {
     var options = MediaPaginationOptions.builder().mediaFilter(effectiveFilter).build();
     return contents
         .findMatchingItem(change, effectiveFilter)
-        .map(item -> connections.toEdge(item, options))
-        .orElse(null);
+        .map(item -> connections.toEdge(item, options));
   }
 
   @DgsSubscription
@@ -92,7 +92,7 @@ public class LibraryContentsSubscriptionResolver {
   @DgsSubscription
   public Publisher<Library> libraryCountsChanged(@InputArgument String libraryId) {
     return register(libraryId, broadcasters.getCounts())
-        .mapNotNull(id -> contents.findLibrary(id).orElse(null));
+        .flatMap(id -> Mono.justOrEmpty(contents.findLibrary(id)));
   }
 
   private <T> Flux<T> register(

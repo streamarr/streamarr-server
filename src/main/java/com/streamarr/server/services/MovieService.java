@@ -38,6 +38,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -46,6 +47,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
 @Service
+@Builder
 @RequiredArgsConstructor
 public class MovieService {
 
@@ -83,7 +85,7 @@ public class MovieService {
   }
 
   @Transactional
-  public boolean deleteMovieById(UUID movieId) {
+  public boolean tryDeleteMovieById(UUID movieId) {
     return movieRepository
         .findById(movieId)
         .map(

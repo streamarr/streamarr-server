@@ -15,10 +15,12 @@ import com.streamarr.server.services.pagination.PageItem;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 @Service
+@Builder
 @RequiredArgsConstructor
 public class LibraryQueryService {
   private final LibraryRepository libraries;

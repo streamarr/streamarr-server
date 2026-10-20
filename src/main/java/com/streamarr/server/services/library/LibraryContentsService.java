@@ -2,6 +2,7 @@ package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
@@ -46,7 +47,7 @@ public class LibraryContentsService {
     return switch (change.kind()) {
       case MOVIE -> movies.findItemPosition(change.itemId(), filter);
       case SERIES -> series.findItemPosition(change.itemId(), filter);
-      default -> throw new IllegalArgumentException("Library items must be movies or series");
+      default -> throw new UnsupportedMediaTypeException(change.kind().name());
     };
   }
 
@@ -55,7 +56,7 @@ public class LibraryContentsService {
     return switch (change.kind()) {
       case MOVIE -> movies.findById(change.itemId()).map(item -> item);
       case SERIES -> series.findById(change.itemId()).map(item -> item);
-      default -> throw new IllegalArgumentException("Library items must be movies or series");
+      default -> throw new UnsupportedMediaTypeException(change.kind().name());
     };
   }
 }
