@@ -5,10 +5,9 @@ import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepositoryCustom;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
-import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -65,22 +64,21 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public List<ProfileHouseholdShare> findPendingByHouseholdId(
-      UUID householdId, Instant now, KeysetPaginationOptions options) {
-    return page(
+  public List<Row<ProfileHouseholdShare>> rowsPendingInHousehold(
+      UUID householdId, Instant now, Seek seek) {
+    return InMemoryKeyset.byCreationTime(
         database.values().stream()
             .filter(share -> share.getHouseholdId().equals(householdId))
             .filter(share -> share.statusAt(now) == ProfileShareStatus.PENDING)
             .toList(),
-        options);
+        seek);
   }
 
   @Override
-  public List<ProfileHouseholdShare> findByProfileId(
-      UUID profileId, KeysetPaginationOptions options) {
-    return page(
+  public List<Row<ProfileHouseholdShare>> rowsOfProfile(UUID profileId, Seek seek) {
+    return InMemoryKeyset.byCreationTime(
         database.values().stream().filter(share -> share.getProfileId().equals(profileId)).toList(),
-        options);
+        seek);
   }
 
   @Override
@@ -305,32 +303,5 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   @Override
   public boolean lockActiveShare(UUID profileId, UUID householdId) {
     return isActivelyShared(profileId, householdId);
-  }
-
-  /** Pages in PostgreSQL uuid order (byte-wise), which UUID.compareTo's signed halves are not. */
-  private static List<ProfileHouseholdShare> page(
-      List<ProfileHouseholdShare> matches, KeysetPaginationOptions options) {
-    var ordered =
-        matches.stream().sorted(Comparator.comparing(share -> share.getId().toString())).toList();
-    var cursorIndex =
-        options
-            .getCursorId()
-            .map(
-                cursorId ->
-                    ordered.stream().map(ProfileHouseholdShare::getId).toList().indexOf(cursorId))
-            .orElse(-1);
-    if (options.getCursorId().isPresent() && cursorIndex < 0) {
-      return List.of();
-    }
-
-    var pagination = options.getPaginationOptions();
-    var rowLimit = pagination.getLimit() + (options.getCursorId().isPresent() ? 2 : 1);
-    if (pagination.getPaginationDirection() == PaginationDirection.REVERSE) {
-      var to = options.getCursorId().isPresent() ? cursorIndex + 1 : ordered.size();
-      return List.copyOf(ordered.subList(Math.max(0, to - rowLimit), to));
-    }
-
-    var from = options.getCursorId().isPresent() ? cursorIndex : 0;
-    return List.copyOf(ordered.subList(from, Math.min(ordered.size(), from + rowLimit)));
   }
 }

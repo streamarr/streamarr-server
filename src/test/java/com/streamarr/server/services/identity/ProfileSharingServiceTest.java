@@ -23,6 +23,7 @@ import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
+import com.streamarr.server.fixtures.PaginationFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
@@ -32,15 +33,11 @@ import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
-import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.PaginationOptions;
-import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.services.pagination.PageRequest;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -96,7 +93,8 @@ class ProfileSharingServiceTest {
                 .passwordResetTtl(Duration.ofHours(1))
                 .replacementLockTimeout(Duration.ofSeconds(5))
                 .build(),
-            new PaginationService(),
+            new PendingShareOffersList(shares, CLOCK),
+            new ProfileSharesList(shares),
             CLOCK);
     household = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     profile = profiles.save(ProfileFixture.defaultProfileBuilder().build());
@@ -399,7 +397,7 @@ class ProfileSharingServiceTest {
 
     var page = service.pendingShareOffers(identity(), household.getId(), paginationOptions());
 
-    assertThat(page.items()).isEmpty();
+    assertThat(page.rows()).isEmpty();
   }
 
   @Test
@@ -437,7 +435,7 @@ class ProfileSharingServiceTest {
 
     var page = service.pendingShareOffers(identity(), household.getId(), paginationOptions());
 
-    assertThat(page.items()).isEmpty();
+    assertThat(page.rows()).isEmpty();
   }
 
   @Test
@@ -448,7 +446,7 @@ class ProfileSharingServiceTest {
 
     var page = service.profileShares(identity(), profile.getId(), paginationOptions());
 
-    assertThat(page.items()).isEmpty();
+    assertThat(page.rows()).isEmpty();
   }
 
   @Test
@@ -529,7 +527,7 @@ class ProfileSharingServiceTest {
 
     var page = service.profileShares(identity(), UUID.randomUUID(), paginationOptions());
 
-    assertThat(page.items()).isEmpty();
+    assertThat(page.rows()).isEmpty();
   }
 
   @Test
@@ -588,13 +586,7 @@ class ProfileSharingServiceTest {
     return TransactionSynchronizationManager.isActualTransactionActive() ? denied() : allowed();
   }
 
-  private static KeysetPaginationOptions paginationOptions() {
-    return new KeysetPaginationOptions(
-        null,
-        PaginationOptions.builder()
-            .paginationDirection(PaginationDirection.FORWARD)
-            .cursor(Optional.empty())
-            .limit(100)
-            .build());
+  private static PageRequest paginationOptions() {
+    return PaginationFixture.firstRows(100);
   }
 }

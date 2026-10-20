@@ -2,7 +2,8 @@ package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -19,12 +20,13 @@ public interface ProfileHouseholdShareRepositoryCustom {
   /** Whether the Profile has any ACTIVE share or unexpired PENDING share, read as a scalar. */
   boolean hasActiveOrPendingShares(UUID profileId, Instant now);
 
-  /** The keyset window of the Household's PENDING shares that are not past expires_at. */
-  List<ProfileHouseholdShare> findPendingByHouseholdId(
-      UUID householdId, Instant now, KeysetPaginationOptions options);
+  /**
+   * The Household's PENDING shares not past expires_at beyond the seek, by creation time, then ID.
+   */
+  List<Row<ProfileHouseholdShare>> rowsPendingInHousehold(UUID householdId, Instant now, Seek seek);
 
-  /** The keyset window of the Profile's shares in every status. */
-  List<ProfileHouseholdShare> findByProfileId(UUID profileId, KeysetPaginationOptions options);
+  /** The Profile's shares in every status beyond the seek, by creation time, then ID. */
+  List<Row<ProfileHouseholdShare>> rowsOfProfile(UUID profileId, Seek seek);
 
   /**
    * The PENDING share of the Profile into the Household becomes CANCELED (EXPIRED when already

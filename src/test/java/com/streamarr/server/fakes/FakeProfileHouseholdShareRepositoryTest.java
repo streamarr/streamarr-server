@@ -1,15 +1,16 @@
 package com.streamarr.server.fakes;
 
+import static com.streamarr.server.fixtures.PaginationFixture.firstSeek;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
-import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.PaginationOptions;
+import com.streamarr.server.services.pagination.ListOrder;
+import com.streamarr.server.services.pagination.SortDirection;
+import com.streamarr.server.services.pagination.SortValueKind;
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -21,6 +22,9 @@ class FakeProfileHouseholdShareRepositoryTest {
 
   private static final UUID LOW = UUID.fromString("00000000-0000-0000-0000-000000000001");
   private static final UUID HIGH = UUID.fromString("80000000-0000-0000-0000-000000000001");
+  private static final Instant CREATED_ON = Instant.parse("2026-08-21T12:00:00Z");
+  private static final ListOrder OLDEST_FIRST =
+      ListOrder.builder().valueKind(SortValueKind.INSTANT).direction(SortDirection.ASC).build();
 
   private final FakeProfileHouseholdShareRepository fake =
       new FakeProfileHouseholdShareRepository();
@@ -29,8 +33,8 @@ class FakeProfileHouseholdShareRepositoryTest {
   // values must sort LOW before HIGH.
   @Test
   @DisplayName(
-      "Should order a page by PostgreSQL uuid byte order when ids straddle the signed boundary")
-  void shouldOrderPageByPostgresUuidByteOrderWhenIdsStraddleSignedBoundary() {
+      "Should order tied offers by PostgreSQL uuid byte order when ids straddle the signed boundary")
+  void shouldOrderTiedOffersByPostgresUuidByteOrderWhenIdsStraddleSignedBoundary() {
     var householdId = UUID.randomUUID();
     for (var id : List.of(HIGH, LOW)) {
       var share =
@@ -40,12 +44,12 @@ class FakeProfileHouseholdShareRepositoryTest {
               .status(ProfileShareStatus.PENDING)
               .build();
       share.setId(id);
-      fake.save(share);
+      AuditFieldSetter.setCreatedOn(fake.save(share), CREATED_ON);
     }
 
-    var page = fake.findPendingByHouseholdId(householdId, Instant.now(), firstPage(10));
+    var rows = fake.rowsPendingInHousehold(householdId, Instant.now(), firstSeek(OLDEST_FIRST, 10));
 
-    assertThat(page).extracting(ProfileHouseholdShare::getId).containsExactly(LOW, HIGH);
+    assertThat(rows).extracting(row -> row.item().getId()).containsExactly(LOW, HIGH);
   }
 
   @Test
@@ -75,15 +79,5 @@ class FakeProfileHouseholdShareRepositoryTest {
               assertThat(offer.getLastModifiedOn()).isEqualTo(now);
               assertThat(offer.getInvalidationReason()).isEmpty();
             });
-  }
-
-  private static KeysetPaginationOptions firstPage(int limit) {
-    return new KeysetPaginationOptions(
-        null,
-        PaginationOptions.builder()
-            .paginationDirection(PaginationDirection.FORWARD)
-            .cursor(Optional.empty())
-            .limit(limit)
-            .build());
   }
 }

@@ -8,6 +8,7 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.fixtures.PaginationFixture;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.RefreshResult;
@@ -16,11 +17,9 @@ import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteLas
 import com.streamarr.server.services.identity.HouseholdDeletionService.SecurityAuditPageRequest;
 import com.streamarr.server.services.identity.HouseholdDeletionService.TransferLastAccountAndDeleteHouseholdCommand;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.support.AuthTestSupport;
-import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -174,7 +173,7 @@ class HouseholdDeletionCompletionIT extends AbstractIntegrationTest {
               assertThat(details.linked()).isTrue();
               assertThat(details.profile().getHouseholdId()).isEqualTo(source.household().getId());
             });
-    assertThat(sharing.profileShares(identity, source.profile().getId(), page()).items())
+    assertThat(sharing.profileShares(identity, source.profile().getId(), page()).rows())
         .singleElement()
         .satisfies(
             item -> {
@@ -191,13 +190,7 @@ class HouseholdDeletionCompletionIT extends AbstractIntegrationTest {
         .build();
   }
 
-  private static KeysetPaginationOptions page() {
-    return new KeysetPaginationOptions(
-        null,
-        PaginationOptions.builder()
-            .paginationDirection(PaginationDirection.FORWARD)
-            .cursor(Optional.empty())
-            .limit(100)
-            .build());
+  private static PageRequest page() {
+    return PaginationFixture.firstRows(100);
   }
 }

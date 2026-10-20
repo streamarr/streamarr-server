@@ -1,6 +1,7 @@
 package com.streamarr.server.fixtures;
 
 import com.streamarr.server.domain.BaseAuditableEntity;
+import com.streamarr.server.services.pagination.ListOrder;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PageItem;
@@ -8,6 +9,7 @@ import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
 import java.util.Optional;
 
 public final class PaginationFixture {
@@ -16,6 +18,16 @@ public final class PaginationFixture {
 
   public static PageRequest firstRows(int limit) {
     return PageRequest.builder()
+        .position(Optional.empty())
+        .direction(PaginationDirection.FORWARD)
+        .limit(limit)
+        .build();
+  }
+
+  /** A seek for a list's first rows, as a repository reads them for its first page. */
+  public static Seek firstSeek(ListOrder order, int limit) {
+    return Seek.builder()
+        .order(order)
         .position(Optional.empty())
         .direction(PaginationDirection.FORWARD)
         .limit(limit)

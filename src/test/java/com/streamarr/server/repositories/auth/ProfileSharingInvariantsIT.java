@@ -1,5 +1,6 @@
 package com.streamarr.server.repositories.auth;
 
+import static com.streamarr.server.fixtures.PaginationFixture.firstSeek;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -15,16 +16,15 @@ import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
-import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.PaginationOptions;
+import com.streamarr.server.services.pagination.ListOrder;
+import com.streamarr.server.services.pagination.SortDirection;
+import com.streamarr.server.services.pagination.SortValueKind;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupportConfig;
 import com.streamarr.server.support.ConstraintViolations;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,6 +45,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 @DisplayName("Profile Sharing Invariants Integration Tests")
 @Import(AuthTestSupportConfig.class)
 class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
+
+  private static final ListOrder NEWEST_FIRST =
+      ListOrder.builder().valueKind(SortValueKind.INSTANT).direction(SortDirection.DESC).build();
 
   private static final String CHK_INVALIDATION_REASON =
       "chk_profile_household_share_invalidation_reason";
@@ -194,11 +197,11 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
     var host = create();
     pendingOffer(owner, host, Instant.now().minusSeconds(60));
 
-    var page =
-        shareRepository.findPendingByHouseholdId(
-            host.household().getId(), Instant.now(), firstPage(10));
+    var rows =
+        shareRepository.rowsPendingInHousehold(
+            host.household().getId(), Instant.now(), firstSeek(NEWEST_FIRST, 10));
 
-    assertThat(page).isEmpty();
+    assertThat(rows).isEmpty();
   }
 
   // Hosting supervision checks and constraint evaluation order.
@@ -384,15 +387,5 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
           account.setHouseholdRole(HouseholdRole.MEMBER);
           userAccountRepository.saveAndFlush(account);
         });
-  }
-
-  private static KeysetPaginationOptions firstPage(int limit) {
-    return new KeysetPaginationOptions(
-        null,
-        PaginationOptions.builder()
-            .paginationDirection(PaginationDirection.FORWARD)
-            .cursor(Optional.empty())
-            .limit(limit)
-            .build());
   }
 }
