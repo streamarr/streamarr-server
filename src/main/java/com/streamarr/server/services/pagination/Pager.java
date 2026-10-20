@@ -64,7 +64,7 @@ public final class Pager {
         .order(order)
         .position(request.position())
         .direction(request.direction())
-        .limit(request.limit() + 2)
+        .limit(request.limit() + (request.position().isPresent() ? 2 : 1))
         .includingPosition(true)
         .build();
   }

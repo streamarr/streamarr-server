@@ -132,6 +132,14 @@ class PagerTest {
   }
 
   @Test
+  @DisplayName("Should read one row past the limit when the page starts the list")
+  void shouldReadOneRowPastTheLimitWhenThePageStartsTheList() {
+    Pager.page(list, "scope", forward(Optional.empty(), 2));
+
+    assertThat(list.rowsRead()).isEqualTo(3);
+  }
+
+  @Test
   @DisplayName("Should page each scope from its own position when scopes are paged together")
   void shouldPageEachScopeFromItsOwnPositionWhenScopesArePagedTogether() {
     var removedAnchor = position(4);

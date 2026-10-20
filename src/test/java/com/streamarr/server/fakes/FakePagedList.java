@@ -22,6 +22,7 @@ public final class FakePagedList implements PagedList<String, String> {
           .thenComparing(Position::itemId);
 
   private final List<Row<String>> rows = new ArrayList<>();
+  private int rowsRead;
 
   /** Adds an item sorted by {@code number}; equal numbers fall back to item ID order. */
   public Row<String> add(String item, long number) {
@@ -33,6 +34,11 @@ public final class FakePagedList implements PagedList<String, String> {
 
   public void remove(Row<String> row) {
     rows.remove(row);
+  }
+
+  /** How many rows every read so far has returned, as a database would load them. */
+  public int rowsRead() {
+    return rowsRead;
   }
 
   @Override
@@ -48,10 +54,13 @@ public final class FakePagedList implements PagedList<String, String> {
       ordered = new ArrayList<>(ordered.reversed());
     }
 
-    return ordered.stream()
-        .filter(row -> isBeyond(row.position(), seek, forward))
-        .limit(seek.limit())
-        .toList();
+    var read =
+        ordered.stream()
+            .filter(row -> isBeyond(row.position(), seek, forward))
+            .limit(seek.limit())
+            .toList();
+    rowsRead += read.size();
+    return read;
   }
 
   private static boolean isBeyond(Position candidate, Seek seek, boolean forward) {
